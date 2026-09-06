@@ -13,9 +13,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2MessageBubble from '../components/V2MessageBubble';
+import V2MessageRow from '../components/V2MessageRow';
 
-jest.mock('../components/V2Avatar', () => () => <span data-testid="avatar" />);
+jest.mock('../components/V2Avatar', () => {
+  const MockAvatar = () => <span data-testid="avatar" />;
+  MockAvatar.displayName = 'MockAvatar';
+  return MockAvatar;
+});
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { _id: 'u1', username: 'me' }, token: 't' }),
 }));
@@ -33,7 +37,7 @@ const msg = (replyToId, replyAuthor) => ({
 });
 
 const show = (props) => render(
-  <MemoryRouter><V2MessageBubble message={msg('root-1', 'rootauthor')} {...props} /></MemoryRouter>,
+  <MemoryRouter><V2MessageRow message={msg('root-1', 'rootauthor')} {...props} /></MemoryRouter>,
 );
 
 describe('the quote is hidden only when the rail already supplies its context', () => {
@@ -49,7 +53,7 @@ describe('the quote is hidden only when the rail already supplies its context', 
     // who is being answered, so suppressing it would lose the addressee.
     render(
       <MemoryRouter>
-        <V2MessageBubble message={msg('m-other', 'someoneelse')} insideThreadRoot="root-1" />
+        <V2MessageRow message={msg('m-other', 'someoneelse')} insideThreadRoot="root-1" />
       </MemoryRouter>,
     );
     expect(screen.getByText(/the quoted text/)).toBeInTheDocument();
@@ -64,7 +68,7 @@ describe('the quote is hidden only when the rail already supplies its context', 
   test('no quote at all is still no quote', () => {
     render(
       <MemoryRouter>
-        <V2MessageBubble message={{ ...msg('root-1', 'a'), replyTo: null }} insideThreadRoot="root-1" />
+        <V2MessageRow message={{ ...msg('root-1', 'a'), replyTo: null }} insideThreadRoot="root-1" />
       </MemoryRouter>,
     );
     expect(screen.queryByText(/the quoted text/)).not.toBeInTheDocument();
@@ -75,7 +79,7 @@ describe('the quote is hidden only when the rail already supplies its context', 
     // the view. An === on mixed types would silently never suppress.
     render(
       <MemoryRouter>
-        <V2MessageBubble message={msg(101, 'rootauthor')} insideThreadRoot="101" />
+        <V2MessageRow message={msg(101, 'rootauthor')} insideThreadRoot="101" />
       </MemoryRouter>,
     );
     expect(screen.queryByText(/the quoted text/)).not.toBeInTheDocument();

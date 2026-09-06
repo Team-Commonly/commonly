@@ -5,7 +5,7 @@ import {
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
-import V2PodChat from '../components/V2PodChat';
+import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
 // SocketContext exports only the provider + hook (no raw context object),
@@ -15,10 +15,10 @@ jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false }),
 }));
 
-jest.mock('../components/V2MessageBubble', () => {
-  const MockV2MessageBubble = () => <div>Rendered message</div>;
-  MockV2MessageBubble.displayName = 'MockV2MessageBubble';
-  return MockV2MessageBubble;
+jest.mock('../components/V2MessageRow', () => {
+  const MockV2MessageRow = () => <div>Rendered message</div>;
+  MockV2MessageRow.displayName = 'MockV2MessageRow';
+  return MockV2MessageRow;
 });
 
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
@@ -75,7 +75,7 @@ const makeDetail = (overrides = {}) => ({
 const renderChat = (detail, props = {}) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
-      <V2PodChat detail={detail} {...props} />
+      <V2Thread detail={detail} {...props} />
     </MemoryRouter>
   </AuthContext.Provider>,
 );
@@ -90,7 +90,7 @@ const makeAgentRoom = (overrides = {}) => makeDetail({
   ...overrides,
 });
 
-describe('V2PodChat teaching empty states', () => {
+describe('V2Thread teaching empty states', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();
@@ -130,7 +130,7 @@ describe('V2PodChat teaching empty states', () => {
   });
 });
 
-describe('V2PodChat starter prompts', () => {
+describe('V2Thread starter prompts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();
@@ -179,7 +179,7 @@ describe('V2PodChat starter prompts', () => {
   });
 });
 
-describe('V2PodChat agent-room liveness', () => {
+describe('V2Thread agent-room liveness', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     axios.get.mockResolvedValue({ data: { agents: [] } });
@@ -239,7 +239,7 @@ describe('V2PodChat agent-room liveness', () => {
     view.rerender(
       <AuthContext.Provider value={authValue}>
         <MemoryRouter>
-          <V2PodChat detail={{ ...detail, messages: [sent, reply] }} />
+          <V2Thread detail={{ ...detail, messages: [sent, reply] }} />
         </MemoryRouter>
       </AuthContext.Provider>,
     );
@@ -280,7 +280,7 @@ describe('V2PodChat agent-room liveness', () => {
   });
 });
 
-describe('V2PodChat just-created Pod starter panel', () => {
+describe('V2Thread just-created Pod starter panel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import Machine, { IMachine } from '../models/Machine';
+import Machine, { IMachine, IMachineAgentState } from '../models/Machine';
 import AgentCredential from '../models/AgentCredential';
 import User from '../models/User';
 import { issueDaemonCredential } from './daemonCredentialService';
@@ -16,6 +16,34 @@ export interface MachineView {
   name: string;
   lastSeenAt: Date | null;
   status: 'online' | 'offline';
+  agentStates: IMachineAgentState[];
+}
+
+// D5 heartbeat payload bounds. A daemon reports every agent it supervises;
+// anything beyond the machine-level cap is a malfunctioning reporter, not a
+// bigger fleet — drop the tail rather than storing unbounded caller input.
+export const MAX_REPORTED_AGENT_STATES = 100;
+const AGENT_RUN_STATES = new Set(['running', 'stopped', 'crashed']);
+
+export function normalizeAgentStates(raw: unknown): IMachineAgentState[] | null {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, MAX_REPORTED_AGENT_STATES)
+    .map((entry) => {
+      const e = (entry || {}) as Record<string, unknown>;
+      const agentName = String(e.agentName || '').trim().toLowerCase();
+      const state = String(e.state || '');
+      if (!agentName || !AGENT_RUN_STATES.has(state)) return null;
+      const restarts = Number(e.restarts);
+      return {
+        agentName,
+        instanceId: String(e.instanceId || '').trim().toLowerCase() || 'default',
+        state: state as IMachineAgentState['state'],
+        restarts: Number.isFinite(restarts) && restarts > 0 ? Math.floor(restarts) : 0,
+      };
+    })
+    .filter((entry): entry is IMachineAgentState => entry !== null);
 }
 
 export interface MachineListView {
@@ -39,6 +67,12 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
     status: lastSeenAt && now.getTime() - lastSeenAt.getTime() <= MACHINE_OFFLINE_AFTER_MS
       ? 'online'
       : 'offline',
+    agentStates: ((machine.agentStates || []) as IMachineAgentState[]).map((s) => ({
+      agentName: s.agentName,
+      instanceId: s.instanceId,
+      state: s.state,
+      restarts: s.restarts,
+    })),
   };
 };
 
@@ -104,9 +138,16 @@ export async function getMachineForDaemon({
   return machine ? serializeMachine(machine) : null;
 }
 
-export async function recordMachineHeartbeat(machine: IMachine): Promise<MachineView> {
+export async function recordMachineHeartbeat(
+  machine: IMachine,
+  agentStates?: unknown,
+): Promise<MachineView> {
   machine.lastSeenAt = new Date();
   machine.status = 'online';
+  // A heartbeat WITHOUT an agents array leaves the last report standing (a
+  // Phase-1 daemon keeps working); one WITH the array replaces it wholesale.
+  const normalized = normalizeAgentStates(agentStates);
+  if (normalized !== null) machine.agentStates = normalized;
   await machine.save();
   return serializeMachine(machine.toObject ? machine.toObject() : machine);
 }
@@ -149,6 +190,8 @@ export async function removeMachine({
 module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
   MAX_MACHINES_PER_OWNER,
+  MAX_REPORTED_AGENT_STATES,
+  normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,
   recordMachineHeartbeat,

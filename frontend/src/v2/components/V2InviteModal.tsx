@@ -1,5 +1,5 @@
 // V2InviteModal — shared invite UI mounted at V2Layout level so both the
-// chat header invite icon (V2PodChat) and the inspector "+ Invite" button
+// thread starter invite action (V2Thread) and the inspector "+ Invite" button
 // can open the same modal. Two tabs: shareable links (people) and an agent
 // install shortcut (browse → install).
 import React, { useState, useEffect, useCallback } from 'react';

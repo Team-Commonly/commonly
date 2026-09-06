@@ -1,0 +1,211 @@
+/**
+ * ADR-026 Phase 2, slice 2: the resident supervision loop behind
+ * `commonly daemon run`.
+ *
+ * The server's work list (GET /api/agent-binding/assigned) is the source of
+ * truth (D2): a row `requested` gets adopted (the D3 CAS — the server refuses
+ * the loser of a race cleanly), a row `bound` gets provisioned (token file)
+ * and supervised (a `commonly agent run <name>` child), and a supervised
+ * agent that leaves the list gets stopped. Per-agent state rides every
+ * machine heartbeat (D5).
+ *
+ * D6 discipline: a replacement child is only ever scheduled from the previous
+ * child's 'exit' event — there is no code path that spawns a second runner
+ * for an agent whose child has not exited.
+ *
+ * All side effects (client, spawn, token file I/O, adapter detection, timers)
+ * are injected so the loop's decisions are testable without processes.
+ */
+
+export const DEFAULT_POLL_MS = 30_000;
+export const DEFAULT_HEARTBEAT_MS = 30_000;
+export const BACKOFF_BASE_MS = 5_000;
+export const BACKOFF_MAX_MS = 60_000;
+
+export const backoffMs = (restarts) => Math.min(
+  BACKOFF_MAX_MS,
+  BACKOFF_BASE_MS * 2 ** Math.max(0, Math.min(restarts, 10)),
+);
+
+const identityKey = (agentName, instanceId) => `${agentName} ${instanceId || 'default'}`;
+
+export const createDaemonSupervisor = ({
+  record,
+  client,
+  spawnChild, // (agentName) => child emitting 'exit'; must expose .kill()
+  loadToken, // (agentName) => token record | null
+  saveToken, // (agentName, record) => void
+  resolveAdapter, // async (runtime) => adapter name for THIS machine
+  log = () => {},
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+}) => {
+  // key → { agentName, instanceId, child, state, restarts, backoffTimer, desired }
+  const seats = new Map();
+  let stopped = false;
+
+  const agentStates = () => Array.from(seats.values()).map((s) => ({
+    agentName: s.agentName,
+    instanceId: s.instanceId,
+    state: s.state,
+    restarts: s.restarts,
+  }));
+
+  const startChild = (seat) => {
+    if (stopped || !seat.desired || seat.child) return;
+    seat.child = spawnChild(seat.agentName);
+    seat.state = 'running';
+    log(`[${seat.agentName}] supervising (restarts so far: ${seat.restarts})`);
+    seat.child.on('exit', (code) => {
+      seat.child = null;
+      if (stopped || !seat.desired) {
+        seat.state = 'stopped';
+        return;
+      }
+      seat.state = code === 0 ? 'stopped' : 'crashed';
+      seat.restarts += 1;
+      const delay = backoffMs(seat.restarts - 1);
+      log(`[${seat.agentName}] exited (code ${code}) — respawn in ${Math.round(delay / 1000)}s`);
+      seat.backoffTimer = setTimeoutFn(() => {
+        seat.backoffTimer = null;
+        startChild(seat);
+      }, delay);
+    });
+  };
+
+  const stopSeat = (seat) => {
+    seat.desired = false;
+    if (seat.backoffTimer) {
+      clearTimeoutFn(seat.backoffTimer);
+      seat.backoffTimer = null;
+    }
+    if (seat.child) {
+      log(`[${seat.agentName}] no longer assigned here — stopping`);
+      seat.child.kill('SIGTERM');
+    } else {
+      seat.state = 'stopped';
+    }
+  };
+
+  // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
+  // The mint refuses to clobber an existing token (409 token_exists); the
+  // binding to THIS machine is the owner's explicit takeover choice (D3), so
+  // that refusal is answered with rotate:true — loudly.
+  const ensureToken = async (row) => {
+    if (loadToken(row.agentName)) return true;
+    const body = { agentName: row.agentName, instanceId: row.instanceId };
+    let minted;
+    try {
+      minted = await client.post('/api/agent-binding/runtime-token', body);
+    } catch (error) {
+      if (error?.status === 409 && error?.body?.code === 'token_exists') {
+        log(`[${row.agentName}] a runtime token exists elsewhere — rotating it to this machine (the old token stops working)`);
+        try {
+          minted = await client.post('/api/agent-binding/runtime-token', { ...body, rotate: true });
+        } catch (rotateError) {
+          log(`[${row.agentName}] token rotation failed: ${rotateError.message}`);
+          return false;
+        }
+      } else {
+        log(`[${row.agentName}] token mint failed: ${error.message}`);
+        return false;
+      }
+    }
+    if (!minted?.token) {
+      log(`[${row.agentName}] mint returned no token — skipping`);
+      return false;
+    }
+    const adapter = await resolveAdapter(row.runtime || null);
+    if (!adapter) {
+      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
+      return false;
+    }
+    saveToken(row.agentName, {
+      agentName: row.agentName,
+      instanceId: row.instanceId,
+      runtimeToken: minted.token,
+      instanceUrl: record.instanceUrl,
+      podId: row.podIds?.[0] || null,
+      adapter,
+    });
+    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter})`);
+    return true;
+  };
+
+  const tick = async () => {
+    if (stopped) return;
+    let assigned;
+    try {
+      assigned = await client.get('/api/agent-binding/assigned');
+    } catch (error) {
+      log(`work-list fetch failed: ${error.message}`);
+      return;
+    }
+    const rows = Array.isArray(assigned?.agents) ? assigned.agents : [];
+
+    const bound = [];
+    for (const row of rows) {
+      if (row.state === 'requested') {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await client.post('/api/agent-binding/adopt', {
+            agentName: row.agentName, instanceId: row.instanceId,
+          });
+          log(`[${row.agentName}] adopted onto this machine`);
+          bound.push(row);
+        } catch (error) {
+          // A clean CAS refusal (409) means another machine won — drop it.
+          log(`[${row.agentName}] adopt refused: ${error.message}`);
+        }
+      } else {
+        bound.push(row);
+      }
+    }
+
+    const desiredKeys = new Set();
+    for (const row of bound) {
+      const key = identityKey(row.agentName, row.instanceId);
+      desiredKeys.add(key);
+      let seat = seats.get(key);
+      if (!seat) {
+        seat = {
+          agentName: row.agentName,
+          instanceId: row.instanceId || 'default',
+          child: null,
+          state: 'stopped',
+          restarts: 0,
+          backoffTimer: null,
+          desired: true,
+        };
+        seats.set(key, seat);
+      }
+      seat.desired = true;
+      if (!seat.child && !seat.backoffTimer) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await ensureToken(row)) startChild(seat);
+      }
+    }
+
+    for (const [key, seat] of seats) {
+      if (!desiredKeys.has(key) && seat.desired) stopSeat(seat);
+    }
+  };
+
+  const heartbeat = async () => {
+    if (stopped) return;
+    try {
+      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates() });
+    } catch (error) {
+      log(`heartbeat failed: ${error.message}`);
+    }
+  };
+
+  const stop = () => {
+    stopped = true;
+    for (const seat of seats.values()) stopSeat(seat);
+  };
+
+  return {
+    tick, heartbeat, stop, agentStates,
+  };
+};
