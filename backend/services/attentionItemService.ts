@@ -116,21 +116,29 @@ const validDate = (value: unknown): Date | null => {
 };
 
 /**
- * A recipient's later post is a real answer to earlier mentions in this pod.
- * It deliberately does not resolve a mention in another pod, an older post,
- * or an attention item owned by somebody else.
+ * Sam's 2026-09-06 ruling: only a later post in the mention's thread or an
+ * explicit reply to its message is a reply. An unrelated pod post is not.
  */
 export const resolveMentionAttentionForReply = async ({
   recipientUserId,
   podId,
   repliedAt,
+  threadRootId,
+  replyToMessageId,
 }: {
   recipientUserId: unknown;
   podId: unknown;
   repliedAt: unknown;
+  threadRootId?: unknown;
+  replyToMessageId?: unknown;
 }): Promise<number> => {
   const at = validDate(repliedAt);
   if (!recipientUserId || !podId || !at) return 0;
+  const targets: Record<string, unknown>[] = [];
+  if (threadRootId) targets.push({ threadRootId: String(threadRootId) });
+  if (replyToMessageId) targets.push({ messageId: String(replyToMessageId) });
+  // Also avoids a Mongo round-trip on ordinary, unthreaded chat writes.
+  if (!targets.length) return 0;
   try {
     const result = await AttentionItem.updateMany(
       {
@@ -138,6 +146,7 @@ export const resolveMentionAttentionForReply = async ({
         podId,
         kind: 'mention',
         status: 'open',
+        $and: [{ $or: targets }],
         // sourceCreatedAt is written on all new rows. The createdAt fallback
         // gives the one-shot sweep's legacy population an honest temporary
         // path until it is examined against its source message.
@@ -173,24 +182,24 @@ const sourceTimeForMention = async (row: any): Promise<Date | null> => {
 const recipientRepliedAfterMention = async (row: any, sourceCreatedAt: Date): Promise<boolean> => {
   const sourceId = String(row?.source?.id || '');
   if (/^\d+$/.test(sourceId)) {
-    return PGMessage.hasMessageByUserAfter(
+    return PGMessage.hasReplyByUserAfter(
       String(row.podId),
       String(row.recipientUserId),
       sourceCreatedAt,
+      { messageId: row.messageId || sourceId, threadRootId: row.threadRootId },
     );
   }
-  return Boolean(await Message.exists({
-    podId: row.podId,
-    userId: row.recipientUserId,
-    createdAt: { $gt: sourceCreatedAt },
-  }));
+  // Mongo fallback messages have no persisted reply/thread edges. There is
+  // no evidence of a reply to use here; explicit acknowledgement still works.
+  return false;
 };
 
 /**
  * One-shot repair for mentions created before reply-resolution existed. It
  * reads each source directly, resolves only rows whose recipient actually
- * posted later in the same pod, and records the same `replied` stamp as the
- * live write path. Call from the explicit maintenance script; retries are
+ * replied later in the same thread or to the source message, and records the
+ * same `replied` stamp as the live write path. Call from the explicit
+ * maintenance script; retries are
  * safe because only still-open rows are updated.
  */
 export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?: boolean } = {}) => {

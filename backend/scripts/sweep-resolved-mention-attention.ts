@@ -1,6 +1,7 @@
 /**
  * Resolve legacy mention AttentionItems whose recipient already replied in
- * the same pod after the source mention was posted.
+ * the same thread or to the source message, after it was posted. Unrelated
+ * posts do not qualify. Already-resolved items are not changed by this script.
  *
  * Dry run by default:
  *   npm run sweep:resolved-mention-attention
