@@ -120,6 +120,73 @@ describe('telegramBridgeService — quote-reply routing', () => {
     expect(out.routedAgent).toBeNull();
     expect(out.content).toBe('plain message');
   });
+
+  // TASK-099 site 7. The two cases below returned an identical value, so a
+  // caller could not tell "nobody quoted anything" from "someone quoted a
+  // relayed line and we failed to route it". Both still relay; only the
+  // second is a failure, and `replyStatus` is the only thing that says so.
+  describe('a quote-reply that does not route is distinguishable from no quote', () => {
+    it('reports not-a-reply when there was no quote', () => {
+      const out = routeReplyContent({ content: 'plain message', replyToTgMessageId: null, relayMap });
+      expect(out.replyStatus).toBe('not-a-reply');
+      expect(out.routedAgent).toBeNull();
+    });
+
+    it('reports unmatched when the quoted message is absent from the relayMap', () => {
+      const out = routeReplyContent({
+        content: 'unrelated reply',
+        replyToTgMessageId: '999',
+        relayMap,
+      });
+      expect(out.replyStatus).toBe('unmatched');
+      expect(out.routedAgent).toBeNull();
+      // The routing behaviour is deliberately unchanged: still relayed, still
+      // unaddressed. Only the reporting is new.
+      expect(out.content).toBe('unrelated reply');
+    });
+
+    it('reports unmatched when the entry aged out past RELAY_MAP_CAP', () => {
+      // The eviction case, which is why this is not a corner: the writer
+      // $slices the map to the newest 100 entries while Telegram scrollback
+      // keeps every relayed message long-pressable.
+      const evicted = Array.from({ length: 100 }, (_, i) => ({
+        tgMessageId: String(1000 + i),
+        agentUsername: 'gene-fix-agent',
+      }));
+      const out = routeReplyContent({
+        content: 'reply to something old',
+        replyToTgMessageId: '101',
+        relayMap: evicted,
+      });
+      expect(out.replyStatus).toBe('unmatched');
+      expect(out.routedAgent).toBeNull();
+    });
+
+    it('reports unmatched when the integration has no relayMap at all', () => {
+      const out = routeReplyContent({ content: 'reply', replyToTgMessageId: '101', relayMap: undefined });
+      expect(out.replyStatus).toBe('unmatched');
+    });
+
+    it('reports unmatched when the matched entry carries no agentUsername', () => {
+      const out = routeReplyContent({
+        content: 'reply',
+        replyToTgMessageId: '101',
+        relayMap: [{ tgMessageId: '101', agentUsername: null }],
+      });
+      expect(out.replyStatus).toBe('unmatched');
+      expect(out.routedAgent).toBeNull();
+    });
+
+    it('reports routed on a hit', () => {
+      const out = routeReplyContent({
+        content: 'looks wrong',
+        replyToTgMessageId: '101',
+        relayMap,
+      });
+      expect(out.replyStatus).toBe('routed');
+      expect(out.routedAgent).toBe('gene-fix-agent');
+    });
+  });
 });
 
 describe('telegramBridgeService — user-scope outbound gate', () => {
