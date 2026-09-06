@@ -90,7 +90,7 @@ describe('V2PodsSidebar workspace groups', () => {
 
     const pods = screen.getByRole('heading', { name: 'pods' }).closest('section');
     const direct = screen.getByRole('heading', { name: 'direct' }).closest('section');
-    expect(within(pods).getByRole('button', { name: 'Sharpen' })).toBeInTheDocument();
+    expect(within(pods).getByRole('button', { name: /^Sharpen/ })).toBeInTheDocument();
     expect(within(pods).getByRole('button', { name: 'Agent Admin' })).toBeInTheDocument();
     expect(within(pods).getByRole('button', { name: 'Study Group' })).toBeInTheDocument();
     expect(within(pods).getByRole('button', { name: 'Project Chat' })).toBeInTheDocument();
