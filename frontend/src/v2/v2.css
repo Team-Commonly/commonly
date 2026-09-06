@@ -9859,7 +9859,29 @@ body.modern-ui.v2-canvas {
 .v2-pods__rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+.v2-pods__pod-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v2-pods__pod-group {
+  min-width: 0;
+}
+
+.v2-pods__subgroup-label {
+  margin: 0 0 6px;
+  padding: 0 24px;
+  color: var(--v2-text-placeholder);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  text-transform: lowercase;
 }
 
 .v2-root button.v2-pods__row,

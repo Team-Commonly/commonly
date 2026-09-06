@@ -1493,7 +1493,15 @@
       "button": "加入 HQ"
     },
     "workspace": {
-      "rooms": "房间",
+      "pods": "Pods",
+      "pinned": "置顶",
+      "community": "社区",
+      "team": "团队",
+      "chat": "聊天",
+      "study": "学习",
+      "games": "游戏",
+      "ensemble": "协作组",
+      "admin": "管理",
       "channels": "频道",
       "direct": "私信",
       "new": "新建",

@@ -137,6 +137,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('sidebar is the artboard’s three-list grammar, not the retired search/filter surface', () => {
     const labels = lastRuleBody(v2, '.v2-pods__group-label');
+    const sublabels = ruleBody(v2, '.v2-pods__subgroup-label');
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     const channelDot = ruleBody(v2, '.v2-pods__channel-dot');
     const liveChannelDot = ruleBody(v2, '.v2-pods__channel-dot--live');
@@ -144,6 +145,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
     expect(labels).toContain('font-family: var(--v2-font-mono)');
     expect(labels).toContain('font-size: 11px');
+    expect(sublabels).toContain('padding: 0 24px');
+    expect(sublabels).toContain('margin: 0 0 6px');
+    expect(sublabels).toContain('color: var(--v2-text-placeholder)');
+    expect(sublabels).toContain('font-family: var(--v2-font-mono)');
     expect(selected).toContain('background: var(--v2-accent)');
     expect(selected).toContain('color: #fff');
     expect(ruleBody(v2, '.v2-root button.v2-pods__row')).toContain('border-radius: 4px');
@@ -151,11 +156,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // not a list inset that would shrink the cobalt slab.
     expect(lastRuleBody(v2, '.v2-pods')).toContain('padding: 6px 0');
     expect(labels).toContain('padding: 0 12px');
+    expect(lastRuleBody(v2, '.v2-pods__rows')).toContain('gap: 4px');
     expect(channelDot).toContain('width: 8px');
     expect(liveChannelDot).toContain('background: var(--v2-accent)');
     expect(directAvatar).toContain('width: 20px');
     expect(directAvatar).toContain('height: 20px');
-    expect(podsSidebar).toContain("'podsSidebar.workspace.rooms'");
+    expect(podsSidebar).toContain("'podsSidebar.workspace.pods'");
     expect(podsSidebar).toContain("'podsSidebar.workspace.channels'");
     expect(podsSidebar).toContain("'podsSidebar.workspace.direct'");
     expect(podsSidebar).not.toContain('v2-pods__search');
@@ -181,6 +187,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('room types are an explicit reviewed mapping, not a complement of direct types', () => {
     expect(podsSidebar).toContain('const ROOM_POD_TYPES');
+    expect(podsSidebar).toContain('const ROOM_POD_TYPE_LABELS');
+    expect(podsSidebar).toContain('communityListed === true');
+    expect(podsSidebar).toContain("? 'pinned'");
+    expect(podsSidebar).toContain("? 'community'");
     expect(podsSidebar).toContain('export const isRoomPod');
     expect(podsSidebar).toContain('pods.filter(isRoomPod)');
     expect(podsSidebar).not.toContain('pods.filter((pod) => !isDirectPod(pod))');
@@ -195,13 +205,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       podModel.match(/type:\s*\{[\s\S]*?enum:\s*\[([^\]]+)\],[\s\S]*?default:\s*'chat'/)?.[1].matchAll(/'([^']+)'/g) || [],
       ([, entry]) => entry,
     );
-    const sidebarTypes = [
-      ...entriesFor(podsSidebar, 'ROOM_POD_TYPES'),
-      ...entriesFor(podsSidebar, 'DM_POD_TYPES'),
-    ];
+    const roomTypes = entriesFor(podsSidebar, 'ROOM_POD_TYPES');
+    const directTypes = entriesFor(podsSidebar, 'DM_POD_TYPES');
+    const typeLabelBody = podsSidebar.match(/const ROOM_POD_TYPE_LABELS:[\s\S]*?= \{([\s\S]*?)\};/)?.[1] || '';
+    const mappedRoomTypes = Array.from(typeLabelBody.matchAll(/(?:'([^']+)'|(\w+)):\s*'[^']+'/g), ([, quoted, bare]) => quoted || bare);
+    const sidebarTypes = [...roomTypes, ...directTypes];
 
     expect(new Set(sidebarTypes).size).toBe(sidebarTypes.length);
     expect(sidebarTypes.sort()).toEqual(schemaTypes.sort());
+    expect(mappedRoomTypes.sort()).toEqual(roomTypes.sort());
   });
 
   test('channels read the existing connector binding endpoint and retain their room target', () => {

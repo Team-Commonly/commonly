@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useAuth } from '../../context/AuthContext';
 
 interface Connector {
@@ -38,6 +39,24 @@ const ROOM_POD_TYPES = new Set([
   'agent-admin',
   'team',
 ]);
+
+type PodListGroup = 'pinned' | 'community' | 'team' | 'chat' | 'study' | 'games' | 'ensemble' | 'admin';
+
+const POD_LIST_GROUP_ORDER: PodListGroup[] = [
+  'pinned', 'community', 'team', 'chat', 'study', 'games', 'ensemble', 'admin',
+];
+
+// Every non-DM Pod.type has a deliberate, human-readable sidebar label. The
+// community label is not a type: it is an admin-curated placement that wins
+// over kind but never over a person's persisted pin.
+export const ROOM_POD_TYPE_LABELS: Record<string, Exclude<PodListGroup, 'pinned' | 'community'>> = {
+  team: 'team',
+  chat: 'chat',
+  study: 'study',
+  games: 'games',
+  'agent-ensemble': 'ensemble',
+  'agent-admin': 'admin',
+};
 
 const connectorLabel = (type: string): string => ({
   telegram: 'Telegram',
@@ -78,6 +97,27 @@ export const isRoomPod = (pod: V2Pod): boolean => (
   ROOM_POD_TYPES.has(String(pod.type || '')) && !isHumanPair(pod)
 );
 
+export const groupWorkspacePods = (
+  pods: V2Pod[],
+  pinnedPodIds: Set<string>,
+): Array<{ label: PodListGroup; pods: V2Pod[] }> => {
+  const groups = new Map<PodListGroup, V2Pod[]>();
+  POD_LIST_GROUP_ORDER.forEach((label) => groups.set(label, []));
+
+  pods.forEach((pod) => {
+    const label = pinnedPodIds.has(pod._id)
+      ? 'pinned'
+      : pod.communityListed === true
+        ? 'community'
+        : ROOM_POD_TYPE_LABELS[String(pod.type || '')];
+    if (label) groups.get(label)?.push(pod);
+  });
+
+  return POD_LIST_GROUP_ORDER
+    .map((label) => ({ label, pods: sortPods(groups.get(label) || []) }))
+    .filter((group) => group.pods.length > 0);
+};
+
 const directMemberFor = (pod: V2Pod, currentUserId?: string): V2PodMember | undefined => (
   (pod.members || []).find((member): member is V2PodMember => (
     typeof member === 'object' && member._id !== currentUserId
@@ -91,6 +131,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const navigate = useNavigate();
   const api = useV2Api();
   const { currentUser } = useAuth();
+  const { pinned } = useV2Pinned();
   const ownPodsState = useV2Pods();
   const {
     pods, loading, error, createPod,
@@ -130,11 +171,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     return () => { active = false; };
   }, [api]);
 
-  const { rooms, direct } = useMemo(() => {
+  const { podGroups, direct } = useMemo(() => {
     const roomPods = pods.filter(isRoomPod);
     const directPods = pods.filter(isDirectPod);
-    return { rooms: sortPods(roomPods), direct: sortPods(directPods) };
-  }, [pods]);
+    return { podGroups: groupWorkspacePods(roomPods, pinned), direct: sortPods(directPods) };
+  }, [pods, pinned]);
 
   const attentionCountByPod = useMemo(() => attentionItems.reduce<Record<string, number>>((counts, item) => {
     if (!item.podId) return counts;
@@ -237,9 +278,18 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         {!loading && error && <div className="v2-pods__empty">{error}</div>}
         {!loading && !error && (
           <div className="v2-pods__list">
-            <section className="v2-pods__group" aria-labelledby="v2-pods-rooms">
-              <h2 id="v2-pods-rooms" className="v2-pods__group-label">{t('podsSidebar.workspace.rooms')}</h2>
-              <div className="v2-pods__rows">{rooms.map((pod) => renderPodRow(pod, 'room'))}</div>
+            <section className="v2-pods__group" aria-labelledby="v2-pods-pods">
+              <h2 id="v2-pods-pods" className="v2-pods__group-label">{t('podsSidebar.workspace.pods')}</h2>
+              <div className="v2-pods__pod-groups">
+                {podGroups.map((group) => (
+                  <section key={group.label} className="v2-pods__pod-group" aria-labelledby={`v2-pods-${group.label}`}>
+                    <h3 id={`v2-pods-${group.label}`} className="v2-pods__subgroup-label">
+                      {t(`podsSidebar.workspace.${group.label}`)}
+                    </h3>
+                    <div className="v2-pods__rows">{group.pods.map((pod) => renderPodRow(pod, 'room'))}</div>
+                  </section>
+                ))}
+              </div>
               <button
                 type="button"
                 className="v2-pods__new-line"

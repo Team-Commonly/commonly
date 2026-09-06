@@ -1499,7 +1499,15 @@
       "button": "Join HQ"
     },
     "workspace": {
-      "rooms": "rooms",
+      "pods": "pods",
+      "pinned": "pinned",
+      "community": "community",
+      "team": "team",
+      "chat": "chat",
+      "study": "study",
+      "games": "games",
+      "ensemble": "ensemble",
+      "admin": "admin",
       "channels": "channels",
       "direct": "direct",
       "new": "new",
