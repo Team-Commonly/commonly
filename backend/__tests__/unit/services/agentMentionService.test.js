@@ -275,6 +275,58 @@ describe('AgentMentionService', () => {
       expect(result.implicit).toEqual(['openclaw']);
     });
 
+    test('a typed return event suppresses the generic implicit reply', async () => {
+      setupReplyTarget();
+      asHumanReplyingTo({
+        _id: 'reply-author',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        suppressImplicitReply: true,
+        message: {
+          id: 'human-reply',
+          content: 'Chosen option',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(result.implicit).toEqual([]);
+    });
+
+    test('a typed return event also suppresses an explicit mention of the asking agent', async () => {
+      setupReplyTarget();
+      asHumanReplyingTo({
+        _id: 'reply-author',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        suppressImplicitReply: true,
+        message: {
+          id: 'human-reply',
+          content: '@aria choose Canary',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(result.enqueued).toEqual([]);
+      expect(result.implicit).toEqual([]);
+      expect(result.skipped).toEqual(['openclaw:typed-return']);
+    });
+
     test('explicit mention plus reply to the same agent enqueues only once', async () => {
       setupReplyTarget();
       asHumanReplyingTo({

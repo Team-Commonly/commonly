@@ -19,6 +19,7 @@
  */
 const { Pool } = require('pg');
 const PGMessage = require('../../models/pg/Message');
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const RUN = process.env.INTEGRATION_TEST === 'true';
 const d = RUN ? describe : describe.skip;
@@ -47,6 +48,9 @@ const replyOf = async (id) => {
 
 d('deleting a thread root, against a real database', () => {
   beforeAll(async () => {
+    // Even posts without mentions resolve Mongo-backed attention now; keep
+    // that real dependency connected while exercising the PG retention path.
+    await setupMongoDb();
     pool = connect();
     await pool.query("INSERT INTO users (_id, username) VALUES ($1,'t43') ON CONFLICT (_id) DO NOTHING", [USER]);
     await pool.query(
@@ -54,7 +58,13 @@ d('deleting a thread root, against a real database', () => {
       [POD, USER],
     );
   });
-  afterAll(async () => { await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]); await pool.end(); });
+  afterAll(async () => {
+    await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]);
+    await pool.end();
+    const { pool: modelPool } = require('../../config/db-pg');
+    if (modelPool?.end) await modelPool.end();
+    await closeMongoDb();
+  });
   beforeEach(async () => { await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]); });
 
   const chain = async () => {

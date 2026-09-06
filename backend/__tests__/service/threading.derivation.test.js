@@ -32,6 +32,7 @@ const { Pool } = require('pg');
 // test the test: the derivation could be corrected in one place and stay wrong
 // in production. This is the same code path createMessage takes.
 const PGMessage = require('../../models/pg/Message');
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const RUN = process.env.INTEGRATION_TEST === 'true';
 // describe.skip would report "skipped" in a way that reads like coverage.
@@ -68,6 +69,9 @@ const insert = (content, replyTo = null) => PGMessage.create(POD, USER, content,
 
 d('thread_root_id derivation, executed', () => {
   beforeAll(async () => {
+    // PGMessage.create also updates Mongo-backed mention attention. Use both
+    // real stores so this awaited projection does not sit in Mongoose's buffer.
+    await setupMongoDb();
     pool = connect();
     const fs = require('fs');
     const path = require('path');
@@ -75,7 +79,10 @@ d('thread_root_id derivation, executed', () => {
     await seed();
   });
 
-  afterAll(async () => { if (pool) await pool.end(); });
+  afterAll(async () => {
+    if (pool) await pool.end();
+    await closeMongoDb();
+  });
   beforeEach(async () => { await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]); });
 
   test('a root has no thread_root_id — NULL, not self-referential', async () => {
@@ -83,6 +90,25 @@ d('thread_root_id derivation, executed', () => {
     // A root pointing at itself would make "is this a root" a comparison
     // instead of a null check, and every consumer would have to know that.
     expect(root.thread_root_id).toBeNull();
+  });
+
+  test('a PG post resolves its recipient\'s earlier Mongo mention before returning', async () => {
+    const AttentionItem = require('../../models/AttentionItem');
+    const attention = await AttentionItem.create({
+      recipientUserId: USER,
+      podId: POD,
+      kind: 'mention',
+      source: { type: 'message', id: 'earlier-mention' },
+      title: 'Earlier mention',
+      sourceCreatedAt: new Date('2020-01-01T00:00:00Z'),
+    });
+
+    await insert('a later post without an at-mention');
+
+    const resolved = await AttentionItem.findById(attention._id).lean();
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.resolvedBy).toBe('replied');
+    expect(resolved.resolvedAt).toBeInstanceOf(Date);
   });
 
   test('a direct reply inherits the root id', async () => {
@@ -158,6 +184,7 @@ d('thread_root_id derivation, executed', () => {
 
 d('the backfill CTE agrees with the write path', () => {
   beforeAll(async () => {
+    await setupMongoDb();
     pool = connect();
     await seed();
   });
@@ -169,6 +196,7 @@ d('the backfill CTE agrees with the write path', () => {
     // eslint-disable-next-line global-require
     const { pool: modelPool } = require('../../config/db-pg');
     if (modelPool?.end) await modelPool.end();
+    await closeMongoDb();
   });
   beforeEach(async () => { await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]); });
 

@@ -54,6 +54,45 @@ describe('AgentEventService', () => {
     AgentEvent.countDocuments.mockResolvedValue(1);
   });
 
+  test('persists a decision.ruled outcome on the asking agent\'s external queue', async () => {
+    AgentInstallation.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
+    const payload = {
+      decisionId: 'decision-1',
+      pick: 'Canary',
+      ruledBy: { userId: 'human-1', username: 'Sam' },
+      ruledAt: '2026-09-06T08:00:00.000Z',
+      rulingMessageId: '901',
+      podId: 'pod-1',
+    };
+    AgentEvent.create.mockResolvedValue({
+      _id: 'event-1',
+      agentName: 'openclaw',
+      instanceId: 'wren',
+      podId: 'pod-1',
+      type: 'decision.ruled',
+      payload,
+      status: 'pending',
+      attempts: 0,
+    });
+
+    await expect(AgentEventService.enqueue({
+      agentName: 'openclaw', instanceId: 'wren', podId: 'pod-1', type: 'decision.ruled', payload,
+    })).resolves.toMatchObject({ _id: 'event-1', type: 'decision.ruled', payload });
+
+    expect(AgentEvent.create).toHaveBeenCalledWith({
+      agentName: 'openclaw',
+      instanceId: 'wren',
+      podId: 'pod-1',
+      type: 'decision.ruled',
+      payload,
+    });
+  });
+
   test('acknowledge auto-recovers OpenClaw context overflow and re-enqueues once', async () => {
     AgentIdentityService.getAgentTypeConfig.mockReturnValue({ runtime: 'moltbot' });
     AgentEvent.findOneAndUpdate.mockResolvedValue({

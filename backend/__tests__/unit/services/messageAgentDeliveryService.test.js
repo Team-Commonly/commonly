@@ -84,6 +84,30 @@ describe('messageAgentDeliveryService', () => {
     });
   });
 
+  it('forwards typed-event reply suppression to the mention seam', async () => {
+    const message = { id: 'm1', userId: { username: 'joined' } };
+
+    await deliverMessageToAgents({
+      podId: 'p1',
+      podType: 'chat',
+      message,
+      userId: 'u1',
+      replyToMessageId: 'm-root',
+      suppressImplicitReply: true,
+      suppressImplicitReplyTarget: { agentName: 'openclaw', instanceId: 'aria' },
+    });
+
+    expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith({
+      podId: 'p1',
+      message,
+      userId: 'u1',
+      username: 'joined',
+      replyToMessageId: 'm-root',
+      suppressImplicitReply: true,
+      suppressImplicitReplyTarget: { agentName: 'openclaw', instanceId: 'aria' },
+    });
+  });
+
   it('sends automatic DM delivery without advisory metadata', async () => {
     const message = { id: 'm1', user: { username: 'mongo-author' } };
     AgentMentionService.isAutoRoutedDmPod.mockReturnValue(true);
@@ -100,6 +124,22 @@ describe('messageAgentDeliveryService', () => {
     });
     expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
     expect(AgentInstallation.countDocuments).not.toHaveBeenCalled();
+    expect(response).toBe(message);
+  });
+
+  it('does not add a DM event beside a typed reply outcome', async () => {
+    const message = { id: 'm1', user: { username: 'mongo-author' } };
+    AgentMentionService.isAutoRoutedDmPod.mockReturnValue(true);
+
+    const response = await deliverMessageToAgents({
+      podId: 'p1',
+      podType: 'agent-admin',
+      message,
+      userId: 'u1',
+      suppressImplicitReply: true,
+    });
+
+    expect(AgentMentionService.enqueueDmEvent).not.toHaveBeenCalled();
     expect(response).toBe(message);
   });
 
