@@ -9,7 +9,7 @@ import V2FirstRunHero from './V2FirstRunHero';
 import V2MobileTabs from './V2MobileTabs';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
-import { useV2PodAttention } from '../hooks/useV2PodAttention';
+import { useV2PodAttention, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
 import { recordPodVisit } from '../lib/podRecency';
@@ -188,7 +188,6 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     && !INVITE_BLOCKED_POD_TYPES.has(String(detail.pod.type)),
   );
 
-  const needsYouTotal = attention.items.length;
 
   // Phone, no pod selected: the pods list IS the page.
   if (phone && !selectedPodId) {
@@ -197,10 +196,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         <V2PodsSidebar
           selectedPodId={null}
           podsState={podsState}
-          attentionItems={attention.items}
+          attentionCountByPod={attention.countByPod}
           variant="page"
         />
-        <V2MobileTabs needsYouCount={needsYouTotal} />
+        <V2MobileTabs needsYouCount={attention.count ?? 0} />
         <V2FirstRunHero onVisibilityChange={setFirstRunVisible} />
       </div>
     );
@@ -214,12 +213,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   return (
     <div className={shellClass}>
-      <V2NavRail />
+      <V2NavRail needsYouCount={attention.count} />
       {!phone && (
         <V2PodsSidebar
           selectedPodId={selectedPodId}
           podsState={podsState}
-          attentionItems={attention.items}
+          attentionCountByPod={attention.countByPod}
         />
       )}
       <V2Thread
@@ -232,9 +231,9 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openFile}
         onBack={phone ? backToPods : undefined}
-        onDecisionSettled={attention.refresh}
+        onDecisionSettled={notifyAttentionChanged}
       />
-      <V2MobileTabs needsYouCount={needsYouTotal} />
+      <V2MobileTabs needsYouCount={attention.count ?? 0} />
       {selectedPodId && !inspectorCollapsed && (
         <>
           <button
@@ -246,6 +245,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           <V2Inspector
             detail={detail}
             attentionItems={attention.items}
+            attentionCount={attention.count === null ? null : (attention.countByPod[selectedPodId] || 0)}
             onClose={toggleInspector}
             onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
           />

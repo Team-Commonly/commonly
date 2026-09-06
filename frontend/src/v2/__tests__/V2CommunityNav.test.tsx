@@ -60,6 +60,12 @@ describe('Community navigation', () => {
     await i18nReady;
   });
 
+  test('rail shows the full queue count, not a capped card count or 99+', async () => {
+    mockAxiosGet.mockResolvedValue({ data: { items: [], count: 105, countsByPod: { hidden: 105 } } });
+    renderRail();
+    expect(await screen.findByLabelText('105 waiting on you')).toHaveTextContent('105');
+  });
+
   beforeEach(() => {
     process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
     process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = COMMUNITY_INVITE_TOKEN;

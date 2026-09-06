@@ -12,6 +12,7 @@ import { POD_VISITS_KEY } from '../lib/podRecency';
 
 const mockCreatePod = jest.fn();
 const mockPinned = new Set<string>();
+const mockTogglePin = jest.fn((id: string) => { if (mockPinned.has(id)) mockPinned.delete(id); else mockPinned.add(id); });
 
 jest.mock('../hooks/useV2Pods', () => ({
   useV2Pods: () => ({
@@ -24,7 +25,7 @@ jest.mock('../hooks/useV2Api', () => ({
 }));
 
 jest.mock('../hooks/useV2Pinned', () => ({
-  useV2Pinned: () => ({ pinned: mockPinned, toggle: jest.fn(), isPinned: (id: string) => mockPinned.has(id) }),
+  useV2Pinned: () => ({ pinned: mockPinned, toggle: mockTogglePin, isPinned: (id: string) => mockPinned.has(id) }),
 }));
 
 jest.mock('../../context/AuthContext', () => ({
@@ -62,15 +63,27 @@ const fleet = [
   pod('fleet', 'Fleet ops', 'agent-admin', [human('me'), agent('ops')], { lastMessage: { content: 'x', createdAt: hoursAgo(24 * 7), username: 'ops' } }),
 ];
 
+// 42 pods = the walk's account size: 12 hand-written plus 30 generated, spread
+// over team / chat / study / games / community with descending message times.
+const KINDS_42 = ['team', 'chat', 'study', 'games', 'team', 'team', 'chat', 'community'];
+const fleet42 = [
+  ...fleet,
+  ...Array.from({ length: 30 }, (_, i) => {
+    const kind = KINDS_42[i % KINDS_42.length];
+    const type = kind === 'community' ? 'team' : kind;
+    const members = type === 'chat' ? [human('me'), human(`x${i}`), human(`y${i}`)] : [human('me'), human(`x${i}`)];
+    return pod(`gen${i}`, `Generated pod ${i + 1}`, type, members, {
+      ...(kind === 'community' ? { communityListed: true } : {}),
+      lastMessage: { content: 'x', createdAt: hoursAgo(30 + i * 7), username: 'me' },
+    });
+  }),
+];
+
 const renderSidebar = (pods, selectedPodId = 'sharpen', extra = {}) => render(
   <MemoryRouter initialEntries={['/v2/pods/sharpen']}>
     <V2PodsSidebar
       selectedPodId={selectedPodId}
-      attentionItems={[
-        { id: 'd1', kind: 'decision', title: 'Mention resolution', podId: 'sharpen' },
-        { id: 'm1', kind: 'mention', title: 'Vera mentioned you', podId: 'sharpen' },
-        { id: 'm2', kind: 'mention', title: 'Kai mentioned you', podId: 'connectors' },
-      ]}
+      attentionCountByPod={{ sharpen: 2, connectors: 1 }}
       podsState={{
         pods, loading: false, error: null, createPod: mockCreatePod, patchLastMessage: jest.fn(),
       }}
@@ -104,16 +117,17 @@ describe('V2PodsSidebar — direction C', () => {
     mockPinned.add('connectors');
     renderSidebar(fleet);
 
-    const heads = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(heads).toEqual(['Pinned', 'Recent']);
+    const heads = screen.getAllByRole('button', { name: /^(Pinned|Recent|Everything)/ }).map((h) => h.textContent.replace(/[▾▸\s]+$/, '').trim());
+    expect(heads).toEqual(['Pinned', 'Recent', 'Everything 12']);
+    expect(screen.getByRole('button', { name: /^Pinned/ })).toHaveAttribute('aria-expanded', 'true');
     const everything = screen.getByRole('button', { name: /^Everything/ });
     expect(everything).toHaveAttribute('aria-expanded', 'false');
     expect(everything).toHaveTextContent('12');
 
-    expect(within(section('Pinned')).getAllByRole('button').map((b) => b.textContent)).toEqual(
+    expect(within(section('Pinned')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row')).map((b) => b.textContent)).toEqual(
       expect.arrayContaining([expect.stringContaining('Sharpen'), expect.stringContaining('Connectors v2')]),
     );
-    const recentRows = within(section('Recent')).getAllByRole('button');
+    const recentRows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row'));
     expect(recentRows).toHaveLength(8);
     expect(recentRows.map((row) => row.textContent)).not.toEqual(expect.arrayContaining([expect.stringContaining('Sharpen')]));
     // The 10th non-pinned pod (Study, 14 days) falls off Recent.
@@ -148,7 +162,7 @@ describe('V2PodsSidebar — direction C', () => {
   test('Recent is ordered by my last visit, not by the last message; the time column stays the last message', () => {
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ files: NOW - 1000, study: NOW - 2000 }));
     renderSidebar(fleet, null);
-    const rows = within(section('Recent')).getAllByRole('button').map((row) => row.textContent);
+    const rows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row')).map((row) => row.textContent);
     expect(rows[0]).toContain('File access test');
     expect(rows[0]).toContain('2mo');
     expect(rows[1]).toContain('Study — agents lit');
@@ -177,14 +191,14 @@ describe('V2PodsSidebar — direction C', () => {
     renderSidebar(fleet);
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'rewire' } });
-    expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Recent/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Rewire/ }).map((b) => b.textContent)).toEqual([
       expect.stringContaining('Rewire Live Demo'), expect.stringContaining('Rewire Demo Sprint'),
     ]);
     fireEvent.change(input, { target: { value: 'zzz' } });
     expect(screen.getByText('no pods match')).toBeInTheDocument();
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(screen.getByRole('heading', { name: 'Recent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Recent/ })).toBeInTheDocument();
   });
 
   test('⌘K focuses the search box from anywhere', () => {
@@ -221,6 +235,35 @@ describe('V2PodsSidebar — direction C', () => {
     const groups = groupPodsByKind(fleet);
     expect(groups.map((g) => g.kind)).toEqual(['team', 'community', 'chat', 'study', 'admin', 'direct']);
     expect(groups.flatMap((g) => g.pods).length).toBe(fleet.length);
+  });
+
+  test('42 pods: Everything counts every kind, Recent stays eight, pinned rows show the pin, search finds a generated pod', () => {
+    mockPinned.add('sharpen');
+    renderSidebar(fleet42);
+    const everything = screen.getByRole('button', { name: /^Everything/ });
+    expect(everything).toHaveTextContent('42');
+    expect(within(section('Recent')).getAllByRole('button', { name: /^(?!Pin|Unpin)/ }).filter((b) => b.className.includes('v2-pods__row'))).toHaveLength(8);
+    fireEvent.click(everything);
+    const kinds = screen.getAllByRole('button', { name: /^(team|community|chat|study|games|admin|direct)\s+\d+/ });
+    const counts = Object.fromEntries(kinds.map((k) => k.textContent.replace(/[▾▸]/g, '').replace(/\s+/g, ' ').trim().split(' ')));
+    expect(Object.values(counts).reduce((a, n) => a + Number(n), 0)).toBe(42);
+    expect(counts.games).toBe('4');
+    // The pinned row carries an active pin; an unpinned row's pin toggles the store.
+    expect(screen.getByRole('button', { name: 'Unpin pod' })).toHaveClass('v2-pods__pin--active');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pin pod' })[0]);
+    expect(mockTogglePin).toHaveBeenCalledTimes(1);
+    const input = screen.getByRole('searchbox', { name: 'Search pods' });
+    fireEvent.change(input, { target: { value: 'Generated pod 30' } });
+    expect(screen.getAllByRole('button', { name: /Generated pod 30/ })).toHaveLength(1);
+  });
+
+  test('Pinned and Recent collapse and remember it for the session', () => {
+    mockPinned.add('sharpen');
+    renderSidebar(fleet);
+    fireEvent.click(screen.getByRole('button', { name: /^Recent/ }));
+    expect(screen.getByRole('button', { name: /^Recent/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(section('Recent')).queryByRole('button', { name: /Commonly HQ/ })).not.toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem('v2:pods.closedSections'))).toEqual(['recent']);
   });
 
   test('recentPods excludes pinned pods and caps at the limit', () => {

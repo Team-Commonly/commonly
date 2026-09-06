@@ -199,6 +199,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain("'podsSidebar.workspace.everything'");
     expect(podsSidebar).toContain('v2-pods__search');
     expect(podsSidebar).toContain('RECENT_LIMIT');
+    // Pinned has an entry point (ux-lead gate 2026-09-06): the pin control is a
+    // sibling of the row, shown on hover / focus / when pinned.
+    expect(podsSidebar).toContain('togglePin(pod._id)');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin');
+    expect(v2).toContain('.v2-root .v2-pods__section--kind button.v2-pods__section-head');
+    expect(lastRuleBody(v2, '.v2-pods__search:focus-within')).toContain('inset 0 0 0 2px var(--v2-accent)');
     expect(podsSidebar).not.toContain("'podsSidebar.workspace.pods'");
     expect(podsSidebar).not.toContain("'podsSidebar.workspace.channels'");
     expect(podsSidebar).not.toContain('v2-pods__filter');
@@ -213,7 +220,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selected).toContain('background: var(--v2-accent)');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
-    expect(podsSidebar).not.toContain('v2-pods__pin');
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
   });
 
@@ -221,7 +227,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podAttention).toContain("'/api/activity/decision-queue'");
     expect(v2Layout).toContain('useV2PodAttention()');
     expect(v2Layout).toContain('attentionItems={attention.items}');
-    expect(v2Layout).toContain('needsYouCount={needsYouTotal}');
+    expect(v2Layout).toContain('attentionCountByPod={attention.countByPod}');
+    expect(v2Layout).toContain('needsYouCount={attention.count}');
+    expect(v2Layout).toContain('attentionCount={attention.count === null ? null : (attention.countByPod[selectedPodId] || 0)}');
+    expect(v2Layout).toContain('needsYouCount={attention.count ?? 0}');
     expect(podsSidebar).toContain('attentionCountByPod');
     expect(podsSidebar).toContain('count > 0');
     expect(workspaceInspector).toContain('attentionItems.filter');

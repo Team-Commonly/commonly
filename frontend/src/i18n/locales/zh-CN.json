@@ -450,7 +450,8 @@
       "agents_one": "{{count}} 个智能体",
       "agents_other": "{{count}} 个智能体",
       "boardOpen": "看板 {{count}} 项待办",
-      "backToPods": "返回 Pod 列表"
+      "backToPods": "返回 Pod 列表",
+      "compactMeta": "{{members}} · {{count}} 个智能体"
     },
     "team": {
       "view": "查看 Pod 团队",

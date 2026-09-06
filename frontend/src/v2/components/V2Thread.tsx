@@ -950,6 +950,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 {pod.description && <p>{pod.description}</p>}
               </div>
             </div>
+            <span className="v2-pod-header__meta v2-pod-header__meta--compact" aria-hidden="true">
+              {t('podChat.header.compactMeta', { members: humanMemberCount, count: agents.length })}
+            </span>
             <span className="v2-pod-header__meta">
               {metaParts.map((part, index) => (
                 <React.Fragment key={index}>

@@ -112,10 +112,10 @@ describe('attentionItemService', () => {
   });
 
   it('returns only rows whose recipient is still a member and resolves by recipient-owned id', async () => {
-    mockFind.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
       { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
       { _id: 'attention-2', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-2', kind: 'approval', source: { type: 'approval', id: 'a-1' }, title: 'Old access', createdAt: new Date() },
-    ] }) }) });
+    ] }) });
     mockPodFind.mockReturnValue(chain([
       { _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] },
       { _id: 'pod-2', name: 'Removed', createdBy: 'someone-else', members: [] },

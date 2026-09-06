@@ -451,7 +451,8 @@
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
-      "backToPods": "Back to pods"
+      "backToPods": "Back to pods",
+      "compactMeta": "{{members}} · {{count}} agents"
     },
     "team": {
       "view": "View pod team",

@@ -1105,51 +1105,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-muted);
 }
 
-/* Wrapper that holds the row button and the absolute-positioned pin button
-   as siblings (HTML doesn't allow <button> inside <button>, so the pin
-   sits next to the row, not nested). */
-.v2-pods__row {
-  position: relative;
-  margin-bottom: 6px;
-}
-.v2-pods__row:last-child { margin-bottom: 0; }
-
-/* Hover-shown pin button. Lives in the top-right of the row; reveals on
-   hover or persists when the pod is pinned. Mirrors Google-Chat / Slack
-   "show on hover, pinned-pods stick" pattern. */
-.v2-root button.v2-pods__pin {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--v2-text-tertiary);
-  opacity: 0;
-  transition: opacity 80ms ease, background 80ms ease, color 80ms ease;
-}
-.v2-pods__row:hover .v2-pods__pin,
-.v2-pods__pin:focus-visible,
-.v2-pods__pin--active {
-  opacity: 1;
-}
-
-/* The pin overlays the reserved time slot, so revealing it cannot reflow the
-   title or preview. */
-.v2-pods__row:hover .v2-pods__item-time,
-.v2-pods__row--pinned .v2-pods__item-time {
-  visibility: hidden;
-}
-.v2-root button.v2-pods__pin:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-.v2-root button.v2-pods__pin--active {
-  color: var(--v2-accent);
-}
-
 .v2-pods__item {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -10237,7 +10192,7 @@ body.modern-ui.v2-canvas {
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-muted);
-  font: 400 12.5px/18px var(--v2-font);
+  font: 400 13px/18px var(--v2-font);
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1 1 0;
@@ -10576,6 +10531,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__search:focus-within {
   border-color: var(--v2-border-strong);
+  box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
 .v2-pods__search-input {
@@ -10675,9 +10631,7 @@ body.modern-ui.v2-canvas {
 [aria-expanded="true"] > .v2-pods__section-chevron::before { content: '▾'; }
 .v2-pods__search-kbd::before { content: '⌘K'; }
 
-.v2-pods__section--kind .v2-pods__section-head,
-.v2-root button.v2-pods__section--kind .v2-pods__section-head,
-.v2-pods__section--kind .v2-root button.v2-pods__section-head {
+.v2-root .v2-pods__section--kind button.v2-pods__section-head {
   padding-left: 24px;
   text-transform: lowercase;
 }
@@ -10701,11 +10655,44 @@ body.modern-ui.v2-canvas {
   border-radius: 0;
   background: transparent;
   color: var(--v2-text-primary);
-  font: 500 13px/18px var(--v2-font);
+  font: 500 14px/18px var(--v2-font);
   text-align: left;
 }
 
 .v2-root button.v2-pods__row--in-fold { padding-left: 24px; }
+
+/* A row and its pin control are siblings (a button cannot nest a button).
+   The pin shows on hover, focus, or when the pod is pinned; the meta column
+   yields to it so nothing overlaps. */
+.v2-pods__rowwrap { position: relative; }
+
+.v2-root button.v2-pods__pin {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  opacity: 0;
+}
+
+.v2-root button.v2-pods__pin::before { content: '⌖'; font: 500 12px/1 var(--v2-font-mono); }
+
+.v2-pods__rowwrap:hover .v2-pods__pin,
+.v2-root button.v2-pods__pin:focus-visible,
+.v2-root button.v2-pods__pin--active { opacity: 1; }
+
+.v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); border-color: var(--v2-accent); }
+.v2-root button.v2-pods__pin:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-pods__rowwrap:hover .v2-pods__row-meta,
+.v2-pods__rowwrap:focus-within .v2-pods__row-meta,
+.v2-pods__rowwrap--pinned .v2-pods__row-meta { padding-right: 30px; }
 
 .v2-root button.v2-pods__row:hover { background: var(--v2-surface-hover); }
 
@@ -10795,6 +10782,8 @@ body.modern-ui.v2-canvas {
   min-height: 50px;
 }
 
+.v2-pod-header__meta--compact { display: none; }
+
 .v2-pod-header__meta {
   display: flex;
   flex: 0 0 auto;
@@ -10846,6 +10835,7 @@ body.modern-ui.v2-canvas {
 
   .v2-pod-header .v2-thread__header-row { min-height: 50px; }
   .v2-pod-header__meta { display: none; }
+  .v2-pod-header__meta--compact { display: flex; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
