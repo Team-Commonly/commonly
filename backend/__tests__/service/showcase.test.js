@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const Message = require('../../models/Message');
+const PGMessage = require('../../models/pg/Message');
 const showcaseRoutes = require('../../routes/showcase');
 const adminPodsRoutes = require('../../routes/admin/pods');
 const podRoutes = require('../../routes/pods');
@@ -13,9 +14,12 @@ const {
   setupMongoDb,
   closeMongoDb,
   clearMongoDb,
+  setupPgDb,
+  closePgDb,
 } = require('../utils/testUtils');
 
 const { isShowcaseWorthy } = showcaseRoutes;
+const REAL_DATABASES = process.env.INTEGRATION_TEST === 'true';
 
 describe('Showcase (public read-only) routes', () => {
   let app;
@@ -27,11 +31,13 @@ describe('Showcase (public read-only) routes', () => {
   let publicPod;
   let privatePod;
   let personalPod;
+  let pgPool;
   // A real-but-nonexistent ObjectId — must 404 the SAME way a private pod does.
   const missingPodId = '0123456789abcdef01234567';
 
   beforeAll(async () => {
     await setupMongoDb();
+    if (REAL_DATABASES) pgPool = await setupPgDb();
     process.env.JWT_SECRET = 'test-jwt-secret';
 
     app = express();
@@ -148,11 +154,32 @@ describe('Showcase (public read-only) routes', () => {
       messageType: 'text',
       createdAt: new Date('2026-01-01T00:00:06Z'),
     });
+
+    // The route is PG-first: a healthy empty PG read does NOT fall back to
+    // Mongo. Seed the primary store in Tier 1, not just its fallback.
+    if (pgPool) {
+      for (const user of [humanUser, botUser]) {
+        await pgPool.query('INSERT INTO users (_id, username, is_bot) VALUES ($1, $2, $3)',
+          [String(user._id), user.username, Boolean(user.isBot)]);
+      }
+      await pgPool.query('INSERT INTO pods (id, name, type, created_by) VALUES ($1, $2, $3, $4)',
+        [String(publicPod._id), publicPod.name, publicPod.type, String(humanUser._id)]);
+      const seeded = await Message.find({ podId: publicPod._id }).lean();
+      for (const message of seeded) {
+        await pgPool.query(
+          'INSERT INTO messages (pod_id, user_id, content, message_type, created_at) VALUES ($1, $2, $3, $4, $5)',
+          [String(message.podId), String(message.userId), message.content, message.messageType, message.createdAt]);
+      }
+    }
   });
 
   afterAll(async () => {
     await clearMongoDb();
     await closeMongoDb();
+    if (pgPool) {
+      await closePgDb();
+      await require('../../config/db-pg').pool.end();
+    }
   });
 
   describe('GET /api/showcase/:podId', () => {
@@ -199,8 +226,17 @@ describe('Showcase (public read-only) routes', () => {
   });
 
   describe('GET /api/showcase/:podId/messages', () => {
-    it('returns filtered, whitelisted messages for a public pod (anon)', async () => {
-      const res = await request(app).get(`/api/showcase/${publicPod._id}/messages`);
+    it.each(['primary', 'Mongo fallback'])('returns filtered, whitelisted messages for a public pod (anon): %s', async (store) => {
+      // Fault injection exercises the real Mongo fallback, not a mocked feed.
+      const failure = store === 'Mongo fallback'
+        ? jest.spyOn(PGMessage, 'findByPodId').mockRejectedValueOnce(new Error('injected PG outage'))
+        : null;
+      let res;
+      try {
+        res = await request(app).get(`/api/showcase/${publicPod._id}/messages`);
+      } finally {
+        failure?.mockRestore();
+      }
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('hasMore');
       const contents = res.body.messages.map((m) => m.content);
@@ -216,6 +252,17 @@ describe('Showcase (public read-only) routes', () => {
       expect(JSON.stringify(res.body)).not.toMatch(/email|@test\.com/i);
       const botMsg = res.body.messages.find((m) => m.author.isBot);
       expect(botMsg.author.displayName).toBe('Pixel');
+    });
+
+    (REAL_DATABASES ? it : it.skip)('does not substitute Mongo history for a successful empty PG read', async () => {
+      const emptyPrimaryPod = await Pod.create({
+        name: 'Empty primary', type: 'team', createdBy: humanUser._id,
+        members: [humanUser._id], publicRead: true,
+      });
+      await Message.create({ podId: emptyPrimaryPod._id, userId: humanUser._id, content: 'Mongo-only history' });
+      const res = await request(app).get(`/api/showcase/${emptyPrimaryPod._id}/messages`);
+      expect(res.status).toBe(200);
+      expect(res.body.messages).toEqual([]);
     });
 
     it('returns 404 for a private pod', async () => {

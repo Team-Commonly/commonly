@@ -58,6 +58,10 @@ type MachineRow = {
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
+// One-time computer setup (ADR-026 D1). Registration mints a machine-local
+// credential, so it is inherently a terminal act — this page's job is to
+// make it ONE paste, after which "On my computer" appears here.
+const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 
 const sanitizeAgentName = (raw: string): string => raw
@@ -705,6 +709,23 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.form.podHint')}
             </span>
           </label>
+          {machines.length === 0 && (
+            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
+              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+              <p className="v2-byo__hint">{t('agentByo.addComputer.lead')}</p>
+              <div className="v2-byo__add-computer-row">
+                <code>{DAEMON_SETUP_COMMAND}</code>
+                <button
+                  type="button"
+                  className="v2-byo__copy"
+                  onClick={() => copy('daemon-setup', DAEMON_SETUP_COMMAND)}
+                >
+                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+                </button>
+              </div>
+              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+            </div>
+          )}
           {error && <div className="v2-byo__error">{error}</div>}
           <button
             type="button"
