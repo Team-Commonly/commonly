@@ -53,7 +53,7 @@ module.exports = {
         'src/v2/components/V2InviteRedeem.tsx',
         'src/components/RegistrationInviteRequired.tsx',
         'src/components/VerifyEmail.tsx',
-        'src/v2/components/V2PodChat.tsx',
+        'src/v2/components/V2Thread.tsx',
         'src/v2/components/V2FirstRunHero.tsx',
         'src/v2/components/V2InviteModal.tsx',
         // Phase 2 — the v2 shell (#719)
