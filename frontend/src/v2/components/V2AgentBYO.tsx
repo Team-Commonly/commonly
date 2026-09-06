@@ -121,6 +121,7 @@ const V2AgentBYO: React.FC = () => {
   // ever rendered on this screen.
   const [hosting, setHosting] = useState<HostedAvailability | null>(null);
   const [mode, setMode] = useState<'hosted' | 'byo' | 'machine'>('byo');
+  const modeDefaulted = React.useRef(false);
   const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
@@ -239,7 +240,15 @@ const V2AgentBYO: React.FC = () => {
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
           setHosting(availability);
-          if (availability.configured) setMode('hosted');
+          // Default to hosted ONCE. This effect re-runs on every pod change
+          // (podId is a dep), and re-asserting the default here silently
+          // stomped an explicit mode choice — caught live 2026-09-06: pick
+          // "On my computer", pick a pod, and the submit button turns back
+          // into "Run it here".
+          if (availability.configured && !modeDefaulted.current) {
+            modeDefaulted.current = true;
+            setMode('hosted');
+          }
         }
       } catch {
         if (!cancelled) setHosting({ configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } });
