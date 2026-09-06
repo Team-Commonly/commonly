@@ -1363,6 +1363,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toContain('color: var(--v2-text-placeholder)');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('text-overflow');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('nowrap');
+    // Line 1 and the gate's pod name wrap too; the 390 clips were the defect (64144).
+    expect(ruleBody(v2, '.v2-connector-row__details strong')).not.toContain('text-overflow');
+    expect(ruleBody(v2, '.v2-connector-row__details strong')).not.toContain('nowrap');
+    expect(ruleBody(v2, '.v2-connector-gate__pod')).not.toContain('text-overflow');
+    expect(ruleBody(v2, '.v2-connector-gate__pod')).not.toContain('nowrap');
+    expect(ruleBody(v2, '.v2-connector-row__details strong')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(v2, '.v2-connector-gate__pod')).toContain('overflow-wrap: anywhere');
     expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-connector-row__dot--idle')).toContain('var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('width: 4px');
