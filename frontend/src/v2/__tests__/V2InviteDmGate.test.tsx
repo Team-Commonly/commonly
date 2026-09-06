@@ -42,7 +42,7 @@ jest.mock('../components/V2InviteModal', () => function MockV2InviteModal({ open
   return open ? <div data-testid="invite-modal-tab">{initialTab}</div> : null;
 });
 jest.mock('../components/V2FirstRunHero', () => () => null);
-jest.mock('../components/V2PodChat', () => function MockV2PodChat({ onOpenInvite }) {
+jest.mock('../components/V2Thread', () => function MockV2Thread({ onOpenInvite }) {
   return (
     <div>
       {onOpenInvite && (

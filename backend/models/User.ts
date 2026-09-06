@@ -134,6 +134,10 @@ export interface IUser extends Document {
     instanceId?: string;
     // ADR-026 D3: the machine this identity is bound to (adoption CAS).
     machineId?: string | null;
+    // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
+    // daemon on X sees it in its work list and performs the adopt CAS; it is
+    // a directive, never a binding — the CAS remains the only binding writer.
+    requestedMachineId?: string | null;
     runtime?: string;
     icon?: string;
   };
@@ -266,6 +270,8 @@ const userSchema = new Schema<IUser>({
     instanceId: { type: String },
     // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
     machineId: { type: String, default: null },
+    // ADR-026 Phase 2 — same lesson: declared or stripped.
+    requestedMachineId: { type: String, default: null },
   },
   avatarMetadata: {
     style: {

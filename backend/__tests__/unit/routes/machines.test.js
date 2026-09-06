@@ -84,12 +84,17 @@ describe('machine lifecycle routes', () => {
   it('uses the daemon credential only for the matching heartbeat', async () => {
     mockRecordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
 
-    const res = await request(app).post('/api/machines/0123456789abcdef01234567/heartbeat');
+    const agents = [{ agentName: 'wren-test', instanceId: 'default', state: 'running', restarts: 0 }];
+    const res = await request(app)
+      .post('/api/machines/0123456789abcdef01234567/heartbeat')
+      .send({ agents });
 
     expect(res.status).toBe(200);
+    // D5: the reported agent states ride the same heartbeat, verbatim — the
+    // service owns validation.
     expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
-    }));
+    }), agents);
     expect(mockFindMachine).toHaveBeenCalledWith({
       _id: '0123456789abcdef01234567',
       machineId: 'daemon-machine',

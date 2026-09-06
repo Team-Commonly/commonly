@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2PodChat from '../components/V2PodChat';
+import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
 let mockSocketValue = { socket: null, connected: false };
@@ -79,7 +79,7 @@ const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS }) => {
     error: null,
     refresh: jest.fn(),
   };
-  return <V2PodChat detail={detail} />;
+  return <V2Thread detail={detail} />;
 };
 
 const renderHarness = (response, sendSpy = jest.fn()) => render(
@@ -97,7 +97,7 @@ const sendDraft = (content) => {
   fireEvent.click(screen.getByRole('button', { name: /send message/i }));
 };
 
-describe('V2PodChat agent delivery hint', () => {
+describe('V2Thread agent delivery hint', () => {
   test('shows a real-agent example after a zero-enqueued send', async () => {
     const response = makeMessage('hello room', {
       enqueued: 0, implicit: [], agentsInPod: 1,

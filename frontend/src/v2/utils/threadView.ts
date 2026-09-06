@@ -5,7 +5,7 @@ import { V2ThreadParticipant } from '../components/V2ThreadCard';
 /**
  * Fold a flat message list into the threaded render order (W-T 4/4).
  *
- * Pure, and separate from V2PodChat, because this is the part with the edge
+ * Pure, and separate from V2Thread, because this is the part with the edge
  * cases and the component is 1,300 lines of surface. Everything here is
  * decided from data the server sent: `thread_root_id` on each message and the
  * per-root state from #1145. Nothing is derived from timestamps.

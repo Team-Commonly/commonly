@@ -3,12 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
-import V2PodChat from './V2PodChat';
+import V2Thread from './V2Thread';
 import V2Inspector from './V2Inspector';
 import V2InviteModal, { type V2InviteTab } from './V2InviteModal';
 import V2FirstRunHero from './V2FirstRunHero';
+import V2MobileTabs from './V2MobileTabs';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
+import { useV2PodAttention } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
 
@@ -19,6 +21,11 @@ interface V2LayoutProps {
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
 const LAST_POD_KEY = 'v2:lastPodId';
 const INVITE_BLOCKED_POD_TYPES = new Set(['agent-room', 'agent-dm']);
+const PHONE_MEDIA_QUERY = '(max-width: 760px)';
+
+const isPhoneViewport = (): boolean => (
+  typeof window !== 'undefined' && !!window.matchMedia?.(PHONE_MEDIA_QUERY).matches
+);
 
 const readInspectorCollapsed = (): boolean => {
   try {
@@ -69,8 +76,15 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { currentUser } = useAuth();
   const podsState = useV2Pods();
   const { pods, loading } = podsState;
+  const attention = useV2PodAttention();
 
-  const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
+  // A desktop preference must not leak into the phone sheet. This initializer
+  // prevents its first rendered frame from flashing open; the media listener
+  // below handles later viewport changes. On phones the sheet opens only
+  // through the header or bottom control.
+  const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(() => (
+    isPhoneViewport() ? true : readInspectorCollapsed()
+  ));
   // Invite modal lives here (not in V2Inspector) so the chat header
   // invite icon and the inspector "+ Invite" button can both open it. The
   // modal itself is V2InviteModal — this component just owns open/close.
@@ -85,21 +99,39 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // instead of a grid column; this owns its open/closed state. Desktop ignores
   // it entirely (the sidebar is always a visible column there).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const phoneViewport = window.matchMedia(PHONE_MEDIA_QUERY);
+    const closeInspectorOnPhone = () => {
+      if (phoneViewport.matches) setInspectorCollapsed(true);
+    };
+    closeInspectorOnPhone();
+    phoneViewport.addEventListener('change', closeInspectorOnPhone);
+    return () => phoneViewport.removeEventListener('change', closeInspectorOnPhone);
+  }, []);
   // Assume visible until the ownership-status probe resolves. This prevents
   // the empty-state stack from flashing while the shell-level first-run modal
   // decides whether it should open; an established/dismissed user flips it off
   // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
-  const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
+  const openMobileNav = useCallback(() => {
+    // The phone has two overlays: rooms drawer and inspector sheet. Opening
+    // one must close the other, otherwise the drawer is mounted behind an
+    // already-open sheet and has no usable hit target.
+    setInspectorCollapsed(true);
+    setMobileNavOpen(true);
+  }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       writeInspectorCollapsed(next);
+      if (!next) setMobileNavOpen(false);
       return next;
     });
   }, []);
   const openInspector = useCallback(() => {
+    setMobileNavOpen(false);
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
   }, []);
@@ -164,7 +196,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   // The inspector is a separate column only when expanded. When collapsed,
   // it's not rendered at all and the chat extends to the right edge — the
-  // entry point is the avatar group in the chat header (see V2PodChat).
+  // entry point is the working-count control in the thread header (see V2Thread).
   const showInspector = Boolean(selectedPodId && !inspectorCollapsed);
   const shellClass = ['v2-shell', !showInspector ? 'v2-shell--no-inspector' : ''].filter(Boolean).join(' ');
 
@@ -182,10 +214,11 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       <V2PodsSidebar
         selectedPodId={selectedPodId}
         podsState={podsState}
+        attentionItems={attention.items}
         mobileOpen={mobileNavOpen}
         onMobileClose={closeMobileNav}
       />
-      <V2PodChat
+      <V2Thread
         detail={detail}
         podsState={podsState}
         firstRunVisible={firstRunVisible}
@@ -195,6 +228,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openFile}
         onOpenMobileNav={openMobileNav}
+        onDecisionSettled={attention.refresh}
+      />
+      <V2MobileTabs
+        podId={selectedPodId}
+        needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}
+        onOpenInspector={openInspector}
       />
       {selectedPodId && !inspectorCollapsed && (
         <>
@@ -206,6 +245,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           />
           <V2Inspector
             detail={detail}
+            attentionItems={attention.items}
             onClose={toggleInspector}
             onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
           />
