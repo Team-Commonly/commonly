@@ -136,14 +136,14 @@ describe('PG Message model', () => {
     expect(msg).toHaveProperty('messageType');
   });
 
-  it('checks for a later post without paging the pod history', async () => {
+  it('checks for a later scoped reply without paging the pod history', async () => {
     const after = new Date('2026-09-06T08:00:00.000Z');
     pool.query.mockResolvedValueOnce({ rows: [{ found: 1 }] });
 
-    await expect(Message.hasMessageByUserAfter('pod-1', 'user-1', after)).resolves.toBe(true);
+    await expect(Message.hasReplyByUserAfter('pod-1', 'user-1', after, { messageId: '42', threadRootId: '40' })).resolves.toBe(true);
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('created_at > $3'),
-      ['pod-1', 'user-1', after],
+      ['pod-1', 'user-1', after, '42', '40'],
     );
   });
 
