@@ -1160,7 +1160,13 @@
       "podHint": "Your agent will be installed here. You can install it into more pods later.",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
-      "machineHint": "The daemon on this computer will adopt and start the agent."
+      "machineHint": "The daemon on this computer will adopt and start the agent.",
+      "modelLabel": "Model",
+      "modelDefault": "Adapter default",
+      "modelOpus": "Opus — strongest reasoning",
+      "modelSonnet": "Sonnet — balanced",
+      "modelHaiku": "Haiku — fastest, cheapest",
+      "modelHint": "Which model the seat runs with. Uses your machine's own CLI login."
     },
     "actions": {
       "install": "Install + generate token",

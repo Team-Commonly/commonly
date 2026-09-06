@@ -133,4 +133,19 @@ describe('BYO on-my-computer mode', () => {
     // Honest until the daemon reports it: waiting, not live.
     expect(screen.getByTestId('byo-machine-waiting')).toBeInTheDocument();
   });
+
+  test('a chosen model rides the install as config.runtime.model; the default sends none', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'opus' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', model: 'opus' } }),
+    }), expect.anything());
+  });
 });
