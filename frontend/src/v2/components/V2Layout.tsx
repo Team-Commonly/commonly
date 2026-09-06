@@ -10,7 +10,7 @@ import V2FirstRunHero from './V2FirstRunHero';
 import V2MobileTabs from './V2MobileTabs';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
-import { useV2PodAttention } from '../hooks/useV2PodAttention';
+import { useV2PodAttention, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
 
@@ -202,7 +202,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   return (
     <div className={shellClass}>
-      <V2NavRail onPodsMobileNav={openMobileNav} />
+      <V2NavRail onPodsMobileNav={openMobileNav} needsYouCount={attention.count} />
       {mobileNavOpen && (
         <button
           type="button"
@@ -214,7 +214,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       <V2PodsSidebar
         selectedPodId={selectedPodId}
         podsState={podsState}
-        attentionItems={attention.items}
+        attentionCountByPod={attention.countByPod}
         mobileOpen={mobileNavOpen}
         onMobileClose={closeMobileNav}
       />
@@ -228,7 +228,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openFile}
         onOpenMobileNav={openMobileNav}
-        onDecisionSettled={attention.refresh}
+        onDecisionSettled={notifyAttentionChanged}
       />
       <V2MobileTabs
         podId={selectedPodId}
@@ -246,6 +246,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           <V2Inspector
             detail={detail}
             attentionItems={attention.items}
+            attentionCount={attention.count === null ? null : (attention.countByPod[selectedPodId] || 0)}
             onClose={toggleInspector}
             onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
           />
