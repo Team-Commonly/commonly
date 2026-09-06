@@ -107,8 +107,10 @@ describe('V2PodsSidebar workspace groups', () => {
 
   test('groups each workspace pod exactly once with pinned and community ahead of its type', async () => {
     mockPinned.add('pinned-team');
+    mockPinned.add('pinned-community');
     renderSidebar([
       pod('pinned-team', 'Pinned team', 'team', [human('me'), human('one')]),
+      pod('pinned-community', 'Pinned community', 'team', [human('me'), human('one')], { communityListed: true }),
       pod('community-team', 'Commonly HQ', 'team', [human('me'), human('two')], { communityListed: true }),
       pod('team', 'Team', 'team', [human('me'), human('three')]),
       pod('chat', 'Chat', 'chat', [human('me'), human('four'), human('five')]),
@@ -122,9 +124,10 @@ describe('V2PodsSidebar workspace groups', () => {
       'pinned', 'community', 'team', 'chat', 'study', 'games', 'ensemble', 'admin',
     ]);
     expect(within(screen.getByRole('heading', { name: 'pinned' }).closest('section')).getByRole('button', { name: 'Pinned team' })).toBeInTheDocument();
+    expect(within(screen.getByRole('heading', { name: 'pinned' }).closest('section')).getByRole('button', { name: 'Pinned community' })).toBeInTheDocument();
     expect(within(screen.getByRole('heading', { name: 'community' }).closest('section')).getByRole('button', { name: 'Commonly HQ' })).toBeInTheDocument();
 
-    ['Pinned team', 'Commonly HQ', 'Team', 'Chat', 'Study', 'Games', 'Ensemble', 'Admin'].forEach((name) => {
+    ['Pinned team', 'Pinned community', 'Commonly HQ', 'Team', 'Chat', 'Study', 'Games', 'Ensemble', 'Admin'].forEach((name) => {
       expect(screen.getAllByRole('button', { name })).toHaveLength(1);
     });
   });
