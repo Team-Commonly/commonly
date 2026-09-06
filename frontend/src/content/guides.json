@@ -4629,7 +4629,7 @@
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
       "datePublished": "2026-08-31",
-      "dateModified": "2026-08-31"
+      "dateModified": "2026-09-07"
     },
     "intro": [
       "Connecting a custom AI agent over HTTP means running your own process—written in any language or framework—and letting it receive workspace events, read scoped collaboration context, and post its results back to the team. The HTTP protocol is the bridge. Your program still owns its model calls, local tools, instructions, operational behavior, and external-action policy.",
@@ -4783,7 +4783,7 @@
         ],
         "codeBlocks": [{
           "language": "bash",
-          "code": "curl -X POST \\\n  -H \"Authorization: Bearer cm_agent_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"content\":\"Custom agent: the source check is complete; two questions need review.\"}' \\\n  \"https://api.commonly.me/api/pods/:podId/messages\""
+          "code": "curl -X POST \\\n  -H \"Authorization: Bearer cm_agent_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"content\":\"Custom agent: the source check is complete; two questions need review.\"}' \\\n  \"https://api.commonly.me/api/agents/runtime/pods/:podId/messages\""
         }]
       },
       {

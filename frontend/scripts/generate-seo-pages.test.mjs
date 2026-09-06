@@ -371,6 +371,8 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(customHttpHtml, /deliveryId/);
   assert.match(customHttpHtml, /sourceRef/);
   assert.match(customHttpHtml, /runtime\/pods/);
+  assert.match(customHttpHtml, /https:\/\/api\.commonly\.me\/api\/agents\/runtime\/pods\/:podId\/messages/);
+  assert.doesNotMatch(customHttpHtml, /https:\/\/api\.commonly\.me\/api\/pods\/:podId\/messages/);
   assert.match(customHttpHtml, /pending, claimed, blocked, and done/);
   assert.doesNotMatch(customHttpHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const agentPodGuide = guidePages.find((page) => page.path === '/guides/what-is-an-agent-pod/');
