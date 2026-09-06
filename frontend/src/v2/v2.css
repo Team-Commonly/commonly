@@ -11165,3 +11165,204 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-msg__thumb { width: calc(50% - 3px); height: 84px; }
   .v2-composer__tag { max-width: 120px; }
 }
+
+/* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
+   Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
+   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   band with a 2px rule and a Collapse foot; the action strip is a 28px white box
+   top-right on hover (inline under the body on long-press at 390); the Jump pill
+   is white with a cobalt count; transcript avatars are two-tone. */
+
+/* Hover band and the expanded band share the panel colour, not the tint. */
+.v2-thread .v2-msg:hover,
+.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg { border-radius: 4px; }
+.v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
+
+/* Runtime tag after the time on agent rows. */
+.v2-msg__tag {
+  display: inline-block;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 8px;
+  border-radius: 3px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  vertical-align: middle;
+}
+
+/* Grouped rows: the time shows in the gutter on hover. */
+.v2-msg__gutter-time {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 28px;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+  visibility: hidden;
+}
+.v2-thread .v2-msg--grouped:hover .v2-msg__gutter-time { visibility: visible; }
+
+/* Two-tone avatars inside the transcript: agents cobalt, humans tint. */
+.v2-thread .v2-msg--agent .v2-avatar:not(.v2-avatar--photo) { background: var(--v2-accent); color: #fff; }
+
+/* Quote: 2px rule, two lines, jumps to the source. */
+.v2-thread .v2-msg__quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 2px 0 6px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font: 400 13px/17px var(--v2-font);
+  cursor: pointer;
+  max-width: 560px;
+}
+.v2-thread .v2-msg__quote:hover { border-left-color: var(--v2-border-strong); }
+.v2-thread .v2-msg__quote:focus-visible { outline: none; box-shadow: inset 2px 0 0 var(--v2-accent); }
+.v2-thread .v2-msg__quote-author { color: var(--v2-text-primary); font-weight: 600; }
+.v2-thread .v2-msg__quote-text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Reactions: 20px chips, mine in the accent wash. */
+.v2-thread .v2-msg__reactions { gap: 6px; margin-top: 6px; }
+.v2-root .v2-thread button.v2-msg__reaction,
+.v2-thread .v2-msg__reaction {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/18px var(--v2-font-mono);
+}
+.v2-thread .v2-msg__reaction-emoji { font-size: 12px; line-height: 18px; }
+.v2-thread .v2-msg__reaction-count { font: 500 11px/18px var(--v2-font-mono); }
+.v2-root .v2-thread button.v2-msg__reaction--mine {
+  border-color: #d4dbf7;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+}
+.v2-root .v2-thread button.v2-msg__reaction--more { color: var(--v2-accent-text); }
+
+/* Action strip: 28px white box, r4, four 24px icons, top-right on hover. */
+.v2-thread .v2-msg__strip {
+  top: -14px;
+  right: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.v2-root .v2-thread button.v2-msg__action { width: 24px; height: 24px; border-radius: 3px; color: #4f5c6e; }
+.v2-msg__more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 7;
+  display: flex;
+  min-width: 140px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+.v2-root .v2-msg__more-menu > button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+.v2-root .v2-msg__more-menu > button:hover { background: var(--v2-surface-hover); }
+
+/* Thread summary chip: faces · N replies · last age. */
+.v2-thread .v2-thread-card { margin: 4px 0 0; gap: 10px; }
+.v2-root .v2-thread button.v2-msg__thread-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+  font: 600 13px/18px var(--v2-font);
+}
+.v2-root .v2-thread button.v2-msg__thread-chip:hover { background: var(--v2-surface-hover); border-color: var(--v2-border); }
+.v2-thread .v2-thread-card__faces .v2-avatar { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--v2-surface); font-size: 8px; }
+.v2-thread .v2-thread-card__faces > * + * { margin-left: -4px; }
+.v2-thread .v2-thread-card__count { color: var(--v2-accent-text); font-weight: 600; }
+.v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+.v2-thread .v2-thread-card__chevron { color: var(--v2-text-muted); font-size: 12px; transform: none; }
+.v2-root .v2-thread button.v2-thread-card__reply { min-height: 28px; padding: 0 6px; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
+
+/* Expanded thread: one band, 2px rule at the text column, indented 24px replies. */
+.v2-thread .v2-thread-block { margin-left: 38px; width: calc(100% - 38px); margin-bottom: 10px; }
+.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-replies { margin: 6px 0 0; padding-left: 14px; border-left: 2px solid var(--v2-border); }
+.v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
+.v2-thread .v2-thread-replies .v2-msg:hover { background: transparent; }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; font-size: 9px; }
+.v2-thread-replies__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+.v2-root button.v2-thread-replies__collapse,
+.v2-root button.v2-thread-replies__more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 13px/18px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root button.v2-thread-replies__more { display: block; margin: 2px 0 4px; }
+.v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
+
+/* Jump pill: white, #dde0e6 border, r14, ink 13/600, cobalt count (walk-3 miss 58). */
+/* Composer aim chip (walk-3 miss 59). */
+.v2-composer__aim { background: var(--v2-accent-soft, #e8ecfb); color: var(--v2-accent-text); }
+
+@media (max-width: 760px) {
+  /* Long-press reveals the strip inline under the body. */
+  .v2-thread .v2-msg { -webkit-touch-callout: none; }
+  /* The row is a 38px | 1fr grid and the strip precedes the body in DOM: left
+     to auto-place, a static strip takes the body's cell and the body drops
+     into the avatar column (one word per line — 390 walk). Pin it. */
+  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal .v2-msg__strip {
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    display: inline-flex;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .v2-root .v2-thread button.v2-msg__action { width: 28px; height: 28px; }
+  .v2-thread .v2-thread-block { margin-left: 0; width: 100%; }
+  .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
+  .v2-thread .v2-msg__gutter-time { display: none; }
+}

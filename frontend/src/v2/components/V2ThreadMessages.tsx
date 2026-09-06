@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
@@ -8,6 +8,9 @@ import V2MessageRow from './V2MessageRow';
 import V2ThreadCard from './V2ThreadCard';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
 
+// Expanded threads show the newest eight; a `N more replies` line reveals the rest.
+const MAX_EXPANDED_REPLIES = 8;
+
 interface V2ThreadMessagesProps {
   messages: V2Message[];
   threadView: ThreadViewItem[];
@@ -15,6 +18,7 @@ interface V2ThreadMessagesProps {
   decisionByMessageId: Map<string, V2DecisionCardData>;
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
+  agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
   onOpenFile?: (fileName: string) => void;
@@ -54,6 +58,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   decisionByMessageId,
   settledDecisionByMessageId,
   agentDisplayNames,
+  agentTags,
   agentAuthorKeys,
   onAuthorClick,
   onOpenFile,
@@ -77,6 +82,9 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
+  // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
+  // reveals the rest for that root (walk-3 §3).
+  const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
 
   const rootPreview = (rootId: string): string => String(
     messages.find((message) => String(message.id) === rootId)?.content || '',
@@ -136,6 +144,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
+                agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
                 onOpenFile={onOpenFile}
@@ -166,8 +175,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         if (settledDecisionByMessageId.has(item.rootId)) return null;
         // A missing state row is not permission to invent a collapsed thread.
         const collapsed = state ? state.collapsed : false;
+        const shownReplies = collapsed || expandedAll.has(item.rootId) || item.replies.length <= MAX_EXPANDED_REPLIES
+          ? item.replies
+          : item.replies.slice(item.replies.length - MAX_EXPANDED_REPLIES);
+        const hiddenReplies = item.replies.length - shownReplies.length;
         return (
-          <div className="v2-thread-block" key={`thread-${item.rootId}`}>
+          <div className={`v2-thread-block${collapsed ? '' : ' v2-thread-block--open'}`} key={`thread-${item.rootId}`}>
             <V2ThreadCard
               replyCount={item.replyCount}
               participants={item.participants}
@@ -180,32 +193,44 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
             />
             {!collapsed && (
               <div className="v2-thread-replies">
-                {item.replies.map((reply, replyIndex) => (
+                {hiddenReplies > 0 && (
+                  <button type="button" className="v2-thread-replies__more" onClick={() => setExpandedAll((current) => new Set(current).add(item.rootId))}>
+                    {t('podChat.thread.moreReplies', { count: hiddenReplies })}
+                  </button>
+                )}
+                {shownReplies.map((reply, replyIndex) => (
                   <V2MessageRow
                     key={reply.id}
                     message={reply}
                     decision={decisionByMessageId.get(String(reply.id))}
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
+                    agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}
                     onOpenFile={onOpenFile}
                     onReply={onReply}
                     onThread={onThread}
-                    grouped={isGroupedWithPrevious(reply, item.replies[replyIndex - 1])}
+                    grouped={isGroupedWithPrevious(reply, shownReplies[replyIndex - 1])}
                     insideThreadRoot={item.rootId}
                   />
                 ))}
-                {onReply && (
-                  <button
-                    type="button"
-                    className="v2-thread-replies__aim"
-                    aria-label={t('podChat.thread.replyFromExpandedThread')}
-                    onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
-                  >
-                    {t('podChat.thread.replyInThread')}
+                <div className="v2-thread-replies__foot">
+                  <button type="button" className="v2-thread-replies__collapse" onClick={() => threadState.toggleCollapsed(item.rootId)}>
+                    {t('podChat.thread.collapse')}
                   </button>
-                )}
+                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
+                  {onReply && (
+                    <button
+                      type="button"
+                      className="v2-thread-replies__aim"
+                      aria-label={t('podChat.thread.replyFromExpandedThread')}
+                      onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
+                    >
+                      {t('podChat.thread.replyInThread')}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

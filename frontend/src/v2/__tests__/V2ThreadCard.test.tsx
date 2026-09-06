@@ -50,7 +50,7 @@ describe('content is a count, faces and a time — and nothing else', () => {
 
   test('the short activity stamp is shown', () => {
     setup();
-    expect(screen.getByText('2m')).toBeInTheDocument();
+    expect(screen.getByText(/2m$/)).toBeInTheDocument();
   });
 
   test('at most three avatars, however many participants', () => {

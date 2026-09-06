@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -92,6 +92,9 @@ interface V2MessageRowProps {
   // raw User row username "openclaw-nova". Frontend-only display layer; the
   // underlying User row is unchanged.
   agentDisplayNames?: Map<string, string>;
+  // Lowercased author key → runtime short name (`codex`, `claude`, …), the
+  // mono tag after the time on agent rows (direction C). Absent = no tag.
+  agentTags?: Map<string, string>;
   // Lowercased set of strings we treat as agent author bylines (both raw
   // usernames and displayNames). The backend may serve either shape on
   // `message.user.username`, so we gate click behavior on a known set.
@@ -318,7 +321,21 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
+const MAX_REACTION_CHIPS = 6;
+const LONG_PRESS_MS = 500;
+
+// Jump to a message already in the transcript and mark it landed for a beat.
+export const landOnMessage = (id: string | number | null | undefined): boolean => {
+  if (id === null || id === undefined) return false;
+  const el = typeof document !== 'undefined' ? document.getElementById(`message-${id}`) : null;
+  if (!el) return false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('v2-msg--landed');
+  window.setTimeout(() => el.classList.remove('v2-msg--landed'), 2000);
+  return true;
+};
+
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -333,15 +350,31 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   // it again. Desktop hover behavior is untouched — the class is inert
   // wherever hover exists.
   const [actionsRevealed, setActionsRevealed] = useState(false);
+  const [reactionsExpanded, setReactionsExpanded] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const isHoverless = () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: none)').matches;
+  // Direction C at 390: a long-press (~500ms) reveals the strip inline under
+  // the body; a tap elsewhere dismisses it. Desktop hover is untouched.
+  // The pointer-up that ends a long-press still delivers a click on most
+  // touch stacks; without this latch that click would hide the strip the
+  // same instant the press revealed it (walk-2b, 390).
+  const pressRevealedRef = useRef(false);
+  const onPressStart = () => {
+    if (!isHoverless()) return;
+    pressRevealedRef.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      setActionsRevealed(true);
+      pressRevealedRef.current = true;
+      pressTimer.current = null;
+    }, LONG_PRESS_MS);
+  };
+  const onPressEnd = () => {
+    if (pressTimer.current !== null) { window.clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
   const onBubbleTap = () => {
-    if (typeof window !== 'undefined'
-      && window.matchMedia
-      && window.matchMedia('(hover: none)').matches) {
-      setActionsRevealed((v) => {
-        if (v) setPickerOpen(false);
-        return !v;
-      });
-    }
+    if (!isHoverless()) return;
+    if (pressRevealedRef.current) { pressRevealedRef.current = false; return; }
+    if (actionsRevealed) { setActionsRevealed(false); setPickerOpen(false); }
   };
   // Surface why a reaction failed instead of swallowing it. Before this, a
   // rejected reaction (bad emoji 400, non-member 403, rate-limit 429) did
@@ -356,6 +389,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   // Click is gated by agentAuthorKeys — backend may serve either raw username
   // or displayName on `message.user.username`, and the v2 set covers both.
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
+  const runtimeTag = agentTags?.get(rawUsername.toLowerCase()) || agentTags?.get(author.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
 
@@ -501,9 +535,14 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
 
   return (
     <div
+      id={`message-${message.id}`}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
-      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
+      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
       onClick={onBubbleTap}
+      onPointerDown={onPressStart}
+      onPointerUp={onPressEnd}
+      onPointerLeave={onPressEnd}
+      onPointerCancel={onPressEnd}
     >
       {grouped ? (
         <div className="v2-msg__avatar-ghost" aria-hidden="true" />
@@ -554,9 +593,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
           )}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
           {time && <span className="v2-msg__time">{time}</span>}
+          {runtimeTag && <span className="v2-msg__tag">{runtimeTag}</span>}
           {isDecisionRuling && <span className="v2-msg__ruled">· {t('activity.decision.ruledShort')}</span>}
         </div>
         )}
+        {grouped && time && <span className="v2-msg__gutter-time" aria-hidden="true">{time}</span>}
         {(() => {
           // Quoted context for replies. POST responses carry a normalized
           // `replyTo` object; list rows may carry raw reply_* columns instead.
@@ -589,10 +630,24 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             && quoteTargetId !== null
             && String(quoteTargetId) === String(insideThreadRoot);
           if (quotesTheRailRoot) return null;
+          // Land on the source when it is loaded; otherwise set the hash so the
+          // thread pages back until it is (V2Thread's landing effect).
+          const jump = () => {
+            if (landOnMessage(quoteTargetId as string | number | null | undefined)) return;
+            if (quoteTargetId !== undefined && quoteTargetId !== null && typeof window !== 'undefined') {
+              window.location.hash = `#message-${quoteTargetId}`;
+            }
+          };
           return (
-            <div className="v2-msg__quote">
-              <span className="v2-msg__quote-author">{quoteAuthor || 'earlier message'}</span>
-              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 140)}</span>
+            <div
+              className="v2-msg__quote"
+              role={quoteTargetId ? 'link' : undefined}
+              tabIndex={quoteTargetId ? 0 : undefined}
+              onClick={(event) => { event.stopPropagation(); jump(); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); jump(); } }}
+            >
+              <span className="v2-msg__quote-author">{quoteAuthor || t('podChat.quote.earlier')}</span>
+              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 240)}</span>
             </div>
           );
         })()}
@@ -664,9 +719,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
           };
 
+          const visible = reactionsExpanded ? renderList : renderList.slice(0, MAX_REACTION_CHIPS);
+          const hidden = renderList.length - visible.length;
           return (
             <div className="v2-msg__reactions" aria-label="Reactions">
-              {renderList.map((r, idx) => (
+              {visible.map((r, idx) => (
                 <button
                   key={`${r.emoji}-${idx}`}
                   type="button"
@@ -679,6 +736,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
                   <span className="v2-msg__reaction-count">{r.count}</span>
                 </button>
               ))}
+              {hidden > 0 && (
+                <button type="button" className="v2-msg__reaction v2-msg__reaction--more" onClick={() => setReactionsExpanded(true)} aria-label={t('podChat.reactions.more', { count: hidden })}>
+                  +{hidden}
+                </button>
+              )}
               {reactionError && (
                 <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>
               )}

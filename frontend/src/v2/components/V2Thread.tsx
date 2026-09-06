@@ -2,13 +2,14 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2ThreadMessages from './V2ThreadMessages';
+import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
   UseV2PodDetailResult,
@@ -158,6 +159,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
+  const location = useLocation();
   const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
@@ -583,6 +585,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!loading && pod && messages.length === 0) composerInputRef.current?.focus();
   }, [loading, pod?._id, messages.length]);
+  // Landing on a message from Activity / a quote: `#message-<id>` scrolls to the
+  // row and marks it landed. If the row is not in the loaded window yet, the
+  // previous pages load until it is (the `after` cursor is kernel row k4).
+  const landedHashRef = useRef<string | null>(null);
+  useEffect(() => {
+    const hash = location.hash || '';
+    const match = hash.match(/^#message-(.+)$/);
+    if (!match) { landedHashRef.current = null; return; }
+    if (landedHashRef.current === hash) return;
+    if (landOnMessage(match[1])) { landedHashRef.current = hash; return; }
+    if (hasMore && !loadingOlder && !loading) void handleLoadOlder();
+  }, [location.hash, messages, hasMore, loadingOlder, loading, handleLoadOlder]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -663,6 +677,30 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const key = agentKeyByAuthorString.get(author.toLowerCase());
     if (key) onOpenMember(key);
   }, [agentKeyByAuthorString, onOpenMember]);
+
+  // Runtime short name per agent author key (direction C, walk-3 miss 51):
+  // the mono tag after the time. Unknown runtime = no tag.
+  const agentTags = React.useMemo(() => {
+    const shortName = (runtimeType?: string): string | null => {
+      switch ((runtimeType || '').toLowerCase()) {
+        case 'codex': return 'codex';
+        case 'claude-code': return 'claude';
+        case 'openclaw': case 'moltbot': return 'openclaw';
+        case 'internal': return 'hosted';
+        case 'webhook': return 'webhook';
+        default: return null;
+      }
+    };
+    const map = new Map<string, string>();
+    (agents || []).forEach((agent) => {
+      const tag = shortName(agent.runtime?.runtimeType || agent.runtime?.wrappedCli);
+      if (!tag) return;
+      const label = agent.profile?.displayName || agent.displayName || agent.agentName;
+      const username = buildAgentUsername(agent.agentName, agent.instanceId || 'default');
+      [label, username, agent.agentName].filter(Boolean).forEach((key) => map.set(String(key).toLowerCase(), tag));
+    });
+    return map;
+  }, [agents]);
 
   const agentAuthorKeys = React.useMemo(
     () => new Set(agentKeyByAuthorString.keys()),
@@ -1086,6 +1124,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           decisionByMessageId={decisionByMessageId}
           settledDecisionByMessageId={settledDecisionByMessageId}
           agentDisplayNames={agentDisplayNames}
+          agentTags={agentTags}
           agentAuthorKeys={agentAuthorKeys}
           onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
           onOpenFile={onOpenFile}
@@ -1268,6 +1307,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     void handleSend();
+                  }
+                  if (event.key === 'Escape' && (replyTarget || threadTarget)) {
+                    event.preventDefault();
+                    setReplyTarget(null);
+                    setThreadTarget(null);
                   }
                 }}
                 onMentionSelect={selectMention}

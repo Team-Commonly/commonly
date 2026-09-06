@@ -4,22 +4,22 @@ import V2Avatar from './V2Avatar';
 import { shortTimeSince } from '../utils/shortTime';
 
 /**
- * The thread headline card (W-T, TASK-029 4/4) — @ux-lead's render brief.
+ * The thread summary chip (direction C, walk-3 miss 54).
  *
- * Sits directly under its root message, in the channel column, and renders
- * INSTEAD of that root's replies while collapsed. Content is count, up to
- * three participant avatars, and a short last-activity stamp — deliberately no
- * reply bodies and no names, so the card is a door and not a preview.
+ * Sits directly under its root message and renders INSTEAD of that root's
+ * replies while collapsed: overlapping 16px face squares, `N replies` in
+ * cobalt, `· last <age>` in muted mono. No chevron at rest, no separate reply
+ * button in the chip, no accent dot unless something in the thread addresses
+ * me — the card is a door and not a preview.
  *
  * `collapsed` is a prop, never derived here. It arrives already resolved from
  * the payload (#1145, @ux-lead 56996): a client that computed it would need
  * the threading cutoff, which is the migration detail that ruling removed from
- * the wire. If you find yourself wanting a date comparison in this file, the
- * bug is upstream.
+ * the wire.
  *
  * `following` is the raw tri-state and renders three labels. Null is NOT
  * "not following" — it means the server will decide from participation — so it
- * reads "Follow" (an invitation) rather than "Muted" (a state).
+ * reads "Follow" (an invitation) rather than "Muted" (a state). Shown expanded.
  */
 export interface V2ThreadParticipant {
   userId: string;
@@ -34,7 +34,7 @@ interface V2ThreadCardProps {
   lastActivityAt?: string | null;
   collapsed: boolean;
   following: boolean | null;
-  /** An item in this thread addresses me. The card's only use of accent. */
+  /** An item in this thread addresses me. The chip's only use of accent beyond the count. */
   addressed?: boolean;
   onToggleCollapsed: () => void;
   onToggleFollowing: () => void;
@@ -82,17 +82,13 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
     >
       <button
         type="button"
-        className="v2-thread-card__main"
+        className="v2-thread-card__main v2-msg__thread-chip"
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
         // The accessible name carries the state, because the visual cue for it
-        // is a rotated chevron and a rotation is not announced.
+        // is a small chevron and a rotation is not announced.
         aria-label={`${collapsed ? 'Expand' : 'Collapse'} thread, ${countLabel}`}
       >
-        <span className="v2-thread-card__count">
-          {addressed && <span className="v2-thread-card__dot" aria-hidden="true" />}
-          {countLabel}
-        </span>
         {shown.length > 0 && (
           <span className="v2-thread-card__faces" aria-hidden="true">
             {shown.map((p) => (
@@ -107,7 +103,11 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
             ))}
           </span>
         )}
-        {stamp && <span className="v2-thread-card__time">{stamp}</span>}
+        <span className="v2-thread-card__count">
+          {addressed && <span className="v2-thread-card__dot" aria-hidden="true" />}
+          {countLabel}
+        </span>
+        {stamp && <span className="v2-thread-card__time">· {t('podChat.thread.last')} {stamp}</span>}
         {!collapsed && <span className="v2-thread-card__chevron" aria-hidden="true">⌄</span>}
       </button>
 

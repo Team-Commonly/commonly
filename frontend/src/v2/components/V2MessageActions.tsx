@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { V2Message } from '../hooks/useV2PodDetail';
 
@@ -23,7 +23,20 @@ interface V2MessageActionsProps {
 
 const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
 
-/** The row-level action affordances, kept out of the message content flow. */
+const Icon = ({ d, extra }: { d: string; extra?: React.ReactNode }) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+    {extra}
+  </svg>
+);
+
+/**
+ * The row's action strip (direction C, walk-3 miss 56): react · reply · thread
+ * · more, in one 28px white box at the row's top-right on hover or focus at
+ * desktop widths, inline under the body on long-press at 390. Kept out of the
+ * message content flow. `v2-msg__actions` stays for the existing invariants;
+ * `v2-msg__strip` is the direction-C contract name.
+ */
 const V2MessageActions: React.FC<V2MessageActionsProps> = ({
   message,
   author,
@@ -36,57 +49,41 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
   onToggleReaction,
 }) => {
   const { t } = useTranslation();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const close = (event: MouseEvent) => { if (moreRef.current && !moreRef.current.contains(event.target as Node)) setMoreOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [moreOpen]);
   if (!onReply && !onThread && !canInteract) return null;
+
+  const copy = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable: nothing to show */ }
+    setMoreOpen(false);
+  };
+  const link = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}#message-${message.id}`
+    : `#message-${message.id}`;
 
   return (
     <div
-      className="v2-msg__actions"
+      className="v2-msg__actions v2-msg__strip"
       role="toolbar"
-      aria-label="Message actions"
+      aria-label={t('podChat.strip.label')}
       onClick={(event) => event.stopPropagation()}
     >
-      {onReply && (
-        <button
-          type="button"
-          className="v2-msg__action"
-          aria-label={`Reply to ${author}`}
-          title={`Reply to ${author}`}
-          onClick={() => onReply(message)}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polyline points="9 17 4 12 9 7" />
-            <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-          </svg>
-        </button>
-      )}
-      {onThread && (
-        <button
-          type="button"
-          className="v2-msg__action"
-          aria-label={`${t('podChat.thread.startThread')} from ${author}`}
-          title={t('podChat.thread.startThread')}
-          onClick={() => onThread(message)}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
-      )}
       {canInteract && (
         <span className="v2-msg__action-wrap">
           <button
             type="button"
             className="v2-msg__action"
-            aria-label="Add reaction"
-            title="Add reaction"
+            aria-label={t('podChat.strip.react')}
+            title={t('podChat.strip.react')}
             onClick={onTogglePicker}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
-            </svg>
+            <Icon d="M8 14s1.5 2 4 2 4-2 4-2" extra={<><circle cx="12" cy="12" r="10" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></>} />
           </button>
           {pickerOpen && (
             <span className="v2-msg__reaction-picker" role="menu">
@@ -109,6 +106,47 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
           )}
         </span>
       )}
+      {onReply && (
+        <button
+          type="button"
+          className="v2-msg__action"
+          aria-label={`Reply to ${author}`}
+          title={`Reply to ${author}`}
+          onClick={() => onReply(message)}
+        >
+          <Icon d="M20 18v-2a4 4 0 0 0-4-4H4" extra={<polyline points="9 17 4 12 9 7" />} />
+        </button>
+      )}
+      {onThread && (
+        <button
+          type="button"
+          className="v2-msg__action"
+          aria-label={`${t('podChat.thread.startThread')} from ${author}`}
+          title={t('podChat.thread.startThread')}
+          onClick={() => onThread(message)}
+        >
+          <Icon d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </button>
+      )}
+      <span className="v2-msg__action-wrap" ref={moreRef}>
+        <button
+          type="button"
+          className="v2-msg__action"
+          aria-label={t('podChat.strip.more')}
+          title={t('podChat.strip.more')}
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <Icon d="M5 12h.01M12 12h.01M19 12h.01" />
+        </button>
+        {moreOpen && (
+          <span className="v2-msg__more-menu" role="menu">
+            <button type="button" role="menuitem" onClick={() => copy(link)}>{t('podChat.strip.copyLink')}</button>
+            <button type="button" role="menuitem" onClick={() => copy(String(message.content || ''))}>{t('podChat.strip.copyText')}</button>
+          </span>
+        )}
+      </span>
     </div>
   );
 };

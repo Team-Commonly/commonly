@@ -834,6 +834,30 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(messageRow).toContain('<V2Lightbox');
   });
 
+  test('threading restyle (PR 2b): runtime tag, 20px reaction chips, two-line quote, thread chip, band, strip, white jump pill', () => {
+    expect(ruleBody(v2, '.v2-msg__tag')).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__reaction')).toContain('height: 20px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__quote')).toContain('border-left: 2px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__quote-text')).toContain('-webkit-line-clamp: 2');
+    expect(ruleBody(v2, '.v2-root .v2-thread button.v2-msg__thread-chip')).toContain('min-height: 28px');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-block--open')).toContain('background: #f9fafb');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-replies')).toContain('border-left: 2px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('border-radius: 4px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('box-shadow: none');
+    expect(lastRuleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border: 1px solid #dde0e6');
+    expect(lastRuleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border-radius: 14px');
+    expect(messageRow).toContain('v2-msg__tag');
+    expect(messageRow).toContain('MAX_REACTION_CHIPS = 6');
+    expect(threadMessages).toContain('MAX_EXPANDED_REPLIES = 8');
+    expect(threadMessages).toContain('v2-thread-replies__foot');
+    // The revealed strip must be pinned to the body column: the row is a
+    // 38px | 1fr grid and auto-placement would drop the body into the avatar
+    // column (390 walk, one word per line).
+    const revealed = ruleBody(v2, '.v2-thread .v2-msg--reveal .v2-msg__strip');
+    expect(revealed).toContain('grid-column: 2');
+    expect(revealed).toContain('grid-row: 2');
+  });
+
   test('history: a mono edge line that loads on scroll and a Jump-to-latest pill', () => {
     expect(threadMessages).toContain('v2-thread__edge');
     expect(threadMessages).not.toContain('v2-chat__older-btn');
@@ -1183,6 +1207,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         '.v2-rail__brand-icon',
         '.v2-root button.v2-decision-card__choice--primary',
         '.v2-root button.v2-pods__row--selected',
+        // Direction C (walk-3 miss 62): an agent's transcript avatar is a cobalt
+        // square with white initials — the mark that says "agent" on a row.
+        '.v2-thread .v2-msg--agent .v2-avatar:not(.v2-avatar--photo)',
         '.v2-thread-card__dot',
         '.v2-workspace-inspector__state--needs-you',
         '.v2-workspace-inspector__state--working',
