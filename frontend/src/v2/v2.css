@@ -10643,9 +10643,10 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__new {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  /* Same 32px as the search box beside it — the two tools share one baseline. */
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   padding: 0;
   place-items: center;
   border: 1px solid var(--v2-border);

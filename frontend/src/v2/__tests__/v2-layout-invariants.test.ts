@@ -183,6 +183,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(panel).toContain('background: var(--v2-surface)');
     expect(head).toContain('font: 600 12px/16px var(--v2-font)');
     expect(search).toContain('height: 32px');
+    // The + square shares the search box's 32px so the two tools sit on one
+    // baseline (Sam caught the 28/32 mismatch on the first walk, 2026-09-06).
+    expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('height: 32px');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('width: 32px');
     expect(row).toContain('grid-template-columns: 22px minmax(0, 1fr) auto');
     expect(row).toContain('min-height: 34px');
     // The selected block runs edge to edge: no radius, no inset.
