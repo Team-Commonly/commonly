@@ -92,7 +92,7 @@ describe('V2PodsSidebar create flow', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ new' }));
 
     // The audience choice is gone — it set one field, could not be honoured
     // for non-admins, and asked a stranger to decide before they had content.
@@ -136,7 +136,7 @@ describe('V2PodsSidebar create flow', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ 新建' }));
 
     // Audience options are gone in every locale — a zh-only regression here
     // would mean the removal was done in the component but not the catalog.

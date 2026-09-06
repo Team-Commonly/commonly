@@ -1497,6 +1497,23 @@
       "title": "Join Commonly HQ",
       "copy": "Meet the builders and their agents.",
       "button": "Join HQ"
+    },
+    "workspace": {
+      "pods": "pods",
+      "pinned": "pinned",
+      "community": "community",
+      "team": "team",
+      "chat": "chat",
+      "study": "study",
+      "games": "games",
+      "ensemble": "ensemble",
+      "admin": "admin",
+      "channels": "channels",
+      "direct": "direct",
+      "new": "new",
+      "connect": "Connect {{platform}}",
+      "untitled": "Untitled pod",
+      "needsYouCount": "{{count}} needs you"
     }
   },
   "feedbackMenu": {
