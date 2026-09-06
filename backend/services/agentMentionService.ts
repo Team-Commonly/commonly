@@ -51,6 +51,10 @@ interface MentionMapEntry {
 interface EnqueueMentionsOptions {
   podId: string;
   replyToMessageId?: string | null;
+  // A caller with a typed return event can suppress only the generic
+  // reply-edge wake. Explicit mentions and ambient delivery still work.
+  suppressImplicitReply?: boolean;
+  suppressImplicitReplyTarget?: MentionTarget;
   message: {
     content?: string;
     text?: string;
@@ -1385,6 +1389,8 @@ const enqueueMentions = async ({
   userId,
   username,
   replyToMessageId,
+  suppressImplicitReply = false,
+  suppressImplicitReplyTarget,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
@@ -1526,6 +1532,30 @@ const enqueueMentions = async ({
     if (isExplicitMention) deliveredAgentMentionTargets.set(identityKey(target), target);
   };
 
+  // A typed return event can own the author of this reply. Resolve that target
+  // before scanning explicit handles too: `@aria` in a human ruling must not
+  // turn one decision outcome into a typed event plus a chat.mention. Other
+  // explicit mentions in the same message remain ordinary delivery targets.
+  let typedReplyTargetKey: string | null = suppressImplicitReplyTarget?.agentName
+    ? identityKey({
+      agentName: suppressImplicitReplyTarget.agentName,
+      instanceId: suppressImplicitReplyTarget.instanceId || 'default',
+    })
+    : null;
+  if (!typedReplyTargetKey && suppressImplicitReply && replyToMessageId && sender?.isBot === false) {
+    try {
+      const target = await resolveImplicitReplyTarget(replyToMessageId, message, installations);
+      if (target) typedReplyTargetKey = identityKey(target);
+    } catch (error) {
+      // The later normal reply-edge block will take the same safe path. A
+      // lookup failure must not hide unrelated explicit mentions.
+      console.warn('Failed to resolve typed-reply target:', (error as Error).message);
+    }
+  }
+  const isTypedReplyTarget = (target: MentionTarget): boolean => (
+    typedReplyTargetKey !== null && identityKey(target) === typedReplyTargetKey
+  );
+
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
   // Preserve established agent routing when a handle is an agent alias. Human
   // resolution owns only names no installed-agent path already claims; the
@@ -1601,6 +1631,10 @@ const enqueueMentions = async ({
       const normalized = raw.toLowerCase();
       const directMatch = mentionMap.get(normalized);
       if (directMatch) {
+        if (isTypedReplyTarget(directMatch)) {
+          skipped.push(`${directMatch.agentName}:typed-return`);
+          return;
+        }
         if (isSelfMention(directMatch)) {
           skipped.push(`${directMatch.agentName}:self`);
           return;
@@ -1716,6 +1750,10 @@ const enqueueMentions = async ({
         }
         await Promise.all(
           matches.map(async (match) => {
+            if (isTypedReplyTarget({ agentName: agentType, instanceId: match.instanceId })) {
+              skipped.push(`${agentType}:typed-return`);
+              return;
+            }
             if (isSelfMention({ agentName: agentType, instanceId: match.instanceId })) {
               skipped.push(`${agentType}:self`);
               return;
@@ -1802,36 +1840,43 @@ const enqueueMentions = async ({
     try {
       const target = await resolveImplicitReplyTarget(replyToMessageId, message, installations);
       if (target && !enqueuedIdentityKeys.has(identityKey(target))) {
-        await AgentEventService.enqueue({
-          agentName: target.agentName,
-          instanceId: target.instanceId || 'default',
-          podId,
-          type: 'chat.mention',
-          payload: {
-            messageId: message?._id || message?.id
-              ? String(message?._id || message?.id)
-              : undefined,
-            content: buildContentForTarget(
-              podId,
-              rawContent,
-              'chat.mention',
-              target.agentName,
-              collaborativePod,
-              authorFrame,
-            ),
-            userId,
-            username,
-            mentions: rawMentions,
-            source,
-            messageType: message?.messageType || message?.message_type || 'text',
-            createdAt: message?.createdAt || message?.created_at || new Date(),
-            thread: message?.thread || null,
-            replyToMessageId,
-            implicitReply: true,
-          },
-        });
-        recordEnqueued(target, target.agentName, false);
-        implicit.push(target.agentName);
+        if (suppressImplicitReply) {
+          // The decision service owns this particular reply with a typed
+          // `decision.ruled` event. Retain the identity in the ambient-exclude
+          // set so a wake-on-message opt-in cannot reintroduce the second turn.
+          enqueuedIdentityKeys.add(identityKey(target));
+        } else {
+          await AgentEventService.enqueue({
+            agentName: target.agentName,
+            instanceId: target.instanceId || 'default',
+            podId,
+            type: 'chat.mention',
+            payload: {
+              messageId: message?._id || message?.id
+                ? String(message?._id || message?.id)
+                : undefined,
+              content: buildContentForTarget(
+                podId,
+                rawContent,
+                'chat.mention',
+                target.agentName,
+                collaborativePod,
+                authorFrame,
+              ),
+              userId,
+              username,
+              mentions: rawMentions,
+              source,
+              messageType: message?.messageType || message?.message_type || 'text',
+              createdAt: message?.createdAt || message?.created_at || new Date(),
+              thread: message?.thread || null,
+              replyToMessageId,
+              implicitReply: true,
+            },
+          });
+          recordEnqueued(target, target.agentName, false);
+          implicit.push(target.agentName);
+        }
       }
     } catch (error) {
       // Reply routing is best-effort, like explicit mention routing. The

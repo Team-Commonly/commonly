@@ -7,6 +7,10 @@ const AttentionItem = require('../models/AttentionItem');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
+// eslint-disable-next-line global-require
+const Message = require('../models/Message');
+// eslint-disable-next-line global-require
+const PGMessage = require('../models/pg/Message');
 
 type SourceType = 'message' | 'approval' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision';
@@ -54,6 +58,7 @@ const recordForRecipients = async (
         messageId: payload.messageId,
         threadRootId: payload.threadRootId,
         options: payload.options,
+        sourceCreatedAt: payload.sourceCreatedAt,
         status: 'open',
       },
     },
@@ -98,10 +103,128 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
       podId, kind: 'mention' as Kind, sourceType: 'message' as SourceType, sourceId: sourceKey('message', messageId),
       title: `${authorName} mentioned you`, actorName: authorName, detail: compact(content), podName: pod?.name || 'Pod',
       messageId: String(messageId), threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),
+      sourceCreatedAt: message?.createdAt || message?.created_at || undefined,
     });
   } catch (error) {
     console.warn('[attention] mention materialization failed:', (error as Error).message);
   }
+};
+
+const validDate = (value: unknown): Date | null => {
+  const date = value instanceof Date ? value : new Date(String(value || ''));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+/**
+ * A recipient's later post is a real answer to earlier mentions in this pod.
+ * It deliberately does not resolve a mention in another pod, an older post,
+ * or an attention item owned by somebody else.
+ */
+export const resolveMentionAttentionForReply = async ({
+  recipientUserId,
+  podId,
+  repliedAt,
+}: {
+  recipientUserId: unknown;
+  podId: unknown;
+  repliedAt: unknown;
+}): Promise<number> => {
+  const at = validDate(repliedAt);
+  if (!recipientUserId || !podId || !at) return 0;
+  try {
+    const result = await AttentionItem.updateMany(
+      {
+        recipientUserId,
+        podId,
+        kind: 'mention',
+        status: 'open',
+        // sourceCreatedAt is written on all new rows. The createdAt fallback
+        // gives the one-shot sweep's legacy population an honest temporary
+        // path until it is examined against its source message.
+        $or: [
+          { sourceCreatedAt: { $lt: at } },
+          { sourceCreatedAt: { $exists: false }, createdAt: { $lt: at } },
+        ],
+      },
+      { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'replied' } },
+    );
+    return Number(result.modifiedCount || 0);
+  } catch (error) {
+    // A message post is authoritative even if this recipient projection is
+    // unavailable. Leave the row open rather than failing the chat write.
+    console.warn('[attention] reply resolution storage failed; leaving item visible:', (error as Error).message);
+    return 0;
+  }
+};
+
+const sourceTimeForMention = async (row: any): Promise<Date | null> => {
+  const stored = validDate(row?.sourceCreatedAt);
+  if (stored) return stored;
+  const sourceId = String(row?.source?.id || '');
+  if (!sourceId) return null;
+  if (/^\d+$/.test(sourceId)) {
+    const message = await PGMessage.findById(sourceId);
+    return validDate(message?.createdAt);
+  }
+  const message = await Message.findById(sourceId).select('createdAt').lean();
+  return validDate(message?.createdAt);
+};
+
+const recipientRepliedAfterMention = async (row: any, sourceCreatedAt: Date): Promise<boolean> => {
+  const sourceId = String(row?.source?.id || '');
+  if (/^\d+$/.test(sourceId)) {
+    return PGMessage.hasMessageByUserAfter(
+      String(row.podId),
+      String(row.recipientUserId),
+      sourceCreatedAt,
+    );
+  }
+  return Boolean(await Message.exists({
+    podId: row.podId,
+    userId: row.recipientUserId,
+    createdAt: { $gt: sourceCreatedAt },
+  }));
+};
+
+/**
+ * One-shot repair for mentions created before reply-resolution existed. It
+ * reads each source directly, resolves only rows whose recipient actually
+ * posted later in the same pod, and records the same `replied` stamp as the
+ * live write path. Call from the explicit maintenance script; retries are
+ * safe because only still-open rows are updated.
+ */
+export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?: boolean } = {}) => {
+  const rows = await AttentionItem.find({ kind: 'mention', status: 'open' })
+    .sort({ createdAt: 1 }).lean();
+  let eligible = 0;
+  let resolved = 0;
+  let unavailable = 0;
+  for (const row of rows) {
+    try {
+      const sourceCreatedAt = await sourceTimeForMention(row);
+      if (!sourceCreatedAt || !await recipientRepliedAfterMention(row, sourceCreatedAt)) continue;
+      eligible += 1;
+      if (!apply) continue;
+      // The condition is repeated at write time so a concurrent explicit
+      // acknowledgement cannot be overwritten with the wrong resolution.
+      const result = await AttentionItem.updateOne(
+        { _id: row._id, kind: 'mention', status: 'open' },
+        {
+          $set: {
+            status: 'resolved',
+            resolvedAt: new Date(),
+            resolvedBy: 'replied',
+            ...(row.sourceCreatedAt ? {} : { sourceCreatedAt }),
+          },
+        },
+      );
+      resolved += Number(result.modifiedCount || 0);
+    } catch (error) {
+      unavailable += 1;
+      console.warn('[attention] mention sweep skipped an unreadable source:', (error as Error).message);
+    }
+  }
+  return { scanned: rows.length, eligible, resolved, unavailable };
 };
 
 export const recordApproval = async (approval: any): Promise<void> => {
@@ -236,10 +359,13 @@ export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: a
 
 export const acknowledgeMention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
   if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
-  const result = await AttentionItem.updateOne({ _id: attentionItemId, recipientUserId, kind: 'mention', status: 'open' }, { $set: { status: 'resolved', resolvedAt: new Date() } });
+  const result = await AttentionItem.updateOne(
+    { _id: attentionItemId, recipientUserId, kind: 'mention', status: 'open' },
+    { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'acknowledged' } },
+  );
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export default { recordMentionedUsers, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };

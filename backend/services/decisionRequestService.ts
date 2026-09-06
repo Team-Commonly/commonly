@@ -17,6 +17,8 @@ const { syncPodFromMongo } = require('./pgPodSyncService');
 // eslint-disable-next-line global-require
 const { deliverMessageToAgents } = require('./messageAgentDeliveryService');
 // eslint-disable-next-line global-require
+const AgentEventService = require('./agentEventService');
+// eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
@@ -152,7 +154,7 @@ const requirePgReply = async (podId: string, userId: string): Promise<void> => {
 /**
  * Store a fork and post the asker's own question into the pod. The source
  * message is created before the row becomes visible in the queue, so every
- * card has a reply target and human rulings always have a normal wake path.
+ * card has a reply target and a later ruling has a durable return path.
  */
 export const requestDecision = async (input: RequestDecisionOptions): Promise<Record<string, unknown>> => {
   const podId = cleanText(input.podId, 'podId', 128);
@@ -239,11 +241,35 @@ const decisionPayload = (row: any): Record<string, unknown> => ({
   } : null,
 });
 
+const enqueueRuledDecisionEvent = async (decision: any): Promise<void> => {
+  const ruling = decision?.ruling;
+  if (!ruling?.value || !ruling?.byUserId || !ruling?.at || !ruling?.messageId) {
+    throw new Error('Ruled decision is missing its delivery payload');
+  }
+
+  await AgentEventService.enqueue({
+    agentName: String(decision.agentName),
+    instanceId: String(decision.instanceId || 'default'),
+    podId: String(decision.podId),
+    type: 'decision.ruled',
+    payload: {
+      decisionId: String(decision._id),
+      pick: String(ruling.value),
+      ruledBy: {
+        userId: String(ruling.byUserId),
+        username: String(ruling.byUsername || 'Human'),
+      },
+      ruledAt: new Date(ruling.at).toISOString(),
+      rulingMessageId: String(ruling.messageId),
+      podId: String(decision.podId),
+    },
+  });
+};
+
 // The decision service bypasses messageController because it must make the
 // decision-row CAS and the normal reply one operation. Preserve the ordinary
 // human-message live contract here: without this broadcast, the ruling is
-// durable and wakes the agent but other open thread views do not see it until
-// their next fetch.
+// durable but other open thread views do not see it until their next fetch.
 const broadcastRulingReply = (podId: string, message: any): void => {
   try {
     const io = socketConfig.getIO();
@@ -271,7 +297,11 @@ const broadcastRulingReply = (podId: string, message: any): void => {
   }
 };
 
-const postRulingReply = async (row: any, callerUserId: string, value: string): Promise<string> => {
+const postRulingReply = async (
+  row: any,
+  callerUserId: string,
+  value: string,
+): Promise<{ messageId: string; message: any }> => {
   await requirePgReply(String(row.podId), callerUserId);
   let resolvedThreadRootId: number | null = null;
   if (row.threadRootId) {
@@ -285,8 +315,8 @@ const postRulingReply = async (row: any, callerUserId: string, value: string): P
   }
 
   // We intentionally require PG here rather than falling back to Mongo. A
-  // ruling without reply_to_message_id is not an implicit reply and would not
-  // wake the asking agent — failing is more honest than acknowledging it.
+  // ruling without reply_to_message_id cannot be tied back to the card —
+  // failing is more honest than acknowledging it.
   const created = await PGMessage.create(
     String(row.podId),
     callerUserId,
@@ -299,16 +329,8 @@ const postRulingReply = async (row: any, callerUserId: string, value: string): P
   const message = created?.id ? await PGMessage.findById(String(created.id)) : null;
   if (!message) throw new Error('Ruling reply could not be read after write');
 
-  const pod = await Pod.findById(String(row.podId)).select('type').lean();
-  await deliverMessageToAgents({
-    podId: String(row.podId),
-    podType: pod?.type,
-    message,
-    userId: callerUserId,
-    replyToMessageId: String(row.messageId),
-  });
   broadcastRulingReply(String(row.podId), message);
-  return String(message.id || message._id || created.id);
+  return { messageId: String(message.id || message._id || created.id), message };
 };
 
 /**
@@ -359,9 +381,9 @@ export const chooseDecision = async (
     return { status: 409, body: { error: 'Decision is being ruled; retry shortly' } };
   }
 
-  let rulingMessageId: string;
+  let rulingReply: { messageId: string; message: any };
   try {
-    rulingMessageId = await postRulingReply(claimed, callerUserId, value);
+    rulingReply = await postRulingReply(claimed, callerUserId, value);
   } catch {
     await DecisionRequest.updateOne(
       { _id: claimed._id, status: 'pending', 'rulingLock.token': lockToken },
@@ -381,7 +403,7 @@ export const chooseDecision = async (
           byUserId: callerUserId,
           byUsername: caller.username || 'Human',
           at: ruledAt,
-          messageId: rulingMessageId,
+          messageId: rulingReply.messageId,
         },
       },
       $unset: { rulingLock: 1 },
@@ -389,8 +411,22 @@ export const chooseDecision = async (
     { new: true },
   );
   if (!ruled) {
-    // The human reply is durable and will wake the agent. Do not manufacture
-    // a second reply trying to recover a rare lock-expiry race.
+    // The human reply is durable, but there is no final decision row to turn
+    // into a typed event. Preserve the ordinary reply-edge wake instead of
+    // leaving the asking agent unable to see a visible human response.
+    try {
+      await deliverMessageToAgents({
+        podId: String(claimed.podId),
+        podType: pod?.type,
+        message: rulingReply.message,
+        userId: callerUserId,
+        replyToMessageId: String(claimed.messageId),
+      });
+    } catch (error) {
+      console.warn('[decision-request] finalize-conflict reply delivery failed:', (error as Error).message);
+    }
+    // Do not manufacture a second reply trying to recover a rare lock-expiry
+    // race.
     throw new DecisionRequestError(
       'Ruling posted but could not be finalized; refresh this decision',
       409,
@@ -400,6 +436,49 @@ export const chooseDecision = async (
   // eslint-disable-next-line global-require
   const { resolve } = require('./attentionItemService');
   await resolve('decision_request', ruled._id);
+  try {
+    await enqueueRuledDecisionEvent(ruled);
+  } catch (error) {
+    // Keep the pre-TASK-130 chat.mention delivery as a failure-only fallback.
+    // The typed event is the normal return contract; the fallback prevents a
+    // transient queue outage from turning a durable human ruling into an
+    // invisible one. It is deliberately not emitted on success, so a normal
+    // ruling never costs the asking agent two turns.
+    console.warn(
+      '[decision-request] typed ruling delivery failed; using implicit-reply fallback:',
+      (error as Error).message,
+    );
+    await deliverMessageToAgents({
+      podId: String(ruled.podId),
+      podType: pod?.type,
+      message: rulingReply.message,
+      userId: callerUserId,
+      replyToMessageId: String(ruled.messageId),
+    });
+    return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
+  }
+  // The typed event is the asking agent's one return turn. Still run the
+  // normal message-delivery seam so explicit mentions in the human ruling
+  // and opt-in wake behavior retain their usual meaning; suppress only the
+  // generic implicit reply edge and its ambient duplicate. This projection is
+  // best effort: its failure must not cause a second generic event after the
+  // typed return event is already durable.
+  try {
+    await deliverMessageToAgents({
+      podId: String(ruled.podId),
+      podType: pod?.type,
+      message: rulingReply.message,
+      userId: callerUserId,
+      replyToMessageId: String(ruled.messageId),
+      suppressImplicitReply: true,
+      suppressImplicitReplyTarget: {
+        agentName: String(ruled.agentName),
+        instanceId: String(ruled.instanceId || 'default'),
+      },
+    });
+  } catch (error) {
+    console.warn('[decision-request] supplementary ruling delivery failed:', (error as Error).message);
+  }
   return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
 };
 

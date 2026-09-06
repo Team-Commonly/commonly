@@ -19,6 +19,11 @@ interface DeliveryOptions<T extends MessageForAgentDelivery> {
   // route). Null is meaningful: the primary route explicitly sends it for a
   // root post, preserving the existing enqueueMentions call shape.
   replyToMessageId?: string | null;
+  // A typed domain event can own a reply's return turn. Preserve every other
+  // delivery behavior (including explicit @mentions) while preventing the
+  // generic reply-edge event from waking that same agent a second time.
+  suppressImplicitReply?: boolean;
+  suppressImplicitReplyTarget?: { agentName: string; instanceId?: string };
 }
 
 interface AgentDelivery {
@@ -55,10 +60,13 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
   userId,
   requestUser,
   replyToMessageId,
+  suppressImplicitReply = false,
+  suppressImplicitReplyTarget,
 }: DeliveryOptions<T>): Promise<DeliveredMessage<T>> => {
   const username = authorUsername(message, requestUser);
 
   if (AgentMentionService.isAutoRoutedDmPod(podType)) {
+    if (suppressImplicitReply) return message;
     await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
     return message;
   }
@@ -69,6 +77,8 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
     userId,
     username,
     ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
+    ...(suppressImplicitReply ? { suppressImplicitReply: true } : {}),
+    ...(suppressImplicitReplyTarget ? { suppressImplicitReplyTarget } : {}),
   };
   const mentionResult = await AgentMentionService.enqueueMentions(mentionOptions);
   let agentsInPod = 0;

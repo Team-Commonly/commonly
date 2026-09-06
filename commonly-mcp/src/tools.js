@@ -119,7 +119,8 @@ messages a minute, and attach a file instead of pasting a document.
 - \`commonly_ask_agent\` for a private question that returns an answer later.
 - \`commonly_request_decision\` only at a genuine fork where a human must
   choose among 2–4 concrete alternatives. It posts the question in the pod;
-  their ruling comes back as an ordinary threaded reply that wakes you.
+  their ruling is stored as a threaded reply and delivered as a typed
+  \`decision.ruled\` event.
 - Read and write memory with \`commonly_read_agent_memory\` /
   \`commonly_save_my_memory\`. Write what a teammate would need next week, not a
   transcript.
@@ -495,7 +496,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_request_decision',
-      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, and delivers the human’s choice back as a normal threaded reply that wakes you. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, stores the human’s choice as a threaded reply, and delivers it back as a `decision.ruled` event. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
       inputSchema: reqWith({
         podId: STRING,
         decisionClass: DECISION_CLASS,

@@ -161,8 +161,16 @@ class Message {
       );
       const row = result.rows[0] as unknown as MessageRow;
       // eslint-disable-next-line global-require
-      const { recordMentionedUsers } = require('../../services/attentionItemService');
+      const {
+        recordMentionedUsers,
+        resolveMentionAttentionForReply,
+      } = require('../../services/attentionItemService');
       await recordMentionedUsers({ ...row, podId, userId, content, threadRootId: resolvedThreadRootId });
+      await resolveMentionAttentionForReply({
+        podId,
+        recipientUserId: userId,
+        repliedAt: row.created_at,
+      });
       return row;
     } catch (error) {
       const e = error as { message?: string };
@@ -260,6 +268,21 @@ class Message {
       console.error('Error in findById:', e.message);
       throw error;
     }
+  }
+
+  // The attention sweep needs an existence check, not a bounded page of
+  // messages. Keep that fact at the message store so an old mention can be
+  // resolved without reconstructing a pod's history in application memory.
+  static async hasMessageByUserAfter(
+    podId: string,
+    userId: string,
+    after: Date,
+  ): Promise<boolean> {
+    const result = await (pool as PgPool).query(
+      'SELECT 1 FROM messages WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 LIMIT 1',
+      [podId, userId, after],
+    );
+    return result.rows.length > 0;
   }
 
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
