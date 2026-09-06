@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { DecisionCardOption, DecisionRelayCard } from './decisionCardRelay';
 
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
@@ -37,11 +38,7 @@ export class DecisionRequestError extends Error {
   }
 }
 
-export interface DecisionOptionInput {
-  label: string;
-  description?: string;
-  recommended?: boolean;
-}
+export type DecisionOptionInput = DecisionCardOption;
 
 export type DecisionClass = 'strategy' | 'implementation' | 'prioritization';
 const ADVISORY_DECISION_CLASSES: readonly DecisionClass[] = [
@@ -184,6 +181,16 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     );
   }
 
+  // This envelope is server-composed from the request that passed validation.
+  // It is dispatch-only: content remains the unchanged, canonical workspace
+  // message, and bridges never need to infer an interrupt from prose.
+  const relayCard: DecisionRelayCard = {
+    title,
+    question,
+    options,
+    ...(context ? { context } : {}),
+  };
+
   const posted = await AgentMessageService.postMessage({
     agentName,
     instanceId,
@@ -191,6 +198,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     podId,
     content: formatDecisionMessage(title, question, options, context),
     metadata: { source: 'decision-request' },
+    relayCard,
     threadRootId,
     installationConfig: input.installationConfig || null,
   });

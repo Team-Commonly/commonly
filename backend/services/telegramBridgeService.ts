@@ -26,9 +26,13 @@ const isPodMember = require('../utils/isPodMember');
 const telegramSend = require('./telegramService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { shouldEscalate } = require('./connectorRelayPolicy');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const channelVerdictService = require('./channelVerdictService');
+import type { DecisionRelayCard } from './decisionCardRelay';
 
 const RELAY_MAP_CAP = 100;
 const OUTBOUND_TEXT_CAP = 900;
+const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
 export interface RelayMapEntry {
   tgMessageId: string;
@@ -38,6 +42,7 @@ export interface RelayMapEntry {
 
 interface TelegramIntegrationDoc {
   _id: unknown;
+  installationId?: unknown;
   podId: unknown;
   scope?: 'pod' | 'user';
   type?: string;
@@ -61,6 +66,53 @@ const escapeHtml = (raw: string): string => String(raw)
   .replace(/>/g, '&gt;');
 
 export { shouldEscalate };
+
+const truncateWithEllipsis = (value: string, limit: number): string => {
+  if (value.length <= limit) return value;
+  if (limit <= 1) return '…'.slice(0, limit);
+  return `${value.slice(0, limit - 1)}…`;
+};
+
+/**
+ * Decision cards have their own cap: ordinary relay messages remain bounded
+ * at 900 characters. Keep the title, question, and option labels intact; if
+ * a valid maximum-size card needs space, descriptions yield first.
+ */
+export const renderTelegramDecisionCard = (opts: {
+  card: DecisionRelayCard;
+  displayName: string;
+  agentUsername: string;
+  link: string;
+}): string => {
+  const { card, displayName, agentUsername, link } = opts;
+  const title = escapeHtml(card.title);
+  const question = escapeHtml(card.question);
+  const agent = escapeHtml(displayName || agentUsername);
+  const footer = '\n\nReply to this message with a number, or write your ruling.\n'
+    + `<a href="${link}">open in Commonly</a>`;
+  const optionLines = card.options.map((option, index) => (
+    `\n${index + 1}. <b>${escapeHtml(option.label)}</b>${option.recommended ? ' ★ recommended' : ''}`
+  ));
+  const header = `<b>${agent} needs a ruling · ${title}</b>\n${question}\n`;
+  let remaining = CARD_OUTBOUND_TEXT_CAP - header.length - footer.length
+    - optionLines.reduce((sum, line) => sum + line.length, 0);
+  const descriptions = card.options.map((option) => (
+    option.description ? escapeHtml(truncateWithEllipsis(option.description, 100)) : ''
+  ));
+
+  const descriptionLines = descriptions.map((description, index) => {
+    if (!description || remaining <= 4) return '';
+    const nonEmptyRemaining = descriptions.slice(index).filter(Boolean).length;
+    const allowance = Math.max(0, Math.floor(remaining / Math.max(1, nonEmptyRemaining)) - 4);
+    if (!allowance) return '';
+    const fitted = truncateWithEllipsis(description, allowance);
+    const line = `\n   ${fitted}`;
+    remaining -= line.length;
+    return line;
+  });
+
+  return header + optionLines.map((line, index) => `${line}${descriptionLines[index]}`).join('') + footer;
+};
 
 // Prefix an inbound Telegram quote-reply with the @mention of the agent whose
 // relayed line was quoted, so the normal mention pipeline routes it. Pure —
@@ -161,6 +213,7 @@ export const relayAgentMessageToTelegram = async (opts: {
   displayName: string;
   content: string;
   podMessageId?: string | null;
+  card?: DecisionRelayCard;
   integration?: TelegramIntegrationDoc;
 }): Promise<void> => {
   const {
@@ -170,22 +223,61 @@ export const relayAgentMessageToTelegram = async (opts: {
     // The dispatcher selects each pod-scoped subscription. Its row is the
     // authority for this send; the fallback preserves legacy direct rows.
     const integration = opts.integration ?? await findLiveIntegration(podId);
-    if (!integration || !isRelayableIntegration(integration, podId)) return;
+    if (!integration) return;
+    const cardHoldReason = opts.card
+      ? (integration.config?.adminPause
+        ? 'paused'
+        : integration.scope === 'user' && integration.config?.gates?.[podId]?.enabled !== true
+          ? 'gate_off'
+          : null)
+      : null;
+    if (cardHoldReason) {
+      if (podMessageId) {
+        await channelVerdictService.record({
+          integrationId: integration._id,
+          ...(integration.installationId ? { installationId: integration.installationId } : {}),
+          podId,
+          provider: 'telegram',
+          event: { kind: 'decision_request', podMessageId },
+          verdict: 'hold',
+          reason: cardHoldReason,
+        });
+      }
+      return;
+    }
+    if (!isRelayableIntegration(integration, podId)) return;
     // /mute pauses ALL outbound relay to the chat, escalations included —
     // mute means mute; /status shows it, and it self-expires.
     const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
-    if (mutedUntil && new Date(mutedUntil) > new Date()) return;
-    if (!shouldEscalate({ content, agentUsername, integration, podId })) return;
+    if (mutedUntil && new Date(mutedUntil) > new Date()) {
+      if (opts.card && podMessageId) {
+        await channelVerdictService.record({
+          integrationId: integration._id,
+          ...(integration.installationId ? { installationId: integration.installationId } : {}),
+          podId,
+          provider: 'telegram',
+          event: { kind: 'decision_request', podMessageId },
+          verdict: 'hold',
+          reason: 'muted',
+        });
+      }
+      return;
+    }
+    if (!opts.card && !shouldEscalate({ content, agentUsername, integration, podId })) return;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = integration.config?.chatId;
     if (!botToken || !chatId) return;
 
     const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
-    const link = `${base}/v2/pods/${podId}`;
+    const link = opts.card && podMessageId
+      ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
+      : `${base}/v2/pods/${podId}`;
     const body = escapeHtml(String(content).slice(0, OUTBOUND_TEXT_CAP));
-    const text = `<b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
-      + `\n\n<a href="${link}">open in Commonly</a>`;
+    const text = opts.card
+      ? renderTelegramDecisionCard({ card: opts.card, displayName, agentUsername, link })
+      : `<b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
+        + `\n\n<a href="${link}">open in Commonly</a>`;
 
     const result = await telegramSend.sendMessage(botToken, chatId, text);
     const tgMessageId = result && result.messageId != null ? String(result.messageId) : null;
@@ -199,6 +291,17 @@ export const relayAgentMessageToTelegram = async (opts: {
         },
       },
     });
+    if (opts.card && podMessageId) {
+      await channelVerdictService.record({
+        integrationId: integration._id,
+        ...(integration.installationId ? { installationId: integration.installationId } : {}),
+        podId,
+        provider: 'telegram',
+        event: { kind: 'decision_request', podMessageId },
+        verdict: 'interrupt',
+        reason: 'card',
+      });
+    }
   } catch (err) {
     console.warn('[tg-bridge] outbound relay failed:', (err as Error).message);
   }
@@ -398,6 +501,7 @@ module.exports = {
   routeReplyContent,
   isRelayableIntegration,
   isInboundRelayableIntegration,
+  renderTelegramDecisionCard,
   relayAgentMessageToTelegram,
   relayTelegramMessageToPod,
 };
