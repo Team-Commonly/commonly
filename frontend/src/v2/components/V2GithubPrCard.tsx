@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 // Inline GitHub PR preview rendered when a message references
 // `https://github.com/<owner>/<repo>/pull/<number>`. Detection lives in
-// V2MessageBubble; this component owns the fetch + render once given the
+// V2MessageRow; this component owns the fetch + render once given the
 // (owner, repo, number) tuple.
 //
 // Fetches via the public GitHub REST API (no auth required for public

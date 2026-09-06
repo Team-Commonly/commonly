@@ -5,22 +5,13 @@ import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import { V2AttentionItem } from '../hooks/useV2PodAttention';
 
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
+  attentionItems?: V2AttentionItem[];
   onClose?: () => void;
   onOpenInvite?: () => void;
-}
-
-interface AttentionItem {
-  id: string;
-  kind: 'mention' | 'approval' | 'decision';
-  title: string;
-  detail?: string;
-  actorName?: string;
-  podId: string;
-  messageId?: string;
-  threadRootId?: string;
 }
 
 interface TaskItem {
@@ -43,6 +34,12 @@ const labelForAgent = (agent: V2Agent): string => (
   agent.profile?.displayName || agent.displayName || agent.agentName
 );
 
+// Pods often carry a longer descriptive title, while the compact inspector
+// heading uses the room's short leading name (for example, “Sharpen”).
+const shortRoomName = (name: string): string => (
+  name.trim().split(/\s*[·—–:|]\s*/)[0].trim() || name.trim()
+);
+
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
   const candidate = (value || '').toLowerCase();
   return candidate === (agent.agentName || '').toLowerCase()
@@ -52,7 +49,7 @@ const matchesAgent = (agent: V2Agent, value?: string): boolean => {
 
 const agentState = (
   agent: V2Agent,
-  attention: AttentionItem[],
+  attention: V2AttentionItem[],
   tasks: TaskItem[],
 ): { kind: 'needs-you' | 'working' | 'idle'; title?: string } => {
   const request = attention.find((item) => matchesAgent(agent, item.actorName));
@@ -65,29 +62,16 @@ const agentState = (
   return { kind: 'idle' };
 };
 
-const V2Inspector: React.FC<V2InspectorProps> = ({ detail, onClose, onOpenInvite }) => {
+const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], onClose, onOpenInvite }) => {
   const { pod, agents } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-
-  useEffect(() => {
-    if (!pod?._id) {
-      setAttention([]);
-      return undefined;
-    }
-    let active = true;
-    api.get<{ items?: AttentionItem[] }>('/api/activity/decision-queue')
-      .then((data) => {
-        if (!active) return;
-        const items = Array.isArray(data?.items) ? data.items : [];
-        setAttention(items.filter((item) => item.podId === pod._id));
-      })
-      .catch(() => { if (active) setAttention([]); });
-    return () => { active = false; };
-  }, [api, pod?._id]);
+  const attention = useMemo(
+    () => attentionItems.filter((item) => item.podId === pod?._id),
+    [attentionItems, pod?._id],
+  );
 
   useEffect(() => {
     if (!pod?._id) {
@@ -117,7 +101,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, onClose, onOpenInvite
 
   if (!pod) return null;
 
-  const openAttention = (item: AttentionItem) => {
+  const openAttention = (item: V2AttentionItem) => {
     const target = item.threadRootId || item.messageId;
     navigate(`/v2/pods/${item.podId}${target ? `#message-${target}` : ''}`);
   };
@@ -147,7 +131,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, onClose, onOpenInvite
 
         <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-agents">
           <h2 id="workspace-inspector-agents" className="v2-workspace-inspector__label">
-            {t('inspector.workspace.agentsIn', { pod: pod.name.toLowerCase() })}
+            {t('inspector.workspace.agentsIn', { pod: shortRoomName(pod.name).toLowerCase() })}
           </h2>
           <div className="v2-workspace-inspector__rows">
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}
