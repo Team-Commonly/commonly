@@ -37,7 +37,7 @@ export const hasEventHandler = (reference: string): boolean => (
   && typeof eventHandlers[reference.slice('internal:'.length)] === 'function'
 );
 
-const activeHandlersForPod = async (podId: string): Promise<Array<{
+const activeHandlersForPod = async (podId: string, includeCardHolds = false): Promise<Array<{
   integration: IIntegration;
   handler: string;
 }>> => {
@@ -57,26 +57,48 @@ const activeHandlersForPod = async (podId: string): Promise<Array<{
   ].filter(Boolean).map((id) => String(id)))).map((id) => new Types.ObjectId(id));
   if (!memberIds.length) return [];
   const gateEnabledPath = `config.gates.${String(podId)}.enabled`;
+  // A decision card must record why it was deliberately withheld. Ordinary
+  // chat retains the narrow selector below; cards additionally reach paused
+  // and gate-off member bindings so their bridge can write a `hold` verdict
+  // without sending anything to the channel.
+  const selection = includeCardHolds
+    ? {
+      type: { $in: ['telegram', 'slack'] },
+      isActive: true,
+      status: { $ne: 'error' },
+      'config.liveRelay': true,
+      $or: [
+        {
+          scope: { $ne: 'user' },
+          podId: new Types.ObjectId(podId),
+        },
+        {
+          scope: 'user',
+          createdBy: { $in: memberIds },
+        },
+      ],
+    }
+    : {
+      type: { $in: ['telegram', 'slack'] },
+      isActive: true,
+      status: { $ne: 'error' },
+      'config.liveRelay': true,
+      'config.adminPause': { $exists: false },
+      $or: [
+        {
+          scope: { $ne: 'user' },
+          podId: new Types.ObjectId(podId),
+        },
+        {
+          scope: 'user',
+          createdBy: { $in: memberIds },
+          [gateEnabledPath]: true,
+        },
+      ],
+    };
   return Integration.aggregate([
     {
-      $match: {
-        type: { $in: ['telegram', 'slack'] },
-        isActive: true,
-        status: { $ne: 'error' },
-        'config.liveRelay': true,
-        'config.adminPause': { $exists: false },
-        $or: [
-          {
-            scope: { $ne: 'user' },
-            podId: new Types.ObjectId(podId),
-          },
-          {
-            scope: 'user',
-            createdBy: { $in: memberIds },
-            [gateEnabledPath]: true,
-          },
-        ],
-      },
+      $match: selection,
     },
     {
       $lookup: {
@@ -160,7 +182,7 @@ export const dispatch = async (
 
   let selected: Array<{ integration: IIntegration; handler: string }>;
   try {
-    selected = await activeHandlersForPod(payload.podId);
+    selected = await activeHandlersForPod(payload.podId, Boolean(payload.card));
   } catch (error) {
     console.warn('[installable-dispatch] selector failed:', (error as Error).message);
     return;
