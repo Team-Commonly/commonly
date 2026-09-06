@@ -8,7 +8,9 @@
 
 import { hostname, homedir } from 'os';
 import { spawn } from 'child_process';
-import { existsSync, mkdirSync, openSync } from 'fs';
+import {
+  existsSync, mkdirSync, openSync, rmSync, writeFileSync,
+} from 'fs';
 import { join } from 'path';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
@@ -20,6 +22,10 @@ import {
 } from '../lib/daemon-supervisor.js';
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getAdapter } from '../lib/adapters/index.js';
+import {
+  installDaemonService,
+  uninstallDaemonService,
+} from '../lib/daemon-service.js';
 
 const requireDaemonRecord = () => {
   const record = loadDaemonRecord();
@@ -167,6 +173,49 @@ Examples:
         console.log(`Heartbeat accepted for ${response?.machine?.name || record.machineName}.`);
       } catch (error) {
         console.error(`Daemon heartbeat failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  // ── install / uninstall (ADR-026 D1) ──────────────────────────────────────
+  const serviceDeps = () => ({
+    writeFile: (file, content) => writeFileSync(file, content, 'utf8'),
+    mkdirp: (dir) => { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); },
+    existsFile: (file) => existsSync(file),
+    removeFile: (file) => rmSync(file),
+    execCmd: (argv) => new Promise((resolvePromise, rejectPromise) => {
+      const child = spawn(argv[0], argv.slice(1), { stdio: 'ignore' });
+      child.on('error', rejectPromise);
+      child.on('exit', (code) => (code === 0
+        ? resolvePromise()
+        : rejectPromise(new Error(`${argv.join(' ')} exited ${code}`))));
+    }),
+    log: (line) => console.log(line),
+  });
+
+  daemon
+    .command('install')
+    .description('Register the daemon as a login service (launchd/systemd) so it survives reboots')
+    .action(async () => {
+      try {
+        // A service without a credential just crash-loops at boot.
+        requireDaemonRecord();
+        await installDaemonService(serviceDeps());
+        console.log('The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
+      } catch (error) {
+        console.error(`Daemon install failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command('uninstall')
+    .description('Remove the daemon login service (agents stop being supervised on this machine)')
+    .action(async () => {
+      try {
+        await uninstallDaemonService(serviceDeps());
+      } catch (error) {
+        console.error(`Daemon uninstall failed: ${error.message}`);
         process.exitCode = 1;
       }
     });
