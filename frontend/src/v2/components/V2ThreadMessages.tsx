@@ -32,6 +32,10 @@ interface V2ThreadMessagesProps {
   onLoadOlder: () => void;
   historySearch?: HistorySearchState;
   onRetryHistorySearch?: () => void;
+  // Production renders this recovery affordance against the chat viewport,
+  // outside this scroll container. Standalone transcript callers keep the
+  // inline form by default for compatibility.
+  renderHistoryStatus?: boolean;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
   // previous page when the reader reaches the top.
   edgeRef?: React.RefObject<HTMLDivElement | null>;
@@ -63,6 +67,50 @@ interface V2ThreadMessagesProps {
  * composer state. It owns only read order: flat rows, reply rails, and the
  * one durable decision card that can replace a request message in either.
  */
+export const V2ThreadHistoryStatus: React.FC<{
+  historySearch: HistorySearchState;
+  onRetryHistorySearch?: () => void;
+  viewport?: boolean;
+}> = ({ historySearch, onRetryHistorySearch, viewport = false }) => {
+  const { t } = useTranslation();
+  const className = `v2-thread__history-status${viewport ? ' v2-thread__history-status--viewport' : ''}${historySearch.status === 'failed' ? ' v2-thread__history-status--error' : ''}`;
+  if (historySearch.status === 'searching') {
+    return (
+      <div className={className} role="status" aria-live="polite">
+        {t('podChat.history.searchingOlder', {
+          attempt: historySearch.attempt,
+          max: historySearch.maxAttempts,
+        })}
+      </div>
+    );
+  }
+  if (historySearch.status === 'failed') {
+    return (
+      <div className={className} role="alert">
+        <span>{t('podChat.history.searchOlderFailed')}</span>
+        {onRetryHistorySearch && (
+          <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+            {t('podChat.history.retrySearch')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (historySearch.status === 'not-found') {
+    return (
+      <div className={className} role="status" aria-live="polite">
+        {t('podChat.history.searchOlderBound', { attempt: historySearch.attempt })}
+        {onRetryHistorySearch && (
+          <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+            {t('podChat.history.retrySearch')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messages,
   threadView,
@@ -84,6 +132,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onLoadOlder,
   historySearch,
   onRetryHistorySearch,
+  renderHistoryStatus = true,
   edgeRef,
   jumpCount = 0,
   showJump = false,
@@ -165,6 +214,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     };
   };
 
+  const historyStatus = renderHistoryStatus ? (
+    <V2ThreadHistoryStatus
+      historySearch={effectiveHistorySearch}
+      onRetryHistorySearch={onRetryHistorySearch}
+    />
+  ) : null;
+
   return (
     <div className="v2-chat__messages" ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
@@ -178,34 +234,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           <span className="v2-thread__edge-line">{t('podChat.history.beginning')}</span>
         ) : null}
       </div>
-      {effectiveHistorySearch.status === 'searching' && (
-        <div className="v2-thread__history-status" role="status" aria-live="polite">
-          {t('podChat.history.searchingOlder', {
-            attempt: effectiveHistorySearch.attempt,
-            max: effectiveHistorySearch.maxAttempts,
-          })}
-        </div>
-      )}
-      {effectiveHistorySearch.status === 'failed' && (
-        <div className="v2-thread__history-status v2-thread__history-status--error" role="alert">
-          <span>{t('podChat.history.searchOlderFailed')}</span>
-          {onRetryHistorySearch && (
-            <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
-              {t('podChat.history.retrySearch')}
-            </button>
-          )}
-        </div>
-      )}
-      {effectiveHistorySearch.status === 'not-found' && (
-        <div className="v2-thread__history-status" role="status" aria-live="polite">
-          {t('podChat.history.searchOlderBound', { attempt: effectiveHistorySearch.attempt })}
-          {onRetryHistorySearch && (
-            <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
-              {t('podChat.history.retrySearch')}
-            </button>
-          )}
-        </div>
-      )}
+      {historyStatus}
       {error && <div className="v2-chat__error">{error}</div>}
       {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}

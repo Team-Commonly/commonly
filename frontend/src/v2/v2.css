@@ -1778,6 +1778,21 @@ body.modern-ui.v2-canvas {
   gap: 0;
 }
 
+/* The transcript is the chat viewport's positioning context. History
+   recovery belongs to this viewport rather than the top of the scrollable
+   message list, otherwise a failure after a deep landing is stranded above
+   the reader's current scroll position. */
+.v2-thread__transcript {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.v2-thread__transcript > .v2-chat__messages {
+  min-height: 0;
+}
+
 /* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
    2026-08-23: FULL-WIDTH, the Slack/Discord model. The measure cap died
    with its last corner: v1 centered messages alone (island), v2/v4
@@ -11171,6 +11186,25 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-thread__history-status--error { color: var(--v2-text-secondary); }
+
+.v2-thread__history-status--viewport {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  right: 24px;
+  z-index: 4;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  box-shadow: 0 2px 10px rgb(17 24 39 / 10%);
+  pointer-events: none;
+}
+
+.v2-thread__history-status--viewport .v2-thread__history-retry {
+  pointer-events: auto;
+}
 
 .v2-root button.v2-thread__history-retry {
   padding: 0;
