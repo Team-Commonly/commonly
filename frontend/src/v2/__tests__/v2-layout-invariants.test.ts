@@ -1328,6 +1328,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test('Activity hydrates settled decisions from the durable history projection', () => {
       expect(activityPage).toContain("'/api/activity/decision-history'");
       expect(activityPage).toContain('settledHistory');
+      expect(activityPage).toContain('loadDecisionHistoryPages(headers, podId)');
       expect(activityPage).toContain('setSettledQueueDecisions');
     });
 

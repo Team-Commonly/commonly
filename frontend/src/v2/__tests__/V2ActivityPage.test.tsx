@@ -319,6 +319,37 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
   });
 
+  test('restores a settled Activity card beyond the first history page', async () => {
+    const settled = {
+      id: 'decision-history-overflow', kind: 'decision', title: 'Older workspace ruling', detail: 'What should the agent do?',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '900', threadRootId: '895',
+      options: [{ label: 'Ship now' }, { label: 'Hold for review' }], status: 'ruled',
+      ruling: { value: 'Ship now', by: 'You' },
+    };
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `decision-history-${index}`, kind: 'decision', title: `Older ruling ${index}`, detail: 'Another ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: `history-${index}`, options: [{ label: 'A' }], status: 'ruled',
+      ruling: { value: 'A', by: 'You' },
+    }));
+    let historyReads = 0;
+    mockGet.mockImplementation((url: string, config?: any) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        if (config?.params?.offset === 0) {
+          return Promise.resolve({ data: { items: firstPage, count: 51, remaining: 1, hasMore: true } });
+        }
+        expect(config?.params?.offset).toBe(50);
+        return Promise.resolve({ data: { items: [settled], count: 51, remaining: 0, hasMore: false } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+
+    renderPage();
+    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    expect(historyReads).toBe(2);
+  });
+
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve({
       data: url === '/api/activity/decision-queue' ? decisionQueue : recap,

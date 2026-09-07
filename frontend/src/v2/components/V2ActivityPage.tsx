@@ -83,6 +83,33 @@ interface DecisionHistoryResponse {
   hasMore?: boolean;
 }
 
+const DECISION_HISTORY_PAGE_SIZE = 50;
+
+const loadDecisionHistoryPages = async (
+  headers: Record<string, string>,
+  podId: string,
+): Promise<DecisionHistoryResponse> => {
+  const items: DecisionHistoryResponse['items'] = [];
+  let offset = 0;
+  // Keep a malformed hasMore response from creating an unbounded poll. The
+  // server caps each page at 50; 100 pages is ample for a pod history.
+  for (let page = 0; page < 100; page += 1) {
+    const response = await axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
+      headers,
+      params: {
+        limit: DECISION_HISTORY_PAGE_SIZE,
+        offset,
+        ...(podId !== 'all' ? { podId } : {}),
+      },
+    });
+    const pageItems = Array.isArray(response.data?.items) ? response.data.items : [];
+    items.push(...pageItems);
+    if (!response.data?.hasMore || pageItems.length === 0) break;
+    offset += pageItems.length;
+  }
+  return { items, count: items.length, remaining: 0, hasMore: false };
+};
+
 interface MovedLine {
   id: string;
   author: string;
@@ -322,10 +349,7 @@ const V2ActivityPage: React.FC = () => {
         '/api/activity/decision-queue',
         { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
-      axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
-        headers,
-        params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) },
-      }).catch(() => null),
+      loadDecisionHistoryPages(headers, podId).catch(() => null),
     ])
       .then(async ([recapResponse, queueResponse, historyResponse]) => {
         if (!active) return;
@@ -334,8 +358,8 @@ const V2ActivityPage: React.FC = () => {
         // Activity read so a settled card survives a hard reload and the
         // Activity → pod → Activity Back path, even when the open queue has
         // already dropped the recipient-owned row.
-        const historyItems = Array.isArray(historyResponse?.data?.items)
-          ? historyResponse.data.items
+        const historyItems = Array.isArray(historyResponse?.items)
+          ? historyResponse.items
           : [];
         const settledHistory = historyItems.filter((item) => (
           item.kind === 'decision' && item.id && item.ruling?.value
