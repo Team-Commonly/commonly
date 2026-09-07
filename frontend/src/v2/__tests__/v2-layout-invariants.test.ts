@@ -408,12 +408,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(composeMenu).toContain('max-height: 240px');
     expect(composeMenu).toContain('overflow-y: auto');
     const composeOption = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-option');
+    expect(composeOption).toContain('min-height: 30px');
     expect(composeOption).toContain('background: transparent');
     expect(composeOption).toContain('color: var(--v2-text-primary)');
     const composeOptionHover = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled)');
     expect(composeOptionHover).toContain('background: var(--v2-surface-hover)');
     expect(composeOptionHover).toContain('color: var(--v2-text-primary)');
     expect(composeOptionHover).toContain('border-color: transparent');
+    expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-root \.v2-activity__compose \.v2-activity__compose-picker-menu \.v2-activity__compose-picker-option \{ min-height: 44px; \}/);
     const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
     expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
