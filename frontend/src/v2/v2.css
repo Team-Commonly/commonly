@@ -9810,6 +9810,7 @@ body.modern-ui.v2-canvas {
 }
 @media (max-width: 640px) {
   .v2-activity__reply { flex-basis: 100%; }
+  .v2-root .v2-activity__reply button { min-height: 44px; }
 }
 
 /* ---------- Workspace sidebar (TASK-129 PR 1) ----------

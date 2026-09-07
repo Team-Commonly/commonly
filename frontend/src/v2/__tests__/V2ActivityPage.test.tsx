@@ -388,6 +388,81 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(composer).toHaveFocus());
   });
 
+  test('does not steal focus when the user moves to another control during a failed action', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-focus', attentionItemId: 'attention-handoff-focus', kind: 'handoff',
+        title: 'Focus-safe handoff', detail: 'Keep the user in control.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let rejectAction: ((error: Error) => void) | null = null;
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? handoffQueue : { ...recap, needsYou: [] } }));
+    mockPost.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectAction = reject; }));
+    renderPage();
+
+    const row = (await screen.findByText('Focus-safe handoff')).closest('article') as HTMLElement;
+    const markHandled = within(row).getByRole('button', { name: 'Mark handled' });
+    const openPod = within(row).getByRole('button', { name: 'Open pod' });
+    markHandled.focus();
+    fireEvent.click(markHandled);
+    await waitFor(() => expect(markHandled).toHaveTextContent('Saving…'));
+    openPod.focus();
+    await act(async () => { rejectAction?.(new Error('temporary failure')); });
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
+    expect(openPod).toHaveFocus();
+  });
+
+  test('keeps concurrent action failures on their own focus requests', async () => {
+    const queue = {
+      items: [
+        {
+          id: 'approval-focus', kind: 'approval', title: 'Approve the change', detail: 'A protected action.',
+          podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+        },
+        {
+          id: 'handoff-focus', attentionItemId: 'attention-handoff-focus-2', kind: 'handoff', title: 'Review the change', detail: 'A recipient-owned handoff.',
+          podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T10:00:00.000Z',
+        },
+      ],
+      count: 2,
+      countsByPod: { 'pod-1': 2 },
+      countsByKind: { approval: 1, handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let rejectApproval: ((error: Error) => void) | null = null;
+    let rejectHandoff: ((error: Error) => void) | null = null;
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queue : { ...recap, needsYou: [] } }));
+    mockPost.mockImplementation((url: string) => new Promise((_resolve, reject) => {
+      if (url.includes('/approval-focus/')) rejectApproval = reject;
+      else rejectHandoff = reject;
+    }));
+    renderPage();
+
+    const approvalRow = (await screen.findByText('Approve the change')).closest('article') as HTMLElement;
+    const handoffRow = (await screen.findByText('Review the change')).closest('article') as HTMLElement;
+    const approve = within(approvalRow).getByRole('button', { name: 'Approve' });
+    const markHandled = within(handoffRow).getByRole('button', { name: 'Mark handled' });
+    approve.focus();
+    fireEvent.click(approve);
+    markHandled.focus();
+    fireEvent.click(markHandled);
+
+    await act(async () => { rejectApproval?.(new Error('approval down')); await Promise.resolve(); });
+    expect(await within(approvalRow).findByRole('alert')).toHaveTextContent(/approval could not be updated/i);
+    expect(markHandled).toHaveFocus();
+
+    markHandled.blur();
+    await act(async () => { rejectHandoff?.(new Error('handoff down')); await Promise.resolve(); });
+    expect(await within(handoffRow).findByRole('alert')).toHaveTextContent(/handoff could not be marked handled/i);
+    await waitFor(() => expect(markHandled).toHaveFocus());
+  });
+
   test('opens an inline reply and posts it into the source thread', async () => {
     mockPost.mockResolvedValue({ data: { id: 123 } });
     renderPage();
