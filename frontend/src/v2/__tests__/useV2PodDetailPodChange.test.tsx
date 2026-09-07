@@ -59,7 +59,9 @@ describe('useV2PodDetail room changes', () => {
 
   it('rejects a late send response from the previous room', async () => {
     const oldPost = deferred();
+    const newMessages = deferred();
     mockApi.get.mockImplementation((url) => {
+      if (url === '/api/messages/new-room?limit=50') return newMessages.promise;
       if (url.startsWith('/api/messages/')) return Promise.resolve([]);
       if (url.includes('/agents')) return Promise.resolve({ agents: [] });
       const id = url.includes('new-room') ? 'new-room' : 'old-room';
@@ -77,6 +79,10 @@ describe('useV2PodDetail room changes', () => {
       sendPromise = result.current.sendMessage('old room send');
     });
     act(() => rerender({ podId: 'new-room' }));
+    await act(async () => {
+      newMessages.resolve([]);
+      await newMessages.promise;
+    });
     expect(result.current.messages).toEqual([]);
 
     await act(async () => {
