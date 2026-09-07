@@ -465,6 +465,26 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Decision card receipts are durable until the fork settles. Reconcile
+    // every five minutes: close rows whose decision was ruled or removed, and
+    // prune receipts seven days after their closedAt mark.
+    const decisionCardReconcileJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepDecisionCards } = require('./decisionCardReconcileService');
+          const result = await sweepDecisionCards();
+          if (result.stamped || result.removed) {
+            console.log(`[decision-card] sweep stamped=${result.stamped} removed=${result.removed}`);
+          }
+        } catch (error) {
+          console.error('[decision-card] scheduled sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -483,6 +503,7 @@ class SchedulerService {
       stalledConnectJob,
       kernelWorkSweepJob,
       installableReconcileJob,
+      decisionCardReconcileJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

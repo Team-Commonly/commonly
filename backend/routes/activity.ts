@@ -125,6 +125,9 @@ router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) =>
       decisionId,
       callerUserId: String(userId || ''),
       value,
+      // Origin is server-owned. A browser can choose from the workspace only;
+      // never accept provider/integration identifiers from the request body.
+      origin: { via: 'workspace' },
     });
     return res.status(result.status).json(result.body);
   } catch (error: any) {

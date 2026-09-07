@@ -131,7 +131,12 @@ export const resolveDecisionCardReply = async (input: {
   const { chooseDecision } = require('./decisionRequestService');
   let outcome: { status: number; body: Record<string, any> };
   try {
-    outcome = await chooseDecision({ decisionId: String(row._id), callerUserId: input.linkedUserId, value });
+    outcome = await chooseDecision({
+      decisionId: String(row._id),
+      callerUserId: input.linkedUserId,
+      value,
+      origin: { via: input.provider, integrationId: input.integrationId },
+    });
   } catch (error) {
     const failure = error as { status?: number; code?: string };
     if (failure.code === 'ruling_finalize_conflict') {
