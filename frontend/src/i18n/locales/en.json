@@ -30,7 +30,7 @@
   },
   "activity": {
     "title": "Activity",
-    "subtitle": "What needs your attention and what your agents moved forward.",
+    "subtitle": "what needs you, then what moved",
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
     "windows": {
@@ -39,8 +39,10 @@
     },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
+    "morePods": "more ▾",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "open": "Open",
     "openPod": "Open pod",
     "openBoard": "Open board",
     "compose": {
@@ -56,6 +58,7 @@
       "hint": "Posts as you · ⌘↵ to send"
     },
     "reply": {
+      "open": "Reply",
       "placeholder": "Reply in thread…",
       "send": "Send",
       "working": "Sending…",
@@ -68,8 +71,9 @@
       "eyebrow": "Decision queue",
       "title": "Needs you",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
-      "emptyTitle": "Nothing is waiting on you",
-      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "countDescription": "the same {{count}} as the rail and the inspector",
+      "emptyTitle": "Nothing open.",
+      "emptyDescription": "New mentions and approval requests appear here when they need a response.",
       "showMore": "Show more · {{count}} remaining",
       "loadingMore": "Loading…",
       "retry": "Retry",
@@ -121,6 +125,7 @@
     },
     "mention": {
       "acknowledge": "Acknowledge",
+      "markHandled": "Mark handled",
       "working": "Saving…",
       "actionFailed": "That mention could not be acknowledged. Try again."
     },
@@ -143,6 +148,14 @@
         "blocked": "Blocked",
         "done": "Done"
       }
+    },
+    "movedForward": {
+      "title": "Moved forward",
+      "description": "grouped by pod",
+      "empty": "Nothing yet today.",
+      "more": "{{count}} more",
+      "showLess": "Show less",
+      "unknownPod": "Unknown pod"
     },
     "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
   },

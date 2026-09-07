@@ -74,6 +74,7 @@ describe('V2ActivityPage', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    sessionStorage.removeItem('v2:activity:snapshot');
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
       return Promise.resolve({ data: recap });
@@ -81,7 +82,7 @@ describe('V2ActivityPage', () => {
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 
-  test('projects existing activity, direct interrupts, and board changes without inventing a queue count', async () => {
+  test('projects the needs-you queue and moved-forward groups without inventing a count', async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
       return Promise.resolve({ data: recap });
@@ -101,10 +102,9 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Release the bounded change.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
-    expect(screen.getByRole('heading', { name: 'What your agents did' })).toBeInTheDocument();
-    expect(screen.getByText('release-agent')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
-    expect(screen.getByText('TASK-068')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Moved forward' })).toBeInTheDocument();
+    expect(screen.getAllByText('release-agent').length).toBeGreaterThan(0);
+    expect(screen.getByText('Checks passed.')).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/recap', expect.objectContaining({
       params: { window: 'today' },
     }));
@@ -122,11 +122,11 @@ describe('V2ActivityPage', () => {
     })));
 
     // findAll: the window change reloads both requests and the rows remount.
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Open thread' }))[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open' }))[0]);
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1#message-699');
   });
 
-  test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
+  test('marks a mention handled explicitly instead of treating a feed read as acknowledgement', async () => {
     let reads = 0;
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
       ? (++reads === 1 ? { ...decisionQueue, items: [decisionQueue.items[0]], count: 1 } : { items: [], count: 0, countsByPod: {} })
@@ -134,13 +134,13 @@ describe('V2ActivityPage', () => {
     mockPost.mockResolvedValue({ data: { success: true } });
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
-      '/api/activity/attention-1/acknowledge',
+      '/api/activity/attention-1/handled',
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 
   test('keeps an empty Needs you state honest', async () => {
@@ -148,7 +148,7 @@ describe('V2ActivityPage', () => {
       ? { items: [], count: 0, countsByPod: {} } : recap }));
     renderPage();
 
-    expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
     expect(screen.queryByText(/0 needs you/i)).not.toBeInTheDocument();
   });
 
@@ -162,7 +162,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByRole('button', { name: 'Meet your Guide' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hire your first agent' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a task' })).toBeInTheDocument();
-    expect(screen.queryByText('Nothing is waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Meet your Guide' }));
     expect(onGuide).toHaveBeenCalledTimes(1);
@@ -197,7 +197,7 @@ describe('V2ActivityPage', () => {
       { notes: 'Approved via Activity' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 
   test('offers Reject as the approval secondary action', async () => {
@@ -279,19 +279,20 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('Choose a deploy shape')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Open thread' })).not.toHaveLength(0);
+    expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
   });
 
-  test('composes an ordinary pod message into the most recently addressed pod', async () => {
+  test('opens an inline reply and posts it into the source thread', async () => {
     mockPost.mockResolvedValue({ data: { id: 123 } });
     renderPage();
 
-    const composer = await screen.findByRole('textbox', { name: 'Write a message. Mention an agent to wake it…' });
-    fireEvent.change(composer, { target: { value: '@release-agent please check this' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reply' }));
+    const composer = await screen.findByRole('textbox', { name: 'Reply in thread…' });
+    fireEvent.change(composer, { target: { value: 'please check this' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/messages/pod-1',
-      { content: '@release-agent please check this' },
+      { content: 'please check this', threadRootId: '695', replyToMessageId: '699' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
     expect(composer).toHaveValue('');
@@ -391,9 +392,9 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Review requested');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Pod scope' }), { target: { value: 'pod-2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
     expect(await screen.findByText('GTM 8')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing is waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ podId: 'pod-2', limit: 50, offset: 0 }),
     }));
@@ -416,10 +417,9 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Review requested');
-    const scope = screen.getByRole('combobox', { name: 'Pod scope' });
-    fireEvent.change(scope, { target: { value: 'pod-2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
     await waitFor(() => expect(resolveScoped).not.toBeNull());
-    fireEvent.change(scope, { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'All pods' }));
     await screen.findByText('Review requested');
 
     await act(async () => {
@@ -441,7 +441,7 @@ describe('V2ActivityPage', () => {
     const queue = document.querySelector('.v2-activity__queue');
     expect(queue).not.toBeNull();
     expect(within(queue as HTMLElement).getByRole('button', { name: 'Open pod' })).toBeInTheDocument();
-    expect(within(queue as HTMLElement).queryByRole('button', { name: 'Open thread' })).not.toBeInTheDocument();
+    expect(within(queue as HTMLElement).queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
     fireEvent.click(within(queue as HTMLElement).getByRole('button', { name: 'Open pod' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
     expect(screen.getByTestId('current-path')).not.toHaveTextContent('#message-');
@@ -453,6 +453,24 @@ describe('V2ActivityPage', () => {
     renderPage();
     expect(await screen.findByRole('status')).toBeInTheDocument();
     expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nothing is waiting on you')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+  });
+
+  test('retains rows and offers Retry when a refresh fails', async () => {
+    let reads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      reads += 1;
+      if (reads === 1) return Promise.resolve({ data: decisionQueue });
+      if (reads === 2) return Promise.reject(new Error('queue down'));
+      return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+    });
+    renderPage();
+    expect(await screen.findByText('Review requested')).toBeInTheDocument();
+    await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByText('Review requested')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText('Review requested')).not.toBeInTheDocument());
   });
 });

@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import V2Avatar from './V2Avatar';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
@@ -71,6 +70,50 @@ interface QueueResponse {
   hasMore?: boolean;
 }
 
+interface MovedLine {
+  id: string;
+  author: string;
+  text: string;
+  timestamp: string | null;
+}
+
+interface MovedGroup {
+  id: string;
+  name: string;
+  lines: MovedLine[];
+}
+
+interface ActivitySnapshot {
+  window?: ActivityWindow;
+  podId?: string;
+  recap?: ActivityRecap | null;
+  queue?: NeedsYouItem[];
+  queueCount?: number | null;
+  queueRemaining?: number;
+  queueCountsByPod?: Record<string, number>;
+  replyDrafts?: Record<string, string>;
+  focusedItemId?: string | null;
+  scrollY?: number;
+  savedAt?: number;
+}
+
+const ACTIVITY_SNAPSHOT_KEY = 'v2:activity:snapshot';
+
+const readActivitySnapshot = (): ActivitySnapshot | null => {
+  try {
+    const raw = sessionStorage.getItem(ACTIVITY_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ActivitySnapshot;
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > 10 * 60_000) {
+      sessionStorage.removeItem(ACTIVITY_SNAPSHOT_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
 const relativeTime = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
@@ -85,10 +128,13 @@ const relativeTime = (value: string | null | undefined): string => {
 const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const [window, setWindow] = useState<ActivityWindow>('today');
-  const [podId, setPodId] = useState('all');
-  const [recap, setRecap] = useState<ActivityRecap | null>(null);
-  const [loading, setLoading] = useState(true);
+  const restoredSnapshotRef = useRef<ActivitySnapshot | null>(readActivitySnapshot());
+  const restoredSnapshot = restoredSnapshotRef.current;
+  const [window, setWindow] = useState<ActivityWindow>(restoredSnapshot?.window || 'today');
+  const [podId, setPodId] = useState(restoredSnapshot?.podId || 'all');
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const [recap, setRecap] = useState<ActivityRecap | null>(restoredSnapshot?.recap || null);
+  const [loading, setLoading] = useState(!restoredSnapshot?.recap);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
@@ -98,19 +144,19 @@ const V2ActivityPage: React.FC = () => {
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
   const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
-  const [composePodId, setComposePodId] = useState('');
-  const [composeDraft, setComposeDraft] = useState('');
-  const [composing, setComposing] = useState(false);
-  const [composeError, setComposeError] = useState<string | null>(null);
-
-  const [queue, setQueue] = useState<NeedsYouItem[]>([]);
-  const [queueCount, setQueueCount] = useState<number | null>(null);
-  const [queueRemaining, setQueueRemaining] = useState(0);
+  const [queue, setQueue] = useState<NeedsYouItem[]>(restoredSnapshot?.queue || []);
+  const [queueCount, setQueueCount] = useState<number | null>(restoredSnapshot?.queueCount ?? null);
+  const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>(restoredSnapshot?.queueCountsByPod || {});
+  const [queueRemaining, setQueueRemaining] = useState(restoredSnapshot?.queueRemaining || 0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
+  const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>(restoredSnapshot?.replyDrafts || {});
+  const [expandedMovedIds, setExpandedMovedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const refresh = () => setReloadKey((value) => value + 1);
@@ -123,11 +169,27 @@ const V2ActivityPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const snapshot = restoredSnapshotRef.current;
+    if (!snapshot) return;
+    const restore = () => {
+      if (snapshot.scrollY && snapshot.scrollY > 0) globalThis.window.scrollTo(0, snapshot.scrollY);
+      if (snapshot.focusedItemId) {
+        const row = document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(snapshot.focusedItemId)}"]`);
+        row?.focus();
+      }
+      sessionStorage.removeItem(ACTIVITY_SNAPSHOT_KEY);
+      restoredSnapshotRef.current = null;
+    };
+    const frame = globalThis.window.requestAnimationFrame(restore);
+    return () => globalThis.window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const generation = queueGenerationRef.current + 1;
     queueGenerationRef.current = generation;
     queueScopeRef.current = podId;
-    setLoading(true);
+    setLoading((current) => (recap ? current : true));
     setError(null);
     setQueueMoreError(false);
     setQueueLoadingMore(false);
@@ -149,24 +211,15 @@ const V2ActivityPage: React.FC = () => {
         if (!active) return;
         setRecap(recapResponse.data);
         const rawItems = queueResponse?.data?.items;
-        const availablePods = recapResponse.data.pods || [];
-        const setComposeDefault = (candidate = '') => {
-          const fallback = candidate || availablePods[0]?.id || '';
-          setComposePodId((current) => (
-            current && availablePods.some((pod) => pod.id === current) ? current : fallback
-          ));
-        };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueue([]);
-          setQueueCount(null);
-          setQueueRemaining(0);
-          setQueueFailed(true);
-          setComposeDefault();
+          setQueueFailed(queue.length === 0);
+          setQueueMoreError(queue.length > 0);
           return;
         }
         setQueueFailed(false);
         setQueueCount(queueResponse!.data.count);
+        setQueueCountsByPod(queueResponse!.data.countsByPod || {});
         const queueItems = rawItems.map((item) => ({
           ...item,
           detail: item.detail || '',
@@ -177,13 +230,15 @@ const V2ActivityPage: React.FC = () => {
         setQueueRemaining(typeof queueResponse!.data.remaining === 'number'
           ? queueResponse!.data.remaining
           : Math.max(queueResponse!.data.count - queueItems.length, 0));
-        // Preserve an intentional target choice across queue refreshes. On
-        // first load, anchor the composer to the most recent direct traffic;
-        // no traffic simply falls back to the user's first available pod.
-        setComposeDefault(queueResponse?.data?.composePodId || '');
       })
       .catch(() => {
-        if (active) setError(t('activity.loadFailed'));
+        if (active) {
+          if (recap && queue.length > 0) {
+            setQueueMoreError(true);
+          } else {
+            setError(t('activity.loadFailed'));
+          }
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -194,6 +249,10 @@ const V2ActivityPage: React.FC = () => {
   }, [podId, reloadKey, t, window]);
 
   const loadMoreQueue = async () => {
+    if (queueMoreError) {
+      setReloadKey((value) => value + 1);
+      return;
+    }
     if (queueLoadingMore || queueRemaining <= 0 || queueFailed) return;
     const requestedScope = podId;
     const requestedGeneration = queueGenerationRef.current;
@@ -221,6 +280,14 @@ const V2ActivityPage: React.FC = () => {
       setQueueRemaining(typeof response.data?.remaining === 'number'
         ? response.data.remaining
         : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
+      globalThis.window.requestAnimationFrame(() => {
+        if (queueMoreButtonRef.current) {
+          queueMoreButtonRef.current.focus();
+          return;
+        }
+        const firstAdded = nextItems[0]?.id;
+        if (firstAdded) document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(String(firstAdded))}"]`)?.focus();
+      });
     } catch {
       if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) setQueueMoreError(true);
     } finally {
@@ -228,8 +295,62 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
+  const movedGroups = useMemo<MovedGroup[]>(() => {
+    if (!recap) return [];
+    const groups = new Map<string, MovedGroup>();
+    const add = (podId: string | null | undefined, podName: string | undefined, line: MovedLine) => {
+      const id = podId || `name:${podName || 'unknown'}`;
+      const group = groups.get(id) || { id, name: podName || t('activity.movedForward.unknownPod'), lines: [] };
+      group.lines.push(line);
+      groups.set(id, group);
+    };
+    recap.agents.forEach((agent) => agent.updates.forEach((update) => add(update.podId, update.podName, {
+      id: `agent:${agent.id}:${update.id}`,
+      author: agent.name,
+      text: update.content,
+      timestamp: update.timestamp,
+    })));
+    recap.board.forEach((item) => {
+      if (!item.lastUpdate) return;
+      add(item.podId, item.podName, {
+        id: `board:${item.id}`,
+        author: item.lastUpdate.author,
+        text: `${item.title} — ${item.lastUpdate.text}`,
+        timestamp: item.lastUpdate.createdAt || item.updatedAt,
+      });
+    });
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        lines: [...group.lines].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()),
+      }))
+      .sort((a, b) => new Date(b.lines[0]?.timestamp || 0).getTime() - new Date(a.lines[0]?.timestamp || 0).getTime());
+  }, [recap, t]);
+
+  const scopedPods = useMemo(() => {
+    return recap?.pods || [];
+  }, [recap]);
+
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
     if (!targetPodId) return;
+    try {
+      const active = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
+      sessionStorage.setItem(ACTIVITY_SNAPSHOT_KEY, JSON.stringify({
+        window,
+        podId,
+        recap,
+        queue,
+        queueCount,
+        queueRemaining,
+        queueCountsByPod,
+        replyDrafts,
+        focusedItemId: active?.dataset.activityItemId || null,
+        scrollY: globalThis.window.scrollY,
+        savedAt: Date.now(),
+      } satisfies ActivitySnapshot));
+    } catch {
+      // Navigation should still work if storage is unavailable or full.
+    }
     const target = messageId === undefined || messageId === null || messageId === ''
       ? ''
       : `#message-${String(messageId)}`;
@@ -297,34 +418,11 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const sendCompose = async () => {
-    const content = composeDraft.trim();
-    if (!content || !composePodId || composing) return;
-    setComposing(true);
-    setComposeError(null);
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `/api/messages/${encodeURIComponent(composePodId)}`,
-        { content },
-        { headers: { 'x-auth-token': token ?? '' } },
-      );
-      setComposeDraft('');
-      notifyAttentionChanged();
-      setReloadKey((value) => value + 1);
-    } catch {
-      setComposeError(t('activity.compose.actionFailed'));
-    } finally {
-      setComposing(false);
-    }
-  };
-
   // Reply-in-place (Sam, 2026-09-01: "a way to really work with these agents
   // more easily… and tell them what is on my mind"). The reply posts into
   // the SAME thread the mention came from, addressed to the message, through
   // the ordinary messages route — so the agent gets the normal implicit-reply
   // wake — and then the mention is acknowledged.
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [repliedIds, setRepliedIds] = useState<Set<string>>(new Set());
   const sendReply = async (item: NeedsYouItem) => {
@@ -351,18 +449,18 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const acknowledgeMention = async (item: NeedsYouItem) => {
+  const markHandled = async (item: NeedsYouItem) => {
     if (acknowledgingMentionId) return;
     setAcknowledgingMentionId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
-        `/api/activity/${item.attentionItemId || item.id}/acknowledge`,
+        `/api/activity/${item.attentionItemId || item.id}/handled`,
         {},
         { headers: { 'x-auth-token': token ?? '' } },
       );
-      if (!response.data?.success) throw new Error('Mention acknowledgement failed');
+      if (!response.data?.success) throw new Error('Activity handling failed');
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
@@ -380,31 +478,28 @@ const V2ActivityPage: React.FC = () => {
   return (
     <div className="v2-activity" aria-busy={loading}>
       <header className="v2-activity__header">
-        <div>
+        <div className="v2-activity__bar-title">
           <h1 className="v2-activity__title">{t('activity.title')}</h1>
-          <p className="v2-activity__subtitle">{t('activity.subtitle')}</p>
+          <span className="v2-activity__subtitle">{t('activity.subtitle')}</span>
         </div>
         <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
           <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
             {(['today', '7d'] as ActivityWindow[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`}
-                onClick={() => setWindow(value)}
-                aria-pressed={window === value}
-              >
+              <button key={value} type="button" className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`} onClick={() => setWindow(value)} aria-pressed={window === value}>
                 {t(`activity.windows.${value}`)}
               </button>
             ))}
           </div>
-          <label className="v2-activity__scope">
-            <span className="v2-sr-only">{t('activity.podScopeLabel')}</span>
-            <select value={podId} onChange={(event) => setPodId(event.target.value)}>
-              <option value="all">{t('activity.allPods')}</option>
-              {(recap?.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-            </select>
-          </label>
+          <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')}>
+            <button type="button" className={`v2-activity__scope-button${podId === 'all' ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId('all'); setScopeMenuOpen(false); }} aria-pressed={podId === 'all'}>{t('activity.allPods')}</button>
+            {scopedPods.slice(0, 2).map((pod) => (
+              <button key={pod.id} type="button" className={`v2-activity__scope-button${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+            ))}
+            {scopedPods.length > 2 && <button type="button" className="v2-activity__scope-button" onClick={() => setScopeMenuOpen((open) => !open)} aria-expanded={scopeMenuOpen}>{t('activity.morePods')}</button>}
+            {scopeMenuOpen && scopedPods.slice(2).map((pod) => (
+              <button key={pod.id} type="button" className={`v2-activity__scope-button v2-activity__scope-button--menu${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -412,40 +507,12 @@ const V2ActivityPage: React.FC = () => {
       {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
       {!loading && !error && recap && (
         <>
-          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
-            <div className="v2-activity__compose-top">
-              <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
-              <label className="v2-activity__compose-pod">
-                <span>{t('activity.compose.podLabel')}</span>
-                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
-                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <textarea
-              aria-label={t('activity.compose.placeholder')}
-              rows={2}
-              placeholder={t('activity.compose.placeholder')}
-              value={composeDraft}
-              onChange={(event) => setComposeDraft(event.target.value)}
-              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
-              disabled={composing || !composePodId}
-            />
-            <div className="v2-activity__compose-foot">
-              <span className="v2-activity__compose-hint">{t('activity.compose.hint')}</span>
-              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
-                {composing ? t('activity.compose.working') : t('activity.compose.send')}
-              </button>
-            </div>
-            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
-          </section>
-
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              <p>{t('activity.needsYou.description')}</p>
+              <p>{t('activity.needsYou.countDescription', { count: queueCount || 0 })}</p>
             </div>
             {queueFailed ? <p role="status">{t('activity.loadFailed')}</p> : isDayZero ? (
               <div className="v2-activity__queue">
@@ -497,15 +564,14 @@ const V2ActivityPage: React.FC = () => {
             ) : (
               <div className="v2-activity__queue">
                 {queue.map((item) => (
-                  <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
+                  <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
-                      {item.kind !== 'mention' && <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>}
+                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
-                        <span>{item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
                       </div>
                       {item.detail && <p>{item.detail}</p>}
                     </div>
@@ -522,26 +588,12 @@ const V2ActivityPage: React.FC = () => {
                       )}
                       {item.kind === 'mention' && (
                         <>
-                          <div className="v2-activity__reply" data-testid="queue-reply">
-                            <textarea
-                              className="v2-activity__reply-input"
-                              rows={2}
-                              placeholder={t('activity.reply.placeholder')}
-                              value={replyDrafts[item.id] || ''}
-                              onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }}
-                              disabled={replyingId === item.id}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => sendReply(item)}
-                              disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}
-                            >
-                              {replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}
-                            </button>
-                          </div>
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
-                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
+                          {!replyOpenIds.has(item.id) ? <button type="button" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
+                            <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
+                            <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
+                          </div>}
+                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandled(item)} disabled={acknowledgingMentionId === item.id}>
+                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
                       )}
@@ -601,19 +653,23 @@ const V2ActivityPage: React.FC = () => {
                           )}
                         </>
                       )}
+                      {item.kind === 'decision' && (item.options || []).length === 0 && (
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandled(item)} disabled={acknowledgingMentionId === item.id}>
+                          {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
+                        </button>
+                      )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                        {item.messageId === undefined || item.messageId === null || item.messageId === ''
-                          ? t('activity.openPod')
-                          : t('activity.openThread')}
+                        {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
                   </article>
                 ))}
               </div>
             )}
-            {queue.length > 0 && queueRemaining > 0 && (
+            {queue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
               <button
                 type="button"
+                ref={queueMoreButtonRef}
                 className="v2-activity__queue-more"
                 onClick={loadMoreQueue}
                 disabled={queueLoadingMore}
@@ -628,75 +684,26 @@ const V2ActivityPage: React.FC = () => {
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
-          <section className="v2-activity__section" aria-labelledby="activity-agents">
+          <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
             <div className="v2-activity__section-heading">
-              <h2 id="activity-agents">{t('activity.agents.title')}</h2>
-              <p>{t('activity.agents.description')}</p>
+              <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
+              <span className="v2-activity__count">{movedGroups.reduce((total, group) => total + group.lines.length, 0)}</span>
+              <p>{t('activity.movedForward.description')}</p>
             </div>
-            {recap.agents.length === 0 ? (
-              <div className="v2-activity__empty">
-                <strong>{t('activity.agents.emptyTitle')}</strong>
-                <span>{t('activity.agents.emptyDescription')}</span>
-              </div>
-            ) : (
-              <div className="v2-activity__agent-grid">
-                {recap.agents.map((agent) => (
-                  <article key={agent.id} className="v2-activity__agent-card">
-                    <div className="v2-activity__agent-topline">
-                      <V2Avatar name={agent.name} src={agent.profilePicture} seed={agent.id} kind="agent" />
-                      <div>
-                        <h3>{agent.name}</h3>
-                        <span>{agent.lastActiveAt ? t('activity.lastActive', { time: relativeTime(agent.lastActiveAt) }) : ''}</span>
-                      </div>
-                      <span className="v2-activity__count-chip">{t('activity.updatesCount', { count: agent.messageCount })}</span>
-                    </div>
-                    <p className="v2-activity__agent-recap">{agent.recap}</p>
-                    <div className="v2-activity__updates">
-                      {agent.updates.map((update) => (
-                        <button key={update.id} type="button" onClick={() => openPod(update.podId)} disabled={!update.podId}>
-                          <span className="v2-activity__update-pod">{update.podName}</span>
-                          <span className="v2-activity__update-content">{update.content}</span>
-                          <span className="v2-activity__update-time">{relativeTime(update.timestamp)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="v2-activity__section" aria-labelledby="activity-board">
-            <div className="v2-activity__section-heading">
-              <h2 id="activity-board">{t('activity.board.title')}</h2>
-              <p>{t('activity.board.description')}</p>
-            </div>
-            {recap.board.length === 0 ? (
-              <div className="v2-activity__empty">
-                <strong>{t('activity.board.emptyTitle')}</strong>
-                <span>{t('activity.board.emptyDescription')}</span>
-              </div>
-            ) : (
-              <div className="v2-activity__board-list">
-                {recap.board.map((item) => (
-                  <article key={item.id} className="v2-activity__board-row">
-                    <div className="v2-activity__board-main">
-                      <span className={`v2-activity__status v2-activity__status--${item.status}`}>{t(`activity.board.status.${item.status}`)}</span>
-                      <div>
-                        <span className="v2-activity__task-id">{item.taskId}</span>
-                        <h3>{item.title}</h3>
-                        {item.lastUpdate && <p>{item.lastUpdate.author ? `${item.lastUpdate.author}: ` : ''}{item.lastUpdate.text}</p>}
-                      </div>
-                    </div>
-                    <div className="v2-activity__board-meta">
-                      <span>{item.podName}</span>
-                      <span>{relativeTime(item.updatedAt)}</span>
-                      <button type="button" onClick={() => openPod(item.podId)}>{t('activity.openThread')}</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
+            {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
+              {movedGroups.map((group) => {
+                const expanded = expandedMovedIds.has(group.id);
+                const cappedLines = group.lines.slice(0, 20);
+                const visible = expanded ? cappedLines : cappedLines.slice(0, 3);
+                return <article key={group.id} className="v2-activity__moved-group">
+                  <div className="v2-activity__moved-head"><span>{group.name}</span><span>{group.lines.length}</span></div>
+                  <div className="v2-activity__moved-lines">
+                    {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
+                  </div>
+                  {cappedLines.length > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setExpandedMovedIds((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{expanded ? t('activity.movedForward.showLess') : t('activity.movedForward.more', { count: cappedLines.length - 3 })}</button>}
+                </article>;
+              })}
+            </div>}
           </section>
           </div>
         </>

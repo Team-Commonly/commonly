@@ -30,7 +30,7 @@
   },
   "activity": {
     "title": "动态",
-    "subtitle": "需要你处理的事项，以及智能体推动的工作。",
+    "subtitle": "需要你处理的事项，以及刚刚推进的工作",
     "controlsAriaLabel": "动态控制项",
     "windowAriaLabel": "动态时间范围",
     "windows": {
@@ -39,8 +39,10 @@
     },
     "podScopeLabel": "Pod 范围",
     "allPods": "所有 Pod",
+    "morePods": "更多 ▾",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
+    "open": "打开",
     "openPod": "打开 pod",
     "openBoard": "打开看板",
     "compose": {
@@ -56,6 +58,7 @@
       "hint": "以你的身份发布 · ⌘↵ 发送"
     },
     "reply": {
+      "open": "回复",
       "placeholder": "在话题中回复…",
       "send": "发送",
       "working": "发送中…",
@@ -68,8 +71,9 @@
       "eyebrow": "决策队列",
       "title": "需要你处理",
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
-      "emptyTitle": "没有事项在等待你",
-      "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "countDescription": "与侧栏和检查器相同的 {{count}} 项",
+      "emptyTitle": "没有未处理事项。",
+      "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
       "showMore": "显示更多 · 剩余 {{count}} 条",
       "loadingMore": "加载中…",
       "retry": "重试",
@@ -121,6 +125,7 @@
     },
     "mention": {
       "acknowledge": "确认",
+      "markHandled": "标记已处理",
       "working": "正在保存…",
       "actionFailed": "无法确认该提及，请重试。"
     },
@@ -143,6 +148,14 @@
         "blocked": "已阻塞",
         "done": "已完成"
       }
+    },
+    "movedForward": {
+      "title": "推进的工作",
+      "description": "按 Pod 分组",
+      "empty": "今天还没有更新。",
+      "more": "还有 {{count}} 项",
+      "showLess": "收起",
+      "unknownPod": "未知 Pod"
     },
     "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
   },
