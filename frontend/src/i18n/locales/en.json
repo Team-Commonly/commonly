@@ -55,7 +55,7 @@
       "working": "Sending…",
       "actionFailed": "Your message could not be sent. Try again.",
       "label": "Tell your agents",
-      "hint": "Posts as you · ⌘↵ to send"
+      "hint": "⌘↵ to send"
     },
     "reply": {
       "open": "Reply",
@@ -72,6 +72,7 @@
       "title": "Needs you",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
       "countDescription": "the same {{count}} as the rail and the inspector",
+      "countUnavailable": "Count unavailable",
       "emptyTitle": "Nothing open.",
       "emptyDescription": "New mentions and approval requests appear here when they need a response.",
       "showMore": "Show more · {{count}} remaining",
@@ -154,6 +155,7 @@
       "description": "grouped by pod",
       "empty": "Nothing yet today.",
       "more": "{{count}} more",
+      "omitted": "{{count}} more updates in {{pod}} not shown",
       "showLess": "Show less",
       "unknownPod": "Unknown pod"
     },

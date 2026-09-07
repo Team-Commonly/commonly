@@ -393,11 +393,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
     expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
     expect(neutralOption).toContain('background: var(--v2-surface)');
-    expect(neutralOption).toContain('border-radius: 999px');
+    expect(neutralOption).toContain('border-radius: var(--v2-radius-sm)');
 
     const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
     expect(recommendedOption).toContain('background: var(--v2-ink)');
     expect(recommendedOption).toContain('color: var(--v2-on-ink)');
+    const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
+    expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
   });
 
@@ -1577,6 +1579,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
       expect(ruleBody(v2, '.v2-activity__queue-row--settled')).toContain('box-shadow: none');
       expect(activityPage).toContain("' v2-activity__queue-row--settled'");
+    });
+
+    test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
+      expect(lastRuleBody(v2, '.v2-activity__header')).toContain('min-height: 52px');
+      expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
+      expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
+      expect(activityPage).toContain('v2-activity__moved');
+      expect(activityPage).toContain('v2-activity__queue-more');
+      expect(activityPage).toContain('v2-activity__moved-cap-note');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('border-radius: var(--v2-radius-sm)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('var(--v2-accent-text)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
+      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ height: 52px; min-height: 52px;/);
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');
     });
 
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {

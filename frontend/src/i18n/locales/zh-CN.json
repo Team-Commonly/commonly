@@ -55,7 +55,7 @@
       "working": "发送中…",
       "actionFailed": "无法发送消息，请重试。",
       "label": "告诉你的智能体",
-      "hint": "以你的身份发布 · ⌘↵ 发送"
+      "hint": "⌘↵ 发送"
     },
     "reply": {
       "open": "回复",
@@ -72,6 +72,7 @@
       "title": "需要你处理",
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
       "countDescription": "与侧栏和检查器相同的 {{count}} 项",
+      "countUnavailable": "数量暂不可用",
       "emptyTitle": "没有未处理事项。",
       "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
       "showMore": "显示更多 · 剩余 {{count}} 条",
@@ -154,6 +155,7 @@
       "description": "按 Pod 分组",
       "empty": "今天还没有更新。",
       "more": "还有 {{count}} 项",
+      "omitted": "{{pod}} 还有 {{count}} 项未显示",
       "showLess": "收起",
       "unknownPod": "未知 Pod"
     },

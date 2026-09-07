@@ -155,22 +155,27 @@ const V2ActivityPage: React.FC = () => {
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
   const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+  const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
+  const [queueHydrated, setQueueHydrated] = useState(false);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
   const revalidationExtentRef = useRef(0);
   const revalidationScopeRef = useRef<string | null>(null);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const queueMoreFailureOffsetRef = useRef<number | null>(null);
+  const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
+  const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
   const [expandedMovedIds, setExpandedMovedIds] = useState<Set<string>>(new Set());
@@ -188,7 +193,8 @@ const V2ActivityPage: React.FC = () => {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
       setRecap(snapshot.recap || null);
-      setQueue(snapshot.queue || []);
+      queueRef.current = snapshot.queue || [];
+      setQueue(queueRef.current);
       setQueueCount(snapshot.queueCount ?? null);
       setQueueCountsByPod(snapshot.queueCountsByPod || {});
       setQueueRemaining(snapshot.queueRemaining || 0);
@@ -203,7 +209,8 @@ const V2ActivityPage: React.FC = () => {
       setWindow('today');
       setPodId('all');
       setRecap(null);
-      setQueue([]);
+      queueRef.current = [];
+      setQueue(queueRef.current);
       setQueueCount(null);
       setQueueCountsByPod({});
       setQueueRemaining(0);
@@ -215,11 +222,16 @@ const V2ActivityPage: React.FC = () => {
       revalidationScopeRef.current = null;
       setLoading(true);
     }
+    setQueueHydrated(false);
     setSnapshotReady(true);
   }, [accountId, authLoading]);
 
   useEffect(() => {
-    const refresh = () => setReloadKey((value) => value + 1);
+    const refresh = () => {
+      const activeRow = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
+      pendingRefreshFocusRef.current = activeRow?.dataset.activityItemId || null;
+      setReloadKey((value) => value + 1);
+    };
     globalThis.window.addEventListener(ATTENTION_CHANGED, refresh);
     globalThis.window.addEventListener('focus', refresh);
     return () => {
@@ -230,7 +242,7 @@ const V2ActivityPage: React.FC = () => {
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
-    if (!snapshotReady || !snapshot) return;
+    if (!snapshotReady || !snapshot || !queueHydrated) return;
     const restore = () => {
       if (snapshot.scrollY && snapshot.scrollY > 0) globalThis.window.scrollTo(0, snapshot.scrollY);
       if (snapshot.focusedItemId) {
@@ -242,14 +254,25 @@ const V2ActivityPage: React.FC = () => {
     };
     const frame = globalThis.window.requestAnimationFrame(restore);
     return () => globalThis.window.cancelAnimationFrame(frame);
-  }, [accountId, snapshotReady]);
+  }, [accountId, queueHydrated, snapshotReady]);
 
   useEffect(() => {
     if (!snapshotReady) return undefined;
     let active = true;
     const generation = queueGenerationRef.current + 1;
     queueGenerationRef.current = generation;
+    const previousScope = queueScopeRef.current;
     queueScopeRef.current = podId;
+    const previousQueue = queueRef.current;
+    // Refreshes in the same scope must revalidate every loaded page before
+    // replacing the visible queue. Otherwise a 56-row queue briefly regresses
+    // to the first 50 rows while the refresh response is settling.
+    if (previousScope === podId && previousQueue.length > 0) {
+      revalidationScopeRef.current = podId;
+      revalidationExtentRef.current = Math.max(revalidationExtentRef.current, previousQueue.length);
+    }
+    queueMoreFailureOffsetRef.current = null;
+    setQueueHydrated(false);
     setLoading((current) => (recap ? current : true));
     setError(null);
     setQueueMoreError(false);
@@ -281,8 +304,8 @@ const V2ActivityPage: React.FC = () => {
         };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueueFailed(queue.length === 0);
-          setQueueMoreError(queue.length > 0);
+          setQueueFailed(previousQueue.length === 0);
+          setQueueMoreError(true);
           setComposeDefault();
           return;
         }
@@ -320,24 +343,37 @@ const V2ActivityPage: React.FC = () => {
         }
         revalidationExtentRef.current = 0;
         revalidationScopeRef.current = null;
+        queueRef.current = queueItems;
         setQueue(queueItems);
         setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
         // The initial destination is an account-level global fact computed by
         // the service before scope/page slicing. Preserve an intentional
         // target across refreshes and fall back to the first available pod.
         setComposeDefault(queueResponse?.data?.composePodId || '');
+        const pendingFocus = pendingRefreshFocusRef.current;
+        pendingRefreshFocusRef.current = null;
+        if (pendingFocus) {
+          globalThis.window.requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(pendingFocus)}"]`)?.focus();
+          });
+        }
       })
       .catch(() => {
         if (active) {
-          if (recap && queue.length > 0) {
+          if (recap || previousQueue.length > 0) {
+            setQueueFailed(false);
             setQueueMoreError(true);
           } else {
             setError(t('activity.loadFailed'));
+            setQueueFailed(true);
           }
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setQueueHydrated(true);
+          setLoading(false);
+        }
       });
     return () => {
       active = false;
@@ -345,14 +381,14 @@ const V2ActivityPage: React.FC = () => {
   }, [accountId, podId, reloadKey, snapshotReady, t, window]);
 
   const loadMoreQueue = async () => {
-    if (queueMoreError) {
+    if (queueMoreError && queueMoreFailureOffsetRef.current === null) {
       setReloadKey((value) => value + 1);
       return;
     }
     if (queueLoadingMore || queueRemaining <= 0 || queueFailed) return;
     const requestedScope = podId;
     const requestedGeneration = queueGenerationRef.current;
-    const offset = queue.length;
+    const offset = queueMoreFailureOffsetRef.current ?? queue.length;
     setQueueLoadingMore(true);
     setQueueMoreError(false);
     try {
@@ -370,9 +406,12 @@ const V2ActivityPage: React.FC = () => {
       }));
       setQueue((current) => {
         const existing = new Set(current.map((item) => `${item.kind}:${item.id}`));
-        return [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+        const nextQueue = [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+        queueRef.current = nextQueue;
+        return nextQueue;
       });
       const loaded = offset + nextItems.length;
+      queueMoreFailureOffsetRef.current = null;
       setQueueRemaining(typeof response.data?.remaining === 'number'
         ? response.data.remaining
         : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
@@ -385,7 +424,10 @@ const V2ActivityPage: React.FC = () => {
         if (firstAdded) document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(String(firstAdded))}"]`)?.focus();
       });
     } catch {
-      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) setQueueMoreError(true);
+      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
+        queueMoreFailureOffsetRef.current = offset;
+        setQueueMoreError(true);
+      }
     } finally {
       if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
     }
@@ -625,7 +667,10 @@ const V2ActivityPage: React.FC = () => {
       </header>
 
       {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
-      {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
+      {!loading && error && <div className="v2-activity__error" role="alert">
+        <span>{error}</span>
+        <button type="button" className="v2-activity__queue-more" onClick={() => { setError(null); setReloadKey((value) => value + 1); }}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+      </div>}
       {!loading && !error && recap && (
         <>
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
@@ -636,6 +681,7 @@ const V2ActivityPage: React.FC = () => {
                 <div className="v2-activity__compose-picker">
                   <button
                     type="button"
+                    ref={composePickerButtonRef}
                     className="v2-activity__compose-picker-button"
                     aria-haspopup="listbox"
                     aria-expanded={composeMenuOpen}
@@ -652,7 +698,11 @@ const V2ActivityPage: React.FC = () => {
                         role="option"
                         aria-selected={pod.id === composePodId}
                         className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
-                        onClick={() => { setComposePodId(pod.id); setComposeMenuOpen(false); }}
+                        onClick={() => {
+                          setComposePodId(pod.id);
+                          setComposeMenuOpen(false);
+                          globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+                        }}
                       >
                         {pod.name}
                       </button>
@@ -683,9 +733,14 @@ const V2ActivityPage: React.FC = () => {
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              <p>{t('activity.needsYou.countDescription', { count: queueCount || 0 })}</p>
+              <p>{queueCount === null
+                ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
+                : t('activity.needsYou.countDescription', { count: queueCount })}</p>
             </div>
-            {queueFailed ? <p role="status">{t('activity.loadFailed')}</p> : isDayZero ? (
+            {queueFailed ? <>
+              <p role="status">{t('activity.loadFailed')}</p>
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+            </> : isDayZero ? (
               <div className="v2-activity__queue">
                 <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
                   <span className="v2-activity__queue-mark" aria-hidden="true">1</span>
@@ -847,6 +902,9 @@ const V2ActivityPage: React.FC = () => {
                     : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
               </button>
             )}
+            {queue.length === 0 && queueMoreError && !queueFailed && (
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+            )}
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
@@ -861,12 +919,14 @@ const V2ActivityPage: React.FC = () => {
                 const expanded = expandedMovedIds.has(group.id);
                 const cappedLines = group.lines.slice(0, 20);
                 const visible = expanded ? cappedLines : cappedLines.slice(0, 3);
+                const omittedCount = Math.max(group.lines.length - cappedLines.length, 0);
                 return <article key={group.id} className="v2-activity__moved-group">
                   <div className="v2-activity__moved-head"><span>{group.name}</span><span>{group.lines.length}</span></div>
                   <div className="v2-activity__moved-lines">
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
                   {cappedLines.length > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setExpandedMovedIds((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{expanded ? t('activity.movedForward.showLess') : t('activity.movedForward.more', { count: cappedLines.length - 3 })}</button>}
+                  {expanded && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}
             </div>}
