@@ -136,7 +136,7 @@ export interface UseV2PodDetailResult {
   /** A full page came back, so older history probably exists. */
   hasMore: boolean;
   loadingOlder: boolean;
-  loadOlder: () => Promise<{ loaded: boolean; hasMore: boolean; failed?: boolean }>;
+  loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
   // `threadRootId` posts INTO a thread without addressing anyone: the backend
   // takes it as membership and leaves reply_to null, so joining a thread does
@@ -286,11 +286,11 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
    * the request was in flight.
    */
   const loadOlder = useCallback(async () => {
-    if (!podId || loadingOlder) return { loaded: false, hasMore };
+    if (!podId || loadingOlder) return;
     const oldest = messages[0];
-    if (!oldest) return { loaded: false, hasMore };
+    if (!oldest) return;
     const cursor = oldest.created_at || oldest.createdAt;
-    if (!cursor) return { loaded: false, hasMore };
+    if (!cursor) return;
 
     setLoadingOlder(true);
     try {
@@ -301,20 +301,18 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       const older = (Array.isArray(data) ? data : []).map(normalizeMessage);
       if (older.length === 0) {
         setHasMore(false);
-        return { loaded: false, hasMore: false };
+        return;
       }
       if (activePodIdRef.current === podId) {
         setMessages((prev) => mergeMessagesById(older, prev));
         setHasMore(older.length >= PAGE_SIZE);
       }
-      return { loaded: true, hasMore: older.length >= PAGE_SIZE };
     } catch {
       // Leave hasMore alone so the same button can be retried.
-      return { loaded: false, hasMore, failed: true };
     } finally {
       setLoadingOlder(false);
     }
-  }, [api, podId, messages, loadingOlder, hasMore]);
+  }, [api, podId, messages, loadingOlder]);
 
   const fetchAgents = useCallback(async (id: string) => {
     try {
