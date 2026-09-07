@@ -8,7 +8,7 @@ import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
-import V2ThreadMessages from './V2ThreadMessages';
+import V2ThreadMessages, { V2ThreadHistoryStatus } from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
@@ -1230,36 +1230,38 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         <V2CatchUpStrip podId={pod._id} />
 
-        <V2ThreadMessages
-          messages={messages}
-          threadView={threadView}
-          threadState={threadState}
-          revealMessageId={revealRequest}
-          onRevealed={onRevealed}
-          decisionByMessageId={decisionByMessageId}
-          settledDecisionByMessageId={settledDecisionByMessageId}
-          agentDisplayNames={agentDisplayNames}
-          agentTags={agentTags}
-          agentAuthorKeys={agentAuthorKeys}
-          onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-          onOpenFile={onOpenFile}
-          onReply={isReadOnly ? undefined : aimAtMessage}
-          onThread={isReadOnly ? undefined : aimAtMessageThread}
-          onQuoteNavigate={onQuoteNavigate}
-          onDecisionRuled={handleDecisionRuled}
-          onAimAtThread={aimAtThread}
-          hasMore={hasMore}
-          loadingOlder={loadingOlder}
-          onLoadOlder={() => { void handleExplicitLoadOlder(); }}
-          historySearch={historySearch}
-          onRetryHistorySearch={() => { void retryHistorySearch(); }}
-          edgeRef={edgeRef}
-          jumpCount={jumpCount}
-          showJump={scrolledUp}
-          onJump={jumpToLatest}
-          loading={loading}
-          error={error}
-          starterPanel={starterPanelVisible ? (
+        <div className="v2-thread__transcript">
+          <V2ThreadMessages
+            messages={messages}
+            threadView={threadView}
+            threadState={threadState}
+            revealMessageId={revealRequest}
+            onRevealed={onRevealed}
+            decisionByMessageId={decisionByMessageId}
+            settledDecisionByMessageId={settledDecisionByMessageId}
+            agentDisplayNames={agentDisplayNames}
+            agentTags={agentTags}
+            agentAuthorKeys={agentAuthorKeys}
+            onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+            onOpenFile={onOpenFile}
+            onReply={isReadOnly ? undefined : aimAtMessage}
+            onThread={isReadOnly ? undefined : aimAtMessageThread}
+            onQuoteNavigate={onQuoteNavigate}
+            onDecisionRuled={handleDecisionRuled}
+            onAimAtThread={aimAtThread}
+            hasMore={hasMore}
+            loadingOlder={loadingOlder}
+            onLoadOlder={() => { void handleExplicitLoadOlder(); }}
+            historySearch={historySearch}
+            onRetryHistorySearch={() => { void retryHistorySearch(); }}
+            renderHistoryStatus={false}
+            edgeRef={edgeRef}
+            jumpCount={jumpCount}
+            showJump={scrolledUp}
+            onJump={jumpToLatest}
+            loading={loading}
+            error={error}
+            starterPanel={starterPanelVisible ? (
             <V2ThreadStarter
               inviteUrl={starterInviteUrl}
               inviteLoading={starterInviteLoading}
@@ -1271,8 +1273,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               onOpenInvite={() => onOpenInvite?.(AGENT_INVITE_TAB)}
               onFocusComposer={() => composerInputRef.current?.focus()}
             />
-          ) : undefined}
-          emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
+            ) : undefined}
+            emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>
@@ -1304,11 +1306,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                     <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
                   )}
                 </div>
-          ) : undefined}
-          agentDeliveryHint={agentDeliveryHint}
-          messagesContainerRef={messagesContainerRef}
-          messagesEndRef={messagesEndRef}
-        />
+            ) : undefined}
+            agentDeliveryHint={agentDeliveryHint}
+            messagesContainerRef={messagesContainerRef}
+            messagesEndRef={messagesEndRef}
+          />
+          <V2ThreadHistoryStatus
+            historySearch={historySearch}
+            onRetryHistorySearch={() => { void retryHistorySearch(); }}
+            viewport
+          />
+        </div>
 
             <TypingIndicator agents={typingAgents} />
 

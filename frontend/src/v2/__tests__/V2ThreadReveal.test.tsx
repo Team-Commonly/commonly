@@ -230,6 +230,21 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     }
   });
 
+  test('history recovery stays anchored to the chat viewport, not the scrolled transcript', async () => {
+    const detail = makeDetail({
+      historySearch: { targetId: 'missing', status: 'failed', attempt: 2, maxAttempts: 5, error: 'offline' },
+    });
+    const { container } = renderAt('', detail);
+    const status = await waitFor(() => {
+      const element = container.querySelector('[role="alert"]');
+      if (!element) throw new Error('history recovery status not mounted');
+      return element;
+    });
+    expect(status).toHaveClass('v2-thread__history-status--viewport');
+    expect(status.closest('.v2-chat__messages')).toBeNull();
+    expect(container.querySelector('.v2-thread__transcript > .v2-chat__messages')).toBeTruthy();
+  });
+
   test('legacy ?message= landing uses the same source reveal path', async () => {
     const detail = makeDetail();
     const { container } = renderAt('?message=r2', detail);
