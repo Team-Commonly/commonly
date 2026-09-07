@@ -62,7 +62,8 @@
       "placeholder": "在话题中回复…",
       "send": "发送",
       "working": "发送中…",
-      "sent": "已回复"
+      "sent": "已回复",
+      "actionFailed": "回复发送失败，请重试。"
     },
     "lastActive": "{{time}}前活跃",
     "updatesCount_one": "{{count}} 条更新",
@@ -82,6 +83,7 @@
         "mention": "提及",
         "approval": "审批",
         "decision": "待你决策",
+        "handoff": "交接",
         "press": "待你合并"
       },
       "countLabel": "{{count}} 项等你处理"
@@ -129,6 +131,11 @@
       "markHandled": "标记已处理",
       "working": "正在保存…",
       "actionFailed": "无法确认该提及，请重试。"
+    },
+    "handoff": {
+      "markHandled": "标记已处理",
+      "working": "正在保存…",
+      "actionFailed": "无法标记该交接，请重试。"
     },
     "agents": {
       "eyebrow": "智能体回顾",

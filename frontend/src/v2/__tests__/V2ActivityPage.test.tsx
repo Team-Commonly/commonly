@@ -272,12 +272,12 @@ describe('V2ActivityPage', () => {
     ));
   });
 
-  test('keeps a task attention row as an open-thread fact when it has no declared options', async () => {
+  test('keeps a decision request as an open-thread fact when it has no declared options', async () => {
     const taskQueue = {
       items: [{
-        id: 'task-1:blocked', attentionItemId: 'attention-task-1', kind: 'decision',
+        id: 'decision-1', attentionItemId: 'attention-decision-1', kind: 'decision',
         title: 'Choose a deploy shape', detail: 'Blocked on an upstream choice.',
-        podId: 'pod-1', podName: 'Launch pod', options: [], createdAt: '2026-08-26T11:00:00.000Z',
+        podId: 'pod-1', podName: 'Launch pod', options: [], source: { type: 'decision_request' }, createdAt: '2026-08-26T11:00:00.000Z',
       }],
       count: 1,
       composePodId: null,
@@ -291,6 +291,228 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
+  });
+
+  test('renders a handoff as a handled action, never as a decision', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-1', attentionItemId: 'attention-handoff-1', kind: 'handoff',
+        title: 'Ready for your press', detail: 'The bounded implementation is ready for review.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? handoffQueue : { items: [], count: 0, countsByPod: {}, countsByKind: {} } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
+    mockPost.mockResolvedValue({ data: { success: true } });
+    renderPage();
+
+    expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
+    expect(screen.getByText(/Handoff · Launch pod/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark handled' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/activity/attention-handoff-1/acknowledge',
+      {},
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+  });
+
+  test('keeps a failed handoff acknowledgement and retry beside its row', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-2', attentionItemId: 'attention-handoff-2', kind: 'handoff',
+        title: 'Needs a retry', detail: 'The first acknowledgement fails.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? handoffQueue : { items: [], count: 0, countsByPod: {}, countsByKind: {} } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
+    mockPost
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce({ data: { success: true } });
+    renderPage();
+
+    const row = (await screen.findByText('Needs a retry')).closest('article') as HTMLElement;
+    const markHandled = within(row).getByRole('button', { name: 'Mark handled' });
+    markHandled.focus();
+    fireEvent.click(markHandled);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
+    await waitFor(() => expect(markHandled).toHaveFocus());
+    expect(within(row).getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+  });
+
+  test('does not steal focus when the user moves during a failed action', async () => {
+    let rejectRequest: (error: Error) => void;
+    mockPost.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectRequest = reject; }));
+    renderPage();
+    const acknowledge = await screen.findByRole('button', { name: 'Mark handled' });
+    acknowledge.focus();
+    fireEvent.click(acknowledge);
+    acknowledge.blur(); // Real browsers blur a newly disabled focused button.
+    const compose = screen.getByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
+    compose.focus();
+    await act(async () => { rejectRequest(new Error('temporary failure')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(compose).toHaveFocus();
+    expect(acknowledge).not.toBeDisabled();
+  });
+
+  test('an older failed action does not consume a newer action focus target', async () => {
+    const queue = {
+      ...decisionQueue,
+      items: [
+        { ...decisionQueue.items[0], id: 'approval-focus', kind: 'approval', title: 'Approval focus' },
+        { ...decisionQueue.items[0], id: 'handoff-focus', attentionItemId: 'handoff-attention', kind: 'handoff', title: 'Handoff focus' },
+      ],
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queue : recap }));
+    let rejectApproval: (error: Error) => void;
+    let rejectHandoff: (error: Error) => void;
+    mockPost.mockImplementation((url: string) => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      return new Promise((resolve, reject) => {
+        if (url.endsWith('/approve')) rejectApproval = reject;
+        else rejectHandoff = reject;
+      });
+    });
+    renderPage();
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const handled = screen.getByRole('button', { name: 'Mark handled' });
+    approve.focus();
+    fireEvent.click(approve);
+    handled.focus();
+    fireEvent.click(handled);
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    await act(async () => { rejectApproval(new Error('approval failed')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(document.body).toHaveFocus();
+    expect(handled).toBeDisabled();
+    await act(async () => { rejectHandoff(new Error('handoff failed')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(handled).toHaveFocus();
+    expect(handled).not.toBeDisabled();
+  });
+
+  test('keeps a failed reply actionable with reply-specific feedback and focus', async () => {
+    mockPost.mockRejectedValueOnce(new Error('reply down'));
+    renderPage();
+
+    const row = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Reply' }));
+    const composer = await within(row).findByRole('textbox', { name: 'Reply in thread…' });
+    fireEvent.change(composer, { target: { value: 'please check this' } });
+    composer.focus();
+    fireEvent.keyDown(composer, { key: 'Enter', ctrlKey: true });
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/Your reply could not be sent/i);
+    await waitFor(() => expect(composer).toHaveFocus());
+  });
+
+  test('does not steal focus when the user moves to another control during a failed action', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-focus', attentionItemId: 'attention-handoff-focus', kind: 'handoff',
+        title: 'Focus-safe handoff', detail: 'Keep the user in control.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let rejectAction: ((error: Error) => void) | null = null;
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? handoffQueue : { ...recap, needsYou: [] } }));
+    mockPost.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectAction = reject; }));
+    renderPage();
+
+    const row = (await screen.findByText('Focus-safe handoff')).closest('article') as HTMLElement;
+    const markHandled = within(row).getByRole('button', { name: 'Mark handled' });
+    const openPod = within(row).getByRole('button', { name: 'Open pod' });
+    markHandled.focus();
+    fireEvent.click(markHandled);
+    await waitFor(() => expect(markHandled).toHaveTextContent('Saving…'));
+    openPod.focus();
+    await act(async () => { rejectAction?.(new Error('temporary failure')); });
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
+    expect(openPod).toHaveFocus();
+  });
+
+  test('keeps concurrent action failures on their own focus requests', async () => {
+    const queue = {
+      items: [
+        {
+          id: 'approval-focus', kind: 'approval', title: 'Approve the change', detail: 'A protected action.',
+          podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+        },
+        {
+          id: 'handoff-focus', attentionItemId: 'attention-handoff-focus-2', kind: 'handoff', title: 'Review the change', detail: 'A recipient-owned handoff.',
+          podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T10:00:00.000Z',
+        },
+      ],
+      count: 2,
+      countsByPod: { 'pod-1': 2 },
+      countsByKind: { approval: 1, handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let rejectApproval: ((error: Error) => void) | null = null;
+    let rejectHandoff: ((error: Error) => void) | null = null;
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queue : { ...recap, needsYou: [] } }));
+    mockPost.mockImplementation((url: string) => new Promise((_resolve, reject) => {
+      if (url.includes('/approval-focus/')) rejectApproval = reject;
+      else rejectHandoff = reject;
+    }));
+    renderPage();
+
+    const approvalRow = (await screen.findByText('Approve the change')).closest('article') as HTMLElement;
+    const handoffRow = (await screen.findByText('Review the change')).closest('article') as HTMLElement;
+    const approve = within(approvalRow).getByRole('button', { name: 'Approve' });
+    const markHandled = within(handoffRow).getByRole('button', { name: 'Mark handled' });
+    approve.focus();
+    fireEvent.click(approve);
+    markHandled.focus();
+    fireEvent.click(markHandled);
+
+    await act(async () => { rejectApproval?.(new Error('approval down')); await Promise.resolve(); });
+    expect(await within(approvalRow).findByRole('alert')).toHaveTextContent(/approval could not be updated/i);
+    expect(markHandled).toHaveFocus();
+
+    markHandled.blur();
+    await act(async () => { rejectHandoff?.(new Error('handoff down')); await Promise.resolve(); });
+    expect(await within(handoffRow).findByRole('alert')).toHaveTextContent(/handoff could not be marked handled/i);
+    await waitFor(() => expect(markHandled).toHaveFocus());
   });
 
   test('opens an inline reply and posts it into the source thread', async () => {

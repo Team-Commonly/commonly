@@ -30,7 +30,7 @@ interface NeedsYouItem {
   id: string;
   attentionItemId?: string;
   actorName?: string;
-  kind: 'mention' | 'approval' | 'decision';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail: string;
   podId: string | null;
@@ -65,6 +65,7 @@ interface QueueResponse {
   composePodId?: string | null;
   count: number;
   countsByPod: Record<string, number>;
+  countsByKind?: Record<string, number>;
   offset?: number;
   limit?: number;
   remaining?: number;
@@ -148,8 +149,9 @@ const V2ActivityPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
-  const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
+  const [acknowledgingAttentionId, setAcknowledgingAttentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionErrorItemId, setActionErrorItemId] = useState<string | null>(null);
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
@@ -163,6 +165,7 @@ const V2ActivityPage: React.FC = () => {
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
+  const actionFocusGenerationRef = useRef(0);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
   const revalidationExtentRef = useRef(0);
@@ -522,10 +525,32 @@ const V2ActivityPage: React.FC = () => {
     navigate('/v2');
   };
 
+  const captureActionFocus = (item: NeedsYouItem) => {
+    const generation = ++actionFocusGenerationRef.current;
+    const active = document.activeElement;
+    const row = active?.closest<HTMLElement>('[data-activity-item-id]');
+    const target = active instanceof HTMLElement && row?.dataset.activityItemId === item.id ? active : null;
+    // Each request owns its target. A later action supersedes older recovery,
+    // and an intentional focus move must survive an eventual failed request.
+    return () => {
+      if (!target) return;
+      globalThis.window.requestAnimationFrame(() => {
+        const current = document.activeElement;
+        if (generation === actionFocusGenerationRef.current
+          && document.contains(target)
+          && (current === document.body || current === target)) {
+          target.focus({ preventScroll: true });
+        }
+      });
+    };
+  };
+
   const actOnApproval = async (item: NeedsYouItem, action: 'approve' | 'reject') => {
     if (actingApprovalId) return;
+    const restoreActionFocus = captureActionFocus(item);
     setActingApprovalId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
@@ -537,7 +562,9 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
+      setActionErrorItemId(item.id);
       setActionError(t('activity.approval.actionFailed'));
+      restoreActionFocus();
     } finally {
       setActingApprovalId(null);
     }
@@ -545,8 +572,10 @@ const V2ActivityPage: React.FC = () => {
 
   const ruleDecision = async (item: NeedsYouItem, value: string) => {
     if (rulingId || !value.trim()) return;
+    const restoreActionFocus = captureActionFocus(item);
     setRulingId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ ok?: boolean }>(
@@ -567,7 +596,9 @@ const V2ActivityPage: React.FC = () => {
           [item.id]: { value: standing.value, by: standing.by },
         }));
       } else {
+        setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
+        restoreActionFocus();
       }
     } finally {
       setRulingId(null);
@@ -606,8 +637,10 @@ const V2ActivityPage: React.FC = () => {
   const sendReply = async (item: NeedsYouItem) => {
     const content = (replyDrafts[item.id] || '').trim();
     if (!content || replyingId || !item.podId) return;
+    const restoreActionFocus = captureActionFocus(item);
     setReplyingId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       await axios.post(
@@ -621,16 +654,20 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
-      setActionError(t('activity.mention.actionFailed'));
+      setActionErrorItemId(item.id);
+      setActionError(t('activity.reply.actionFailed', { defaultValue: 'Your reply could not be sent. Try again.' }));
+      restoreActionFocus();
     } finally {
       setReplyingId(null);
     }
   };
 
-  const acknowledgeMention = async (item: NeedsYouItem) => {
-    if (acknowledgingMentionId) return;
-    setAcknowledgingMentionId(item.id);
+  const acknowledgeAttention = async (item: NeedsYouItem, errorKey: 'activity.mention.actionFailed' | 'activity.handoff.actionFailed') => {
+    if (acknowledgingAttentionId) return;
+    const restoreActionFocus = captureActionFocus(item);
+    setAcknowledgingAttentionId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
@@ -642,11 +679,17 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
-      setActionError(t('activity.mention.actionFailed'));
+      const message = t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' });
+      setActionErrorItemId(item.id);
+      setActionError(message);
+      restoreActionFocus();
     } finally {
-      setAcknowledgingMentionId(null);
+      setAcknowledgingAttentionId(null);
     }
   };
+
+  const acknowledgeMention = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.mention.actionFailed');
+  const markHandoffHandled = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.handoff.actionFailed');
 
   const isDayZero = podId === 'all'
     && queueCount === 0
@@ -813,7 +856,7 @@ const V2ActivityPage: React.FC = () => {
                 {queue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
-                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
+                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
@@ -839,10 +882,15 @@ const V2ActivityPage: React.FC = () => {
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
-                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
+                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
+                            {acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
+                      )}
+                      {item.kind === 'handoff' && (
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                          {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
+                        </button>
                       )}
                       {item.kind === 'decision' && (item.options || []).length > 0 && (
                         <>
@@ -904,6 +952,9 @@ const V2ActivityPage: React.FC = () => {
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
+                    {actionErrorItemId === item.id && actionError && (
+                      <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -926,7 +977,6 @@ const V2ActivityPage: React.FC = () => {
             {queue.length === 0 && queueMoreError && !queueFailed && (
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
-            {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">

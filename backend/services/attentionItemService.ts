@@ -13,7 +13,7 @@ const Message = require('../models/Message');
 const PGMessage = require('../models/pg/Message');
 
 type SourceType = 'message' | 'approval' | 'decision_request' | 'task';
-type Kind = 'mention' | 'approval' | 'decision';
+type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
 };
@@ -291,7 +291,7 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
     const taskKey = String(task._id || task.taskId);
     const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
     await recordForRecipients(recipients, {
-      podId: task.podId, kind: 'decision' as Kind, sourceType: 'task' as SourceType,
+      podId: task.podId, kind: 'handoff' as Kind, sourceType: 'task' as SourceType,
       sourceId: `${taskKey}:${sequence}`,
       title: String(task.title || 'Task needs attention'), detail: compact(last?.text || task.notes, 220),
       podName: pod?.name || 'Pod',
@@ -347,6 +347,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   items: any[];
   count: number;
   countsByPod: Record<string, number>;
+  countsByKind: Record<string, number>;
   composePodId: string | null;
   offset: number;
   limit: number;
@@ -360,7 +361,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
   if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
-    return { items: [], count: 0, countsByPod: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+    return { items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
   }
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
@@ -369,7 +370,10 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
-  const priority: Record<string, number> = { approval: 0, decision: 1, mention: 2 };
+  const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
+  const renderKind = (row: any): Kind => (
+    row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
+  );
   const valid = rows.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
     (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
     || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -387,11 +391,19 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const scoped = requestedPodId
     ? valid.filter((row: any) => String(row.podId) === requestedPodId)
     : valid;
+  // Per-kind totals describe the requested view, but are calculated before
+  // pagination. Legacy task rows are projected through renderKind so their
+  // handoff bucket agrees with the card and acknowledgement semantics.
+  const countsByKind = scoped.reduce((counts: Record<string, number>, row: any) => {
+    const kind = renderKind(row);
+    counts[kind] = (counts[kind] || 0) + 1;
+    return counts;
+  }, {});
   const page = scoped.slice(offset, offset + limit);
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
-      id: String(row.source.id), attentionItemId: String(row._id), kind: row.kind, title: row.title, actorName: row.actorName || undefined, detail: row.detail || '',
+      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), title: row.title, actorName: row.actorName || undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
@@ -401,6 +413,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     items: picked,
     count: scoped.length,
     countsByPod,
+    countsByKind,
     composePodId,
     offset,
     limit,
@@ -409,15 +422,29 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   };
 };
 
-export const acknowledgeMention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
+export const acknowledgeAttention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
   if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
   const result = await AttentionItem.updateOne(
-    { _id: attentionItemId, recipientUserId, kind: 'mention', status: 'open' },
+    {
+      _id: attentionItemId,
+      recipientUserId,
+      status: 'open',
+      $or: [
+        { kind: 'mention' },
+        { kind: 'handoff' },
+        { kind: 'decision', 'source.type': 'task' },
+      ],
+    },
     { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'acknowledged' } },
   );
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+// Kept as the public name for the existing Activity route. The selector is
+// now deliberately recipient-owned and covers mentions plus handoffs while
+// excluding true decisions and approvals.
+export const acknowledgeMention = acknowledgeAttention;
+
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };

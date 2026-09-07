@@ -71,7 +71,7 @@ describe('activity read routes', () => {
     await request(app).post('/api/activity/mark-read').send({}).expect(400);
   });
 
-  it('POST /api/activity/:id/acknowledge uses the dedicated mention acknowledgement', async () => {
+  it('POST /api/activity/:id/acknowledge uses the recipient-owned mention acknowledgement path', async () => {
     await request(app).post('/api/activity/mention-1/acknowledge').expect(200);
     expect(ActivityService.acknowledgeMention).toHaveBeenCalledWith('user123', 'mention-1');
   });
