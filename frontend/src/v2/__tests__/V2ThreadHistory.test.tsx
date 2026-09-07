@@ -124,7 +124,7 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
   });
 
   test('groups a settled ruling by its rendered human identity, preserving the author and ruled marker', () => {
-    const previous = msg('1');
+    const previous = msg('1', { user_id: 'u-agent', user: { username: 'Scout' } });
     const source = msg('2', { user_id: 'u-agent', user: { username: 'Scout' } });
     const { container } = renderThread({
       messages: [previous, source],
