@@ -110,6 +110,7 @@ const V2ActivityPage: React.FC = () => {
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const queueScopeRef = useRef('all');
+  const queueGenerationRef = useRef(0);
 
   useEffect(() => {
     const refresh = () => setReloadKey((value) => value + 1);
@@ -123,10 +124,13 @@ const V2ActivityPage: React.FC = () => {
 
   useEffect(() => {
     let active = true;
+    const generation = queueGenerationRef.current + 1;
+    queueGenerationRef.current = generation;
     queueScopeRef.current = podId;
     setLoading(true);
     setError(null);
     setQueueMoreError(false);
+    setQueueLoadingMore(false);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     // Recap and attention are independent facts. A failed queue read must
@@ -192,6 +196,7 @@ const V2ActivityPage: React.FC = () => {
   const loadMoreQueue = async () => {
     if (queueLoadingMore || queueRemaining <= 0 || queueFailed) return;
     const requestedScope = podId;
+    const requestedGeneration = queueGenerationRef.current;
     const offset = queue.length;
     setQueueLoadingMore(true);
     setQueueMoreError(false);
@@ -201,7 +206,7 @@ const V2ActivityPage: React.FC = () => {
         headers: { 'x-auth-token': token ?? '' },
         params: { limit: 50, offset, ...(requestedScope !== 'all' ? { podId: requestedScope } : {}) },
       });
-      if (queueScopeRef.current !== requestedScope) return;
+      if (queueScopeRef.current !== requestedScope || queueGenerationRef.current !== requestedGeneration) return;
       const nextItems = (response.data?.items || []).map((item) => ({
         ...item,
         detail: item.detail || '',
@@ -217,9 +222,9 @@ const V2ActivityPage: React.FC = () => {
         ? response.data.remaining
         : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
     } catch {
-      if (queueScopeRef.current === requestedScope) setQueueMoreError(true);
+      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) setQueueMoreError(true);
     } finally {
-      setQueueLoadingMore(false);
+      if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
     }
   };
 

@@ -6,6 +6,7 @@ import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
 import V2ActivityPage from '../components/V2ActivityPage';
 import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
+import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
 
 jest.mock('axios');
 jest.mock('../components/V2Avatar', () => {
@@ -335,6 +336,42 @@ describe('V2ActivityPage', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ limit: 50, offset: 50 }),
     }));
+  });
+
+  test('discards a late page after a same-scope refresh resets the queue', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `refresh-${index}`, attentionItemId: `refresh-attention-${index}`, kind: 'mention', title: `Refresh ${index}`, detail: 'First page.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    const refreshedPage = [{
+      id: 'refreshed-row', attentionItemId: 'refreshed-attention', kind: 'mention', title: 'Refreshed row', detail: 'New first page.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T12:00:00.000Z',
+    }];
+    const stalePage = [{
+      id: 'stale-row', attentionItemId: 'stale-attention', kind: 'mention', title: 'Stale page row', detail: 'Old page.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T10:00:00.000Z',
+    }];
+    let queueReads = 0;
+    let resolveMore: ((value: any) => void) | null = null;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      if (config?.params?.offset === 50) {
+        return new Promise((resolve) => { resolveMore = resolve; });
+      }
+      queueReads += 1;
+      return Promise.resolve({ data: queueReads === 1
+        ? { items: firstPage, count: 51, remaining: 1, countsByPod: { 'pod-1': 51 } }
+        : { items: refreshedPage, count: 1, remaining: 0, countsByPod: { 'pod-1': 1 } } });
+    });
+    renderPage();
+    await screen.findByText('Refresh 0');
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
+    await waitFor(() => expect(resolveMore).not.toBeNull());
+
+    await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
+    expect(await screen.findByText('Refreshed row')).toBeInTheDocument();
+    await act(async () => { resolveMore?.({ data: { items: stalePage, count: 51, remaining: 0, countsByPod: { 'pod-1': 51 } } }); });
+    expect(screen.queryByText('Stale page row')).not.toBeInTheDocument();
   });
 
   test('passes pod scope to the server before pagination', async () => {
