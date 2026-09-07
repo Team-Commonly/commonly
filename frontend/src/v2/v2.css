@@ -10343,6 +10343,14 @@ body.modern-ui.v2-canvas {
 
   /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
      while the transcript, composer, and tab bar share the white canvas. */
+  /* The 1023px rule is more specific and otherwise leaves three tracks
+     active at phone width. The rail is hidden below, so every shell must
+     explicitly collapse to one main track. */
+  .v2-shell:not(.v2-shell--feature-wide),
+  .v2-shell--feature-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .v2-shell,
   .v2-shell--no-inspector,
   .v2-shell--feature {
