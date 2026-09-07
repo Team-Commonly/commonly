@@ -71,7 +71,7 @@ describe('ActivityService recap and legacy approval authorization', () => {
   });
 
   test('acknowledges attention only through the recipient-owned attention record', async () => {
-    await expect(ActivityService.acknowledgeAttention(ownerId, 'attention-1')).resolves.toEqual({ success: true });
+    await expect(ActivityService.acknowledgeMention(ownerId, 'attention-1')).resolves.toEqual({ success: true });
     expect(mockAcknowledgeAttention).toHaveBeenCalledWith(ownerId, 'attention-1');
   });
 

@@ -92,6 +92,8 @@ describe('uncapped attention counts — persisted query and membership', () => {
       make('decision', 'decision_request', 'decision-1'),
       make('approval', 'approval', 'approval-1'),
     ]);
+    const before = await service.getOpenQueue(recipient);
+    expect(before.countsByKind).toEqual({ mention: 1, handoff: 2, decision: 1, approval: 1 });
 
     await expect(service.acknowledgeMention(recipient, mention.id)).resolves.toEqual({ success: true });
     await expect(service.acknowledgeMention(recipient, handoff.id)).resolves.toEqual({ success: true });
