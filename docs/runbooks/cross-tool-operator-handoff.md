@@ -8,6 +8,10 @@ artifacts, source branches, review gates, and verified runtime state.
 
 1. Read the project instructions and review rubric. Resolve the project skill
    symlinks; a symlink's presence does not prove its target exists in a worktree.
+   For example, `.agents/skills → ../.claude/skills` can exist while
+   `.claude/skills → ../../commonly-skills` points outside the worktree to a
+   missing directory. Check target resolution (`test -e .agents/skills`), not
+   only the link text shown by `ls -l`.
    Load the current memory index, not a similarly named historical index.
 2. Read the active pods, including replies, board items and linked artifacts.
    Ask the existing owners for current work, branch/head, dirty files, blockers,
