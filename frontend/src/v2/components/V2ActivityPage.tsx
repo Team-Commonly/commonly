@@ -165,7 +165,7 @@ const V2ActivityPage: React.FC = () => {
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
-  const actionFocusGenerationRef = useRef(0);
+  const actionFocusRef = useRef<Map<string, HTMLElement>>(new Map());
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
   const revalidationExtentRef = useRef(0);
@@ -525,29 +525,38 @@ const V2ActivityPage: React.FC = () => {
     navigate('/v2');
   };
 
-  const captureActionFocus = (item: NeedsYouItem) => {
-    const generation = ++actionFocusGenerationRef.current;
+  // Action requests can overlap across kinds. Keep their focus targets keyed
+  // to the request so a late failure cannot restore another row's control.
+  const rememberActionFocus = (action: string, item: NeedsYouItem): string => {
+    const key = `${action}:${item.id}`;
     const active = document.activeElement;
     const row = active?.closest<HTMLElement>('[data-activity-item-id]');
-    const target = active instanceof HTMLElement && row?.dataset.activityItemId === item.id ? active : null;
-    // Each request owns its target. A later action supersedes older recovery,
-    // and an intentional focus move must survive an eventual failed request.
-    return () => {
-      if (!target) return;
-      globalThis.window.requestAnimationFrame(() => {
-        const current = document.activeElement;
-        if (generation === actionFocusGenerationRef.current
-          && document.contains(target)
-          && (current === document.body || current === target)) {
-          target.focus({ preventScroll: true });
-        }
-      });
-    };
+    if (active instanceof HTMLElement && row?.dataset.activityItemId === item.id) {
+      actionFocusRef.current.set(key, active);
+    } else {
+      actionFocusRef.current.delete(key);
+    }
+    return key;
+  };
+
+  const clearActionFocus = (key: string) => {
+    actionFocusRef.current.delete(key);
+  };
+
+  const restoreActionFocus = (key: string) => {
+    const target = actionFocusRef.current.get(key);
+    actionFocusRef.current.delete(key);
+    if (!target) return;
+    globalThis.window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const focusWasLost = !active || active === document.body || active === document.documentElement;
+      if ((focusWasLost || active === target) && document.contains(target)) target.focus({ preventScroll: true });
+    });
   };
 
   const actOnApproval = async (item: NeedsYouItem, action: 'approve' | 'reject') => {
     if (actingApprovalId) return;
-    const restoreActionFocus = captureActionFocus(item);
+    const focusKey = rememberActionFocus(`approval:${action}`, item);
     setActingApprovalId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -564,15 +573,16 @@ const V2ActivityPage: React.FC = () => {
     } catch {
       setActionErrorItemId(item.id);
       setActionError(t('activity.approval.actionFailed'));
-      restoreActionFocus();
+      restoreActionFocus(focusKey);
     } finally {
+      clearActionFocus(focusKey);
       setActingApprovalId(null);
     }
   };
 
   const ruleDecision = async (item: NeedsYouItem, value: string) => {
     if (rulingId || !value.trim()) return;
-    const restoreActionFocus = captureActionFocus(item);
+    const focusKey = rememberActionFocus('decision', item);
     setRulingId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -598,9 +608,10 @@ const V2ActivityPage: React.FC = () => {
       } else {
         setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
-        restoreActionFocus();
+        restoreActionFocus(focusKey);
       }
     } finally {
+      clearActionFocus(focusKey);
       setRulingId(null);
     }
   };
@@ -637,7 +648,7 @@ const V2ActivityPage: React.FC = () => {
   const sendReply = async (item: NeedsYouItem) => {
     const content = (replyDrafts[item.id] || '').trim();
     if (!content || replyingId || !item.podId) return;
-    const restoreActionFocus = captureActionFocus(item);
+    const focusKey = rememberActionFocus('reply', item);
     setReplyingId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -656,15 +667,16 @@ const V2ActivityPage: React.FC = () => {
     } catch {
       setActionErrorItemId(item.id);
       setActionError(t('activity.reply.actionFailed', { defaultValue: 'Your reply could not be sent. Try again.' }));
-      restoreActionFocus();
+      restoreActionFocus(focusKey);
     } finally {
+      clearActionFocus(focusKey);
       setReplyingId(null);
     }
   };
 
   const acknowledgeAttention = async (item: NeedsYouItem, errorKey: 'activity.mention.actionFailed' | 'activity.handoff.actionFailed') => {
     if (acknowledgingAttentionId) return;
-    const restoreActionFocus = captureActionFocus(item);
+    const focusKey = rememberActionFocus('acknowledge', item);
     setAcknowledgingAttentionId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -682,8 +694,9 @@ const V2ActivityPage: React.FC = () => {
       const message = t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' });
       setActionErrorItemId(item.id);
       setActionError(message);
-      restoreActionFocus();
+      restoreActionFocus(focusKey);
     } finally {
+      clearActionFocus(focusKey);
       setAcknowledgingAttentionId(null);
     }
   };
