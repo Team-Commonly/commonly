@@ -272,12 +272,12 @@ describe('V2ActivityPage', () => {
     ));
   });
 
-  test('keeps a task attention row as an open-thread fact when it has no declared options', async () => {
+  test('keeps a decision request as an open-thread fact when it has no declared options', async () => {
     const taskQueue = {
       items: [{
-        id: 'task-1:blocked', attentionItemId: 'attention-task-1', kind: 'decision',
+        id: 'decision-1', attentionItemId: 'attention-decision-1', kind: 'decision',
         title: 'Choose a deploy shape', detail: 'Blocked on an upstream choice.',
-        podId: 'pod-1', podName: 'Launch pod', options: [], createdAt: '2026-08-26T11:00:00.000Z',
+        podId: 'pod-1', podName: 'Launch pod', options: [], source: { type: 'decision_request' }, createdAt: '2026-08-26T11:00:00.000Z',
       }],
       count: 1,
       composePodId: null,
@@ -291,6 +291,43 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
+  });
+
+  test('renders a handoff as a handled action, never as a decision', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-1', attentionItemId: 'attention-handoff-1', kind: 'handoff',
+        title: 'Ready for your press', detail: 'The bounded implementation is ready for review.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? handoffQueue : { items: [], count: 0, countsByPod: {}, countsByKind: {} } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
+    mockPost.mockResolvedValue({ data: { success: true } });
+    renderPage();
+
+    expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
+    expect(screen.getByText(/Handoff · Launch pod/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark handled' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/activity/attention-handoff-1/acknowledge',
+      {},
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 
   test('opens an inline reply and posts it into the source thread', async () => {

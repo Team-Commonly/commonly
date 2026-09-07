@@ -30,7 +30,7 @@ interface NeedsYouItem {
   id: string;
   attentionItemId?: string;
   actorName?: string;
-  kind: 'mention' | 'approval' | 'decision';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail: string;
   podId: string | null;
@@ -65,6 +65,7 @@ interface QueueResponse {
   composePodId?: string | null;
   count: number;
   countsByPod: Record<string, number>;
+  countsByKind?: Record<string, number>;
   offset?: number;
   limit?: number;
   remaining?: number;
@@ -92,6 +93,7 @@ interface ActivitySnapshot {
   queueCount?: number | null;
   queueRemaining?: number;
   queueCountsByPod?: Record<string, number>;
+  queueCountsByKind?: Record<string, number>;
   composePodId?: string;
   composeDraft?: string;
   replyDrafts?: Record<string, string>;
@@ -148,7 +150,7 @@ const V2ActivityPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
-  const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
+  const [acknowledgingAttentionId, setAcknowledgingAttentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
@@ -158,6 +160,7 @@ const V2ActivityPage: React.FC = () => {
   const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
+  const [queueCountsByKind, setQueueCountsByKind] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
@@ -199,6 +202,7 @@ const V2ActivityPage: React.FC = () => {
       setQueue(queueRef.current);
       setQueueCount(snapshot.queueCount ?? null);
       setQueueCountsByPod(snapshot.queueCountsByPod || {});
+      setQueueCountsByKind(snapshot.queueCountsByKind || {});
       setQueueRemaining(snapshot.queueRemaining || 0);
       setReplyDrafts(snapshot.replyDrafts || {});
       setComposePodId(snapshot.composePodId || '');
@@ -216,6 +220,7 @@ const V2ActivityPage: React.FC = () => {
       setQueue(queueRef.current);
       setQueueCount(null);
       setQueueCountsByPod({});
+      setQueueCountsByKind({});
       setQueueRemaining(0);
       setReplyDrafts({});
       setComposePodId('');
@@ -327,6 +332,7 @@ const V2ActivityPage: React.FC = () => {
         setQueueFailed(false);
         setQueueCount(queueResponse!.data.count);
         setQueueCountsByPod(queueResponse!.data.countsByPod || {});
+        setQueueCountsByKind(queueResponse!.data.countsByKind || {});
         const mapQueueItems = (items: QueueResponse['items']) => items.map((item) => ({
           ...item,
           detail: item.detail || '',
@@ -497,6 +503,7 @@ const V2ActivityPage: React.FC = () => {
         queueCount,
         queueRemaining,
         queueCountsByPod,
+        queueCountsByKind,
         replyDrafts,
         composePodId,
         composeDraft,
@@ -627,9 +634,9 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const acknowledgeMention = async (item: NeedsYouItem) => {
-    if (acknowledgingMentionId) return;
-    setAcknowledgingMentionId(item.id);
+  const acknowledgeAttention = async (item: NeedsYouItem, errorKey: 'activity.mention.actionFailed' | 'activity.handoff.actionFailed') => {
+    if (acknowledgingAttentionId) return;
+    setAcknowledgingAttentionId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
@@ -642,11 +649,14 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
-      setActionError(t('activity.mention.actionFailed'));
+      setActionError(t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' }));
     } finally {
-      setAcknowledgingMentionId(null);
+      setAcknowledgingAttentionId(null);
     }
   };
+
+  const acknowledgeMention = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.mention.actionFailed');
+  const markHandoffHandled = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.handoff.actionFailed');
 
   const isDayZero = podId === 'all'
     && queueCount === 0
@@ -813,7 +823,7 @@ const V2ActivityPage: React.FC = () => {
                 {queue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
-                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
+                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
@@ -839,10 +849,15 @@ const V2ActivityPage: React.FC = () => {
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
-                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
+                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
+                            {acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
+                      )}
+                      {item.kind === 'handoff' && (
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                          {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
+                        </button>
                       )}
                       {item.kind === 'decision' && (item.options || []).length > 0 && (
                         <>

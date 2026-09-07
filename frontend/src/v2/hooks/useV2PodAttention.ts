@@ -3,7 +3,7 @@ import { useV2Api } from './useV2Api';
 
 export interface V2AttentionItem {
   id: string;
-  kind: 'mention' | 'approval' | 'decision';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail?: string;
   actorName?: string;
@@ -27,18 +27,20 @@ export const useV2PodAttention = (enabled = true) => {
   const [items, setItems] = useState<V2AttentionItem[]>([]);
   const [count, setCount] = useState<number | null>(null);
   const [countByPod, setCountByPod] = useState<Record<string, number>>({});
+  const [countByKind, setCountByKind] = useState<Record<string, number>>({});
   const generation = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const request = ++generation.current;
     try {
-      const data = await apiRef.current.get<{ items: V2AttentionItem[]; count: number; countsByPod: Record<string, number> }>('/api/activity/decision-queue');
+      const data = await apiRef.current.get<{ items: V2AttentionItem[]; count: number; countsByPod: Record<string, number>; countsByKind?: Record<string, number> }>('/api/activity/decision-queue');
       if (request !== generation.current) return;
       if (!Array.isArray(data?.items) || typeof data.count !== 'number' || !data.countsByPod) throw new Error('Invalid attention queue');
       setItems(data.items);
       setCount(data.count);
       setCountByPod(data.countsByPod);
+      setCountByKind(data.countsByKind || {});
     } catch {
       // Attention is additive UI. A transient read failure must not invent a
       // stale count or block the pod surface; the next refresh retries it.
@@ -46,6 +48,7 @@ export const useV2PodAttention = (enabled = true) => {
       setItems([]);
       setCount(null);
       setCountByPod({});
+      setCountByKind({});
     }
   }, [enabled]);
 
@@ -59,5 +62,5 @@ export const useV2PodAttention = (enabled = true) => {
       window.removeEventListener('focus', refresh);
     };
   }, [refresh]);
-  return { items, count, countByPod, refresh };
+  return { items, count, countByPod, countByKind, refresh };
 };
