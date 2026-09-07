@@ -11,6 +11,7 @@ jest.mock('../../../services/activityService', () => ({
   getUserFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
   getRecap: jest.fn(async () => ({ needsYou: [], agents: [], board: [] })),
   getDecisionQueue: jest.fn(async () => ({ items: [], count: 0, countsByPod: {}, remaining: 0, hasMore: false })),
+  getDecisionHistory: jest.fn(async () => ({ items: [], count: 0, remaining: 0, hasMore: false })),
   getPodFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
   getPendingApprovals: jest.fn(async () => []),
   acknowledgeMention: jest.fn(async () => ({ success: true })),
@@ -60,6 +61,21 @@ describe('activity read routes', () => {
     await request(app).get('/api/activity/decision-queue?limit=0').expect(400);
     await request(app).get('/api/activity/decision-queue?offset=-1').expect(400);
     await request(app).get('/api/activity/decision-queue?limit=51').expect(400);
+  });
+
+  it('GET /api/activity/decision-history forwards pod scope and pagination', async () => {
+    await request(app)
+      .get('/api/activity/decision-history?podId=pod-1&limit=50&offset=50')
+      .expect(200);
+    expect(ActivityService.getDecisionHistory).toHaveBeenCalledWith('user123', {
+      podId: 'pod-1', limit: 50, offset: 50,
+    });
+  });
+
+  it('GET /api/activity/decision-history rejects unsafe pagination', async () => {
+    await request(app).get('/api/activity/decision-history?limit=0').expect(400);
+    await request(app).get('/api/activity/decision-history?offset=-1').expect(400);
+    await request(app).get('/api/activity/decision-history?limit=51').expect(400);
   });
 
   it('POST /api/activity/mark-read with all:true calls markRead', async () => {

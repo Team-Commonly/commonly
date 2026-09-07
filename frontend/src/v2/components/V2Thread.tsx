@@ -90,6 +90,8 @@ interface ThreadDecision extends V2DecisionCardData {
   kind: 'decision';
   podId: string;
   messageId: string;
+  status?: 'pending' | 'ruled';
+  ruling?: V2DecisionRuling | null;
 }
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
@@ -280,16 +282,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const podId = pod?._id;
     if (!podId) {
       setDecisions([]);
+      setSettledDecisionByMessageId(new Map());
       return undefined;
     }
     let active = true;
     const load = async () => {
       try {
-        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue', {
-          params: { podId },
-        });
+        const [pendingData, historyData] = await Promise.all([
+          api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue', {
+            params: { podId },
+          }),
+          api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-history', {
+            params: { podId, limit: 50, offset: 0 },
+          }).catch(() => ({ items: [] })),
+        ]);
         if (!active) return;
-        setDecisions((data?.items || []).filter((item) => (
+        setDecisions((pendingData?.items || []).filter((item) => (
           item.kind === 'decision'
           && item.podId === podId
           && typeof item.messageId === 'string'
@@ -297,9 +305,19 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           && Array.isArray(item.options)
           && item.options.length > 0
         )));
+        const settled = (historyData?.items || []).filter((item) => (
+          item.kind === 'decision'
+          && item.podId === podId
+          && typeof item.messageId === 'string'
+          && item.ruling?.value
+        ));
+        setSettledDecisionByMessageId(new Map(
+          settled.map((item) => [String(item.messageId), item.ruling as V2DecisionRuling]),
+        ));
       } catch {
         // A queue read is additive decoration: preserve a working thread when
         // attention is temporarily unavailable rather than inventing cards.
+        // Keep any durable settled map already rendered during this mount.
         if (active) setDecisions([]);
       }
     };

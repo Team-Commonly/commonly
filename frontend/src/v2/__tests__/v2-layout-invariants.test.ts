@@ -407,6 +407,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(activityPage).toContain('(option, index)');
     expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
     expect(thread).toContain('params: { podId }');
+    expect(thread).toContain("'/api/activity/decision-history'");
+    expect(thread).toContain('settledDecisionByMessageId');
   });
 
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {

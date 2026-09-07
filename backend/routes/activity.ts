@@ -132,6 +132,41 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
   }
 });
 
+// Settled decision cards are durable pod history, not recipient-owned open
+// attention. Keep this read separate so the Activity queue remains an honest
+// count of unresolved work while a room can restore its settled card after a
+// hard reload or leave/return navigation.
+router.get('/decision-history', auth, async (req: Req, res: Res) => {
+  try {
+    const podId = req.query?.podId;
+    const rawLimit = req.query?.limit;
+    const rawOffset = req.query?.offset;
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? undefined : Number(rawOffset);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
+      return res.status(400).json({ error: 'limit must be an integer between 1 and 50' });
+    }
+    if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
+      return res.status(400).json({ error: 'offset must be a non-negative integer' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const options = {
+      ...(podId ? { podId } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+    return res.json(await ActivityService.getDecisionHistory(userId, options));
+  } catch (error) {
+    const e = error as { message?: string };
+    if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+    console.error('Error fetching decision history:', error);
+    return res.status(500).json({ error: 'Failed to fetch decision history' });
+  }
+});
+
 // Human-only by construction: this route uses `auth`, not dual auth. The
 // service repeats the isBot + pod-membership checks so a future middleware
 // change cannot turn an agent token into a decision authority.

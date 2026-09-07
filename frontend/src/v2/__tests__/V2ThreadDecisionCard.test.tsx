@@ -69,6 +69,7 @@ describe('V2Thread decision cards', () => {
           options: [{ label: 'Ship the rebuilt workspace', recommended: true }],
         }] } });
       }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
       return Promise.resolve({ data: {} });
     });
     mockPost.mockResolvedValue({ data: { decision: { ruling: {
@@ -88,6 +89,9 @@ describe('V2Thread decision cards', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: { podId: 'pod-1' },
     }));
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-history', expect.objectContaining({
+      params: { podId: 'pod-1', limit: 50, offset: 0 },
+    }));
     expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     expect(screen.queryByText('Choose one of the following approaches in prose.')).not.toBeInTheDocument();
 
@@ -103,5 +107,60 @@ describe('V2Thread decision cards', () => {
     expect(ruling).toHaveTextContent('Ship the rebuilt workspace');
     expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
     expect(onDecisionSettled).toHaveBeenCalledTimes(1);
+  });
+
+  test('restores a settled card from durable history after leave and return', async () => {
+    const settled = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship the rebuilt workspace' }, { label: 'Keep the legacy chat' }],
+      status: 'ruled', ruling: {
+        value: 'Ship the rebuilt workspace', by: 'Lily', messageId: 'ruling-42', at: '2026-09-05T12:01:00.000Z',
+      },
+    };
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [] } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [settled] } });
+      return Promise.resolve({ data: {} });
+    });
+
+    const first = render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(await screen.findByTestId('decision-ruling-row')).toHaveTextContent('Ship the rebuilt workspace');
+    first.unmount();
+
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(await screen.findByTestId('decision-ruling-row')).toHaveTextContent('Lily');
+    expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
+  });
+
+  test('discovers a decision in the selected pod beyond the global queue page', async () => {
+    const target = {
+      id: 'decision-overflow', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Overflow decision', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship this one' }, { label: 'Keep looking' }],
+    };
+    mockGet.mockImplementation((url, config) => {
+      if (url === '/api/activity/decision-queue') {
+        expect(config).toEqual(expect.objectContaining({ params: { podId: 'pod-1' } }));
+        return Promise.resolve({ data: { items: [target], count: 1, remaining: 0 } });
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
+    expect(screen.getByText('Overflow decision')).toBeInTheDocument();
   });
 });
