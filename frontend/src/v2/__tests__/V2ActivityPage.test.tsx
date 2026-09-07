@@ -397,6 +397,47 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(retry).toHaveFocus());
   });
 
+  test('keeps an unseen older ruling available after a newest ruling arrives', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `decision-visible-${index}`, kind: 'decision', title: `Visible decision ${index}`, detail: 'A ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: String(800 - index), options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    }));
+    const priorOlder = {
+      id: 'decision-prior-older', kind: 'decision', title: 'Prior older decision', detail: 'A ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '749', options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    };
+    const newestArrival = { ...firstPage[0], id: 'decision-arrival', title: 'Newest arrival', messageId: '801' };
+    const unseenOlder = {
+      id: 'decision-unseen-older', kind: 'decision', title: 'Unseen older decision', detail: 'A ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '700', options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    };
+    let historyReads = 0;
+    mockGet.mockImplementation((url: string, config?: any) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        if (historyReads === 1) return Promise.resolve({ data: { items: firstPage, count: 51, remaining: 1, hasMore: true } });
+        if (historyReads === 2) return Promise.resolve({ data: { items: [priorOlder], count: 51, remaining: 0, hasMore: false } });
+        if (historyReads === 3) return Promise.resolve({ data: { items: [newestArrival, ...firstPage.slice(0, 49)], count: 53, remaining: 3, hasMore: true } });
+        expect(config?.params?.offset).toBe(51);
+        return Promise.resolve({ data: { items: [unseenOlder], count: 53, remaining: 0, hasMore: false } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Visible decision 0')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show more settled · 1 remaining' }));
+    expect(await screen.findByText('Prior older decision')).toBeInTheDocument();
+    globalThis.window.dispatchEvent(new Event(ATTENTION_CHANGED));
+    expect(await screen.findByRole('button', { name: 'Show more settled · 1 remaining' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show more settled · 1 remaining' }));
+    expect(await screen.findByText('Unseen older decision')).toBeInTheDocument();
+  });
+
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve({
       data: url === '/api/activity/decision-queue' ? decisionQueue : recap,
