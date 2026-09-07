@@ -157,6 +157,37 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     }
   });
 
+  test('the automatic sentinel stays quiet after a target search stops even without a URL target', async () => {
+    const loadOlder = jest.fn(() => Promise.resolve());
+    const callbacks: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+    const PreviousObserver = global.IntersectionObserver;
+    global.IntersectionObserver = class {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    } as any;
+    try {
+      const detail = makeDetail({
+        hasMore: true,
+        loadOlder,
+        historySearch: { targetId: 'missing', status: 'not-found', attempt: 5, maxAttempts: 5, error: null },
+      });
+      const { container } = renderAt('', detail);
+      await waitFor(() => expect(container.querySelector('.v2-thread__history-status')).toHaveTextContent('keep browsing'));
+      await act(async () => {
+        callbacks.at(-1)?.([{ isIntersecting: true }]);
+      });
+      expect(loadOlder).not.toHaveBeenCalled();
+
+      fireEvent.click(container.querySelector('button.v2-thread__edge-line'));
+      expect(loadOlder).toHaveBeenCalledTimes(1);
+    } finally {
+      global.IntersectionObserver = PreviousObserver;
+    }
+  });
+
   test('legacy ?message= landing uses the same source reveal path', async () => {
     const detail = makeDetail();
     const { container } = renderAt('?message=r2', detail);
