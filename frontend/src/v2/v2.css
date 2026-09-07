@@ -8940,8 +8940,17 @@ body.modern-ui.v2-canvas {
   font-weight: 500;
 }
 
-.v2-root .v2-activity__compose .v2-activity__compose-picker-option:hover,
 .v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer hover rule includes :not(:disabled) and a button
+   element, so it outranks the picker option's class-only hover selector.
+   Match that specificity here to keep the light Signal option treatment in
+   the real hovered and selected+hovered states without changing Send. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled) {
   border-color: transparent;
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
@@ -9532,6 +9541,10 @@ body.modern-ui.v2-canvas {
   .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
   .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
+  /* The picker option rule is more specific than the generic composer
+     button floor above; repeat the menu scope so every option keeps a 44px
+     touch target on phones. */
+  .v2-root .v2-activity__compose .v2-activity__compose-picker-menu .v2-activity__compose-picker-option { min-height: 44px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
