@@ -9,13 +9,15 @@ runtime API.
 
 ## Verified prerequisites
 
-1. **Runtime fidelity.** The daemon work list carries the complete
-   `config.environment` (workspace, sandbox, skills, MCP, model, and effort).
-   Older installations that expose only `config.runtime.model/effort` remain
-   compatible through a non-destructive overlay. The Codex adapter passes model
-   on fresh and resumed runs and passes reasoning effort as
-   `model_reasoning_effort` through `-c`, which is the supported Codex CLI
-   surface.
+1. **Runtime fidelity.** The daemon work list carries the complete supported
+   ADR-008 `config.environment` projection (workspace, sandbox, skills, MCP,
+   model, and effort). Opaque keys and literal `mcp[].env` values are dropped
+   at the server boundary; only adapter-resolved Commonly placeholders remain,
+   while provider secrets stay out-of-band per ADR-008. Older installations
+   that expose only `config.runtime.model/effort` remain compatible through a
+   non-destructive overlay. The Codex adapter passes model on fresh and
+   resumed runs and passes reasoning effort as `model_reasoning_effort` through
+   `-c`, which is the supported Codex CLI surface.
 2. **Existing-agent editing.** The existing registry PATCH route remains the
    source of truth: `PATCH /api/registry/pods/:podId/agents/:name` with
    `config.runtime` and/or a validated ADR-008 `config.environment`. The
@@ -60,5 +62,6 @@ require moving the already-proven seats back.
   applied by the daemon without replacing identity or memory.
 - Exactly one runner owns the migrated seat after handoff; old ownership is
   absent only after the normal-work proof.
-- Paused seats remain paused and all declared workspace, sandbox, skills, MCP,
-  permissions, and tool settings are unchanged.
+- Paused seats remain paused and all supported declarative workspace, sandbox,
+  skills, MCP, permissions, and tool settings are unchanged; provider secrets
+  remain out-of-band and are never returned by `/assigned`.
