@@ -1632,6 +1632,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('overflow-y: auto');
       expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions')).toContain('grid-column: 3');
       expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions:has(textarea)')).toContain('grid-column: 2 / -1');
+      const rowActionError = ruleBody(v2, '.v2-activity__row-action-error');
+      expect(rowActionError).toContain('grid-column: 1 / -1');
+      expect(rowActionError).toContain('color: var(--v2-ink)');
     });
 
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
