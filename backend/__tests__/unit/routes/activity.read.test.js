@@ -90,6 +90,14 @@ describe('activity read routes', () => {
     await request(app).get('/api/activity/decision-history?limit=51').expect(400);
   });
 
+  it('GET /api/activity/decision-history preserves the membership-gate 403', async () => {
+    ActivityService.getDecisionHistory.mockRejectedValueOnce(new Error('Access denied'));
+
+    await request(app)
+      .get('/api/activity/decision-history?podId=private-pod')
+      .expect(403, { error: 'Access denied' });
+  });
+
   it('POST /api/activity/mark-read with all:true calls markRead', async () => {
     await request(app).post('/api/activity/mark-read').send({ all: true }).expect(200);
     expect(ActivityService.markRead).toHaveBeenCalledWith('user123', expect.objectContaining({ all: true }));
