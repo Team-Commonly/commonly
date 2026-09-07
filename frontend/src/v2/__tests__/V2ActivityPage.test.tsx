@@ -343,6 +343,7 @@ describe('V2ActivityPage', () => {
     const more = await screen.findByRole('button', { name: 'Show more · 6 remaining' });
     fireEvent.click(more);
     expect(await screen.findByText('Mention 55')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-activity-item-id="mention-50"]')).toHaveFocus());
     expect(screen.queryByRole('button', { name: 'Show more · 6 remaining' })).not.toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ limit: 50, offset: 50 }),
@@ -492,8 +493,9 @@ describe('V2ActivityPage', () => {
     }));
     sessionStorage.setItem('v2:activity:snapshot:user-a', JSON.stringify({
       window: 'today', podId: 'all', recap, queue: loaded, queueCount: 56, queueRemaining: 0,
-      queueCountsByPod: { 'pod-1': 56 }, composePodId: 'pod-1', composeDraft: 'draft from account A', savedAt: Date.now(),
+      queueCountsByPod: { 'pod-1': 56 }, composePodId: 'pod-1', composeDraft: 'draft from account A', focusedItemId: 'revalidated-55', scrollY: 321, savedAt: Date.now(),
     }));
+    const scrollTo = jest.spyOn(window, 'scrollTo').mockImplementation(() => {});
     let queueReads = 0;
     mockGet.mockImplementation((url: string) => {
       if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
@@ -506,8 +508,11 @@ describe('V2ActivityPage', () => {
     renderPageWithAuth({ _id: 'user-a' });
     expect(await screen.findByText('Revalidated 55')).toBeInTheDocument();
     expect(screen.getByDisplayValue('draft from account A')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-activity-item-id="revalidated-55"]')).toHaveFocus());
+    expect(scrollTo).toHaveBeenCalledWith(0, 321);
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ limit: 50, offset: 50 }),
     }));
+    scrollTo.mockRestore();
   });
 });

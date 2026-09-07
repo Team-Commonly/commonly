@@ -8958,8 +8958,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-sm);
   background: transparent;
   color: var(--v2-accent-text);
-  font-size: var(--v2-fs-label);
-  font-weight: 700;
+  font: 600 12px/16px var(--v2-font);
 }
 
 .v2-activity__queue-more:hover:not(:disabled) {

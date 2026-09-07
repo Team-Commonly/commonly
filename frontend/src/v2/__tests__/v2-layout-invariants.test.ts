@@ -1579,6 +1579,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("' v2-activity__queue-row--settled'");
     });
 
+    test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
+      expect(lastRuleBody(v2, '.v2-activity__header')).toContain('min-height: 52px');
+      expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
+      expect(activityPage).toContain('v2-activity__moved');
+      expect(activityPage).toContain('v2-activity__queue-more');
+    });
+
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
       const activityFocusRules = v2.split('}').filter((block) => {
         const brace = block.indexOf('{');

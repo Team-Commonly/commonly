@@ -155,17 +155,20 @@ const V2ActivityPage: React.FC = () => {
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
   const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+  const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
+  const [queueHydrated, setQueueHydrated] = useState(false);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
   const revalidationExtentRef = useRef(0);
   const revalidationScopeRef = useRef<string | null>(null);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
@@ -188,7 +191,8 @@ const V2ActivityPage: React.FC = () => {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
       setRecap(snapshot.recap || null);
-      setQueue(snapshot.queue || []);
+      queueRef.current = snapshot.queue || [];
+      setQueue(queueRef.current);
       setQueueCount(snapshot.queueCount ?? null);
       setQueueCountsByPod(snapshot.queueCountsByPod || {});
       setQueueRemaining(snapshot.queueRemaining || 0);
@@ -203,7 +207,8 @@ const V2ActivityPage: React.FC = () => {
       setWindow('today');
       setPodId('all');
       setRecap(null);
-      setQueue([]);
+      queueRef.current = [];
+      setQueue(queueRef.current);
       setQueueCount(null);
       setQueueCountsByPod({});
       setQueueRemaining(0);
@@ -215,11 +220,16 @@ const V2ActivityPage: React.FC = () => {
       revalidationScopeRef.current = null;
       setLoading(true);
     }
+    setQueueHydrated(false);
     setSnapshotReady(true);
   }, [accountId, authLoading]);
 
   useEffect(() => {
-    const refresh = () => setReloadKey((value) => value + 1);
+    const refresh = () => {
+      const activeRow = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
+      pendingRefreshFocusRef.current = activeRow?.dataset.activityItemId || null;
+      setReloadKey((value) => value + 1);
+    };
     globalThis.window.addEventListener(ATTENTION_CHANGED, refresh);
     globalThis.window.addEventListener('focus', refresh);
     return () => {
@@ -230,7 +240,7 @@ const V2ActivityPage: React.FC = () => {
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
-    if (!snapshotReady || !snapshot) return;
+    if (!snapshotReady || !snapshot || !queueHydrated) return;
     const restore = () => {
       if (snapshot.scrollY && snapshot.scrollY > 0) globalThis.window.scrollTo(0, snapshot.scrollY);
       if (snapshot.focusedItemId) {
@@ -242,7 +252,7 @@ const V2ActivityPage: React.FC = () => {
     };
     const frame = globalThis.window.requestAnimationFrame(restore);
     return () => globalThis.window.cancelAnimationFrame(frame);
-  }, [accountId, snapshotReady]);
+  }, [accountId, queueHydrated, snapshotReady]);
 
   useEffect(() => {
     if (!snapshotReady) return undefined;
@@ -250,6 +260,8 @@ const V2ActivityPage: React.FC = () => {
     const generation = queueGenerationRef.current + 1;
     queueGenerationRef.current = generation;
     queueScopeRef.current = podId;
+    const previousQueue = queueRef.current;
+    setQueueHydrated(false);
     setLoading((current) => (recap ? current : true));
     setError(null);
     setQueueMoreError(false);
@@ -281,8 +293,8 @@ const V2ActivityPage: React.FC = () => {
         };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueueFailed(queue.length === 0);
-          setQueueMoreError(queue.length > 0);
+          setQueueFailed(previousQueue.length === 0);
+          setQueueMoreError(true);
           setComposeDefault();
           return;
         }
@@ -320,24 +332,37 @@ const V2ActivityPage: React.FC = () => {
         }
         revalidationExtentRef.current = 0;
         revalidationScopeRef.current = null;
+        queueRef.current = queueItems;
         setQueue(queueItems);
         setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
         // The initial destination is an account-level global fact computed by
         // the service before scope/page slicing. Preserve an intentional
         // target across refreshes and fall back to the first available pod.
         setComposeDefault(queueResponse?.data?.composePodId || '');
+        const pendingFocus = pendingRefreshFocusRef.current;
+        pendingRefreshFocusRef.current = null;
+        if (pendingFocus) {
+          globalThis.window.requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(pendingFocus)}"]`)?.focus();
+          });
+        }
       })
       .catch(() => {
         if (active) {
-          if (recap && queue.length > 0) {
+          if (recap || previousQueue.length > 0) {
+            setQueueFailed(false);
             setQueueMoreError(true);
           } else {
             setError(t('activity.loadFailed'));
+            setQueueFailed(true);
           }
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setQueueHydrated(true);
+          setLoading(false);
+        }
       });
     return () => {
       active = false;
@@ -370,7 +395,9 @@ const V2ActivityPage: React.FC = () => {
       }));
       setQueue((current) => {
         const existing = new Set(current.map((item) => `${item.kind}:${item.id}`));
-        return [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+        const nextQueue = [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+        queueRef.current = nextQueue;
+        return nextQueue;
       });
       const loaded = offset + nextItems.length;
       setQueueRemaining(typeof response.data?.remaining === 'number'
@@ -625,7 +652,10 @@ const V2ActivityPage: React.FC = () => {
       </header>
 
       {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
-      {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
+      {!loading && error && <div className="v2-activity__error" role="alert">
+        <span>{error}</span>
+        <button type="button" className="v2-activity__queue-more" onClick={() => { setError(null); setReloadKey((value) => value + 1); }}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+      </div>}
       {!loading && !error && recap && (
         <>
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
@@ -685,7 +715,10 @@ const V2ActivityPage: React.FC = () => {
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
               <p>{t('activity.needsYou.countDescription', { count: queueCount || 0 })}</p>
             </div>
-            {queueFailed ? <p role="status">{t('activity.loadFailed')}</p> : isDayZero ? (
+            {queueFailed ? <>
+              <p role="status">{t('activity.loadFailed')}</p>
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+            </> : isDayZero ? (
               <div className="v2-activity__queue">
                 <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
                   <span className="v2-activity__queue-mark" aria-hidden="true">1</span>
@@ -846,6 +879,9 @@ const V2ActivityPage: React.FC = () => {
                     ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
                     : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
               </button>
+            )}
+            {queue.length === 0 && queueMoreError && !queueFailed && (
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
