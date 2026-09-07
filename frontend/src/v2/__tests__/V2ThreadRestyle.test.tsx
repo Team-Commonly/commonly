@@ -198,6 +198,50 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
   });
 
+  test('expanded settled source replies render one ruled answer instead of a duplicate durable reply', () => {
+    const root = msg(20);
+    const source = msg(21, { thread_root_id: '20', content: 'Choose a path' });
+    const durableRuling = msg(22, { thread_root_id: '20', content: 'Ship it', user: { username: 'Sam' } });
+    const replies = [source, durableRuling];
+    const { container } = renderThread({
+      messages: [root, ...replies],
+      threadView: [
+        { kind: 'message', message: root },
+        { kind: 'card', rootId: '20', replyCount: replies.length, participants: [], lastActivityAt: null, replies },
+      ],
+      settledDecisionByMessageId: new Map([['21', { value: 'Ship it', by: 'Sam', messageId: '22' }]]),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 2 replies' }));
+    const block = container.querySelector('.v2-thread-block--open');
+    expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(1);
+    expect(block.querySelector('[data-testid="decision-ruling-row"]')).toHaveTextContent('Ship it');
+    expect(block.querySelectorAll('#message-22')).toHaveLength(1);
+    Element.prototype.scrollIntoView = jest.fn();
+    expect(landOnMessage('21')).toBe(true);
+    const sourceTarget = block.querySelector('#message-22');
+    expect(sourceTarget).toHaveClass('v2-msg--landed');
+    expect(landOnMessage('22')).toBe(true);
+    expect(block.querySelector('#message-22')).toBe(sourceTarget);
+  });
+
+  test('settled root keeps source and durable links on the same visible ruling', () => {
+    const root = msg(30, { content: 'Choose a path' });
+    const durableRuling = msg(31, { content: 'Ship it', user: { username: 'Sam' } });
+    const { container } = renderThread({
+      messages: [root, durableRuling],
+      threadView: [{ kind: 'message', message: root }],
+      settledDecisionByMessageId: new Map([['30', { value: 'Ship it', by: 'Sam', messageId: '31' }]]),
+    });
+    const ruling = container.querySelector('[data-testid="decision-ruling-row"]');
+    expect(ruling).toBe(container.querySelector('#message-31'));
+    Element.prototype.scrollIntoView = jest.fn();
+    expect(landOnMessage('30')).toBe(true);
+    expect(landOnMessage('31')).toBe(true);
+    expect(container.querySelectorAll('[data-testid="decision-ruling-row"]')).toHaveLength(1);
+    expect(container.querySelector('#message-31')).toBe(ruling);
+  });
+
   test('landing on a reply folded behind the chip reveals the whole thread instead of fetching history', () => {
     const onRevealed = jest.fn();
     const { container, rerender } = renderThread({ revealMessageId: '22', onRevealed });
