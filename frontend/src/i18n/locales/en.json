@@ -561,9 +561,6 @@
       "loadingEarlier": "loading earlier…",
       "loadEarlier": "load earlier",
       "beginning": "beginning of the pod",
-      "retryEarlier": "retry",
-      "notReached": "message not reached yet",
-      "continueBrowsing": "continue browsing older messages",
       "jumpToLatest": "Jump to latest"
     },
     "strip": {
