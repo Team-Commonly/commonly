@@ -112,6 +112,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
+  const featurePage = read('../components/V2FeaturePage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
   const appStyles = read('../../App.css');
@@ -1600,6 +1601,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     });
 
     test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
+      expect(v2App).toContain("'v2-feature--activity'");
+      expect(featurePage).toContain('className?: string;');
+      expect(lastRuleBody(v2, '.v2-feature--activity > .v2-feature__body')).toContain('padding: 6px 0 28px');
+      expect(lastRuleBody(v2, '.v2-feature--activity .v2-feature__legacy')).toContain('max-width: none');
       expect(lastRuleBody(v2, '.v2-activity__header')).toContain('min-height: 52px');
       expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
       expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
@@ -1611,6 +1616,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ height: 52px; min-height: 52px;/);
       expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__queue-more')).toContain('color: var(--v2-accent)');
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__scope-button')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
+      expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('var(--v2-font-mono)');
+      expect(activityPage).not.toContain('v2-activity__footer');
     });
 
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {

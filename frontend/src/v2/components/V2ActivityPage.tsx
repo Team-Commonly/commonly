@@ -178,7 +178,7 @@ const V2ActivityPage: React.FC = () => {
   const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
-  const [expandedMovedIds, setExpandedMovedIds] = useState<Set<string>>(new Set());
+  const [movedVisibleCounts, setMovedVisibleCounts] = useState<Record<string, number>>({});
 
   // A Back snapshot is account-scoped and is only read after AuthContext has
   // established the identity. This prevents one signed-in account from
@@ -795,11 +795,10 @@ const V2ActivityPage: React.FC = () => {
                 </article>
               </div>
             ) : queue.length === 0 ? (
-              <div className="v2-activity__empty">
-                {queueCount === 0 ? <>
-                  <strong>{t('activity.needsYou.emptyTitle')}</strong>
-                  <span>{t('activity.needsYou.emptyDescription')}</span>
-                </> : <strong>{t('activity.needsYou.countLabel', { count: queueCount })}</strong>}
+              <div className="v2-activity__empty v2-activity__empty--plain">
+                <span>{queueCount === 0
+                  ? t('activity.needsYou.emptyTitle')
+                  : t('activity.needsYou.countLabel', { count: queueCount })}</span>
               </div>
             ) : (
               <div className="v2-activity__queue">
@@ -930,17 +929,23 @@ const V2ActivityPage: React.FC = () => {
             </div>
             {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
               {movedGroups.map((group) => {
-                const expanded = expandedMovedIds.has(group.id);
-                const cappedLines = group.lines.slice(0, 20);
-                const visible = expanded ? cappedLines : cappedLines.slice(0, 3);
-                const omittedCount = Math.max(group.lines.length - cappedLines.length, 0);
+                const visibleCount = movedVisibleCounts[group.id] || 3;
+                const visible = group.lines.slice(0, Math.min(visibleCount, group.lines.length));
+                const hasMore = visible.length < group.lines.length;
+                const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
+                const omittedCount = Math.max(group.lines.length - visible.length, 0);
                 return <article key={group.id} className="v2-activity__moved-group">
                   <div className="v2-activity__moved-head"><span>{group.name}</span><span>{group.lines.length}</span></div>
                   <div className="v2-activity__moved-lines">
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
-                  {cappedLines.length > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setExpandedMovedIds((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{expanded ? t('activity.movedForward.showLess') : t('activity.movedForward.more', { count: cappedLines.length - 3 })}</button>}
-                  {expanded && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
+                  {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }))}>{t('activity.movedForward.showLess')}</button>}
+                  {hasMore && <button type="button" className="v2-activity__moved-more" onClick={() => setMovedVisibleCounts((current) => {
+                    const currentCount = current[group.id] || 3;
+                    const increment = currentCount < 20 ? 17 : 20;
+                    return { ...current, [group.id]: Math.min(currentCount + increment, group.lines.length) };
+                  })}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount) })}</button>}
+                  {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}
             </div>}
@@ -948,7 +953,6 @@ const V2ActivityPage: React.FC = () => {
           </div>
         </>
       )}
-      <footer className="v2-activity__footer">{t('activity.footer')}</footer>
     </div>
   );
 };

@@ -11538,3 +11538,40 @@ body.modern-ui.v2-canvas {
   .v2-activity__moved-line { grid-template-columns: minmax(0, 1fr) auto; }
   .v2-activity__moved-line span { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Direction C owns the full pane edge. The generic feature wrapper is padded
+   for legacy pages, which would inset the Activity bar and make its 52px
+   contract impossible to reach. */
+.v2-feature--activity > .v2-feature__body { padding: 6px 0 28px; }
+.v2-feature--activity .v2-feature__legacy { max-width: none; }
+
+/* The compact controls stay beside the title on touch. Only the scope strip
+   scrolls when a workspace has more pods than the bar can show; the title and
+   window selector never disappear with it. */
+.v2-activity__header { min-height: 52px; overflow: hidden; }
+.v2-root button.v2-activity__queue-more {
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent);
+  font: 600 12px/16px var(--v2-font);
+}
+.v2-root button.v2-activity__queue-more:hover:not(:disabled) { background: var(--v2-accent-soft); color: var(--v2-accent); }
+.v2-root button.v2-activity__scope-button { font: 600 11px/16px var(--v2-font-mono); }
+.v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
+.v2-activity__queue-row--mention .v2-activity__queue-actions { grid-column: 3; grid-row: 1; margin-top: 0; }
+.v2-activity__empty--plain span { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
+.v2-rail__utility .v2-lang-switch__trigger { font: 700 11px/16px var(--v2-font-mono); }
+
+@media (max-width: 640px) {
+  .v2-activity__header { overflow: hidden; }
+  .v2-activity__bar-title { flex: 0 0 auto; max-width: 86px; }
+  .v2-activity__subtitle { display: none; }
+  .v2-activity__controls { min-width: 0; flex: 1 1 auto; overflow: hidden; justify-content: flex-end; }
+  .v2-activity__window { width: auto; flex: 0 0 auto; }
+  .v2-activity__scope { min-width: 0; max-width: 100%; flex: 1 1 auto; justify-content: flex-end; overflow-x: auto; }
+  .v2-root button.v2-activity__scope-button { flex: 0 0 auto; font: 600 11px/16px var(--v2-font-mono); }
+  .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
+  .v2-activity__queue-row--mention .v2-activity__queue-actions { grid-column: 2; grid-row: auto; }
+}

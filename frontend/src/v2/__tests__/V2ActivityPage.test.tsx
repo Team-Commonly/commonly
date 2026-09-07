@@ -613,7 +613,9 @@ describe('V2ActivityPage', () => {
     fireEvent.click(more);
     expect(await screen.findByRole('button', { name: 'Show less' })).toBeInTheDocument();
     expect(screen.getByText('5 more updates in Launch pod not shown')).toBeInTheDocument();
-    expect(screen.queryByText('Moved 24')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '5 more' }));
+    expect(await screen.findByText('Moved 23')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {
