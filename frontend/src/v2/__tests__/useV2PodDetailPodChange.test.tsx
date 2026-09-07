@@ -56,4 +56,35 @@ describe('useV2PodDetail room changes', () => {
     });
     await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(['new-message']));
   });
+
+  it('rejects a late send response from the previous room', async () => {
+    const oldPost = deferred();
+    mockApi.get.mockImplementation((url) => {
+      if (url.startsWith('/api/messages/')) return Promise.resolve([]);
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      const id = url.includes('new-room') ? 'new-room' : 'old-room';
+      return Promise.resolve({ _id: id, name: id, members: [] });
+    });
+    mockApi.post.mockReturnValue(oldPost.promise);
+
+    const { result, rerender } = renderHook(({ podId }) => useV2PodDetail(podId), {
+      initialProps: { podId: 'old-room' },
+    });
+    await waitFor(() => expect(result.current.pod?._id).toBe('old-room'));
+
+    let sendPromise;
+    act(() => {
+      sendPromise = result.current.sendMessage('old room send');
+    });
+    act(() => rerender({ podId: 'new-room' }));
+    expect(result.current.messages).toEqual([]);
+
+    await act(async () => {
+      oldPost.resolve({
+        id: 'old-send', pod_id: 'old-room', content: 'old room send', created_at: '2026-09-07T00:00:00Z',
+      });
+      await sendPromise;
+    });
+    expect(result.current.messages).toEqual([]);
+  });
 });
