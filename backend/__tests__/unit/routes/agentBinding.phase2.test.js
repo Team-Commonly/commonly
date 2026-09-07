@@ -171,6 +171,17 @@ describe('daemon work list', () => {
     const seenByA = await assigned(DAEMON_A);
     expect(seenByA.body.agents).toEqual([]);
   });
+
+  it('does not expose an empty environment projection as a declared spec', async () => {
+    const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
+    installation.config.set('environment', { privateKey: 'must-not-travel' });
+    await installation.save();
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0]).not.toHaveProperty('environment');
+  });
 });
 
 describe('runtime-token mint', () => {

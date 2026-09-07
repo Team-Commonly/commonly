@@ -88,7 +88,7 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
         return entry;
       });
   }
-  return projected;
+  return Object.keys(projected).length ? projected : null;
 };
 
 // Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
