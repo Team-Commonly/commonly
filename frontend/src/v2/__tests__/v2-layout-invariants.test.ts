@@ -297,7 +297,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the workspace route uses the small replacement components, never the retired chat or bubble files', () => {
     expect(fs.existsSync(path.join(__dirname, '../components/V2PodChat.tsx'))).toBe(false);
     expect(fs.existsSync(path.join(__dirname, '../components/V2MessageBubble.tsx'))).toBe(false);
-    expect(thread).toContain("import V2ThreadMessages from './V2ThreadMessages'");
+    expect(thread).toContain("from './V2ThreadMessages'");
+    expect(thread).toContain('V2ThreadHistoryStatus');
     expect(threadMessages).toContain("import V2MessageRow from './V2MessageRow'");
     expect(thread).toContain("import V2Composer");
     expect(messageRow).toContain("import V2DecisionCard");
@@ -905,6 +906,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(jump).toContain('border: 1px solid #dde0e6');
     expect(jump).toContain('font: 600 13px/26px var(--v2-font)');
     expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
+  });
+
+  test('history recovery is positioned against the chat viewport, outside the scroller', () => {
+    const transcript = ruleBody(v2, '.v2-thread__transcript');
+    expect(transcript).toContain('position: relative');
+    expect(transcript).toContain('flex: 1');
+    expect(transcript).toContain('min-height: 0');
+    expect(thread).toContain('<div className="v2-thread__transcript">');
+    expect(thread).toContain('<V2ThreadHistoryStatus');
+
+    const status = ruleBody(v2, '.v2-thread__history-status--viewport');
+    expect(status).toContain('position: absolute');
+    expect(status).toContain('top: 8px');
+    expect(status).toContain('left: 24px');
+    expect(status).toContain('right: 24px');
+    expect(status).toContain('pointer-events: none');
+    expect(status).not.toContain('box-shadow');
   });
 
   test('the pod header is 50px: sans 15/600 name, inline description, mono meta — the working count moved to the inspector', () => {
