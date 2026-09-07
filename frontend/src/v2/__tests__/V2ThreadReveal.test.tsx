@@ -84,6 +84,18 @@ const setScrollMetrics = (element, scrollHeight, scrollTop) => {
   Object.defineProperty(element, 'scrollHeight', { configurable: true, value: scrollHeight });
   Object.defineProperty(element, 'scrollTop', { configurable: true, writable: true, value: scrollTop });
 };
+const setRowContentTop = (container, messageId, contentTop) => {
+  const row = container.querySelector(`#message-${messageId}`);
+  if (!row) throw new Error(`row ${messageId} not mounted`);
+  Object.defineProperty(container, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ top: 0 }),
+  });
+  Object.defineProperty(row, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ top: contentTop - container.scrollTop }),
+  });
+};
 
 describe('landing on a message decides reveal vs fetch (producer)', () => {
   test('a target folded inside a collapsed thread is revealed — the thread opens and NO history is fetched', async () => {
@@ -252,6 +264,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
     setScrollMetrics(scroller, 1000, 400);
+    setRowContentTop(scroller, 'm1', 1000);
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
     await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
@@ -260,12 +273,14 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     // pending. It must not move the reader or consume the prepend anchor. The
     // user also scrolls while waiting; that newer position must be retained.
     setScrollMetrics(scroller, 1100, 300);
+    setRowContentTop(scroller, 'm1', 1000);
     view.rerender(threadNode('', { ...detail, messages: [...initial, arrival] }));
     expect(scroller.scrollTop).toBe(300);
 
     // The eventual prepend compensates only for its own 200px growth; the
     // 100px append was already folded into the anchor baseline.
     setScrollMetrics(scroller, 1300, 300);
+    setRowContentTop(scroller, 'm1', 1200);
     view.rerender(threadNode('', { ...detail, messages: [older, ...initial, arrival] }));
     expect(scroller.scrollTop).toBe(500);
     await act(async () => { resolveLoadOlder('prepended'); });
@@ -288,6 +303,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
     setScrollMetrics(scroller, 1000, 400);
+    setRowContentTop(scroller, 'm1', 1000);
 
     // Two clicks can arrive before React commits the loading status. The
     // second must not replace the first request's anchor.
@@ -300,8 +316,39 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     // post-await DOM fallback would clear the anchor too early here.
     await act(async () => { resolveLoadOlder('prepended'); });
     setScrollMetrics(scroller, 1200, 400);
+    setRowContentTop(scroller, 'm1', 1200);
     view.rerender(threadNode('', { ...detail, messages: [older, ...initial] }));
     expect(scroller.scrollTop).toBe(600);
+  });
+
+  test('same-commit prepend plus append compensates only the existing row movement', async () => {
+    let resolveLoadOlder;
+    const loadOlder = jest.fn(() => new Promise((resolve) => { resolveLoadOlder = resolve; }));
+    const initial = threadMessages();
+    const arrival = {
+      id: 'arrival', pod_id: 'p1', user_id: 'u4', content: 'peer arrival', message_type: 'text',
+      created_at: '2026-08-22T15:00:00Z', user: { username: 'peer' },
+    };
+    const older = {
+      id: 'older', pod_id: 'p1', user_id: 'u5', content: 'older page', message_type: 'text',
+      created_at: '2026-08-22T12:00:00Z', user: { username: 'archivist' },
+    };
+    const detail = makeDetail({ messages: initial, loadOlder });
+    const view = renderAt('', detail);
+    const scroller = view.container.querySelector('.v2-chat__messages');
+    setScrollMetrics(scroller, 1000, 400);
+    setRowContentTop(scroller, 'm1', 1000);
+
+    fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+
+    // Both changes land in one React commit. Total scrollHeight grows by 350,
+    // but the existing m1 row moves by only the 200px prepend growth.
+    setScrollMetrics(scroller, 1350, 400);
+    setRowContentTop(scroller, 'm1', 1200);
+    view.rerender(threadNode('', { ...detail, messages: [older, ...initial, arrival] }));
+    expect(scroller.scrollTop).toBe(600);
+    await act(async () => { resolveLoadOlder('prepended'); });
   });
 
   test.each(['empty', 'failed'])('%s older-page result clears the anchor before a later prepend', async (outcome) => {
