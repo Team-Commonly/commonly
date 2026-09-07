@@ -100,8 +100,11 @@ const violations = (): Violation[] => {
   return found;
 };
 
+// Group headers carry no counts: a hand-maintained number that nothing
+// asserts is a claim that goes stale on the first burn-down step. The list
+// length is the count.
 const ALLOWLIST: string[] = [
-  // PR2a (24)
+  // PR2a
   '.v2-avatar', // 11.0px — no-mono-family
   '.v2-avatar--md', // 11.0px — no-mono-family
   '.v2-avatar--sm', // 10.0px — no-mono-family
@@ -125,8 +128,7 @@ const ALLOWLIST: string[] = [
   '.v2-prcard__state', // 11.0px — no-mono-family
   '.v2-root .v2-chat__new-pod-error button', // 11.0px — no-mono-family
   '.v2-root button.v2-chat__new-pod-copy', // 11.0px — no-mono-family
-  '.v2-root button.v2-composer__send', // 11.0px — no-mono-family
-  // PR3 (20)
+  // PR3
   '.v2-activity__compose h2.v2-activity__compose-label', // 11.0px — no-mono-family
   '.v2-activity__count', // 11.0px — no-mono-family
   '.v2-activity__count-chip, .v2-activity__status', // 11.0px — no-mono-family
@@ -147,7 +149,7 @@ const ALLOWLIST: string[] = [
   '.v2-rail__utility .v2-lang-switch__trigger', // 11.0px — no-mono-family
   '.v2-root button.v2-inspector__tab', // 11.5px — no-mono-family
   '.v2-workspace-inspector__avatar.v2-avatar', // 10.0px — no-mono-family
-  // PR4 (12)
+  // PR4
   '.v2-billing__badge', // 11.0px — no-mono-family
   '.v2-byo__mode-kicker', // 10.0px — no-mono-family
   '.v2-byo__mode-meta', // 11.0px — no-mono-family
@@ -160,7 +162,7 @@ const ALLOWLIST: string[] = [
   '.v2-runtime-pill__mono', // 10.0px — no-mono-family
   '.v2-runtime-row__byo', // 9.0px — no-mono-family
   '.v2-runtime-row__label', // 10.5px — no-mono-family
-  // unassigned (31)
+  // unassigned
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
   '.v2-board__card-id', // 10.5px — no-mono-family
