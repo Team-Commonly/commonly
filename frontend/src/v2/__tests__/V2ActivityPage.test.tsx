@@ -463,6 +463,8 @@ describe('V2ActivityPage', () => {
       ? Promise.reject(new Error('queue down')) : Promise.resolve({ data: recap }));
     renderPage();
     expect(await screen.findByRole('status')).toBeInTheDocument();
+    expect(screen.getByText('Count unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('the same 0 as the rail and the inspector')).not.toBeInTheDocument();
     expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
     expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
   });
@@ -561,7 +563,7 @@ describe('V2ActivityPage', () => {
     const more = await screen.findByRole('button', { name: '17 more' });
     fireEvent.click(more);
     expect(await screen.findByRole('button', { name: 'Show less' })).toBeInTheDocument();
-    expect(screen.getByText('5 more')).toBeInTheDocument();
+    expect(screen.getByText('5 more updates in Launch pod not shown')).toBeInTheDocument();
     expect(screen.queryByText('Moved 24')).not.toBeInTheDocument();
   });
 

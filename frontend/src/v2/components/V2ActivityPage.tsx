@@ -733,7 +733,9 @@ const V2ActivityPage: React.FC = () => {
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              <p>{t('activity.needsYou.countDescription', { count: queueCount || 0 })}</p>
+              <p>{queueCount === null
+                ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
+                : t('activity.needsYou.countDescription', { count: queueCount })}</p>
             </div>
             {queueFailed ? <>
               <p role="status">{t('activity.loadFailed')}</p>
@@ -924,7 +926,7 @@ const V2ActivityPage: React.FC = () => {
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
                   {cappedLines.length > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setExpandedMovedIds((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{expanded ? t('activity.movedForward.showLess') : t('activity.movedForward.more', { count: cappedLines.length - 3 })}</button>}
-                  {expanded && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.more', { count: omittedCount })}</span>}
+                  {expanded && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}
             </div>}
