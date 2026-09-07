@@ -245,11 +245,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-lang-switch__caret {
-  font-size: 9px;
-  color: var(--v2-text-muted);
-}
-
 .v2-lang-switch__menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -604,12 +599,11 @@ body.modern-ui.v2-canvas {
   background: var(--v2-border);
 }
 
-.v2-rail__utility .v2-lang-switch__trigger {
+.v2-root .v2-rail__utility button.v2-lang-switch__trigger {
   min-height: 24px;
   padding: 2px 6px;
   gap: 3px;
-  font-size: 11px;
-  font-weight: 700;
+  font: 700 11px/16px var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   border-radius: var(--v2-radius-sm);
 }
@@ -1781,6 +1775,21 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+/* The transcript is the chat viewport's positioning context. History
+   recovery belongs to this viewport rather than the top of the scrollable
+   message list, otherwise a failure after a deep landing is stranded above
+   the reader's current scroll position. */
+.v2-thread__transcript {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.v2-thread__transcript > .v2-chat__messages {
+  min-height: 0;
 }
 
 /* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
@@ -3239,7 +3248,7 @@ body.modern-ui.v2-canvas {
   border-radius: 6px;
   background: transparent;
   border: none;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--v2-text-secondary);
@@ -3272,7 +3281,8 @@ body.modern-ui.v2-canvas {
   border-radius: 999px;
   background: var(--v2-border-soft);
   color: var(--v2-text-tertiary);
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -3293,7 +3303,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__now-eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--v2-text-tertiary);
   font-family: var(--v2-font-mono);
@@ -3436,7 +3446,8 @@ body.modern-ui.v2-canvas {
    --c-fg-tertiary uppercase pattern in the design-system preview cards
    (see frontend/design-system/preview/components-inspector.html .eyebrow). */
 .v2-inspector__section-title {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   letter-spacing: 0.08em;
@@ -3606,6 +3617,7 @@ body.modern-ui.v2-canvas {
 
 .v2-inspector__artifact-sub {
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3673,7 +3685,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__member-role {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3707,6 +3719,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -3736,7 +3749,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__section-subtitle {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3775,7 +3788,7 @@ body.modern-ui.v2-canvas {
 .v2-inspector__task-assignee {
   font-size: 11px;
   color: var(--v2-text-tertiary);
-  font-family: 'SF Mono', Menlo, monospace;
+  font-family: var(--v2-font-mono);
 }
 
 /* ---------- Inspector: Detail sub-page ---------- */
@@ -3870,7 +3883,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__detail-kicker {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   text-transform: uppercase;
@@ -3897,6 +3911,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
   color: var(--v2-text-secondary);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -5538,7 +5553,7 @@ body.modern-ui.v2-canvas {
     min-width: 0;
   }
 
-  .v2-shell {
+  .v2-shell:not(.v2-shell--feature-wide) {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
@@ -8386,7 +8401,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-agent {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--v2-text-secondary);
 }
@@ -8397,7 +8412,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-waiting {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--v2-text-muted);
   font-style: italic;
 }
@@ -8768,6 +8783,7 @@ body.modern-ui.v2-canvas {
   margin: 0;
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-label);
+  font-family: var(--v2-font-mono);
   line-height: var(--v2-lh-label);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -8783,9 +8799,16 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
-.v2-activity__compose-pod select {
+.v2-activity__compose-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.v2-root .v2-activity__compose-picker-button {
   height: 26px;
+  min-height: 26px;
   max-width: 220px;
+  overflow: hidden;
   padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
@@ -8794,6 +8817,42 @@ body.modern-ui.v2-canvas {
   font: inherit;
   font-size: var(--v2-fs-meta);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-activity__compose-picker-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  max-width: min(280px, 70vw);
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-md);
+}
+
+.v2-root .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose-picker-option:hover,
+.v2-root .v2-activity__compose-picker-option.is-active {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
 }
 
 .v2-root .v2-activity__compose textarea {
@@ -8811,15 +8870,15 @@ body.modern-ui.v2-canvas {
 }
 
 /* Halo focus (TASK-122): the card carries the halo (focus-within above), so
-   the textarea itself shows nothing; <select> is outside the global
-   focus-visible list and carries its own ring. */
+   the textarea itself shows nothing; the destination picker carries its own
+   ring. */
 .v2-root .v2-activity__compose textarea:focus-visible {
   outline: none;
   box-shadow: none;
   border-color: transparent;
 }
 
-.v2-activity__compose-pod select:focus-visible {
+.v2-activity__compose-picker-button:focus-visible {
   outline: none;
   box-shadow: var(--v2-focus-ring);
   border-color: var(--v2-accent);
@@ -8871,6 +8930,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink);
   color: var(--v2-on-ink);
   font-size: var(--v2-fs-label);
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -8879,6 +8939,7 @@ body.modern-ui.v2-canvas {
   margin-bottom: 5px;
   color: var(--v2-text-muted);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -8904,6 +8965,27 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue {
   display: grid;
   gap: 2px;
+}
+
+.v2-activity__queue-more {
+  justify-self: start;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 600 12px/16px var(--v2-font);
+}
+
+.v2-activity__queue-more:hover:not(:disabled) {
+  background: var(--v2-accent-soft);
+}
+
+.v2-activity__queue-more:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .v2-activity__board-row {
@@ -9130,7 +9212,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option {
   border: 1px solid var(--v2-border);
-  border-radius: 999px;
+  border-radius: var(--v2-radius-sm);
   background: var(--v2-surface);
   color: var(--v2-text-primary);
 }
@@ -9142,9 +9224,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
-  border-style: dashed;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
 }
 
 .v2-activity__option-choice {
@@ -9235,6 +9317,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -9351,7 +9434,8 @@ body.modern-ui.v2-canvas {
   .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
   .v2-activity__compose-pod { width: 100%; }
   .v2-activity__compose-pod > span { white-space: nowrap; }
-  .v2-activity__compose-pod select { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }
@@ -9870,7 +9954,7 @@ body.modern-ui.v2-canvas {
   border: 0;
   border-radius: 4px;
   box-shadow: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .v2-workspace-inspector__agent-copy {
@@ -10321,7 +10405,7 @@ body.modern-ui.v2-canvas {
     border-radius: 999px;
     background: var(--v2-accent);
     color: #fff;
-    font: 700 10px/1 var(--v2-font-mono);
+    font: 700 11px/1 var(--v2-font-mono);
   }
 }
 
@@ -11099,6 +11183,47 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__edge-line { cursor: pointer; }
 .v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
 
+.v2-thread__history-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0 10px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+}
+
+.v2-thread__history-status--error { color: var(--v2-text-secondary); }
+
+.v2-thread__history-status--viewport {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  right: 24px;
+  z-index: 4;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  pointer-events: none;
+}
+
+.v2-thread__history-status--viewport .v2-thread__history-retry {
+  pointer-events: auto;
+}
+
+.v2-root button.v2-thread__history-retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* The wrap is the scroller's last child and STICKS to its bottom edge: a
    0-height wrap with an absolute pill resolved `bottom: 12px` against a box
    at the end of the transcript, ~1100px below the viewport when the pill
@@ -11372,4 +11497,92 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-thread button.v2-msg__action { width: 24px; height: 24px; }
   .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
   .v2-thread .v2-msg__gutter-time { display: none; }
+}
+
+/* Direction C Activity board: a 52px bar over a readable 760px column.
+   The composer remains under the explicit destination ruling. */
+.v2-activity { position: relative; width: 100%; max-width: none; padding: 0 0 28px; }
+.v2-activity__header { min-height: 52px; align-items: center; padding: 0 16px; gap: 16px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-activity__bar-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.v2-activity__title { font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: 0; white-space: nowrap; }
+.v2-activity__subtitle { margin: 0; font-size: 13px; line-height: 18px; white-space: nowrap; }
+.v2-activity__controls { position: absolute; top: 11px; right: 16px; gap: 8px; z-index: 2; }
+.v2-activity__scope { display: flex; flex-wrap: nowrap; gap: 2px; position: relative; }
+.v2-activity__scope-menu { position: absolute; top: calc(100% + 4px); right: 0; display: grid; gap: 2px; width: min(300px, 85vw); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-root button.v2-activity__scope-button { min-height: 30px; padding: 0 9px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-secondary); font: 600 12px/16px var(--v2-font); white-space: nowrap; }
+.v2-root button.v2-activity__scope-button--active { background: var(--v2-ink); border-color: var(--v2-ink); color: var(--v2-on-ink); }
+.v2-root button.v2-activity__scope-button--menu { max-width: none; white-space: normal; text-align: left; }
+.v2-root button.v2-activity__window-button { font: 600 11px/16px var(--v2-font-mono); }
+.v2-activity__sections { width: min(100%, 760px); margin: 28px auto 0; gap: 34px; }
+.v2-activity__section-heading { margin-bottom: 10px; }
+.v2-activity__section-heading > p { font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__queue { gap: 10px; }
+.v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 12px; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); }
+.v2-activity__queue-row:hover { background: var(--v2-surface); }
+.v2-activity__queue-row--decision { border-color: var(--v2-accent); box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2-activity__queue-row--approval { border-color: var(--v2-border); box-shadow: none; }
+.v2-activity__queue-kind { font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__queue-topline strong { font-size: 14px; line-height: 20px; }
+.v2-activity__queue-copy p { font-size: 14px; line-height: 20px; }
+.v2-activity__queue-more { min-height: 36px; border: 1px solid var(--v2-accent); color: var(--v2-accent); font: 600 12px/16px var(--v2-font); }
+.v2-activity__empty--plain { min-height: 0; padding: 10px 0; border: 0; align-items: flex-start; text-align: left; }
+.v2-activity__moved-list { display: grid; gap: 10px; }
+.v2-activity__moved-group { border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; background: var(--v2-surface); }
+.v2-activity__moved-head { display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--v2-border-soft); color: var(--v2-text-secondary); font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__moved-lines { display: grid; }
+.v2-activity__moved-line { display: grid; grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px; font-size: 13px; line-height: 18px; }
+.v2-activity__moved-line + .v2-activity__moved-line { border-top: 1px solid var(--v2-border-soft); }
+.v2-activity__moved-line strong { font-weight: 600; color: var(--v2-text-primary); }
+.v2-activity__moved-line span { min-width: 0; overflow-wrap: anywhere; }
+.v2-activity__moved-line time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); white-space: nowrap; }
+.v2-activity__moved-cap-note { display: block; padding: 6px 12px 8px; color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+.v2-root button.v2-activity__moved-more { width: 100%; padding: 8px 12px; border: 0; border-top: 1px solid var(--v2-border-soft); background: transparent; color: var(--v2-accent-text); text-align: left; font: 600 12px/16px var(--v2-font); }
+@media (max-width: 640px) {
+  .v2-activity__header { height: 52px; min-height: 52px; align-items: center; flex-direction: row; flex-wrap: nowrap; padding: 0 12px; gap: 8px; }
+  .v2-activity__sections { margin-top: 20px; padding: 0 12px; }
+  .v2-activity__moved-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .v2-activity__moved-line span { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Direction C owns the full pane edge. The generic feature wrapper is padded
+   for legacy pages, which would inset the Activity bar and make its 52px
+   contract impossible to reach. */
+.v2-feature--activity > .v2-feature__body { padding: 0 0 28px; }
+.v2-feature--activity .v2-feature__legacy { max-width: none; }
+
+.v2-activity__header { height: 52px; min-height: 52px; overflow: visible; }
+.v2-activity__compose { width: min(calc(100% - 24px), 760px); margin: 20px auto 0; }
+.v2-root button.v2-activity__queue-more {
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent);
+  font: 600 12px/16px var(--v2-font);
+}
+.v2-root button.v2-activity__queue-more:hover:not(:disabled) { background: var(--v2-accent-soft); color: var(--v2-accent); }
+.v2-root button.v2-activity__scope-button { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font: 600 11px/16px var(--v2-font-mono); }
+.v2-root .v2-activity__scope-menu button.v2-activity__scope-button { width: 100%; max-width: none; }
+.v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
+.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3; grid-row: 1; max-width: 320px; justify-content: flex-end; flex-wrap: wrap; margin-top: 0; }
+.v2-activity__queue-row .v2-activity__option-choice { flex: 0 1 auto; max-width: 150px; }
+.v2-activity__queue-row .v2-activity__option { white-space: normal; }
+/* Opening a reply or a free-text ruling gives that editor a full content row. */
+.v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
+.v2-activity__empty--plain span { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
+
+/* Keep filters on a separate row when the pane cannot fit them beside the
+   title. Both rows stay in normal reading order, without a clipped title. */
+@media (max-width: 1100px) {
+  .v2-activity__controls { position: relative; top: auto; right: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
+  .v2-activity__bar-title { min-width: 0; }
+  .v2-activity__subtitle { overflow: hidden; text-overflow: ellipsis; }
+  .v2-activity__window { width: auto; flex: 0 0 auto; }
+  .v2-activity__scope { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
+  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 2; grid-row: auto; max-width: none; justify-content: flex-start; }
+  .v2-activity__queue-row .v2-activity__option-choice { max-width: 100%; }
 }

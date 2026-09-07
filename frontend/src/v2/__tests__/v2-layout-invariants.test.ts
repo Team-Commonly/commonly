@@ -112,6 +112,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
+  const featurePage = read('../components/V2FeaturePage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
   const appStyles = read('../../App.css');
@@ -297,7 +298,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the workspace route uses the small replacement components, never the retired chat or bubble files', () => {
     expect(fs.existsSync(path.join(__dirname, '../components/V2PodChat.tsx'))).toBe(false);
     expect(fs.existsSync(path.join(__dirname, '../components/V2MessageBubble.tsx'))).toBe(false);
-    expect(thread).toContain("import V2ThreadMessages from './V2ThreadMessages'");
+    expect(thread).toContain("from './V2ThreadMessages'");
+    expect(thread).toContain('V2ThreadHistoryStatus');
     expect(threadMessages).toContain("import V2MessageRow from './V2MessageRow'");
     expect(thread).toContain("import V2Composer");
     expect(messageRow).toContain("import V2DecisionCard");
@@ -373,6 +375,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
 
+  test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
+    const more = ruleBody(v2, '.v2-activity__queue-more');
+    expect(more).toContain('min-height: 36px');
+    expect(more).toContain('border: 1px solid var(--v2-accent)');
+    expect(more).toContain('color: var(--v2-accent-text)');
+    expect(v2).toContain('.v2-activity__queue-more:hover:not(:disabled)');
+    expect(v2).toContain('.v2-activity__queue-more:disabled');
+  });
+
   test('DecisionRequest options are full-width content with one recommended primary choice', () => {
     // The first build left options inside the narrow actions column. Generic
     // queue-button CSS then made every non-recommended option blue while the
@@ -384,11 +395,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
     expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
     expect(neutralOption).toContain('background: var(--v2-surface)');
-    expect(neutralOption).toContain('border-radius: 999px');
+    expect(neutralOption).toContain('border-radius: var(--v2-radius-sm)');
 
     const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
     expect(recommendedOption).toContain('background: var(--v2-ink)');
     expect(recommendedOption).toContain('color: var(--v2-on-ink)');
+    const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
+    expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
   });
 
@@ -403,6 +416,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const start = v2.indexOf('@media (max-width: 1023px)');
     expect(start).toBeGreaterThan(-1);
     const block = v2.slice(start, v2.indexOf('@media', start + 10));
+    expect(block).toContain('.v2-shell:not(.v2-shell--feature-wide)');
+    expect(block).not.toMatch(/\.v2-shell\s*\{/);
     expect(block).toContain('.v2-pane--inspector');
     expect(block).toContain('position: fixed');
     expect(block).not.toContain('display: none');
@@ -905,6 +920,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(jump).toContain('border: 1px solid #dde0e6');
     expect(jump).toContain('font: 600 13px/26px var(--v2-font)');
     expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
+  });
+
+  test('history recovery is positioned against the chat viewport, outside the scroller', () => {
+    const transcript = ruleBody(v2, '.v2-thread__transcript');
+    expect(transcript).toContain('position: relative');
+    expect(transcript).toContain('flex: 1');
+    expect(transcript).toContain('min-height: 0');
+    expect(thread).toContain('<div className="v2-thread__transcript">');
+    expect(thread).toContain('<V2ThreadHistoryStatus');
+
+    const status = ruleBody(v2, '.v2-thread__history-status--viewport');
+    expect(status).toContain('position: absolute');
+    expect(status).toContain('top: 8px');
+    expect(status).toContain('left: 24px');
+    expect(status).toContain('right: 24px');
+    expect(status).toContain('pointer-events: none');
+    expect(status).not.toContain('box-shadow');
   });
 
   test('the pod header is 50px: sans 15/600 name, inline description, mono meta — the working count moved to the inspector', () => {
@@ -1570,6 +1602,38 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("' v2-activity__queue-row--settled'");
     });
 
+    test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
+      expect(v2App).toContain("'v2-feature--activity'");
+      expect(featurePage).toContain('className?: string;');
+      expect(lastRuleBody(v2, '.v2-feature--activity > .v2-feature__body')).toContain('padding: 0 0 28px');
+      expect(lastRuleBody(v2, '.v2-feature--activity .v2-feature__legacy')).toContain('max-width: none');
+      expect(lastRuleBody(v2, '.v2-activity__header')).toContain('min-height: 52px');
+      expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
+      expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
+      expect(activityPage).toContain('v2-activity__moved');
+      expect(activityPage).toContain('v2-activity__queue-more');
+      expect(activityPage).toContain('v2-activity__moved-cap-note');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('border-radius: var(--v2-radius-sm)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('var(--v2-accent-text)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
+      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ height: 52px; min-height: 52px;/);
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__queue-more')).toContain('color: var(--v2-accent)');
+      expect(lastRuleBody(v2, '.v2-root button.v2-activity__scope-button')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
+      expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root .v2-rail__utility button.v2-lang-switch__trigger')).toContain('font: 700 11px/16px var(--v2-font-mono)');
+      expect(activityPage).not.toContain('v2-activity__footer');
+      expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
+      expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: relative;[^}]*top: auto;[^}]*right: auto;[^}]*flex-wrap: wrap;/);
+      expect(lastRuleBody(v2, '.v2-activity__controls')).toContain('z-index: 2');
+      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('position: absolute');
+      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('max-height: 240px');
+      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('overflow-y: auto');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions')).toContain('grid-column: 3');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions:has(textarea)')).toContain('grid-column: 2 / -1');
+    });
+
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
       const activityFocusRules = v2.split('}').filter((block) => {
         const brace = block.indexOf('{');
@@ -1580,8 +1644,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityFocusRules.length).toBeGreaterThan(0);
       for (const block of activityFocusRules) expect(block.slice(block.indexOf('{'))).not.toContain('outline: 2px');
       expect(ruleBody(v2, '.v2-root button:focus-visible,\n.v2-root input:focus-visible,\n.v2-root textarea:focus-visible,\n.v2-root a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
-      // <select> is outside the global halo's element list, so the pod picker carries its own.
-      expect(ruleBody(v2, '.v2-activity__compose-pod select:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+      // The custom pod picker is outside the global halo's element list, so it carries its own.
+      expect(ruleBody(v2, '.v2-activity__compose-picker-button:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     });
 
     test('ink primary: filled Activity buttons are ink, and blue stays off them', () => {

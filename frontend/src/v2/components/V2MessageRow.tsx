@@ -334,6 +334,11 @@ export const landOnMessage = (id: string | number | null | undefined): boolean =
   const el = typeof document !== 'undefined' ? document.getElementById(`message-${id}`) : null;
   if (!el) return false;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // The landed row is the keyboard target as well as the visual target. Keep
+  // focus from changing the scroll position a second time after smooth scroll.
+  if (typeof (el as HTMLElement).focus === 'function') {
+    (el as HTMLElement).focus({ preventScroll: true });
+  }
   el.classList.add('v2-msg--landed');
   window.setTimeout(() => el.classList.remove('v2-msg--landed'), 2000);
   return true;
@@ -399,7 +404,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
 
   if (decision) {
     return (
-      <div className="v2-message-row v2-message-row--decision">
+      <div id={`message-${message.id}`} tabIndex={-1} className="v2-message-row v2-message-row--decision">
         <V2DecisionCard
           decision={{ ...decision, actorName: decision.actorName || author }}
           onRuled={onDecisionRuled}
@@ -540,6 +545,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   return (
     <div
       id={`message-${message.id}`}
+      tabIndex={-1}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
       className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
       onClick={onBubbleTap}

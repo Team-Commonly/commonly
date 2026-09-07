@@ -106,10 +106,29 @@ router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
 router.get('/decision-queue', auth, async (req: Req, res: Res) => {
   try {
     const userId = getAuthenticatedUserId(req);
-    res.json(await ActivityService.getDecisionQueue(userId));
+    const podId = req.query?.podId;
+    const rawLimit = req.query?.limit;
+    const rawOffset = req.query?.offset;
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? undefined : Number(rawOffset);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
+      return res.status(400).json({ error: 'limit must be an integer between 1 and 50' });
+    }
+    if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
+      return res.status(400).json({ error: 'offset must be a non-negative integer' });
+    }
+    const options = {
+      ...(podId ? { podId } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+    return res.json(await ActivityService.getDecisionQueue(userId, options));
   } catch (error) {
     console.error('Error fetching decision queue:', error);
-    res.status(500).json({ error: 'Failed to fetch decision queue' });
+    return res.status(500).json({ error: 'Failed to fetch decision queue' });
   }
 });
 

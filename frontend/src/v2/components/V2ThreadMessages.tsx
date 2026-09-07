@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { V2Message } from '../hooks/useV2PodDetail';
+import { HistorySearchState, V2Message } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
@@ -61,6 +61,50 @@ interface V2ThreadMessagesProps {
  * composer state. It owns only read order: flat rows, reply rails, and the
  * one durable decision card that can replace a request message in either.
  */
+export const V2ThreadHistoryStatus: React.FC<{
+  historySearch: HistorySearchState;
+  onRetryHistorySearch?: () => void;
+  viewport?: boolean;
+}> = ({ historySearch, onRetryHistorySearch, viewport = false }) => {
+  const { t } = useTranslation();
+  const className = `v2-thread__history-status${viewport ? ' v2-thread__history-status--viewport' : ''}${historySearch.status === 'failed' ? ' v2-thread__history-status--error' : ''}`;
+  if (historySearch.status === 'searching') {
+    return (
+      <div className={className} role="status" aria-live="polite">
+        {t('podChat.history.searchingOlder', {
+          attempt: historySearch.attempt,
+          max: historySearch.maxAttempts,
+        })}
+      </div>
+    );
+  }
+  if (historySearch.status === 'failed') {
+    return (
+      <div className={className} role="alert">
+        <span>{t('podChat.history.searchOlderFailed')}</span>
+        {onRetryHistorySearch && (
+          <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+            {t('podChat.history.retrySearch')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (historySearch.status === 'not-found') {
+    return (
+      <div className={className} role="status" aria-live="polite">
+        {t('podChat.history.searchOlderBound', { attempt: historySearch.attempt })}
+        {onRetryHistorySearch && (
+          <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+            {t('podChat.history.retrySearch')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messages,
   threadView,

@@ -32,9 +32,22 @@ describe('uncapped attention counts — persisted query and membership', () => {
     const queue = await service.getOpenQueue(recipient);
     expect(queue.count).toBe(95);
     expect(queue.countsByPod).toEqual({ [busy.id]: 94, [omitted.id]: 1 });
-    expect(queue.items).toHaveLength(12);
-    expect(queue.items.filter((item) => item.kind === 'mention')).toHaveLength(8);
+    expect(queue.items).toHaveLength(50);
+    expect(queue.items.filter((item) => item.kind === 'mention')).toHaveLength(46);
     expect(queue.items.some((item) => item.podId === omitted.id)).toBe(false);
+    expect(queue.remaining).toBe(45);
+    expect(queue.hasMore).toBe(true);
+
+    const nextPage = await service.getOpenQueue(recipient, { offset: 50 });
+    expect(nextPage.items).toHaveLength(45);
+    expect(nextPage.remaining).toBe(0);
+    expect(nextPage.hasMore).toBe(false);
+
+    const scoped = await service.getOpenQueue(recipient, { podId: omitted.id.toString() });
+    expect(scoped.count).toBe(1);
+    expect(scoped.items).toHaveLength(1);
+    expect(scoped.items[0].podId).toBe(omitted.id.toString());
+    expect(scoped.remaining).toBe(0);
 
     const old = await AttentionItem.findOne({ 'source.id': 'oldest' });
     expect(await service.acknowledgeMention(other, old.id)).toMatchObject({ success: false });
@@ -45,6 +58,9 @@ describe('uncapped attention counts — persisted query and membership', () => {
   });
 
   it('returns an authoritative empty shape for invalid recipients', async () => {
-    expect(await service.getOpenQueue('invalid')).toEqual({ items: [], count: 0, countsByPod: {}, composePodId: null });
+    expect(await service.getOpenQueue('invalid')).toEqual({
+      items: [], count: 0, countsByPod: {}, composePodId: null,
+      offset: 0, limit: 50, remaining: 0, hasMore: false,
+    });
   });
 });

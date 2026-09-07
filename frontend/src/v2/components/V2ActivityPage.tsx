@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import V2Avatar from './V2Avatar';
+import { AuthContext } from '../../context/AuthContext';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
@@ -60,6 +60,65 @@ interface ActivityRecap {
   board: BoardItem[];
 }
 
+interface QueueResponse {
+  items: Array<NeedsYouItem & { createdAt?: string | null }>;
+  composePodId?: string | null;
+  count: number;
+  countsByPod: Record<string, number>;
+  offset?: number;
+  limit?: number;
+  remaining?: number;
+  hasMore?: boolean;
+}
+
+interface MovedLine {
+  id: string;
+  author: string;
+  text: string;
+  timestamp: string | null;
+}
+
+interface MovedGroup {
+  id: string;
+  name: string;
+  lines: MovedLine[];
+}
+
+interface ActivitySnapshot {
+  window?: ActivityWindow;
+  podId?: string;
+  recap?: ActivityRecap | null;
+  queue?: NeedsYouItem[];
+  queueCount?: number | null;
+  queueRemaining?: number;
+  queueCountsByPod?: Record<string, number>;
+  composePodId?: string;
+  composeDraft?: string;
+  replyDrafts?: Record<string, string>;
+  focusedItemId?: string | null;
+  scrollY?: number;
+  savedAt?: number;
+}
+
+const ACTIVITY_SNAPSHOT_KEY = 'v2:activity:snapshot';
+
+const snapshotKey = (accountId: string): string => `${ACTIVITY_SNAPSHOT_KEY}:${accountId}`;
+
+const readActivitySnapshot = (accountId: string): ActivitySnapshot | null => {
+  try {
+    const raw = sessionStorage.getItem(snapshotKey(accountId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ActivitySnapshot;
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > 10 * 60_000) {
+      sessionStorage.removeItem(snapshotKey(accountId));
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
 const relativeTime = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
@@ -74,8 +133,16 @@ const relativeTime = (value: string | null | undefined): string => {
 const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const auth = useContext(AuthContext);
+  const currentUser = auth?.currentUser || null;
+  const authLoading = auth?.loading || false;
+  const accountId = currentUser?._id ? String(currentUser._id) : null;
+  const restoredSnapshotRef = useRef<ActivitySnapshot | null>(null);
+  const snapshotAccountRef = useRef<string | null | undefined>(undefined);
+  const [snapshotReady, setSnapshotReady] = useState(false);
   const [window, setWindow] = useState<ActivityWindow>('today');
   const [podId, setPodId] = useState('all');
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const [recap, setRecap] = useState<ActivityRecap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,17 +154,87 @@ const V2ActivityPage: React.FC = () => {
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
   const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
+  const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+  const queueRef = useRef<NeedsYouItem[]>([]);
+  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
+  const [queueRemaining, setQueueRemaining] = useState(0);
+  const [queueLoadingMore, setQueueLoadingMore] = useState(false);
+  const [queueMoreError, setQueueMoreError] = useState(false);
+  const [queueFailed, setQueueFailed] = useState(false);
+  const [queueHydrated, setQueueHydrated] = useState(false);
+  const queueScopeRef = useRef('all');
+  const queueGenerationRef = useRef(0);
+  const revalidationExtentRef = useRef(0);
+  const revalidationScopeRef = useRef<string | null>(null);
+  const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const queueMoreFailureOffsetRef = useRef<number | null>(null);
+  const pendingRefreshFocusRef = useRef<string | null>(null);
+  const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
+  const [composeMenuOpen, setComposeMenuOpen] = useState(false);
+  const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
+  const [movedVisibleCounts, setMovedVisibleCounts] = useState<Record<string, number>>({});
 
-  const [queue, setQueue] = useState<NeedsYouItem[]>([]);
-  const [queueCount, setQueueCount] = useState<number | null>(null);
-  const [queueFailed, setQueueFailed] = useState(false);
+  // A Back snapshot is account-scoped and is only read after AuthContext has
+  // established the identity. This prevents one signed-in account from
+  // hydrating another account's queue, recap, or reply drafts from a shared
+  // browser session.
+  useEffect(() => {
+    if (authLoading || snapshotAccountRef.current === accountId) return;
+    snapshotAccountRef.current = accountId;
+    const snapshot = accountId ? readActivitySnapshot(accountId) : null;
+    restoredSnapshotRef.current = snapshot;
+    if (snapshot) {
+      setWindow(snapshot.window || 'today');
+      setPodId(snapshot.podId || 'all');
+      setRecap(snapshot.recap || null);
+      queueScopeRef.current = snapshot.podId || 'all';
+      queueRef.current = snapshot.queue || [];
+      setQueue(queueRef.current);
+      setQueueCount(snapshot.queueCount ?? null);
+      setQueueCountsByPod(snapshot.queueCountsByPod || {});
+      setQueueRemaining(snapshot.queueRemaining || 0);
+      setReplyDrafts(snapshot.replyDrafts || {});
+      setComposePodId(snapshot.composePodId || '');
+      setComposeDraft(snapshot.composeDraft || '');
+      setComposeMenuOpen(false);
+      revalidationExtentRef.current = snapshot.queue?.length || 0;
+      revalidationScopeRef.current = snapshot.podId || 'all';
+      setLoading(!snapshot.recap);
+    } else {
+      setWindow('today');
+      setPodId('all');
+      setRecap(null);
+      queueScopeRef.current = 'all';
+      queueRef.current = [];
+      setQueue(queueRef.current);
+      setQueueCount(null);
+      setQueueCountsByPod({});
+      setQueueRemaining(0);
+      setReplyDrafts({});
+      setComposePodId('');
+      setComposeDraft('');
+      setComposeMenuOpen(false);
+      revalidationExtentRef.current = 0;
+      revalidationScopeRef.current = null;
+      setLoading(true);
+    }
+    setQueueHydrated(false);
+    setSnapshotReady(true);
+  }, [accountId, authLoading]);
 
   useEffect(() => {
-    const refresh = () => setReloadKey((value) => value + 1);
+    const refresh = () => {
+      const activeRow = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
+      pendingRefreshFocusRef.current = activeRow?.dataset.activityItemId || null;
+      setReloadKey((value) => value + 1);
+    };
     globalThis.window.addEventListener(ATTENTION_CHANGED, refresh);
     globalThis.window.addEventListener('focus', refresh);
     return () => {
@@ -107,9 +244,54 @@ const V2ActivityPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const snapshot = restoredSnapshotRef.current;
+    if (!snapshotReady || !snapshot || !queueHydrated) return;
+    const restore = () => {
+      if (snapshot.scrollY && snapshot.scrollY > 0) globalThis.window.scrollTo(0, snapshot.scrollY);
+      if (snapshot.focusedItemId) {
+        const row = document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(snapshot.focusedItemId)}"]`);
+        row?.focus();
+      }
+      if (accountId) sessionStorage.removeItem(snapshotKey(accountId));
+      restoredSnapshotRef.current = null;
+    };
+    const frame = globalThis.window.requestAnimationFrame(restore);
+    return () => globalThis.window.cancelAnimationFrame(frame);
+  }, [accountId, queueHydrated, snapshotReady]);
+
+  useEffect(() => {
+    if (!snapshotReady) return undefined;
     let active = true;
-    setLoading(true);
+    const generation = queueGenerationRef.current + 1;
+    queueGenerationRef.current = generation;
+    const previousScope = queueScopeRef.current;
+    queueScopeRef.current = podId;
+    const sameScope = previousScope === podId;
+    const previousQueue = sameScope ? queueRef.current : [];
+    if (!sameScope) {
+      // Retained rows are evidence for their own scope only. If the new
+      // request fails, showing them under the newly selected pod is false.
+      queueRef.current = [];
+      setQueue([]);
+      setQueueCount(null);
+      setQueueRemaining(0);
+      setQueueFailed(false);
+      revalidationExtentRef.current = 0;
+      revalidationScopeRef.current = null;
+    }
+    // Refreshes in the same scope must revalidate every loaded page before
+    // replacing the visible queue. Otherwise a 56-row queue briefly regresses
+    // to the first 50 rows while the refresh response is settling.
+    if (sameScope && previousQueue.length > 0) {
+      revalidationScopeRef.current = podId;
+      revalidationExtentRef.current = Math.max(revalidationExtentRef.current, previousQueue.length);
+    }
+    queueMoreFailureOffsetRef.current = null;
+    setQueueHydrated(false);
+    setLoading((current) => (sameScope && recap ? current : true));
     setError(null);
+    setQueueMoreError(false);
+    setQueueLoadingMore(false);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     // Recap and attention are independent facts. A failed queue read must
@@ -119,17 +301,12 @@ const V2ActivityPage: React.FC = () => {
         headers,
         params: { window, ...(podId !== 'all' ? { podId } : {}) },
       }),
-      axios.get<{
-        items: Array<NeedsYouItem & { createdAt?: string | null }>;
-        composePodId?: string | null;
-        count: number;
-        countsByPod: Record<string, number>;
-      }>(
+      axios.get<QueueResponse>(
         '/api/activity/decision-queue',
-        { headers },
+        { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
     ])
-      .then(([recapResponse, queueResponse]) => {
+      .then(async ([recapResponse, queueResponse]) => {
         if (!active) return;
         setRecap(recapResponse.data);
         const rawItems = queueResponse?.data?.items;
@@ -142,41 +319,198 @@ const V2ActivityPage: React.FC = () => {
         };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueue([]);
-          setQueueCount(null);
-          setQueueFailed(true);
+          setQueueFailed(previousQueue.length === 0);
+          setQueueMoreError(true);
           setComposeDefault();
           return;
         }
         setQueueFailed(false);
-        setQueueCount(podId === 'all' ? queueResponse!.data.count : (queueResponse!.data.countsByPod?.[podId] || 0));
-        const queueItems = rawItems.map((item) => ({
+        setQueueCount(queueResponse!.data.count);
+        setQueueCountsByPod(queueResponse!.data.countsByPod || {});
+        const mapQueueItems = (items: QueueResponse['items']) => items.map((item) => ({
           ...item,
           detail: item.detail || '',
           podName: item.podName || '',
           timestamp: item.timestamp ?? item.createdAt ?? null,
         }));
-        setQueue(podId !== 'all'
-          ? queueItems.filter((item) => item.podId === podId)
-          : queueItems);
-        // Preserve an intentional target choice across queue refreshes. On
-        // first load, anchor the composer to the most recent direct traffic;
-        // no traffic simply falls back to the user's first available pod.
+        let queueItems = mapQueueItems(rawItems);
+        // A Back snapshot can contain more than one server page. Revalidate
+        // the loaded extent before replacing it, otherwise a 56-row snapshot
+        // briefly regresses to the first 50 and loses its final six rows.
+        const revalidateTo = revalidationScopeRef.current === podId ? revalidationExtentRef.current : 0;
+        let nextOffset = queueItems.length;
+        let nextRemaining = typeof queueResponse!.data.remaining === 'number'
+          ? queueResponse!.data.remaining
+          : Math.max(queueResponse!.data.count - nextOffset, 0);
+        while (nextOffset < revalidateTo && nextRemaining > 0) {
+          const nextResponse = await axios.get<QueueResponse>('/api/activity/decision-queue', {
+            headers,
+            params: { limit: 50, offset: nextOffset, ...(podId !== 'all' ? { podId } : {}) },
+          });
+          const nextPage = mapQueueItems(nextResponse.data?.items || []);
+          if (!nextPage.length) break;
+          const existing = new Set(queueItems.map((item) => `${item.kind}:${item.id}`));
+          queueItems = [...queueItems, ...nextPage.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+          nextOffset += nextPage.length;
+          nextRemaining = typeof nextResponse.data?.remaining === 'number'
+            ? nextResponse.data.remaining
+            : Math.max((nextResponse.data?.count || 0) - nextOffset, 0);
+        }
+        revalidationExtentRef.current = 0;
+        revalidationScopeRef.current = null;
+        queueRef.current = queueItems;
+        setQueue(queueItems);
+        setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
+        // The initial destination is an account-level global fact computed by
+        // the service before scope/page slicing. Preserve an intentional
+        // target across refreshes and fall back to the first available pod.
         setComposeDefault(queueResponse?.data?.composePodId || '');
+        const pendingFocus = pendingRefreshFocusRef.current;
+        pendingRefreshFocusRef.current = null;
+        if (pendingFocus) {
+          globalThis.window.requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(pendingFocus)}"]`)?.focus();
+          });
+        }
       })
       .catch(() => {
-        if (active) setError(t('activity.loadFailed'));
+        if (active) {
+          if (recap || previousQueue.length > 0) {
+            setQueueFailed(false);
+            setQueueMoreError(true);
+          } else {
+            setError(t('activity.loadFailed'));
+            setQueueFailed(true);
+          }
+        }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setQueueHydrated(true);
+          setLoading(false);
+        }
       });
     return () => {
       active = false;
     };
-  }, [podId, reloadKey, t, window]);
+  }, [accountId, podId, reloadKey, snapshotReady, t, window]);
 
-  const openPod = (targetPodId: string | null) => {
-    if (targetPodId) navigate(`/v2/pods/${targetPodId}`);
+  const loadMoreQueue = async () => {
+    if (queueMoreError && queueMoreFailureOffsetRef.current === null) {
+      setReloadKey((value) => value + 1);
+      return;
+    }
+    if (queueLoadingMore || queueRemaining <= 0 || queueFailed) return;
+    const requestedScope = podId;
+    const requestedGeneration = queueGenerationRef.current;
+    const offset = queueMoreFailureOffsetRef.current ?? queue.length;
+    setQueueLoadingMore(true);
+    setQueueMoreError(false);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<QueueResponse>('/api/activity/decision-queue', {
+        headers: { 'x-auth-token': token ?? '' },
+        params: { limit: 50, offset, ...(requestedScope !== 'all' ? { podId: requestedScope } : {}) },
+      });
+      if (queueScopeRef.current !== requestedScope || queueGenerationRef.current !== requestedGeneration) return;
+      const nextItems = (response.data?.items || []).map((item) => ({
+        ...item,
+        detail: item.detail || '',
+        podName: item.podName || '',
+        timestamp: item.timestamp ?? item.createdAt ?? null,
+      }));
+      setQueue((current) => {
+        const existing = new Set(current.map((item) => `${item.kind}:${item.id}`));
+        const nextQueue = [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+        queueRef.current = nextQueue;
+        return nextQueue;
+      });
+      const loaded = offset + nextItems.length;
+      queueMoreFailureOffsetRef.current = null;
+      setQueueRemaining(typeof response.data?.remaining === 'number'
+        ? response.data.remaining
+        : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
+      globalThis.window.requestAnimationFrame(() => {
+        if (queueMoreButtonRef.current) {
+          queueMoreButtonRef.current.focus();
+          return;
+        }
+        const firstAdded = nextItems[0]?.id;
+        if (firstAdded) document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(String(firstAdded))}"]`)?.focus();
+      });
+    } catch {
+      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
+        queueMoreFailureOffsetRef.current = offset;
+        setQueueMoreError(true);
+      }
+    } finally {
+      if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
+    }
+  };
+
+  const movedGroups = useMemo<MovedGroup[]>(() => {
+    if (!recap) return [];
+    const groups = new Map<string, MovedGroup>();
+    const add = (podId: string | null | undefined, podName: string | undefined, line: MovedLine) => {
+      const id = podId || `name:${podName || 'unknown'}`;
+      const group = groups.get(id) || { id, name: podName || t('activity.movedForward.unknownPod'), lines: [] };
+      group.lines.push(line);
+      groups.set(id, group);
+    };
+    recap.agents.forEach((agent) => agent.updates.forEach((update) => add(update.podId, update.podName, {
+      id: `agent:${agent.id}:${update.id}`,
+      author: agent.name,
+      text: update.content,
+      timestamp: update.timestamp,
+    })));
+    recap.board.forEach((item) => {
+      if (!item.lastUpdate) return;
+      add(item.podId, item.podName, {
+        id: `board:${item.id}`,
+        author: item.lastUpdate.author,
+        text: `${item.title} — ${item.lastUpdate.text}`,
+        timestamp: item.lastUpdate.createdAt || item.updatedAt,
+      });
+    });
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        lines: [...group.lines].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()),
+      }))
+      .sort((a, b) => new Date(b.lines[0]?.timestamp || 0).getTime() - new Date(a.lines[0]?.timestamp || 0).getTime());
+  }, [recap, t]);
+
+  const scopedPods = useMemo(() => {
+    return recap?.pods || [];
+  }, [recap]);
+  const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
+
+  const openPod = (targetPodId: string | null, messageId?: number | string) => {
+    if (!targetPodId) return;
+    try {
+      const active = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
+      if (accountId) sessionStorage.setItem(snapshotKey(accountId), JSON.stringify({
+        window,
+        podId,
+        recap,
+        queue,
+        queueCount,
+        queueRemaining,
+        queueCountsByPod,
+        replyDrafts,
+        composePodId,
+        composeDraft,
+        focusedItemId: active?.dataset.activityItemId || null,
+        scrollY: globalThis.window.scrollY,
+        savedAt: Date.now(),
+      } satisfies ActivitySnapshot));
+    } catch {
+      // Navigation should still work if storage is unavailable or full.
+    }
+    const target = messageId === undefined || messageId === null || messageId === ''
+      ? ''
+      : `#message-${String(messageId)}`;
+    navigate(`/v2/pods/${targetPodId}${target}`);
   };
 
   const openFirstBoard = () => {
@@ -267,7 +601,6 @@ const V2ActivityPage: React.FC = () => {
   // the SAME thread the mention came from, addressed to the message, through
   // the ordinary messages route — so the agent gets the normal implicit-reply
   // wake — and then the mention is acknowledged.
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [repliedIds, setRepliedIds] = useState<Set<string>>(new Set());
   const sendReply = async (item: NeedsYouItem) => {
@@ -305,7 +638,7 @@ const V2ActivityPage: React.FC = () => {
         {},
         { headers: { 'x-auth-token': token ?? '' } },
       );
-      if (!response.data?.success) throw new Error('Mention acknowledgement failed');
+      if (!response.data?.success) throw new Error('Activity handling failed');
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
@@ -323,47 +656,82 @@ const V2ActivityPage: React.FC = () => {
   return (
     <div className="v2-activity" aria-busy={loading}>
       <header className="v2-activity__header">
-        <div>
+        <div className="v2-activity__bar-title">
           <h1 className="v2-activity__title">{t('activity.title')}</h1>
-          <p className="v2-activity__subtitle">{t('activity.subtitle')}</p>
-        </div>
-        <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
-          <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
-            {(['today', '7d'] as ActivityWindow[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`}
-                onClick={() => setWindow(value)}
-                aria-pressed={window === value}
-              >
-                {t(`activity.windows.${value}`)}
-              </button>
-            ))}
-          </div>
-          <label className="v2-activity__scope">
-            <span className="v2-sr-only">{t('activity.podScopeLabel')}</span>
-            <select value={podId} onChange={(event) => setPodId(event.target.value)}>
-              <option value="all">{t('activity.allPods')}</option>
-              {(recap?.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-            </select>
-          </label>
+          <span className="v2-activity__subtitle">{t('activity.subtitle')}</span>
         </div>
       </header>
+      <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
+        <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
+          {(['today', '7d'] as ActivityWindow[]).map((value) => (
+            <button key={value} type="button" className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`} onClick={() => setWindow(value)} aria-pressed={window === value}>
+              {t(`activity.windows.${value}`)}
+            </button>
+          ))}
+        </div>
+        <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')} onKeyDown={(event) => {
+          if (event.key === 'Escape' && scopeMenuOpen) {
+            event.preventDefault();
+            event.stopPropagation(); // This menu restores focus; the global Escape handler blurs it.
+            setScopeMenuOpen(false);
+            scopeMenuButtonRef.current?.focus();
+          }
+        }}>
+          <button type="button" className={`v2-activity__scope-button${podId === 'all' ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId('all'); setScopeMenuOpen(false); }} aria-pressed={podId === 'all'}>{t('activity.allPods')}</button>
+          {scopedPods.slice(0, 2).map((pod) => (
+            <button key={pod.id} type="button" className={`v2-activity__scope-button${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+          ))}
+          {scopedPods.length > 2 && <button type="button" ref={scopeMenuButtonRef} className={`v2-activity__scope-button${scopedPods.slice(2).some((pod) => pod.id === podId) ? ' v2-activity__scope-button--active' : ''}`} onClick={() => setScopeMenuOpen((open) => !open)} aria-expanded={scopeMenuOpen}>{scopedPods.slice(2).find((pod) => pod.id === podId)?.name || t('activity.morePods')}</button>}
+          {scopeMenuOpen && <div className="v2-activity__scope-menu">{scopedPods.slice(2).map((pod) => (
+            <button key={pod.id} type="button" className={`v2-activity__scope-button v2-activity__scope-button--menu${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); scopeMenuButtonRef.current?.focus(); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+          ))}</div>}
+        </div>
+      </div>
 
       {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
-      {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
+      {!loading && error && <div className="v2-activity__error" role="alert">
+        <span>{error}</span>
+        <button type="button" className="v2-activity__queue-more" onClick={() => { setError(null); setReloadKey((value) => value + 1); }}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+      </div>}
       {!loading && !error && recap && (
         <>
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
             <div className="v2-activity__compose-top">
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
-              <label className="v2-activity__compose-pod">
+              <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
-                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
-                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-                </select>
-              </label>
+                <div className="v2-activity__compose-picker">
+                  <button
+                    type="button"
+                    ref={composePickerButtonRef}
+                    className="v2-activity__compose-picker-button"
+                    aria-haspopup="listbox"
+                    aria-expanded={composeMenuOpen}
+                    onClick={() => setComposeMenuOpen((open) => !open)}
+                    disabled={composing || scopedPods.length === 0}
+                  >
+                    {composePodName}
+                  </button>
+                  {composeMenuOpen && <div className="v2-activity__compose-picker-menu" role="listbox" aria-label={t('activity.compose.podLabel')}>
+                    {scopedPods.map((pod) => (
+                      <button
+                        key={pod.id}
+                        type="button"
+                        role="option"
+                        aria-selected={pod.id === composePodId}
+                        className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setComposePodId(pod.id);
+                          setComposeMenuOpen(false);
+                          globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+                        }}
+                      >
+                        {pod.name}
+                      </button>
+                    ))}
+                  </div>}
+                </div>
+              </div>
             </div>
             <textarea
               aria-label={t('activity.compose.placeholder')}
@@ -371,26 +739,30 @@ const V2ActivityPage: React.FC = () => {
               placeholder={t('activity.compose.placeholder')}
               value={composeDraft}
               onChange={(event) => setComposeDraft(event.target.value)}
-              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
+              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void sendCompose(); }}
               disabled={composing || !composePodId}
             />
             <div className="v2-activity__compose-foot">
               <span className="v2-activity__compose-hint">{t('activity.compose.hint')}</span>
-              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
+              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={() => { void sendCompose(); }} disabled={composing || !composePodId || !composeDraft.trim()}>
                 {composing ? t('activity.compose.working') : t('activity.compose.send')}
               </button>
             </div>
             {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
           </section>
-
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              <p>{t('activity.needsYou.description')}</p>
+              <p>{queueCount === null
+                ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
+                : t('activity.needsYou.countDescription', { count: queueCount })}</p>
             </div>
-            {queueFailed ? <p role="status">{t('activity.loadFailed')}</p> : isDayZero ? (
+            {queueFailed ? <>
+              <p role="status">{t('activity.loadFailed')}</p>
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+            </> : isDayZero ? (
               <div className="v2-activity__queue">
                 <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
                   <span className="v2-activity__queue-mark" aria-hidden="true">1</span>
@@ -431,24 +803,22 @@ const V2ActivityPage: React.FC = () => {
                 </article>
               </div>
             ) : queue.length === 0 ? (
-              <div className="v2-activity__empty">
-                {queueCount === 0 ? <>
-                  <strong>{t('activity.needsYou.emptyTitle')}</strong>
-                  <span>{t('activity.needsYou.emptyDescription')}</span>
-                </> : <strong>{t('activity.needsYou.countLabel', { count: queueCount })}</strong>}
+              <div className="v2-activity__empty v2-activity__empty--plain">
+                <span>{queueCount === 0
+                  ? t('activity.needsYou.emptyTitle')
+                  : t('activity.needsYou.countLabel', { count: queueCount })}</span>
               </div>
             ) : (
               <div className="v2-activity__queue">
                 {queue.map((item) => (
-                  <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
+                  <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
-                      {item.kind !== 'mention' && <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>}
+                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
-                        <span>{item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
                       </div>
                       {item.detail && <p>{item.detail}</p>}
                     </div>
@@ -465,26 +835,12 @@ const V2ActivityPage: React.FC = () => {
                       )}
                       {item.kind === 'mention' && (
                         <>
-                          <div className="v2-activity__reply" data-testid="queue-reply">
-                            <textarea
-                              className="v2-activity__reply-input"
-                              rows={2}
-                              placeholder={t('activity.reply.placeholder')}
-                              value={replyDrafts[item.id] || ''}
-                              onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }}
-                              disabled={replyingId === item.id}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => sendReply(item)}
-                              disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}
-                            >
-                              {replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}
-                            </button>
-                          </div>
+                          {!replyOpenIds.has(item.id) ? <button type="button" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
+                            <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
+                            <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
+                          </div>}
                           <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
-                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
+                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
                       )}
@@ -544,91 +900,74 @@ const V2ActivityPage: React.FC = () => {
                           )}
                         </>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
-                        {t('activity.openThread')}
+                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                        {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
                   </article>
                 ))}
               </div>
             )}
+            {queue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
+              <button
+                type="button"
+                ref={queueMoreButtonRef}
+                className="v2-activity__queue-more"
+                onClick={loadMoreQueue}
+                disabled={queueLoadingMore}
+              >
+                {queueLoadingMore
+                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                  : queueMoreError
+                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                    : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
+              </button>
+            )}
+            {queue.length === 0 && queueMoreError && !queueFailed && (
+              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+            )}
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
-          <section className="v2-activity__section" aria-labelledby="activity-agents">
+          <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
             <div className="v2-activity__section-heading">
-              <h2 id="activity-agents">{t('activity.agents.title')}</h2>
-              <p>{t('activity.agents.description')}</p>
+              <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
+              <span className="v2-activity__count">{movedGroups.reduce((total, group) => total + group.lines.length, 0)}</span>
+              <p>{t('activity.movedForward.description')}</p>
             </div>
-            {recap.agents.length === 0 ? (
-              <div className="v2-activity__empty">
-                <strong>{t('activity.agents.emptyTitle')}</strong>
-                <span>{t('activity.agents.emptyDescription')}</span>
-              </div>
-            ) : (
-              <div className="v2-activity__agent-grid">
-                {recap.agents.map((agent) => (
-                  <article key={agent.id} className="v2-activity__agent-card">
-                    <div className="v2-activity__agent-topline">
-                      <V2Avatar name={agent.name} src={agent.profilePicture} seed={agent.id} kind="agent" />
-                      <div>
-                        <h3>{agent.name}</h3>
-                        <span>{agent.lastActiveAt ? t('activity.lastActive', { time: relativeTime(agent.lastActiveAt) }) : ''}</span>
-                      </div>
-                      <span className="v2-activity__count-chip">{t('activity.updatesCount', { count: agent.messageCount })}</span>
-                    </div>
-                    <p className="v2-activity__agent-recap">{agent.recap}</p>
-                    <div className="v2-activity__updates">
-                      {agent.updates.map((update) => (
-                        <button key={update.id} type="button" onClick={() => openPod(update.podId)} disabled={!update.podId}>
-                          <span className="v2-activity__update-pod">{update.podName}</span>
-                          <span className="v2-activity__update-content">{update.content}</span>
-                          <span className="v2-activity__update-time">{relativeTime(update.timestamp)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="v2-activity__section" aria-labelledby="activity-board">
-            <div className="v2-activity__section-heading">
-              <h2 id="activity-board">{t('activity.board.title')}</h2>
-              <p>{t('activity.board.description')}</p>
-            </div>
-            {recap.board.length === 0 ? (
-              <div className="v2-activity__empty">
-                <strong>{t('activity.board.emptyTitle')}</strong>
-                <span>{t('activity.board.emptyDescription')}</span>
-              </div>
-            ) : (
-              <div className="v2-activity__board-list">
-                {recap.board.map((item) => (
-                  <article key={item.id} className="v2-activity__board-row">
-                    <div className="v2-activity__board-main">
-                      <span className={`v2-activity__status v2-activity__status--${item.status}`}>{t(`activity.board.status.${item.status}`)}</span>
-                      <div>
-                        <span className="v2-activity__task-id">{item.taskId}</span>
-                        <h3>{item.title}</h3>
-                        {item.lastUpdate && <p>{item.lastUpdate.author ? `${item.lastUpdate.author}: ` : ''}{item.lastUpdate.text}</p>}
-                      </div>
-                    </div>
-                    <div className="v2-activity__board-meta">
-                      <span>{item.podName}</span>
-                      <span>{relativeTime(item.updatedAt)}</span>
-                      <button type="button" onClick={() => openPod(item.podId)}>{t('activity.openThread')}</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
+            {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
+              {movedGroups.map((group) => {
+                const visibleCount = movedVisibleCounts[group.id] || 3;
+                const visible = group.lines.slice(0, Math.min(visibleCount, group.lines.length));
+                const hasMore = visible.length < group.lines.length;
+                const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
+                const omittedCount = Math.max(group.lines.length - visible.length, 0);
+                return <article key={group.id} className="v2-activity__moved-group">
+                  <div className="v2-activity__moved-head"><span>{group.name}</span><span>{group.lines.length}</span></div>
+                  <div className="v2-activity__moved-lines">
+                    {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
+                  </div>
+                  {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                    const article = event.currentTarget.closest('article');
+                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }));
+                    globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                  }}>{t('activity.movedForward.showLess')}</button>}
+                  {hasMore && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                    const article = event.currentTarget.closest('article');
+                    const nextCount = Math.min(visibleCount < 20 ? 20 : visibleCount + 20, group.lines.length);
+                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: nextCount }));
+                    if (nextCount === group.lines.length) {
+                      globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                    }
+                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount) })}</button>}
+                  {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
+                </article>;
+              })}
+            </div>}
           </section>
           </div>
         </>
       )}
-      <footer className="v2-activity__footer">{t('activity.footer')}</footer>
     </div>
   );
 };
