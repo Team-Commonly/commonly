@@ -597,40 +597,39 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // the anchor keyed to the oldest row: appends leave that id unchanged and
   // must not consume the anchor or compensate for their own height.
   const scrollAnchorRef = useRef<{
+    podId: string | null;
     oldestId: string | null;
-    scrollTop: number;
     scrollHeight: number;
   } | null>(null);
+  const currentPodId = pod?._id ? String(pod._id) : null;
   const oldestMessageId = messages[0]?.id ? String(messages[0].id) : null;
   const handleLoadOlder = useCallback(async () => {
+    // The edge button is replaced by a loading status after the first click,
+    // but keep the first request's anchor when two events batch before React
+    // commits. The hook's own loading ref suppresses the duplicate fetch.
+    const existingAnchor = scrollAnchorRef.current;
+    const ownsAnchor = existingAnchor == null;
     const el = messagesContainerRef.current;
-    const anchor = el
+    const anchor = existingAnchor || (el
       ? {
+        podId: currentPodId,
         oldestId: oldestMessageId,
-        scrollTop: el.scrollTop,
         scrollHeight: el.scrollHeight,
       }
-      : null;
-    scrollAnchorRef.current = anchor;
+      : null);
+    if (ownsAnchor) scrollAnchorRef.current = anchor;
     const result = await loadOlder();
+    if (!ownsAnchor) return;
     if (result !== 'prepended' && result !== 'unchanged') {
       // Empty/error/no-op responses do not produce a prepend. Clear the arm
       // now so an unrelated future append cannot apply a stale compensation.
       if (scrollAnchorRef.current === anchor) scrollAnchorRef.current = null;
-    } else if (result === 'prepended' && scrollAnchorRef.current) {
-      // Usually the layout effect below runs before this continuation. Keep a
-      // fallback for a deferred React commit so the anchor cannot survive a
-      // successful prepend and fire on a later message.
-      const current = messagesContainerRef.current;
-      const pending = scrollAnchorRef.current;
-      if (current && pending === anchor) {
-        current.scrollTop = pending.scrollTop + (current.scrollHeight - pending.scrollHeight);
-        scrollAnchorRef.current = null;
-      }
     } else if (scrollAnchorRef.current === anchor) {
-      scrollAnchorRef.current = null;
+      // A successful prepend is consumed by the committed-row layout effect;
+      // do not clear it here before a deferred React commit can be observed.
+      if (result === 'unchanged') scrollAnchorRef.current = null;
     }
-  }, [loadOlder, oldestMessageId]);
+  }, [currentPodId, loadOlder, oldestMessageId]);
 
   // Older detail fixtures (and a few read-only embed callers) predate the
   // bounded source-search fields. Keep those callers on the legacy one-page
@@ -654,6 +653,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const el = messagesContainerRef.current;
     const anchor = scrollAnchorRef.current;
     if (!el || anchor == null) return;
+    if (anchor.podId !== currentPodId) {
+      scrollAnchorRef.current = null;
+      return;
+    }
     const firstId = messages[0]?.id ? String(messages[0].id) : null;
     if (firstId === anchor.oldestId) {
       // A socket append changed the list without prepending anything. Move
@@ -662,9 +665,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       anchor.scrollHeight = el.scrollHeight;
       return;
     }
-    el.scrollTop = anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
+    // Apply only the growth measured across the commit that changed the
+    // oldest row. Reading the current scrollTop preserves any user scrolling
+    // that happened while the request was in flight.
+    el.scrollTop += el.scrollHeight - anchor.scrollHeight;
     scrollAnchorRef.current = null;
-  }, [messages]);
+  }, [currentPodId, messages]);
 
   // Pasting an image into the field attaches it. The handler is defined
   // later (it needs the upload plumbing), so the effect reads it through a ref
