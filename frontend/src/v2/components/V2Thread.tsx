@@ -823,6 +823,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // decision-card producer may use either canonical `#message-<id>` or the
   // legacy `?message=<id>` form; both must share one retry/reveal lifecycle.
   const landedTargetRef = useRef<string | null>(null);
+  // Hydrating a settled ruling can replace a focused decision-card DOM node.
+  // Remember the exact node so we can restore landing only when that
+  // replacement caused the blur; deliberate focus movement must win.
+  const landedElementRef = useRef<HTMLElement | null>(null);
+  const landedElementShapeRef = useRef<string | null>(null);
+  const landedDecisionFingerprintRef = useRef<string | null>(null);
   // A URL target remains in the address bar after landing. Keep automatic
   // prepends paused until the reader deliberately uses the edge control, so
   // the focused row cannot be pushed out while a landing is settling.
@@ -839,6 +845,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     // thread. Clear the landing guards and bump the effect so this gesture
     // reopens the fold instead of being treated as an already-landed hash.
     landedTargetRef.current = null;
+    landedElementRef.current = null;
+    landedElementShapeRef.current = null;
+    landedDecisionFingerprintRef.current = null;
     revealTriedRef.current = null;
     releasedLandingTargetRef.current = null;
     releasedHistorySearchTargetRef.current = null;
@@ -873,6 +882,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const target = landingTarget;
     if (!target) {
       landedTargetRef.current = null;
+      landedElementRef.current = null;
+      landedElementShapeRef.current = null;
+      landedDecisionFingerprintRef.current = null;
       releasedLandingTargetRef.current = null;
       return;
     }
@@ -880,8 +892,49 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       releasedLandingTargetRef.current = null;
     }
     if (!initialLoadComplete) return;
-    if (landedTargetRef.current === target) return;
-    if (landOnMessage(target)) { landedTargetRef.current = target; return; }
+    const settledRuling = settledDecisionByMessageId.get(target);
+    const durableLoaded = !!settledRuling?.messageId
+      && messages.some((message) => String(message.id) === String(settledRuling.messageId));
+    const decisionFingerprint = settledRuling
+      ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
+      : 'none';
+    if (landedTargetRef.current === target) {
+      const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+      const landingNodeReplaced = activeElement === document.body
+        && !!landedElementRef.current
+        && !document.body.contains(landedElementRef.current);
+      const currentShape = landedElementRef.current?.className
+        .replace(/\bv2-msg--landed\b/g, '')
+        .trim();
+      const landingShapeChanged = !!landedElementShapeRef.current
+        && currentShape !== landedElementShapeRef.current;
+      if (landedDecisionFingerprintRef.current === decisionFingerprint
+        && !landingNodeReplaced && !landingShapeChanged) return;
+      const focusedElsewhere = !!activeElement
+        && activeElement !== document.body
+        && activeElement !== landedElementRef.current;
+      if (focusedElsewhere || (!landingNodeReplaced && !landingShapeChanged)) {
+        // The reader moved focus (or the node stayed mounted); do not steal it
+        // merely because a polling map got a new object identity.
+        landedDecisionFingerprintRef.current = decisionFingerprint;
+        landedElementShapeRef.current = currentShape || null;
+        return;
+      }
+      landedTargetRef.current = null;
+      landedElementRef.current = null;
+      landedElementShapeRef.current = null;
+    }
+    if (landOnMessage(target)) {
+      landedTargetRef.current = target;
+      landedDecisionFingerprintRef.current = decisionFingerprint;
+      landedElementRef.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      landedElementShapeRef.current = landedElementRef.current?.className
+        .replace(/\bv2-msg--landed\b/g, '')
+        .trim() || null;
+      return;
+    }
     const folded = threadView.some((item) => item.kind === 'card'
       && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
     if (folded && revealTriedRef.current !== target) {
@@ -899,7 +952,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           || historySearch.status === 'not-found'))) {
       void searchOlderForMessage(target);
     }
-  }, [landingTarget, initialLoadComplete, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+  }, [landingTarget, initialLoadComplete, messages, threadView, decisionByMessageId, settledDecisionByMessageId, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {

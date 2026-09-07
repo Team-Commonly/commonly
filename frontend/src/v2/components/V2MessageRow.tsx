@@ -77,6 +77,10 @@ const messageMarkdownComponents = {
 
 interface V2MessageRowProps {
   message: V2Message;
+  // A settled decision replaces its source request/reply with the durable
+  // ruling row. Keep the source id as a secondary landing anchor so Activity
+  // links to the request still land on that one visible answer.
+  sourceMessageId?: string | number;
   // DecisionRequest data is deliberately joined by the thread container,
   // not parsed from the agent's prose. The message is the durable timeline
   // anchor; the queue owns the choices and resolution state.
@@ -331,7 +335,12 @@ const LONG_PRESS_MS = 500;
 // Jump to a message already in the transcript and mark it landed for a beat.
 export const landOnMessage = (id: string | number | null | undefined): boolean => {
   if (id === null || id === undefined) return false;
-  const el = typeof document !== 'undefined' ? document.getElementById(`message-${id}`) : null;
+  let el = typeof document !== 'undefined' ? document.getElementById(`message-${id}`) : null;
+  if (!el && typeof document !== 'undefined') {
+    const target = String(id);
+    el = Array.from(document.querySelectorAll<HTMLElement>('[data-source-message-id]'))
+      .find((candidate) => candidate.dataset.sourceMessageId === target) || null;
+  }
   if (!el) return false;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   // The landed row is the keyboard target as well as the visual target. Keep
@@ -344,7 +353,7 @@ export const landOnMessage = (id: string | number | null | undefined): boolean =
   return true;
 };
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -404,7 +413,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
 
   if (decision) {
     return (
-      <div id={`message-${message.id}`} tabIndex={-1} className="v2-message-row v2-message-row--decision">
+      <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className="v2-message-row v2-message-row--decision">
         <V2DecisionCard
           decision={{ ...decision, actorName: decision.actorName || author }}
           onRuled={onDecisionRuled}
@@ -545,6 +554,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   return (
     <div
       id={`message-${message.id}`}
+      data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined}
       tabIndex={-1}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
       className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
