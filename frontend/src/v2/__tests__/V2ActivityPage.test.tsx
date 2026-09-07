@@ -121,6 +121,28 @@ describe('V2ActivityPage', () => {
     }));
   });
 
+  test('preserves authored decision order and makes only the first option primary', async () => {
+    const authoredOrder = {
+      ...decisionQueue,
+      items: [{
+        ...decisionQueue.items[1],
+        options: [
+          { label: 'Hold for review', description: 'Wait for a second pass.', recommended: false },
+          { label: 'Ship now', description: 'Release the bounded change.', recommended: true },
+        ],
+      }],
+      count: 1,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? authoredOrder : recap }));
+    renderPage();
+
+    const first = await screen.findByRole('button', { name: 'Rule: Hold for review' });
+    const second = screen.getByRole('button', { name: 'Rule: Ship now' });
+    expect(first).toHaveClass('v2-activity__option--primary');
+    expect(second).not.toHaveClass('v2-activity__option--primary');
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('changes the read window and opens the source pod from a factual queue row', async () => {
     renderPage();
     await screen.findByText('Review requested');
@@ -251,6 +273,24 @@ describe('V2ActivityPage', () => {
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Rule: Ship now' })).not.toBeInTheDocument());
+  });
+
+  test('keeps a successful ruling visible when the queue refresh fails', async () => {
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return queueReads === 1
+          ? Promise.resolve({ data: decisionQueue })
+          : Promise.reject(new Error('queue down'));
+      }
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockResolvedValue({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now' }));
+    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
   });
 
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {

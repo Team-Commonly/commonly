@@ -85,6 +85,9 @@ describe('V2Thread decision cards', () => {
     );
 
     expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: { podId: 'pod-1' },
+    }));
     expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     expect(screen.queryByText('Choose one of the following approaches in prose.')).not.toBeInTheDocument();
 

@@ -8819,7 +8819,7 @@ body.modern-ui.v2-canvas {
   padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface-hover);
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: inherit;
   font-size: var(--v2-fs-meta);
@@ -8889,6 +8889,11 @@ body.modern-ui.v2-canvas {
   outline: none;
   box-shadow: var(--v2-focus-ring);
   border-color: var(--v2-accent);
+}
+
+.v2-root .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
 }
 
 .v2-activity__compose-hint {
@@ -9177,10 +9182,26 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
+/* Activity's navigation and acknowledgement controls are secondary actions:
+   keep them visibly distinct from the ink send/approve actions while making
+   their hit targets as clear as the approved board. */
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered {
+  padding-inline: 12px;
+  border-color: var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 /* DecisionRequest alternatives are content, not row actions: a decision gets
-   its own full-width action line below the question. A neutral base prevents
-   an arbitrary non-recommended choice from inheriting the queue's primary
-   CTA treatment; the recommended choice is the only emphasized pill. */
+   its own full-width action line below the question. Preserve the asking
+   agent's option order; only the first authored option receives the cobalt
+   primary treatment. */
 .v2-activity__queue-row--decision .v2-activity__queue-actions {
   grid-column: 1 / -1;
   justify-content: flex-start;
@@ -9224,9 +9245,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
-  border-color: var(--v2-ink);
-  background: var(--v2-ink);
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
   color: var(--v2-on-ink);
 }
 

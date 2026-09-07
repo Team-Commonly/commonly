@@ -285,7 +285,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     let active = true;
     const load = async () => {
       try {
-        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue');
+        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue', {
+          params: { podId },
+        });
         if (!active) return;
         setDecisions((data?.items || []).filter((item) => (
           item.kind === 'decision'

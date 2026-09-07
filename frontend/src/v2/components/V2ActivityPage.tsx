@@ -155,7 +155,8 @@ const V2ActivityPage: React.FC = () => {
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
-  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
+  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by?: string }>>({});
+  const [settledQueueDecisions, setSettledQueueDecisions] = useState<Record<string, NeedsYouItem>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
   const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
@@ -193,6 +194,8 @@ const V2ActivityPage: React.FC = () => {
     snapshotAccountRef.current = accountId;
     const snapshot = accountId ? readActivitySnapshot(accountId) : null;
     restoredSnapshotRef.current = snapshot;
+    setRuledDecisions({});
+    setSettledQueueDecisions({});
     if (snapshot) {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
@@ -487,6 +490,12 @@ const V2ActivityPage: React.FC = () => {
     return recap?.pods || [];
   }, [recap]);
   const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
+  const visibleQueue = useMemo(() => {
+    const settled = Object.values(settledQueueDecisions)
+      .filter((item) => podId === 'all' || item.podId === podId)
+      .filter((item) => !queue.some((open) => open.id === item.id));
+    return [...queue, ...settled];
+  }, [podId, queue, settledQueueDecisions]);
 
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
     if (!targetPodId) return;
@@ -578,23 +587,35 @@ const V2ActivityPage: React.FC = () => {
     setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post<{ ok?: boolean }>(
+      const response = await axios.post<{
+        ok?: boolean;
+        decision?: { ruling?: { value?: string; by?: string } | null };
+      }>(
         `/api/activity/decisions/${encodeURIComponent(item.id)}/choose`,
         { value },
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
+      const settled = response.data.decision?.ruling;
+      const ruling = { value: settled?.value || value.trim(), ...(settled?.by ? { by: settled.by } : {}) };
+      setRuledDecisions((current) => ({
+        ...current,
+        [item.id]: ruling,
+      }));
+      setSettledQueueDecisions((current) => ({ ...current, [item.id]: item }));
       notifyAttentionChanged();
       setOtherDecisionId(null);
       setOtherDecisionValue('');
       setReloadKey((value) => value + 1);
     } catch (error) {
       const standing = axios.isAxiosError(error) ? error.response?.data?.decision?.ruling : null;
-      if (standing?.value && standing?.by) {
+      if (standing?.value) {
+        const ruling = { value: standing.value, ...(standing.by ? { by: standing.by } : {}) };
         setRuledDecisions((current) => ({
           ...current,
-          [item.id]: { value: standing.value, by: standing.by },
+          [item.id]: ruling,
         }));
+        setSettledQueueDecisions((current) => ({ ...current, [item.id]: item }));
       } else {
         setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
@@ -693,6 +714,7 @@ const V2ActivityPage: React.FC = () => {
 
   const isDayZero = podId === 'all'
     && queueCount === 0
+    && visibleQueue.length === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
@@ -845,7 +867,7 @@ const V2ActivityPage: React.FC = () => {
                   </div>
                 </article>
               </div>
-            ) : queue.length === 0 ? (
+            ) : visibleQueue.length === 0 ? (
               <div className="v2-activity__empty v2-activity__empty--plain">
                 <span>{queueCount === 0
                   ? t('activity.needsYou.emptyTitle')
@@ -853,7 +875,7 @@ const V2ActivityPage: React.FC = () => {
               </div>
             ) : (
               <div className="v2-activity__queue">
-                {queue.map((item) => (
+                {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
@@ -878,17 +900,17 @@ const V2ActivityPage: React.FC = () => {
                       )}
                       {item.kind === 'mention' && (
                         <>
-                          {!replyOpenIds.has(item.id) ? <button type="button" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
+                          {!replyOpenIds.has(item.id) ? <button type="button" className="v2-activity__queue-action--bordered" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
+                          <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
                             {acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
                       )}
                       {item.kind === 'handoff' && (
-                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>
                       )}
@@ -900,24 +922,22 @@ const V2ActivityPage: React.FC = () => {
                             </span>
                           ) : (
                             <>
-                              {[...(item.options || [])]
-                                .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
-                                .map((option) => (
-                                  <div className="v2-activity__option-choice" key={option.label}>
-                                    <button
-                                      type="button"
-                                      className={`v2-activity__option${option.recommended ? ' v2-activity__option--recommended' : ''}`}
-                                      onClick={() => ruleDecision(item, option.label)}
-                                      disabled={rulingId === item.id}
-                                      aria-label={t('activity.decision.ruleOption', { option: option.label })}
-                                    >
-                                      {rulingId === item.id ? t('activity.decision.working') : option.label}
-                                    </button>
-                                    {option.description && (
-                                      <span className="v2-activity__option-description">{option.description}</span>
-                                    )}
-                                  </div>
-                                ))}
+                              {(item.options || []).map((option, index) => (
+                                <div className="v2-activity__option-choice" key={option.label}>
+                                  <button
+                                    type="button"
+                                    className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
+                                    onClick={() => ruleDecision(item, option.label)}
+                                    disabled={rulingId === item.id}
+                                    aria-label={t('activity.decision.ruleOption', { option: option.label })}
+                                  >
+                                    {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                  </button>
+                                  {option.description && (
+                                    <span className="v2-activity__option-description">{option.description}</span>
+                                  )}
+                                </div>
+                              ))}
                               <button
                                 type="button"
                                 className="v2-activity__queue-action--secondary v2-activity__option"
@@ -948,7 +968,7 @@ const V2ActivityPage: React.FC = () => {
                           )}
                         </>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                      <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
@@ -959,7 +979,7 @@ const V2ActivityPage: React.FC = () => {
                 ))}
               </div>
             )}
-            {queue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
+            {visibleQueue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
               <button
                 type="button"
                 ref={queueMoreButtonRef}
@@ -974,7 +994,7 @@ const V2ActivityPage: React.FC = () => {
                     : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
               </button>
             )}
-            {queue.length === 0 && queueMoreError && !queueFailed && (
+            {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
           </section>
