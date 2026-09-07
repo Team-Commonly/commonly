@@ -9279,7 +9279,7 @@ body.modern-ui.v2-canvas {
   font-size: 13px;
 }
 
-.v2-activity__row-action-error {
+.v2-root .v2-activity__row-action-error {
   grid-column: 1 / -1;
   color: var(--v2-ink);
 }
