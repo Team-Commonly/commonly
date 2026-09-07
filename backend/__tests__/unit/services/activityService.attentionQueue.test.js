@@ -86,6 +86,15 @@ describe('ActivityService.getDecisionQueue', () => {
     });
   });
 
+  it('rejects settled history for a viewer outside the requested pod', async () => {
+    mockPodFind.mockReturnValue(chain([]));
+
+    await expect(ActivityService.getDecisionHistory('outsider-1', { podId: 'pod-1' }))
+      .rejects.toThrow('Access denied');
+    expect(mockDecisionFind).not.toHaveBeenCalled();
+    expect(mockDecisionCountDocuments).not.toHaveBeenCalled();
+  });
+
   it('bounds settled history to the loaded source message IDs when supplied', async () => {
     mockPodFind.mockReturnValue(chain([{
       _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],
