@@ -90,6 +90,27 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(landOnMessage(null)).toBe(false);
   });
 
+  test('a decision-card ask row is a keyboard-landable landing target', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={msg('decision-ask')}
+          decision={{
+            id: 'decision-1',
+            title: 'Choose a path',
+            options: [{ label: 'Ship it' }, { label: 'Wait' }],
+          }}
+        />
+      </MemoryRouter>,
+    );
+    const row = container.querySelector('#message-decision-ask');
+    expect(row).toHaveClass('v2-message-row--decision');
+    expect(row).toHaveAttribute('tabindex', '-1');
+    Element.prototype.scrollIntoView = jest.fn();
+    expect(landOnMessage('decision-ask')).toBe(true);
+    expect(document.activeElement).toBe(row);
+  });
+
   test('the strip is react · reply · thread · more, and more offers copy link / copy text', () => {
     render(
       <V2MessageActions

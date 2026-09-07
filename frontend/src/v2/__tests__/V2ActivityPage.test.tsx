@@ -84,7 +84,7 @@ describe('V2ActivityPage', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    sessionStorage.removeItem('v2:activity:snapshot');
+    sessionStorage.clear();
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
       return Promise.resolve({ data: recap });
@@ -482,6 +482,39 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Review requested')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByText('Review requested')).not.toBeInTheDocument());
+  });
+
+  test('does not restore another account\'s queue or drafts before or after revalidation', async () => {
+    const privateItem = { ...decisionQueue.items[0], title: 'Private request for account A' };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { ...decisionQueue, items: [privateItem], count: 1 }
+      : recap }));
+    const accountA = renderPageWithAuth({ _id: 'user-a' });
+    await screen.findByText(privateItem.title);
+    fireEvent.change(screen.getByRole('textbox', { name: i18n.t('activity.compose.placeholder') }), {
+      target: { value: 'Private unsent draft from account A' },
+    });
+    // Exercise the real snapshot writer, so a shared or constant-account key
+    // cannot pass merely because a hardcoded fixture key stopped matching.
+    fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('#message-699');
+    accountA.unmount();
+
+    const pending: Array<{ url: string; resolve: (value: any) => void }> = [];
+    mockGet.mockImplementation((url: string) => new Promise((resolve) => pending.push({ url, resolve })));
+    renderPageWithAuth({ _id: 'user-b' });
+    await waitFor(() => expect(pending.length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByText(privateItem.title)).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Private unsent draft from account A')).not.toBeInTheDocument();
+
+    await act(async () => {
+      pending.forEach(({ url, resolve }) => resolve({ data: url === '/api/activity/decision-queue'
+        ? { ...decisionQueue, items: [{ ...privateItem, title: 'Fresh request for account B' }], count: 1 }
+        : { ...recap, needsYou: [], agents: [], board: [] } }));
+    });
+    expect(await screen.findByText('Fresh request for account B')).toBeInTheDocument();
+    expect(screen.queryByText(privateItem.title)).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Private unsent draft from account A')).not.toBeInTheDocument();
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {
