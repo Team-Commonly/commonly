@@ -11564,7 +11564,7 @@ body.modern-ui.v2-canvas {
 /* Keep filters on a separate row when the pane cannot fit them beside the
    title. Both rows stay in normal reading order, without a clipped title. */
 @media (max-width: 1100px) {
-  .v2-activity__controls { position: static; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
+  .v2-activity__controls { position: relative; top: auto; right: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
   .v2-activity__bar-title { min-width: 0; }
   .v2-activity__subtitle { overflow: hidden; text-overflow: ellipsis; }
   .v2-activity__window { width: auto; flex: 0 0 auto; }

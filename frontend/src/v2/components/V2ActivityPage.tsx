@@ -671,6 +671,8 @@ const V2ActivityPage: React.FC = () => {
         </div>
         <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')} onKeyDown={(event) => {
           if (event.key === 'Escape' && scopeMenuOpen) {
+            event.preventDefault();
+            event.stopPropagation(); // This menu restores focus; the global Escape handler blurs it.
             setScopeMenuOpen(false);
             scopeMenuButtonRef.current?.focus();
           }

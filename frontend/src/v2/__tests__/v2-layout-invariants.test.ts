@@ -1623,7 +1623,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-rail__utility button.v2-lang-switch__trigger')).toContain('font: 700 11px/16px var(--v2-font-mono)');
       expect(activityPage).not.toContain('v2-activity__footer');
       expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
-      expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: static;[^}]*flex-wrap: wrap;/);
+      expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: relative;[^}]*top: auto;[^}]*right: auto;[^}]*flex-wrap: wrap;/);
+      expect(lastRuleBody(v2, '.v2-activity__controls')).toContain('z-index: 2');
       expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('position: absolute');
       expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('max-height: 240px');
       expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('overflow-y: auto');

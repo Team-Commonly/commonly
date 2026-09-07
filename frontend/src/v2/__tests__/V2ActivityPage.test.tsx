@@ -8,6 +8,7 @@ import V2ActivityPage from '../components/V2ActivityPage';
 import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
 import { AuthContext } from '../../context/AuthContext';
+import { setupFocusManagement } from '../../utils/focusUtils';
 
 jest.mock('axios');
 jest.mock('../components/V2Avatar', () => {
@@ -80,7 +81,7 @@ const renderPageWithAuth = (currentUser: { _id: string } | null) => render(
 );
 
 describe('V2ActivityPage', () => {
-  beforeAll(async () => { await i18nReady; });
+  beforeAll(async () => { await i18nReady; setupFocusManagement(); });
 
   beforeEach(async () => {
     jest.clearAllMocks();
