@@ -593,15 +593,44 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     setSendFollowVersion((version) => version + 1);
   }, []);
 
-  // Prepending changes scrollHeight, so without this the viewport jumps. Hold
-  // the reader's position by restoring the distance from the BOTTOM, which is
-  // invariant under a prepend.
-  const scrollAnchorRef = useRef<number | null>(null);
+  // Prepending changes scrollHeight, so without this the viewport jumps. Keep
+  // the anchor keyed to the oldest row: appends leave that id unchanged and
+  // must not consume the anchor or compensate for their own height.
+  const scrollAnchorRef = useRef<{
+    oldestId: string | null;
+    scrollTop: number;
+    scrollHeight: number;
+  } | null>(null);
+  const oldestMessageId = messages[0]?.id ? String(messages[0].id) : null;
   const handleLoadOlder = useCallback(async () => {
     const el = messagesContainerRef.current;
-    scrollAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
-    await loadOlder();
-  }, [loadOlder]);
+    const anchor = el
+      ? {
+        oldestId: oldestMessageId,
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+      }
+      : null;
+    scrollAnchorRef.current = anchor;
+    const result = await loadOlder();
+    if (result !== 'prepended' && result !== 'unchanged') {
+      // Empty/error/no-op responses do not produce a prepend. Clear the arm
+      // now so an unrelated future append cannot apply a stale compensation.
+      if (scrollAnchorRef.current === anchor) scrollAnchorRef.current = null;
+    } else if (result === 'prepended' && scrollAnchorRef.current) {
+      // Usually the layout effect below runs before this continuation. Keep a
+      // fallback for a deferred React commit so the anchor cannot survive a
+      // successful prepend and fire on a later message.
+      const current = messagesContainerRef.current;
+      const pending = scrollAnchorRef.current;
+      if (current && pending === anchor) {
+        current.scrollTop = pending.scrollTop + (current.scrollHeight - pending.scrollHeight);
+        scrollAnchorRef.current = null;
+      }
+    } else if (scrollAnchorRef.current === anchor) {
+      scrollAnchorRef.current = null;
+    }
+  }, [loadOlder, oldestMessageId]);
 
   // Older detail fixtures (and a few read-only embed callers) predate the
   // bounded source-search fields. Keep those callers on the legacy one-page
@@ -625,7 +654,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const el = messagesContainerRef.current;
     const anchor = scrollAnchorRef.current;
     if (!el || anchor == null) return;
-    el.scrollTop = el.scrollHeight - anchor;
+    const firstId = messages[0]?.id ? String(messages[0].id) : null;
+    if (firstId === anchor.oldestId) {
+      // A socket append changed the list without prepending anything. Move
+      // the baseline forward so the eventual older page is measured against
+      // the post-append height, while leaving the reader's scrollTop alone.
+      anchor.scrollHeight = el.scrollHeight;
+      return;
+    }
+    el.scrollTop = anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
     scrollAnchorRef.current = null;
   }, [messages]);
 

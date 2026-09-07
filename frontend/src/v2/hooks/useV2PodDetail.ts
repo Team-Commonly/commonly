@@ -124,6 +124,8 @@ interface MessagesResponse {
   data?: V2Message[];
 }
 
+export type LoadOlderResult = 'noop' | 'prepended' | 'unchanged' | 'empty' | 'failed' | 'stale';
+
 export interface UseV2PodDetailResult {
   pod: V2Pod | null;
   members: V2PodMember[];
@@ -138,7 +140,7 @@ export interface UseV2PodDetailResult {
   /** A full page came back, so older history probably exists. */
   hasMore: boolean;
   loadingOlder: boolean;
-  loadOlder: () => Promise<void>;
+  loadOlder: () => Promise<LoadOlderResult>;
   /** Bounded state for an automatic quote/activity lookup in older history. */
   historySearch?: HistorySearchState;
   searchOlderForMessage?: (messageId: string | number, retry?: boolean) => Promise<void>;
@@ -346,32 +348,36 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     return (Array.isArray(data) ? data : []).map(normalizeMessage);
   }, [api]);
 
-  const loadOlder = useCallback(async () => {
-    if (!podId || loadingOlderRef.current) return;
+  const loadOlder = useCallback(async (): Promise<LoadOlderResult> => {
+    if (!podId || loadingOlderRef.current) return 'noop';
     const oldest = messagesRef.current[0];
-    if (!oldest) return;
+    if (!oldest) return 'noop';
     const cursor = oldest.created_at || oldest.createdAt;
-    if (!cursor) return;
+    if (!cursor) return 'noop';
 
     loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
       const older = await fetchOlderPage(podId, cursor);
-      if (activePodIdRef.current !== podId) return;
+      if (activePodIdRef.current !== podId) return 'stale';
       if (older.length === 0) {
         hasMoreRef.current = false;
         setHasMore(false);
-        return;
+        return 'empty';
       }
       if (activePodIdRef.current === podId) {
+        const beforeFirstId = messagesRef.current[0]?.id;
         const merged = mergeMessagesById(older, messagesRef.current);
         messagesRef.current = merged;
         hasMoreRef.current = older.length >= PAGE_SIZE;
         setMessages(merged);
         setHasMore(hasMoreRef.current);
+        return merged[0]?.id !== beforeFirstId ? 'prepended' : 'unchanged';
       }
+      return 'stale';
     } catch {
       // Leave hasMore alone so the same button can be retried.
+      return 'failed';
     } finally {
       if (activePodIdRef.current === podId) {
         loadingOlderRef.current = false;

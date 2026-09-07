@@ -80,6 +80,11 @@ const threadNode = (hash, detail) => (
 );
 const renderAt = (hash, detail) => render(threadNode(hash, detail));
 
+const setScrollMetrics = (element, scrollHeight, scrollTop) => {
+  Object.defineProperty(element, 'scrollHeight', { configurable: true, value: scrollHeight });
+  Object.defineProperty(element, 'scrollTop', { configurable: true, writable: true, value: scrollTop });
+};
+
 describe('landing on a message decides reveal vs fetch (producer)', () => {
   test('a target folded inside a collapsed thread is revealed — the thread opens and NO history is fetched', async () => {
     const detail = makeDetail();
@@ -229,6 +234,72 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     } finally {
       global.IntersectionObserver = PreviousObserver;
     }
+  });
+
+  test('history prepend restores the viewport after a background append without compensating for the append', async () => {
+    let resolveLoadOlder;
+    const loadOlder = jest.fn(() => new Promise((resolve) => { resolveLoadOlder = resolve; }));
+    const initial = threadMessages();
+    const arrival = {
+      id: 'arrival', pod_id: 'p1', user_id: 'u4', content: 'peer arrival', message_type: 'text',
+      created_at: '2026-08-22T15:00:00Z', user: { username: 'peer' },
+    };
+    const older = {
+      id: 'older', pod_id: 'p1', user_id: 'u5', content: 'older page', message_type: 'text',
+      created_at: '2026-08-22T12:00:00Z', user: { username: 'archivist' },
+    };
+    const detail = makeDetail({ messages: initial, loadOlder });
+    const view = renderAt('', detail);
+    const scroller = view.container.querySelector('.v2-chat__messages');
+    setScrollMetrics(scroller, 1000, 400);
+
+    fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+
+    // A socket append changes the list while the older-page request is still
+    // pending. It must not move the reader or consume the prepend anchor.
+    setScrollMetrics(scroller, 1100, 400);
+    view.rerender(threadNode('', { ...detail, messages: [...initial, arrival] }));
+    expect(scroller.scrollTop).toBe(400);
+
+    // The eventual prepend compensates only for its own 200px growth; the
+    // 100px append was already folded into the anchor baseline.
+    setScrollMetrics(scroller, 1300, 400);
+    view.rerender(threadNode('', { ...detail, messages: [older, ...initial, arrival] }));
+    expect(scroller.scrollTop).toBe(600);
+    await act(async () => { resolveLoadOlder('prepended'); });
+  });
+
+  test.each(['empty', 'failed'])('%s older-page result clears the anchor before a later prepend', async (outcome) => {
+    let resolveLoadOlder;
+    const loadOlder = jest.fn(() => new Promise((resolve) => { resolveLoadOlder = resolve; }));
+    const initial = threadMessages();
+    const arrival = {
+      id: 'arrival', pod_id: 'p1', user_id: 'u4', content: 'peer arrival', message_type: 'text',
+      created_at: '2026-08-22T15:00:00Z', user: { username: 'peer' },
+    };
+    const older = {
+      id: 'older', pod_id: 'p1', user_id: 'u5', content: 'later older page', message_type: 'text',
+      created_at: '2026-08-22T12:00:00Z', user: { username: 'archivist' },
+    };
+    const detail = makeDetail({ messages: initial, loadOlder });
+    const view = renderAt('', detail);
+    const scroller = view.container.querySelector('.v2-chat__messages');
+    setScrollMetrics(scroller, 1000, 400);
+
+    fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
+    await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+    await act(async () => { resolveLoadOlder(outcome); });
+
+    // A no-prepend result must disarm the anchor; a later peer append should
+    // not be interpreted as the missing prepend.
+    setScrollMetrics(scroller, 1100, 400);
+    view.rerender(threadNode('', { ...detail, messages: [...initial, arrival] }));
+    expect(scroller.scrollTop).toBe(400);
+
+    setScrollMetrics(scroller, 1300, 400);
+    view.rerender(threadNode('', { ...detail, messages: [older, ...initial, arrival] }));
+    expect(scroller.scrollTop).toBe(400);
   });
 
   test('history recovery stays anchored to the chat viewport, not the scrolled transcript', async () => {

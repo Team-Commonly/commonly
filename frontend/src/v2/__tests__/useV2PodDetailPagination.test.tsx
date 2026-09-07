@@ -86,6 +86,21 @@ describe('useV2PodDetail pagination', () => {
     expect(result.current.hasMore).toBe(true);
   });
 
+  it('reports an empty older page and clears hasMore', async () => {
+    const first = makePage('a', PAGE, 100);
+    routeMock([first, []]);
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
+
+    let outcome;
+    await act(async () => { outcome = await result.current.loadOlder(); });
+
+    expect(outcome).toBe('empty');
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.messages).toHaveLength(PAGE);
+    expect(result.current.loadingOlder).toBe(false);
+  });
+
   it('reports no more history when the first page is short', async () => {
     routeMock([makePage('a', 3, 100)]);
     const { result } = renderHook(() => useV2PodDetail('p1'));
@@ -101,7 +116,9 @@ describe('useV2PodDetail pagination', () => {
     const { result } = renderHook(() => useV2PodDetail('p1'));
     await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
 
-    await act(async () => { await result.current.loadOlder(); });
+    let outcome;
+    await act(async () => { outcome = await result.current.loadOlder(); });
+    expect(outcome).toBe('prepended');
 
     const olderCall = mockApi.get.mock.calls
       .map((c) => c[0])
@@ -125,7 +142,9 @@ describe('useV2PodDetail pagination', () => {
     const { result } = renderHook(() => useV2PodDetail('p1'));
     await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
 
-    await act(async () => { await result.current.loadOlder(); });
+    let outcome;
+    await act(async () => { outcome = await result.current.loadOlder(); });
+    expect(outcome).toBe('prepended');
 
     const ids = result.current.messages.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -137,7 +156,9 @@ describe('useV2PodDetail pagination', () => {
     const { result } = renderHook(() => useV2PodDetail('p1'));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await act(async () => { await result.current.loadOlder(); });
+    let outcome;
+    await act(async () => { outcome = await result.current.loadOlder(); });
+    expect(outcome).toBe('noop');
 
     expect(mockApi.get.mock.calls.filter((c) => String(c[0]).includes('before=')))
       .toHaveLength(0);
@@ -159,10 +180,12 @@ describe('useV2PodDetail pagination', () => {
     const { result } = renderHook(() => useV2PodDetail('p1'));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
 
-    await act(async () => { await result.current.loadOlder(); });
+    let outcome;
+    await act(async () => { outcome = await result.current.loadOlder(); });
 
     expect(result.current.hasMore).toBe(true);
     expect(result.current.loadingOlder).toBe(false);
+    expect(outcome).toBe('failed');
   });
 
   it('bounds automatic source lookup to five older pages and reports a non-deletion bound', async () => {
