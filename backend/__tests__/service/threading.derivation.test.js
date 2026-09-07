@@ -92,23 +92,50 @@ d('thread_root_id derivation, executed', () => {
     expect(root.thread_root_id).toBeNull();
   });
 
-  test('a PG post resolves its recipient\'s earlier Mongo mention before returning', async () => {
+  test.each(['unthreaded', 'other-thread', 'same-thread', 'explicit-reply'])(
+    'mention resolution and sweep require scoped reply evidence: %s', async (mode) => {
     const AttentionItem = require('../../models/AttentionItem');
+    const { sweepResolvedMentionAttention } = require('../../services/attentionItemService');
+    await AttentionItem.deleteMany({});
+    const root = await insert('mention root');
+    const otherRoot = await insert('unrelated root');
+    await pool.query('UPDATE messages SET created_at = $1 WHERE pod_id = $2', [new Date('2019-01-01'), POD]);
     const attention = await AttentionItem.create({
       recipientUserId: USER,
       podId: POD,
       kind: 'mention',
-      source: { type: 'message', id: 'earlier-mention' },
+      source: { type: 'message', id: String(root.id) },
+      messageId: String(root.id),
+      // Explicit replies must also work for a legacy item without a root.
+      ...(mode === 'explicit-reply' ? {} : { threadRootId: String(root.id) }),
       title: 'Earlier mention',
       sourceCreatedAt: new Date('2020-01-01T00:00:00Z'),
     });
 
-    await insert('a later post without an at-mention');
+    await PGMessage.create(POD, USER, 'a later post', 'text',
+      mode === 'explicit-reply' ? root.id : null, null,
+      mode === 'same-thread' ? root.id : mode === 'other-thread' ? otherRoot.id : null);
 
     const resolved = await AttentionItem.findById(attention._id).lean();
-    expect(resolved.status).toBe('resolved');
-    expect(resolved.resolvedBy).toBe('replied');
-    expect(resolved.resolvedAt).toBeInstanceOf(Date);
+    const shouldResolve = mode === 'same-thread' || mode === 'explicit-reply';
+    if (!shouldResolve) {
+      expect(resolved.status).toBe('open');
+      expect(resolved.resolvedBy).toBeFalsy();
+    } else {
+      expect(resolved.status).toBe('resolved');
+      expect(resolved.resolvedBy).toBe('replied');
+      expect(resolved.resolvedAt).toBeInstanceOf(Date);
+    }
+    // Exercise the maintenance SQL against the same real message history.
+    await AttentionItem.updateOne({ _id: attention._id }, {
+      $set: { status: 'open' }, $unset: { resolvedBy: '', resolvedAt: '' },
+    });
+    const dry = await sweepResolvedMentionAttention();
+    expect(dry).toMatchObject({ scanned: 1, eligible: Number(shouldResolve), resolved: 0 });
+    expect((await AttentionItem.findById(attention._id)).status).toBe('open');
+    const applied = await sweepResolvedMentionAttention({ apply: true });
+    expect(applied).toMatchObject({ eligible: Number(shouldResolve), resolved: Number(shouldResolve) });
+    expect((await AttentionItem.findById(attention._id)).status).toBe(shouldResolve ? 'resolved' : 'open');
   });
 
   test('a direct reply inherits the root id', async () => {

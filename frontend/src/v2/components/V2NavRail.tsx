@@ -5,6 +5,8 @@ import V2LangSwitch from './V2LangSwitch';
 import V2AccountMenu from './V2AccountMenu';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
+import Badge from '@mui/material/Badge';
+import { useV2PodAttention } from '../hooks/useV2PodAttention';
 
 interface NavItem {
   key: string;
@@ -45,17 +47,20 @@ interface V2NavRailProps {
   // single chat with no way back to the list). Undefined on surfaces without a
   // drawer (feature pages) — those fall back to plain navigation.
   onPodsMobileNav?: () => void;
+  needsYouCount?: number | null;
 }
 
 const isMobileViewport = (): boolean => (
   typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 760px)').matches
 );
 
-const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
+const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useAuth();
   const { t } = useTranslation();
+  const attention = useV2PodAttention(needsYouCount === undefined);
+  const count = needsYouCount === undefined ? attention.count : needsYouCount;
   // Labels resolve at render so the rail tooltip (v2.css attr(data-label))
   // follows the active locale — NAV_ITEMS.label is the English fallback.
   const navLabel = (item: NavItem) => t(`common.nav.${item.key}`, { defaultValue: item.label });
@@ -97,9 +102,17 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
                 className={`v2-rail__item${isActive(item) ? ' v2-rail__item--active' : ''}`}
                 onClick={() => handleNavClick(item)}
                 title={navLabel(item)}
+                aria-label={item.key === 'activity' && count !== null && count > 0
+                  ? `${navLabel(item)}: ${t('activity.needsYou.countLabel', { count })}` : navLabel(item)}
                 data-label={navLabel(item)}
               >
-                <span className="v2-rail__item-icon">{item.icon}</span>
+                <span className="v2-rail__item-icon">
+                  {item.key === 'activity' && count !== null && count > 0 ? (
+                    <Badge badgeContent={count} max={Number.MAX_SAFE_INTEGER} aria-label={t('activity.needsYou.countLabel', { count })}>
+                      {item.icon}
+                    </Badge>
+                  ) : item.icon}
+                </span>
                 <span className="v2-rail__item-label">{navLabel(item)}</span>
               </button>
               {item.dividerAfter && <span className="v2-rail__divider" aria-hidden="true" />}

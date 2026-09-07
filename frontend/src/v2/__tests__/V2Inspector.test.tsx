@@ -35,6 +35,7 @@ const renderInspector = (props: Partial<React.ComponentProps<typeof V2Inspector>
   <MemoryRouter>
     <V2Inspector
       detail={detail as any}
+      attentionCount={1}
       attentionItems={[{
         id: 'decision-1', kind: 'decision', title: 'Slack default mode', actorName: 'Wren', podId: 'pod-1', messageId: 'message-7',
       }]}
@@ -100,15 +101,22 @@ describe('V2Inspector', () => {
 
   test('does not render a stale attention item from another pod', async () => {
     mockGet.mockResolvedValue({ tasks: [] });
-    renderInspector({ attentionItems: [{ id: 'other', kind: 'decision', title: 'Other pod', podId: 'pod-2' }] });
+    renderInspector({ attentionCount: 0, attentionItems: [{ id: 'other', kind: 'decision', title: 'Other pod', podId: 'pod-2' }] });
     await waitFor(() => expect(screen.getByText('Nothing. Wren is working.')).toBeInTheDocument());
     expect(screen.queryByText('Other pod')).not.toBeInTheDocument();
   });
 
   test('uses the settled-workspace empty copy when no agent is working', async () => {
     mockGet.mockImplementation(() => Promise.resolve({ items: [], tasks: [] }));
-    renderInspector({ detail: { ...detail, agents: [] } as any, attentionItems: [] });
+    renderInspector({ detail: { ...detail, agents: [] } as any, attentionCount: 0, attentionItems: [] });
 
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+  });
+
+  test('does not claim nothing open when this pod falls outside the display cap', async () => {
+    renderInspector({ attentionCount: 83, attentionItems: [] });
+    fireEvent.click(await screen.findByRole('button', { name: '83 waiting on you' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/activity');
+    expect(screen.queryByText(/Nothing/)).not.toBeInTheDocument();
   });
 });

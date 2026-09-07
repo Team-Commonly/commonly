@@ -12,6 +12,8 @@ import axios from 'axios';
 interface PodSummary {
   content?: string;
   createdAt?: string;
+  metadata?: { totalItems?: number };
+  timeRange?: { start?: string; end?: string };
 }
 
 interface Props {
@@ -90,16 +92,18 @@ const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
   }, [podId, summary]);
 
   if (!loaded) return null;
-  // Sam's revised ruling (2026-09-01, hours after the strip shipped):
-  // "always shows up is not a good design" and an empty/stale strip
-  // "reveals no good info". So the strip EARNS its row: it renders only
-  // when a summary exists, is fresh (24h), and this version has not been
-  // dismissed. No summary -> no strip, not an empty shell with a
-  // Summarize button — generating one on demand stays available from the
-  // inspector/summaries surface.
-  const FRESH_MS = 24 * 60 * 60 * 1000;
-  const isFresh = !!(summary?.createdAt && Date.now() - new Date(summary.createdAt).getTime() < FRESH_MS);
-  if (!summary?.content || !isFresh || dismissed) return null;
+  // Sam 2026-09-06: at least three source messages and a covered window
+  // ending within seven days. This supersedes the generation-age-only 24h
+  // gate: re-generating a July summary today must not make July fresh.
+  // Legacy summaries without source evidence stay available on the summary
+  // surface, but do not earn a catch-up strip.
+  const sourceCount = summary?.metadata?.totalItems;
+  const sourceStart = Date.parse(summary?.timeRange?.start || '');
+  const sourceEnd = Date.parse(summary?.timeRange?.end || '');
+  const sourceAge = Date.now() - sourceEnd;
+  const isFresh = Number.isFinite(sourceStart) && Number.isFinite(sourceEnd)
+    && sourceStart <= sourceEnd && sourceAge >= 0 && sourceAge < 7 * 24 * 60 * 60 * 1000;
+  if (!summary?.content?.trim() || !Number.isInteger(sourceCount) || (sourceCount ?? 0) < 3 || !isFresh || dismissed) return null;
 
   return (
     <div className="v2-catchup" data-testid="catchup-strip">

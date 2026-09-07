@@ -10,6 +10,7 @@ import { V2AttentionItem } from '../hooks/useV2PodAttention';
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
   attentionItems?: V2AttentionItem[];
+  attentionCount?: number | null;
   onClose?: () => void;
   onOpenInvite?: () => void;
 }
@@ -62,7 +63,7 @@ const agentState = (
   return { kind: 'idle' };
 };
 
-const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], onClose, onOpenInvite }) => {
+const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], attentionCount = null, onClose, onOpenInvite }) => {
   const { pod, agents } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
@@ -167,7 +168,12 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
         <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-needs-you">
           <h2 id="workspace-inspector-needs-you" className="v2-workspace-inspector__label">{t('inspector.workspace.needsYou')}</h2>
           <div className="v2-workspace-inspector__rows">
-            {attention.length === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
+            {attentionCount === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
+            {attentionCount !== null && attentionCount > 0 && (
+              <button type="button" className="v2-workspace-inspector__attention" onClick={() => navigate('/v2/activity')}>
+                {t('activity.needsYou.countLabel', { count: attentionCount })}
+              </button>
+            )}
             {attention.map((item) => (
               <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
                 <span>{item.title}</span>
