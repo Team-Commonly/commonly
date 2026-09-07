@@ -593,15 +593,70 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     setSendFollowVersion((version) => version + 1);
   }, []);
 
-  // Prepending changes scrollHeight, so without this the viewport jumps. Hold
-  // the reader's position by restoring the distance from the BOTTOM, which is
-  // invariant under a prepend.
-  const scrollAnchorRef = useRef<number | null>(null);
+  // Prepending moves every already-rendered row below the inserted page. Keep
+  // one such row as the anchor and measure its content offset, rather than the
+  // container's total height: a peer append at the bottom must not be part of
+  // the compensation.
+  const findAnchorRow = useCallback((container: HTMLElement, preferredId: string | null) => {
+    const preferred = preferredId ? document.getElementById(`message-${preferredId}`) : null;
+    if (preferred && container.contains(preferred)) return preferred;
+    return container.querySelector<HTMLElement>('[id^="message-"]');
+  }, []);
+  const measureAnchorOffset = useCallback((container: HTMLElement, row: HTMLElement | null) => {
+    if (!row || !container.contains(row)) return null;
+    const containerRect = container.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    // Rect + scrollTop is the row's position in the scroll content. It stays
+    // stable when a reader scrolls while the request is in flight.
+    return rowRect.top - containerRect.top + container.scrollTop;
+  }, []);
+  const scrollAnchorRef = useRef<{
+    podId: string | null;
+    oldestId: string | null;
+    rowId: string;
+    rowOffset: number;
+  } | null>(null);
+  const currentPodId = pod?._id ? String(pod._id) : null;
+  const oldestMessageId = messages[0]?.id ? String(messages[0].id) : null;
   const handleLoadOlder = useCallback(async () => {
+    // The edge button is replaced by a loading status after the first click,
+    // but keep the first request's anchor when two events batch before React
+    // commits. The hook's own loading ref suppresses the duplicate fetch.
+    const existingAnchor = scrollAnchorRef.current;
+    const ownsAnchor = existingAnchor == null;
     const el = messagesContainerRef.current;
-    scrollAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
-    await loadOlder();
-  }, [loadOlder]);
+    const row = el ? findAnchorRow(el, oldestMessageId) : null;
+    const rowOffset = el ? measureAnchorOffset(el, row) : null;
+    const anchor = existingAnchor || (el && row && rowOffset !== null
+      ? {
+        podId: currentPodId,
+        oldestId: oldestMessageId,
+        rowId: row.id,
+        rowOffset,
+      }
+      : null);
+    if (ownsAnchor) {
+      scrollAnchorRef.current = anchor;
+      if (anchor && el) el.dataset.historyAnchor = 'active';
+    }
+    const result = await loadOlder();
+    if (!ownsAnchor) return;
+    if (result !== 'prepended' && result !== 'unchanged') {
+      // Empty/error/no-op responses do not produce a prepend. Clear the arm
+      // now so an unrelated future append cannot apply a stale compensation.
+      if (scrollAnchorRef.current === anchor) {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
+    } else if (scrollAnchorRef.current === anchor) {
+      // A successful prepend is consumed by the committed-row layout effect;
+      // do not clear it here before a deferred React commit can be observed.
+      if (result === 'unchanged') {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
+    }
+  }, [currentPodId, findAnchorRow, loadOlder, measureAnchorOffset, oldestMessageId]);
 
   // Older detail fixtures (and a few read-only embed callers) predate the
   // bounded source-search fields. Keep those callers on the legacy one-page
@@ -625,9 +680,34 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const el = messagesContainerRef.current;
     const anchor = scrollAnchorRef.current;
     if (!el || anchor == null) return;
-    el.scrollTop = el.scrollHeight - anchor;
+    if (anchor.podId !== currentPodId) {
+      scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
+      return;
+    }
+    const firstId = messages[0]?.id ? String(messages[0].id) : null;
+    const row = document.getElementById(anchor.rowId);
+    const rowOffset = measureAnchorOffset(el, row);
+    if (rowOffset === null) {
+      scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
+      return;
+    }
+    if (firstId === anchor.oldestId) {
+      // A socket append changed the list without prepending anything. Move
+      // the baseline forward so the eventual older page is measured against
+      // the same rendered row, while leaving the reader's scrollTop alone.
+      anchor.rowOffset = rowOffset;
+      return;
+    }
+    // Apply only the movement of the existing row across the commit that
+    // changed the oldest id. Reading the current scrollTop preserves any user
+    // scrolling that happened while the request was in flight, and a bottom
+    // append does not move this row.
+    el.scrollTop += rowOffset - anchor.rowOffset;
     scrollAnchorRef.current = null;
-  }, [messages]);
+    delete el.dataset.historyAnchor;
+  }, [currentPodId, measureAnchorOffset, messages]);
 
   // Pasting an image into the field attaches it. The handler is defined
   // later (it needs the upload plumbing), so the effect reads it through a ref

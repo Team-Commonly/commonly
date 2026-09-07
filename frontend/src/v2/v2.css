@@ -1777,6 +1777,13 @@ body.modern-ui.v2-canvas {
   gap: 0;
 }
 
+/* Only the managed history operation disables native anchoring. Leaving the
+   default on at rest keeps late image loads above a reader's viewport stable;
+   V2Thread measures and compensates the history row itself. */
+.v2-chat__messages[data-history-anchor="active"] {
+  overflow-anchor: none;
+}
+
 /* The transcript is the chat viewport's positioning context. History
    recovery belongs to this viewport rather than the top of the scrollable
    message list, otherwise a failure after a deep landing is stranded above
