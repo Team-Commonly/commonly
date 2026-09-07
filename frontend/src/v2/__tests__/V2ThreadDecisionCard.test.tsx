@@ -249,6 +249,55 @@ describe('V2Thread decision cards', () => {
     expect(screen.getByText('Overflow decision')).toBeInTheDocument();
   });
 
+  test('chunks loaded source ids so decisions at both ends of a long transcript remain discoverable', async () => {
+    const messages = Array.from({ length: 202 }, (_, index) => ({
+      ...detail.messages[0],
+      id: String(index),
+    }));
+    messages[0] = { ...messages[0], id: 'source-first' };
+    messages[201] = { ...messages[201], id: 'source-last' };
+    const wideDetail = { ...detail, messages };
+    const first = {
+      id: 'decision-first', kind: 'decision', podId: 'pod-1', messageId: 'source-first',
+      title: 'First source decision', detail: 'Which first-end choice?',
+      options: [{ label: 'Keep first' }],
+    };
+    const last = {
+      id: 'decision-last', kind: 'decision', podId: 'pod-1', messageId: 'source-last',
+      title: 'Last source decision', detail: 'Which last-end choice?',
+      options: [{ label: 'Keep last' }],
+    };
+    const requests = new Map<string, string[]>();
+    mockGet.mockImplementation((url, config) => {
+      if (url !== '/api/activity/decision-queue' && url !== '/api/activity/decision-history') return Promise.resolve({ data: {} });
+      const ids = String(config?.params?.messageIds || '').split(',').filter(Boolean);
+      expect(ids.length).toBeLessThanOrEqual(200);
+      expect(new Set(ids).size).toBe(ids.length);
+      const key = url.endsWith('decision-queue') ? 'queue' : 'history';
+      requests.set(`${key}-${requests.size}`, ids);
+      const items = key === 'queue'
+        ? [first, last].filter((item) => ids.includes(item.messageId))
+        : [];
+      return Promise.resolve({ data: { items, hasMore: false } });
+    });
+
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={wideDetail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    expect(await screen.findAllByTestId('decision-card')).toHaveLength(2);
+    expect(screen.getByText('First source decision')).toBeInTheDocument();
+    expect(screen.getByText('Last source decision')).toBeInTheDocument();
+    const queueRequests = [...requests.entries()].filter(([key]) => key.startsWith('queue-'));
+    const historyRequests = [...requests.entries()].filter(([key]) => key.startsWith('history-'));
+    expect(queueRequests).toHaveLength(2);
+    expect(historyRequests).toHaveLength(2);
+    expect(queueRequests[0][1]).toContain('source-first');
+    expect(queueRequests[1][1]).toContain('source-last');
+  });
+
   test('keeps authored option order while labeling a later recommended option', async () => {
     const authored = {
       id: 'decision-authored-order', kind: 'decision', podId: 'pod-1', messageId: '42',

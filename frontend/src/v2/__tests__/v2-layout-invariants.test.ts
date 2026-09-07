@@ -409,10 +409,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-activity__option-description');
     expect(activityPage).toContain('(option, index)');
     expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
-    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId, {");
-    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId, {");
-    expect(thread).toContain('podId, limit: DECISION_PAGE_SIZE, offset, ...extraParams');
-    expect(thread).toContain("messageIds: loadedMessageIdsRef.current.join(',')");
+    expect(thread).toContain("loadDecisionPages<T>(");
+    expect(thread).toContain("'/api/activity/decision-queue'");
+    expect(thread).toContain("'/api/activity/decision-history'");
+    expect(thread).toContain('DECISION_MESSAGE_ID_BATCH_SIZE = 200');
+    expect(thread).toContain('loadDecisionPagesForMessageIds<ThreadDecision>');
+    expect(thread).toContain('loadedMessageIdsRef.current = [...new Set(messages');
     expect(thread).toContain('if (pendingData)');
     expect(thread).toContain("'/api/activity/decision-history'");
     expect(thread).toContain('settledDecisionByMessageId');

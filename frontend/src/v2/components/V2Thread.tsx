@@ -100,6 +100,7 @@ interface DecisionPage<T> {
 }
 
 const DECISION_PAGE_SIZE = 50;
+const DECISION_MESSAGE_ID_BATCH_SIZE = 200;
 
 const loadDecisionPages = async <T,>(
   api: ReturnType<typeof useV2Api>,
@@ -124,6 +125,30 @@ const loadDecisionPages = async <T,>(
     offset += pageItems.length;
   }
   return { items };
+};
+
+const loadDecisionPagesForMessageIds = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+  messageIds: string[],
+): Promise<{ items: T[] }> => {
+  const uniqueMessageIds = [...new Set(messageIds.filter(Boolean))];
+  const batches: string[][] = [];
+  for (let index = 0; index < uniqueMessageIds.length; index += DECISION_MESSAGE_ID_BATCH_SIZE) {
+    batches.push(uniqueMessageIds.slice(index, index + DECISION_MESSAGE_ID_BATCH_SIZE));
+  }
+  // An empty transcript still sends one explicit empty filter. This keeps the
+  // read authoritative (and preserves the existing empty-state behavior),
+  // while every non-empty filter stays under the server's documented cap.
+  if (batches.length === 0) batches.push([]);
+  const pages = await Promise.all(batches.map((batch) => loadDecisionPages<T>(
+    api,
+    endpoint,
+    podId,
+    { messageIds: batch.join(',') },
+  )));
+  return { items: pages.flatMap((page) => page.items) };
 };
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
@@ -307,9 +332,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
   const loadedMessageIdsRef = useRef<string[]>([]);
-  loadedMessageIdsRef.current = messages
+  loadedMessageIdsRef.current = [...new Set(messages
     .map((message) => String(message.id || ''))
-    .filter(Boolean);
+    .filter(Boolean))];
 
   // A DecisionRequest posts an ordinary message for its timeline position and
   // materializes its typed choices in the attention queue. Join those two
@@ -325,12 +350,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const load = async () => {
       try {
         const [pendingData, historyData] = await Promise.all([
-          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId, {
-            messageIds: loadedMessageIdsRef.current.join(','),
-          }).catch(() => null),
-          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId, {
-            messageIds: loadedMessageIdsRef.current.join(','),
-          }).catch(() => null),
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-queue', podId, loadedMessageIdsRef.current).catch(() => null),
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-history', podId, loadedMessageIdsRef.current).catch(() => null),
         ]);
         if (!active) return;
         // A failed queue read is not authoritative. Preserve pending cards

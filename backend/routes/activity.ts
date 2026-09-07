@@ -34,6 +34,7 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+const MAX_MESSAGE_IDS_PER_REQUEST = 200;
 
 // Activity queries and actions fan out to multiple projections. Sixty per
 // minute leaves room for normal use without an unbounded hot loop.
@@ -118,7 +119,10 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     }
     const messageIds = rawMessageIds === undefined
       ? undefined
-      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 200);
+      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))];
+    if (messageIds && messageIds.length > MAX_MESSAGE_IDS_PER_REQUEST) {
+      return res.status(400).json({ error: `messageIds must contain at most ${MAX_MESSAGE_IDS_PER_REQUEST} ids` });
+    }
     const limit = rawLimit === undefined ? undefined : Number(rawLimit);
     const offset = rawOffset === undefined ? undefined : Number(rawOffset);
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
@@ -158,7 +162,10 @@ router.get('/decision-history', auth, async (req: Req, res: Res) => {
     }
     const messageIds = rawMessageIds === undefined
       ? undefined
-      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 200);
+      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))];
+    if (messageIds && messageIds.length > MAX_MESSAGE_IDS_PER_REQUEST) {
+      return res.status(400).json({ error: `messageIds must contain at most ${MAX_MESSAGE_IDS_PER_REQUEST} ids` });
+    }
     const limit = rawLimit === undefined ? undefined : Number(rawLimit);
     const offset = rawOffset === undefined ? undefined : Number(rawOffset);
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {

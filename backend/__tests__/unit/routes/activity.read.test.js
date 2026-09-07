@@ -63,6 +63,18 @@ describe('activity read routes', () => {
     await request(app).get('/api/activity/decision-queue?limit=51').expect(400);
   });
 
+  it('GET /api/activity decision reads reject an oversized loaded-source filter', async () => {
+    const messageIds = Array.from({ length: 201 }, (_, index) => `message-${index}`).join(',');
+    await request(app)
+      .get('/api/activity/decision-queue')
+      .query({ messageIds })
+      .expect(400, { error: 'messageIds must contain at most 200 ids' });
+    await request(app)
+      .get('/api/activity/decision-history')
+      .query({ messageIds })
+      .expect(400, { error: 'messageIds must contain at most 200 ids' });
+  });
+
   it('GET /api/activity/decision-history forwards pod scope and pagination', async () => {
     await request(app)
       .get('/api/activity/decision-history?podId=pod-1&messageIds=42%2C43&limit=50&offset=50')
