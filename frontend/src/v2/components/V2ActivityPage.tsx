@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AuthContext } from '../../context/AuthContext';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
@@ -91,6 +92,8 @@ interface ActivitySnapshot {
   queueCount?: number | null;
   queueRemaining?: number;
   queueCountsByPod?: Record<string, number>;
+  composePodId?: string;
+  composeDraft?: string;
   replyDrafts?: Record<string, string>;
   focusedItemId?: string | null;
   scrollY?: number;
@@ -99,13 +102,15 @@ interface ActivitySnapshot {
 
 const ACTIVITY_SNAPSHOT_KEY = 'v2:activity:snapshot';
 
-const readActivitySnapshot = (): ActivitySnapshot | null => {
+const snapshotKey = (accountId: string): string => `${ACTIVITY_SNAPSHOT_KEY}:${accountId}`;
+
+const readActivitySnapshot = (accountId: string): ActivitySnapshot | null => {
   try {
-    const raw = sessionStorage.getItem(ACTIVITY_SNAPSHOT_KEY);
+    const raw = sessionStorage.getItem(snapshotKey(accountId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ActivitySnapshot;
     if (!parsed.savedAt || Date.now() - parsed.savedAt > 10 * 60_000) {
-      sessionStorage.removeItem(ACTIVITY_SNAPSHOT_KEY);
+      sessionStorage.removeItem(snapshotKey(accountId));
       return null;
     }
     return parsed;
@@ -128,13 +133,18 @@ const relativeTime = (value: string | null | undefined): string => {
 const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const restoredSnapshotRef = useRef<ActivitySnapshot | null>(readActivitySnapshot());
-  const restoredSnapshot = restoredSnapshotRef.current;
-  const [window, setWindow] = useState<ActivityWindow>(restoredSnapshot?.window || 'today');
-  const [podId, setPodId] = useState(restoredSnapshot?.podId || 'all');
+  const auth = useContext(AuthContext);
+  const currentUser = auth?.currentUser || null;
+  const authLoading = auth?.loading || false;
+  const accountId = currentUser?._id ? String(currentUser._id) : null;
+  const restoredSnapshotRef = useRef<ActivitySnapshot | null>(null);
+  const snapshotAccountRef = useRef<string | null | undefined>(undefined);
+  const [snapshotReady, setSnapshotReady] = useState(false);
+  const [window, setWindow] = useState<ActivityWindow>('today');
+  const [podId, setPodId] = useState('all');
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
-  const [recap, setRecap] = useState<ActivityRecap | null>(restoredSnapshot?.recap || null);
-  const [loading, setLoading] = useState(!restoredSnapshot?.recap);
+  const [recap, setRecap] = useState<ActivityRecap | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
@@ -144,10 +154,10 @@ const V2ActivityPage: React.FC = () => {
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
   const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
-  const [queue, setQueue] = useState<NeedsYouItem[]>(restoredSnapshot?.queue || []);
-  const [queueCount, setQueueCount] = useState<number | null>(restoredSnapshot?.queueCount ?? null);
-  const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>(restoredSnapshot?.queueCountsByPod || {});
-  const [queueRemaining, setQueueRemaining] = useState(restoredSnapshot?.queueRemaining || 0);
+  const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
+  const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
@@ -155,8 +165,49 @@ const V2ActivityPage: React.FC = () => {
   const queueGenerationRef = useRef(0);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>(restoredSnapshot?.replyDrafts || {});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [composePodId, setComposePodId] = useState('');
+  const [composeDraft, setComposeDraft] = useState('');
+  const [composing, setComposing] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
   const [expandedMovedIds, setExpandedMovedIds] = useState<Set<string>>(new Set());
+
+  // A Back snapshot is account-scoped and is only read after AuthContext has
+  // established the identity. This prevents one signed-in account from
+  // hydrating another account's queue, recap, or reply drafts from a shared
+  // browser session.
+  useEffect(() => {
+    if (authLoading || snapshotAccountRef.current === accountId) return;
+    snapshotAccountRef.current = accountId;
+    const snapshot = accountId ? readActivitySnapshot(accountId) : null;
+    restoredSnapshotRef.current = snapshot;
+    if (snapshot) {
+      setWindow(snapshot.window || 'today');
+      setPodId(snapshot.podId || 'all');
+      setRecap(snapshot.recap || null);
+      setQueue(snapshot.queue || []);
+      setQueueCount(snapshot.queueCount ?? null);
+      setQueueCountsByPod(snapshot.queueCountsByPod || {});
+      setQueueRemaining(snapshot.queueRemaining || 0);
+      setReplyDrafts(snapshot.replyDrafts || {});
+      setComposePodId(snapshot.composePodId || '');
+      setComposeDraft(snapshot.composeDraft || '');
+      setLoading(!snapshot.recap);
+    } else {
+      setWindow('today');
+      setPodId('all');
+      setRecap(null);
+      setQueue([]);
+      setQueueCount(null);
+      setQueueCountsByPod({});
+      setQueueRemaining(0);
+      setReplyDrafts({});
+      setComposePodId('');
+      setComposeDraft('');
+      setLoading(true);
+    }
+    setSnapshotReady(true);
+  }, [accountId, authLoading]);
 
   useEffect(() => {
     const refresh = () => setReloadKey((value) => value + 1);
@@ -170,21 +221,22 @@ const V2ActivityPage: React.FC = () => {
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
-    if (!snapshot) return;
+    if (!snapshotReady || !snapshot) return;
     const restore = () => {
       if (snapshot.scrollY && snapshot.scrollY > 0) globalThis.window.scrollTo(0, snapshot.scrollY);
       if (snapshot.focusedItemId) {
         const row = document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(snapshot.focusedItemId)}"]`);
         row?.focus();
       }
-      sessionStorage.removeItem(ACTIVITY_SNAPSHOT_KEY);
+      if (accountId) sessionStorage.removeItem(snapshotKey(accountId));
       restoredSnapshotRef.current = null;
     };
     const frame = globalThis.window.requestAnimationFrame(restore);
     return () => globalThis.window.cancelAnimationFrame(frame);
-  }, []);
+  }, [accountId, snapshotReady]);
 
   useEffect(() => {
+    if (!snapshotReady) return undefined;
     let active = true;
     const generation = queueGenerationRef.current + 1;
     queueGenerationRef.current = generation;
@@ -211,10 +263,18 @@ const V2ActivityPage: React.FC = () => {
         if (!active) return;
         setRecap(recapResponse.data);
         const rawItems = queueResponse?.data?.items;
+        const availablePods = recapResponse.data.pods || [];
+        const setComposeDefault = (candidate = '') => {
+          const fallback = candidate || availablePods[0]?.id || '';
+          setComposePodId((current) => (
+            current && availablePods.some((pod) => pod.id === current) ? current : fallback
+          ));
+        };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
           setQueueFailed(queue.length === 0);
           setQueueMoreError(queue.length > 0);
+          setComposeDefault();
           return;
         }
         setQueueFailed(false);
@@ -230,6 +290,10 @@ const V2ActivityPage: React.FC = () => {
         setQueueRemaining(typeof queueResponse!.data.remaining === 'number'
           ? queueResponse!.data.remaining
           : Math.max(queueResponse!.data.count - queueItems.length, 0));
+        // The initial destination is an account-level global fact computed by
+        // the service before scope/page slicing. Preserve an intentional
+        // target across refreshes and fall back to the first available pod.
+        setComposeDefault(queueResponse?.data?.composePodId || '');
       })
       .catch(() => {
         if (active) {
@@ -246,7 +310,7 @@ const V2ActivityPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [podId, reloadKey, t, window]);
+  }, [accountId, podId, reloadKey, snapshotReady, t, window]);
 
   const loadMoreQueue = async () => {
     if (queueMoreError) {
@@ -335,7 +399,7 @@ const V2ActivityPage: React.FC = () => {
     if (!targetPodId) return;
     try {
       const active = document.activeElement?.closest<HTMLElement>('[data-activity-item-id]');
-      sessionStorage.setItem(ACTIVITY_SNAPSHOT_KEY, JSON.stringify({
+      if (accountId) sessionStorage.setItem(snapshotKey(accountId), JSON.stringify({
         window,
         podId,
         recap,
@@ -344,6 +408,8 @@ const V2ActivityPage: React.FC = () => {
         queueRemaining,
         queueCountsByPod,
         replyDrafts,
+        composePodId,
+        composeDraft,
         focusedItemId: active?.dataset.activityItemId || null,
         scrollY: globalThis.window.scrollY,
         savedAt: Date.now(),
@@ -418,6 +484,28 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
+  const sendCompose = async () => {
+    const content = composeDraft.trim();
+    if (!content || !composePodId || composing) return;
+    setComposing(true);
+    setComposeError(null);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `/api/messages/${encodeURIComponent(composePodId)}`,
+        { content },
+        { headers: { 'x-auth-token': token ?? '' } },
+      );
+      setComposeDraft('');
+      notifyAttentionChanged();
+      setReloadKey((value) => value + 1);
+    } catch {
+      setComposeError(t('activity.compose.actionFailed'));
+    } finally {
+      setComposing(false);
+    }
+  };
+
   // Reply-in-place (Sam, 2026-09-01: "a way to really work with these agents
   // more easily… and tell them what is on my mind"). The reply posts into
   // the SAME thread the mention came from, addressed to the message, through
@@ -449,14 +537,14 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const markHandled = async (item: NeedsYouItem) => {
+  const acknowledgeMention = async (item: NeedsYouItem) => {
     if (acknowledgingMentionId) return;
     setAcknowledgingMentionId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
-        `/api/activity/${item.attentionItemId || item.id}/handled`,
+        `/api/activity/${item.attentionItemId || item.id}/acknowledge`,
         {},
         { headers: { 'x-auth-token': token ?? '' } },
       );
@@ -507,6 +595,33 @@ const V2ActivityPage: React.FC = () => {
       {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
       {!loading && !error && recap && (
         <>
+          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
+            <div className="v2-activity__compose-top">
+              <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
+              <label className="v2-activity__compose-pod">
+                <span>{t('activity.compose.podLabel')}</span>
+                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
+                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <textarea
+              aria-label={t('activity.compose.placeholder')}
+              rows={2}
+              placeholder={t('activity.compose.placeholder')}
+              value={composeDraft}
+              onChange={(event) => setComposeDraft(event.target.value)}
+              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void sendCompose(); }}
+              disabled={composing || !composePodId}
+            />
+            <div className="v2-activity__compose-foot">
+              <span className="v2-activity__compose-hint">{t('activity.compose.hint')}</span>
+              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={() => { void sendCompose(); }} disabled={composing || !composePodId || !composeDraft.trim()}>
+                {composing ? t('activity.compose.working') : t('activity.compose.send')}
+              </button>
+            </div>
+            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
+          </section>
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
@@ -592,7 +707,7 @@ const V2ActivityPage: React.FC = () => {
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandled(item)} disabled={acknowledgingMentionId === item.id}>
+                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
                             {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
@@ -652,11 +767,6 @@ const V2ActivityPage: React.FC = () => {
                             </>
                           )}
                         </>
-                      )}
-                      {item.kind === 'decision' && (item.options || []).length === 0 && (
-                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandled(item)} disabled={acknowledgingMentionId === item.id}>
-                          {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
-                        </button>
                       )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}

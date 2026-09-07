@@ -30,6 +30,8 @@ interface V2ThreadMessagesProps {
   hasMore: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  historyLandingState?: 'idle' | 'loading' | 'retry' | 'not-reached';
+  onRetryHistory?: () => void;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
   // previous page when the reader reaches the top.
   edgeRef?: React.RefObject<HTMLDivElement | null>;
@@ -80,6 +82,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   hasMore,
   loadingOlder,
   onLoadOlder,
+  historyLandingState = 'idle',
+  onRetryHistory,
   edgeRef,
   jumpCount = 0,
   showJump = false,
@@ -158,9 +162,16 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     <div className="v2-chat__messages" ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
           the button form stays reachable by keyboard. */}
-      <div className="v2-thread__edge" ref={edgeRef} data-state={loadingOlder ? 'loading' : hasMore ? 'more' : messages.length > 0 ? 'beginning' : 'empty'}>
-        {loadingOlder ? (
+      <div className="v2-thread__edge" ref={edgeRef} data-state={historyLandingState !== 'idle' ? historyLandingState : loadingOlder ? 'loading' : hasMore ? 'more' : messages.length > 0 ? 'beginning' : 'empty'}>
+        {historyLandingState === 'loading' || loadingOlder ? (
           <span className="v2-thread__edge-line" role="status">{t('podChat.history.loadingEarlier')}</span>
+        ) : historyLandingState === 'retry' ? (
+          <button type="button" className="v2-thread__edge-line" onClick={onRetryHistory}>{t('podChat.history.retryEarlier', { defaultValue: 'Retry' })}</button>
+        ) : historyLandingState === 'not-reached' ? (
+          <>
+            <span className="v2-thread__edge-line" role="status">{t('podChat.history.notReached', { defaultValue: 'Message not reached yet.' })}</span>
+            {hasMore && <button type="button" className="v2-thread__edge-line" onClick={onLoadOlder}>{t('podChat.history.continueBrowsing', { defaultValue: 'Continue browsing older messages' })}</button>}
+          </>
         ) : hasMore ? (
           <button type="button" className="v2-thread__edge-line" onClick={onLoadOlder}>{t('podChat.history.loadEarlier')}</button>
         ) : messages.length > 0 ? (

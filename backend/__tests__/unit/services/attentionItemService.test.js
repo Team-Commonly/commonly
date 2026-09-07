@@ -203,15 +203,6 @@ describe('attentionItemService', () => {
     );
   });
 
-  it('marks any open attention item handled by its recipient', async () => {
-    await AttentionItemService.markHandled('507f191e810c19729de860ea', '507f191e810c19729de860eb');
-
-    expect(mockUpdateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ recipientUserId: '507f191e810c19729de860ea', status: 'open' }),
-      { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'handled' }) },
-    );
-  });
-
   it('sweeps legacy mentions only when the recipient replied after the source, with the replied stamp', async () => {
     const row = {
       _id: 'attention-1',

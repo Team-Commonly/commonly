@@ -560,6 +560,9 @@
       "loadingEarlier": "正在加载更早的消息…",
       "loadEarlier": "加载更早的消息",
       "beginning": "Pod 的开始",
+      "retryEarlier": "重试",
+      "notReached": "尚未找到该消息",
+      "continueBrowsing": "继续浏览更早的消息",
       "jumpToLatest": "跳到最新"
     },
     "strip": {

@@ -561,7 +561,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const handleLoadOlder = useCallback(async () => {
     const el = messagesContainerRef.current;
     scrollAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
-    await loadOlder();
+    return loadOlder();
   }, [loadOlder]);
 
   useLayoutEffect(() => {
@@ -596,6 +596,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // row and marks it landed. If the row is not in the loaded window yet, the
   // previous pages load until it is (the `after` cursor is kernel row k4).
   const landedHashRef = useRef<string | null>(null);
+  const landingTargetRef = useRef<string | null>(null);
+  const landingAttemptsRef = useRef(0);
+  const landingStoppedRef = useRef(false);
+  const [landingHistoryState, setLandingHistoryState] = useState<'idle' | 'loading' | 'retry' | 'not-reached'>('idle');
   // A target that is loaded but not rendered (collapsed thread, `N more
   // replies` fold) is REVEALED, not fetched: the transcript opens the thread
   // and bumps `revealTick` so this effect runs again against the new DOM.
@@ -608,6 +612,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     // reopens the fold instead of being treated as an already-landed hash.
     landedHashRef.current = null;
     revealTriedRef.current = null;
+    landingTargetRef.current = null;
+    landingAttemptsRef.current = 0;
+    landingStoppedRef.current = false;
+    setLandingHistoryState('idle');
     setRevealTick((tick) => tick + 1);
   }, []);
   const onRevealed = useCallback((messageId: string, found: boolean) => {
@@ -618,10 +626,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     const hash = location.hash || '';
     const match = hash.match(/^#message-(.+)$/);
-    if (!match) { landedHashRef.current = null; return; }
+    if (!match) {
+      landedHashRef.current = null;
+      landingTargetRef.current = null;
+      landingAttemptsRef.current = 0;
+      landingStoppedRef.current = false;
+      setLandingHistoryState('idle');
+      return;
+    }
+    const target = match[1];
+    if (landingTargetRef.current !== target) {
+      landingTargetRef.current = target;
+      landingAttemptsRef.current = 0;
+      landingStoppedRef.current = false;
+      setLandingHistoryState('idle');
+    }
     if (landedHashRef.current === hash) return;
     if (landOnMessage(match[1])) { landedHashRef.current = hash; return; }
-    const target = match[1];
     const folded = threadView.some((item) => item.kind === 'card'
       && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
     if (folded && revealTriedRef.current !== target) {
@@ -629,7 +650,27 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       setRevealRequest(target);
       return;
     }
-    if (hasMore && !loadingOlder && !loading) void handleLoadOlder();
+    if (landingStoppedRef.current || !hasMore || loadingOlder || loading) return;
+    if (landingAttemptsRef.current >= 5) {
+      landingStoppedRef.current = true;
+      setLandingHistoryState('not-reached');
+      return;
+    }
+    landingAttemptsRef.current += 1;
+    setLandingHistoryState('loading');
+    void handleLoadOlder().then((result) => {
+      if (landedHashRef.current === hash) return;
+      if (result?.failed) {
+        landingStoppedRef.current = true;
+        setLandingHistoryState('retry');
+      } else if (!result?.hasMore) {
+        landingStoppedRef.current = true;
+        setLandingHistoryState('not-reached');
+      } else {
+        setLandingHistoryState('idle');
+        setRevealTick((tick) => tick + 1);
+      }
+    });
   }, [location.hash, messages, threadView, revealTick, hasMore, loadingOlder, loading, handleLoadOlder]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
@@ -645,6 +686,29 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     observer.observe(edge);
     return () => observer.disconnect();
   }, [hasMore, loadingOlder, loading, handleLoadOlder, pod?._id]);
+
+  const retryHistory = useCallback(() => {
+    landingStoppedRef.current = false;
+    setLandingHistoryState('idle');
+    void handleLoadOlder().then((result) => {
+      if (result?.failed) {
+        landingStoppedRef.current = true;
+        setLandingHistoryState('retry');
+      } else if (!result?.hasMore) {
+        landingStoppedRef.current = true;
+        setLandingHistoryState('not-reached');
+      } else {
+        setLandingHistoryState('idle');
+        setRevealTick((tick) => tick + 1);
+      }
+    });
+  }, [handleLoadOlder]);
+
+  const manualLoadOlder = useCallback(() => {
+    landingStoppedRef.current = true;
+    setLandingHistoryState('idle');
+    void handleLoadOlder();
+  }, [handleLoadOlder]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -1171,7 +1235,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           onAimAtThread={aimAtThread}
           hasMore={hasMore}
           loadingOlder={loadingOlder}
-          onLoadOlder={() => { void handleLoadOlder(); }}
+          historyLandingState={landingHistoryState}
+          onRetryHistory={retryHistory}
+          onLoadOlder={manualLoadOlder}
           edgeRef={edgeRef}
           jumpCount={jumpCount}
           showJump={scrolledUp}

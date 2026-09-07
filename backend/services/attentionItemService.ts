@@ -418,15 +418,6 @@ export const acknowledgeMention = async (recipientUserId: unknown, attentionItem
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export const markHandled = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
-  if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
-  const result = await AttentionItem.updateOne(
-    { _id: attentionItemId, recipientUserId, status: 'open' },
-    { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'handled' } },
-  );
-  return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
-};
-
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, markHandled };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, markHandled, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };

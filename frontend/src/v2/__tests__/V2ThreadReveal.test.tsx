@@ -5,7 +5,7 @@
 // covered (V2ThreadRestyle hands `revealMessageId` straight to the
 // transcript); nothing exercised the code that computes either.
 import React from 'react';
-import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -66,7 +66,7 @@ const makeDetail = (overrides = {}) => ({
   sendError: null,
   hasMore: true,
   loadingOlder: false,
-  loadOlder: jest.fn(() => Promise.resolve()),
+  loadOlder: jest.fn(() => Promise.resolve({ loaded: true, hasMore: true })),
   refresh: jest.fn(),
   ...overrides,
 });
@@ -100,6 +100,23 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const { container } = renderAt('#message-999', detail);
     await waitFor(() => { expect(detail.loadOlder).toHaveBeenCalled(); });
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+  });
+
+  test('a missing target stops after five older pages and reports honest not-reached state', async () => {
+    const detail = makeDetail({ loadOlder: jest.fn(() => Promise.resolve({ loaded: true, hasMore: true })) });
+    const { container } = renderAt('#message-999', detail);
+    await waitFor(() => expect(detail.loadOlder).toHaveBeenCalledTimes(5));
+    await waitFor(() => expect(container.querySelector('.v2-thread__edge')).toHaveAttribute('data-state', 'not-reached'));
+    expect(container.textContent).toContain('message not reached yet');
+  });
+
+  test('a failed landing page exposes deliberate Retry instead of retrying in a loop', async () => {
+    const detail = makeDetail({ loadOlder: jest.fn(() => Promise.resolve({ loaded: false, hasMore: true, failed: true })) });
+    const { container } = renderAt('#message-999', detail);
+    await waitFor(() => expect(detail.loadOlder).toHaveBeenCalledTimes(1));
+    expect(container.querySelector('.v2-thread__edge')).toHaveAttribute('data-state', 'retry');
+    fireEvent.click(screen.getByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(detail.loadOlder).toHaveBeenCalledTimes(2));
   });
 
   test('a target already on screen neither reveals nor fetches', async () => {

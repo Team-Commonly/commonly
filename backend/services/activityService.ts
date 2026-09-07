@@ -225,7 +225,9 @@ class ActivityService {
     // Recipient-owned AttentionItem rows are the only needs-you source.
     // eslint-disable-next-line global-require
     const AttentionItemService = require('./attentionItemService');
-    const attention = await AttentionItemService.getOpenQueue(userId, requestedPodId ? { podId: requestedPodId } : {});
+    const attention = requestedPodId
+      ? await AttentionItemService.getOpenQueue(userId, { podId: requestedPodId })
+      : await AttentionItemService.getOpenQueue(userId);
     const needsYou = attention.items
       .filter((item: any) => !requestedPodId || item.podId === requestedPodId)
       .map((item: any) => ({
@@ -823,12 +825,6 @@ class ActivityService {
     // eslint-disable-next-line global-require
     const AttentionItemService = require('./attentionItemService');
     return AttentionItemService.acknowledgeMention(userId, activityId);
-  }
-
-  static async markHandled(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
-    // eslint-disable-next-line global-require
-    const AttentionItemService = require('./attentionItemService');
-    return AttentionItemService.markHandled(userId, activityId);
   }
 
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {

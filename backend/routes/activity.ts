@@ -215,19 +215,6 @@ router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
   }
 });
 
-router.post('/:activityId/handled', auth, async (req: Req, res: Res) => {
-  try {
-    const { activityId } = req.params || {};
-    const userId = getAuthenticatedUserId(req);
-    const result = await ActivityService.markHandled(userId, String(activityId)) as { success?: boolean; error?: string };
-    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to mark activity handled' });
-    return res.json(result);
-  } catch (error) {
-    console.error('Error marking activity handled:', error);
-    return res.status(500).json({ error: 'Failed to mark activity handled' });
-  }
-});
-
 router.post('/:activityId/like', auth, async (req: Req, res: Res) => {
   try {
     const { activityId } = req.params || {};

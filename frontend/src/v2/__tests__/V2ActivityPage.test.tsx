@@ -136,7 +136,7 @@ describe('V2ActivityPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
-      '/api/activity/attention-1/handled',
+      '/api/activity/attention-1/acknowledge',
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
