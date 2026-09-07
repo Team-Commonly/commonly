@@ -65,7 +65,10 @@ beforeEach(async () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
-          env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+          env: {
+            COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            PRIVATE_API_KEY: 'literal-secret-must-not-travel',
+          },
         }],
         model: 'gpt-5.4',
         effort: 'high',
@@ -169,6 +172,7 @@ describe('daemon work list', () => {
         effort: 'high',
       }),
     })]);
+    expect(seenByA.body.agents[0].environment.mcp[0].env).not.toHaveProperty('PRIVATE_API_KEY');
 
     const seenByB = await assigned(DAEMON_B);
     expect(seenByB.body.agents).toEqual([]);

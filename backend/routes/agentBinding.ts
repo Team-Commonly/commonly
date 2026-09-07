@@ -39,7 +39,26 @@ const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 // become a read-all projection of an installation's opaque config. Keep this
 // allow-list aligned with environment.js and discard future/accidental keys at
 // the server boundary. MCP env values are declarations (usually placeholders);
-// provider secrets remain out-of-band per ADR-008.
+// provider secrets remain out-of-band per ADR-008. Only the placeholders that
+// the local adapters resolve are retained; literal values must never cross the
+// daemon-token boundary.
+const MCP_PLACEHOLDERS = new Set([
+  '${COMMONLY_AGENT_TOKEN}',
+  '${COMMONLY_API_URL}',
+  '${COMMONLY_INSTANCE_URL}',
+]);
+
+const projectMcpEnv = (raw: unknown): Record<string, string> | null => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const projected: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && MCP_PLACEHOLDERS.has(value)) {
+      projected[key] = value;
+    }
+  }
+  return Object.keys(projected).length ? projected : null;
+};
+
 const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const source = raw as Record<string, any>;
@@ -72,9 +91,11 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
       .filter((server: any) => server && typeof server === 'object' && !Array.isArray(server))
       .map((server: Record<string, any>) => {
         const entry: Record<string, unknown> = {};
-        for (const key of ['name', 'transport', 'url', 'command', 'env']) {
+        for (const key of ['name', 'transport', 'url', 'command']) {
           if (server[key] !== undefined) entry[key] = server[key];
         }
+        const env = projectMcpEnv(server.env);
+        if (env) entry.env = env;
         return entry;
       })
       .filter((server: Record<string, unknown>) => Object.keys(server).length);
