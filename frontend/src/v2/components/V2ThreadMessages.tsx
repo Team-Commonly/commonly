@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
@@ -8,18 +8,23 @@ import V2MessageRow from './V2MessageRow';
 import V2ThreadCard from './V2ThreadCard';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
 
+// Expanded threads show the newest eight; a `N more replies` line reveals the rest.
+const MAX_EXPANDED_REPLIES = 8;
+
 interface V2ThreadMessagesProps {
   messages: V2Message[];
   threadView: ThreadViewItem[];
-  threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'>;
+  threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'> & Partial<Pick<UseV2ThreadState, 'setCollapsed'>>;
   decisionByMessageId: Map<string, V2DecisionCardData>;
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
+  agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
   onOpenFile?: (fileName: string) => void;
   onReply?: (message: V2Message) => void;
   onThread?: (message: V2Message) => void;
+  onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
   hasMore: boolean;
@@ -33,6 +38,15 @@ interface V2ThreadMessagesProps {
   // Mount the pill once the reader is a viewport up, even before arrivals.
   showJump?: boolean;
   onJump?: () => void;
+  /**
+   * A message id the reader is landing on (quote link, Activity) that is not
+   * in the DOM because its thread is collapsed or folded behind `N more
+   * replies`. The transcript opens that thread in full and reports back, so
+   * the landing effect can re-run — a reveal, never a history fetch
+   * (sprint-review 64477).
+   */
+  revealMessageId?: string | null;
+  onRevealed?: (messageId: string, found: boolean) => void;
   loading: boolean;
   error: string | null;
   starterPanel?: React.ReactNode;
@@ -54,11 +68,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   decisionByMessageId,
   settledDecisionByMessageId,
   agentDisplayNames,
+  agentTags,
   agentAuthorKeys,
   onAuthorClick,
   onOpenFile,
   onReply,
   onThread,
+  onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
   hasMore,
@@ -68,6 +84,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   jumpCount = 0,
   showJump = false,
   onJump,
+  revealMessageId,
+  onRevealed,
   loading,
   error,
   starterPanel,
@@ -77,6 +95,36 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
+  // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
+  // reveals the rest for that root (walk-3 §3).
+  const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
+  // The resting state of a thread is the chip (ux-lead 64476 (4)). Which
+  // roots are open is a session gesture held here; the server `collapsed`
+  // row is written to match on each open/close (it still drives the wake
+  // path), but a fresh mount always shows chips.
+  const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
+  const setOpen = useCallback((rootId: string, open: boolean) => {
+    setOpenRoots((current) => {
+      const next = new Set(current);
+      if (open) next.add(rootId); else next.delete(rootId);
+      return next;
+    });
+    threadState.setCollapsed?.(rootId, !open);
+  }, [threadState]);
+
+  // Landing on a folded reply: open its thread, drop the `N more replies`
+  // fold, then tell the caller so it can land on the now-rendered row.
+  useEffect(() => {
+    if (!revealMessageId) return;
+    const target = String(revealMessageId);
+    const owner = threadView.find((item) => item.kind === 'card'
+      && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
+    if (owner && owner.kind === 'card') {
+      setOpenRoots((current) => (current.has(owner.rootId) ? current : new Set(current).add(owner.rootId)));
+      setExpandedAll((current) => (current.has(owner.rootId) ? current : new Set(current).add(owner.rootId)));
+    }
+    onRevealed?.(target, Boolean(owner));
+  }, [revealMessageId, threadView, onRevealed]);
 
   const rootPreview = (rootId: string): string => String(
     messages.find((message) => String(message.id) === rootId)?.content || '',
@@ -124,9 +172,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       {starterPanel}
       {emptyState}
       {threadView.map((item, index, view) => {
-        if (item.kind === 'message') {
-          const message = item.message;
-          const previous = view[index - 1];
+        const renderMessage = (message: V2Message, previous: ThreadViewItem | undefined) => {
           const settledRuling = settledDecisionByMessageId.get(String(message.id));
           return (
             <React.Fragment key={message.id}>
@@ -136,11 +182,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
+                agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
                 onOpenFile={onOpenFile}
                 onReply={onReply}
                 onThread={onThread}
+                onQuoteNavigate={onQuoteNavigate}
                 grouped={isGroupedWithPrevious(
                   message,
                   previous && previous.kind === 'message' ? previous.message : undefined,
@@ -157,6 +205,15 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               )}
             </React.Fragment>
           );
+        };
+
+        if (item.kind === 'message') {
+          const next = view[index + 1];
+          // A root with a live thread renders INSIDE its band (below), so the
+          // root and its replies share one surface — ux-lead 64476 (2).
+          if (next && next.kind === 'card' && next.rootId === String(item.message.id)
+            && !settledDecisionByMessageId.has(next.rootId)) return null;
+          return renderMessage(item.message, view[index - 1]);
         }
 
         const state = threadState.byRoot.get(item.rootId);
@@ -164,50 +221,82 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         // in the flat transcript above. Its durable reply remains in the
         // server list, but rendering both would show the same pick twice.
         if (settledDecisionByMessageId.has(item.rootId)) return null;
-        // A missing state row is not permission to invent a collapsed thread.
-        const collapsed = state ? state.collapsed : false;
+        const rootItem = view[index - 1];
+        const rootMessage = rootItem && rootItem.kind === 'message' && String(rootItem.message.id) === item.rootId
+          ? rootItem.message
+          : messages.find((message) => String(message.id) === item.rootId);
+        const collapsed = !openRoots.has(item.rootId);
+        const shownReplies = collapsed || expandedAll.has(item.rootId) || item.replies.length <= MAX_EXPANDED_REPLIES
+          ? item.replies
+          : item.replies.slice(item.replies.length - MAX_EXPANDED_REPLIES);
+        const hiddenReplies = item.replies.length - shownReplies.length;
+        const following = state ? state.following : null;
+        const followLabel = following === true ? t('podChat.thread.following') : following === false ? t('podChat.thread.muted') : t('podChat.thread.follow');
         return (
-          <div className="v2-thread-block" key={`thread-${item.rootId}`}>
-            <V2ThreadCard
-              replyCount={item.replyCount}
-              participants={item.participants}
-              lastActivityAt={item.lastActivityAt}
-              collapsed={collapsed}
-              following={state ? state.following : null}
-              onToggleCollapsed={() => threadState.toggleCollapsed(item.rootId)}
-              onToggleFollowing={() => threadState.toggleFollowing(item.rootId)}
-              onReplyInThread={onReply ? () => onAimAtThread(item.rootId, rootPreview(item.rootId)) : undefined}
-            />
+          <div className={`v2-thread-block${collapsed ? '' : ' v2-thread-block--open'}`} key={`thread-${item.rootId}`}>
+            {rootMessage && renderMessage(rootMessage, view[index - 2])}
+            <div className="v2-thread-block__inner">
+            {collapsed && (
+              <V2ThreadCard
+                replyCount={item.replyCount}
+                participants={item.participants}
+                lastActivityAt={item.lastActivityAt}
+                collapsed
+                onToggleCollapsed={() => setOpen(item.rootId, true)}
+              />
+            )}
             {!collapsed && (
               <div className="v2-thread-replies">
-                {item.replies.map((reply, replyIndex) => (
+                {hiddenReplies > 0 && (
+                  <button type="button" className="v2-thread-replies__more" onClick={() => setExpandedAll((current) => new Set(current).add(item.rootId))}>
+                    {t('podChat.thread.moreReplies', { count: hiddenReplies })}
+                  </button>
+                )}
+                {shownReplies.map((reply, replyIndex) => (
                   <V2MessageRow
                     key={reply.id}
                     message={reply}
                     decision={decisionByMessageId.get(String(reply.id))}
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
+                    agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}
                     onOpenFile={onOpenFile}
                     onReply={onReply}
                     onThread={onThread}
-                    grouped={isGroupedWithPrevious(reply, item.replies[replyIndex - 1])}
+                    onQuoteNavigate={onQuoteNavigate}
+                    grouped={isGroupedWithPrevious(reply, shownReplies[replyIndex - 1])}
                     insideThreadRoot={item.rootId}
                   />
                 ))}
-                {onReply && (
+                <div className="v2-thread-replies__foot">
+                  <button type="button" className="v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
+                    {t('podChat.thread.collapse')}
+                  </button>
+                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
+                  {onReply && (
+                    <button
+                      type="button"
+                      className="v2-thread-replies__aim"
+                      aria-label={t('podChat.thread.replyFromExpandedThread')}
+                      onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
+                    >
+                      {t('podChat.thread.replyInThread')}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="v2-thread-replies__aim"
-                    aria-label={t('podChat.thread.replyFromExpandedThread')}
-                    onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
+                    className={`v2-thread-replies__follow${following === true ? ' v2-thread-replies__follow--on' : ''}${following === false ? ' v2-thread-replies__follow--muted' : ''}`}
+                    aria-pressed={following === true}
+                    onClick={() => threadState.toggleFollowing(item.rootId)}
                   >
-                    {t('podChat.thread.replyInThread')}
+                    {followLabel}
                   </button>
-                )}
+                </div>
               </div>
             )}
+            </div>
           </div>
         );
       })}

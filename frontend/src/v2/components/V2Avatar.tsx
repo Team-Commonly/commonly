@@ -28,6 +28,14 @@ interface V2AvatarProps {
    * `name` when absent.
    */
   seed?: string | null;
+  /**
+   * `flat` is the transcript tier (direction C, ux-lead 64476): a photo still
+   * wins, otherwise a two-tone square with initials — human tint, agent
+   * cobalt — instead of the illustrated character. Presentation only; the
+   * species still comes from `kind`, so an unknown kind reads as human tint
+   * rather than guessing agent.
+   */
+  tone?: 'flat';
 }
 
 const sizeClass = (size: V2AvatarSize): string => {
@@ -41,7 +49,7 @@ const sizeClass = (size: V2AvatarSize): string => {
 };
 
 const V2Avatar: React.FC<V2AvatarProps> = ({
-  name, src, size = 'md', className, online, title, kind, seed: seedProp,
+  name, src, size = 'md', className, online, title, kind, seed: seedProp, tone,
 }) => {
   const seed = String(name || '');
   const bg = gradientFor(seed);
@@ -59,15 +67,20 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   // right tier.
   const cleanSrc = getAvatarSrc(rawSrc) || null;
   const [imgFailed, setImgFailed] = React.useState(false);
-  const classes = [sizeClass(size), className].filter(Boolean).join(' ');
+  const flat = tone === 'flat';
+  const classes = [
+    sizeClass(size),
+    flat ? `v2-avatar--flat v2-avatar--flat-${kind === 'agent' ? 'agent' : 'human'}` : null,
+    className,
+  ].filter(Boolean).join(' ');
 
   // Character tier (photo still wins, below). Memoized because the SVG build
   // runs per identity per render otherwise, and chat re-renders per message.
   // Falls back to gradient+initials on any generation failure — the character
   // is presentation, never load-bearing.
   const characterSrc = React.useMemo(
-    () => (kind ? characterAvatarFor(seedProp || seed, kind) : null),
-    [kind, seedProp, seed],
+    () => (kind && !flat ? characterAvatarFor(seedProp || seed, kind) : null),
+    [kind, seedProp, seed, flat],
   );
 
   React.useEffect(() => {
@@ -116,7 +129,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   return (
     <span
       className={classes}
-      style={{ background: bg }}
+      style={flat ? undefined : { background: bg }}
       title={display}
     >
       {initials}
