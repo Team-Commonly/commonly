@@ -156,6 +156,20 @@ describe('attentionItemService', () => {
     expect((await AttentionItemService.getOpenQueue(recipient, { podId: 'pod-1' })).composePodId).toBe('pod-2');
   });
 
+  it('bounds an open queue read to the loaded source message ids when requested', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+    mockPodFind.mockReturnValue(chain([]));
+
+    await AttentionItemService.getOpenQueue(recipient, { messageIds: ['42', '42', '  '] });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      recipientUserId: recipient,
+      status: 'open',
+      messageId: { $in: ['42'] },
+    });
+  });
+
   it('does not let projection-resolution storage turn a completed source into a failure', async () => {
     mockUpdateMany.mockRejectedValueOnce(new Error('mongo unavailable'));
     await expect(AttentionItemService.resolve('approval', 'a-1')).resolves.toBeUndefined();

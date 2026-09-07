@@ -380,6 +380,90 @@ class ActivityService {
       : AttentionItemService.getOpenQueue(userId);
   }
 
+  /**
+   * Read settled DecisionRequest rows for the currently viewed pod. Unlike
+   * the recipient-owned open queue, this projection is pod-scoped because a
+   * ruling is durable workspace history that every current human member can
+   * read after leaving and returning to the room.
+   */
+  static async getDecisionHistory(userId: unknown, options: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    const requestedPodId = typeof options.podId === 'string' ? options.podId.trim() : '';
+    const hasMessageFilter = Array.isArray(options.messageIds);
+    const messageIds = hasMessageFilter
+      ? [...new Set((options.messageIds as unknown[]).map((id) => String(id).trim()).filter(Boolean))]
+      : [];
+    const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
+    const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
+    const membership = {
+      $or: [
+        { createdBy: userId },
+        { 'members.userId': userId },
+        { members: userId },
+        { 'members._id': userId },
+      ],
+    };
+    const podQuery = requestedPodId ? { _id: requestedPodId, ...membership } : membership;
+    const pods: PodDoc[] = await Pod.find(podQuery).select('_id name createdBy members').lean();
+    if (requestedPodId && pods.length === 0) throw new Error('Access denied');
+    const allowedPods = pods.filter((pod) => (
+      String(pod.createdBy || '') === String(userId)
+      || (pod.members || []).some((member: any) => String(member?.userId || member?._id || member) === String(userId))
+    ));
+    if (requestedPodId && allowedPods.length === 0) throw new Error('Access denied');
+    const podIds = allowedPods.map((pod) => String(pod._id));
+    if (!podIds.length) {
+      return { items: [], count: 0, offset, limit, remaining: 0, hasMore: false };
+    }
+
+    // eslint-disable-next-line global-require
+    const DecisionRequest = require('../models/DecisionRequest');
+    const historyQuery = {
+      podId: { $in: podIds },
+      status: 'ruled',
+      ...(hasMessageFilter
+        ? { messageId: { $in: messageIds } }
+        : { messageId: { $exists: true } }),
+    };
+    const [count, rows] = await Promise.all([
+      DecisionRequest.countDocuments(historyQuery),
+      DecisionRequest.find(historyQuery)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+    ]);
+    const podNames = new Map(allowedPods.map((pod) => [String(pod._id), pod.name]));
+    const items = rows.map((row: any) => ({
+      id: String(row._id),
+      kind: 'decision',
+      podId: String(row.podId),
+      podName: podNames.get(String(row.podId)) || 'Pod',
+      messageId: row.messageId,
+      threadRootId: row.threadRootId,
+      actorName: row.agentName,
+      title: row.title,
+      detail: row.question,
+      options: row.options || [],
+      status: row.status,
+      ruling: row.ruling ? {
+        value: row.ruling.value,
+        by: row.ruling.byUsername,
+        at: row.ruling.at,
+        messageId: row.ruling.messageId,
+      } : null,
+      createdAt: row.createdAt,
+    }));
+    const remaining = Math.max(count - offset - items.length, 0);
+    return {
+      items,
+      count,
+      offset,
+      limit,
+      remaining,
+      hasMore: remaining > 0,
+    };
+  }
+
   static async getPodFeed(
     podId: unknown,
     userId: unknown,

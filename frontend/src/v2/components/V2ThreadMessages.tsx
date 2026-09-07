@@ -218,10 +218,17 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       {threadView.map((item, index, view) => {
         const renderMessage = (message: V2Message, previous: ThreadViewItem | undefined) => {
           const settledRuling = settledDecisionByMessageId.get(String(message.id));
+          const renderedMessage = settledRuling ? rulingMessage(message, settledRuling) : message;
+          const previousMessage = previous && previous.kind === 'message'
+            ? (() => {
+              const previousRuling = settledDecisionByMessageId.get(String(previous.message.id));
+              return previousRuling ? rulingMessage(previous.message, previousRuling) : previous.message;
+            })()
+            : undefined;
           return (
             <React.Fragment key={message.id}>
               <V2MessageRow
-                message={settledRuling ? rulingMessage(message, settledRuling) : message}
+                message={renderedMessage}
                 decision={settledRuling ? undefined : decisionByMessageId.get(String(message.id))}
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
@@ -233,10 +240,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onReply={onReply}
                 onThread={onThread}
                 onQuoteNavigate={onQuoteNavigate}
-                grouped={isGroupedWithPrevious(
-                  message,
-                  previous && previous.kind === 'message' ? previous.message : undefined,
-                )}
+                grouped={isGroupedWithPrevious(renderedMessage, previousMessage)}
               />
               {agentDeliveryHint?.messageId === message.id && (
                 <div className="v2-chat__delivery-hint" role="status">

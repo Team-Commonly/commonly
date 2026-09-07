@@ -90,7 +90,66 @@ interface ThreadDecision extends V2DecisionCardData {
   kind: 'decision';
   podId: string;
   messageId: string;
+  status?: 'pending' | 'ruled';
+  ruling?: V2DecisionRuling | null;
 }
+
+interface DecisionPage<T> {
+  items?: T[];
+  hasMore?: boolean;
+}
+
+const DECISION_PAGE_SIZE = 50;
+const DECISION_MESSAGE_ID_BATCH_SIZE = 200;
+
+const loadDecisionPages = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+  extraParams: Record<string, string> = {},
+): Promise<{ items: T[] }> => {
+  const items: T[] = [];
+  let offset = 0;
+  // A malformed response must not create an unbounded request loop. The
+  // server caps each page at 50; 100 pages is ample for a room while still
+  // bounding a broken hasMore implementation.
+  for (let page = 0; page < 100; page += 1) {
+    const data = await api.get<DecisionPage<T>>(endpoint, {
+      params: {
+        podId, limit: DECISION_PAGE_SIZE, offset, ...extraParams,
+      },
+    });
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    items.push(...pageItems);
+    if (!data?.hasMore || pageItems.length === 0) break;
+    offset += pageItems.length;
+  }
+  return { items };
+};
+
+const loadDecisionPagesForMessageIds = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+  messageIds: string[],
+): Promise<{ items: T[] }> => {
+  const uniqueMessageIds = [...new Set(messageIds.filter(Boolean))];
+  const batches: string[][] = [];
+  for (let index = 0; index < uniqueMessageIds.length; index += DECISION_MESSAGE_ID_BATCH_SIZE) {
+    batches.push(uniqueMessageIds.slice(index, index + DECISION_MESSAGE_ID_BATCH_SIZE));
+  }
+  // An empty transcript still sends one explicit empty filter. This keeps the
+  // read authoritative (and preserves the existing empty-state behavior),
+  // while every non-empty filter stays under the server's documented cap.
+  if (batches.length === 0) batches.push([]);
+  const pages = await Promise.all(batches.map((batch) => loadDecisionPages<T>(
+    api,
+    endpoint,
+    podId,
+    { messageIds: batch.join(',') },
+  )));
+  return { items: pages.flatMap((page) => page.items) };
+};
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
   const { t, i18n } = useTranslation();
@@ -272,6 +331,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
+  const loadedMessageIdsRef = useRef<string[]>([]);
+  loadedMessageIdsRef.current = [...new Set(messages
+    .map((message) => String(message.id || ''))
+    .filter(Boolean))];
 
   // A DecisionRequest posts an ordinary message for its timeline position and
   // materializes its typed choices in the attention queue. Join those two
@@ -280,31 +343,55 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const podId = pod?._id;
     if (!podId) {
       setDecisions([]);
+      setSettledDecisionByMessageId(new Map());
       return undefined;
     }
     let active = true;
     const load = async () => {
       try {
-        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue');
+        const [pendingData, historyData] = await Promise.all([
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-queue', podId, loadedMessageIdsRef.current).catch(() => null),
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-history', podId, loadedMessageIdsRef.current).catch(() => null),
+        ]);
         if (!active) return;
-        setDecisions((data?.items || []).filter((item) => (
-          item.kind === 'decision'
-          && item.podId === podId
-          && typeof item.messageId === 'string'
-          && item.messageId.length > 0
-          && Array.isArray(item.options)
-          && item.options.length > 0
-        )));
+        // A failed queue read is not authoritative. Preserve pending cards
+        // already rendered in this mount rather than making an open decision
+        // disappear during a transient 429/network failure.
+        if (pendingData) {
+          setDecisions(pendingData.items.filter((item) => (
+            item.kind === 'decision'
+            && item.podId === podId
+            && typeof item.messageId === 'string'
+            && item.messageId.length > 0
+            && Array.isArray(item.options)
+            && item.options.length > 0
+          )));
+        }
+        // A successful empty history page is authoritative and clears rows
+        // that are no longer ruled. A failed history read is not authoritative
+        // and must preserve settled cards already rendered in this mount.
+        if (historyData) {
+          const settled = (historyData.items || []).filter((item) => (
+            item.kind === 'decision'
+            && item.podId === podId
+            && typeof item.messageId === 'string'
+            && item.ruling?.value
+          ));
+          setSettledDecisionByMessageId(new Map(
+            settled.map((item) => [String(item.messageId), item.ruling as V2DecisionRuling]),
+          ));
+        }
       } catch {
         // A queue read is additive decoration: preserve a working thread when
         // attention is temporarily unavailable rather than inventing cards.
+        // Keep any durable settled map already rendered during this mount.
         if (active) setDecisions([]);
       }
     };
     void load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [api, pod?._id]);
+  }, [api, pod?._id, detailInitialLoadComplete]);
 
   const decisionByMessageId = useMemo(() => new Map(
     decisions.map((decision) => [String(decision.messageId), decision]),
