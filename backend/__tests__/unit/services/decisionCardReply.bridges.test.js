@@ -112,7 +112,10 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
   test('200: one threaded ruling, one typed wake, one closed receipt and reached ledger', async () => {
     await receive();
     expect(choose).toHaveBeenCalledTimes(1);
-    expect(choose).toHaveBeenCalledWith({ decisionId: String(decision._id), callerUserId: ownerId, value: 'Now' });
+    expect(choose).toHaveBeenCalledWith({
+      decisionId: String(decision._id), callerUserId: ownerId, value: 'Now',
+      origin: { via: provider, integrationId: binding._id },
+    });
     expect(messages).toEqual([expect.objectContaining({ podId, userId: ownerId, content: 'Now', replyTo: '700', thread_root_id: '700' })]);
     expect(messages.filter((m) => m.thread_root_id == null)).toHaveLength(0);
     expect(enqueue).toHaveBeenCalledTimes(1);
@@ -234,7 +237,7 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
     expect(messages[1].content).toContain('1');
     expect((await receipts())[0].closedAt).toEqual(expect.any(Date));
     expect((await ledger())[0].reachedHumanAt).toBeUndefined();
-    expect((await ledger())[0].ruledVia).toBeUndefined();
+    expect((await ledger())[0].ruledVia).toBe(provider);
     expect(confirmation()).toContain('Already ruled');
   });
 
