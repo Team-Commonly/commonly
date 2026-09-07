@@ -123,6 +123,10 @@ interface V2MessageRowProps {
   // parent resolves an already-threaded message to its existing root before
   // aiming the composer, so this control never asks the server for nesting.
   onThread?: (message: V2Message) => void;
+  // Notifies the transcript when a quote points at a row hidden behind a
+  // thread fold. Repeating that quote after collapsing must be a fresh
+  // navigation gesture even though the hash string is unchanged.
+  onQuoteNavigate?: (messageId: string | number) => void;
   // Consecutive-author grouping (craft audit finding 7): when the previous
   // message is the same author within the grouping window, the header row
   // (avatar / name / time) is suppressed and the row tightens. The avatar
@@ -335,7 +339,7 @@ export const landOnMessage = (id: string | number | null | undefined): boolean =
   return true;
 };
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -638,6 +642,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             if (landOnMessage(quoteTargetId as string | number | null | undefined)) return;
             if (quoteTargetId !== undefined && quoteTargetId !== null && typeof window !== 'undefined') {
               window.location.hash = `#message-${quoteTargetId}`;
+              onQuoteNavigate?.(quoteTargetId as string | number);
             }
           };
           return (

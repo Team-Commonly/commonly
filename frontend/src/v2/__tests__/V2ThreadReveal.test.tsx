@@ -5,7 +5,7 @@
 // covered (V2ThreadRestyle hands `revealMessageId` straight to the
 // transcript); nothing exercised the code that computes either.
 import React from 'react';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -71,13 +71,14 @@ const makeDetail = (overrides = {}) => ({
   ...overrides,
 });
 
-const renderAt = (hash, detail) => render(
+const threadNode = (hash, detail) => (
   <AuthContext.Provider value={authValue}>
     <MemoryRouter initialEntries={[`/v2/pods/p1${hash}`]}>
       <V2Thread detail={detail} />
     </MemoryRouter>
-  </AuthContext.Provider>,
+  </AuthContext.Provider>
 );
+const renderAt = (hash, detail) => render(threadNode(hash, detail));
 
 describe('landing on a message decides reveal vs fetch (producer)', () => {
   test('a target folded inside a collapsed thread is revealed — the thread opens and NO history is fetched', async () => {
@@ -109,6 +110,57 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     });
     expect(detail.loadOlder).not.toHaveBeenCalled();
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+  });
+
+  test('quoting the same folded reply again after collapse reopens it without fetching history', async () => {
+    const detail = makeDetail({
+      messages: [
+        ...threadMessages(),
+        {
+          id: 'q', pod_id: 'p1', user_id: 'u4', content: 'follow-up', message_type: 'text',
+          created_at: '2026-08-22T14:00:00Z', user: { username: 'quoter' },
+          replyTo: { id: 'r2', username: 'other', content: 'reply 2' },
+        },
+      ],
+    });
+    const { container } = renderAt('#message-r2', detail);
+    await waitFor(() => {
+      expect(container.querySelector('.v2-thread-block--open')).toBeTruthy();
+      expect(container.querySelector('#message-r2')).toBeTruthy();
+    });
+
+    fireEvent.click(container.querySelector('.v2-thread-replies__collapse'));
+    await waitFor(() => {
+      expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    });
+
+    fireEvent.click(container.querySelector('#message-q .v2-msg__quote'));
+    await waitFor(() => {
+      expect(container.querySelector('.v2-thread-block--open')).toBeTruthy();
+      expect(container.querySelector('#message-r2')).toBeTruthy();
+    });
+    expect(detail.loadOlder).not.toHaveBeenCalled();
+  });
+
+  test('a reply visible before its older root loads remains flat after the prepend', async () => {
+    const orphan = {
+      id: 'orphan', pod_id: 'p1', user_id: 'u3', thread_root_id: 'old-root', content: 'orphan reply',
+      message_type: 'text', created_at: '2026-08-22T12:00:00Z', user: { username: 'other' },
+    };
+    const initial = makeDetail({ messages: [orphan] });
+    const view = renderAt('', initial);
+    await waitFor(() => { expect(view.container.querySelector('#message-orphan')).toBeTruthy(); });
+
+    const loaded = {
+      ...initial,
+      messages: [
+        { id: 'old-root', pod_id: 'p1', user_id: 'u2', content: 'older root', message_type: 'text', created_at: '2026-08-22T11:00:00Z', user: { username: 'teammate' } },
+        orphan,
+      ],
+    };
+    view.rerender(threadNode('', loaded));
+    await waitFor(() => { expect(view.container.querySelector('#message-orphan')).toBeTruthy(); });
+    expect(view.container.querySelector('.v2-thread-block')).toBeNull();
   });
 });
 

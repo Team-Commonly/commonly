@@ -24,7 +24,7 @@ import type { V2InviteTab } from './V2InviteModal';
 
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
-import { buildThreadView } from '../utils/threadView';
+import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import {
   buildAgentUsername,
@@ -234,10 +234,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Memoized: it was called in the render body, so every keystroke in the
   // composer re-folded the whole message list. @sprint-review on #1150.
   // Recomputes only when the messages or the thread state actually change.
-  const threadView = useMemo(
-    () => buildThreadView(messages, threadState.byRoot),
-    [messages, threadState.byRoot],
-  );
+  const flatReplyIdsRef = useRef<{ podId: string | null; ids: Set<string> }>({ podId: null, ids: new Set() });
+  const threadView = useMemo(() => {
+    const podId = pod?._id || null;
+    if (flatReplyIdsRef.current.podId !== podId) {
+      flatReplyIdsRef.current = { podId, ids: new Set() };
+    }
+    // A reply visible flat before its root arrived must stay flat. Otherwise
+    // prepending an older page relocates it into a resting thread chip.
+    flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
+    return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids);
+  }, [messages, pod?._id, threadState.byRoot]);
 
   // #891 surface 1: agent reachability at the moment of composing a mention.
   // Best-effort — a failed read renders nothing rather than something wrong,
@@ -595,6 +602,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [revealRequest, setRevealRequest] = useState<string | null>(null);
   const [revealTick, setRevealTick] = useState(0);
   const revealTriedRef = useRef<string | null>(null);
+  const onQuoteNavigate = useCallback((_messageId: string | number) => {
+    // A repeated quote can have the same hash after the user collapsed the
+    // thread. Clear the landing guards and bump the effect so this gesture
+    // reopens the fold instead of being treated as an already-landed hash.
+    landedHashRef.current = null;
+    revealTriedRef.current = null;
+    setRevealTick((tick) => tick + 1);
+  }, []);
   const onRevealed = useCallback((messageId: string, found: boolean) => {
     setRevealRequest(null);
     if (found) setRevealTick((tick) => tick + 1);
@@ -1151,6 +1166,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           onOpenFile={onOpenFile}
           onReply={isReadOnly ? undefined : aimAtMessage}
           onThread={isReadOnly ? undefined : aimAtMessageThread}
+          onQuoteNavigate={onQuoteNavigate}
           onDecisionRuled={handleDecisionRuled}
           onAimAtThread={aimAtThread}
           hasMore={hasMore}

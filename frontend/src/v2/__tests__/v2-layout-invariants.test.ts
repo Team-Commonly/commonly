@@ -846,6 +846,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-thread-replies')).toContain('border-left: 2px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('border-radius: 4px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('box-shadow: none');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__strip')).toContain('padding: 1px');
+    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat')).toContain('font: 650 12px/1 var(--v2-font)');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-replies .v2-msg .v2-avatar')).toContain('font-size: 12px');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-card__faces .v2-avatar')).toContain('font: 650 11px/1 var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-card__faces .v2-avatar--flat')).toContain('font: 650 11px/1 var(--v2-font-mono)');
+    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-thread button\.v2-msg__action \{ width: 24px; height: 24px; \}/);
     expect(lastRuleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border: 1px solid #dde0e6');
     expect(lastRuleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border-radius: 14px');
     expect(messageRow).toContain('v2-msg__tag');

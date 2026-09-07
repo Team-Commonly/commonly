@@ -24,6 +24,7 @@ interface V2ThreadMessagesProps {
   onOpenFile?: (fileName: string) => void;
   onReply?: (message: V2Message) => void;
   onThread?: (message: V2Message) => void;
+  onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
   hasMore: boolean;
@@ -73,6 +74,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onOpenFile,
   onReply,
   onThread,
+  onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
   hasMore,
@@ -186,6 +188,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onOpenFile={onOpenFile}
                 onReply={onReply}
                 onThread={onThread}
+                onQuoteNavigate={onQuoteNavigate}
                 grouped={isGroupedWithPrevious(
                   message,
                   previous && previous.kind === 'message' ? previous.message : undefined,
@@ -262,6 +265,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     onOpenFile={onOpenFile}
                     onReply={onReply}
                     onThread={onThread}
+                    onQuoteNavigate={onQuoteNavigate}
                     grouped={isGroupedWithPrevious(reply, shownReplies[replyIndex - 1])}
                     insideThreadRoot={item.rootId}
                   />
