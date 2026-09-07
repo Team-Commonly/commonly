@@ -8940,8 +8940,17 @@ body.modern-ui.v2-canvas {
   font-weight: 500;
 }
 
-.v2-root .v2-activity__compose .v2-activity__compose-picker-option:hover,
 .v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer hover rule includes :not(:disabled) and a button
+   element, so it outranks the picker option's class-only hover selector.
+   Match that specificity here to keep the light Signal option treatment in
+   the real hovered and selected+hovered states without changing Send. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled) {
   border-color: transparent;
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
