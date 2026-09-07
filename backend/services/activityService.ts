@@ -822,9 +822,7 @@ class ActivityService {
   }
 
   static async acknowledgeMention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
-    // eslint-disable-next-line global-require
-    const AttentionItemService = require('./attentionItemService');
-    return AttentionItemService.acknowledgeMention(userId, activityId);
+    return ActivityService.acknowledgeAttention(userId, activityId);
   }
 
   static async acknowledgeAttention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {

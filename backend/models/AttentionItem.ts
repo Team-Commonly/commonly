@@ -21,9 +21,10 @@ export interface IAttentionItem extends Document {
   sourceCreatedAt?: Date;
   status: 'open' | 'resolved';
   resolvedAt?: Date;
-  // Mention/handoff rows resolve when their recipient replies or explicitly
-  // acknowledges them. Decision and approval actions have source-specific
-  // writers and never become dismissible through this field.
+  // Mention rows may resolve when their recipient replies; mention and handoff
+  // rows also support an explicit recipient acknowledgement. Decision and
+  // approval actions have source-specific writers and never become dismissible
+  // through this field.
   resolvedBy?: 'replied' | 'acknowledged';
   createdAt: Date;
   updatedAt: Date;

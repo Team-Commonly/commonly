@@ -13,7 +13,7 @@ jest.mock('../../../services/activityService', () => ({
   getDecisionQueue: jest.fn(async () => ({ items: [], count: 0, countsByPod: {}, remaining: 0, hasMore: false })),
   getPodFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
   getPendingApprovals: jest.fn(async () => []),
-  acknowledgeMention: jest.fn(async () => ({ success: true })),
+  acknowledgeAttention: jest.fn(async () => ({ success: true })),
   toggleLike: jest.fn(async () => ({ success: true })),
   addReply: jest.fn(async () => ({ success: true })),
   approveActivity: jest.fn(async () => ({ success: true })),
@@ -71,9 +71,9 @@ describe('activity read routes', () => {
     await request(app).post('/api/activity/mark-read').send({}).expect(400);
   });
 
-  it('POST /api/activity/:id/acknowledge uses the dedicated mention acknowledgement', async () => {
+  it('POST /api/activity/:id/acknowledge uses the recipient-owned attention acknowledgement', async () => {
     await request(app).post('/api/activity/mention-1/acknowledge').expect(200);
-    expect(ActivityService.acknowledgeMention).toHaveBeenCalledWith('user123', 'mention-1');
+    expect(ActivityService.acknowledgeAttention).toHaveBeenCalledWith('user123', 'mention-1');
   });
 
   it('preserves a membership-gate 403 from the approval writer', async () => {

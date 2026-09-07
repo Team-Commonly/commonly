@@ -2,11 +2,11 @@ jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }
 jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
 
 const mockGetOpenQueue = jest.fn();
-const mockAcknowledgeMention = jest.fn();
+const mockAcknowledgeAttention = jest.fn();
 const mockResolve = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   getOpenQueue: (...args) => mockGetOpenQueue(...args),
-  acknowledgeMention: (...args) => mockAcknowledgeMention(...args),
+  acknowledgeAttention: (...args) => mockAcknowledgeAttention(...args),
   resolve: (...args) => mockResolve(...args),
 }));
 
@@ -37,7 +37,7 @@ describe('ActivityService recap and legacy approval authorization', () => {
     Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
     Task.find.mockReturnValue(taskQuery([]));
     mockGetOpenQueue.mockResolvedValue({ items: [], count: 0, composePodId: null });
-    mockAcknowledgeMention.mockResolvedValue({ success: true });
+    mockAcknowledgeAttention.mockResolvedValue({ success: true });
     mockResolve.mockResolvedValue(undefined);
     feedSpy = jest.spyOn(ActivityService, 'getUserFeed').mockResolvedValue({ activities: [] });
   });
@@ -70,9 +70,9 @@ describe('ActivityService recap and legacy approval authorization', () => {
     expect(mockGetOpenQueue).toHaveBeenCalledWith(ownerId);
   });
 
-  test('acknowledges a mention only through the recipient-owned attention record', async () => {
-    await expect(ActivityService.acknowledgeMention(ownerId, 'attention-1')).resolves.toEqual({ success: true });
-    expect(mockAcknowledgeMention).toHaveBeenCalledWith(ownerId, 'attention-1');
+  test('acknowledges attention only through the recipient-owned attention record', async () => {
+    await expect(ActivityService.acknowledgeAttention(ownerId, 'attention-1')).resolves.toEqual({ success: true });
+    expect(mockAcknowledgeAttention).toHaveBeenCalledWith(ownerId, 'attention-1');
   });
 
   test('allows a pod member to approve a legacy Activity approval', async () => {

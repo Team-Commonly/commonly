@@ -206,7 +206,7 @@ router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
   try {
     const { activityId } = req.params || {};
     const userId = getAuthenticatedUserId(req);
-    const result = await ActivityService.acknowledgeMention(userId, String(activityId)) as { success?: boolean; error?: string };
+    const result = await ActivityService.acknowledgeAttention(userId, String(activityId)) as { success?: boolean; error?: string };
     if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge attention' });
     return res.json(result);
   } catch (error) {
