@@ -372,6 +372,58 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 
+  test('does not steal focus when the user moves during a failed action', async () => {
+    let rejectRequest: (error: Error) => void;
+    mockPost.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectRequest = reject; }));
+    renderPage();
+    const acknowledge = await screen.findByRole('button', { name: 'Mark handled' });
+    acknowledge.focus();
+    fireEvent.click(acknowledge);
+    acknowledge.blur(); // Real browsers blur a newly disabled focused button.
+    const compose = screen.getByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
+    compose.focus();
+    await act(async () => { rejectRequest(new Error('temporary failure')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(compose).toHaveFocus();
+    expect(acknowledge).not.toBeDisabled();
+  });
+
+  test('an older failed action does not consume a newer action focus target', async () => {
+    const queue = {
+      ...decisionQueue,
+      items: [
+        { ...decisionQueue.items[0], id: 'approval-focus', kind: 'approval', title: 'Approval focus' },
+        { ...decisionQueue.items[0], id: 'handoff-focus', attentionItemId: 'handoff-attention', kind: 'handoff', title: 'Handoff focus' },
+      ],
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queue : recap }));
+    let rejectApproval: (error: Error) => void;
+    let rejectHandoff: (error: Error) => void;
+    mockPost.mockImplementation((url: string) => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      return new Promise((resolve, reject) => {
+        if (url.endsWith('/approve')) rejectApproval = reject;
+        else rejectHandoff = reject;
+      });
+    });
+    renderPage();
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const handled = screen.getByRole('button', { name: 'Mark handled' });
+    approve.focus();
+    fireEvent.click(approve);
+    handled.focus();
+    fireEvent.click(handled);
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    await act(async () => { rejectApproval(new Error('approval failed')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(document.body).toHaveFocus();
+    expect(handled).toBeDisabled();
+    await act(async () => { rejectHandoff(new Error('handoff failed')); });
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
+    expect(handled).toHaveFocus();
+    expect(handled).not.toBeDisabled();
+  });
+
   test('keeps a failed reply actionable with reply-specific feedback and focus', async () => {
     mockPost.mockRejectedValueOnce(new Error('reply down'));
     renderPage();
