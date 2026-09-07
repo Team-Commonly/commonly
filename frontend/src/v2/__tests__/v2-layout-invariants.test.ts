@@ -393,11 +393,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
     expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
     expect(neutralOption).toContain('background: var(--v2-surface)');
-    expect(neutralOption).toContain('border-radius: 999px');
+    expect(neutralOption).toContain('border-radius: var(--v2-radius-sm)');
 
     const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
     expect(recommendedOption).toContain('background: var(--v2-ink)');
     expect(recommendedOption).toContain('color: var(--v2-on-ink)');
+    const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
+    expect(otherOption).toContain('border-color: var(--v2-accent)');
+    expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
   });
 
@@ -1584,6 +1587,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
       expect(activityPage).toContain('v2-activity__moved');
       expect(activityPage).toContain('v2-activity__queue-more');
+      expect(activityPage).toContain('v2-activity__moved-cap-note');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('border-radius: var(--v2-radius-sm)');
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('var(--v2-accent)');
+      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ height: 52px; min-height: 52px;/);
     });
 
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {

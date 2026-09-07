@@ -485,6 +485,86 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(screen.queryByText('Review requested')).not.toBeInTheDocument());
   });
 
+  test('revalidates every loaded page on a same-scope refresh', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `refresh-extent-${index}`, attentionItemId: `refresh-extent-attention-${index}`, kind: 'mention', title: `Extent ${index}`,
+      detail: 'Loaded row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    const secondPage = Array.from({ length: 6 }, (_, index) => ({
+      id: `refresh-extent-${index + 50}`, attentionItemId: `refresh-extent-attention-${index + 50}`, kind: 'mention', title: `Extent ${index + 50}`,
+      detail: 'Loaded row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T10:00:00.000Z',
+    }));
+    let initial = true;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      const offset = config?.params?.offset || 0;
+      if (offset === 50) return Promise.resolve({ data: { items: secondPage, count: 56, remaining: 0, countsByPod: { 'pod-1': 56 } } });
+      const items = initial ? firstPage : firstPage;
+      initial = false;
+      return Promise.resolve({ data: { items, count: 56, remaining: 6, countsByPod: { 'pod-1': 56 } } });
+    });
+    renderPage();
+    await screen.findByText('Extent 0');
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 6 remaining' }));
+    expect(await screen.findByText('Extent 55')).toBeInTheDocument();
+
+    await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.objectContaining({ offset: 50, limit: 50 }),
+    })));
+    expect(screen.getByText('Extent 55')).toBeInTheDocument();
+  });
+
+  test('retries a failed append at its original offset', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `append-retry-${index}`, attentionItemId: `append-retry-attention-${index}`, kind: 'mention', title: `Append ${index}`,
+      detail: 'Loaded row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    const secondPage = [{ id: 'append-retry-50', attentionItemId: 'append-retry-attention-50', kind: 'mention', title: 'Append 50', detail: 'Retried row.', podId: 'pod-1', podName: 'Launch pod' }];
+    let appendReads = 0;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      if (config?.params?.offset === 50) {
+        appendReads += 1;
+        if (appendReads === 1) return Promise.reject(new Error('page down'));
+        return Promise.resolve({ data: { items: secondPage, count: 51, remaining: 0, countsByPod: { 'pod-1': 51 } } });
+      }
+      return Promise.resolve({ data: { items: firstPage, count: 51, remaining: 1, countsByPod: { 'pod-1': 51 } } });
+    });
+    renderPage();
+    await screen.findByText('Append 0');
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Append 50')).toBeInTheDocument();
+    expect(appendReads).toBe(2);
+  });
+
+  test('returns focus to the composer picker after selecting a destination', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.click(picker);
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'GTM Programs' }));
+    await waitFor(() => expect(picker).toHaveFocus());
+  });
+
+  test('shows the omitted moved-forward count after the twenty-line cap', async () => {
+    const updates = Array.from({ length: 24 }, (_, index) => ({
+      id: `moved-${index}`, podId: 'pod-1', podName: 'Launch pod', content: `Moved ${index}`, timestamp: `2026-08-26T${String(11 - Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00.000Z`,
+    }));
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }] } }));
+    renderPage();
+    const more = await screen.findByRole('button', { name: '17 more' });
+    fireEvent.click(more);
+    expect(await screen.findByRole('button', { name: 'Show less' })).toBeInTheDocument();
+    expect(screen.getByText('5 more')).toBeInTheDocument();
+    expect(screen.queryByText('Moved 24')).not.toBeInTheDocument();
+  });
+
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {
     const loaded = Array.from({ length: 56 }, (_, index) => ({
       id: `revalidated-${index}`, attentionItemId: `507f1f77bcf86cd7994390${String(index).padStart(2, '0')}`,
