@@ -934,6 +934,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
   });
 
+  test('managed history prepends disable native anchoring while idle media keeps native anchoring', () => {
+    const history = ruleBody(v2, '.v2-chat__messages[data-history-anchor="active"]');
+    expect(history).toContain('overflow-anchor: none');
+    expect(ruleBody(v2, '.v2-chat__messages')).not.toContain('overflow-anchor');
+    expect(thread).toContain('getBoundingClientRect');
+    expect(thread).toContain('rowOffset');
+    expect(thread).toContain("el.dataset.historyAnchor = 'active'");
+    expect(thread).toContain('delete el.dataset.historyAnchor');
+  });
+
   test('history recovery is positioned against the chat viewport, outside the scroller', () => {
     const transcript = ruleBody(v2, '.v2-thread__transcript');
     expect(transcript).toContain('position: relative');
