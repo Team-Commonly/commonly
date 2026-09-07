@@ -151,6 +151,7 @@ const V2ActivityPage: React.FC = () => {
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
   const [acknowledgingAttentionId, setAcknowledgingAttentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionErrorItemId, setActionErrorItemId] = useState<string | null>(null);
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
@@ -527,6 +528,7 @@ const V2ActivityPage: React.FC = () => {
     if (actingApprovalId) return;
     setActingApprovalId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
@@ -548,6 +550,7 @@ const V2ActivityPage: React.FC = () => {
     if (rulingId || !value.trim()) return;
     setRulingId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ ok?: boolean }>(
@@ -609,6 +612,7 @@ const V2ActivityPage: React.FC = () => {
     if (!content || replyingId || !item.podId) return;
     setReplyingId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       await axios.post(
@@ -632,6 +636,7 @@ const V2ActivityPage: React.FC = () => {
     if (acknowledgingAttentionId) return;
     setAcknowledgingAttentionId(item.id);
     setActionError(null);
+    setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
@@ -643,7 +648,13 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
-      setActionError(t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' }));
+      const message = t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' });
+      if (item.kind === 'handoff') {
+        setActionErrorItemId(item.id);
+        setActionError(message);
+      } else {
+        setActionError(message);
+      }
     } finally {
       setAcknowledgingAttentionId(null);
     }
@@ -913,6 +924,14 @@ const V2ActivityPage: React.FC = () => {
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
+                    {item.kind === 'handoff' && actionErrorItemId === item.id && actionError && (
+                      <div className="v2-activity__row-action-error" role="alert">
+                        <span>{actionError}</span>
+                        <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                          {t('activity.needsYou.retry', { defaultValue: 'Retry' })}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -935,7 +954,7 @@ const V2ActivityPage: React.FC = () => {
             {queue.length === 0 && queueMoreError && !queueFailed && (
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
-            {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
+            {actionError && !actionErrorItemId && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">

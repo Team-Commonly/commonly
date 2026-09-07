@@ -330,6 +330,43 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 
+  test('keeps a failed handoff acknowledgement and retry beside its row', async () => {
+    const handoffQueue = {
+      items: [{
+        id: 'task-1:update-2', attentionItemId: 'attention-handoff-2', kind: 'handoff',
+        title: 'Needs a retry', detail: 'The first acknowledgement fails.',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+      countsByKind: { handoff: 1 },
+      composePodId: 'pod-1',
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? handoffQueue : { items: [], count: 0, countsByPod: {}, countsByKind: {} } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
+    mockPost
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce({ data: { success: true } });
+    renderPage();
+
+    const row = (await screen.findByText('Needs a retry')).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
+    expect(within(row).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+  });
+
   test('opens an inline reply and posts it into the source thread', async () => {
     mockPost.mockResolvedValue({ data: { id: 123 } });
     renderPage();
