@@ -184,6 +184,27 @@ describe('V2Thread decision cards', () => {
     }
   });
 
+  test('returns focus to a failed custom answer instead of skipping to the composer', async () => {
+    mockPost.mockRejectedValueOnce(new Error('temporary failure'));
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Other…' }));
+    const input = screen.getByRole('textbox', { name: 'Write your ruling…' });
+    fireEvent.change(input, { target: { value: 'Hold for customer evidence' } });
+    const send = screen.getByRole('button', { name: 'Send ruling' });
+    send.focus();
+    fireEvent.click(send);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be saved/i);
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(send).not.toBeDisabled();
+  });
+
   test('keeps a pending card visible when a later queue refresh fails', async () => {
     const pending = {
       id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
