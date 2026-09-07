@@ -208,6 +208,7 @@ cd backend && npm run lint:ts                 # backend .ts — 0 errors, gated 
 2. **Backend issues**: Check `backend/TESTING.md` — likely static method calls
 
 ### Local Skill Paths
+- For continuation between Claude Code and Codex, start with [the operator handoff runbook](docs/runbooks/cross-tool-operator-handoff.md); it covers recovering pods, artifacts, review gates and runtime state without transferring session transcripts.
 - `.claude/skills` is the tracked source-path symlink for local development skills.
 - `.agents/skills` is the OpenAI/Codex agent-facing symlink and should point to `../.claude/skills`.
 - Do not recreate `.codex/skills`; it was replaced by `.agents/skills`.
