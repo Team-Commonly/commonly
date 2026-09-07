@@ -366,11 +366,21 @@ const V2ActivityPage: React.FC = () => {
           // for another page.
           const loadedExtent = Math.max(historyItems.length, previousHistoryExtent);
           historyOffsetRef.current = loadedExtent;
-          setHistoryRemaining(sameScope && previousHistoryExtent > historyItems.length
-            ? Math.max(historyCount - previousHistoryExtent, 0)
-            : typeof historyResponse.data?.remaining === 'number'
+          if (sameScope && previousHistoryExtent > 0) {
+            // A new ruling can arrive ahead of an already-loaded older page.
+            // Count the union of durable cards we already rendered and this
+            // refreshed first page; using only the previous offset would
+            // report the new row as an unseen older row.
+            const existingIds = new Set(Object.values(settledQueueDecisions)
+              .filter((item) => podId === 'all' || item.podId === podId)
+              .map((item) => String(item.id)));
+            settledHistory.forEach((item) => existingIds.add(String(item.id)));
+            setHistoryRemaining(Math.max(historyCount - existingIds.size, 0));
+          } else {
+            setHistoryRemaining(typeof historyResponse.data?.remaining === 'number'
               ? historyResponse.data.remaining
               : Math.max(historyCount - historyItems.length, 0));
+          }
           setHistoryMoreError(false);
         }
         if (settledHistory.length > 0) {

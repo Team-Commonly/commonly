@@ -336,6 +336,9 @@ describe('V2ActivityPage', () => {
       podId: 'pod-1', podName: 'Launch pod', messageId: '650', options: [{ label: 'Keep' }], status: 'ruled',
       ruling: { value: 'Keep', by: 'You' },
     };
+    const newestArrival = {
+      ...newest, id: 'decision-newest-arrival', title: 'Newest arrival', messageId: '652',
+    };
     let historyReads = 0;
     mockGet.mockImplementation((url: string, config?: any) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
@@ -346,7 +349,7 @@ describe('V2ActivityPage', () => {
           ? { items: firstPage, count: 51, remaining: 1, hasMore: true }
           : historyReads === 2
             ? { items: [older], count: 51, remaining: 0, hasMore: false }
-            : { items: firstPage, count: 51, remaining: 1, hasMore: true } });
+            : { items: [newestArrival, ...firstPage.slice(0, 49)], count: 52, remaining: 2, hasMore: true } });
       }
       return Promise.resolve({ data: recap });
     });
@@ -362,7 +365,8 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(document.querySelector('[data-activity-item-id="decision-older"]')).toHaveFocus());
     globalThis.window.dispatchEvent(new Event(ATTENTION_CHANGED));
     await waitFor(() => expect(historyReads).toBe(3));
-    expect(screen.queryByRole('button', { name: 'Show more settled · 1 remaining' })).not.toBeInTheDocument();
+    expect(screen.getByText('Newest arrival')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show more settled/ })).not.toBeInTheDocument();
     expect(screen.getByText('Older decision')).toBeInTheDocument();
   });
 
