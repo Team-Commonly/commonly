@@ -137,12 +137,14 @@ const feature = (
   children: React.ReactNode,
   showPodsSidebar = false,
   showHeader = true,
+  className = '',
 ) => (
   <V2FeaturePage
     title={title}
     description={description}
     showPodsSidebar={showPodsSidebar}
     showHeader={showHeader}
+    className={className}
   >
     {children}
   </V2FeaturePage>
@@ -291,7 +293,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false)}
+                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"

@@ -12,6 +12,7 @@ interface V2FeaturePageProps {
   children: React.ReactNode;
   showPodsSidebar?: boolean;
   showHeader?: boolean;
+  className?: string;
 }
 
 const withV2Prefix = (path: string): string => {
@@ -295,6 +296,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
   children,
   showPodsSidebar = false,
   showHeader = true,
+  className = '',
 }) => {
   const navigate = useNavigate();
 
@@ -326,7 +328,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
     <div className={`v2-shell${showPodsSidebar ? ' v2-shell--feature' : ' v2-shell--feature-wide'}`}>
       <V2NavRail />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
-      <main className="v2-pane v2-pane--main v2-feature" onClickCapture={handleClickCapture} aria-label={title}>
+      <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
         {showHeader && (
           <header className="v2-feature__header">
             <div>
