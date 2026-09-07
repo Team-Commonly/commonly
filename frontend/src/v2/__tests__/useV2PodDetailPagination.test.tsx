@@ -48,6 +48,37 @@ const routeMock = (messagesByCall) => {
 describe('useV2PodDetail pagination', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it('keeps initialLoadComplete false until the first pod/message read settles', async () => {
+    let resolvePod;
+    let resolveMessages;
+    let resolveAgents;
+    mockApi.get.mockImplementation((url) => {
+      if (url.startsWith('/api/messages/')) {
+        return new Promise((resolve) => { resolveMessages = resolve; });
+      }
+      if (url.includes('/agents')) {
+        return new Promise((resolve) => { resolveAgents = resolve; });
+      }
+      return new Promise((resolve) => { resolvePod = resolve; });
+    });
+
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    expect(result.current.initialLoadComplete).toBe(false);
+
+    await act(async () => {
+      resolvePod({ _id: 'p1', name: 'Pod', members: [] });
+    });
+    await waitFor(() => {
+      expect(resolveMessages).toEqual(expect.any(Function));
+      expect(resolveAgents).toEqual(expect.any(Function));
+    });
+    await act(async () => {
+      resolveMessages(makePage('a', 3, 100));
+      resolveAgents({ agents: [] });
+    });
+    await waitFor(() => expect(result.current.initialLoadComplete).toBe(true));
+  });
+
   it('reports hasMore when the first page comes back full', async () => {
     routeMock([makePage('a', PAGE, 100)]);
     const { result } = renderHook(() => useV2PodDetail('p1'));

@@ -157,6 +157,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
+    initialLoadComplete: detailInitialLoadComplete,
     historySearch: detailHistorySearch,
     searchOlderForMessage: detailSearchOlderForMessage,
     retryHistorySearch: detailRetryHistorySearch,
@@ -579,6 +580,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     error: null,
   };
   const historySearch = detailHistorySearch || idleHistorySearch;
+  // Older fixtures and read-only embeds predate the readiness field; their
+  // supplied messages are already settled. The real hook keeps this false
+  // through its first pod/message read, even though `loading` starts false.
+  const initialLoadComplete = detailInitialLoadComplete ?? true;
   const legacySearchOlder = useCallback(async () => { await handleLoadOlder(); }, [handleLoadOlder]);
   const searchOlderForMessage = detailSearchOlderForMessage || legacySearchOlder;
   const retryHistorySearch = detailRetryHistorySearch || legacySearchOlder;
@@ -645,6 +650,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [location.hash, location.search]);
   useEffect(() => {
     const target = landingTarget;
+    if (!initialLoadComplete) return;
     if (!target) { landedTargetRef.current = null; return; }
     if (landedTargetRef.current === target) return;
     if (landOnMessage(target)) { landedTargetRef.current = target; return; }
@@ -665,7 +671,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           || historySearch.status === 'not-found'))) {
       void searchOlderForMessage(target);
     }
-  }, [landingTarget, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+  }, [landingTarget, initialLoadComplete, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -675,11 +681,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
       if (!hasMore || loadingOlder || loading) return;
+      // The sentinel is automatic. During a target landing (including a
+      // stopped search) it must not prepend a page behind the focused row or
+      // silently bypass the bound. The edge button remains deliberate and
+      // continues to call handleLoadOlder normally.
+      if (landingTarget || (historySearch.targetId && historySearch.status !== 'idle')) return;
       void handleLoadOlder();
     }, { root, rootMargin: '120px 0px 0px 0px' });
     observer.observe(edge);
     return () => observer.disconnect();
-  }, [hasMore, loadingOlder, loading, handleLoadOlder, pod?._id]);
+  }, [hasMore, loadingOlder, loading, landingTarget, historySearch.targetId, historySearch.status, handleLoadOlder, pod?._id]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed

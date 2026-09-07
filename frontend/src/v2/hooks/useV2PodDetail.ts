@@ -130,6 +130,8 @@ export interface UseV2PodDetailResult {
   messages: V2Message[];
   agents: V2Agent[];
   loading: boolean;
+  /** True after the current pod's initial pod/message read has settled. */
+  initialLoadComplete?: boolean;
   error: string | null;
   /** Send failures belong beside the composer; load failures use `error`. */
   sendError: string | null;
@@ -240,6 +242,10 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [messages, setMessages] = useState<V2Message[]>([]);
   const [agents, setAgents] = useState<V2Agent[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading: false` is also the first-render default. Keep that transient
+  // state distinct from a settled empty page so landing cannot declare a
+  // target absent before the initial messages request has even started.
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -280,6 +286,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     setAgents([]);
     setError(null);
     setSendError(null);
+    setInitialLoadComplete(false);
     setHasMore(false);
     setLoadingOlder(false);
     updateHistorySearch({
@@ -511,11 +518,13 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     hasMoreRef.current = false;
     loadingOlderRef.current = false;
     setLoadingOlder(false);
+    setInitialLoadComplete(false);
     if (!podId) {
       setPod(null);
       setMessages([]);
       setAgents([]);
       setSendError(null);
+      setInitialLoadComplete(true);
       return;
     }
     setLoading(true);
@@ -554,6 +563,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     } finally {
       if (refreshSequence === refreshSequenceRef.current && activePodIdRef.current === podId) {
         setLoading(false);
+        setInitialLoadComplete(true);
       }
     }
   }, [podId, fetchPod, fetchMessages, fetchAgents]);
@@ -687,6 +697,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     messages,
     agents,
     loading,
+    initialLoadComplete,
     error,
     sendError,
     hasMore,

@@ -102,6 +102,22 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
   });
 
+  test('does not search before the initial pod/message read settles', async () => {
+    const searchOlderForMessage = jest.fn(() => Promise.resolve());
+    const detail = makeDetail({
+      messages: [],
+      initialLoadComplete: false,
+      searchOlderForMessage,
+      historySearch: { targetId: null, status: 'idle', attempt: 0, maxAttempts: 5, error: null },
+    });
+    const view = renderAt('#message-999', detail);
+    await act(async () => {});
+    expect(searchOlderForMessage).not.toHaveBeenCalled();
+
+    view.rerender(threadNode('#message-999', { ...detail, initialLoadComplete: true }));
+    await waitFor(() => expect(searchOlderForMessage).toHaveBeenCalledWith('999'));
+  });
+
   test('a target already on screen neither reveals nor fetches', async () => {
     const detail = makeDetail();
     const { container } = renderAt('#message-m1', detail);
@@ -110,6 +126,35 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     });
     expect(detail.loadOlder).not.toHaveBeenCalled();
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+  });
+
+  test('the automatic history sentinel stays quiet during landing, while the deliberate button remains usable', async () => {
+    const loadOlder = jest.fn(() => Promise.resolve());
+    const callbacks: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+    const PreviousObserver = global.IntersectionObserver;
+    global.IntersectionObserver = class {
+      callback: (entries: Array<{ isIntersecting: boolean }>) => void;
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        this.callback = callback;
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    } as any;
+    try {
+      const detail = makeDetail({ hasMore: true, loadOlder });
+      const { container } = renderAt('#message-m1', detail);
+      await waitFor(() => expect(container.querySelector('#message-m1')).toHaveClass('v2-msg--landed'));
+      await act(async () => {
+        callbacks.at(-1)?.([{ isIntersecting: true }]);
+      });
+      expect(loadOlder).not.toHaveBeenCalled();
+
+      fireEvent.click(container.querySelector('button.v2-thread__edge-line'));
+      expect(loadOlder).toHaveBeenCalledTimes(1);
+    } finally {
+      global.IntersectionObserver = PreviousObserver;
+    }
   });
 
   test('legacy ?message= landing uses the same source reveal path', async () => {
