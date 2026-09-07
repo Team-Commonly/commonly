@@ -952,12 +952,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       && currentShape !== landedElementShapeRef.current;
     if (landedDecisionFingerprintRef.current === decisionFingerprint
       && !landingNodeReplaced && !landingShapeChanged) return;
-    const focusedElsewhere = !!activeElement
-      && activeElement !== document.body
-      && activeElement !== landedElementRef.current;
-    if (focusedElsewhere || (!landingNodeReplaced && !landingShapeChanged)) {
-      // The reader moved focus (or the node stayed mounted); do not steal it
-      // merely because a polling map got a new object identity.
+    if (!landingNodeReplaced && !landingShapeChanged) {
+      // A stable node means the reader either moved focus or the polling map
+      // changed without changing the projected row; do not steal focus.
       landedDecisionFingerprintRef.current = decisionFingerprint;
       landedElementShapeRef.current = currentShape || null;
       return;
