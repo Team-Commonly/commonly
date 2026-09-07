@@ -909,6 +909,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // a confirmation render increment the Jump pill.
     expect(thread).toContain('sentMessageIdRef');
     expect(thread).toContain('sendFollowVersion');
+    expect(thread).toContain('if (!sendFollowVersion || !sentMessageIdRef.current) return;');
     expect(thread).toContain('if (atBottomRef.current)');
     expect(thread).toContain('}, [newestMessageId]);');
     expect(thread).toContain('}, [sendFollowVersion]);');

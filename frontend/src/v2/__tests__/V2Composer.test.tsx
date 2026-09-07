@@ -645,6 +645,8 @@ describe('V2Composer send button', () => {
     fireEvent.change(composerInput(), { target: { value: 'old own' } });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => expect(oldDetail.sendMessage).toHaveBeenCalledTimes(1));
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
 
     const newDetail = {
       ...oldDetail,
@@ -659,8 +661,10 @@ describe('V2Composer send button', () => {
         </MemoryRouter>
       </AuthContext.Provider>,
     );
+    // Pod-change cleanup bumps the effect version, but without a recorded
+    // sent id it must not be mistaken for a successful local send.
+    expect(scrollIntoView).not.toHaveBeenCalled();
     const scroller = scrollUp(view);
-    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
     scrollIntoView.mockClear();
     scroller.scrollTop = 0;
     fireEvent.scroll(scroller);
