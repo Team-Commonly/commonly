@@ -2,6 +2,7 @@ const mockGetOpenQueue = jest.fn();
 const mockPodFind = jest.fn();
 const mockTaskFind = jest.fn();
 const mockDecisionFind = jest.fn();
+const mockDecisionCountDocuments = jest.fn();
 
 jest.mock('../../../models/Pod', () => ({ find: (...args) => mockPodFind(...args) }));
 jest.mock('../../../models/User', () => ({}));
@@ -9,7 +10,10 @@ jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/Summary', () => ({}));
 jest.mock('../../../models/Post', () => ({}));
 jest.mock('../../../models/Task', () => ({ find: (...args) => mockTaskFind(...args) }));
-jest.mock('../../../models/DecisionRequest', () => ({ find: (...args) => mockDecisionFind(...args) }));
+jest.mock('../../../models/DecisionRequest', () => ({
+  find: (...args) => mockDecisionFind(...args),
+  countDocuments: (...args) => mockDecisionCountDocuments(...args),
+}));
 jest.mock('../../../services/attentionItemService', () => ({
   getOpenQueue: (...args) => mockGetOpenQueue(...args),
 }));
@@ -18,6 +22,13 @@ const ActivityService = require('../../../services/activityService');
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
 const taskChain = (value) => ({
   select: () => ({ sort: () => ({ limit: () => ({ lean: async () => value }) }) }),
+});
+const decisionChain = (value) => ({
+  sort: () => ({
+    skip: () => ({
+      limit: () => ({ lean: async () => value }),
+    }),
+  }),
 });
 
 describe('ActivityService.getDecisionQueue', () => {
@@ -49,13 +60,14 @@ describe('ActivityService.getDecisionQueue', () => {
     mockPodFind.mockReturnValue(chain([{
       _id: 'pod-1', name: 'Current', createdBy: 'owner', members: [{ userId: 'member-1' }],
     }]));
-    mockDecisionFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+    mockDecisionCountDocuments.mockResolvedValue(1);
+    mockDecisionFind.mockReturnValue(decisionChain([{
       _id: 'decision-1', podId: 'pod-1', status: 'ruled', messageId: '42',
       threadRootId: '40', agentName: 'scout', title: 'Choose a path', question: 'Which?',
       options: [{ label: 'A' }, { label: 'B' }],
       ruling: { value: 'B', byUsername: 'Sam', at: new Date('2026-09-07T00:00:00Z'), messageId: '43' },
       createdAt: new Date('2026-09-06T00:00:00Z'), updatedAt: new Date('2026-09-07T00:00:00Z'),
-    }] }) });
+    }]));
 
     const history = await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
     expect(history).toMatchObject({ count: 1, hasMore: false });
@@ -69,6 +81,9 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(mockDecisionFind).toHaveBeenCalledWith({
       podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $exists: true },
     });
+    expect(mockDecisionCountDocuments).toHaveBeenCalledWith({
+      podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $exists: true },
+    });
   });
 
   it('paginates settled decisions within the selected pod instead of global overflow', async () => {
@@ -80,7 +95,8 @@ describe('ActivityService.getDecisionQueue', () => {
       title: `Decision ${index}`, question: 'Which?', options: [{ label: 'A' }, { label: 'B' }],
       ruling: { value: 'A', byUsername: 'Sam', messageId: `reply-${index}` },
     }));
-    mockDecisionFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
+    mockDecisionCountDocuments.mockResolvedValue(51);
+    mockDecisionFind.mockReturnValue(decisionChain([rows[50]]));
 
     const history = await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1', limit: 1, offset: 50 });
     expect(history).toMatchObject({ count: 51, remaining: 0, hasMore: false });

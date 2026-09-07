@@ -413,13 +413,21 @@ class ActivityService {
 
     // eslint-disable-next-line global-require
     const DecisionRequest = require('../models/DecisionRequest');
-    const rows = await DecisionRequest.find({
+    const historyQuery = {
       podId: { $in: podIds },
       status: 'ruled',
       messageId: { $exists: true },
-    }).sort({ updatedAt: -1 }).lean();
+    };
+    const [count, rows] = await Promise.all([
+      DecisionRequest.countDocuments(historyQuery),
+      DecisionRequest.find(historyQuery)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+    ]);
     const podNames = new Map(allowedPods.map((pod) => [String(pod._id), pod.name]));
-    const items = rows.slice(offset, offset + limit).map((row: any) => ({
+    const items = rows.map((row: any) => ({
       id: String(row._id),
       kind: 'decision',
       podId: String(row.podId),
@@ -439,10 +447,10 @@ class ActivityService {
       } : null,
       createdAt: row.createdAt,
     }));
-    const remaining = Math.max(rows.length - offset - items.length, 0);
+    const remaining = Math.max(count - offset - items.length, 0);
     return {
       items,
-      count: rows.length,
+      count,
       offset,
       limit,
       remaining,
