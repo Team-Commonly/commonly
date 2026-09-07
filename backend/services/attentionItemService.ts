@@ -337,12 +337,34 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
   }
 };
 
-export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: any[]; count: number; countsByPod: Record<string, number>; composePodId: string | null }> => {
+interface OpenQueueOptions {
+  podId?: unknown;
+  limit?: number;
+  offset?: number;
+}
+
+export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueOptions = {}): Promise<{
+  items: any[];
+  count: number;
+  countsByPod: Record<string, number>;
+  composePodId: string | null;
+  offset: number;
+  limit: number;
+  remaining: number;
+  hasMore: boolean;
+}> => {
+  const requestedPodId = typeof options.podId === 'string' ? options.podId.trim() : '';
+  const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
+  const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
-  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { items: [], count: 0, countsByPod: {}, composePodId: null };
-  // Counts include every accessible open item; only the rendered cards are capped.
+  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
+    return { items: [], count: 0, countsByPod: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+  }
+  // Counts include every accessible open item. The selected pod scope is
+  // applied before pagination so a scoped list cannot show a positive count
+  // with zero rows merely because its rows fell beyond the global page.
   const rows = await AttentionItem.find({ recipientUserId, status: 'open' }).sort({ createdAt: -1 }).lean();
   const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
@@ -352,24 +374,34 @@ export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: a
     (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
     || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   ));
+  const countsByPod = valid.reduce((counts: Record<string, number>, row: any) => {
+    const podId = String(row.podId);
+    counts[podId] = (counts[podId] || 0) + 1;
+    return counts;
+  }, {});
+  const scoped = requestedPodId
+    ? valid.filter((row: any) => String(row.podId) === requestedPodId)
+    : valid;
+  const page = scoped.slice(offset, offset + limit);
   const picked: any[] = [];
-  let mentionCount = 0;
-  for (const row of valid) {
-    if (picked.length >= 12) break;
-    if (row.kind === 'mention' && mentionCount >= 8) continue;
-    if (row.kind === 'mention') mentionCount += 1;
+  for (const row of page) {
     picked.push({
       id: String(row.source.id), attentionItemId: String(row._id), kind: row.kind, title: row.title, actorName: row.actorName || undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
   }
-  const countsByPod = valid.reduce((counts: Record<string, number>, row: any) => {
-    const podId = String(row.podId);
-    counts[podId] = (counts[podId] || 0) + 1;
-    return counts;
-  }, {});
-  return { items: picked, count: valid.length, countsByPod, composePodId: picked.find((row) => row.kind === 'mention')?.podId || null };
+  const remaining = Math.max(scoped.length - offset - picked.length, 0);
+  return {
+    items: picked,
+    count: scoped.length,
+    countsByPod,
+    composePodId: picked.find((row) => row.kind === 'mention')?.podId || null,
+    offset,
+    limit,
+    remaining,
+    hasMore: remaining > 0,
+  };
 };
 
 export const acknowledgeMention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {

@@ -31,6 +31,18 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(mockGetOpenQueue).toHaveBeenCalledWith('507f191e810c19729de860ea');
   });
 
+  it('forwards scoped pagination to the queue projection', async () => {
+    const queue = { items: [], count: 9, countsByPod: { 'pod-1': 9 }, remaining: 0 };
+    mockGetOpenQueue.mockResolvedValue(queue);
+
+    await expect(ActivityService.getDecisionQueue('507f191e810c19729de860ea', {
+      podId: 'pod-1', limit: 50, offset: 0,
+    })).resolves.toBe(queue);
+    expect(mockGetOpenQueue).toHaveBeenCalledWith('507f191e810c19729de860ea', {
+      podId: 'pod-1', limit: 50, offset: 0,
+    });
+  });
+
   it('keeps the recap fallback scoped to the requested pod', async () => {
     mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current pod' }]));
     mockTaskFind.mockReturnValue(taskChain([]));

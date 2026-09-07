@@ -373,6 +373,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
 
+  test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
+    const more = ruleBody(v2, '.v2-activity__queue-more');
+    expect(more).toContain('min-height: 36px');
+    expect(more).toContain('border: 1px solid var(--v2-accent)');
+    expect(more).toContain('color: var(--v2-accent-text)');
+    expect(v2).toContain('.v2-activity__queue-more:hover:not(:disabled)');
+    expect(v2).toContain('.v2-activity__queue-more:disabled');
+  });
+
   test('DecisionRequest options are full-width content with one recommended primary choice', () => {
     // The first build left options inside the narrow actions column. Generic
     // queue-button CSS then made every non-recommended option blue while the

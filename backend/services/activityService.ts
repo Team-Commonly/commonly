@@ -225,7 +225,7 @@ class ActivityService {
     // Recipient-owned AttentionItem rows are the only needs-you source.
     // eslint-disable-next-line global-require
     const AttentionItemService = require('./attentionItemService');
-    const attention = await AttentionItemService.getOpenQueue(userId);
+    const attention = await AttentionItemService.getOpenQueue(userId, requestedPodId ? { podId: requestedPodId } : {});
     const needsYou = attention.items
       .filter((item: any) => !requestedPodId || item.podId === requestedPodId)
       .map((item: any) => ({
@@ -368,12 +368,14 @@ class ActivityService {
     }
   }
 
-  static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
+  static async getDecisionQueue(userId: unknown, options: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     // Recipient-scoped rows are materialized at each source write, then
     // membership-checked by this indexed reader.
     // eslint-disable-next-line global-require
     const AttentionItemService = require('./attentionItemService');
-    return AttentionItemService.getOpenQueue(userId);
+    return Object.keys(options).length > 0
+      ? AttentionItemService.getOpenQueue(userId, options)
+      : AttentionItemService.getOpenQueue(userId);
   }
 
   static async getPodFeed(

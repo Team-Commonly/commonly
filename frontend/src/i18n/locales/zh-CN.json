@@ -41,6 +41,7 @@
     "allPods": "所有 Pod",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
+    "openPod": "打开 pod",
     "openBoard": "打开看板",
     "compose": {
       "eyebrow": "发起对话",
@@ -69,6 +70,9 @@
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
       "emptyTitle": "没有事项在等待你",
       "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "showMore": "显示更多 · 剩余 {{count}} 条",
+      "loadingMore": "加载中…",
+      "retry": "重试",
       "kinds": {
         "mention": "提及",
         "approval": "审批",

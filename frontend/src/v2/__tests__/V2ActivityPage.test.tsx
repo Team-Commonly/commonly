@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
@@ -18,7 +18,7 @@ const mockGet = axios.get as jest.Mock;
 const mockPost = axios.post as jest.Mock;
 const CurrentPath = () => {
   const location = useLocation();
-  return <div data-testid="current-path">{location.pathname}{location.search}</div>;
+  return <div data-testid="current-path">{location.pathname}{location.search}{location.hash}</div>;
 };
 
 // Only the queue endpoint supplies attention; recap is not a fallback.
@@ -26,7 +26,7 @@ const decisionQueue = {
   items: [
     {
       id: 'mention-1', attentionItemId: 'attention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
-      podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '699', threadRootId: '695', createdAt: '2026-08-26T11:00:00.000Z',
     },
     {
       id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
@@ -122,7 +122,7 @@ describe('V2ActivityPage', () => {
 
     // findAll: the window change reloads both requests and the rows remount.
     fireEvent.click((await screen.findAllByRole('button', { name: 'Open thread' }))[0]);
-    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1#message-699');
   });
 
   test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
@@ -301,6 +301,113 @@ describe('V2ActivityPage', () => {
       ? { ...decisionQueue, count: 91, countsByPod: { 'pod-1': 91 } } : recap }));
     renderPage();
     expect(await screen.findByLabelText('91 waiting on you')).toHaveTextContent('91');
+  });
+
+  test('appends the next server page without losing the existing rows', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `mention-${index}`, attentionItemId: `attention-${index}`, kind: 'mention', title: `Mention ${index}`, detail: 'Needs a reply.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: `2026-08-26T11:${String(index).padStart(2, '0')}:00.000Z`,
+    }));
+    const secondPage = Array.from({ length: 6 }, (_, index) => ({
+      id: `mention-${index + 50}`, attentionItemId: `attention-${index + 50}`, kind: 'mention', title: `Mention ${index + 50}`, detail: 'Needs a reply.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: `2026-08-26T10:${String(index).padStart(2, '0')}:00.000Z`,
+    }));
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-queue') {
+        return Promise.resolve({ data: {
+          items: config?.params?.offset === 50 ? secondPage : firstPage,
+          count: 56,
+          remaining: config?.params?.offset === 50 ? 0 : 6,
+          hasMore: config?.params?.offset !== 50,
+          countsByPod: { 'pod-1': 56 },
+          composePodId: 'pod-1',
+        } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Mention 0')).toBeInTheDocument();
+    const more = await screen.findByRole('button', { name: 'Show more · 6 remaining' });
+    fireEvent.click(more);
+    expect(await screen.findByText('Mention 55')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show more · 6 remaining' })).not.toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.objectContaining({ limit: 50, offset: 50 }),
+    }));
+  });
+
+  test('passes pod scope to the server before pagination', async () => {
+    const scopedRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    const scopedItems = Array.from({ length: 9 }, (_, index) => ({
+      id: `gtm-${index}`, attentionItemId: `gtm-attention-${index}`, kind: 'mention', title: `GTM ${index}`, detail: 'Scoped item.',
+      podId: 'pod-2', podName: 'GTM Programs', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-queue') {
+        const scoped = config?.params?.podId === 'pod-2';
+        return Promise.resolve({ data: scoped
+          ? { items: scopedItems, count: 9, remaining: 0, countsByPod: { 'pod-2': 9 }, composePodId: 'pod-2' }
+          : { ...decisionQueue, count: 56, remaining: 54, items: decisionQueue.items } });
+      }
+      return Promise.resolve({ data: scopedRecap });
+    });
+    renderPage();
+    await screen.findByText('Review requested');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Pod scope' }), { target: { value: 'pod-2' } });
+    expect(await screen.findByText('GTM 8')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing is waiting on you')).not.toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.objectContaining({ podId: 'pod-2', limit: 50, offset: 0 }),
+    }));
+  });
+
+  test('discards a late scoped response after the user switches scope again', async () => {
+    const scopedRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    const scopedItems = [{
+      id: 'late-gtm', attentionItemId: 'late-gtm-attention', kind: 'mention', title: 'Late GTM item', detail: 'Stale response.',
+      podId: 'pod-2', podName: 'GTM Programs', createdAt: '2026-08-26T11:00:00.000Z',
+    }];
+    let resolveScoped: ((value: any) => void) | null = null;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-queue' && config?.params?.podId === 'pod-2') {
+        return new Promise((resolve) => { resolveScoped = resolve; });
+      }
+      return Promise.resolve({ data: url === '/api/activity/decision-queue'
+        ? decisionQueue
+        : scopedRecap });
+    });
+    renderPage();
+    await screen.findByText('Review requested');
+    const scope = screen.getByRole('combobox', { name: 'Pod scope' });
+    fireEvent.change(scope, { target: { value: 'pod-2' } });
+    await waitFor(() => expect(resolveScoped).not.toBeNull());
+    fireEvent.change(scope, { target: { value: 'all' } });
+    await screen.findByText('Review requested');
+
+    await act(async () => {
+      resolveScoped?.({ data: {
+        items: scopedItems, count: 1, remaining: 0, countsByPod: { 'pod-2': 1 }, composePodId: 'pod-2',
+      } });
+    });
+    expect(screen.queryByText('Late GTM item')).not.toBeInTheDocument();
+  });
+
+  test('uses Open pod when a decision has no source message', async () => {
+    const sourceLess = {
+      items: [{ id: 'decision-source-less', kind: 'decision', title: 'Old decision', detail: 'No originating message.', podId: 'pod-1', podName: 'Launch pod', options: [] }],
+      count: 1, remaining: 0, countsByPod: { 'pod-1': 1 }, composePodId: null,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? sourceLess : recap }));
+    renderPage();
+    expect(await screen.findByText('Old decision')).toBeInTheDocument();
+    const queue = document.querySelector('.v2-activity__queue');
+    expect(queue).not.toBeNull();
+    expect(within(queue as HTMLElement).getByRole('button', { name: 'Open pod' })).toBeInTheDocument();
+    expect(within(queue as HTMLElement).queryByRole('button', { name: 'Open thread' })).not.toBeInTheDocument();
+    fireEvent.click(within(queue as HTMLElement).getByRole('button', { name: 'Open pod' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+    expect(screen.getByTestId('current-path')).not.toHaveTextContent('#message-');
   });
 
   test('does not substitute recap attention or claim empty on queue failure', async () => {

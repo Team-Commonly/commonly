@@ -41,6 +41,7 @@
     "allPods": "All pods",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "openPod": "Open pod",
     "openBoard": "Open board",
     "compose": {
       "eyebrow": "Start a conversation",
@@ -69,6 +70,9 @@
       "description": "Direct mentions, approvals, and active decisions that need your call.",
       "emptyTitle": "Nothing is waiting on you",
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "showMore": "Show more · {{count}} remaining",
+      "loadingMore": "Loading…",
+      "retry": "Retry",
       "kinds": {
         "mention": "Mention",
         "approval": "Approval",

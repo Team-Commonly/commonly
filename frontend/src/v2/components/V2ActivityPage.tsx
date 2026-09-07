@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -60,6 +60,17 @@ interface ActivityRecap {
   board: BoardItem[];
 }
 
+interface QueueResponse {
+  items: Array<NeedsYouItem & { createdAt?: string | null }>;
+  composePodId?: string | null;
+  count: number;
+  countsByPod: Record<string, number>;
+  offset?: number;
+  limit?: number;
+  remaining?: number;
+  hasMore?: boolean;
+}
+
 const relativeTime = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
@@ -94,7 +105,11 @@ const V2ActivityPage: React.FC = () => {
 
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [queueRemaining, setQueueRemaining] = useState(0);
+  const [queueLoadingMore, setQueueLoadingMore] = useState(false);
+  const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
+  const queueScopeRef = useRef('all');
 
   useEffect(() => {
     const refresh = () => setReloadKey((value) => value + 1);
@@ -108,8 +123,10 @@ const V2ActivityPage: React.FC = () => {
 
   useEffect(() => {
     let active = true;
+    queueScopeRef.current = podId;
     setLoading(true);
     setError(null);
+    setQueueMoreError(false);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     // Recap and attention are independent facts. A failed queue read must
@@ -119,14 +136,9 @@ const V2ActivityPage: React.FC = () => {
         headers,
         params: { window, ...(podId !== 'all' ? { podId } : {}) },
       }),
-      axios.get<{
-        items: Array<NeedsYouItem & { createdAt?: string | null }>;
-        composePodId?: string | null;
-        count: number;
-        countsByPod: Record<string, number>;
-      }>(
+      axios.get<QueueResponse>(
         '/api/activity/decision-queue',
-        { headers },
+        { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
     ])
       .then(([recapResponse, queueResponse]) => {
@@ -144,21 +156,23 @@ const V2ActivityPage: React.FC = () => {
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
           setQueue([]);
           setQueueCount(null);
+          setQueueRemaining(0);
           setQueueFailed(true);
           setComposeDefault();
           return;
         }
         setQueueFailed(false);
-        setQueueCount(podId === 'all' ? queueResponse!.data.count : (queueResponse!.data.countsByPod?.[podId] || 0));
+        setQueueCount(queueResponse!.data.count);
         const queueItems = rawItems.map((item) => ({
           ...item,
           detail: item.detail || '',
           podName: item.podName || '',
           timestamp: item.timestamp ?? item.createdAt ?? null,
         }));
-        setQueue(podId !== 'all'
-          ? queueItems.filter((item) => item.podId === podId)
-          : queueItems);
+        setQueue(queueItems);
+        setQueueRemaining(typeof queueResponse!.data.remaining === 'number'
+          ? queueResponse!.data.remaining
+          : Math.max(queueResponse!.data.count - queueItems.length, 0));
         // Preserve an intentional target choice across queue refreshes. On
         // first load, anchor the composer to the most recent direct traffic;
         // no traffic simply falls back to the user's first available pod.
@@ -175,8 +189,46 @@ const V2ActivityPage: React.FC = () => {
     };
   }, [podId, reloadKey, t, window]);
 
-  const openPod = (targetPodId: string | null) => {
-    if (targetPodId) navigate(`/v2/pods/${targetPodId}`);
+  const loadMoreQueue = async () => {
+    if (queueLoadingMore || queueRemaining <= 0 || queueFailed) return;
+    const requestedScope = podId;
+    const offset = queue.length;
+    setQueueLoadingMore(true);
+    setQueueMoreError(false);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<QueueResponse>('/api/activity/decision-queue', {
+        headers: { 'x-auth-token': token ?? '' },
+        params: { limit: 50, offset, ...(requestedScope !== 'all' ? { podId: requestedScope } : {}) },
+      });
+      if (queueScopeRef.current !== requestedScope) return;
+      const nextItems = (response.data?.items || []).map((item) => ({
+        ...item,
+        detail: item.detail || '',
+        podName: item.podName || '',
+        timestamp: item.timestamp ?? item.createdAt ?? null,
+      }));
+      setQueue((current) => {
+        const existing = new Set(current.map((item) => `${item.kind}:${item.id}`));
+        return [...current, ...nextItems.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+      });
+      const loaded = offset + nextItems.length;
+      setQueueRemaining(typeof response.data?.remaining === 'number'
+        ? response.data.remaining
+        : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
+    } catch {
+      if (queueScopeRef.current === requestedScope) setQueueMoreError(true);
+    } finally {
+      setQueueLoadingMore(false);
+    }
+  };
+
+  const openPod = (targetPodId: string | null, messageId?: number | string) => {
+    if (!targetPodId) return;
+    const target = messageId === undefined || messageId === null || messageId === ''
+      ? ''
+      : `#message-${String(messageId)}`;
+    navigate(`/v2/pods/${targetPodId}${target}`);
   };
 
   const openFirstBoard = () => {
@@ -544,13 +596,29 @@ const V2ActivityPage: React.FC = () => {
                           )}
                         </>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
-                        {t('activity.openThread')}
+                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                        {item.messageId === undefined || item.messageId === null || item.messageId === ''
+                          ? t('activity.openPod')
+                          : t('activity.openThread')}
                       </button>
                     </div>
                   </article>
                 ))}
               </div>
+            )}
+            {queue.length > 0 && queueRemaining > 0 && (
+              <button
+                type="button"
+                className="v2-activity__queue-more"
+                onClick={loadMoreQueue}
+                disabled={queueLoadingMore}
+              >
+                {queueLoadingMore
+                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                  : queueMoreError
+                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                    : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
+              </button>
             )}
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>

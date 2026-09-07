@@ -8906,6 +8906,28 @@ body.modern-ui.v2-canvas {
   gap: 2px;
 }
 
+.v2-activity__queue-more {
+  justify-self: start;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  color: var(--v2-accent-text);
+  font-size: var(--v2-fs-label);
+  font-weight: 700;
+}
+
+.v2-activity__queue-more:hover:not(:disabled) {
+  background: var(--v2-accent-soft);
+}
+
+.v2-activity__queue-more:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .v2-activity__board-row {
   display: grid;
   align-items: center;
