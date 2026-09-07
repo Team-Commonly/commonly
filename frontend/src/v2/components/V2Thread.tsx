@@ -185,6 +185,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  // Keep the id of the last message sent from this composer. Comparing ids,
+  // rather than authors, keeps another tab's message from stealing a reader's
+  // viewport. The version state re-runs the scroll effect when the POST wins
+  // after its socket copy (and therefore the newest id) already arrived.
+  const sentMessageIdRef = useRef<string | null>(null);
+  const [sendFollowVersion, setSendFollowVersion] = useState(0);
+  const activePodIdRef = useRef<string | null>(pod?._id || null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -213,6 +220,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Per-user thread state for this pod (#1145). `collapsed` arrives resolved;
   // this component must never compute it.
   const threadState = useV2ThreadState(detail?.pod?._id);
+
+  // A late response from a pod we left must not make the first message in the
+  // next pod look like it came from this composer.
+  useLayoutEffect(() => {
+    activePodIdRef.current = pod?._id || null;
+    sentMessageIdRef.current = null;
+    setSendFollowVersion((version) => version + 1);
+  }, [pod?._id]);
 
   // Setting one composer target clears the other. Two chips would be two
   // meanings for one send, and the resolver rejects a message carrying both.
@@ -520,8 +535,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // prepends are ignored.
   const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
   // Direction C history: the reader's position is respected. New messages
-  // pull the view down only when it was already at the bottom (or the message
-  // is mine); otherwise they count up in the Jump-to-latest pill.
+  // pull the view down only when it was already at the bottom (or are the
+  // message returned by this composer's send); otherwise they count up in the
+  // Jump-to-latest pill.
   const atBottomRef = useRef(true);
   const [jumpCount, setJumpCount] = useState(0);
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
@@ -547,17 +563,25 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, [pod?._id]);
-  const newestIsMine = messages.length > 0 && String(messages[messages.length - 1]?.user_id || '') === String(currentUser?._id || '');
   useEffect(() => {
     if (!newestMessageId) return;
-    if (atBottomRef.current || newestIsMine) {
+    if (atBottomRef.current || newestMessageId === sentMessageIdRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newestMessageId]);
+  }, [newestMessageId, sendFollowVersion]);
+
+  const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
+    const id = String(created?.id || (created as { _id?: string })?._id || '');
+    if (!id || activePodIdRef.current !== sendPodId) return;
+    sentMessageIdRef.current = id;
+    // If the socket copy won the race, newestMessageId has already been
+    // observed and its effect cannot see this id until it is nudged here.
+    setSendFollowVersion((version) => version + 1);
+  }, []);
 
   // Prepending changes scrollHeight, so without this the viewport jumps. Hold
   // the reader's position by restoring the distance from the BOTTOM, which is
@@ -974,6 +998,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const handleSend = async (override?: string) => {
     const text = (override ?? draft).trim();
     if (!text || sending) return;
+    const sendPodId = pod?._id;
+    if (!sendPodId) return;
     setSending(true);
     setComposerError(null);
     try {
@@ -1005,6 +1031,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         threadTarget?.id || undefined,
       );
       if (created) {
+        rememberSentMessage(sendPodId, created);
         // A direct-room post is not evidence that the agent is alive or
         // working. Track the reply separately so the user gets a truthful
         // "waiting" state until the agent speaks or the wait expires.
@@ -1152,6 +1179,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           threadTarget?.id || undefined,
         );
         if (created) {
+          rememberSentMessage(pod._id, created);
           setReplyTarget(null);
           setThreadTarget(null);
         }
