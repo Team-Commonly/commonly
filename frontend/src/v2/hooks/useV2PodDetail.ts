@@ -648,6 +648,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         },
         { timeout: SEND_TIMEOUT_MS },
       );
+      // A send started in a pod we have already left must not append its late
+      // response into the newly selected pod's transcript.
+      if (activePodIdRef.current !== podId) return null;
       const normalized = normalizeMessage(created);
       // Dedupe by id — the Socket.io `newMessage` broadcast and this
       // optimistic add both come from the same DB row and race after
@@ -658,6 +661,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       // an older backend's broadcast omits replyTo, which dropped the reply
       // quote until reload (#646).
       setMessages((prev) => {
+        if (activePodIdRef.current !== podId) return prev;
         if (prev.some((m) => m.id && m.id === normalized.id)) {
           const next = prev.map((m) => (
             m.id === normalized.id
@@ -679,8 +683,10 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         messagesRef.current = next;
         return next;
       });
+      if (activePodIdRef.current !== podId) return null;
       return normalized;
     } catch (err) {
+      if (activePodIdRef.current !== podId) return null;
       const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
       setSendError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
       return null;

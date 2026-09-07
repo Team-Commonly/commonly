@@ -433,4 +433,257 @@ describe('V2Composer send button', () => {
       expect(detail.sendMessage).toHaveBeenCalledWith('Replying to a person.', 'text', 'm2', undefined);
     });
   });
+
+  const transcriptMessage = (id: string, userId = 'u2', content = id) => ({
+    id,
+    pod_id: 'p1',
+    user_id: userId,
+    content,
+    message_type: 'text',
+    created_at: `2026-08-22T13:00:${id.length.toString().padStart(2, '0')}Z`,
+    user: { username: userId === 'u1' ? 'solo-user' : 'teammate' },
+  });
+
+  const scrollUp = (view: { container: HTMLElement }) => {
+    const scroller = view.container.querySelector('.v2-chat__messages') as HTMLElement;
+    Object.defineProperties(scroller, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    fireEvent.scroll(scroller);
+    return scroller;
+  };
+
+  beforeEach(() => {
+    (Element.prototype.scrollIntoView as jest.Mock).mockClear();
+  });
+
+  test('background arrivals stay put even when another tab uses the same user', async () => {
+    const detail = makeDetail({ messages: [transcriptMessage('start')] });
+    const view = renderChat(detail);
+    const scroller = scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // Same-author rows from another tab are still background arrivals. This
+    // is the mutation that the old currentUser comparison would let through.
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+            transcriptMessage('same-user', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // The normal bottom-following behavior remains unchanged.
+    scroller.scrollTop = 600;
+    fireEvent.scroll(scroller);
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+            transcriptMessage('same-user', 'u1'),
+            transcriptMessage('bottom-arrival'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('a text send follows its own row when the socket wins before POST', async () => {
+    let resolveSend: (message: any) => void = () => undefined;
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => new Promise((resolve) => { resolveSend = resolve; })),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'sent from this tab' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+
+    // Simulate the socket row being deduped into detail before the POST
+    // promise resolves. The id ref is not known yet, so this must stay put.
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('own-race', 'u1', 'sent from this tab'),
+            transcriptMessage('background-after-own'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    resolveSend(transcriptMessage('own-race', 'u1', 'sent from this tab'));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('a POST-first own send follows before its socket row arrives', async () => {
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('post-first', 'u1'))),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'post first' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    // The confirmation itself must not manufacture a new-arrival count.
+    expect(view.container.querySelector('.v2-thread__jump-count')).toBeNull();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('post-first', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('failed sends do not grant follow privileges to a later arrival', async () => {
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(null)),
+    });
+    const view = renderChat(detail);
+    const scroller = scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'will fail' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('later-same-user', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    // Keep the scroller referenced so this test also exercises the real
+    // scroll-listener path rather than only the initial ref state.
+    expect(scroller).toBeTruthy();
+  });
+
+  test('an image send records the same own-message id as text sends', async () => {
+    mockUpload();
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('own-image', 'u1'))),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    upload(view.container);
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('own-image', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('switching pods clears the prior composer message id', async () => {
+    let resolveSend: (message: any) => void = () => undefined;
+    const oldDetail = makeDetail({
+      messages: [transcriptMessage('old-start')],
+      sendMessage: jest.fn(() => new Promise((resolve) => { resolveSend = resolve; })),
+    });
+    const view = renderChat(oldDetail);
+    scrollUp(view);
+    fireEvent.change(composerInput(), { target: { value: 'old own' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(oldDetail.sendMessage).toHaveBeenCalledTimes(1));
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    const newDetail = {
+      ...oldDetail,
+      pod: { _id: 'p2', name: 'Other Workspace', type: 'chat' },
+      messages: [transcriptMessage('new-start')],
+      sendMessage: jest.fn(() => Promise.resolve(null)),
+    };
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={newDetail} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    // Pod-change cleanup bumps the effect version, but without a recorded
+    // sent id it must not be mistaken for a successful local send.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    const scroller = scrollUp(view);
+    scrollIntoView.mockClear();
+    scroller.scrollTop = 0;
+    fireEvent.scroll(scroller);
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...newDetail, messages: [
+            transcriptMessage('new-start'),
+            transcriptMessage('new-background', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // The old pod's late POST response is also unrelated to this pod.
+    resolveSend(transcriptMessage('old-own', 'u1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });
