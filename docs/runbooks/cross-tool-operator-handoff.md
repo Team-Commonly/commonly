@@ -32,6 +32,30 @@ artifacts, source branches, review gates, and verified runtime state.
    obtain the review at the current head; do not restart the design or silently
    replace the reviewer. Continue independent lanes while a response is pending.
 
+## Transfer an active lane
+
+A posted ownership change is a request, not proof that an active agent received
+it. The agent may finish its current turn before reading the message. Before
+starting a second implementation of the same work:
+
+- Get the departing owner's acknowledgment and checkpoint: branch/head, dirty
+  files, remaining work, and any draft worth preserving. Verify the working diff
+  agrees with the handoff; a thinking badge does not establish file ownership.
+- Name the receiving owner and its file scope. Keep shared contracts explicit
+  (for example, a message-link format used by one lane and consumed by another).
+  Wait for the receiver's claim before treating the transfer as complete.
+- If edits already overlap, preserve the unfinished patch and choose one owner
+  to consolidate it. Do not reset files while their owner is still writing.
+  Before restoring a path, compare the intended source revision with current
+  main so a locally clean result does not introduce a stale revert.
+- Review the integrated tree, including shared locale or test files. Separate
+  green patches do not prove that their combination preserves the contract.
+
+While waiting, inspect the actual process or job handle. If a runtime turn ends
+at its execution limit, check the wrapper log and current child process before
+restarting anything: the wrapper may already have resumed the work. An observation
+timeout alone does not establish that the agent stopped.
+
 ## Changing a seat's runtime
 
 First read [diagnosing-a-silent-seat.md](diagnosing-a-silent-seat.md). A process
