@@ -90,6 +90,7 @@ describe('updateAgentConfiguration', () => {
       parseEnv: jest.fn(async () => environment),
     })).resolves.toEqual({
       agentName: 'juno', podId: 'pod-9', instanceId: 'writer', changed: ['runtime', 'environment'],
+      environment,
     });
     expect(client.patch).toHaveBeenCalledWith(
       '/api/registry/pods/pod-9/agents/juno',
@@ -127,6 +128,16 @@ describe('updateAgentConfiguration', () => {
     await updateAgentConfiguration({ client, record: localRecord, model: 'new-model', effort: 'high' });
     expect(client.patch.mock.calls[0][1].config.environment).toEqual({
       ...localRecord.environment, model: 'new-model', effort: 'high',
+    });
+  });
+
+  test('materializes runtime edits into the declared environment when none exists', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const result = await updateAgentConfiguration({ client, record, model: 'new-model', effort: 'high' });
+    expect(result.environment).toEqual({ model: 'new-model', effort: 'high' });
+    expect(client.patch.mock.calls[0][1].config).toEqual({
+      runtime: { model: 'new-model', effort: 'high' },
+      environment: { model: 'new-model', effort: 'high' },
     });
   });
 });

@@ -422,6 +422,9 @@ export const updateAgentConfiguration = async ({
   if (environment && Object.keys(runtime).length) {
     environment = { ...environment, ...runtime };
   }
+  if (!environment && Object.keys(runtime).length) {
+    environment = { ...runtime };
+  }
   if (environment) config.environment = environment;
   if (!Object.keys(config).length) {
     throw new Error('provide at least one of --model, --effort, or --env');
@@ -436,6 +439,7 @@ export const updateAgentConfiguration = async ({
     podId: record.podId,
     instanceId,
     changed: Object.keys(config),
+    ...(environment ? { environment } : {}),
   };
 };
 
@@ -2670,6 +2674,9 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
           effort: opts.effort,
           envPath: opts.env ? pathResolve(opts.env) : null,
         });
+        if (result.environment) {
+          saveAgentToken(name, { ...record, environment: result.environment });
+        }
         console.log(`✓ Updated ${result.agentName} in pod ${result.podId} (${result.changed.join(', ')})`);
         console.log('  The daemon will apply the change on its next poll; a standalone agent run needs a restart.');
       } catch (err) {
