@@ -1016,13 +1016,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2Layout).toContain('{!phone && (');
   });
 
-  test('phone pod routes retain the rail track while feature-wide pages stay single-column', () => {
+  test('phone pod routes collapse to the main track while feature-wide pages stay single-column', () => {
     const phoneStart = v2.lastIndexOf(
       '@media (max-width: 760px)',
       v2.lastIndexOf('/* The workspace is edge-to-edge on a phone'),
     );
     const phone = v2.slice(phoneStart);
-    expect(phone).toMatch(/\.v2-shell:not\(.v2-shell--feature-wide\)\s*\{[\s\S]*?grid-template-columns: var\(--v2-rail-w\) minmax\(0, 1fr\);/);
+    expect(phone).toMatch(/\.v2-shell:not\(.v2-shell--feature-wide\)\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
     expect(phone).toMatch(/\.v2-shell,\s*\.v2-shell--no-inspector,\s*\.v2-shell--feature\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
     expect(phone).not.toContain('.v2-shell--feature-wide {');
   });

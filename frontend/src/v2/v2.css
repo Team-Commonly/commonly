@@ -10343,10 +10343,11 @@ body.modern-ui.v2-canvas {
 
   /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
      while the transcript, composer, and tab bar share the white canvas. */
-  /* Pod routes keep the rail track beside the conversation. Feature-wide
-     pages (for example Activity) remain a single 390px column. */
+  /* The 1023px rule is more specific and otherwise leaves three tracks
+     active at phone width. The rail is hidden below, so pod routes must
+     explicitly collapse to one main track; feature-wide pages already do. */
   .v2-shell:not(.v2-shell--feature-wide) {
-    grid-template-columns: var(--v2-rail-w) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .v2-shell,
