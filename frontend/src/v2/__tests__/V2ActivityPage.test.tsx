@@ -341,10 +341,12 @@ describe('V2ActivityPage', () => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
       if (url === '/api/activity/decision-history') {
         historyReads += 1;
-        expect(config?.params?.offset).toBe(historyReads === 1 ? 0 : 50);
+        expect(config?.params?.offset).toBe(historyReads === 2 ? 50 : 0);
         return Promise.resolve({ data: historyReads === 1
           ? { items: firstPage, count: 51, remaining: 1, hasMore: true }
-          : { items: [older], count: 51, remaining: 0, hasMore: false } });
+          : historyReads === 2
+            ? { items: [older], count: 51, remaining: 0, hasMore: false }
+            : { items: firstPage, count: 51, remaining: 1, hasMore: true } });
       }
       return Promise.resolve({ data: recap });
     });
@@ -358,6 +360,10 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('Older decision')).toBeInTheDocument();
     await waitFor(() => expect(historyReads).toBe(2));
     await waitFor(() => expect(document.querySelector('[data-activity-item-id="decision-older"]')).toHaveFocus());
+    globalThis.window.dispatchEvent(new Event(ATTENTION_CHANGED));
+    await waitFor(() => expect(historyReads).toBe(3));
+    expect(screen.queryByRole('button', { name: 'Show more settled · 1 remaining' })).not.toBeInTheDocument();
+    expect(screen.getByText('Older decision')).toBeInTheDocument();
   });
 
   test('returns focus to the settled-history Retry control after a failed page load', async () => {

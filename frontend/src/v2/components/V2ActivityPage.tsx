@@ -294,6 +294,7 @@ const V2ActivityPage: React.FC = () => {
     queueScopeRef.current = podId;
     const sameScope = previousScope === podId;
     const previousQueue = sameScope ? queueRef.current : [];
+    const previousHistoryExtent = sameScope ? historyOffsetRef.current : 0;
     if (!sameScope) {
       // Retained rows are evidence for their own scope only. If the new
       // request fails, showing them under the newly selected pod is false.
@@ -358,10 +359,18 @@ const V2ActivityPage: React.FC = () => {
           const historyCount = typeof historyResponse.data?.count === 'number'
             ? historyResponse.data.count
             : historyItems.length;
-          historyOffsetRef.current = historyItems.length;
-          setHistoryRemaining(typeof historyResponse.data?.remaining === 'number'
-            ? historyResponse.data.remaining
-            : Math.max(historyCount - historyItems.length, 0));
+          // A refresh revalidates the first page but must not collapse an
+          // explicitly loaded history extent back to its first-page boundary.
+          // Keep the prior extent as the cursor; older rows remain durable in
+          // settledQueueDecisions and can be fetched only when the reader asks
+          // for another page.
+          const loadedExtent = Math.max(historyItems.length, previousHistoryExtent);
+          historyOffsetRef.current = loadedExtent;
+          setHistoryRemaining(sameScope && previousHistoryExtent > historyItems.length
+            ? Math.max(historyCount - previousHistoryExtent, 0)
+            : typeof historyResponse.data?.remaining === 'number'
+              ? historyResponse.data.remaining
+              : Math.max(historyCount - historyItems.length, 0));
           setHistoryMoreError(false);
         }
         if (settledHistory.length > 0) {

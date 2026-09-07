@@ -1337,7 +1337,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('settledHistory');
       expect(activityPage).toContain('setSettledQueueDecisions');
       expect(activityPage).toContain('const loadMoreHistory = async () =>');
-      expect(activityPage).toContain('historyOffsetRef.current = historyItems.length');
+      expect(activityPage).toContain('const loadedExtent = Math.max(historyItems.length, previousHistoryExtent)');
+      expect(activityPage).toContain('historyOffsetRef.current = loadedExtent');
+      expect(activityPage).toContain('historyCount - previousHistoryExtent');
       expect(activityPage).toContain('showMoreSettled');
       expect(activityPage).toContain('offset: 0');
     });
