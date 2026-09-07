@@ -1079,6 +1079,38 @@ describe('V2ActivityPage', () => {
     expect(compose).toHaveValue('Keep this draft');
   });
 
+  test('closes the destination menu on Escape without blurring its trigger', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.click(picker);
+    const option = within(screen.getByRole('listbox')).getByRole('option', { name: 'GTM Programs' });
+    option.focus();
+    fireEvent.keyDown(option, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
+
+  test('closes the destination menu on an outside mouse or touch press', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.click(picker);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    fireEvent.click(picker);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.touchStart(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
   test('keeps an overflow pod selection visible and returns focus to its trigger', async () => {
     const extraPods = [2, 3, 4].map((id) => ({ id: `pod-${id}`, name: `Pod ${id}` }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, pods: [...recap.pods, ...extraPods] } }));

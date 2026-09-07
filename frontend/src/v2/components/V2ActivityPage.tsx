@@ -195,6 +195,7 @@ const V2ActivityPage: React.FC = () => {
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
+  const composePickerRef = useRef<HTMLDivElement | null>(null);
   const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const composePickerOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -269,6 +270,22 @@ const V2ActivityPage: React.FC = () => {
       globalThis.window.removeEventListener('focus', refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!composeMenuOpen) return undefined;
+    const closeOnOutsidePress = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && composePickerRef.current && !composePickerRef.current.contains(target)) {
+        setComposeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsidePress);
+    document.addEventListener('touchstart', closeOnOutsidePress);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsidePress);
+      document.removeEventListener('touchstart', closeOnOutsidePress);
+    };
+  }, [composeMenuOpen]);
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
@@ -951,7 +968,7 @@ const V2ActivityPage: React.FC = () => {
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
               <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
-                <div className="v2-activity__compose-picker">
+                <div ref={composePickerRef} className="v2-activity__compose-picker">
                   <button
                     type="button"
                     ref={composePickerButtonRef}
@@ -962,6 +979,7 @@ const V2ActivityPage: React.FC = () => {
                     onKeyDown={(event) => {
                       if (event.key === 'Escape' && composeMenuOpen) {
                         event.preventDefault();
+                        event.stopPropagation();
                         setComposeMenuOpen(false);
                         return;
                       }
@@ -1002,6 +1020,7 @@ const V2ActivityPage: React.FC = () => {
                             focusComposePickerOption(scopedPods.length - 1);
                           } else if (event.key === 'Escape') {
                             event.preventDefault();
+                            event.stopPropagation();
                             setComposeMenuOpen(false);
                             composePickerButtonRef.current?.focus();
                           } else if (event.key === 'Enter' || event.key === ' ') {
