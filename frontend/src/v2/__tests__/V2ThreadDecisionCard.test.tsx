@@ -184,6 +184,125 @@ describe('V2Thread decision cards', () => {
     }
   });
 
+  test('preserves Activity landing when hydration replaces the focused source row', async () => {
+    const settled = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship the rebuilt workspace' }], status: 'ruled',
+      ruling: {
+        value: 'Ship the rebuilt workspace', by: 'Lily', messageId: '43', at: '2026-09-05T12:01:00.000Z',
+      },
+    };
+    const pending = { ...settled, status: 'pending', ruling: undefined };
+    let historyReads = 0;
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [pending] } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        return historyReads === 1
+          ? Promise.resolve({ data: { items: [] } })
+          : Promise.resolve({ data: { items: [settled] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const settledDetail = {
+      ...detail,
+      messages: [
+        ...detail.messages,
+        {
+          id: '43', pod_id: 'pod-1', user_id: 'human-1',
+          user: { username: 'lily', isBot: false }, content: 'Ship the rebuilt workspace',
+          message_type: 'text', created_at: '2026-09-05T12:01:00.000Z',
+          thread_root_id: '42',
+        },
+      ],
+    };
+
+    jest.useFakeTimers();
+    try {
+      const { container } = render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter initialEntries={['/v2/pods/pod-1#message-42']}>
+            <V2Thread detail={settledDetail} />
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
+      await waitFor(() => expect(container.querySelector('#message-42')).toHaveClass('v2-msg--landed'));
+      await waitFor(() => expect(historyReads).toBe(1));
+
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(container.querySelector('#message-43')).toHaveClass('v2-msg--landed'));
+      expect(document.activeElement).toBe(container.querySelector('#message-43'));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('preserves deliberate composer focus through settled hydration', async () => {
+    const settled = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship the rebuilt workspace' }], status: 'ruled',
+      ruling: {
+        value: 'Ship the rebuilt workspace', by: 'Lily', messageId: '43', at: '2026-09-05T12:01:00.000Z',
+      },
+    };
+    const pending = { ...settled, status: 'pending', ruling: undefined };
+    let historyReads = 0;
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [pending] } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        return historyReads === 1
+          ? Promise.resolve({ data: { items: [] } })
+          : Promise.resolve({ data: { items: [settled] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const settledDetail = {
+      ...detail,
+      messages: [
+        ...detail.messages,
+        {
+          id: '43', pod_id: 'pod-1', user_id: 'human-1',
+          user: { username: 'lily', isBot: false }, content: 'Ship the rebuilt workspace',
+          message_type: 'text', created_at: '2026-09-05T12:01:00.000Z',
+          thread_root_id: '42',
+        },
+      ],
+    };
+
+    jest.useFakeTimers();
+    try {
+      const { container } = render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter initialEntries={['/v2/pods/pod-1#message-42']}>
+            <V2Thread detail={settledDetail} />
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
+      await waitFor(() => expect(container.querySelector('#message-42')).toHaveClass('v2-msg--landed'));
+      const composer = container.querySelector('textarea');
+      expect(composer).toBeTruthy();
+      composer.focus();
+
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(historyReads).toBe(2));
+      expect(composer).toHaveFocus();
+      expect(container.querySelector('#message-43')).not.toHaveClass('v2-msg--landed');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('returns focus to a failed custom answer instead of skipping to the composer', async () => {
     mockPost.mockRejectedValueOnce(new Error('temporary failure'));
     render(

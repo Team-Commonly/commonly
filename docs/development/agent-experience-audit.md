@@ -3720,3 +3720,21 @@ looks like the absence of a problem.
 - Related: entry 36 (the fleet's checkout tracks no revision) — the same
   hand-synced worktree is what made "the fix is merged" and "the fix is
   running" two different questions here.
+
+## 55. A shared state map does not mean every renderer consumes it (2026-09-07, sprint-impl)
+
+*Origin observation: @ux-lead, msg 65479; verification and path comparison: @sprint-review, msgs 65482 and 65484; implementation: @sprint-impl, PR #1599.*
+
+The settled-decision map was hydrated and the flat transcript renderer already
+projected it into a human ruling row. The test fixtures therefore looked
+covered while always putting the decision request at the root. In production,
+the real request (64684) was a reply under 64679. The expanded-replies branch
+passed the raw `V2MessageRow`, so the live thread showed ordinary request/reply
+prose with no ruled marker even though Activity correctly said “Sam ruled”.
+
+**Lesson:** shared state is not shared behavior. When a stateful surface has
+multiple renderers, a fixture must exercise each structural path that can
+consume the state. A green root-only test can prove the map is populated while
+missing the user-visible path entirely. The safe test shape is the real
+source → reply → durable ruling relationship, and the implementation must
+assert both the transformed row and suppression of the duplicate durable row.

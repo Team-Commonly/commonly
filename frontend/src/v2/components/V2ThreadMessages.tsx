@@ -198,6 +198,32 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     };
   };
 
+  // A settled ruling keeps the ordinary reply id it created when the choice
+  // was acknowledged. When that source request is rendered inside an
+  // expanded thread, replace the request with the ruling and omit the
+  // durable reply row so the answer appears once with the ruled marker.
+  const renderedReplyEntries = (replies: V2Message[]) => {
+    const visibleReplyIds = new Set(replies.map((reply) => String(reply.id)));
+    const settledRulingReplyIds = new Set(
+      Array.from(settledDecisionByMessageId.entries())
+        .filter(([sourceId, ruling]) => visibleReplyIds.has(String(sourceId)) && ruling.messageId)
+        .map(([, ruling]) => String(ruling.messageId)),
+    );
+    return replies
+      .filter((reply) => (
+        !settledRulingReplyIds.has(String(reply.id))
+        || settledDecisionByMessageId.has(String(reply.id))
+      ))
+      .map((reply) => {
+        const settledRuling = settledDecisionByMessageId.get(String(reply.id));
+        return {
+          sourceId: String(reply.id),
+          message: settledRuling ? rulingMessage(reply, settledRuling) : reply,
+          ruling: settledRuling,
+        };
+      });
+  };
+
   return (
     <div className="v2-chat__messages" ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
@@ -229,6 +255,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
             <React.Fragment key={message.id}>
               <V2MessageRow
                 message={renderedMessage}
+                sourceMessageId={settledRuling ? message.id : undefined}
                 decision={settledRuling ? undefined : decisionByMessageId.get(String(message.id))}
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
@@ -300,11 +327,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     {t('podChat.thread.moreReplies', { count: hiddenReplies })}
                   </button>
                 )}
-                {shownReplies.map((reply, replyIndex) => (
+                {renderedReplyEntries(shownReplies).map(({ sourceId, message: reply, ruling }, replyIndex, renderedReplies) => (
                   <V2MessageRow
                     key={reply.id}
                     message={reply}
-                    decision={decisionByMessageId.get(String(reply.id))}
+                    sourceMessageId={ruling ? sourceId : undefined}
+                    decision={ruling ? undefined : decisionByMessageId.get(sourceId)}
+                    isDecisionRuling={Boolean(ruling)}
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
                     agentTags={agentTags}
@@ -314,7 +343,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     onReply={onReply}
                     onThread={onThread}
                     onQuoteNavigate={onQuoteNavigate}
-                    grouped={isGroupedWithPrevious(reply, shownReplies[replyIndex - 1])}
+                    grouped={isGroupedWithPrevious(reply, renderedReplies[replyIndex - 1]?.message)}
                     insideThreadRoot={item.rootId}
                   />
                 ))}
