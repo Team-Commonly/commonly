@@ -12,10 +12,12 @@ runtime API.
 1. **Runtime fidelity.** The daemon work list carries the complete supported
    ADR-008 `config.environment` projection (workspace, sandbox, skills, MCP,
    model, and effort). Opaque keys and literal `mcp[].env` values are dropped
-   at the server boundary; only adapter-resolved Commonly placeholders remain,
-   while provider secrets stay out-of-band per ADR-008. Older installations
-   that expose only `config.runtime.model/effort` remain compatible through a
-   non-destructive overlay. The Codex adapter passes model on fresh and
+   at the server boundary; only exact adapter-resolved Commonly placeholder
+   values remain (embedded placeholder strings are dropped with a value-free
+   warning), while provider secrets stay out-of-band per ADR-008. Older
+   installations that expose only `config.runtime.model/effort` remain
+   compatible through a non-destructive overlay. The Codex adapter passes model
+   on fresh and
    resumed runs and passes reasoning effort as `model_reasoning_effort` through
    `-c`, which is the supported Codex CLI surface.
 2. **Existing-agent editing.** The existing registry PATCH route remains the

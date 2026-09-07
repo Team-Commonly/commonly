@@ -205,6 +205,30 @@ describe('daemon work list', () => {
     expect(seenByA.body.agents).toEqual([]);
   });
 
+  it('warns when an embedded MCP placeholder is dropped', async () => {
+    const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
+    const environment = installation.config.get('environment');
+    installation.config.set('environment', {
+      ...environment,
+      mcp: [{ ...environment.mcp[0], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}/v1' } }],
+    });
+    await installation.save();
+    await requestPlacement('machine-a');
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const seenByA = await assigned(DAEMON_A);
+      expect(seenByA.status).toBe(200);
+      expect(seenByA.body.agents[0].environment.mcp[0]).not.toHaveProperty('env');
+      expect(warn).toHaveBeenCalledWith(
+        '[agent-binding] dropped MCP env placeholder declaration',
+        { server: 'commonly', key: 'COMMONLY_API_URL' },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('does not expose an empty environment projection as a declared spec', async () => {
     const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
     installation.config.set('environment', {

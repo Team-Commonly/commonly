@@ -39,21 +39,30 @@ const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 // become a read-all projection of an installation's opaque config. Keep this
 // allow-list aligned with environment.js and discard future/accidental keys at
 // the server boundary. MCP env values are declarations (usually placeholders);
-// provider secrets remain out-of-band per ADR-008. Only the placeholders that
-// the local adapters resolve are retained; literal values must never cross the
-// daemon-token boundary.
+// provider secrets remain out-of-band per ADR-008. Only exact placeholder
+// values that the local adapters resolve are retained; literal MCP env values
+// must never cross the daemon-token boundary. Command and URL fields remain
+// declarative inputs and are intentionally outside this env-value filter.
 const MCP_PLACEHOLDERS = new Set([
   '${COMMONLY_AGENT_TOKEN}',
   '${COMMONLY_API_URL}',
   '${COMMONLY_INSTANCE_URL}',
 ]);
 
-const projectMcpEnv = (raw: unknown): Record<string, string> | null => {
+const projectMcpEnv = (raw: unknown, serverName: string): Record<string, string> | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const projected: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === 'string' && MCP_PLACEHOLDERS.has(value)) {
       projected[key] = value;
+    } else if (typeof value === 'string' && value.includes('${COMMONLY_')) {
+      // Adapters resolve placeholders embedded in command/URL-like values,
+      // but env projections deliberately accept only a placeholder by itself.
+      // Warn without logging the value so an operator can repair the spec.
+      console.warn('[agent-binding] dropped MCP env placeholder declaration', {
+        server: serverName,
+        key,
+      });
     }
   }
   return Object.keys(projected).length ? projected : null;
@@ -94,7 +103,8 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
         for (const key of ['name', 'transport', 'url', 'command']) {
           if (server[key] !== undefined) entry[key] = server[key];
         }
-        const env = projectMcpEnv(server.env);
+        const serverName = typeof server.name === 'string' ? server.name : 'unknown';
+        const env = projectMcpEnv(server.env, serverName);
         if (env) entry.env = env;
         return entry;
       })
