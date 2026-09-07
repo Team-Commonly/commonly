@@ -506,7 +506,15 @@
       "startThread": "Thread",
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
-      "replyingInThread": "Replying in thread ·"
+      "replyingInThread": "Replying in thread ·",
+      "last": "last",
+      "collapse": "Collapse",
+      "replyOne": "reply",
+      "replyOther": "replies",
+      "moreReplies": "{{count}} more replies",
+      "follow": "Follow",
+      "following": "Following",
+      "muted": "Muted"
     },
     "leadBadge": "Lead",
     "catchup": {
@@ -537,6 +545,19 @@
       "loadEarlier": "load earlier",
       "beginning": "beginning of the pod",
       "jumpToLatest": "Jump to latest"
+    },
+    "strip": {
+      "label": "Message actions",
+      "react": "Add reaction",
+      "more": "More",
+      "copyLink": "Copy link",
+      "copyText": "Copy text"
+    },
+    "quote": {
+      "earlier": "earlier message"
+    },
+    "reactions": {
+      "more": "{{count}} more reactions"
     }
   },
   "landing": {
