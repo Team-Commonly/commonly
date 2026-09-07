@@ -8918,6 +8918,35 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink-hover);
 }
 
+/* The destination menu is a light, bounded list even though its options are
+   buttons nested under the composer. Keep this selector stronger than the
+   generic Send-button rule above so a large pod list cannot become a black,
+   unbounded wall of buttons. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option:hover,
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 /* The generic composer button treatment above is for Send. The destination
    picker is a neutral selector and needs a stronger selector so it cannot
    inherit Send's ink fill. */
