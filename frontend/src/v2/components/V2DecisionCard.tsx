@@ -107,8 +107,14 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
                 className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
                 onClick={() => { void choose(option.label); }}
                 disabled={saving}
+                aria-label={option.recommended
+                  ? t('activity.decision.ruleOptionRecommended', { option: option.label })
+                  : undefined}
               >
-                {saving ? t('activity.decision.working') : option.label}
+                {saving ? t('activity.decision.working') : <>
+                  {option.label}
+                  {option.recommended && <span className="v2-decision-card__recommended"> · {t('activity.decision.recommended')}</span>}
+                </>}
               </button>
               {option.description && <span>{option.description}</span>}
             </div>

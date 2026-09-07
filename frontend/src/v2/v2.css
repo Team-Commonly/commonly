@@ -9281,6 +9281,12 @@ body.modern-ui.v2-canvas {
   line-height: 1.35;
 }
 
+.v2-activity__option-recommended,
+.v2-decision-card__recommended {
+  font: 500 10px/14px var(--v2-font-mono);
+  opacity: 0.9;
+}
+
 .v2-activity__decision-other {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -119,6 +119,8 @@
     },
     "decision": {
       "ruleOption": "裁定：{{option}}",
+      "ruleOptionRecommended": "裁定：{{option}}（推荐）",
+      "recommended": "推荐",
       "working": "正在裁定…",
       "other": "其他…",
       "otherPlaceholder": "写下你的裁定…",

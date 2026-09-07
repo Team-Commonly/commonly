@@ -88,6 +88,7 @@ describe('V2ActivityPage', () => {
     sessionStorage.clear();
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
       return Promise.resolve({ data: recap });
     });
     await act(async () => { await i18n.changeLanguage('en'); });
@@ -109,7 +110,7 @@ describe('V2ActivityPage', () => {
     // Queue rows are only durable source facts; task handoff prose never
     // creates a card. DecisionRequest cards use declared alternatives.
     expect(screen.getByText('Choose the eslint scope')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rule: Ship now' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rule: Ship now (Recommended)' })).toBeInTheDocument();
     expect(screen.getByText('Release the bounded change.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
@@ -137,9 +138,11 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     const first = await screen.findByRole('button', { name: 'Rule: Hold for review' });
-    const second = screen.getByRole('button', { name: 'Rule: Ship now' });
+    const second = screen.getByRole('button', { name: 'Rule: Ship now (Recommended)' });
     expect(first).toHaveClass('v2-activity__option--primary');
     expect(second).not.toHaveClass('v2-activity__option--primary');
+    expect(second).toHaveTextContent('Recommended');
+    expect(first).not.toHaveTextContent('Recommended');
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -266,31 +269,54 @@ describe('V2ActivityPage', () => {
     mockPost.mockResolvedValue({ data: { ok: true } });
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/activity/decisions/decision-024/choose',
       { value: 'Ship now' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Rule: Ship now' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Rule: Ship now (Recommended)' })).not.toBeInTheDocument());
   });
 
-  test('keeps a successful ruling visible when the queue refresh fails', async () => {
+  test('keeps a successful ruling visible when a successful queue refresh omits the settled row', async () => {
     let queueReads = 0;
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') {
         queueReads += 1;
         return queueReads === 1
           ? Promise.resolve({ data: decisionQueue })
-          : Promise.reject(new Error('queue down'));
+          : Promise.resolve({ data: { items: [], count: 0, composePodId: 'pod-1' } });
       }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
       return Promise.resolve({ data: recap });
     });
     mockPost.mockResolvedValue({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
     expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+  });
+
+  test('restores a settled Activity card from durable history after leave and return', async () => {
+    const settled = {
+      id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '700', threadRootId: '695',
+      options: [{ label: 'Ship now' }, { label: 'Hold for review' }], status: 'ruled',
+      ruling: { value: 'Ship now', by: 'You' },
+    };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [settled] } });
+      return Promise.resolve({ data: recap });
+    });
+
+    const first = renderPage();
+    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    first.unmount();
+
+    renderPage();
+    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
   });
 
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {

@@ -32,7 +32,8 @@ describe('V2DecisionCard', () => {
     expect(screen.getByText('Which implementation should ship?')).toBeInTheDocument();
     expect(screen.getByText('Sprint impl')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ship the rebuilt workspace' })).toHaveClass('v2-decision-card__choice--primary');
-    expect(screen.getByRole('button', { name: 'Keep the legacy chat' })).not.toHaveClass('v2-decision-card__choice--primary');
+    expect(screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' })).not.toHaveClass('v2-decision-card__choice--primary');
+    expect(screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' })).toHaveTextContent('Recommended');
 
     fireEvent.click(screen.getByRole('button', { name: 'Ship the rebuilt workspace' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
@@ -48,7 +49,7 @@ describe('V2DecisionCard', () => {
     });
     render(<V2DecisionCard decision={decision} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep the legacy chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Lily ruled: Keep the legacy chat');
     expect(screen.queryByRole('button', { name: 'Ship the rebuilt workspace' })).not.toBeInTheDocument();
   });

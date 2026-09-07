@@ -95,7 +95,7 @@ describe('V2Thread decision cards', () => {
     expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     expect(screen.queryByText('Choose one of the following approaches in prose.')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ship the rebuilt workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rule: Ship the rebuilt workspace (Recommended)' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/activity/decisions/decision-42/choose',
       { value: 'Ship the rebuilt workspace' },
@@ -162,5 +162,31 @@ describe('V2Thread decision cards', () => {
     );
     expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
     expect(screen.getByText('Overflow decision')).toBeInTheDocument();
+  });
+
+  test('keeps authored option order while labeling a later recommended option', async () => {
+    const authored = {
+      id: 'decision-authored-order', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Hold for review' }, { label: 'Ship the rebuilt workspace', recommended: true }],
+    };
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [authored] } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    const first = await screen.findByRole('button', { name: 'Hold for review' });
+    const second = screen.getByRole('button', { name: 'Rule: Ship the rebuilt workspace (Recommended)' });
+    expect(first).toHaveClass('v2-decision-card__choice--primary');
+    expect(second).not.toHaveClass('v2-decision-card__choice--primary');
+    expect(second).toHaveTextContent('Recommended');
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -72,6 +72,17 @@ interface QueueResponse {
   hasMore?: boolean;
 }
 
+interface DecisionHistoryResponse {
+  items?: Array<NeedsYouItem & {
+    status?: 'pending' | 'ruled';
+    ruling?: { value?: string; by?: string } | null;
+    createdAt?: string | null;
+  }>;
+  count?: number;
+  remaining?: number;
+  hasMore?: boolean;
+}
+
 interface MovedLine {
   id: string;
   author: string;
@@ -311,10 +322,48 @@ const V2ActivityPage: React.FC = () => {
         '/api/activity/decision-queue',
         { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
+      axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
+        headers,
+        params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) },
+      }).catch(() => null),
     ])
-      .then(async ([recapResponse, queueResponse]) => {
+      .then(async ([recapResponse, queueResponse, historyResponse]) => {
         if (!active) return;
         setRecap(recapResponse.data);
+        // Decision history is a durable pod projection. Hydrate it on every
+        // Activity read so a settled card survives a hard reload and the
+        // Activity → pod → Activity Back path, even when the open queue has
+        // already dropped the recipient-owned row.
+        const historyItems = Array.isArray(historyResponse?.data?.items)
+          ? historyResponse.data.items
+          : [];
+        const settledHistory = historyItems.filter((item) => (
+          item.kind === 'decision' && item.id && item.ruling?.value
+        ));
+        if (settledHistory.length > 0) {
+          setRuledDecisions((current) => {
+            const next = { ...current };
+            settledHistory.forEach((item) => {
+              next[String(item.id)] = {
+                value: String(item.ruling?.value),
+                ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+              };
+            });
+            return next;
+          });
+          setSettledQueueDecisions((current) => {
+            const next = { ...current };
+            settledHistory.forEach((item) => {
+              next[String(item.id)] = {
+                ...item,
+                detail: item.detail || '',
+                podName: item.podName || '',
+                timestamp: item.timestamp ?? item.createdAt ?? null,
+              };
+            });
+            return next;
+          });
+        }
         const rawItems = queueResponse?.data?.items;
         const availablePods = recapResponse.data.pods || [];
         const setComposeDefault = (candidate = '') => {
@@ -325,7 +374,7 @@ const V2ActivityPage: React.FC = () => {
         };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueueFailed(previousQueue.length === 0);
+          setQueueFailed(previousQueue.length === 0 && settledHistory.length === 0);
           setQueueMoreError(true);
           setComposeDefault();
           return;
@@ -929,9 +978,14 @@ const V2ActivityPage: React.FC = () => {
                                     className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
                                     onClick={() => ruleDecision(item, option.label)}
                                     disabled={rulingId === item.id}
-                                    aria-label={t('activity.decision.ruleOption', { option: option.label })}
+                                    aria-label={t(option.recommended
+                                      ? 'activity.decision.ruleOptionRecommended'
+                                      : 'activity.decision.ruleOption', { option: option.label })}
                                   >
-                                    {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                    {rulingId === item.id ? t('activity.decision.working') : <>
+                                      {option.label}
+                                      {option.recommended && <span className="v2-activity__option-recommended"> · {t('activity.decision.recommended')}</span>}
+                                    </>}
                                   </button>
                                   {option.description && (
                                     <span className="v2-activity__option-description">{option.description}</span>
