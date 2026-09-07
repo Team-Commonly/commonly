@@ -67,6 +67,8 @@ beforeEach(async () => {
           command: ['npx', 'commonly-mcp'],
           env: {
             COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            COMMONLY_API_URL: 'literal-api-value-must-not-travel',
+            COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
             PRIVATE_API_KEY: 'literal-secret-must-not-travel',
           },
         }],
@@ -166,7 +168,10 @@ describe('daemon work list', () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
-          env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+          env: {
+            COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
+          },
         }],
         model: 'gpt-5.4',
         effort: 'high',
