@@ -937,6 +937,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('managed history prepends disable native anchoring while idle media keeps native anchoring', () => {
     const history = ruleBody(v2, '.v2-chat__messages[data-history-anchor="active"]');
     expect(history).toContain('overflow-anchor: none');
+    expect(ruleBody(v2, '.v2-chat__messages')).not.toContain('overflow-anchor');
     expect(thread).toContain('getBoundingClientRect');
     expect(thread).toContain('rowOffset');
     expect(thread).toContain("el.dataset.historyAnchor = 'active'");
