@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -87,7 +87,7 @@ describe('V2Thread decision cards', () => {
 
     expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
-      params: { podId: 'pod-1' },
+      params: { podId: 'pod-1', limit: 50, offset: 0 },
     }));
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-history', expect.objectContaining({
       params: { podId: 'pod-1', limit: 50, offset: 0 },
@@ -141,7 +141,54 @@ describe('V2Thread decision cards', () => {
     expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
   });
 
+  test('keeps a settled card visible when a later history refresh fails', async () => {
+    const settled = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+      title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship the rebuilt workspace' }, { label: 'Keep the legacy chat' }],
+      status: 'ruled', ruling: {
+        value: 'Ship the rebuilt workspace', by: 'Lily', messageId: 'ruling-42', at: '2026-09-05T12:01:00.000Z',
+      },
+    };
+    let historyReads = 0;
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [] } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        return historyReads === 1
+          ? Promise.resolve({ data: { items: [settled] } })
+          : Promise.reject(new Error('history unavailable'));
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    jest.useFakeTimers();
+    try {
+      render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByTestId('decision-ruling-row')).toHaveTextContent('Ship the rebuilt workspace');
+      expect(historyReads).toBe(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(historyReads).toBe(2));
+      expect(screen.getByTestId('decision-ruling-row')).toHaveTextContent('Lily');
+      expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('discovers a decision in the selected pod beyond the global queue page', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `decision-filler-${index}`, kind: 'decision', podId: 'pod-1', messageId: `filler-${index}`,
+      title: `Filler ${index}`, detail: 'Another decision', options: [{ label: 'Keep looking' }],
+    }));
     const target = {
       id: 'decision-overflow', kind: 'decision', podId: 'pod-1', messageId: '42',
       title: 'Overflow decision', detail: 'Which implementation should ship?',
@@ -149,8 +196,12 @@ describe('V2Thread decision cards', () => {
     };
     mockGet.mockImplementation((url, config) => {
       if (url === '/api/activity/decision-queue') {
-        expect(config).toEqual(expect.objectContaining({ params: { podId: 'pod-1' } }));
-        return Promise.resolve({ data: { items: [target], count: 1, remaining: 0 } });
+        const offset = config?.params?.offset;
+        if (offset === 0) {
+          return Promise.resolve({ data: { items: firstPage, count: 51, remaining: 1, hasMore: true } });
+        }
+        expect(offset).toBe(50);
+        return Promise.resolve({ data: { items: [target], count: 51, remaining: 0, hasMore: false } });
       }
       if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
       return Promise.resolve({ data: {} });

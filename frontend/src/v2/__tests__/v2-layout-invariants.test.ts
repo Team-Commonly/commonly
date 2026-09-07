@@ -406,7 +406,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-activity__option-description');
     expect(activityPage).toContain('(option, index)');
     expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
-    expect(thread).toContain('params: { podId }');
+    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId)");
+    expect(thread).toContain('params: { podId, limit: DECISION_PAGE_SIZE, offset }');
     expect(thread).toContain("'/api/activity/decision-history'");
     expect(thread).toContain('settledDecisionByMessageId');
   });

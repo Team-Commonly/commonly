@@ -94,6 +94,35 @@ interface ThreadDecision extends V2DecisionCardData {
   ruling?: V2DecisionRuling | null;
 }
 
+interface DecisionPage<T> {
+  items?: T[];
+  hasMore?: boolean;
+}
+
+const DECISION_PAGE_SIZE = 50;
+
+const loadDecisionPages = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+): Promise<{ items: T[] }> => {
+  const items: T[] = [];
+  let offset = 0;
+  // A malformed response must not create an unbounded request loop. The
+  // server caps each page at 50; 100 pages is ample for a room while still
+  // bounding a broken hasMore implementation.
+  for (let page = 0; page < 100; page += 1) {
+    const data = await api.get<DecisionPage<T>>(endpoint, {
+      params: { podId, limit: DECISION_PAGE_SIZE, offset },
+    });
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    items.push(...pageItems);
+    if (!data?.hasMore || pageItems.length === 0) break;
+    offset += pageItems.length;
+  }
+  return { items };
+};
+
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
   const { t, i18n } = useTranslation();
   if (!agents || agents.length === 0) return null;
@@ -289,12 +318,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const load = async () => {
       try {
         const [pendingData, historyData] = await Promise.all([
-          api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue', {
-            params: { podId },
-          }),
-          api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-history', {
-            params: { podId, limit: 50, offset: 0 },
-          }).catch(() => ({ items: [] })),
+          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId).catch(() => null),
+          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId).catch(() => null),
         ]);
         if (!active) return;
         setDecisions((pendingData?.items || []).filter((item) => (
@@ -305,15 +330,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           && Array.isArray(item.options)
           && item.options.length > 0
         )));
-        const settled = (historyData?.items || []).filter((item) => (
-          item.kind === 'decision'
-          && item.podId === podId
-          && typeof item.messageId === 'string'
-          && item.ruling?.value
-        ));
-        setSettledDecisionByMessageId(new Map(
-          settled.map((item) => [String(item.messageId), item.ruling as V2DecisionRuling]),
-        ));
+        // A successful empty history page is authoritative and clears rows
+        // that are no longer ruled. A failed history read is not authoritative
+        // and must preserve settled cards already rendered in this mount.
+        if (historyData) {
+          const settled = (historyData.items || []).filter((item) => (
+            item.kind === 'decision'
+            && item.podId === podId
+            && typeof item.messageId === 'string'
+            && item.ruling?.value
+          ));
+          setSettledDecisionByMessageId(new Map(
+            settled.map((item) => [String(item.messageId), item.ruling as V2DecisionRuling]),
+          ));
+        }
       } catch {
         // A queue read is additive decoration: preserve a working thread when
         // attention is temporarily unavailable rather than inventing cards.
