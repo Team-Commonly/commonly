@@ -1022,7 +1022,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       v2.lastIndexOf('/* The workspace is edge-to-edge on a phone'),
     );
     const phone = v2.slice(phoneStart);
-    expect(phone).toMatch(/\.v2-shell:not\(.v2-shell--feature-wide\),\s*\.v2-shell--feature-wide\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
+    expect(phone).toMatch(/\.v2-shell:not\(.v2-shell--feature-wide\),\s*\.v2-shell--feature-wide\s*\{[^}]*?grid-template-columns: minmax\(0, 1fr\);/);
     expect(phone).toContain('.v2-pane--rail { display: none; }');
   });
 
