@@ -119,7 +119,7 @@ describe('tick', () => {
   test('preserves full declared environment and runtime effort when minting', async () => {
     const environment = {
       version: 1,
-      workspace: { path: './workspace' },
+      workspace: { path: '/tmp/commonly-test-workspace' },
       sandbox: { mode: 'workspace', trust: 'internal' },
       skills: { claude: ['common'] },
       mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
@@ -129,7 +129,10 @@ describe('tick', () => {
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus', effort: 'high' }, environment })],
     });
     await supervisor.tick();
-    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({ environment: { ...environment, model: 'opus' } }));
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { ...environment, model: 'opus' },
+      workspacePath: '/tmp/commonly-test-workspace',
+    }));
   });
 
   test('runtime-only model updates preserve a local full environment', async () => {

@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
+import { homedir } from 'node:os';
+import { isAbsolute, resolve as pathResolve } from 'node:path';
 
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
@@ -23,6 +25,15 @@ export const DEFAULT_POLL_MS = 30_000;
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 60_000;
+
+const workspacePathFor = (environment) => {
+  const declared = environment?.workspace?.path;
+  if (typeof declared !== 'string' || !declared.trim()) return null;
+  const expanded = declared === '~'
+    ? homedir()
+    : (declared.startsWith('~/') ? `${homedir()}/${declared.slice(2)}` : declared);
+  return isAbsolute(expanded) ? expanded : pathResolve(expanded);
+};
 
 export const backoffMs = (restarts) => Math.min(
   BACKOFF_MAX_MS,
@@ -126,8 +137,15 @@ export const createDaemonSupervisor = ({
         const nextEnvironment = wanted.declared
           ? wanted.value
           : { ...(existing.environment || {}), ...wanted.value };
-        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment)) {
-          saveToken(row.agentName, { ...existing, environment: nextEnvironment });
+        const workspacePath = workspacePathFor(nextEnvironment);
+        const nextRecord = {
+          ...existing,
+          environment: nextEnvironment,
+          ...(workspacePath ? { workspacePath } : {}),
+        };
+        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment)
+          || (workspacePath && existing.workspacePath !== workspacePath)) {
+          saveToken(row.agentName, nextRecord);
           log('runtime config changed — restarting the seat to load it');
           return 'changed';
         }
@@ -170,6 +188,10 @@ export const createDaemonSupervisor = ({
       podId: row.podIds?.[0] || null,
       adapter,
       ...(environment ? { environment: environment.value } : {}),
+      ...(environment?.value ? (() => {
+        const workspacePath = workspacePathFor(environment.value);
+        return workspacePath ? { workspacePath } : {};
+      })() : {}),
     });
     log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment?.value?.model ? `, model: ${environment.value.model}` : ''})`);
     return 'ready';
