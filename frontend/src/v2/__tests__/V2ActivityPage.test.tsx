@@ -357,6 +357,34 @@ describe('V2ActivityPage', () => {
     fireEvent.click(more);
     expect(await screen.findByText('Older decision')).toBeInTheDocument();
     await waitFor(() => expect(historyReads).toBe(2));
+    await waitFor(() => expect(document.querySelector('[data-activity-item-id="decision-older"]')).toHaveFocus());
+  });
+
+  test('returns focus to the settled-history Retry control after a failed page load', async () => {
+    const newest = {
+      id: 'decision-newest', kind: 'decision', title: 'Newest decision', detail: 'A newer ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '651', options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    };
+    let historyReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        return historyReads === 1
+          ? Promise.resolve({ data: { items: [newest], count: 51, remaining: 1, hasMore: true } })
+          : Promise.reject(new Error('history unavailable'));
+      }
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+
+    const more = await screen.findByRole('button', { name: 'Show more settled · 1 remaining' });
+    more.focus();
+    fireEvent.click(more);
+    more.blur();
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    await waitFor(() => expect(retry).toHaveFocus());
   });
 
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {

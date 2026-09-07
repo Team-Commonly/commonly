@@ -532,6 +532,11 @@ const V2ActivityPage: React.FC = () => {
     const requestedScope = podId;
     const requestedGeneration = queueGenerationRef.current;
     const offset = historyOffsetRef.current;
+    const trigger = historyMoreButtonRef.current;
+    const shouldRestoreFocus = () => {
+      const active = document.activeElement;
+      return active === document.body || active === trigger || active === historyMoreButtonRef.current;
+    };
     setHistoryLoadingMore(true);
     setHistoryMoreError(false);
     try {
@@ -543,6 +548,11 @@ const V2ActivityPage: React.FC = () => {
       if (queueScopeRef.current !== requestedScope || queueGenerationRef.current !== requestedGeneration) return;
       const items = Array.isArray(response.data?.items) ? response.data.items : [];
       const settled = items.filter((item) => item.kind === 'decision' && item.id && item.ruling?.value);
+      const existingSettledIds = new Set(Object.keys(settledQueueDecisions));
+      const existingQueueIds = new Set(queue.map((item) => `${item.kind}:${item.id}`));
+      const firstAddedId = settled.find((item) => (
+        !existingSettledIds.has(String(item.id)) && !existingQueueIds.has(`${item.kind}:${item.id}`)
+      ))?.id;
       if (settled.length > 0) {
         setRuledDecisions((current) => {
           const next = { ...current };
@@ -575,10 +585,22 @@ const V2ActivityPage: React.FC = () => {
           : 0;
       setHistoryRemaining(remaining);
       setHistoryMoreError(false);
-      globalThis.window.requestAnimationFrame(() => historyMoreButtonRef.current?.focus());
+      globalThis.window.requestAnimationFrame(() => {
+        if (!shouldRestoreFocus()) return;
+        if (historyMoreButtonRef.current) {
+          historyMoreButtonRef.current.focus();
+          return;
+        }
+        if (firstAddedId) {
+          document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(String(firstAddedId))}"]`)?.focus();
+        }
+      });
     } catch {
       if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
         setHistoryMoreError(true);
+        globalThis.window.requestAnimationFrame(() => {
+          if (shouldRestoreFocus()) historyMoreButtonRef.current?.focus();
+        });
       }
     } finally {
       if (queueGenerationRef.current === requestedGeneration) setHistoryLoadingMore(false);
