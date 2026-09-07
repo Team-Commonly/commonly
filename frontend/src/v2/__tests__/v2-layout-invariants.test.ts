@@ -403,7 +403,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('v2-activity__queue-action--bordered');
     const borderedAction = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
     expect(borderedAction).toContain('border: 1px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-root .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
     const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
     expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');

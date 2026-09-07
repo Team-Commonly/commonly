@@ -8918,6 +8918,27 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink-hover);
 }
 
+/* The generic composer button treatment above is for Send. The destination
+   picker is a neutral selector and needs a stronger selector so it cannot
+   inherit Send's ink fill. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button {
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+  border-color: var(--v2-accent);
+}
+
 .v2-activity__section-heading {
   display: flex;
   align-items: baseline;
