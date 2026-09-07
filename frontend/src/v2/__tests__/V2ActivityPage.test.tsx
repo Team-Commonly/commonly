@@ -538,6 +538,25 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByLabelText('91 waiting on you')).toHaveTextContent('91');
   });
 
+  test('describes the count in the active queue scope without claiming rail/inspector parity', async () => {
+    const scopedRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-queue') {
+        return Promise.resolve({ data: config?.params?.podId === 'pod-2'
+          ? { items: [], count: 9, remaining: 0, countsByPod: { 'pod-2': 9 } }
+          : { ...decisionQueue, count: 56, countsByPod: { 'pod-1': 56 } } });
+      }
+      return Promise.resolve({ data: scopedRecap });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Open items across all pods')).toBeInTheDocument();
+    expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
+    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
+    expect(await screen.findByText('Open items in this pod')).toBeInTheDocument();
+    expect(screen.getByLabelText('9 waiting on you')).toHaveTextContent('9');
+  });
+
   test('appends the next server page without losing the existing rows', async () => {
     const firstPage = Array.from({ length: 50 }, (_, index) => ({
       id: `mention-${index}`, attentionItemId: `attention-${index}`, kind: 'mention', title: `Mention ${index}`, detail: 'Needs a reply.',

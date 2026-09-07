@@ -800,7 +800,7 @@ const V2ActivityPage: React.FC = () => {
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
               <p>{queueCount === null
                 ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
-                : t('activity.needsYou.countDescription', { count: queueCount })}</p>
+                : t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}</p>
             </div>
             {queueFailed ? <>
               <p role="status">{t('activity.loadFailed')}</p>
