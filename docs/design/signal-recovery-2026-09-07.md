@@ -3,8 +3,12 @@
 Sam's correction in Sharpen messages 65295 and 65298 supersedes the blanket
 ink-button interpretation and count-driven acceptance of the inbox. Recover
 the approved Workspace and Activity experience; preserve the functional scroll
-fixes. Further visual implementation remains frozen until this recovery is
-accepted. This document authorizes no implementation or bulk data changes.
+fixes. The original visual freeze is historical: Sam released bounded
+milestones 2–3 in Sharpen message 65335 and shared plan v3
+(`1788810044845-408843167.md`). TASK-098 covers controls restoration and
+decision discoverability with durable settled-card recovery. Exact-head UX,
+code review and CI gates remain required before integration. This release
+does not authorize bulk data changes or a new design direction.
 
 ## The approved reference
 
@@ -48,7 +52,13 @@ without authentication/API mocks or action submissions.
    Other… remains cobalt text. Preserve agent-authored option order. The
    current thread uses the first option, while Activity sorts by recommended;
    use the same authored order in both surfaces rather than silently changing
-   what the agent asked. The tool already recommends placing that option first.
+   what the agent asked. Keep `recommended` metadata: show “Recommended” as
+   plain text alongside each flagged option’s label, included in its accessible
+   name, in both Activity and thread. A later recommended option stays bordered;
+   an unflagged first option gets no recommendation label. Authored order and
+   first-option styling do not imply a recommendation. Authoring guidance may
+   suggest recommended-first, but do not enforce it or reorder stored options
+   (UX ruling 65372, within Sam’s constraints in 65371).
 3. Restore the Activity destination picker to a bordered secondary control;
    retain the composer and its behavior. Do not redesign the shell, move
    content, change typography globally or roll back the scroll fixes.
@@ -59,7 +69,8 @@ without authentication/API mocks or action submissions.
    messages, suppress accessible items, add quotas, or impose a new enforcement
    mechanism. Existing history remains accessible.
 
-The first three items are proposed bounded changes, not changes already made.
+The first three items are released bounded implementation scope, not a claim
+that the changes have shipped.
 Inspector ordering and other older board differences are recorded in the
 comparison but are not a reason to enlarge this patch.
 
@@ -96,7 +107,13 @@ Use one genuine agent-authored pending decision, with Sam choosing the actual
 option. At 1440 and 390 verify: source card and Activity show the same ordered
 options; primary cobalt, alternatives bordered; keyboard focus and phone
 targets usable; one choice persists; both surfaces settle; the asking agent
-receives the chosen value and resumes. Check Other…, failure/retry, and an
+receives the chosen value and resumes. Hard reload and leave/return must
+recover an already settled card from a durable read without reopening choices.
+A successful queue refresh that omits the now-settled decision must retain its
+readable resolution; retaining local state after a failed refresh is insufficient.
+Include overflow within one pod and a recommended-second fixture: preserve
+order and visible/accessible recommendation text, wrapping and phone targets.
+Check Other…, failure/retry, and an
 already-ruled response in a controlled test without making spurious live forks.
 Confirm the real card remains discoverable when other queue items precede it.
 Keep live evidence separate from mocked coverage.
