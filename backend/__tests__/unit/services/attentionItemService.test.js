@@ -125,7 +125,7 @@ describe('attentionItemService', () => {
     expect(queue.items).toEqual([expect.objectContaining({ id: '41', attentionItemId: 'attention-1', podName: 'Current' })]);
     await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
     expect(mockUpdateOne).toHaveBeenLastCalledWith(
-      expect.objectContaining({ recipientUserId: '507f191e810c19729de860ea', kind: 'mention' }),
+      expect.objectContaining({ recipientUserId: '507f191e810c19729de860ea', status: 'open', $or: expect.any(Array) }),
       expect.any(Object),
     );
   });
@@ -198,7 +198,7 @@ describe('attentionItemService', () => {
     await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
 
     expect(mockUpdateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'mention', status: 'open' }),
+      expect.objectContaining({ status: 'open', $or: expect.any(Array) }),
       { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }) },
     );
   });
@@ -256,9 +256,28 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).toHaveBeenCalledTimes(2);
     expect(mockUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ 'source.type': 'task', 'source.id': 'task-1:update-1' }),
-      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'decision', title: 'Choose a deploy shape' }) }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'handoff', title: 'Choose a deploy shape' }) }),
       { upsert: true },
     );
+  });
+
+  it('acknowledges only recipient-owned mentions and handoffs, never decisions or approvals', async () => {
+    await AttentionItemService.acknowledgeMention('sam', '507f191e810c19729de860eb');
+
+    const selector = mockUpdateOne.mock.calls.at(-1)[0];
+    expect(selector).toEqual({
+      _id: '507f191e810c19729de860eb',
+      recipientUserId: 'sam',
+      status: 'open',
+      $or: [
+        { kind: 'mention' },
+        { kind: 'handoff' },
+        { kind: 'decision', 'source.type': 'task' },
+      ],
+    });
+    expect(mockUpdateOne.mock.calls.at(-1)[1]).toEqual({
+      $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }),
+    });
   });
 
   it('resolves every outstanding fact for a task once the task no longer needs a human', async () => {

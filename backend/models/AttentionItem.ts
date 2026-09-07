@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type AttentionKind = 'mention' | 'approval' | 'decision';
+export type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff';
 export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task';
 
 export interface IAttentionItem extends Document {
@@ -21,8 +21,9 @@ export interface IAttentionItem extends Document {
   sourceCreatedAt?: Date;
   status: 'open' | 'resolved';
   resolvedAt?: Date;
-  // Mention rows resolve only when their recipient replies in the pod or
-  // explicitly acknowledges them. Other attention sources do not use this.
+  // Mention/handoff rows resolve when their recipient replies or explicitly
+  // acknowledges them. Decision and approval actions have source-specific
+  // writers and never become dismissible through this field.
   resolvedBy?: 'replied' | 'acknowledged';
   createdAt: Date;
   updatedAt: Date;
@@ -37,7 +38,7 @@ const optionSchema = new Schema({
 const attentionItemSchema = new Schema<IAttentionItem>({
   recipientUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
-  kind: { type: String, enum: ['mention', 'approval', 'decision'], required: true },
+  kind: { type: String, enum: ['mention', 'approval', 'decision', 'handoff'], required: true },
   source: {
     type: { type: String, enum: ['message', 'approval', 'decision_request', 'task'], required: true },
     id: { type: String, required: true },

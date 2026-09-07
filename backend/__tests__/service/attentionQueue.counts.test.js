@@ -19,27 +19,29 @@ describe('uncapped attention counts — persisted query and membership', () => {
     ]);
     const make = (id, pod, kind = 'mention', who = recipient, status = 'open') => ({
       recipientUserId: who, podId: pod._id, kind, status,
-      source: { type: kind === 'mention' ? 'message' : 'approval', id }, title: id,
+      source: { type: kind === 'mention' ? 'message' : kind === 'approval' ? 'approval' : 'task', id }, title: id,
       createdAt: new Date('2026-09-01T00:00:00Z'),
     });
     await AttentionItem.insertMany([
       ...Array.from({ length: 90 }, (_, i) => make(`mention-${i}`, busy)),
       ...Array.from({ length: 4 }, (_, i) => make(`approval-${i}`, busy, 'approval')),
+      ...Array.from({ length: 3 }, (_, i) => make(`handoff-${i}`, busy, 'handoff')),
       { ...make('oldest', omitted), createdAt: new Date('2020-01-01') },
       make('revoked', revoked), make('other-user', busy, 'mention', other),
       make('closed', busy, 'mention', recipient, 'resolved'),
     ]);
     const queue = await service.getOpenQueue(recipient);
-    expect(queue.count).toBe(95);
-    expect(queue.countsByPod).toEqual({ [busy.id]: 94, [omitted.id]: 1 });
+    expect(queue.count).toBe(98);
+    expect(queue.countsByPod).toEqual({ [busy.id]: 97, [omitted.id]: 1 });
+    expect(queue.countsByKind).toEqual({ mention: 91, approval: 4, handoff: 3 });
     expect(queue.items).toHaveLength(50);
-    expect(queue.items.filter((item) => item.kind === 'mention')).toHaveLength(46);
+    expect(queue.items.filter((item) => item.kind === 'mention')).toHaveLength(43);
     expect(queue.items.some((item) => item.podId === omitted.id)).toBe(false);
-    expect(queue.remaining).toBe(45);
+    expect(queue.remaining).toBe(48);
     expect(queue.hasMore).toBe(true);
 
     const nextPage = await service.getOpenQueue(recipient, { offset: 50 });
-    expect(nextPage.items).toHaveLength(45);
+    expect(nextPage.items).toHaveLength(48);
     expect(nextPage.remaining).toBe(0);
     expect(nextPage.hasMore).toBe(false);
 
@@ -53,14 +55,48 @@ describe('uncapped attention counts — persisted query and membership', () => {
     expect(await service.acknowledgeMention(other, old.id)).toMatchObject({ success: false });
     expect(await service.acknowledgeMention(recipient, old.id)).toMatchObject({ success: true });
     const next = await service.getOpenQueue(recipient);
-    expect(next.count).toBe(94);
-    expect(next.countsByPod).toEqual({ [busy.id]: 94 });
+    expect(next.count).toBe(97);
+    expect(next.countsByPod).toEqual({ [busy.id]: 97 });
   });
 
   it('returns an authoritative empty shape for invalid recipients', async () => {
     expect(await service.getOpenQueue('invalid')).toEqual({
-      items: [], count: 0, countsByPod: {}, composePodId: null,
+      items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,
       offset: 0, limit: 50, remaining: 0, hasMore: false,
     });
+  });
+
+  it('acknowledges mentions and handoffs but never a decision request or approval', async () => {
+    const recipient = new mongoose.Types.ObjectId();
+    const pod = await Pod.create({ name: 'Authority', type: 'team', createdBy: recipient, members: [recipient] });
+    const make = (kind, sourceType, id) => ({
+      recipientUserId: recipient,
+      podId: pod._id,
+      kind,
+      source: { type: sourceType, id },
+      title: id,
+      status: 'open',
+    });
+    const [mention, handoff, legacy, decision, approval] = await AttentionItem.create([
+      make('mention', 'message', 'mention-1'),
+      make('handoff', 'task', 'task-1:update-1'),
+      make('decision', 'task', 'task-2:update-1'),
+      make('decision', 'decision_request', 'decision-1'),
+      make('approval', 'approval', 'approval-1'),
+    ]);
+
+    await expect(service.acknowledgeMention(recipient, mention.id)).resolves.toEqual({ success: true });
+    await expect(service.acknowledgeMention(recipient, handoff.id)).resolves.toEqual({ success: true });
+    await expect(service.acknowledgeMention(recipient, legacy.id)).resolves.toEqual({ success: true });
+    await expect(service.acknowledgeMention(recipient, decision.id)).resolves.toEqual({ success: false, error: 'Attention item not found' });
+    await expect(service.acknowledgeMention(recipient, approval.id)).resolves.toEqual({ success: false, error: 'Attention item not found' });
+
+    await expect(AttentionItem.find({ recipientUserId: recipient }).sort({ createdAt: 1 }).lean()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ _id: mention._id, status: 'resolved', resolvedBy: 'acknowledged' }),
+      expect.objectContaining({ _id: handoff._id, status: 'resolved', resolvedBy: 'acknowledged' }),
+      expect.objectContaining({ _id: legacy._id, status: 'resolved', resolvedBy: 'acknowledged' }),
+      expect.objectContaining({ _id: decision._id, status: 'open' }),
+      expect.objectContaining({ _id: approval._id, status: 'open' }),
+    ]));
   });
 });

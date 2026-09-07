@@ -82,6 +82,7 @@
         "mention": "Mention",
         "approval": "Approval",
         "decision": "Decision needed",
+        "handoff": "Handoff",
         "press": "Ready for your press"
       },
       "countLabel": "{{count}} waiting on you"
@@ -129,6 +130,11 @@
       "markHandled": "Mark handled",
       "working": "Saving…",
       "actionFailed": "That mention could not be acknowledged. Try again."
+    },
+    "handoff": {
+      "markHandled": "Mark handled",
+      "working": "Saving…",
+      "actionFailed": "That handoff could not be marked handled. Try again."
     },
     "agents": {
       "eyebrow": "Agent recap",

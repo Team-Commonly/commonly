@@ -827,6 +827,12 @@ class ActivityService {
     return AttentionItemService.acknowledgeMention(userId, activityId);
   }
 
+  static async acknowledgeAttention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    return AttentionItemService.acknowledgeAttention(userId, activityId);
+  }
+
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {
     const activitiesResult = await ActivityService.getUserFeed(userId, {
       ...options,

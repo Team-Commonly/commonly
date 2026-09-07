@@ -82,6 +82,7 @@
         "mention": "提及",
         "approval": "审批",
         "decision": "待你决策",
+        "handoff": "交接",
         "press": "待你合并"
       },
       "countLabel": "{{count}} 项等你处理"
@@ -129,6 +130,11 @@
       "markHandled": "标记已处理",
       "working": "正在保存…",
       "actionFailed": "无法确认该提及，请重试。"
+    },
+    "handoff": {
+      "markHandled": "标记已处理",
+      "working": "正在保存…",
+      "actionFailed": "无法标记该交接，请重试。"
     },
     "agents": {
       "eyebrow": "智能体回顾",
