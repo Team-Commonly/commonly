@@ -44,41 +44,31 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const source = raw as Record<string, any>;
   const projected: Record<string, any> = {};
+  const pick = (value: unknown, keys: string[]) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const picked: Record<string, unknown> = {};
+    for (const key of keys) {
+      if ((value as Record<string, unknown>)[key] !== undefined) {
+        picked[key] = (value as Record<string, unknown>)[key];
+      }
+    }
+    return Object.keys(picked).length ? picked : null;
+  };
   for (const key of ['version', 'model', 'effort']) {
     if (source[key] !== undefined) projected[key] = source[key];
   }
-  if (source.workspace && typeof source.workspace === 'object' && !Array.isArray(source.workspace)) {
-    projected.workspace = {};
-    for (const key of ['path', 'seed']) {
-      if (source.workspace[key] !== undefined) projected.workspace[key] = source.workspace[key];
-    }
-  }
-  if (source.sandbox && typeof source.sandbox === 'object' && !Array.isArray(source.sandbox)) {
-    projected.sandbox = {};
-    for (const key of ['mode', 'trust']) {
-      if (source.sandbox[key] !== undefined) projected.sandbox[key] = source.sandbox[key];
-    }
-    if (source.sandbox.network && typeof source.sandbox.network === 'object') {
-      projected.sandbox.network = {};
-      for (const key of ['policy', 'allow-hosts']) {
-        if (source.sandbox.network[key] !== undefined) projected.sandbox.network[key] = source.sandbox.network[key];
-      }
-    }
-    if (source.sandbox.filesystem && typeof source.sandbox.filesystem === 'object') {
-      projected.sandbox.filesystem = {};
-      for (const key of ['read-outside', 'write-outside']) {
-        if (source.sandbox.filesystem[key] !== undefined) projected.sandbox.filesystem[key] = source.sandbox.filesystem[key];
-      }
-    }
-  }
-  if (source.skills && typeof source.skills === 'object' && !Array.isArray(source.skills)) {
-    projected.skills = {};
-    for (const key of ['claude', 'commonly']) {
-      if (source.skills[key] !== undefined) projected.skills[key] = source.skills[key];
-    }
-  }
+  const workspace = pick(source.workspace, ['path', 'seed']);
+  if (workspace) projected.workspace = workspace;
+  const sandbox = pick(source.sandbox, ['mode', 'trust']);
+  if (sandbox) projected.sandbox = sandbox;
+  const network = pick(source.sandbox?.network, ['policy', 'allow-hosts']);
+  if (network) projected.sandbox = { ...(projected.sandbox || {}), network };
+  const filesystem = pick(source.sandbox?.filesystem, ['read-outside', 'write-outside']);
+  if (filesystem) projected.sandbox = { ...(projected.sandbox || {}), filesystem };
+  const skills = pick(source.skills, ['claude', 'commonly']);
+  if (skills) projected.skills = skills;
   if (Array.isArray(source.mcp)) {
-    projected.mcp = source.mcp
+    const mcp = source.mcp
       .filter((server: any) => server && typeof server === 'object' && !Array.isArray(server))
       .map((server: Record<string, any>) => {
         const entry: Record<string, unknown> = {};
@@ -86,7 +76,9 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
           if (server[key] !== undefined) entry[key] = server[key];
         }
         return entry;
-      });
+      })
+      .filter((server: Record<string, unknown>) => Object.keys(server).length);
+    if (mcp.length) projected.mcp = mcp;
   }
   return Object.keys(projected).length ? projected : null;
 };

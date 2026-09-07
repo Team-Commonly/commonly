@@ -198,7 +198,13 @@ describe('daemon work list', () => {
 
   it('does not expose an empty environment projection as a declared spec', async () => {
     const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
-    installation.config.set('environment', { privateKey: 'must-not-travel' });
+    installation.config.set('environment', {
+      privateKey: 'must-not-travel',
+      workspace: { privatePath: '/Users/private' },
+      sandbox: { privateMode: 'unsafe', network: { privatePolicy: 'allow-all' } },
+      skills: { privateSkill: ['secret'] },
+      mcp: [{ privateCommand: ['secret'] }],
+    });
     await installation.save();
     await requestPlacement('machine-a');
 
