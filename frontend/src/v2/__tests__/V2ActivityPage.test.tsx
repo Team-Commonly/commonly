@@ -603,19 +603,48 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(picker).toHaveFocus());
   });
 
-  test('shows the omitted moved-forward count after the twenty-line cap', async () => {
-    const updates = Array.from({ length: 24 }, (_, index) => ({
-      id: `moved-${index}`, podId: 'pod-1', podName: 'Launch pod', content: `Moved ${index}`, timestamp: `2026-08-26T${String(11 - Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00.000Z`,
+  test('keeps an overflow pod selection visible and returns focus to its trigger', async () => {
+    const extraPods = [2, 3, 4].map((id) => ({ id: `pod-${id}`, name: `Pod ${id}` }));
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, pods: [...recap.pods, ...extraPods] } }));
+    renderPage();
+    const more = await screen.findByRole('button', { name: i18n.t('activity.morePods') });
+    fireEvent.click(more);
+    const choice = screen.getByRole('button', { name: 'Pod 4', exact: true });
+    choice.focus();
+    fireEvent.click(choice);
+    expect(more).toHaveTextContent('Pod 4');
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(more).toHaveFocus();
+    fireEvent.click(more);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Pod 3', exact: true }), { key: 'Escape' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(more).toHaveFocus();
+  });
+
+  test('paginates all moved-forward lines in twenty-line batches and retains keyboard focus', async () => {
+    const updates = Array.from({ length: 45 }, (_, index) => ({
+      id: `moved-${index}`, podId: 'pod-1', podName: 'Launch pod', content: `Moved ${index}`, timestamp: `2026-08-26T11:${String(index).padStart(2, '0')}:00.000Z`,
     }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }] } }));
     renderPage();
     const more = await screen.findByRole('button', { name: '17 more' });
+    const group = more.closest('article');
+    const lines = () => group.querySelectorAll('.v2-activity__moved-line');
+    expect(lines()).toHaveLength(3);
     fireEvent.click(more);
-    expect(await screen.findByRole('button', { name: 'Show less' })).toBeInTheDocument();
-    expect(screen.getByText('5 more updates in Launch pod not shown')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '5 more' }));
-    expect(await screen.findByText('Moved 23')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
+    expect(lines()).toHaveLength(20);
+    fireEvent.click(within(group).getByRole('button', { name: '20 more' }));
+    expect(lines()).toHaveLength(40);
+    const lastMore = within(group).getByRole('button', { name: '6 more' });
+    lastMore.focus();
+    fireEvent.click(lastMore);
+    expect(lines()).toHaveLength(46);
+    for (const update of updates) expect(within(group).getByText(update.content)).toBeInTheDocument();
+    const less = within(group).getByRole('button', { name: 'Show less' });
+    await waitFor(() => expect(less).toHaveFocus());
+    fireEvent.click(less);
+    expect(lines()).toHaveLength(3);
+    await waitFor(() => expect(within(group).getByRole('button', { name: '17 more' })).toHaveFocus());
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {

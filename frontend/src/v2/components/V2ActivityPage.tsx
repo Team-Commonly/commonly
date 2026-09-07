@@ -176,6 +176,7 @@ const V2ActivityPage: React.FC = () => {
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
   const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
   const [movedVisibleCounts, setMovedVisibleCounts] = useState<Record<string, number>>({});
@@ -659,26 +660,31 @@ const V2ActivityPage: React.FC = () => {
           <h1 className="v2-activity__title">{t('activity.title')}</h1>
           <span className="v2-activity__subtitle">{t('activity.subtitle')}</span>
         </div>
-        <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
-          <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
-            {(['today', '7d'] as ActivityWindow[]).map((value) => (
-              <button key={value} type="button" className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`} onClick={() => setWindow(value)} aria-pressed={window === value}>
-                {t(`activity.windows.${value}`)}
-              </button>
-            ))}
-          </div>
-          <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')}>
-            <button type="button" className={`v2-activity__scope-button${podId === 'all' ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId('all'); setScopeMenuOpen(false); }} aria-pressed={podId === 'all'}>{t('activity.allPods')}</button>
-            {scopedPods.slice(0, 2).map((pod) => (
-              <button key={pod.id} type="button" className={`v2-activity__scope-button${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
-            ))}
-            {scopedPods.length > 2 && <button type="button" className="v2-activity__scope-button" onClick={() => setScopeMenuOpen((open) => !open)} aria-expanded={scopeMenuOpen}>{t('activity.morePods')}</button>}
-            {scopeMenuOpen && scopedPods.slice(2).map((pod) => (
-              <button key={pod.id} type="button" className={`v2-activity__scope-button v2-activity__scope-button--menu${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
-            ))}
-          </div>
-        </div>
       </header>
+      <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
+        <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
+          {(['today', '7d'] as ActivityWindow[]).map((value) => (
+            <button key={value} type="button" className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`} onClick={() => setWindow(value)} aria-pressed={window === value}>
+              {t(`activity.windows.${value}`)}
+            </button>
+          ))}
+        </div>
+        <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')} onKeyDown={(event) => {
+          if (event.key === 'Escape' && scopeMenuOpen) {
+            setScopeMenuOpen(false);
+            scopeMenuButtonRef.current?.focus();
+          }
+        }}>
+          <button type="button" className={`v2-activity__scope-button${podId === 'all' ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId('all'); setScopeMenuOpen(false); }} aria-pressed={podId === 'all'}>{t('activity.allPods')}</button>
+          {scopedPods.slice(0, 2).map((pod) => (
+            <button key={pod.id} type="button" className={`v2-activity__scope-button${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+          ))}
+          {scopedPods.length > 2 && <button type="button" ref={scopeMenuButtonRef} className={`v2-activity__scope-button${scopedPods.slice(2).some((pod) => pod.id === podId) ? ' v2-activity__scope-button--active' : ''}`} onClick={() => setScopeMenuOpen((open) => !open)} aria-expanded={scopeMenuOpen}>{scopedPods.slice(2).find((pod) => pod.id === podId)?.name || t('activity.morePods')}</button>}
+          {scopeMenuOpen && <div className="v2-activity__scope-menu">{scopedPods.slice(2).map((pod) => (
+            <button key={pod.id} type="button" className={`v2-activity__scope-button v2-activity__scope-button--menu${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); scopeMenuButtonRef.current?.focus(); }} aria-pressed={podId === pod.id}>{pod.name}</button>
+          ))}</div>}
+        </div>
+      </div>
 
       {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
       {!loading && error && <div className="v2-activity__error" role="alert">
@@ -939,12 +945,19 @@ const V2ActivityPage: React.FC = () => {
                   <div className="v2-activity__moved-lines">
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
-                  {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={() => setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }))}>{t('activity.movedForward.showLess')}</button>}
-                  {hasMore && <button type="button" className="v2-activity__moved-more" onClick={() => setMovedVisibleCounts((current) => {
-                    const currentCount = current[group.id] || 3;
-                    const increment = currentCount < 20 ? 17 : 20;
-                    return { ...current, [group.id]: Math.min(currentCount + increment, group.lines.length) };
-                  })}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount) })}</button>}
+                  {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                    const article = event.currentTarget.closest('article');
+                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }));
+                    globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                  }}>{t('activity.movedForward.showLess')}</button>}
+                  {hasMore && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                    const article = event.currentTarget.closest('article');
+                    const nextCount = Math.min(visibleCount < 20 ? 20 : visibleCount + 20, group.lines.length);
+                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: nextCount }));
+                    if (nextCount === group.lines.length) {
+                      globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                    }
+                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount) })}</button>}
                   {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}

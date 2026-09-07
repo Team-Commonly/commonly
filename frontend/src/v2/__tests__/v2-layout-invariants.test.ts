@@ -1603,7 +1603,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
       expect(v2App).toContain("'v2-feature--activity'");
       expect(featurePage).toContain('className?: string;');
-      expect(lastRuleBody(v2, '.v2-feature--activity > .v2-feature__body')).toContain('padding: 6px 0 28px');
+      expect(lastRuleBody(v2, '.v2-feature--activity > .v2-feature__body')).toContain('padding: 0 0 28px');
       expect(lastRuleBody(v2, '.v2-feature--activity .v2-feature__legacy')).toContain('max-width: none');
       expect(lastRuleBody(v2, '.v2-activity__header')).toContain('min-height: 52px');
       expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
@@ -1621,6 +1621,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
       expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('var(--v2-font-mono)');
       expect(activityPage).not.toContain('v2-activity__footer');
+      expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
+      expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: static;[^}]*flex-wrap: wrap;/);
+      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('max-height: 240px');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions')).toContain('grid-column: 3');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions:has(textarea)')).toContain('grid-column: 2 / -1');
     });
 
     test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
