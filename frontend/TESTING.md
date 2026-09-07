@@ -227,3 +227,28 @@ src/
 4. Use descriptive test names
 5. Keep mocks simple but complete
 6. Test accessibility features (aria-labels, roles)
+
+## Browser proof for layout and focus changes
+
+Jest has no layout engine. For a layout change, capture the actual production
+build at desktop and touch/mobile widths, including intermediate breakpoints
+changed by the patch. In PR #1588, 1440px and 390px passed while 900px exposed a main
+pane auto-placed into a sidebar grid track whose sidebar was not rendered.
+
+For overlapping controls, check the point a person is likely to tap. A locator
+click may find an exposed edge while the centre is covered by another control.
+Inspect the centre with `document.elementFromPoint`, then perform an actual
+touch tap there and assert the intended state changed and the underlying
+control stayed closed. PR #1588's overflow menu passed locator selection but
+its centre tap opened the composer picker behind it.
+
+Focus tests must include the app-level keyboard handlers that run in the real
+page. The isolated Activity test restored Escape focus correctly, but
+`setupFocusManagement` subsequently blurred that trigger. Including the real
+handler reproduced the failure; consuming the menu's Escape locally fixed it.
+Confirm final focus after the interaction settles in the browser as well.
+
+Record the exact build revision and whether auth/API/writes were mocked.
+Fixture success is pre-deployment proof; follow it with a live smoke of the
+shipped interaction. Preserve focused CSS invariants for load-bearing rules,
+without treating string presence as proof of computed layout or hit testing.
