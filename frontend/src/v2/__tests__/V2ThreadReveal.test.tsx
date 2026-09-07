@@ -268,6 +268,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
     await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+    expect(scroller.dataset.historyAnchor).toBe('active');
 
     // A socket append changes the list while the older-page request is still
     // pending. It must not move the reader or consume the prepend anchor. The
@@ -283,6 +284,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     setRowContentTop(scroller, 'm1', 1200);
     view.rerender(threadNode('', { ...detail, messages: [older, ...initial, arrival] }));
     expect(scroller.scrollTop).toBe(500);
+    expect(scroller.dataset.historyAnchor).toBeUndefined();
     await act(async () => { resolveLoadOlder('prepended'); });
   });
 
@@ -370,7 +372,9 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
     await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));
+    expect(scroller.dataset.historyAnchor).toBe('active');
     await act(async () => { resolveLoadOlder(outcome); });
+    expect(scroller.dataset.historyAnchor).toBeUndefined();
 
     // A no-prepend result must disarm the anchor; a later peer append should
     // not be interpreted as the missing prepend.

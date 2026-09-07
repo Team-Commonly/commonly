@@ -635,17 +635,26 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         rowOffset,
       }
       : null);
-    if (ownsAnchor) scrollAnchorRef.current = anchor;
+    if (ownsAnchor) {
+      scrollAnchorRef.current = anchor;
+      if (anchor && el) el.dataset.historyAnchor = 'active';
+    }
     const result = await loadOlder();
     if (!ownsAnchor) return;
     if (result !== 'prepended' && result !== 'unchanged') {
       // Empty/error/no-op responses do not produce a prepend. Clear the arm
       // now so an unrelated future append cannot apply a stale compensation.
-      if (scrollAnchorRef.current === anchor) scrollAnchorRef.current = null;
+      if (scrollAnchorRef.current === anchor) {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
     } else if (scrollAnchorRef.current === anchor) {
       // A successful prepend is consumed by the committed-row layout effect;
       // do not clear it here before a deferred React commit can be observed.
-      if (result === 'unchanged') scrollAnchorRef.current = null;
+      if (result === 'unchanged') {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
     }
   }, [currentPodId, findAnchorRow, loadOlder, measureAnchorOffset, oldestMessageId]);
 
@@ -673,6 +682,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     if (!el || anchor == null) return;
     if (anchor.podId !== currentPodId) {
       scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
       return;
     }
     const firstId = messages[0]?.id ? String(messages[0].id) : null;
@@ -680,6 +690,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const rowOffset = measureAnchorOffset(el, row);
     if (rowOffset === null) {
       scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
       return;
     }
     if (firstId === anchor.oldestId) {
@@ -695,6 +706,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     // append does not move this row.
     el.scrollTop += rowOffset - anchor.rowOffset;
     scrollAnchorRef.current = null;
+    delete el.dataset.historyAnchor;
   }, [currentPodId, measureAnchorOffset, messages]);
 
   // Pasting an image into the field attaches it. The handler is defined

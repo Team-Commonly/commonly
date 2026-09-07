@@ -1766,10 +1766,6 @@ body.modern-ui.v2-canvas {
 .v2-chat__messages {
   flex: 1;
   overflow-y: auto;
-  /* History prepends are compensated from the movement of a rendered row.
-     Disable the browser's own scroll anchoring so it cannot compensate the
-     same insertion a second time (UX diagnostic #1594). */
-  overflow-anchor: none;
   /* The transcript never scrolls sideways — wide content (code, tables)
      manages its own overflow-x inside its message. Without this, any
      mis-sized row makes the whole pane horizontally swipeable (the
@@ -1779,6 +1775,13 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+/* Only the managed history operation disables native anchoring. Leaving the
+   default on at rest keeps late image loads above a reader's viewport stable;
+   V2Thread measures and compensates the history row itself. */
+.v2-chat__messages[data-history-anchor="active"] {
+  overflow-anchor: none;
 }
 
 /* The transcript is the chat viewport's positioning context. History
