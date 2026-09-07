@@ -80,6 +80,12 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Color
 
+The pre-Signal values below are historical. For current screens, use
+[Identity: Signal](#identity-signal-chosen-2026-09-03), the approved artboard,
+and [the recovery boundary](../../docs/design/signal-recovery-2026-09-07.md).
+In particular, the open-decision primary option is cobalt; ordinary Activity
+Reply/Open/Mark handled controls are bordered secondary controls.
+
 - **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (Sam, 2026-09-03, TASK-122).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. `#f8f8fb` remains the page canvas behind the shell.
@@ -218,7 +224,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 Sam chose this on the Shell Parity canvas from three directions (Studio, Workshop, Signal). It is one system at two volumes, never a hybrid:
 
-- **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Filled buttons are **ink** `#101828`.
+- **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Ordinary filled actions such as Send are **ink** `#101828`. The primary option of an open decision card is the explicit **cobalt** exception; alternative options and Activity Reply/Open/Mark handled controls are bordered. Other… is cobalt text. Preserve the agent’s option order in the thread and Activity. See [Signal §1/§3](../../docs/design/signal-identity.md) and the [2026-09-07 recovery](../../docs/design/signal-recovery-2026-09-07.md).
 - **Three faces, one job each.** Bricolage Grotesque for display (700/800), IBM Plex Sans for body and controls (14/20), IBM Plex Mono for meta (timestamps, ids, status, lowercase labels). Self-hosted via `@fontsource`.
 - **Hard edges, no shadows.** Radius 4 for controls and rows, 6 for cards, panels and the content card. `--v2-shadow-pending` is `none`; a pending card is a 2px cobalt ring instead. Avatars and marks are 4px squares, not circles.
 - **Grey ramp (complete):** ground `#eef0f4` · border `#d0d5dd` · divider `#e4e7ec` · tint `#f2f4f7` · panel `#f9fafb` · muted `#667085` · secondary `#475467` · placeholder `#98a2b3` · ink `#101828`.
