@@ -52,12 +52,12 @@ beforeEach(async () => {
       runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
       environment: {
         version: 1,
-        workspace: { path: './workspace', seed: 'workspace-seed' },
+        workspace: { path: './workspace', seed: ['README.md'] },
         sandbox: {
           mode: 'workspace',
           trust: 'internal',
-          network: { policy: 'allow', 'allow-hosts': ['api.commonly.me'] },
-          filesystem: { 'read-outside': false, 'write-outside': false },
+          network: { policy: 'restricted', 'allow-hosts': ['api.commonly.me'] },
+          filesystem: { 'read-outside': ['/tmp'], 'write-outside': ['/tmp/workspace'] },
         },
         skills: { claude: ['common'], commonly: ['decision-cards'] },
         mcp: [{
@@ -150,12 +150,12 @@ describe('daemon work list', () => {
       runtime: expect.objectContaining({ model: 'claude-opus-5' }),
       environment: expect.objectContaining({
         version: 1,
-        workspace: { path: './workspace', seed: 'workspace-seed' },
+        workspace: { path: './workspace', seed: ['README.md'] },
         sandbox: {
           mode: 'workspace',
           trust: 'internal',
-          network: { policy: 'allow', 'allow-hosts': ['api.commonly.me'] },
-          filesystem: { 'read-outside': false, 'write-outside': false },
+          network: { policy: 'restricted', 'allow-hosts': ['api.commonly.me'] },
+          filesystem: { 'read-outside': ['/tmp'], 'write-outside': ['/tmp/workspace'] },
         },
         skills: { claude: ['common'], commonly: ['decision-cards'] },
         mcp: [{
