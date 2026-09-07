@@ -93,7 +93,6 @@ interface ActivitySnapshot {
   queueCount?: number | null;
   queueRemaining?: number;
   queueCountsByPod?: Record<string, number>;
-  queueCountsByKind?: Record<string, number>;
   composePodId?: string;
   composeDraft?: string;
   replyDrafts?: Record<string, string>;
@@ -160,7 +159,6 @@ const V2ActivityPage: React.FC = () => {
   const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
-  const [queueCountsByKind, setQueueCountsByKind] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
@@ -202,7 +200,6 @@ const V2ActivityPage: React.FC = () => {
       setQueue(queueRef.current);
       setQueueCount(snapshot.queueCount ?? null);
       setQueueCountsByPod(snapshot.queueCountsByPod || {});
-      setQueueCountsByKind(snapshot.queueCountsByKind || {});
       setQueueRemaining(snapshot.queueRemaining || 0);
       setReplyDrafts(snapshot.replyDrafts || {});
       setComposePodId(snapshot.composePodId || '');
@@ -220,7 +217,6 @@ const V2ActivityPage: React.FC = () => {
       setQueue(queueRef.current);
       setQueueCount(null);
       setQueueCountsByPod({});
-      setQueueCountsByKind({});
       setQueueRemaining(0);
       setReplyDrafts({});
       setComposePodId('');
@@ -332,7 +328,6 @@ const V2ActivityPage: React.FC = () => {
         setQueueFailed(false);
         setQueueCount(queueResponse!.data.count);
         setQueueCountsByPod(queueResponse!.data.countsByPod || {});
-        setQueueCountsByKind(queueResponse!.data.countsByKind || {});
         const mapQueueItems = (items: QueueResponse['items']) => items.map((item) => ({
           ...item,
           detail: item.detail || '',
@@ -503,7 +498,6 @@ const V2ActivityPage: React.FC = () => {
         queueCount,
         queueRemaining,
         queueCountsByPod,
-        queueCountsByKind,
         replyDrafts,
         composePodId,
         composeDraft,

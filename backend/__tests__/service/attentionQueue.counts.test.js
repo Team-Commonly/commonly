@@ -27,36 +27,42 @@ describe('uncapped attention counts — persisted query and membership', () => {
       ...Array.from({ length: 4 }, (_, i) => make(`approval-${i}`, busy, 'approval')),
       ...Array.from({ length: 3 }, (_, i) => make(`handoff-${i}`, busy, 'handoff')),
       { ...make('oldest', omitted), createdAt: new Date('2020-01-01') },
+      ...Array.from({ length: 51 }, (_, i) => make(`omitted-mention-${i}`, omitted)),
       make('revoked', revoked), make('other-user', busy, 'mention', other),
       make('closed', busy, 'mention', recipient, 'resolved'),
     ]);
     const queue = await service.getOpenQueue(recipient);
-    expect(queue.count).toBe(98);
-    expect(queue.countsByPod).toEqual({ [busy.id]: 97, [omitted.id]: 1 });
-    expect(queue.countsByKind).toEqual({ mention: 91, approval: 4, handoff: 3 });
+    expect(queue.count).toBe(149);
+    expect(queue.countsByPod).toEqual({ [busy.id]: 97, [omitted.id]: 52 });
+    expect(queue.countsByKind).toEqual({ mention: 142, approval: 4, handoff: 3 });
     expect(queue.items).toHaveLength(50);
     expect(queue.items.filter((item) => item.kind === 'mention')).toHaveLength(43);
-    expect(queue.items.some((item) => item.podId === omitted.id)).toBe(false);
-    expect(queue.remaining).toBe(48);
+    expect(queue.remaining).toBe(99);
     expect(queue.hasMore).toBe(true);
 
     const nextPage = await service.getOpenQueue(recipient, { offset: 50 });
-    expect(nextPage.items).toHaveLength(48);
-    expect(nextPage.remaining).toBe(0);
-    expect(nextPage.hasMore).toBe(false);
+    expect(nextPage.items).toHaveLength(50);
+    expect(nextPage.remaining).toBe(49);
+    expect(nextPage.hasMore).toBe(true);
 
     const scoped = await service.getOpenQueue(recipient, { podId: omitted.id.toString() });
-    expect(scoped.count).toBe(1);
-    expect(scoped.items).toHaveLength(1);
+    expect(scoped.count).toBe(52);
+    expect(scoped.items).toHaveLength(50);
     expect(scoped.items[0].podId).toBe(omitted.id.toString());
-    expect(scoped.remaining).toBe(0);
+    expect(scoped.countsByKind).toEqual({ mention: 52 });
+    expect(scoped.remaining).toBe(2);
+
+    const busyScoped = await service.getOpenQueue(recipient, { podId: busy.id.toString(), limit: 50 });
+    expect(busyScoped.count).toBe(97);
+    expect(busyScoped.countsByKind).toEqual({ mention: 90, approval: 4, handoff: 3 });
+    expect(Object.values(busyScoped.countsByKind).reduce((sum, value) => sum + value, 0)).toBe(busyScoped.count);
 
     const old = await AttentionItem.findOne({ 'source.id': 'oldest' });
     expect(await service.acknowledgeMention(other, old.id)).toMatchObject({ success: false });
     expect(await service.acknowledgeMention(recipient, old.id)).toMatchObject({ success: true });
     const next = await service.getOpenQueue(recipient);
-    expect(next.count).toBe(97);
-    expect(next.countsByPod).toEqual({ [busy.id]: 97 });
+    expect(next.count).toBe(148);
+    expect(next.countsByPod).toEqual({ [busy.id]: 97, [omitted.id]: 51 });
   });
 
   it('returns an authoritative empty shape for invalid recipients', async () => {

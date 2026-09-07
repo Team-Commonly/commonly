@@ -383,11 +383,6 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     counts[podId] = (counts[podId] || 0) + 1;
     return counts;
   }, {});
-  const countsByKind = valid.reduce((counts: Record<string, number>, row: any) => {
-    const kind = renderKind(row);
-    counts[kind] = (counts[kind] || 0) + 1;
-    return counts;
-  }, {});
   // The composer target is an account-level fact, not a property of the
   // rendered page. A priority-heavy first page can contain no mentions even
   // while an accessible mention exists later in the global ordering.
@@ -396,6 +391,14 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const scoped = requestedPodId
     ? valid.filter((row: any) => String(row.podId) === requestedPodId)
     : valid;
+  // Per-kind totals describe the requested view, but are calculated before
+  // pagination. Legacy task rows are projected through renderKind so their
+  // handoff bucket agrees with the card and acknowledgement semantics.
+  const countsByKind = scoped.reduce((counts: Record<string, number>, row: any) => {
+    const kind = renderKind(row);
+    counts[kind] = (counts[kind] || 0) + 1;
+    return counts;
+  }, {});
   const page = scoped.slice(offset, offset + limit);
   const picked: any[] = [];
   for (const row of page) {
