@@ -65,6 +65,7 @@ describe('activity route identity handling', () => {
 
     expect(DecisionRequestService.chooseDecision).toHaveBeenCalledWith({
       decisionId: 'decision-1', callerUserId: 'human-1', value: 'Ship now',
+      origin: { via: 'workspace' },
     });
   });
 });
