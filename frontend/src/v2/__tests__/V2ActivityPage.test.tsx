@@ -370,6 +370,36 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Older decision')).toBeInTheDocument();
   });
 
+  test('does not revive More after a newest ruling arrives before older history is requested', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      id: `decision-initial-${index}`, kind: 'decision', title: `Initial decision ${index}`, detail: 'A ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: String(900 - index), options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    }));
+    const newestArrival = {
+      ...firstPage[0], id: 'decision-newest-arrival', title: 'Newest arrival', messageId: '901',
+    };
+    let historyReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        return historyReads === 1
+          ? Promise.resolve({ data: { items: firstPage, count: 50, remaining: 0, hasMore: false } })
+          : Promise.resolve({ data: { items: [newestArrival, ...firstPage.slice(0, 49)], count: 51, remaining: 1, hasMore: true } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Initial decision 0')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show more settled/ })).not.toBeInTheDocument();
+    await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
+    await waitFor(() => expect(historyReads).toBe(2));
+    expect(await screen.findByText('Newest arrival')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show more settled/ })).not.toBeInTheDocument();
+  });
+
   test('returns focus to the settled-history Retry control after a failed page load', async () => {
     const newest = {
       id: 'decision-newest', kind: 'decision', title: 'Newest decision', detail: 'A newer ruling',
