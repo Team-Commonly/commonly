@@ -11099,6 +11099,29 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__edge-line { cursor: pointer; }
 .v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
 
+.v2-thread__history-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0 10px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+}
+
+.v2-thread__history-status--error { color: var(--v2-text-secondary); }
+
+.v2-root button.v2-thread__history-retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* The wrap is the scroller's last child and STICKS to its bottom edge: a
    0-height wrap with an absolute pill resolved `bottom: 12px` against a box
    at the end of the transcript, ~1100px below the viewport when the pill

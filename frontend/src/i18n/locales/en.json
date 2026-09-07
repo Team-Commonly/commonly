@@ -544,7 +544,11 @@
       "loadingEarlier": "loading earlier…",
       "loadEarlier": "load earlier",
       "beginning": "beginning of the pod",
-      "jumpToLatest": "Jump to latest"
+      "jumpToLatest": "Jump to latest",
+      "searchingOlder": "Searching older messages ({{attempt}}/{{max}})…",
+      "searchOlderFailed": "Couldn't load older history. Automatic search stopped.",
+      "searchOlderBound": "Target not found after {{attempt}} older pages. You can keep browsing the conversation.",
+      "retrySearch": "Retry"
     },
     "strip": {
       "label": "Message actions",

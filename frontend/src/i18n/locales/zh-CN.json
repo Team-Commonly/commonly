@@ -543,7 +543,11 @@
       "loadingEarlier": "正在加载更早的消息…",
       "loadEarlier": "加载更早的消息",
       "beginning": "Pod 的开始",
-      "jumpToLatest": "跳到最新"
+      "jumpToLatest": "跳到最新",
+      "searchingOlder": "正在搜索更早的消息（{{attempt}}/{{max}}）…",
+      "searchOlderFailed": "无法加载更早的历史记录。自动搜索已停止。",
+      "searchOlderBound": "在 {{attempt}} 页更早的消息中未找到目标。你仍可继续浏览对话。",
+      "retrySearch": "重试"
     },
     "strip": {
       "label": "消息操作",

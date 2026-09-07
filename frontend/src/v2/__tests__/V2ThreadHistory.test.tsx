@@ -44,7 +44,7 @@ const renderThread = (props = {}) => {
 describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
   test('with more history the edge is a mono "load earlier" control; loading shows "loading earlier…"', () => {
     const onLoadOlder = jest.fn();
-    const { rerender, container } = renderThread({ hasMore: true, onLoadOlder });
+    const { container } = renderThread({ hasMore: true, onLoadOlder });
     expect(container.querySelector('.v2-thread__edge')).toHaveAttribute('data-state', 'more');
     fireEvent.click(screen.getByRole('button', { name: 'load earlier' }));
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
@@ -65,6 +65,32 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
     const { container } = renderThread({ messages: [], hasMore: false });
     expect(container.querySelector('.v2-thread__edge')).toHaveAttribute('data-state', 'empty');
     expect(container.querySelector('.v2-thread__edge').textContent).toBe('');
+  });
+
+  test('source lookup shows bounded progress, failure retry, and a non-deletion bound', () => {
+    const onRetry = jest.fn();
+    const first = renderThread({
+      historySearch: { targetId: 'missing', status: 'searching', attempt: 2, maxAttempts: 5, error: null },
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Searching older messages (2/5)');
+
+    first.unmount();
+    const failed = renderThread({
+      historySearch: { targetId: 'missing', status: 'failed', attempt: 2, maxAttempts: 5, error: 'offline' },
+      onRetryHistorySearch: onRetry,
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Automatic search stopped');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    failed.unmount();
+
+    const second = renderThread({
+      historySearch: { targetId: 'missing', status: 'not-found', attempt: 5, maxAttempts: 5, error: null },
+      onRetryHistorySearch: onRetry,
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('keep browsing the conversation');
+    expect(screen.getByRole('status')).not.toHaveTextContent(/deleted/i);
+    second.unmount();
   });
 
   test('the jump pill appears only with arrivals while scrolled up and carries the count', () => {

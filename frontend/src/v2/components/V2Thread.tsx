@@ -12,6 +12,7 @@ import V2ThreadMessages from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
+  HistorySearchState,
   UseV2PodDetailResult,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
@@ -156,6 +157,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
+    historySearch: detailHistorySearch,
+    searchOlderForMessage: detailSearchOlderForMessage,
+    retryHistorySearch: detailRetryHistorySearch,
   } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
@@ -564,6 +568,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     await loadOlder();
   }, [loadOlder]);
 
+  // Older detail fixtures (and a few read-only embed callers) predate the
+  // bounded source-search fields. Keep those callers on the legacy one-page
+  // behavior while the real hook supplies the capped search implementation.
+  const idleHistorySearch: HistorySearchState = {
+    targetId: null,
+    status: 'idle',
+    attempt: 0,
+    maxAttempts: 5,
+    error: null,
+  };
+  const historySearch = detailHistorySearch || idleHistorySearch;
+  const legacySearchOlder = useCallback(async () => { await handleLoadOlder(); }, [handleLoadOlder]);
+  const searchOlderForMessage = detailSearchOlderForMessage || legacySearchOlder;
+  const retryHistorySearch = detailRetryHistorySearch || legacySearchOlder;
+
   useLayoutEffect(() => {
     const el = messagesContainerRef.current;
     const anchor = scrollAnchorRef.current;
@@ -595,7 +614,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Landing on a message from Activity / a quote: `#message-<id>` scrolls to the
   // row and marks it landed. If the row is not in the loaded window yet, the
   // previous pages load until it is (the `after` cursor is kernel row k4).
-  const landedHashRef = useRef<string | null>(null);
+  // Key landing guards by the resolved message id, not the URL spelling. A
+  // decision-card producer may use either canonical `#message-<id>` or the
+  // legacy `?message=<id>` form; both must share one retry/reveal lifecycle.
+  const landedTargetRef = useRef<string | null>(null);
   // A target that is loaded but not rendered (collapsed thread, `N more
   // replies` fold) is REVEALED, not fetched: the transcript opens the thread
   // and bumps `revealTick` so this effect runs again against the new DOM.
@@ -606,7 +628,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     // A repeated quote can have the same hash after the user collapsed the
     // thread. Clear the landing guards and bump the effect so this gesture
     // reopens the fold instead of being treated as an already-landed hash.
-    landedHashRef.current = null;
+    landedTargetRef.current = null;
     revealTriedRef.current = null;
     setRevealTick((tick) => tick + 1);
   }, []);
@@ -615,13 +637,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     if (found) setRevealTick((tick) => tick + 1);
     else revealTriedRef.current = `miss:${messageId}`;
   }, []);
+  const landingTarget = React.useMemo(() => {
+    const hashMatch = (location.hash || '').match(/^#message-(.+)$/);
+    // The canonical hash is authoritative when both forms are present.
+    if (hashMatch) return hashMatch[1];
+    return new URLSearchParams(location.search || '').get('message');
+  }, [location.hash, location.search]);
   useEffect(() => {
-    const hash = location.hash || '';
-    const match = hash.match(/^#message-(.+)$/);
-    if (!match) { landedHashRef.current = null; return; }
-    if (landedHashRef.current === hash) return;
-    if (landOnMessage(match[1])) { landedHashRef.current = hash; return; }
-    const target = match[1];
+    const target = landingTarget;
+    if (!target) { landedTargetRef.current = null; return; }
+    if (landedTargetRef.current === target) return;
+    if (landOnMessage(target)) { landedTargetRef.current = target; return; }
     const folded = threadView.some((item) => item.kind === 'card'
       && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
     if (folded && revealTriedRef.current !== target) {
@@ -629,8 +655,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       setRevealRequest(target);
       return;
     }
-    if (hasMore && !loadingOlder && !loading) void handleLoadOlder();
-  }, [location.hash, messages, threadView, revealTick, hasMore, loadingOlder, loading, handleLoadOlder]);
+    // The hook owns the bounded search state. Once a target has failed or the
+    // five-page bound has been reached, this effect must stay quiet until the
+    // reader explicitly presses Retry.
+    if (!loadingOlder && !loading
+      && !(historySearch.targetId === target
+        && (historySearch.status === 'searching'
+          || historySearch.status === 'failed'
+          || historySearch.status === 'not-found'))) {
+      void searchOlderForMessage(target);
+    }
+  }, [landingTarget, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -1172,6 +1207,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           hasMore={hasMore}
           loadingOlder={loadingOlder}
           onLoadOlder={() => { void handleLoadOlder(); }}
+          historySearch={historySearch}
+          onRetryHistorySearch={() => { void retryHistorySearch(); }}
           edgeRef={edgeRef}
           jumpCount={jumpCount}
           showJump={scrolledUp}
