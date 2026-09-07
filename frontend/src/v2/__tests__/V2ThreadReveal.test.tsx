@@ -128,7 +128,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
   });
 
-  test('the automatic history sentinel stays quiet during landing, while the deliberate button remains usable', async () => {
+  test('a landed target stays protected until deliberate browsing resumes the sentinel', async () => {
     const loadOlder = jest.fn(() => Promise.resolve());
     const callbacks: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
     const PreviousObserver = global.IntersectionObserver;
@@ -152,6 +152,10 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
 
       fireEvent.click(container.querySelector('button.v2-thread__edge-line'));
       expect(loadOlder).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        callbacks.at(-1)?.([{ isIntersecting: true }]);
+      });
+      expect(loadOlder).toHaveBeenCalledTimes(2);
     } finally {
       global.IntersectionObserver = PreviousObserver;
     }
@@ -183,6 +187,10 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
 
       fireEvent.click(container.querySelector('button.v2-thread__edge-line'));
       expect(loadOlder).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        callbacks.at(-1)?.([{ isIntersecting: true }]);
+      });
+      expect(loadOlder).toHaveBeenCalledTimes(2);
     } finally {
       global.IntersectionObserver = PreviousObserver;
     }
