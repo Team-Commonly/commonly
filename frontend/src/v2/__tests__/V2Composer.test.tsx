@@ -536,6 +536,7 @@ describe('V2Composer send button', () => {
           <V2Thread detail={{ ...detail, messages: [
             transcriptMessage('start'),
             transcriptMessage('own-race', 'u1', 'sent from this tab'),
+            transcriptMessage('background-after-own'),
           ] }} />
         </MemoryRouter>
       </AuthContext.Provider>,
@@ -544,6 +545,35 @@ describe('V2Composer send button', () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
 
     resolveSend(transcriptMessage('own-race', 'u1', 'sent from this tab'));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('a POST-first own send follows before its socket row arrives', async () => {
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('post-first', 'u1'))),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'post first' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    // The confirmation itself must not manufacture a new-arrival count.
+    expect(view.container.querySelector('.v2-thread__jump-count')).toBeNull();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('post-first', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
   });
 
@@ -605,25 +635,16 @@ describe('V2Composer send button', () => {
   });
 
   test('switching pods clears the prior composer message id', async () => {
+    let resolveSend: (message: any) => void = () => undefined;
     const oldDetail = makeDetail({
       messages: [transcriptMessage('old-start')],
-      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('old-own', 'u1'))),
+      sendMessage: jest.fn(() => new Promise((resolve) => { resolveSend = resolve; })),
     });
     const view = renderChat(oldDetail);
     scrollUp(view);
     fireEvent.change(composerInput(), { target: { value: 'old own' } });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => expect(oldDetail.sendMessage).toHaveBeenCalledTimes(1));
-    view.rerender(
-      <AuthContext.Provider value={authValue}>
-        <MemoryRouter>
-          <V2Thread detail={{ ...oldDetail, messages: [
-            transcriptMessage('old-start'),
-            transcriptMessage('old-own', 'u1'),
-          ] }} />
-        </MemoryRouter>
-      </AuthContext.Provider>,
-    );
 
     const newDetail = {
       ...oldDetail,
@@ -654,6 +675,11 @@ describe('V2Composer send button', () => {
       </AuthContext.Provider>,
     );
     await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // The old pod's late POST response is also unrelated to this pod.
+    resolveSend(transcriptMessage('old-own', 'u1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

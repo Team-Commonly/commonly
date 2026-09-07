@@ -534,10 +534,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // which reads as "load older is broken". Key on the newest message's id so
   // prepends are ignored.
   const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
-  // Direction C history: the reader's position is respected. New messages
-  // pull the view down only when it was already at the bottom (or are the
-  // message returned by this composer's send); otherwise they count up in the
-  // Jump-to-latest pill.
+  // Direction C history: the reader's position is respected. Background
+  // arrivals pull the view down only when it was already at the bottom;
+  // otherwise they count up in the Jump-to-latest pill. Explicit local sends
+  // follow in the separate confirmation effect below.
   const atBottomRef = useRef(true);
   const [jumpCount, setJumpCount] = useState(0);
   // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
@@ -565,21 +565,31 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [pod?._id]);
   useEffect(() => {
     if (!newestMessageId) return;
-    if (atBottomRef.current || newestMessageId === sentMessageIdRef.current) {
+    if (atBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newestMessageId, sendFollowVersion]);
+  }, [newestMessageId]);
+
+  // A successful POST is an explicit local follow instruction, independent
+  // of which socket row won the race or whether another row arrived after it.
+  // Keeping this separate from arrival counting prevents the confirmation
+  // render from incrementing the Jump pill when no new message arrived.
+  useEffect(() => {
+    if (!sendFollowVersion || !sentMessageIdRef.current) return;
+    atBottomRef.current = true;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setJumpCount(0);
+  }, [sendFollowVersion]);
 
   const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
     const id = String(created?.id || (created as { _id?: string })?._id || '');
     if (!id || activePodIdRef.current !== sendPodId) return;
     sentMessageIdRef.current = id;
-    // If the socket copy won the race, newestMessageId has already been
-    // observed and its effect cannot see this id until it is nudged here.
+    // The confirmation version is independent of the socket row's ordering.
     setSendFollowVersion((version) => version + 1);
   }, []);
 

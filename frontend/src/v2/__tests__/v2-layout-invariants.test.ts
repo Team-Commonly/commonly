@@ -903,12 +903,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(thread).toContain('new IntersectionObserver');
     expect(thread).toContain('atBottomRef');
     // Background arrivals must respect the reader's position even when they
-    // share the current user's author id. Only the id returned by this
-    // composer's own send is allowed to bypass the scrolled-up guard; the
-    // follow-version nudge covers socket-before-POST ordering.
+    // share the current user's author id. Arrival counting is separate from
+    // the explicit follow instruction returned by this composer's send; the
+    // follow-version nudge covers socket-before-POST ordering without letting
+    // a confirmation render increment the Jump pill.
     expect(thread).toContain('sentMessageIdRef');
-    expect(thread).toContain('newestMessageId === sentMessageIdRef.current');
     expect(thread).toContain('sendFollowVersion');
+    expect(thread).toContain('if (atBottomRef.current)');
+    expect(thread).toContain('}, [newestMessageId]);');
+    expect(thread).toContain('}, [sendFollowVersion]);');
     expect(thread).not.toContain('newestIsMine');
     // ux-lead gate on #1579: the pill is a 28px r14 white chip on #dde0e6, sans
     // 600 13px — the same family as the aim chip, not a 999px capsule.
