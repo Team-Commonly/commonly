@@ -65,10 +65,10 @@ describe('activity read routes', () => {
 
   it('GET /api/activity/decision-history forwards pod scope and pagination', async () => {
     await request(app)
-      .get('/api/activity/decision-history?podId=pod-1&limit=50&offset=50')
+      .get('/api/activity/decision-history?podId=pod-1&messageIds=42%2C43&limit=50&offset=50')
       .expect(200);
     expect(ActivityService.getDecisionHistory).toHaveBeenCalledWith('user123', {
-      podId: 'pod-1', limit: 50, offset: 50,
+      podId: 'pod-1', messageIds: ['42', '43'], limit: 50, offset: 50,
     });
   });
 

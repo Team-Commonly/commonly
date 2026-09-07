@@ -388,6 +388,10 @@ class ActivityService {
    */
   static async getDecisionHistory(userId: unknown, options: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const requestedPodId = typeof options.podId === 'string' ? options.podId.trim() : '';
+    const hasMessageFilter = Array.isArray(options.messageIds);
+    const messageIds = hasMessageFilter
+      ? [...new Set((options.messageIds as unknown[]).map((id) => String(id).trim()).filter(Boolean))]
+      : [];
     const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
     const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
     const membership = {
@@ -416,7 +420,9 @@ class ActivityService {
     const historyQuery = {
       podId: { $in: podIds },
       status: 'ruled',
-      messageId: { $exists: true },
+      ...(hasMessageFilter
+        ? { messageId: { $in: messageIds } }
+        : { messageId: { $exists: true } }),
     };
     const [count, rows] = await Promise.all([
       DecisionRequest.countDocuments(historyQuery),

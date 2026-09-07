@@ -90,7 +90,7 @@ describe('V2Thread decision cards', () => {
       params: { podId: 'pod-1', limit: 50, offset: 0 },
     }));
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-history', expect.objectContaining({
-      params: { podId: 'pod-1', limit: 50, offset: 0 },
+      params: { podId: 'pod-1', limit: 50, offset: 0, messageIds: '42' },
     }));
     expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     expect(screen.queryByText('Choose one of the following approaches in prose.')).not.toBeInTheDocument();
@@ -179,6 +179,46 @@ describe('V2Thread decision cards', () => {
       await waitFor(() => expect(historyReads).toBe(2));
       expect(screen.getByTestId('decision-ruling-row')).toHaveTextContent('Lily');
       expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('keeps a pending card visible when a later queue refresh fails', async () => {
+    const pending = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+      actorName: 'Sprint impl', title: 'Choose the workspace cutover', detail: 'Which implementation should ship?',
+      options: [{ label: 'Ship the rebuilt workspace' }, { label: 'Keep the legacy chat' }],
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return queueReads === 1
+          ? Promise.resolve({ data: { items: [pending] } })
+          : Promise.reject(new Error('queue unavailable'));
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: {} });
+    });
+
+    jest.useFakeTimers();
+    try {
+      render(
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
+      expect(queueReads).toBe(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(queueReads).toBe(2));
+      expect(screen.getByTestId('decision-card')).toBeInTheDocument();
+      expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     } finally {
       jest.useRealTimers();
     }

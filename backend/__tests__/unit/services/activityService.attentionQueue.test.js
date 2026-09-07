@@ -86,6 +86,30 @@ describe('ActivityService.getDecisionQueue', () => {
     });
   });
 
+  it('bounds settled history to the loaded source message IDs when supplied', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],
+    }]));
+    mockDecisionCountDocuments.mockResolvedValue(1);
+    mockDecisionFind.mockReturnValue(decisionChain([{
+      _id: 'decision-1', podId: 'pod-1', status: 'ruled', messageId: '42',
+      title: 'Choose a path', question: 'Which?', options: [{ label: 'A' }, { label: 'B' }],
+      ruling: { value: 'B', byUsername: 'Sam' },
+    }]));
+
+    const history = await ActivityService.getDecisionHistory('member-1', {
+      podId: 'pod-1', messageIds: ['42', '42', '  '],
+    });
+
+    expect(history).toMatchObject({ count: 1, hasMore: false });
+    expect(mockDecisionFind).toHaveBeenCalledWith({
+      podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $in: ['42'] },
+    });
+    expect(mockDecisionCountDocuments).toHaveBeenCalledWith({
+      podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $in: ['42'] },
+    });
+  });
+
   it('paginates settled decisions within the selected pod instead of global overflow', async () => {
     mockPodFind.mockReturnValue(chain([{
       _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],

@@ -139,11 +139,18 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
 router.get('/decision-history', auth, async (req: Req, res: Res) => {
   try {
     const podId = req.query?.podId;
+    const rawMessageIds = req.query?.messageIds;
     const rawLimit = req.query?.limit;
     const rawOffset = req.query?.offset;
     if (podId !== undefined && typeof podId !== 'string') {
       return res.status(400).json({ error: 'podId must be a string' });
     }
+    if (rawMessageIds !== undefined && typeof rawMessageIds !== 'string') {
+      return res.status(400).json({ error: 'messageIds must be a comma-separated string' });
+    }
+    const messageIds = rawMessageIds === undefined
+      ? undefined
+      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 200);
     const limit = rawLimit === undefined ? undefined : Number(rawLimit);
     const offset = rawOffset === undefined ? undefined : Number(rawOffset);
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
@@ -155,6 +162,7 @@ router.get('/decision-history', auth, async (req: Req, res: Res) => {
     const userId = getAuthenticatedUserId(req);
     const options = {
       ...(podId ? { podId } : {}),
+      ...(messageIds ? { messageIds } : rawMessageIds !== undefined ? { messageIds: [] } : {}),
       ...(limit === undefined ? {} : { limit }),
       ...(offset === undefined ? {} : { offset }),
     };

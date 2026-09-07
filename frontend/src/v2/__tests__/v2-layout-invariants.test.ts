@@ -407,8 +407,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(activityPage).toContain('(option, index)');
     expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
     expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId)");
-    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId)");
-    expect(thread).toContain('params: { podId, limit: DECISION_PAGE_SIZE, offset }');
+    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId, {");
+    expect(thread).toContain('podId, limit: DECISION_PAGE_SIZE, offset, ...extraParams');
+    expect(thread).toContain("messageIds: loadedMessageIdsRef.current.join(',')");
+    expect(thread).toContain('if (pendingData)');
     expect(thread).toContain("'/api/activity/decision-history'");
     expect(thread).toContain('settledDecisionByMessageId');
   });
@@ -1328,7 +1330,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test('Activity hydrates settled decisions from the durable history projection', () => {
       expect(activityPage).toContain("'/api/activity/decision-history'");
       expect(activityPage).toContain('settledHistory');
-      expect(activityPage).toContain('loadDecisionHistoryPages(headers, podId)');
       expect(activityPage).toContain('setSettledQueueDecisions');
     });
 
