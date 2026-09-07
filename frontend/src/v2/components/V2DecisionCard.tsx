@@ -43,9 +43,10 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
   const [error, setError] = useState<string | null>(null);
   const otherInputRef = useRef<HTMLInputElement | null>(null);
   const otherSubmitRef = useRef<HTMLButtonElement | null>(null);
+  const otherSubmissionRef = useRef(false);
 
   useEffect(() => {
-    if (!error || !otherOpen) return undefined;
+    if (!error || !otherOpen || !otherSubmissionRef.current) return undefined;
     const frame = globalThis.window.requestAnimationFrame(() => {
       const active = document.activeElement;
       // A disabled submit button can blur to body while the request settles.
@@ -152,7 +153,12 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
                 onChange={(event) => setOtherValue(event.target.value)}
                 disabled={saving}
               />
-              <button ref={otherSubmitRef} type="button" onClick={() => { void choose(otherValue); }} disabled={saving || !otherValue.trim()}>
+              <button
+                ref={otherSubmitRef}
+                type="button"
+                onClick={() => { otherSubmissionRef.current = true; void choose(otherValue); }}
+                disabled={saving || !otherValue.trim()}
+              >
                 {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
               </button>
             </div>
