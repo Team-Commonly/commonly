@@ -934,6 +934,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
   });
 
+  test('history prepends disable native anchoring because V2 compensates rendered-row movement', () => {
+    expect(ruleBody(v2, '.v2-chat__messages')).toContain('overflow-anchor: none');
+    expect(thread).toContain('getBoundingClientRect');
+    expect(thread).toContain('rowOffset');
+  });
+
   test('history recovery is positioned against the chat viewport, outside the scroller', () => {
     const transcript = ruleBody(v2, '.v2-thread__transcript');
     expect(transcript).toContain('position: relative');
