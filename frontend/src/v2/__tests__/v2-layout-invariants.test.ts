@@ -1620,6 +1620,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root button.v2-activity__scope-button')).toContain('var(--v2-font-mono)');
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
       expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('var(--v2-font-mono)');
+      expect(lastRuleBody(v2, '.v2-root .v2-rail__utility button.v2-lang-switch__trigger')).toContain('font: 700 11px/16px var(--v2-font-mono)');
       expect(activityPage).not.toContain('v2-activity__footer');
       expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
       expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: static;[^}]*flex-wrap: wrap;/);

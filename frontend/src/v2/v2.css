@@ -599,12 +599,11 @@ body.modern-ui.v2-canvas {
   background: var(--v2-border);
 }
 
-.v2-rail__utility .v2-lang-switch__trigger {
+.v2-root .v2-rail__utility button.v2-lang-switch__trigger {
   min-height: 24px;
   padding: 2px 6px;
   gap: 3px;
-  font-size: 11px;
-  font-weight: 700;
+  font: 700 11px/16px var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   border-radius: var(--v2-radius-sm);
 }
@@ -11561,7 +11560,6 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
 .v2-activity__empty--plain span { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
 .v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
-.v2-rail__utility .v2-lang-switch__trigger { font: 700 11px/16px var(--v2-font-mono); }
 
 /* Keep filters on a separate row when the pane cannot fit them beside the
    title. Both rows stay in normal reading order, without a clipped title. */
