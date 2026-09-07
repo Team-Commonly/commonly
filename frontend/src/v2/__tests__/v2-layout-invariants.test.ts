@@ -1589,8 +1589,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityFocusRules.length).toBeGreaterThan(0);
       for (const block of activityFocusRules) expect(block.slice(block.indexOf('{'))).not.toContain('outline: 2px');
       expect(ruleBody(v2, '.v2-root button:focus-visible,\n.v2-root input:focus-visible,\n.v2-root textarea:focus-visible,\n.v2-root a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
-      // <select> is outside the global halo's element list, so the pod picker carries its own.
-      expect(ruleBody(v2, '.v2-activity__compose-pod select:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+      // The custom pod picker is outside the global halo's element list, so it carries its own.
+      expect(ruleBody(v2, '.v2-activity__compose-picker-button:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     });
 
     test('ink primary: filled Activity buttons are ink, and blue stays off them', () => {
