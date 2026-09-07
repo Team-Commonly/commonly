@@ -8783,9 +8783,16 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
-.v2-activity__compose-pod select {
+.v2-activity__compose-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.v2-root .v2-activity__compose-picker-button {
   height: 26px;
+  min-height: 26px;
   max-width: 220px;
+  overflow: hidden;
   padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
@@ -8794,6 +8801,42 @@ body.modern-ui.v2-canvas {
   font: inherit;
   font-size: var(--v2-fs-meta);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-activity__compose-picker-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  max-width: min(280px, 70vw);
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-md);
+}
+
+.v2-root .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose-picker-option:hover,
+.v2-root .v2-activity__compose-picker-option.is-active {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
 }
 
 .v2-root .v2-activity__compose textarea {
@@ -8811,15 +8854,15 @@ body.modern-ui.v2-canvas {
 }
 
 /* Halo focus (TASK-122): the card carries the halo (focus-within above), so
-   the textarea itself shows nothing; <select> is outside the global
-   focus-visible list and carries its own ring. */
+   the textarea itself shows nothing; the destination picker carries its own
+   ring. */
 .v2-root .v2-activity__compose textarea:focus-visible {
   outline: none;
   box-shadow: none;
   border-color: transparent;
 }
 
-.v2-activity__compose-pod select:focus-visible {
+.v2-activity__compose-picker-button:focus-visible {
   outline: none;
   box-shadow: var(--v2-focus-ring);
   border-color: var(--v2-accent);
@@ -9373,7 +9416,8 @@ body.modern-ui.v2-canvas {
   .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
   .v2-activity__compose-pod { width: 100%; }
   .v2-activity__compose-pod > span { white-space: nowrap; }
-  .v2-activity__compose-pod select { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }

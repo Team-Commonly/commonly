@@ -7,6 +7,7 @@ import i18n, { i18nReady } from '../../i18n';
 import V2ActivityPage from '../components/V2ActivityPage';
 import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
+import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios');
 jest.mock('../components/V2Avatar', () => {
@@ -67,6 +68,15 @@ const renderPage = () => render(
     <V2ActivityPage />
     <CurrentPath />
   </MemoryRouter>,
+);
+
+const renderPageWithAuth = (currentUser: { _id: string } | null) => render(
+  <AuthContext.Provider value={{ currentUser, loading: false } as any}>
+    <MemoryRouter initialEntries={['/v2/activity']}>
+      <V2ActivityPage />
+      <CurrentPath />
+    </MemoryRouter>
+  </AuthContext.Provider>
 );
 
 describe('V2ActivityPage', () => {
@@ -472,5 +482,32 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Review requested')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByText('Review requested')).not.toBeInTheDocument());
+  });
+
+  test('revalidates the loaded Back extent and preserves the same account draft', async () => {
+    const loaded = Array.from({ length: 56 }, (_, index) => ({
+      id: `revalidated-${index}`, attentionItemId: `507f1f77bcf86cd7994390${String(index).padStart(2, '0')}`,
+      kind: 'mention', title: `Revalidated ${index}`, detail: 'Older row', podId: 'pod-1', podName: 'Launch pod',
+      messageId: String(900 + index), threadRootId: '895', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    sessionStorage.setItem('v2:activity:snapshot:user-a', JSON.stringify({
+      window: 'today', podId: 'all', recap, queue: loaded, queueCount: 56, queueRemaining: 0,
+      queueCountsByPod: { 'pod-1': 56 }, composePodId: 'pod-1', composeDraft: 'draft from account A', savedAt: Date.now(),
+    }));
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      queueReads += 1;
+      return Promise.resolve({ data: {
+        items: queueReads === 1 ? loaded.slice(0, 50) : loaded.slice(50), count: 56,
+        remaining: queueReads === 1 ? 6 : 0, countsByPod: { 'pod-1': 56 }, composePodId: 'pod-1',
+      } });
+    });
+    renderPageWithAuth({ _id: 'user-a' });
+    expect(await screen.findByText('Revalidated 55')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('draft from account A')).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.objectContaining({ limit: 50, offset: 50 }),
+    }));
   });
 });

@@ -163,11 +163,14 @@ const V2ActivityPage: React.FC = () => {
   const [queueFailed, setQueueFailed] = useState(false);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
+  const revalidationExtentRef = useRef(0);
+  const revalidationScopeRef = useRef<string | null>(null);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
+  const [composeMenuOpen, setComposeMenuOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
   const [expandedMovedIds, setExpandedMovedIds] = useState<Set<string>>(new Set());
@@ -192,6 +195,9 @@ const V2ActivityPage: React.FC = () => {
       setReplyDrafts(snapshot.replyDrafts || {});
       setComposePodId(snapshot.composePodId || '');
       setComposeDraft(snapshot.composeDraft || '');
+      setComposeMenuOpen(false);
+      revalidationExtentRef.current = snapshot.queue?.length || 0;
+      revalidationScopeRef.current = snapshot.podId || 'all';
       setLoading(!snapshot.recap);
     } else {
       setWindow('today');
@@ -204,6 +210,9 @@ const V2ActivityPage: React.FC = () => {
       setReplyDrafts({});
       setComposePodId('');
       setComposeDraft('');
+      setComposeMenuOpen(false);
+      revalidationExtentRef.current = 0;
+      revalidationScopeRef.current = null;
       setLoading(true);
     }
     setSnapshotReady(true);
@@ -259,7 +268,7 @@ const V2ActivityPage: React.FC = () => {
         { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
     ])
-      .then(([recapResponse, queueResponse]) => {
+      .then(async ([recapResponse, queueResponse]) => {
         if (!active) return;
         setRecap(recapResponse.data);
         const rawItems = queueResponse?.data?.items;
@@ -280,16 +289,39 @@ const V2ActivityPage: React.FC = () => {
         setQueueFailed(false);
         setQueueCount(queueResponse!.data.count);
         setQueueCountsByPod(queueResponse!.data.countsByPod || {});
-        const queueItems = rawItems.map((item) => ({
+        const mapQueueItems = (items: QueueResponse['items']) => items.map((item) => ({
           ...item,
           detail: item.detail || '',
           podName: item.podName || '',
           timestamp: item.timestamp ?? item.createdAt ?? null,
         }));
-        setQueue(queueItems);
-        setQueueRemaining(typeof queueResponse!.data.remaining === 'number'
+        let queueItems = mapQueueItems(rawItems);
+        // A Back snapshot can contain more than one server page. Revalidate
+        // the loaded extent before replacing it, otherwise a 56-row snapshot
+        // briefly regresses to the first 50 and loses its final six rows.
+        const revalidateTo = revalidationScopeRef.current === podId ? revalidationExtentRef.current : 0;
+        let nextOffset = queueItems.length;
+        let nextRemaining = typeof queueResponse!.data.remaining === 'number'
           ? queueResponse!.data.remaining
-          : Math.max(queueResponse!.data.count - queueItems.length, 0));
+          : Math.max(queueResponse!.data.count - nextOffset, 0);
+        while (nextOffset < revalidateTo && nextRemaining > 0) {
+          const nextResponse = await axios.get<QueueResponse>('/api/activity/decision-queue', {
+            headers,
+            params: { limit: 50, offset: nextOffset, ...(podId !== 'all' ? { podId } : {}) },
+          });
+          const nextPage = mapQueueItems(nextResponse.data?.items || []);
+          if (!nextPage.length) break;
+          const existing = new Set(queueItems.map((item) => `${item.kind}:${item.id}`));
+          queueItems = [...queueItems, ...nextPage.filter((item) => !existing.has(`${item.kind}:${item.id}`))];
+          nextOffset += nextPage.length;
+          nextRemaining = typeof nextResponse.data?.remaining === 'number'
+            ? nextResponse.data.remaining
+            : Math.max((nextResponse.data?.count || 0) - nextOffset, 0);
+        }
+        revalidationExtentRef.current = 0;
+        revalidationScopeRef.current = null;
+        setQueue(queueItems);
+        setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
         // The initial destination is an account-level global fact computed by
         // the service before scope/page slicing. Preserve an intentional
         // target across refreshes and fall back to the first available pod.
@@ -394,6 +426,7 @@ const V2ActivityPage: React.FC = () => {
   const scopedPods = useMemo(() => {
     return recap?.pods || [];
   }, [recap]);
+  const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
 
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
     if (!targetPodId) return;
@@ -598,12 +631,35 @@ const V2ActivityPage: React.FC = () => {
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
             <div className="v2-activity__compose-top">
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
-              <label className="v2-activity__compose-pod">
+              <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
-                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
-                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-                </select>
-              </label>
+                <div className="v2-activity__compose-picker">
+                  <button
+                    type="button"
+                    className="v2-activity__compose-picker-button"
+                    aria-haspopup="listbox"
+                    aria-expanded={composeMenuOpen}
+                    onClick={() => setComposeMenuOpen((open) => !open)}
+                    disabled={composing || scopedPods.length === 0}
+                  >
+                    {composePodName}
+                  </button>
+                  {composeMenuOpen && <div className="v2-activity__compose-picker-menu" role="listbox" aria-label={t('activity.compose.podLabel')}>
+                    {scopedPods.map((pod) => (
+                      <button
+                        key={pod.id}
+                        type="button"
+                        role="option"
+                        aria-selected={pod.id === composePodId}
+                        className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
+                        onClick={() => { setComposePodId(pod.id); setComposeMenuOpen(false); }}
+                      >
+                        {pod.name}
+                      </button>
+                    ))}
+                  </div>}
+                </div>
+              </div>
             </div>
             <textarea
               aria-label={t('activity.compose.placeholder')}
