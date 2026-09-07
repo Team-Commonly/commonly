@@ -116,6 +116,39 @@ describe('tick', () => {
     expect(saveToken.mock.calls[0][1]).not.toHaveProperty('environment');
   });
 
+  test('preserves full declared environment and runtime effort when minting', async () => {
+    const environment = {
+      version: 1,
+      workspace: { path: './workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      skills: { claude: ['common'] },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+      effort: 'high',
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus', effort: 'high' }, environment })],
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({ environment: { ...environment, model: 'opus' } }));
+  });
+
+  test('runtime-only model updates preserve a local full environment', async () => {
+    const environment = {
+      workspace: { path: './workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+    };
+    const tokens = { 'wren-test': { agentName: 'wren-test', environment } };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'sonnet' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { ...environment, model: 'sonnet' },
+    }));
+  });
+
   test('a model changed server-side updates the record and restarts the seat', async () => {
     let model = 'opus';
     const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };

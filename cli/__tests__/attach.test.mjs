@@ -28,6 +28,7 @@ await jest.unstable_mockModule('os', () => {
 const {
   performAttach,
   setWakeOnMessage,
+  updateAgentConfiguration,
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
@@ -62,6 +63,71 @@ describe('setWakeOnMessage', () => {
     await expect(setWakeOnMessage({ client, record: { agentName: 'x' }, enabled: true }))
       .rejects.toThrow(/podId/);
     expect(client.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateAgentConfiguration', () => {
+  const record = {
+    agentName: 'juno', podId: 'pod-9', instanceId: 'writer', runtimeToken: 'cm_agent_j',
+  };
+
+  test('reuses the registry PATCH route for runtime controls and full env specs', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const environment = {
+      version: 1,
+      workspace: { path: './workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+      effort: 'xhigh',
+      model: 'gpt-5.4',
+    };
+    await expect(updateAgentConfiguration({
+      client,
+      record,
+      model: 'gpt-5.4',
+      effort: 'xhigh',
+      envPath: '/tmp/runtime.json',
+      parseEnv: jest.fn(async () => environment),
+    })).resolves.toEqual({
+      agentName: 'juno', podId: 'pod-9', instanceId: 'writer', changed: ['runtime', 'environment'],
+    });
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      {
+        instanceId: 'writer',
+        config: {
+          runtime: { model: 'gpt-5.4', effort: 'xhigh' },
+          environment,
+        },
+      },
+    );
+  });
+
+  test('rejects an empty edit and an incomplete token record before making a request', async () => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record })).rejects.toThrow(/at least one/);
+    await expect(updateAgentConfiguration({ client, record, effort: 'turbo' }))
+      .rejects.toThrow(/effort must be one of/);
+    await expect(updateAgentConfiguration({ client, record: { agentName: 'juno' }, model: 'opus' }))
+      .rejects.toThrow(/podId/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
+  test('updates an existing declared environment when only model/effort flags change', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const localRecord = {
+      ...record,
+      environment: {
+        workspace: { path: './workspace' },
+        sandbox: { mode: 'workspace', trust: 'internal' },
+        model: 'old-model',
+        effort: 'medium',
+      },
+    };
+    await updateAgentConfiguration({ client, record: localRecord, model: 'new-model', effort: 'high' });
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({
+      ...localRecord.environment, model: 'new-model', effort: 'high',
+    });
   });
 });
 

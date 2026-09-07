@@ -48,7 +48,17 @@ beforeEach(async () => {
   await AgentInstallation.create({
     agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
     version: '1.0.0', status: 'active', installedBy: owner._id,
-    config: { runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' } },
+    config: {
+      runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
+      environment: {
+        version: 1,
+        workspace: { path: './workspace' },
+        sandbox: { mode: 'workspace', trust: 'internal' },
+        skills: { claude: ['common'] },
+        mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+        effort: 'high',
+      },
+    },
   });
   for (const [tok, mid] of [[DAEMON_A, 'machine-a'], [DAEMON_B, 'machine-b']]) {
     // eslint-disable-next-line no-await-in-loop
@@ -124,6 +134,14 @@ describe('daemon work list', () => {
       instanceId: 'default',
       state: 'requested',
       runtime: expect.objectContaining({ model: 'claude-opus-5' }),
+      environment: expect.objectContaining({
+        version: 1,
+        workspace: { path: './workspace' },
+        sandbox: { mode: 'workspace', trust: 'internal' },
+        skills: { claude: ['common'] },
+        mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+        effort: 'high',
+      }),
     })]);
 
     const seenByB = await assigned(DAEMON_B);

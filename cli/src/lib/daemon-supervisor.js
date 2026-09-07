@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
  * `commonly daemon run`.
@@ -87,11 +89,24 @@ export const createDaemonSupervisor = ({
     }
   };
 
-  // The server-declared runtime config carries the owner's model choice; the
-  // adapter reads it from the token record's environment (claude: --model).
-  const environmentFor = (row) => (
-    row.runtime?.model ? { model: String(row.runtime.model) } : null
-  );
+  // Preserve the complete ADR-008 environment when the daemon receives it.
+  // Older installs only expose runtime.model/effort; those fields are a
+  // compatibility overlay and must merge into an existing local environment
+  // rather than erasing its workspace, skills, or MCP declarations.
+  const environmentFor = (row) => {
+    const declared = row.environment && typeof row.environment === 'object'
+      && !Array.isArray(row.environment) ? { ...row.environment } : null;
+    const runtime = row.runtime && typeof row.runtime === 'object' ? row.runtime : {};
+    if (declared) {
+      if (runtime.model && declared.model === undefined) declared.model = String(runtime.model);
+      if (runtime.effort && declared.effort === undefined) declared.effort = String(runtime.effort);
+      return { value: declared, declared: true };
+    }
+    const fallback = {};
+    if (runtime.model) fallback.model = String(runtime.model);
+    if (runtime.effort) fallback.effort = String(runtime.effort);
+    return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
+  };
 
   // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
   // The mint refuses to clobber an existing token (409 token_exists); the
@@ -107,10 +122,15 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
-      if (wanted && existing.environment?.model !== wanted.model) {
-        saveToken(row.agentName, { ...existing, environment: { ...(existing.environment || {}), ...wanted } });
-        log(`[${row.agentName}] model changed to ${wanted.model} — restarting the seat to load it`);
-        return 'changed';
+      if (wanted) {
+        const nextEnvironment = wanted.declared
+          ? wanted.value
+          : { ...(existing.environment || {}), ...wanted.value };
+        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment)) {
+          saveToken(row.agentName, { ...existing, environment: nextEnvironment });
+          log('runtime config changed — restarting the seat to load it');
+          return 'changed';
+        }
       }
       return 'ready';
     }
@@ -149,9 +169,9 @@ export const createDaemonSupervisor = ({
       instanceUrl: record.instanceUrl,
       podId: row.podIds?.[0] || null,
       adapter,
-      ...(environment ? { environment } : {}),
+      ...(environment ? { environment: environment.value } : {}),
     });
-    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment ? `, model: ${environment.model}` : ''})`);
+    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment?.value?.model ? `, model: ${environment.value.model}` : ''})`);
     return 'ready';
   };
 

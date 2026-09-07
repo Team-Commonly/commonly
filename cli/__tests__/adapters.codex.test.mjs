@@ -146,6 +146,27 @@ describe('codex adapter — spawn()', () => {
       .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
+  test('passes model and reasoning effort to fresh and resumed runs', async () => {
+    const fresh = makeSpawnImpl({ outputContents: 'ok' });
+    await codex.spawn('fresh', {
+      sessionId: null,
+      environment: { model: 'gpt-5.4', effort: 'high' },
+      _spawnImpl: fresh.impl,
+    });
+    expect(fresh.calls[0].args).toContain('--model');
+    expect(fresh.calls[0].args).toContain('gpt-5.4');
+    expect(fresh.calls[0].args).toContain('-c');
+    expect(fresh.calls[0].args).toContain('model_reasoning_effort="high"');
+    const resumed = makeSpawnImpl({ outputContents: 'ok' });
+    await codex.spawn('resume', {
+      sessionId: 'sid-1',
+      environment: { model: 'gpt-5.4', effort: 'xhigh' },
+      _spawnImpl: resumed.impl,
+    });
+    expect(resumed.calls[0].args.slice(0, 5)).toEqual(['exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check']);
+    expect(resumed.calls[0].args).toContain('model_reasoning_effort="xhigh"');
+  });
+
   test('environment.mcp servers become -c mcp_servers.* overrides with substituted token/env', async () => {
     // Regression for the 2026-07-22 as-operator attribution incident: the
     // adapter used to silently ignore environment.mcp, so a codex agent had

@@ -190,7 +190,7 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       .select('agentName instanceId podId config').lean();
     if (!installs.length) return res.json({ agents: [] });
 
-    const byIdentity = new Map<string, { agentName: string; instanceId: string; podIds: string[]; runtime: unknown }>();
+    const byIdentity = new Map<string, { agentName: string; instanceId: string; podIds: string[]; runtime: unknown; environment: unknown }>();
     for (const install of installs) {
       const agentName = normalize(install.agentName);
       const instanceId = normalize(install.instanceId) || 'default';
@@ -201,10 +201,11 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         ? Object.fromEntries(install.config)
         : (install.config || {});
       const entry = byIdentity.get(key) || {
-        agentName, instanceId, podIds: [], runtime: null,
+        agentName, instanceId, podIds: [], runtime: null, environment: null,
       };
       if (install.podId) entry.podIds.push(String(install.podId));
       if (!entry.runtime && config.runtime) entry.runtime = config.runtime;
+      if (!entry.environment && config.environment) entry.environment = config.environment;
       byIdentity.set(key, entry);
     }
 
@@ -229,6 +230,7 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         state: meta.machineId === machine.machineId ? 'bound' : 'requested',
         podIds: entry.podIds,
         runtime: entry.runtime,
+        ...(entry.environment ? { environment: entry.environment } : {}),
       }];
     });
     return res.json({ agents });
