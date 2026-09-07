@@ -112,6 +112,26 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
   });
 
+  test('legacy ?message= landing uses the same source reveal path', async () => {
+    const detail = makeDetail();
+    const { container } = renderAt('?message=r2', detail);
+    await waitFor(() => {
+      expect(container.querySelector('.v2-thread-block--open')).toBeTruthy();
+      expect(container.querySelector('#message-r2')).toBeTruthy();
+    });
+    expect(detail.loadOlder).not.toHaveBeenCalled();
+  });
+
+  test('canonical hash wins when a legacy query target is also present', async () => {
+    const detail = makeDetail();
+    const { container } = renderAt('?message=r1#message-r2', detail);
+    await waitFor(() => {
+      expect(container.querySelector('#message-r2')).toBeTruthy();
+    });
+    expect(container.querySelector('#message-r1')).not.toHaveClass('v2-msg--landed');
+    expect(detail.loadOlder).not.toHaveBeenCalled();
+  });
+
   test('quoting the same folded reply again after collapse reopens it without fetching history', async () => {
     const detail = makeDetail({
       messages: [

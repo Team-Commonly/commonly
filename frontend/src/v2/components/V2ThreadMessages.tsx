@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { V2Message } from '../hooks/useV2PodDetail';
+import { HistorySearchState, V2Message } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
@@ -30,6 +30,8 @@ interface V2ThreadMessagesProps {
   hasMore: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  historySearch?: HistorySearchState;
+  onRetryHistorySearch?: () => void;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
   // previous page when the reader reaches the top.
   edgeRef?: React.RefObject<HTMLDivElement | null>;
@@ -80,6 +82,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   hasMore,
   loadingOlder,
   onLoadOlder,
+  historySearch,
+  onRetryHistorySearch,
   edgeRef,
   jumpCount = 0,
   showJump = false,
@@ -95,6 +99,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
+  const effectiveHistorySearch = historySearch || {
+    targetId: null,
+    status: 'idle' as const,
+    attempt: 0,
+    maxAttempts: 5,
+    error: null,
+  };
   // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
   // reveals the rest for that root (walk-3 §3).
   const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
@@ -167,6 +178,34 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           <span className="v2-thread__edge-line">{t('podChat.history.beginning')}</span>
         ) : null}
       </div>
+      {effectiveHistorySearch.status === 'searching' && (
+        <div className="v2-thread__history-status" role="status" aria-live="polite">
+          {t('podChat.history.searchingOlder', {
+            attempt: effectiveHistorySearch.attempt,
+            max: effectiveHistorySearch.maxAttempts,
+          })}
+        </div>
+      )}
+      {effectiveHistorySearch.status === 'failed' && (
+        <div className="v2-thread__history-status v2-thread__history-status--error" role="alert">
+          <span>{t('podChat.history.searchOlderFailed')}</span>
+          {onRetryHistorySearch && (
+            <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+              {t('podChat.history.retrySearch')}
+            </button>
+          )}
+        </div>
+      )}
+      {effectiveHistorySearch.status === 'not-found' && (
+        <div className="v2-thread__history-status" role="status" aria-live="polite">
+          {t('podChat.history.searchOlderBound', { attempt: effectiveHistorySearch.attempt })}
+          {onRetryHistorySearch && (
+            <button type="button" className="v2-thread__history-retry" onClick={onRetryHistorySearch}>
+              {t('podChat.history.retrySearch')}
+            </button>
+          )}
+        </div>
+      )}
       {error && <div className="v2-chat__error">{error}</div>}
       {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}

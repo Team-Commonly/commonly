@@ -84,6 +84,7 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(quotes[0]).toHaveAttribute('role', 'link');
     fireEvent.click(quotes[0]);
     expect(container.querySelector('#message-10')).toHaveClass('v2-msg--landed');
+    expect(document.activeElement).toBe(container.querySelector('#message-10'));
     fireEvent.click(quotes[1]);
     expect(window.location.hash).toBe('#message-99');
     expect(landOnMessage(null)).toBe(false);

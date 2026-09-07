@@ -133,4 +133,74 @@ describe('useV2PodDetail pagination', () => {
     expect(result.current.hasMore).toBe(true);
     expect(result.current.loadingOlder).toBe(false);
   });
+
+  it('bounds automatic source lookup to five older pages and reports a non-deletion bound', async () => {
+    const first = makePage('new', PAGE, 100);
+    const older = Array.from({ length: PAGE }, (_, page) => makePage(`older-${page}`, PAGE, 50 - page * PAGE));
+    let call = 0;
+    mockApi.get.mockImplementation((url) => {
+      if (url.startsWith('/api/messages/')) {
+        const response = call === 0 ? first : older[call - 1];
+        call += 1;
+        return Promise.resolve(response || makePage('overflow', PAGE, -500));
+      }
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      return Promise.resolve({ _id: 'p1', name: 'Pod', members: [] });
+    });
+
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
+
+    await act(async () => { await result.current.searchOlderForMessage('missing-source'); });
+
+    expect(mockApi.get.mock.calls.filter(([url]) => String(url).includes('before='))).toHaveLength(5);
+    expect(result.current.historySearch).toMatchObject({
+      targetId: 'missing-source',
+      status: 'not-found',
+      attempt: 5,
+      maxAttempts: 5,
+    });
+  });
+
+  it('stops automatic lookup as soon as the exact source row arrives', async () => {
+    const first = makePage('new', PAGE, 100);
+    const older = makePage('older', PAGE, 50);
+    older[17].id = 'exact-source';
+    routeMock([first, older]);
+
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
+    await act(async () => { await result.current.searchOlderForMessage('exact-source'); });
+
+    expect(result.current.messages.some((message) => message.id === 'exact-source')).toBe(true);
+    expect(result.current.historySearch?.status).toBe('idle');
+    expect(mockApi.get.mock.calls.filter(([url]) => String(url).includes('before='))).toHaveLength(1);
+  });
+
+  it('stops on a failed automatic lookup and only retries when asked', async () => {
+    const first = makePage('new', PAGE, 100);
+    let call = 0;
+    mockApi.get.mockImplementation((url) => {
+      if (url.startsWith('/api/messages/')) {
+        call += 1;
+        if (call === 1) return Promise.resolve(first);
+        return Promise.reject(new Error('history unavailable'));
+      }
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      return Promise.resolve({ _id: 'p1', name: 'Pod', members: [] });
+    });
+
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    await waitFor(() => expect(result.current.messages).toHaveLength(PAGE));
+    await act(async () => { await result.current.searchOlderForMessage('missing-source'); });
+    expect(result.current.historySearch?.status).toBe('failed');
+    expect(call).toBe(2);
+
+    // The failed state is deliberately sticky; a second automatic invocation
+    // cannot create a retry loop. The explicit retry does make one request.
+    await act(async () => { await result.current.searchOlderForMessage('missing-source'); });
+    expect(call).toBe(2);
+    await act(async () => { await result.current.retryHistorySearch?.(); });
+    expect(call).toBe(3);
+  });
 });
