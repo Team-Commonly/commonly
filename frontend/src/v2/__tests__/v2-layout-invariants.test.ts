@@ -404,6 +404,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const borderedAction = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
     expect(borderedAction).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
+    const composeMenu = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu');
+    expect(composeMenu).toContain('max-height: 240px');
+    expect(composeMenu).toContain('overflow-y: auto');
+    const composeOption = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-option');
+    expect(composeOption).toContain('background: transparent');
+    expect(composeOption).toContain('color: var(--v2-text-primary)');
     const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
     expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');

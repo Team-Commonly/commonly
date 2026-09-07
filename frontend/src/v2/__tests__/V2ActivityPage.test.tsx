@@ -1060,6 +1060,71 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(picker).toHaveFocus());
   });
 
+  test('supports keyboard destination selection without losing the draft', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    const compose = await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
+    fireEvent.change(compose, { target: { value: 'Keep this draft' } });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const options = within(screen.getByRole('listbox')).getAllByRole('option');
+    await waitFor(() => expect(options[0]).toHaveFocus());
+    fireEvent.keyDown(options[0], { key: 'ArrowDown' });
+    await waitFor(() => expect(options[1]).toHaveFocus());
+    fireEvent.keyDown(options[1], { key: 'Enter' });
+    await waitFor(() => expect(picker).toHaveFocus());
+    expect(picker).toHaveTextContent('GTM Programs');
+    expect(compose).toHaveValue('Keep this draft');
+  });
+
+  test('closes the destination menu on Escape without blurring its trigger', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.click(picker);
+    const option = within(screen.getByRole('listbox')).getByRole('option', { name: 'GTM Programs' });
+    option.focus();
+    fireEvent.keyDown(option, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
+
+  test('keeps the trigger focused when Escape closes an open destination menu', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    picker.focus();
+    fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
+
+  test('closes the destination menu on an outside mouse or touch press', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    fireEvent.click(picker);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    fireEvent.click(picker);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.touchStart(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
   test('keeps an overflow pod selection visible and returns focus to its trigger', async () => {
     const extraPods = [2, 3, 4].map((id) => ({ id: `pod-${id}`, name: `Pod ${id}` }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, pods: [...recap.pods, ...extraPods] } }));

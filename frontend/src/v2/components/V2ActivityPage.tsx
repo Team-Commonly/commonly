@@ -195,7 +195,9 @@ const V2ActivityPage: React.FC = () => {
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
+  const composePickerRef = useRef<HTMLDivElement | null>(null);
   const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const composePickerOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
@@ -268,6 +270,22 @@ const V2ActivityPage: React.FC = () => {
       globalThis.window.removeEventListener('focus', refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!composeMenuOpen) return undefined;
+    const closeOnOutsidePress = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && composePickerRef.current && !composePickerRef.current.contains(target)) {
+        setComposeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsidePress);
+    document.addEventListener('touchstart', closeOnOutsidePress);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsidePress);
+      document.removeEventListener('touchstart', closeOnOutsidePress);
+    };
+  }, [composeMenuOpen]);
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
@@ -662,6 +680,19 @@ const V2ActivityPage: React.FC = () => {
     return recap?.pods || [];
   }, [recap]);
   const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
+  const selectComposePod = (nextPodId: string) => {
+    setComposePodId(nextPodId);
+    setComposeMenuOpen(false);
+    globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+  };
+  const focusComposePickerOption = (index: number) => {
+    if (scopedPods.length === 0) return;
+    const boundedIndex = (index + scopedPods.length) % scopedPods.length;
+    const option = scopedPods[boundedIndex];
+    if (!option) return;
+    setComposeMenuOpen(true);
+    globalThis.window.requestAnimationFrame(() => composePickerOptionRefs.current[option.id]?.focus());
+  };
   const visibleQueue = useMemo(() => {
     const settled = Object.values(settledQueueDecisions)
       .filter((item) => podId === 'all' || item.podId === podId)
@@ -937,7 +968,7 @@ const V2ActivityPage: React.FC = () => {
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
               <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
-                <div className="v2-activity__compose-picker">
+                <div ref={composePickerRef} className="v2-activity__compose-picker">
                   <button
                     type="button"
                     ref={composePickerButtonRef}
@@ -945,22 +976,57 @@ const V2ActivityPage: React.FC = () => {
                     aria-haspopup="listbox"
                     aria-expanded={composeMenuOpen}
                     onClick={() => setComposeMenuOpen((open) => !open)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && composeMenuOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setComposeMenuOpen(false);
+                        return;
+                      }
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        focusComposePickerOption(0);
+                      } else if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        focusComposePickerOption(scopedPods.length - 1);
+                      }
+                    }}
                     disabled={composing || scopedPods.length === 0}
                   >
                     {composePodName}
                   </button>
                   {composeMenuOpen && <div className="v2-activity__compose-picker-menu" role="listbox" aria-label={t('activity.compose.podLabel')}>
-                    {scopedPods.map((pod) => (
+                    {scopedPods.map((pod, index) => (
                       <button
                         key={pod.id}
                         type="button"
                         role="option"
+                        ref={(element) => { composePickerOptionRefs.current[pod.id] = element; }}
                         aria-selected={pod.id === composePodId}
                         className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
-                        onClick={() => {
-                          setComposePodId(pod.id);
-                          setComposeMenuOpen(false);
-                          globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+                        onClick={() => selectComposePod(pod.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            focusComposePickerOption(index + 1);
+                          } else if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            focusComposePickerOption(index - 1);
+                          } else if (event.key === 'Home') {
+                            event.preventDefault();
+                            focusComposePickerOption(0);
+                          } else if (event.key === 'End') {
+                            event.preventDefault();
+                            focusComposePickerOption(scopedPods.length - 1);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setComposeMenuOpen(false);
+                            composePickerButtonRef.current?.focus();
+                          } else if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            selectComposePod(pod.id);
+                          }
                         }}
                       >
                         {pod.name}
