@@ -1,7 +1,8 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
-import MenuIcon from '@mui/icons-material/Menu';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
@@ -13,6 +14,7 @@ import {
   UseV2PodDetailResult,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -139,22 +141,24 @@ interface V2ThreadProps {
   // to V2MessageRow → FilePill so the click opens the inspector
   // artifact preview instead of window.open()'ing a raw file in a new tab.
   onOpenFile?: (fileName: string) => void;
-  // Opens the mobile pods drawer (<=760px). The hamburger in the chat header
-  // is the primary way back to the pod list on phones, where the sidebar is
-  // an overlay rather than a visible column. Hidden via CSS on desktop.
-  onOpenMobileNav?: () => void;
+  // Phone only (<=760px): the pods list is a page and a pod is the next page,
+  // so the header carries a back control instead of a drawer hamburger.
+  // Hidden via CSS on desktop, where the sidebar is a visible column.
+  onBack?: () => void;
   // A ruling changes the one workspace attention collection owned by
   // V2Layout, so its sidebar, inspector, and phone badge refresh together.
   onDecisionSettled?: () => void;
 }
 
-const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav, onDecisionSettled }) => {
+const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onBack, onDecisionSettled }) => {
   const { t } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
   } = detail;
   const api = useV2Api();
+  const navigate = useNavigate();
+  const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
   const [draft, setDraft] = useState('');
@@ -205,13 +209,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
   // Setting one composer target clears the other. Two chips would be two
   // meanings for one send, and the resolver rejects a message carrying both.
+  // Aiming puts the cursor in the field so Esc (un-aim) and typing both land.
   const aimAtThread = useCallback((rootId: string, preview: string) => {
     setReplyTarget(null);
     setThreadTarget({ id: rootId, preview });
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessage = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     setThreadTarget(null);
     setReplyTarget(m);
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessageThread = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     // The action is available on every visible message, including replies.
@@ -498,8 +505,44 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // which reads as "load older is broken". Key on the newest message's id so
   // prepends are ignored.
   const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
-  useEffect(() => {
+  // Direction C history: the reader's position is respected. New messages
+  // pull the view down only when it was already at the bottom (or the message
+  // is mine); otherwise they count up in the Jump-to-latest pill.
+  const atBottomRef = useRef(true);
+  const [jumpCount, setJumpCount] = useState(0);
+  // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const edgeRef = useRef<HTMLDivElement | null>(null);
+  const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    atBottomRef.current = true;
+    setJumpCount(0);
+    setScrolledUp(false);
+  }, []);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const near = distance < 80;
+      atBottomRef.current = near;
+      setScrolledUp(distance > el.clientHeight);
+      if (near) setJumpCount(0);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [pod?._id]);
+  const newestIsMine = messages.length > 0 && String(messages[messages.length - 1]?.user_id || '') === String(currentUser?._id || '');
+  useEffect(() => {
+    if (!newestMessageId) return;
+    if (atBottomRef.current || newestIsMine) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setJumpCount(0);
+    } else {
+      setJumpCount((count) => count + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newestMessageId]);
 
   // Prepending changes scrollHeight, so without this the viewport jumps. Hold
@@ -519,6 +562,41 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     el.scrollTop = el.scrollHeight - anchor;
     scrollAnchorRef.current = null;
   }, [messages]);
+
+  // Pasting an image into the field attaches it. The handler is defined
+  // later (it needs the upload plumbing), so the effect reads it through a ref
+  // and stays above the early return with the other hooks.
+  const attachFileRef = useRef<((file: File | null) => Promise<void>) | null>(null);
+  useEffect(() => {
+    const el = composerInputRef.current;
+    if (!el) return undefined;
+    const onPaste = (event: ClipboardEvent) => {
+      const file = Array.from(event.clipboardData?.files || []).find((candidate) => candidate.type.startsWith('image/'));
+      if (!file) return;
+      event.preventDefault();
+      void attachFileRef.current?.(file);
+    };
+    el.addEventListener('paste', onPaste);
+    return () => el.removeEventListener('paste', onPaste);
+  }, [pod?._id]);
+
+  useEffect(() => {
+    if (!loading && pod && messages.length === 0) composerInputRef.current?.focus();
+  }, [loading, pod?._id, messages.length]);
+
+  // Reaching the top loads the previous page; the edge line is the sentinel.
+  useEffect(() => {
+    const edge = edgeRef.current;
+    const root = messagesContainerRef.current;
+    if (!edge || !root || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (!hasMore || loadingOlder || loading) return;
+      void handleLoadOlder();
+    }, { root, rootMargin: '120px 0px 0px 0px' });
+    observer.observe(edge);
+    return () => observer.disconnect();
+  }, [hasMore, loadingOlder, loading, handleLoadOlder, pod?._id]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -679,18 +757,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [mentionOpen]);
 
-  // Mobile-only hamburger: opens the pods slide-over drawer. CSS hides it on
-  // desktop (>=761px) where the sidebar is a permanent column. Without it a
-  // phone user who lands in a pod chat has no way back to the pod list.
-  const mobileNavButton = onOpenMobileNav ? (
+  // Phone-only back control: returns to the pods list page. CSS hides it on
+  // desktop (>=761px) where the sidebar is a permanent column.
+  const mobileNavButton = onBack ? (
     <button
       type="button"
-      className="v2-chat__mobile-nav-btn"
-      onClick={onOpenMobileNav}
-      title={t('podChat.mobile.showPods')}
-      aria-label={t('podChat.mobile.showPodsList')}
+      className="v2-thread__back"
+      onClick={onBack}
+      title={t('podChat.header.backToPods')}
+      aria-label={t('podChat.header.backToPods')}
     >
-      <MenuIcon fontSize="small" aria-hidden="true" />
+      <ArrowBackIcon fontSize="small" aria-hidden="true" />
     </button>
   ) : null;
 
@@ -858,6 +935,25 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // draft so the user can add accompanying text and send when ready). Both
   // paths POST to /api/uploads with the active podId so the file shows up in
   // the inspector's Artifacts section.
+  // Paste an image straight into the thread: from the plus menu (clipboard
+  // read) or by pasting into the field.
+  const attachFromClipboard = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => candidate.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          const ext = type.split('/')[1] || 'png';
+          await handleAttachFile(new File([blob], `pasted-${Date.now()}.${ext}`, { type }));
+          return;
+        }
+      }
+      setComposerError(t('podChat.composer.clipboardEmpty'));
+    } catch {
+      fileInputRef.current?.click();
+    }
+  };
   const handleAttachFile = async (file: File | null) => {
     if (!file || uploading) return;
     setUploading(true);
@@ -891,8 +987,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         // The rule the ruling states is "a send consumes the target on EVERY
         // path" — written that way precisely because per-path wiring is what
         // keeps going wrong here.
+        // One attachment model (direction C): the image goes out as the same
+        // `[[upload:…|image]]` manifest a file does, so the row renders a
+        // thumbnail and an agent reads it through the attachment tool. The
+        // bare URL remains only for a server that returned no file key.
+        const imageContent = uploaded.fileName
+          ? `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|image]]`
+          : uploaded.url;
         const created = await sendMessage(
-          uploaded.url,
+          imageContent,
           'image',
           replyTarget?.id || undefined,
           threadTarget?.id || undefined,
@@ -915,17 +1018,31 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+  attachFileRef.current = handleAttachFile;
 
-  const onlineAgentCount = agents.filter((agent) => (
-    !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
-  )).length;
-  const workingClass = onlineAgentCount > 0 ? ' v2-thread__working--active' : '';
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
+  // Header meta (direction C): members · agents · board N open · bound
+  // channels. The agents-working count left the header for the inspector.
+  const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
+  const metaParts: React.ReactNode[] = [
+    <span key="members">{t('podChat.header.members', { count: humanMemberCount })}</span>,
+    <span key="agents">{t('podChat.header.agents', { count: agents.length })}</span>,
+  ];
+  if (headerMeta.boardOpen !== null) {
+    metaParts.push(
+      <button key="board" type="button" className="v2-pod-header__board" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
+        {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
+      </button>,
+    );
+  }
+  headerMeta.channels.forEach((channel) => {
+    metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
+  });
 
   return (
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat v2-thread">
-        <header className="v2-thread__header">
+        <header className="v2-thread__header v2-pod-header">
           <div className="v2-thread__header-row">
             {mobileNavButton}
             <div className="v2-thread__title">
@@ -933,12 +1050,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 <h1>{pod.name}</h1>
                 {pod.description && <p>{pod.description}</p>}
               </div>
-              <span className={`v2-thread__working v2-thread__working--mobile${workingClass}`}>
-                {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
-              </span>
             </div>
-            <span className={`v2-thread__working v2-thread__working--desktop${workingClass}`}>
-              {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
+            <span className="v2-pod-header__meta v2-pod-header__meta--compact" aria-hidden="true">
+              {t('podChat.header.compactMeta', { members: humanMemberCount, count: agents.length })}
+            </span>
+            <span className="v2-pod-header__meta">
+              {metaParts.map((part, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 && <span className="v2-pod-header__sep" aria-hidden="true">·</span>}
+                  {part}
+                </React.Fragment>
+              ))}
             </span>
             {onToggleInspector && (
               <button
@@ -974,6 +1096,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           hasMore={hasMore}
           loadingOlder={loadingOlder}
           onLoadOlder={() => { void handleLoadOlder(); }}
+          edgeRef={edgeRef}
+          jumpCount={jumpCount}
+          showJump={scrolledUp}
+          onJump={jumpToLatest}
           loading={loading}
           error={error}
           starterPanel={starterPanelVisible ? (
@@ -1017,12 +1143,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       <div className="v2-empty__text">{t('podChat.empty.agentDmText')}</div>
                     </>
                   ) : (
-                    <>
-                      <div className="v2-empty__title">{t('podChat.empty.quietTitle')}</div>
-                      <div className="v2-empty__text">
-                        {t('podChat.empty.quietText')}
-                      </div>
-                    </>
+                    // Direction C: an empty pod is one mono line and a focused composer.
+                    <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
                   )}
                 </div>
           ) : undefined}
@@ -1135,6 +1257,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       return;
                     }
                   }
+                  // Esc with no mention menu open un-aims the composer (the aim
+                  // chip's keyboard cancel); the draft itself is kept.
+                  if (event.key === 'Escape' && (replyTarget || threadTarget)) {
+                    event.preventDefault();
+                    setReplyTarget(null);
+                    setThreadTarget(null);
+                    return;
+                  }
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     void handleSend();
@@ -1143,6 +1273,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 onMentionSelect={selectMention}
                 onSend={() => { void handleSend(); }}
                 onAttach={(file) => { void handleAttachFile(file); }}
+                onPasteFromClipboard={() => { void attachFromClipboard(); }}
                 onCancelReply={() => setReplyTarget(null)}
                 onCancelThread={() => setThreadTarget(null)}
               />

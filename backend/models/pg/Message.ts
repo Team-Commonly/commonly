@@ -18,6 +18,7 @@ interface MessageRow {
   // for ordinary messages.
   payload?: unknown;
   reply_to_message_id?: string;
+  thread_root_id?: string | number | null;
   created_at: unknown;
   updated_at?: unknown;
   username?: string;
@@ -170,6 +171,8 @@ class Message {
         podId,
         recipientUserId: userId,
         repliedAt: row.created_at,
+        threadRootId: row.thread_root_id,
+        replyToMessageId: row.reply_to_message_id,
       });
       return row;
     } catch (error) {
@@ -273,14 +276,16 @@ class Message {
   // The attention sweep needs an existence check, not a bounded page of
   // messages. Keep that fact at the message store so an old mention can be
   // resolved without reconstructing a pod's history in application memory.
-  static async hasMessageByUserAfter(
+  static async hasReplyByUserAfter(
     podId: string,
     userId: string,
     after: Date,
+    target: { messageId: string; threadRootId?: string | null },
   ): Promise<boolean> {
     const result = await (pool as PgPool).query(
-      'SELECT 1 FROM messages WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 LIMIT 1',
-      [podId, userId, after],
+      `SELECT 1 FROM messages WHERE pod_id = $1 AND user_id = $2 AND created_at > $3
+       AND (reply_to_message_id = $4::int OR thread_root_id = $5::int) LIMIT 1`,
+      [podId, userId, after, target.messageId, target.threadRootId || null],
     );
     return result.rows.length > 0;
   }

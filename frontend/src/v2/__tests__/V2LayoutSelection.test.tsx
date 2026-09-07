@@ -37,7 +37,9 @@ jest.mock('../../context/AuthContext', () => ({
 }));
 
 jest.mock('../components/V2NavRail', () => () => null);
-jest.mock('../components/V2PodsSidebar', () => () => null);
+jest.mock('../components/V2PodsSidebar', () => ({ variant }: { variant?: string }) => (
+  <div data-testid="pods-sidebar" data-variant={variant || 'column'} />
+));
 jest.mock('../components/V2Thread', () => ({ onToggleInspector }: { onToggleInspector?: () => void }) => (
   <button type="button" onClick={onToggleInspector}>toggle inspector</button>
 ));
@@ -98,6 +100,34 @@ describe('V2Layout default pod selection', () => {
       writable: true,
       value: originalMatchMedia,
     });
+  });
+
+  test('on a phone /v2 is the pods list page: no redirect into a pod, no thread, page-variant sidebar', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: jest.fn((query: string) => ({
+        matches: query === '(max-width: 760px)',
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      })),
+    });
+    localStorage.setItem('v2:lastPodId', 'hq');
+    renderAutoLayout();
+    await waitFor(() => expect(screen.getByTestId('pods-sidebar')).toHaveAttribute('data-variant', 'page'));
+    expect(screen.queryByTestId('current-path')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'toggle inspector' })).not.toBeInTheDocument();
+  });
+
+  test('opening a pod records it in the visit log that orders the sidebar’s Recent', () => {
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/workspace']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(Object.keys(JSON.parse(localStorage.getItem('v2:podVisits') || '{}'))).toEqual(['workspace']);
   });
 
   test('a phone starts with its inspector sheet closed even when desktop left it open', () => {

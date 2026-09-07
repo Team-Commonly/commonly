@@ -18,7 +18,9 @@
       "activity": "动态",
       "community": "社区",
       "settings": "设置",
-      "connectors": "连接器"
+      "connectors": "连接器",
+      "needsYou": "待处理",
+      "team": "团队"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
@@ -418,7 +420,8 @@
       "noMessagesTitle": "暂无消息",
       "agentDmText": "这是一对一私信。打个招呼，开始对话。",
       "quietTitle": "这个 Pod 还很安静",
-      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
+      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。",
+      "noMessages": "还没有消息"
     },
     "newPod": {
       "label": "新 Pod 开始操作",
@@ -442,7 +445,14 @@
       "recent_other": "最近收到 {{formattedCount}} 次心跳"
     },
     "header": {
-      "agentsWorking_other": "{{count}} 个智能体正在工作"
+      "agentsWorking_other": "{{count}} 个智能体正在工作",
+      "members_one": "{{count}} 名成员",
+      "members_other": "{{count}} 名成员",
+      "agents_one": "{{count}} 个智能体",
+      "agents_other": "{{count}} 个智能体",
+      "boardOpen": "看板 {{count}} 项待办",
+      "backToPods": "返回 Pod 列表",
+      "compactMeta": "{{members}} · {{count}} 个智能体"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -476,7 +486,15 @@
       "sendAria": "发送消息",
       "postsAs": "发布身份：{{name}}",
       "mentionAgent": "提及智能体",
-      "toSend": "发送"
+      "toSend": "发送",
+      "more": "添加",
+      "attachImage": "添加图片",
+      "pasteImage": "粘贴剪贴板图片",
+      "sendTooltip": "以 {{name}} 身份发送 · Enter",
+      "clipboardEmpty": "剪贴板中没有图片。",
+      "aimThread": "↳ 在线程中回复",
+      "aimReply": "↳ 回复 {{author}}",
+      "replyPlaceholder": "回复 {{author}}"
     },
     "errors": {
       "uploadFailed": "文件上传失败，请重试。"
@@ -501,6 +519,23 @@
       "refresh": "刷新",
       "working": "正在总结…",
       "dismiss": "关闭"
+    },
+    "lightbox": {
+      "close": "关闭",
+      "previous": "上一张",
+      "next": "下一张"
+    },
+    "attachment": {
+      "open": "打开 {{name}}",
+      "showMore": "展开另外 {{count}} 行",
+      "showLess": "收起",
+      "image": "图片"
+    },
+    "history": {
+      "loadingEarlier": "正在加载更早的消息…",
+      "loadEarlier": "加载更早的消息",
+      "beginning": "Pod 的开始",
+      "jumpToLatest": "跳到最新"
     }
   },
   "landing": {
@@ -1336,6 +1371,13 @@
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
       "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
       "openPod": "打开 pod"
+    },
+    "addComputer": {
+      "title": "添加电脑",
+      "lead": "想让智能体在你自己的电脑上运行？在它的终端里粘贴一次：",
+      "after": "然后刷新本页——会出现“在我的电脑上”选项，之后往那台电脑添加智能体再也不需要终端。",
+      "copy": "复制",
+      "copied": "已复制"
     }
   },
   "agentProfile": {
@@ -1557,7 +1599,13 @@
       "new": "新建",
       "connect": "连接 {{platform}}",
       "untitled": "未命名 Pod",
-      "needsYouCount": "{{count}} 项待处理"
+      "needsYouCount": "{{count}} 项待处理",
+      "listTitle": "Pod",
+      "search": "搜索 Pod",
+      "noMatch": "没有匹配的 Pod",
+      "pinnedTitle": "置顶",
+      "recent": "最近",
+      "everything": "全部"
     }
   },
   "feedbackMenu": {

@@ -21,8 +21,7 @@ const CurrentPath = () => {
   return <div data-testid="current-path">{location.pathname}{location.search}</div>;
 };
 
-// The queue now arrives from /decision-queue (TASK-083) — recap.needsYou is
-// only the degrade path when that endpoint fails.
+// Only the queue endpoint supplies attention; recap is not a fallback.
 const decisionQueue = {
   items: [
     {
@@ -38,6 +37,7 @@ const decisionQueue = {
     },
   ],
   count: 2,
+  countsByPod: { 'pod-1': 2 },
   composePodId: 'pod-1',
 };
 
@@ -73,13 +73,8 @@ describe('V2ActivityPage', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Default: the decision-queue endpoint FAILS, exercising the designed
-    // degrade path (fall back to recap.needsYou) — which also keeps the
-    // pre-existing tests' order-based mockResolvedValueOnce chains valid,
-    // since their Once values feed the recap call and this implementation
-    // catches the queue call. The first test overrides with real items.
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/activity/decision-queue') return Promise.reject(new Error('queue down'));
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
       return Promise.resolve({ data: recap });
     });
     await act(async () => { await i18n.changeLanguage('en'); });
@@ -131,15 +126,16 @@ describe('V2ActivityPage', () => {
   });
 
   test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
-    mockGet
-      .mockResolvedValueOnce({ data: recap })
-      .mockResolvedValue({ data: { ...recap, needsYou: [] } });
+    let reads = 0;
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? (++reads === 1 ? { ...decisionQueue, items: [decisionQueue.items[0]], count: 1 } : { items: [], count: 0, countsByPod: {} })
+      : recap }));
     mockPost.mockResolvedValue({ data: { success: true } });
     renderPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
-      '/api/activity/mention-1/acknowledge',
+      '/api/activity/attention-1/acknowledge',
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
@@ -147,7 +143,8 @@ describe('V2ActivityPage', () => {
   });
 
   test('keeps an empty Needs you state honest', async () => {
-    mockGet.mockResolvedValue({ data: { ...recap, needsYou: [] } });
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { items: [], count: 0, countsByPod: {} } : recap }));
     renderPage();
 
     expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
@@ -155,7 +152,8 @@ describe('V2ActivityPage', () => {
   });
 
   test('turns a truly empty workspace into the three factual onboarding rows', async () => {
-    mockGet.mockResolvedValue({ data: { ...recap, needsYou: [], agents: [], board: [] } });
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { items: [], count: 0, countsByPod: {} } : { ...recap, needsYou: [], agents: [], board: [] } }));
     const onGuide = jest.fn();
     window.addEventListener(FIRST_RUN_REOPEN_EVENT, onGuide);
     renderPage();
@@ -296,5 +294,21 @@ describe('V2ActivityPage', () => {
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
     expect(composer).toHaveValue('');
+  });
+
+  test('renders the uncapped count, not the displayed card count', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { ...decisionQueue, count: 91, countsByPod: { 'pod-1': 91 } } : recap }));
+    renderPage();
+    expect(await screen.findByLabelText('91 waiting on you')).toHaveTextContent('91');
+  });
+
+  test('does not substitute recap attention or claim empty on queue failure', async () => {
+    mockGet.mockImplementation((url: string) => url === '/api/activity/decision-queue'
+      ? Promise.reject(new Error('queue down')) : Promise.resolve({ data: recap }));
+    renderPage();
+    expect(await screen.findByRole('status')).toBeInTheDocument();
+    expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing is waiting on you')).not.toBeInTheDocument();
   });
 });

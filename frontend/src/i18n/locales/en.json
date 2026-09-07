@@ -18,7 +18,9 @@
       "activity": "Activity",
       "community": "Community",
       "settings": "Settings",
-      "connectors": "Connectors"
+      "connectors": "Connectors",
+      "needsYou": "Needs you",
+      "team": "Team"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
@@ -418,7 +420,8 @@
       "noMessagesTitle": "No messages yet",
       "agentDmText": "This is a private 1:1 conversation. Say hello to get started.",
       "quietTitle": "This pod is quiet",
-      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply."
+      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply.",
+      "noMessages": "no messages yet"
     },
     "newPod": {
       "label": "New Pod starter actions",
@@ -443,7 +446,14 @@
     },
     "header": {
       "agentsWorking_one": "{{count}} agent working",
-      "agentsWorking_other": "{{count}} agents working"
+      "agentsWorking_other": "{{count}} agents working",
+      "members_one": "{{count}} member",
+      "members_other": "{{count}} members",
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents",
+      "boardOpen": "board {{count}} open",
+      "backToPods": "Back to pods",
+      "compactMeta": "{{members}} · {{count}} agents"
     },
     "team": {
       "view": "View pod team",
@@ -477,7 +487,15 @@
       "sendAria": "Send message",
       "postsAs": "posts as {{name}}",
       "mentionAgent": "mention an agent",
-      "toSend": "to send"
+      "toSend": "to send",
+      "more": "Add",
+      "attachImage": "Attach image",
+      "pasteImage": "Paste image from clipboard",
+      "sendTooltip": "Send as {{name}} · Enter",
+      "clipboardEmpty": "No image on the clipboard.",
+      "aimThread": "↳ replying in thread",
+      "aimReply": "↳ replying to {{author}}",
+      "replyPlaceholder": "Reply to {{author}}"
     },
     "errors": {
       "uploadFailed": "Failed to upload file. Please try again."
@@ -502,6 +520,23 @@
       "refresh": "Refresh",
       "working": "Summarizing…",
       "dismiss": "Dismiss"
+    },
+    "lightbox": {
+      "close": "Close",
+      "previous": "Previous image",
+      "next": "Next image"
+    },
+    "attachment": {
+      "open": "Open {{name}}",
+      "showMore": "Show {{count}} more lines",
+      "showLess": "Show less",
+      "image": "image"
+    },
+    "history": {
+      "loadingEarlier": "loading earlier…",
+      "loadEarlier": "load earlier",
+      "beginning": "beginning of the pod",
+      "jumpToLatest": "Jump to latest"
     }
   },
   "landing": {
@@ -1276,6 +1311,13 @@
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
+    },
+    "addComputer": {
+      "title": "Add a computer",
+      "lead": "Want an agent running on your own machine? One paste in its terminal:",
+      "after": "Then reload this page — an “On my computer” option appears, and adding agents to that machine never needs a terminal again.",
+      "copy": "Copy",
+      "copied": "Copied"
     }
   },
   "compare": {
@@ -1565,7 +1607,13 @@
       "new": "new",
       "connect": "Connect {{platform}}",
       "untitled": "Untitled pod",
-      "needsYouCount": "{{count}} needs you"
+      "needsYouCount": "{{count}} needs you",
+      "listTitle": "Pods",
+      "search": "Search pods",
+      "noMatch": "no pods match",
+      "pinnedTitle": "Pinned",
+      "recent": "Recent",
+      "everything": "Everything"
     }
   },
   "feedbackMenu": {

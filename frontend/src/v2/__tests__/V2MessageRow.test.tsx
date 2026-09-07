@@ -33,14 +33,13 @@ describe('V2MessageRow', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('img', { name: 'Uploaded attachment' })).toHaveAttribute(
+    // Direction C: the image is a thumbnail that opens the lightbox, not a link.
+    expect(screen.getByRole('img', { name: 'image' })).toHaveAttribute(
       'src',
       'https://api.commonly.me/api/uploads/avatar.png',
     );
-    expect(screen.getByRole('link')).toHaveAttribute(
-      'href',
-      'https://api.commonly.me/api/uploads/avatar.png',
-    );
+    expect(screen.getByRole('button', { name: 'Open image' })).toHaveClass('v2-msg__thumb');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
   // A message with no reactions renders NO reactions row at all — the

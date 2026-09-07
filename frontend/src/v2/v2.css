@@ -134,8 +134,8 @@ body.modern-ui.v2-canvas {
 
   /* Layout */
   --v2-rail-w: 56px;
-  --v2-pods-w: 232px;
-  --v2-inspector-w: 300px;
+  --v2-pods-w: 260px;
+  --v2-inspector-w: 272px;
 
   /* Keep production's scoped V2 layer in step with design-system/tokens.css.
      The typing cadence belongs to the minimal mark; pulse/spin retain their
@@ -564,10 +564,6 @@ body.modern-ui.v2-canvas {
    here so resizing a phone-open drawer up to desktop can't leak the overlay
    or backdrop into the normal multi-column layout. */
 .v2-mobile-backdrop {
-  display: none;
-}
-
-.v2-chat__mobile-nav-btn {
   display: none;
 }
 
@@ -1030,42 +1026,6 @@ body.modern-ui.v2-canvas {
   cursor: not-allowed;
 }
 
-.v2-pods__search {
-  position: relative;
-  margin-bottom: 14px;
-}
-
-.v2-pods__search-input {
-  width: 100%;
-  height: 40px;
-  padding: 0 12px 0 32px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: var(--v2-radius);
-  font-size: 13px;
-  color: var(--v2-text-primary);
-  outline: none;
-  transition: background 80ms ease, border-color 80ms ease;
-}
-
-.v2-pods__search-input::placeholder {
-  color: var(--v2-text-muted);
-}
-
-.v2-pods__search-input:focus {
-  background: var(--v2-surface);
-  border-color: var(--v2-border-strong);
-}
-
-.v2-pods__search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--v2-text-muted);
-  pointer-events: none;
-}
-
 .v2-pods__filters {
   /* Fourth mechanism for this row (Sam's ruling 2026-08-23): every chip the
      SAME size, at least as roomy as the widest label. Content-sized chips
@@ -1143,51 +1103,6 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
   font-weight: 600;
   color: var(--v2-text-muted);
-}
-
-/* Wrapper that holds the row button and the absolute-positioned pin button
-   as siblings (HTML doesn't allow <button> inside <button>, so the pin
-   sits next to the row, not nested). */
-.v2-pods__row {
-  position: relative;
-  margin-bottom: 6px;
-}
-.v2-pods__row:last-child { margin-bottom: 0; }
-
-/* Hover-shown pin button. Lives in the top-right of the row; reveals on
-   hover or persists when the pod is pinned. Mirrors Google-Chat / Slack
-   "show on hover, pinned-pods stick" pattern. */
-.v2-root button.v2-pods__pin {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--v2-text-tertiary);
-  opacity: 0;
-  transition: opacity 80ms ease, background 80ms ease, color 80ms ease;
-}
-.v2-pods__row:hover .v2-pods__pin,
-.v2-pods__pin:focus-visible,
-.v2-pods__pin--active {
-  opacity: 1;
-}
-
-/* The pin overlays the reserved time slot, so revealing it cannot reflow the
-   title or preview. */
-.v2-pods__row:hover .v2-pods__item-time,
-.v2-pods__row--pinned .v2-pods__item-time {
-  visibility: hidden;
-}
-.v2-root button.v2-pods__pin:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-.v2-root button.v2-pods__pin--active {
-  color: var(--v2-accent);
 }
 
 .v2-pods__item {
@@ -5728,23 +5643,6 @@ body.modern-ui.v2-canvas {
     cursor: pointer;
   }
 
-  /* Hamburger in the chat header — primary way back to the pod list. */
-  .v2-chat__mobile-nav-btn {
-    display: inline-grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    color: var(--v2-text-secondary);
-    border: 1px solid var(--v2-border);
-    border-radius: var(--v2-radius-sm);
-    background: var(--v2-surface);
-  }
-
-  .v2-chat__mobile-nav-btn:hover {
-    background: var(--v2-surface-hover);
-    color: var(--v2-text-primary);
-  }
 
   /* Close (X) inside the drawer header. Title row becomes a flex row so the
      X sits at the far end. Drop the fixed 32px height so the 44px tap target
@@ -6593,6 +6491,34 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
   white-space: pre-wrap;
   word-break: break-all;
+}
+/* ADR-026 D1: one-paste computer setup, shown only while no machine exists. */
+.v2-byo__add-computer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-md, 8px);
+  background: var(--v2-surface-hover, #f9fafb);
+}
+.v2-byo__add-computer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2-byo__add-computer-row code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface, #fff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--v2-text-primary);
+  overflow-x: auto;
+  white-space: nowrap;
 }
 .v2-byo__cta-row {
   display: flex;
@@ -9830,7 +9756,7 @@ body.modern-ui.v2-canvas {
    chat and inspector receive their own structural passes in PRs 2 and 3. */
 
 .v2-shell {
-  gap: 12px;
+  gap: 14px;
   padding: 14px;
   box-sizing: border-box;
 }
@@ -9850,178 +9776,6 @@ body.modern-ui.v2-canvas {
   height: 100%;
   padding: 6px 0;
   background: var(--v2-shell-bg);
-}
-
-.v2-pods__list {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 18px;
-  overflow-y: auto;
-}
-
-.v2-pods__group {
-  min-width: 0;
-}
-
-.v2-pods__group-label {
-  margin: 0 0 6px;
-  padding: 0 12px;
-  color: var(--v2-text-muted);
-  font-family: var(--v2-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 16px;
-  text-transform: lowercase;
-}
-
-.v2-pods__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v2-pods__pod-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.v2-pods__pod-group {
-  min-width: 0;
-}
-
-.v2-pods__subgroup-label {
-  margin: 0 0 6px;
-  padding: 0 24px;
-  color: var(--v2-text-placeholder);
-  font-family: var(--v2-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 16px;
-  text-transform: lowercase;
-}
-
-.v2-root button.v2-pods__row,
-.v2-root button.v2-pods__channel,
-.v2-root button.v2-pods__new-line,
-.v2-root button.v2-pods__connect-line {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 500 13px/18px var(--v2-font);
-  text-align: left;
-}
-
-.v2-root button.v2-pods__row {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  border-radius: 4px;
-}
-
-.v2-root button.v2-pods__row:hover,
-.v2-root button.v2-pods__channel:hover:not(:disabled) {
-  background: var(--v2-surface-hover);
-}
-
-.v2-root button.v2-pods__row--selected,
-.v2-root button.v2-pods__row--selected:hover {
-  background: var(--v2-accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.v2-pods__row-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-pods__attention-count {
-  margin-left: auto;
-  color: #fff;
-  font-family: var(--v2-font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-}
-
-.v2-pods__direct-avatar.v2-avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 8px;
-}
-
-.v2-root button.v2-pods__channel {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 4px;
-  color: var(--v2-text-secondary);
-}
-
-.v2-root button.v2-pods__channel:disabled {
-  cursor: default;
-}
-
-.v2-pods__channel-dot {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 8px;
-  border: 1px solid var(--v2-border-strong);
-  background: transparent;
-}
-
-.v2-pods__channel-dot--live {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent);
-}
-
-.v2-root button.v2-pods__new-line,
-.v2-root button.v2-pods__connect-line {
-  min-height: 32px;
-  padding: 7px 12px;
-  color: var(--v2-accent-text);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.v2-root button.v2-pods__new-line { margin-top: 2px; }
-
-.v2-pods__create {
-  margin: 4px 12px 0;
-  padding: 8px;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
-}
-
-.v2-pods__create-input {
-  min-height: 32px;
-  font-size: 12px;
-}
-
-.v2-root button.v2-pods__create-cancel,
-.v2-root button.v2-pods__create-submit {
-  min-height: 30px;
-  padding: 6px 9px;
-}
-
-.v2-pods__empty {
-  padding: 28px 12px;
-  font-size: 12px;
 }
 
 @media (max-width: 760px) {
@@ -10392,8 +10146,8 @@ body.modern-ui.v2-canvas {
 .v2-thread__header {
   flex: 0 0 auto;
   box-sizing: border-box;
-  min-height: 64px;
-  padding: 12px 14px;
+  min-height: 50px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
 }
@@ -10421,10 +10175,16 @@ body.modern-ui.v2-canvas {
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-primary);
-  font: 700 22px/28px var(--v2-font-display);
-  letter-spacing: -0.01em;
+  /* Direction C (walk-1 ruling b): a pod is a conversation, not a page — sans
+     15/600 replaces the display face here; Bricolage stays on page titles. */
+  font: 600 15px/20px var(--v2-font);
+  letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The description gives way before the name truncates (walk-1 §3). */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .v2-thread__title p {
@@ -10432,23 +10192,11 @@ body.modern-ui.v2-canvas {
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-muted);
-  font: 400 14px/20px var(--v2-font);
+  font: 400 13px/18px var(--v2-font);
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1 1 0;
 }
-
-.v2-thread__working {
-  flex: 0 0 auto;
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  white-space: nowrap;
-}
-
-.v2-thread__working::before { content: '●'; color: var(--v2-text-muted); }
-
-.v2-thread__working--active::before { color: var(--v2-accent); }
-
-.v2-thread__working--mobile { display: none; }
 
 .v2-root button.v2-thread__inspector-toggle {
   display: inline-grid;
@@ -10490,101 +10238,6 @@ body.modern-ui.v2-canvas {
 
 .v2-message-row--decision { padding: 8px 0; }
 
-.v2-composer {
-  flex: 0 0 auto;
-  margin: 10px 14px 14px;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
-  background: var(--v2-surface);
-}
-
-.v2-composer__target {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--v2-border-soft);
-  color: var(--v2-text-secondary);
-  font: 400 12px/16px var(--v2-font);
-}
-
-.v2-root button.v2-composer__target button {
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-muted);
-  font-size: 18px;
-  line-height: 1;
-}
-
-.v2-composer__field { position: relative; }
-
-.v2-root .v2-composer__field > textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 68px;
-  padding: 10px 12px 6px;
-  resize: vertical;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 400 14px/20px var(--v2-font);
-}
-
-.v2-composer__file { display: none; }
-
-.v2-composer__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 6px 8px 6px 10px;
-  border-top: 1px solid var(--v2-border-soft);
-}
-
-.v2-root button.v2-composer__attach {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-secondary);
-}
-
-.v2-root button.v2-composer__attach:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
-
-.v2-composer__posts-as {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-root button.v2-composer__send {
-  min-height: 28px;
-  padding: 4px 12px;
-  border: 1px solid var(--v2-ink);
-  border-radius: 4px;
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  font: 600 12px/18px var(--v2-font);
-}
-
-.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
-.v2-root button.v2-composer__send:disabled { cursor: not-allowed; opacity: 0.45; }
-
 .v2-composer__error {
   margin: 0;
   padding: 0 10px 8px;
@@ -10603,16 +10256,14 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-thread__header {
-    min-height: 66px;
-    padding: 8px 14px;
+    min-height: 50px;
+    padding: 0 12px;
   }
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: block; }
-  .v2-thread__title h1 { font: 700 20px/24px var(--v2-font-display); }
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); }
   .v2-thread__title p { display: none; }
-  .v2-thread__working--desktop { display: none; }
-  .v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }
 
   .v2-thread .v2-msg__author,
   .v2-thread .v2-msg__author-btn { font-size: 15px; }
@@ -10626,30 +10277,6 @@ body.modern-ui.v2-canvas {
   .v2-decision-card__option { width: 100%; }
   .v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }
   .v2-root button.v2-decision-card__other { align-self: center; min-height: 30px; }
-
-  .v2-composer { margin: 8px 16px 62px; border: 0; background: transparent; }
-  .v2-composer__field { display: flex; align-items: stretch; gap: 12px; }
-  .v2-root .v2-composer__field > textarea {
-    min-height: 44px;
-    height: 44px;
-    flex: 1;
-    padding: 11px 12px;
-    resize: none;
-    border: 1px solid var(--v2-border);
-    border-radius: 4px;
-    background: var(--v2-surface);
-    line-height: 20px;
-  }
-  .v2-composer__actions { min-height: 0; padding: 0; border: 0; }
-  .v2-root button.v2-composer__attach,
-  .v2-composer__posts-as { display: none; }
-  .v2-root button.v2-composer__send {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-    border-radius: 4px;
-    font-size: 11px;
-  }
 
   /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
      while the transcript, composer, and tab bar share the white canvas. */
@@ -10677,20 +10304,6 @@ body.modern-ui.v2-canvas {
     border-radius: 12px 12px 0 0;
     box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
   }
-
-  .v2-root button.v2-chat__mobile-nav-btn {
-    display: inline-grid;
-    width: 28px;
-    height: 28px;
-    flex: 0 0 28px;
-    place-items: center;
-    padding: 0;
-    border: 1px solid var(--v2-border);
-    border-radius: 4px;
-    background: var(--v2-surface);
-    color: var(--v2-text-secondary);
-  }
-  .v2-chat__mobile-nav-btn svg { width: 16px; height: 16px; }
 
   .v2-mobile-tabs {
     position: fixed;
@@ -10743,4 +10356,812 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-mobile-tabs { display: grid; }
+}
+
+/* ---------- Workspace at scale · direction C · PR 1 (sidebar + header + 390 list page) ----------
+   Ruled 2026-09-06 (walk 1): grid 56 / 260 / fluid / 272 with 14px gaps; the sidebar
+   is a white bordered panel; Pinned, Recent (eight by my last visit), Everything folded
+   by kind; every row carries a 22px mark, the needs-you pill and the last-message time;
+   the pod header is 50px with a 15/600 sans title and inline meta. On the phone the
+   pods list is a page and the drawer is gone. Nothing under 11px mono / 12px sans. */
+
+.v2-pods-aside {
+  background: var(--v2-shell-bg);
+}
+
+.v2-pods {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-content-radius);
+  background: var(--v2-surface);
+  overflow: hidden;
+}
+
+.v2-pods__page-title {
+  margin: 0;
+  padding: 14px 14px 4px;
+  color: var(--v2-text-primary);
+  font: 600 17px/24px var(--v2-font);
+}
+
+.v2-pods__tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 6px;
+}
+
+.v2-pods__search {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+}
+
+.v2-pods__search:focus-within {
+  border-color: var(--v2-border-strong);
+  box-shadow: inset 0 0 0 2px var(--v2-accent);
+}
+
+.v2-pods__search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  outline: none;
+}
+
+.v2-pods__search-input::placeholder {
+  color: var(--v2-text-placeholder);
+}
+
+.v2-pods__search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.v2-pods__search-kbd {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 3px;
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-pods__new {
+  display: inline-grid;
+  /* Same 32px as the search box beside it — the two tools share one baseline. */
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 16px/1 var(--v2-font);
+}
+
+.v2-root button.v2-pods__new:hover:not(:disabled),
+.v2-root button.v2-pods__new[aria-expanded="true"] {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-pods__list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 0 8px;
+  overflow-y: auto;
+}
+
+.v2-pods__section {
+  min-width: 0;
+}
+
+.v2-pods__section-head,
+.v2-root button.v2-pods__section-head {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 600 12px/16px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-pods__section-head { cursor: pointer; }
+.v2-root button.v2-pods__section-head:hover { color: var(--v2-text-primary); }
+
+.v2-pods__section-count {
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-pods__section-chevron {
+  margin-left: auto;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+}
+
+.v2-pods__section-chevron::before { content: '▸'; }
+[aria-expanded="true"] > .v2-pods__section-chevron::before { content: '▾'; }
+.v2-pods__search-kbd::before { content: '⌘K'; }
+
+.v2-root .v2-pods__section--kind button.v2-pods__section-head {
+  padding-left: 24px;
+  text-transform: lowercase;
+}
+
+.v2-pods__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.v2-root button.v2-pods__row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 500 14px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-pods__row--in-fold { padding-left: 24px; }
+
+/* A row and its pin control are siblings (a button cannot nest a button).
+   The pin shows on hover, focus, or when the pod is pinned; the meta column
+   yields to it so nothing overlaps. */
+.v2-pods__rowwrap { position: relative; }
+
+.v2-root button.v2-pods__pin {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  opacity: 0;
+}
+
+.v2-root button.v2-pods__pin::before { content: '⌖'; font: 500 12px/1 var(--v2-font-mono); }
+
+.v2-pods__rowwrap:hover .v2-pods__pin,
+.v2-root button.v2-pods__pin:focus-visible,
+.v2-root button.v2-pods__pin--active { opacity: 1; }
+
+.v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); border-color: var(--v2-accent); }
+.v2-root button.v2-pods__pin:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-pods__rowwrap:hover .v2-pods__row-meta,
+.v2-pods__rowwrap:focus-within .v2-pods__row-meta,
+.v2-pods__rowwrap--pinned .v2-pods__row-meta { padding-right: 30px; }
+
+.v2-root button.v2-pods__row:hover { background: var(--v2-surface-hover); }
+
+.v2-root button.v2-pods__row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--v2-accent);
+}
+
+.v2-root button.v2-pods__row--selected,
+.v2-root button.v2-pods__row--selected:hover {
+  background: var(--v2-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.v2-pods__row-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  /* 11px is the mono floor (walk-1 ruling h); two letters fit the 22px square. */
+  font: 500 11px/1 var(--v2-font-mono);
+}
+
+/* A DM row carries the peer's avatar in the same 22px slot. */
+.v2-pods__row-mark.v2-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.v2-root button.v2-pods__row--selected .v2-pods__row-mark {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.v2-pods__row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-root button.v2-pods__row--unread .v2-pods__row-name { font-weight: 600; }
+
+.v2-pods__row-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: rgba(255, 255, 255, 0.85); }
+
+.v2-pods__row-pill {
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--v2-ink);
+  color: #fff;
+  font: 700 11px/1 var(--v2-font-mono);
+}
+
+.v2-root button.v2-pods__row--selected .v2-pods__row-pill {
+  background: #fff;
+  color: var(--v2-accent);
+}
+
+.v2-pods__create {
+  margin: 0 10px 6px;
+}
+
+.v2-pods__empty { padding: 20px 12px; }
+.v2-pods__empty--mono { color: var(--v2-text-muted); font: 400 12px/16px var(--v2-font-mono); }
+
+/* Pod header: 50px, sans 15/600 title, description inline, meta on the right. */
+.v2-pod-header .v2-thread__header-row {
+  min-height: 50px;
+}
+
+.v2-pod-header__meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
+
+/* The compact meta is the phone's; both carry the base class, so the
+   compact rule must out-rank the base `display: flex` above it. */
+.v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }
+
+.v2-root button.v2-pod-header__board {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+
+.v2-root button.v2-pod-header__board:hover { text-decoration: underline; }
+
+.v2-root button.v2-thread__back { display: none; }
+
+@media (max-width: 760px) {
+  /* The list is a page: full width, no drawer, no backdrop. */
+  .v2-shell--list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  .v2-shell--list .v2-pods-aside--page {
+    position: static;
+    width: 100%;
+    height: calc(100vh - 56px);
+    transform: none;
+    box-shadow: none;
+    border: 0;
+  }
+
+  .v2-shell--list .v2-pods {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .v2-pods-aside:not(.v2-pods-aside--page) { display: none; }
+  .v2-mobile-backdrop { display: none; }
+
+  .v2-pod-header .v2-thread__header-row { min-height: 50px; }
+  .v2-pod-header__meta { display: none; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; }
+
+  .v2-root button.v2-thread__back {
+    display: inline-grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--v2-border);
+    border-radius: 4px;
+    background: var(--v2-surface);
+    color: var(--v2-text-secondary);
+  }
+
+  /* Tab bar with labels; the count lives inside the label, one counter. */
+  .v2-mobile-tabs {
+    height: 56px;
+    padding: 6px 8px 4px;
+  }
+
+  .v2-root button.v2-mobile-tabs__item {
+    display: flex;
+    width: auto;
+    height: 44px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 6px;
+    background: transparent;
+    color: var(--v2-text-muted);
+  }
+
+  .v2-root button.v2-mobile-tabs__item--active,
+  .v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled) {
+    background: transparent;
+    color: var(--v2-text-primary);
+  }
+
+  .v2-mobile-tabs__icon {
+    display: grid;
+    width: 24px;
+    height: 20px;
+    place-items: center;
+  }
+
+  .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__icon { color: var(--v2-ink); }
+
+  .v2-mobile-tabs__label {
+    font: 500 11px/12px var(--v2-font-mono);
+    white-space: nowrap;
+  }
+
+  .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__label { font-weight: 700; }
+}
+
+/* ---------- Workspace at scale · direction C · PR 2a (composer, attachments, history) ----------
+   One-line composer with a plus menu, Send only with text, no identity line;
+   images as 156×104 thumbnails with a lightbox, files as chips with a text type
+   badge, code past six lines collapsed; older messages load on scroll with a
+   mono edge line and a Jump-to-latest pill. */
+
+.v2-composer {
+  flex: 0 0 auto;
+  margin: 0 16px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-composer--typing,
+.v2-composer:focus-within { border-color: var(--v2-border-strong); }
+
+.v2-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 8px 7px 10px;
+}
+
+.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; padding-bottom: 2px; }
+
+.v2-root button.v2-composer__plus {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-composer__plus::before { content: '+'; font: 500 16px/1 var(--v2-font); }
+.v2-root button.v2-composer__plus:hover:not(:disabled),
+.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-composer__menu {
+  position: absolute;
+  left: 0;
+  bottom: 32px;
+  z-index: 4;
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-root .v2-composer__menu > button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root .v2-composer__menu > button:hover,
+.v2-root .v2-composer__menu > button:focus-visible { background: var(--v2-surface-hover); outline: none; }
+
+.v2-thread__empty-line {
+  display: block;
+  padding: 12px 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-composer__tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 4px 2px 6px;
+  margin-bottom: 4px;
+  border-radius: 3px;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-root button.v2-composer__tag-cancel {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.v2-composer__field { position: relative; min-width: 0; flex: 1; }
+
+.v2-composer__file { display: none; }
+
+.v2-root .v2-composer__field > textarea::placeholder { color: var(--v2-text-placeholder); }
+
+/* The row carries the focus state on its border; the field itself draws none. */
+.v2-root .v2-composer__field > textarea:focus,
+.v2-root .v2-composer__field > textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.v2-root .v2-composer__field > textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  max-height: 112px;
+  padding: 6px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-composer__uploading {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-composer__send {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  margin-bottom: 0;
+  border: 1px solid var(--v2-ink);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: 500 14px/1 var(--v2-font-mono);
+}
+
+.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
+.v2-root button.v2-composer__send:disabled { cursor: progress; opacity: 0.6; }
+
+.v2-composer__error,
+.v2-composer__warnings { padding: 0 10px 8px; }
+
+/* Attachments */
+.v2-msg__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__thumb {
+  display: block;
+  width: 156px;
+  height: 104px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface-tint);
+  position: relative;
+}
+
+.v2-root button.v2-msg__thumb:hover { border-color: var(--v2-border-strong); }
+
+.v2-msg__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.v2-msg__thumb-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-msg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__chip,
+.v2-msg__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 12.5px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-msg__chip:hover { background: var(--v2-surface-hover); }
+
+.v2-msg__chip-ext {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  text-transform: uppercase;
+}
+
+.v2-msg__chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-msg__chip-size {
+  flex: 0 0 auto;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* Long code collapses after six lines; expands in place. */
+.v2-msg__collapse { position: relative; }
+.v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
+
+.v2-root button.v2-msg__more {
+  display: inline-block;
+  margin: 2px 0 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 12.5px/18px var(--v2-font);
+}
+
+.v2-root button.v2-msg__more:hover { text-decoration: underline; }
+
+/* Lightbox */
+.v2-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 24, 40, 0.9);
+  cursor: zoom-out;
+}
+
+.v2-lightbox__image {
+  max-width: min(92vw, 1400px);
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.v2-lightbox__name {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-lightbox__close,
+.v2-root button.v2-lightbox__nav {
+  position: absolute;
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 500 16px/1 var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-lightbox__close { top: 12px; right: 12px; }
+.v2-root button.v2-lightbox__nav--prev { left: 12px; top: 50%; transform: translateY(-50%); }
+.v2-root button.v2-lightbox__nav--next { right: 12px; top: 50%; transform: translateY(-50%); }
+
+/* History edge + jump pill */
+.v2-thread__edge {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 10px;
+}
+
+.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line { cursor: pointer; }
+.v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
+
+/* The wrap is the scroller's last child and STICKS to its bottom edge: a
+   0-height wrap with an absolute pill resolved `bottom: 12px` against a box
+   at the end of the transcript, ~1100px below the viewport when the pill
+   mounts a viewport up (ux-lead gate on #1579). Sticky needs real height. */
+.v2-thread__jump-wrap {
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  height: 28px;
+  pointer-events: none;
+}
+
+.v2-root button.v2-thread__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  pointer-events: auto;
+  border: 1px solid #dde0e6;
+  border-radius: 14px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 13px/26px var(--v2-font);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-thread__jump:hover { background: var(--v2-surface-hover); }
+.v2-thread__jump-count { color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
+
+@media (max-width: 760px) {
+  /* Sits above the 56px tab bar; the row itself keeps its desktop shape. */
+  .v2-composer { margin: 0 12px 64px; }
+  .v2-composer__menu { min-width: 200px; }
+  .v2-root button.v2-msg__thumb { width: calc(50% - 3px); height: 84px; }
+  .v2-composer__tag { max-width: 120px; }
 }

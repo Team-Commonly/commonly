@@ -34,12 +34,13 @@ const renderComposer = (overrides: Partial<React.ComponentProps<typeof V2Compose
 };
 
 describe('V2Composer', () => {
-  test('keeps the workspace’s single bordered input and posts-as line independent of the thread controller', () => {
+  test('keeps the workspace’s single bordered one-line input independent of the thread controller', () => {
     const { props, container } = renderComposer({ draft: 'Ready to ship' });
 
     expect(container.querySelector('.v2-composer')).toBeInTheDocument();
-    expect(screen.getByText('posts as lily · ⌘↵')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send message' })).toHaveTextContent('Send');
+    // Direction C: no identity line in the bar; it lives in the Send tooltip.
+    expect(screen.queryByText(/posts as/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send message' })).toHaveAttribute('title', 'Send as lily · Enter');
 
     fireEvent.change(screen.getByPlaceholderText('Message Sharpen…'), {
       target: { value: 'Next draft', selectionStart: 10 },
