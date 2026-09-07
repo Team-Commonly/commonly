@@ -9283,7 +9283,7 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__option-recommended,
 .v2-decision-card__recommended {
-  font: 500 10px/14px var(--v2-font-mono);
+  font: 500 11px/14px var(--v2-font-mono);
   opacity: 0.9;
 }
 
