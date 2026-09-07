@@ -9187,13 +9187,13 @@ body.modern-ui.v2-canvas {
    their hit targets as clear as the approved board. */
 .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered {
   padding-inline: 12px;
-  border-color: var(--v2-border);
+  border: 1px solid var(--v2-border);
   background: var(--v2-surface);
   color: var(--v2-text-primary);
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered:hover:not(:disabled) {
-  border-color: var(--v2-border-strong);
+  border: 1px solid var(--v2-border-strong);
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }

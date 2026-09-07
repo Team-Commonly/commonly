@@ -50,10 +50,10 @@ describe('activity read routes', () => {
 
   it('GET /api/activity/decision-queue forwards scope and pagination', async () => {
     await request(app)
-      .get('/api/activity/decision-queue?podId=pod-1&limit=50&offset=50')
+      .get('/api/activity/decision-queue?podId=pod-1&messageIds=42%2C43&limit=50&offset=50')
       .expect(200);
     expect(ActivityService.getDecisionQueue).toHaveBeenCalledWith('user123', {
-      podId: 'pod-1', limit: 50, offset: 50,
+      podId: 'pod-1', messageIds: ['42', '43'], limit: 50, offset: 50,
     });
   });
 

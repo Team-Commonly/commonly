@@ -87,7 +87,7 @@ describe('V2Thread decision cards', () => {
 
     expect(await screen.findByTestId('decision-card')).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
-      params: { podId: 'pod-1', limit: 50, offset: 0 },
+      params: { podId: 'pod-1', limit: 50, offset: 0, messageIds: '42' },
     }));
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-history', expect.objectContaining({
       params: { podId: 'pod-1', limit: 50, offset: 0, messageIds: '42' },
@@ -224,11 +224,7 @@ describe('V2Thread decision cards', () => {
     }
   });
 
-  test('discovers a decision in the selected pod beyond the global queue page', async () => {
-    const firstPage = Array.from({ length: 50 }, (_, index) => ({
-      id: `decision-filler-${index}`, kind: 'decision', podId: 'pod-1', messageId: `filler-${index}`,
-      title: `Filler ${index}`, detail: 'Another decision', options: [{ label: 'Keep looking' }],
-    }));
+  test('discovers a loaded decision despite unrelated queue overflow', async () => {
     const target = {
       id: 'decision-overflow', kind: 'decision', podId: 'pod-1', messageId: '42',
       title: 'Overflow decision', detail: 'Which implementation should ship?',
@@ -236,11 +232,9 @@ describe('V2Thread decision cards', () => {
     };
     mockGet.mockImplementation((url, config) => {
       if (url === '/api/activity/decision-queue') {
+        expect(config?.params?.messageIds).toBe('42');
         const offset = config?.params?.offset;
-        if (offset === 0) {
-          return Promise.resolve({ data: { items: firstPage, count: 51, remaining: 1, hasMore: true } });
-        }
-        expect(offset).toBe(50);
+        expect(offset).toBe(0);
         return Promise.resolve({ data: { items: [target], count: 51, remaining: 0, hasMore: false } });
       }
       if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });

@@ -401,12 +401,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(primaryOption).toContain('background: var(--v2-accent)');
     expect(primaryOption).toContain('color: var(--v2-on-ink)');
     expect(v2).toContain('v2-activity__queue-action--bordered');
+    const borderedAction = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
+    expect(borderedAction).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
     const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
     expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
     expect(activityPage).toContain('(option, index)');
     expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
-    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId)");
+    expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId, {");
     expect(thread).toContain("loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId, {");
     expect(thread).toContain('podId, limit: DECISION_PAGE_SIZE, offset, ...extraParams');
     expect(thread).toContain("messageIds: loadedMessageIdsRef.current.join(',')");
@@ -1079,7 +1082,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
     const bordered = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
-    expect(bordered).toContain('border-color: var(--v2-border)');
+    expect(bordered).toContain('border: 1px solid var(--v2-border)');
     expect(bordered).toContain('background: var(--v2-surface)');
   });
 

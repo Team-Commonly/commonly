@@ -122,4 +122,18 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
     fireEvent.click(pill);
     expect(onJump).toHaveBeenCalledTimes(1);
   });
+
+  test('groups a settled ruling by its rendered human identity, preserving the author and ruled marker', () => {
+    const previous = msg('1');
+    const source = msg('2', { user_id: 'u-agent', user: { username: 'Scout' } });
+    const { container } = renderThread({
+      messages: [previous, source],
+      settledDecisionByMessageId: new Map([['2', { value: 'Ship it', by: 'Sam' }]]),
+    });
+
+    const ruling = container.querySelector('[data-testid="decision-ruling-row"]');
+    expect(ruling).not.toHaveClass('v2-msg--grouped');
+    expect(ruling.querySelector('.v2-msg__author')).toHaveTextContent('Sam');
+    expect(ruling.querySelector('.v2-msg__ruled')).toBeInTheDocument();
+  });
 });

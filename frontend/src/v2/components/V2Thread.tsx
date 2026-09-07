@@ -325,7 +325,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const load = async () => {
       try {
         const [pendingData, historyData] = await Promise.all([
-          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId).catch(() => null),
+          loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-queue', podId, {
+            messageIds: loadedMessageIdsRef.current.join(','),
+          }).catch(() => null),
           loadDecisionPages<ThreadDecision>(api, '/api/activity/decision-history', podId, {
             messageIds: loadedMessageIdsRef.current.join(','),
           }).catch(() => null),
