@@ -359,10 +359,10 @@ describe('V2ActivityPage', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
 
     expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
-    expect(within(row).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.getAllByRole('alert')).toHaveLength(1);
 
-    fireEvent.click(within(row).getByRole('button', { name: 'Retry' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });

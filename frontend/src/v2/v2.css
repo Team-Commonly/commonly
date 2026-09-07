@@ -9281,28 +9281,7 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__row-action-error {
   grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
-.v2-activity__row-action-error button {
-  min-height: 32px;
-  padding: 5px 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.v2-activity__row-action-error button:hover:not(:disabled) {
-  border-color: var(--v2-accent);
+  color: var(--v2-ink);
 }
 
 .v2-activity__queue-row button:disabled,

@@ -540,6 +540,7 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
+      setActionErrorItemId(item.id);
       setActionError(t('activity.approval.actionFailed'));
     } finally {
       setActingApprovalId(null);
@@ -571,6 +572,7 @@ const V2ActivityPage: React.FC = () => {
           [item.id]: { value: standing.value, by: standing.by },
         }));
       } else {
+        setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
       }
     } finally {
@@ -626,6 +628,7 @@ const V2ActivityPage: React.FC = () => {
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
+      setActionErrorItemId(item.id);
       setActionError(t('activity.mention.actionFailed'));
     } finally {
       setReplyingId(null);
@@ -649,12 +652,8 @@ const V2ActivityPage: React.FC = () => {
       setReloadKey((value) => value + 1);
     } catch {
       const message = t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' });
-      if (item.kind === 'handoff') {
-        setActionErrorItemId(item.id);
-        setActionError(message);
-      } else {
-        setActionError(message);
-      }
+      setActionErrorItemId(item.id);
+      setActionError(message);
     } finally {
       setAcknowledgingAttentionId(null);
     }
@@ -924,13 +923,8 @@ const V2ActivityPage: React.FC = () => {
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
-                    {item.kind === 'handoff' && actionErrorItemId === item.id && actionError && (
-                      <div className="v2-activity__row-action-error" role="alert">
-                        <span>{actionError}</span>
-                        <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
-                          {t('activity.needsYou.retry', { defaultValue: 'Retry' })}
-                        </button>
-                      </div>
+                    {actionErrorItemId === item.id && actionError && (
+                      <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
                     )}
                   </article>
                 ))}
@@ -954,7 +948,6 @@ const V2ActivityPage: React.FC = () => {
             {queue.length === 0 && queueMoreError && !queueFailed && (
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
-            {actionError && !actionErrorItemId && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
