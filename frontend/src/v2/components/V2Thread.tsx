@@ -892,41 +892,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       releasedLandingTargetRef.current = null;
     }
     if (!initialLoadComplete) return;
-    const settledRuling = settledDecisionByMessageId.get(target);
-    const durableLoaded = !!settledRuling?.messageId
-      && messages.some((message) => String(message.id) === String(settledRuling.messageId));
-    const decisionFingerprint = settledRuling
-      ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
-      : 'none';
-    if (landedTargetRef.current === target) {
-      const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
-      const landingNodeReplaced = activeElement === document.body
-        && !!landedElementRef.current
-        && !document.body.contains(landedElementRef.current);
-      const currentShape = landedElementRef.current?.className
-        .replace(/\bv2-msg--landed\b/g, '')
-        .trim();
-      const landingShapeChanged = !!landedElementShapeRef.current
-        && currentShape !== landedElementShapeRef.current;
-      if (landedDecisionFingerprintRef.current === decisionFingerprint
-        && !landingNodeReplaced && !landingShapeChanged) return;
-      const focusedElsewhere = !!activeElement
-        && activeElement !== document.body
-        && activeElement !== landedElementRef.current;
-      if (focusedElsewhere || (!landingNodeReplaced && !landingShapeChanged)) {
-        // The reader moved focus (or the node stayed mounted); do not steal it
-        // merely because a polling map got a new object identity.
-        landedDecisionFingerprintRef.current = decisionFingerprint;
-        landedElementShapeRef.current = currentShape || null;
-        return;
-      }
-      landedTargetRef.current = null;
-      landedElementRef.current = null;
-      landedElementShapeRef.current = null;
-    }
+    if (landedTargetRef.current === target) return;
     if (landOnMessage(target)) {
       landedTargetRef.current = target;
-      landedDecisionFingerprintRef.current = decisionFingerprint;
+      const settledRuling = settledDecisionByMessageId.get(target);
+      const durableLoaded = !!settledRuling?.messageId
+        && messages.some((message) => String(message.id) === String(settledRuling.messageId));
+      landedDecisionFingerprintRef.current = settledRuling
+        ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
+        : 'none';
       landedElementRef.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
@@ -952,7 +926,56 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           || historySearch.status === 'not-found'))) {
       void searchOlderForMessage(target);
     }
-  }, [landingTarget, initialLoadComplete, messages, threadView, decisionByMessageId, settledDecisionByMessageId, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+  }, [landingTarget, initialLoadComplete, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+
+  // A settled decision can replace the row that was landed from Activity after
+  // the initial transcript render. Keep this recovery separate from the
+  // reveal-vs-fetch producer above: map updates must not re-enter that effect,
+  // or a folded target is mistaken for a history miss and fetches older pages.
+  useEffect(() => {
+    const target = landingTarget;
+    if (!target || !initialLoadComplete || landedTargetRef.current !== target) return;
+    const settledRuling = settledDecisionByMessageId.get(target);
+    const durableLoaded = !!settledRuling?.messageId
+      && messages.some((message) => String(message.id) === String(settledRuling.messageId));
+    const decisionFingerprint = settledRuling
+      ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
+      : 'none';
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    const landingNodeReplaced = activeElement === document.body
+      && !!landedElementRef.current
+      && !document.body.contains(landedElementRef.current);
+    const currentShape = landedElementRef.current?.className
+      .replace(/\bv2-msg--landed\b/g, '')
+      .trim();
+    const landingShapeChanged = !!landedElementShapeRef.current
+      && currentShape !== landedElementShapeRef.current;
+    if (landedDecisionFingerprintRef.current === decisionFingerprint
+      && !landingNodeReplaced && !landingShapeChanged) return;
+    const focusedElsewhere = !!activeElement
+      && activeElement !== document.body
+      && activeElement !== landedElementRef.current;
+    if (focusedElsewhere || (!landingNodeReplaced && !landingShapeChanged)) {
+      // The reader moved focus (or the node stayed mounted); do not steal it
+      // merely because a polling map got a new object identity.
+      landedDecisionFingerprintRef.current = decisionFingerprint;
+      landedElementShapeRef.current = currentShape || null;
+      return;
+    }
+    landedTargetRef.current = null;
+    landedElementRef.current = null;
+    landedElementShapeRef.current = null;
+    if (landOnMessage(target)) {
+      landedTargetRef.current = target;
+      landedDecisionFingerprintRef.current = decisionFingerprint;
+      landedElementRef.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      landedElementShapeRef.current = landedElementRef.current?.className
+        .replace(/\bv2-msg--landed\b/g, '')
+        .trim() || null;
+    }
+  }, [landingTarget, initialLoadComplete, messages, decisionByMessageId, settledDecisionByMessageId]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
