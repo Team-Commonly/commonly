@@ -175,6 +175,9 @@ const V2ActivityPage: React.FC = () => {
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
+  const [historyRemaining, setHistoryRemaining] = useState(0);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyMoreError, setHistoryMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const actionFocusGenerationRef = useRef(0);
@@ -184,6 +187,8 @@ const V2ActivityPage: React.FC = () => {
   const revalidationScopeRef = useRef<string | null>(null);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
   const queueMoreFailureOffsetRef = useRef<number | null>(null);
+  const historyMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyOffsetRef = useRef(0);
   const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -207,6 +212,10 @@ const V2ActivityPage: React.FC = () => {
     restoredSnapshotRef.current = snapshot;
     setRuledDecisions({});
     setSettledQueueDecisions({});
+    setHistoryRemaining(0);
+    setHistoryMoreError(false);
+    setHistoryLoadingMore(false);
+    historyOffsetRef.current = 0;
     if (snapshot) {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
@@ -292,6 +301,10 @@ const V2ActivityPage: React.FC = () => {
       setQueue([]);
       setQueueCount(null);
       setQueueRemaining(0);
+      setHistoryRemaining(0);
+      setHistoryMoreError(false);
+      setHistoryLoadingMore(false);
+      historyOffsetRef.current = 0;
       setQueueFailed(false);
       revalidationExtentRef.current = 0;
       revalidationScopeRef.current = null;
@@ -309,6 +322,7 @@ const V2ActivityPage: React.FC = () => {
     setError(null);
     setQueueMoreError(false);
     setQueueLoadingMore(false);
+    setHistoryLoadingMore(false);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     // Recap and attention are independent facts. A failed queue read must
@@ -340,6 +354,16 @@ const V2ActivityPage: React.FC = () => {
         const settledHistory = historyItems.filter((item) => (
           item.kind === 'decision' && item.id && item.ruling?.value
         ));
+        if (historyResponse) {
+          const historyCount = typeof historyResponse.data?.count === 'number'
+            ? historyResponse.data.count
+            : historyItems.length;
+          historyOffsetRef.current = historyItems.length;
+          setHistoryRemaining(typeof historyResponse.data?.remaining === 'number'
+            ? historyResponse.data.remaining
+            : Math.max(historyCount - historyItems.length, 0));
+          setHistoryMoreError(false);
+        }
         if (settledHistory.length > 0) {
           setRuledDecisions((current) => {
             const next = { ...current };
@@ -500,6 +524,64 @@ const V2ActivityPage: React.FC = () => {
       }
     } finally {
       if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
+    }
+  };
+
+  const loadMoreHistory = async () => {
+    if (historyLoadingMore || historyRemaining <= 0) return;
+    const requestedScope = podId;
+    const requestedGeneration = queueGenerationRef.current;
+    const offset = historyOffsetRef.current;
+    setHistoryLoadingMore(true);
+    setHistoryMoreError(false);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
+        headers: { 'x-auth-token': token ?? '' },
+        params: { limit: 50, offset, ...(requestedScope !== 'all' ? { podId: requestedScope } : {}) },
+      });
+      if (queueScopeRef.current !== requestedScope || queueGenerationRef.current !== requestedGeneration) return;
+      const items = Array.isArray(response.data?.items) ? response.data.items : [];
+      const settled = items.filter((item) => item.kind === 'decision' && item.id && item.ruling?.value);
+      if (settled.length > 0) {
+        setRuledDecisions((current) => {
+          const next = { ...current };
+          settled.forEach((item) => {
+            next[String(item.id)] = {
+              value: String(item.ruling?.value),
+              ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+            };
+          });
+          return next;
+        });
+        setSettledQueueDecisions((current) => {
+          const next = { ...current };
+          settled.forEach((item) => {
+            next[String(item.id)] = {
+              ...item,
+              detail: item.detail || '',
+              podName: item.podName || '',
+              timestamp: item.timestamp ?? item.createdAt ?? null,
+            };
+          });
+          return next;
+        });
+      }
+      historyOffsetRef.current = offset + items.length;
+      const remaining = typeof response.data?.remaining === 'number'
+        ? response.data.remaining
+        : items.length > 0 && typeof response.data?.count === 'number'
+          ? Math.max(response.data.count - historyOffsetRef.current, 0)
+          : 0;
+      setHistoryRemaining(remaining);
+      setHistoryMoreError(false);
+      globalThis.window.requestAnimationFrame(() => historyMoreButtonRef.current?.focus());
+    } catch {
+      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
+        setHistoryMoreError(true);
+      }
+    } finally {
+      if (queueGenerationRef.current === requestedGeneration) setHistoryLoadingMore(false);
     }
   };
 
@@ -1046,6 +1128,21 @@ const V2ActivityPage: React.FC = () => {
                   : queueMoreError
                     ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
                     : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
+              </button>
+            )}
+            {(historyRemaining > 0 || historyMoreError) && (
+              <button
+                type="button"
+                ref={historyMoreButtonRef}
+                className="v2-activity__queue-more"
+                onClick={loadMoreHistory}
+                disabled={historyLoadingMore}
+              >
+                {historyLoadingMore
+                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                  : historyMoreError
+                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                    : t('activity.needsYou.showMoreSettled', { count: historyRemaining, defaultValue: `Show more settled · ${historyRemaining} remaining` })}
               </button>
             )}
             {visibleQueue.length === 0 && queueMoreError && !queueFailed && (

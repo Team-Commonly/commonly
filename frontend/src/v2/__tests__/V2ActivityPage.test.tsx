@@ -319,6 +319,46 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
   });
 
+  test('loads older settled decisions only when the Activity history control is requested', async () => {
+    const newest = {
+      id: 'decision-newest', kind: 'decision', title: 'Newest decision', detail: 'A newer ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '651', options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    };
+    const firstPage = [newest, ...Array.from({ length: 49 }, (_, index) => ({
+      ...newest,
+      id: `decision-${index}`,
+      title: `Decision ${index}`,
+      messageId: String(650 - index),
+    }))];
+    const older = {
+      id: 'decision-older', kind: 'decision', title: 'Older decision', detail: 'An older ruling',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '650', options: [{ label: 'Keep' }], status: 'ruled',
+      ruling: { value: 'Keep', by: 'You' },
+    };
+    let historyReads = 0;
+    mockGet.mockImplementation((url: string, config?: any) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') {
+        historyReads += 1;
+        expect(config?.params?.offset).toBe(historyReads === 1 ? 0 : 50);
+        return Promise.resolve({ data: historyReads === 1
+          ? { items: firstPage, count: 51, remaining: 1, hasMore: true }
+          : { items: [older], count: 51, remaining: 0, hasMore: false } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+
+    expect(await screen.findByText('Newest decision')).toBeInTheDocument();
+    expect(historyReads).toBe(1);
+    expect(screen.queryByText('Older decision')).not.toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'Show more settled · 1 remaining' });
+    fireEvent.click(more);
+    expect(await screen.findByText('Older decision')).toBeInTheDocument();
+    await waitFor(() => expect(historyReads).toBe(2));
+  });
+
   test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve({
       data: url === '/api/activity/decision-queue' ? decisionQueue : recap,

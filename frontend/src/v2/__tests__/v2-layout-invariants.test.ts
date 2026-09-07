@@ -1334,6 +1334,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("'/api/activity/decision-history'");
       expect(activityPage).toContain('settledHistory');
       expect(activityPage).toContain('setSettledQueueDecisions');
+      expect(activityPage).toContain('const loadMoreHistory = async () =>');
+      expect(activityPage).toContain('historyOffsetRef.current = historyItems.length');
+      expect(activityPage).toContain('showMoreSettled');
+      expect(activityPage).toContain('offset: 0');
     });
 
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {
