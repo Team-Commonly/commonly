@@ -416,6 +416,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const start = v2.indexOf('@media (max-width: 1023px)');
     expect(start).toBeGreaterThan(-1);
     const block = v2.slice(start, v2.indexOf('@media', start + 10));
+    expect(block).toContain('.v2-shell:not(.v2-shell--feature-wide)');
+    expect(block).not.toMatch(/\.v2-shell\s*\{/);
     expect(block).toContain('.v2-pane--inspector');
     expect(block).toContain('position: fixed');
     expect(block).not.toContain('display: none');

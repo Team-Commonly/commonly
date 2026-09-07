@@ -3248,7 +3248,7 @@ body.modern-ui.v2-canvas {
   border-radius: 6px;
   background: transparent;
   border: none;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--v2-text-secondary);
@@ -3281,7 +3281,8 @@ body.modern-ui.v2-canvas {
   border-radius: 999px;
   background: var(--v2-border-soft);
   color: var(--v2-text-tertiary);
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -3302,7 +3303,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__now-eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--v2-text-tertiary);
   font-family: var(--v2-font-mono);
@@ -3445,7 +3446,8 @@ body.modern-ui.v2-canvas {
    --c-fg-tertiary uppercase pattern in the design-system preview cards
    (see frontend/design-system/preview/components-inspector.html .eyebrow). */
 .v2-inspector__section-title {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   letter-spacing: 0.08em;
@@ -3615,6 +3617,7 @@ body.modern-ui.v2-canvas {
 
 .v2-inspector__artifact-sub {
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3682,7 +3685,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__member-role {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3716,6 +3719,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -3745,7 +3749,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__section-subtitle {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3784,7 +3788,7 @@ body.modern-ui.v2-canvas {
 .v2-inspector__task-assignee {
   font-size: 11px;
   color: var(--v2-text-tertiary);
-  font-family: 'SF Mono', Menlo, monospace;
+  font-family: var(--v2-font-mono);
 }
 
 /* ---------- Inspector: Detail sub-page ---------- */
@@ -3879,7 +3883,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__detail-kicker {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   text-transform: uppercase;
@@ -3906,6 +3911,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
   color: var(--v2-text-secondary);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -5547,7 +5553,7 @@ body.modern-ui.v2-canvas {
     min-width: 0;
   }
 
-  .v2-shell {
+  .v2-shell:not(.v2-shell--feature-wide) {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
@@ -8395,7 +8401,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-agent {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--v2-text-secondary);
 }
@@ -8406,7 +8412,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-waiting {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--v2-text-muted);
   font-style: italic;
 }
@@ -8777,6 +8783,7 @@ body.modern-ui.v2-canvas {
   margin: 0;
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-label);
+  font-family: var(--v2-font-mono);
   line-height: var(--v2-lh-label);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -8923,6 +8930,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink);
   color: var(--v2-on-ink);
   font-size: var(--v2-fs-label);
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -8931,6 +8939,7 @@ body.modern-ui.v2-canvas {
   margin-bottom: 5px;
   color: var(--v2-text-muted);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -9308,6 +9317,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -9944,7 +9954,7 @@ body.modern-ui.v2-canvas {
   border: 0;
   border-radius: 4px;
   box-shadow: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .v2-workspace-inspector__agent-copy {
@@ -10395,7 +10405,7 @@ body.modern-ui.v2-canvas {
     border-radius: 999px;
     background: var(--v2-accent);
     color: #fff;
-    font: 700 10px/1 var(--v2-font-mono);
+    font: 700 11px/1 var(--v2-font-mono);
   }
 }
 

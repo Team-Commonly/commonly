@@ -128,27 +128,7 @@ const ALLOWLIST: string[] = [
   '.v2-prcard__state', // 11.0px — no-mono-family
   '.v2-root .v2-chat__new-pod-error button', // 11.0px — no-mono-family
   '.v2-root button.v2-chat__new-pod-copy', // 11.0px — no-mono-family
-  // PR3
-  '.v2-activity__compose h2.v2-activity__compose-label', // 11.0px — no-mono-family
-  '.v2-activity__count', // 11.0px — no-mono-family
-  '.v2-activity__count-chip, .v2-activity__status', // 11.0px — no-mono-family
-  '.v2-activity__eyebrow', // 11.0px — no-mono-family
-  '.v2-inspector__approval-agent', // 11.5px — no-mono-family
-  '.v2-inspector__approval-waiting', // 11.5px — no-mono-family
-  '.v2-inspector__artifact-sub', // 11.0px — no-mono-family
-  '.v2-inspector__chip', // 11.0px — no-mono-family
-  '.v2-inspector__detail-kicker', // 10.0px — no-mono-family
-  '.v2-inspector__member-role', // 11.0px — no-mono-family
-  '.v2-inspector__now-eyebrow', // 10.0px — mono-below-floor
-  '.v2-inspector__pill', // 11.0px — no-mono-family
-  '.v2-inspector__section-subtitle', // 11.0px — no-mono-family
-  '.v2-inspector__section-title', // 10.0px — no-mono-family
-  '.v2-inspector__tab-count', // 10.0px — no-mono-family
-  '.v2-inspector__task-assignee', // 11.0px — no-mono-family
-  '.v2-mobile-tabs__badge', // 10.0px — mono-below-floor
-  '.v2-rail__utility .v2-lang-switch__trigger', // 11.0px — no-mono-family
-  '.v2-root button.v2-inspector__tab', // 11.5px — no-mono-family
-  '.v2-workspace-inspector__avatar.v2-avatar', // 10.0px — no-mono-family
+  // PR3 selectors meet the floor; no remaining allowances.
   // PR4
   '.v2-billing__badge', // 11.0px — no-mono-family
   '.v2-byo__mode-kicker', // 10.0px — no-mono-family
@@ -178,7 +158,6 @@ const ALLOWLIST: string[] = [
   '.v2-invite-manage__summary', // 11.0px — no-mono-family
   '.v2-invite-manage__url', // 10.0px — mono-below-floor
   '.v2-invite-options__field', // 11.0px — no-mono-family
-  '.v2-lang-switch__caret', // 9.0px — no-mono-family
   '.v2-lang-switch__check', // 11.0px — no-mono-family
   '.v2-mention-item__sub', // 11.0px — no-mono-family
   '.v2-modal__error', // 11.0px — no-mono-family
