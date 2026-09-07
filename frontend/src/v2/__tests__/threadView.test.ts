@@ -1,4 +1,4 @@
-import { buildThreadView } from '../utils/threadView';
+import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { V2ThreadState } from '../hooks/useV2ThreadState';
 
 const msg = (id: number, opts: Partial<any> = {}) => ({
@@ -54,6 +54,38 @@ describe('a reply whose root is not in the page is not lost', () => {
     const items = buildThreadView([msg(5, { thread_root_id: 999 })], state([]));
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ kind: 'message', message: { id: '5' } });
+  });
+
+  test('an orphan stays flat when its root arrives on a later page', () => {
+    const orphan = msg(5, { thread_root_id: 999 });
+    const frozen = freezeOrphanReplyIds([orphan]);
+    const items = buildThreadView(
+      [msg(999), orphan],
+      state([999]),
+      frozen,
+    );
+    expect(items.filter((i) => i.kind === 'message').map((i: any) => i.message.id)).toEqual(['999', '5']);
+    expect(items.find((i) => i.kind === 'card')).toBeUndefined();
+  });
+
+  test('a frozen orphan stays visible beside an unfrozen reply under the same root', () => {
+    const orphan = msg(5, { thread_root_id: 999 });
+    const liveReply = msg(6, { thread_root_id: 999 });
+    const frozen = freezeOrphanReplyIds([orphan]);
+    const items = buildThreadView(
+      [msg(999), orphan, liveReply],
+      state([999]),
+      frozen,
+    );
+    expect(items.filter((i) => i.kind === 'message').map((i: any) => i.message.id)).toEqual(['999', '5']);
+    expect((items.find((i) => i.kind === 'card') as any).replies.map((reply: any) => reply.id)).toEqual(['6']);
+  });
+
+  test('freezeOrphanReplyIds retains prior freezes and adds new orphans', () => {
+    const prior = new Set(['5']);
+    const next = freezeOrphanReplyIds([msg(5, { thread_root_id: 999 }), msg(6, { thread_root_id: 1000 })], prior);
+    expect([...next]).toEqual(['5', '6']);
+    expect(prior).toEqual(new Set(['5']));
   });
 });
 

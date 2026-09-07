@@ -35,6 +35,13 @@ export interface UseV2ThreadState {
   /** Roots the server told us about — a message not in here is not a thread. */
   isThreadRoot: (messageId: string) => boolean;
   toggleCollapsed: (messageId: string) => void;
+  /**
+   * Write an explicit collapsed value. The transcript's resting state is the
+   * chip (ux-lead 64476): every thread mounts collapsed and opening is a
+   * session gesture, so the server row is brought to the visible state on
+   * each open/close rather than blindly flipped.
+   */
+  setCollapsed: (messageId: string, collapsed: boolean) => void;
   toggleFollowing: (messageId: string) => void;
 }
 
@@ -92,6 +99,14 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
       .catch(() => patch(messageId, { collapsed: row.collapsed }));
   }, [api, byRoot, patch]);
 
+  const setCollapsed = useCallback((messageId: string, collapsed: boolean) => {
+    const row = byRoot.get(key(messageId));
+    if (!row || row.collapsed === collapsed) return;
+    patch(messageId, { collapsed });
+    api.put(`/api/messages/${messageId}/collapsed`, { collapsed })
+      .catch(() => patch(messageId, { collapsed: row.collapsed }));
+  }, [api, byRoot, patch]);
+
   const toggleFollowing = useCallback((messageId: string) => {
     const row = byRoot.get(key(messageId));
     if (!row) return;
@@ -111,8 +126,8 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   );
 
   return useMemo(
-    () => ({ byRoot, loading, isThreadRoot, toggleCollapsed, toggleFollowing }),
-    [byRoot, loading, isThreadRoot, toggleCollapsed, toggleFollowing],
+    () => ({ byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing }),
+    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing],
   );
 };
 

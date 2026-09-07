@@ -27,6 +27,24 @@ const rootOf = (m: V2Message): string | null => (
 );
 const whenOf = (m: V2Message): string => String(m.created_at || m.createdAt || '');
 
+/**
+ * Keep replies that were visible before their root arrived flat for the life
+ * of this transcript. A history prepend can otherwise make the same reply
+ * move into a resting thread chip and disappear from the reader's viewport.
+ */
+export const freezeOrphanReplyIds = (
+  messages: V2Message[],
+  frozen: ReadonlySet<string> = new Set(),
+): Set<string> => {
+  const next = new Set(frozen);
+  const presentIds = new Set(messages.map(idOf));
+  for (const message of messages) {
+    const root = rootOf(message);
+    if (root && !presentIds.has(root)) next.add(idOf(message));
+  }
+  return next;
+};
+
 const participantOf = (m: V2Message): V2ThreadParticipant => {
   const uid = String(m.user_id || '');
   const nested = typeof m.userId === 'object' && m.userId ? m.userId : undefined;
@@ -41,6 +59,7 @@ const participantOf = (m: V2Message): V2ThreadParticipant => {
 export const buildThreadView = (
   messages: V2Message[],
   byRoot: Map<string, V2ThreadState>,
+  flatIds: ReadonlySet<string> = new Set(),
 ): ThreadViewItem[] => {
   // Ids up front. This used to be `messages.some(...)` inside the loop below,
   // which is O(n²) on a pod's whole scrollback — fine at 20 messages and not
@@ -51,6 +70,7 @@ export const buildThreadView = (
   for (const m of messages) {
     const root = rootOf(m);
     if (!root) continue;
+    if (flatIds.has(idOf(m))) continue;
     // A message whose root is not in this list (paged out, or deleted) is NOT
     // hidden. It renders flat rather than vanishing — losing a message is the
     // one outcome worse than showing it in the wrong place.
@@ -63,7 +83,7 @@ export const buildThreadView = (
   const out: ThreadViewItem[] = [];
   for (const m of messages) {
     const root = rootOf(m);
-    if (root && repliesByRoot.has(root)) continue; // rendered under its card
+    if (root && repliesByRoot.has(root) && !flatIds.has(idOf(m))) continue; // rendered under its card
 
     out.push({ kind: 'message', message: m });
 

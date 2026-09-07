@@ -198,7 +198,19 @@ describe('V2Composer send button', () => {
     },
   ]);
 
-  const replyFromExpandedThread = () => screen.getByRole('button', { name: /reply from expanded thread/i });
+  // Threads rest as a chip (ux-lead 64476); Reply in thread lives in the
+  // open band's foot, so every path through it opens the thread first.
+  // The reply row (m2) lives inside the thread, which rests as a chip: open
+  // it before reaching for a button on that row.
+  const openThread = () => {
+    const chip = screen.queryByRole('button', { name: /expand thread/i });
+    if (chip) fireEvent.click(chip);
+  };
+  const replyFromExpandedThread = () => {
+    const chip = screen.queryByRole('button', { name: /expand thread/i });
+    if (chip) fireEvent.click(chip);
+    return screen.getByRole('button', { name: /reply from expanded thread/i });
+  };
 
   test('"Reply in thread" from the expanded rail sends threadRootId and no reply edge', async () => {
     const detail = makeDetail({ messages: threadMessages() });
@@ -221,7 +233,7 @@ describe('V2Composer send button', () => {
 
     // Reply-to-person first, then "Reply in thread": the thread wins, the
     // reply edge is gone.
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.click(replyFromExpandedThread());
     fireEvent.change(composerInput(), {
       target: { value: 'thread wins' },
@@ -234,7 +246,7 @@ describe('V2Composer send button', () => {
     // The other order: thread first, then reply-to-person. The reply edge
     // wins, the thread root is gone.
     fireEvent.click(replyFromExpandedThread());
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.change(composerInput(), {
       target: { value: 'reply wins' },
     });
@@ -247,7 +259,7 @@ describe('V2Composer send button', () => {
   test('Escape in the field un-aims (reply or thread) and keeps the draft; the send goes out plain', async () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     expect(document.activeElement).toBe(composerInput());
     fireEvent.change(composerInput(), { target: { value: 'kept draft' } });
     fireEvent.keyDown(composerInput(), { key: 'Escape' });
@@ -325,7 +337,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     const { container } = renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     upload(container);
 
     await waitFor(() => {
@@ -379,7 +391,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
     fireEvent.change(composerInput(), {
       target: { value: 'Still in the first thread.' },
     });
@@ -390,11 +402,13 @@ describe('V2Composer send button', () => {
     });
   });
 
-  test('the headline card aims the same root without requiring an expand', async () => {
+  test('the chip opens the thread and the foot aims the same root', async () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /^reply in thread$/i }));
+    expect(screen.queryByRole('button', { name: /^reply in thread$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /expand thread/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reply from expanded thread/i }));
     fireEvent.change(composerInput(), {
       target: { value: 'Joining through the card.' },
     });
@@ -409,7 +423,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.change(composerInput(), {
       target: { value: 'Replying to a person.' },
     });

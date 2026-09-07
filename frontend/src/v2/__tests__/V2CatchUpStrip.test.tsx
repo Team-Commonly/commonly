@@ -74,7 +74,10 @@ describe('V2CatchUpStrip', () => {
 
   test('dismiss hides this summary version and persists; the strip stays gone on re-render', async () => {
     const createdAt = new Date(Date.now() - 5 * 60000).toISOString();
-    axios.get.mockResolvedValue({ data: summary({ content: 'Digest.', createdAt }) });
+    let resolveRemount: (value: { data: ReturnType<typeof summary> }) => void = () => {};
+    axios.get
+      .mockResolvedValueOnce({ data: summary({ content: 'Digest.', createdAt }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRemount = resolve; }));
     const { unmount } = render(<V2CatchUpStrip podId="p5" />);
     await waitFor(() => expect(screen.getByTestId('catchup-strip')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -83,7 +86,8 @@ describe('V2CatchUpStrip', () => {
     unmount();
     render(<V2CatchUpStrip podId="p5" />);
     await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
-    expect(screen.queryByTestId('catchup-strip')).toBeNull();
+    await act(async () => { resolveRemount({ data: summary({ content: 'Digest.', createdAt }) }); });
+    await waitFor(() => expect(screen.queryByTestId('catchup-strip')).toBeNull());
   });
 
   test('a failed summary read never blocks the chat — and renders no strip', async () => {
