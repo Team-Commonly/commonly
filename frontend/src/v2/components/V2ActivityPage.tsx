@@ -165,6 +165,7 @@ const V2ActivityPage: React.FC = () => {
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
+  const actionFocusRef = useRef<HTMLElement | null>(null);
   const queueScopeRef = useRef('all');
   const queueGenerationRef = useRef(0);
   const revalidationExtentRef = useRef(0);
@@ -524,8 +525,24 @@ const V2ActivityPage: React.FC = () => {
     navigate('/v2');
   };
 
+  const rememberActionFocus = (item: NeedsYouItem) => {
+    const active = document.activeElement;
+    const row = active?.closest<HTMLElement>('[data-activity-item-id]');
+    actionFocusRef.current = active instanceof HTMLElement && row?.dataset.activityItemId === item.id ? active : null;
+  };
+
+  const restoreActionFocus = () => {
+    const target = actionFocusRef.current;
+    actionFocusRef.current = null;
+    if (!target) return;
+    globalThis.window.requestAnimationFrame(() => {
+      if (document.contains(target)) target.focus({ preventScroll: true });
+    });
+  };
+
   const actOnApproval = async (item: NeedsYouItem, action: 'approve' | 'reject') => {
     if (actingApprovalId) return;
+    rememberActionFocus(item);
     setActingApprovalId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -542,6 +559,7 @@ const V2ActivityPage: React.FC = () => {
     } catch {
       setActionErrorItemId(item.id);
       setActionError(t('activity.approval.actionFailed'));
+      restoreActionFocus();
     } finally {
       setActingApprovalId(null);
     }
@@ -549,6 +567,7 @@ const V2ActivityPage: React.FC = () => {
 
   const ruleDecision = async (item: NeedsYouItem, value: string) => {
     if (rulingId || !value.trim()) return;
+    rememberActionFocus(item);
     setRulingId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -574,6 +593,7 @@ const V2ActivityPage: React.FC = () => {
       } else {
         setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
+        restoreActionFocus();
       }
     } finally {
       setRulingId(null);
@@ -612,6 +632,7 @@ const V2ActivityPage: React.FC = () => {
   const sendReply = async (item: NeedsYouItem) => {
     const content = (replyDrafts[item.id] || '').trim();
     if (!content || replyingId || !item.podId) return;
+    rememberActionFocus(item);
     setReplyingId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -629,7 +650,8 @@ const V2ActivityPage: React.FC = () => {
       setReloadKey((value) => value + 1);
     } catch {
       setActionErrorItemId(item.id);
-      setActionError(t('activity.mention.actionFailed'));
+      setActionError(t('activity.reply.actionFailed', { defaultValue: 'Your reply could not be sent. Try again.' }));
+      restoreActionFocus();
     } finally {
       setReplyingId(null);
     }
@@ -637,6 +659,7 @@ const V2ActivityPage: React.FC = () => {
 
   const acknowledgeAttention = async (item: NeedsYouItem, errorKey: 'activity.mention.actionFailed' | 'activity.handoff.actionFailed') => {
     if (acknowledgingAttentionId) return;
+    rememberActionFocus(item);
     setAcknowledgingAttentionId(item.id);
     setActionError(null);
     setActionErrorItemId(null);
@@ -654,6 +677,7 @@ const V2ActivityPage: React.FC = () => {
       const message = t(errorKey, { defaultValue: 'That attention item could not be marked handled. Try again.' });
       setActionErrorItemId(item.id);
       setActionError(message);
+      restoreActionFocus();
     } finally {
       setAcknowledgingAttentionId(null);
     }

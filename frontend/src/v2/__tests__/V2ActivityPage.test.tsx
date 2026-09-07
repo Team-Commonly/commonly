@@ -356,15 +356,36 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     const row = (await screen.findByText('Needs a retry')).closest('article') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
+    const markHandled = within(row).getByRole('button', { name: 'Mark handled' });
+    markHandled.focus();
+    fireEvent.click(markHandled);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    (document.activeElement as HTMLElement | null)?.blur();
 
     expect(await within(row).findByRole('alert')).toHaveTextContent(/could not be marked handled/i);
+    await waitFor(() => expect(markHandled).toHaveFocus());
     expect(within(row).getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.getAllByRole('alert')).toHaveLength(1);
 
     fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+  });
+
+  test('keeps a failed reply actionable with reply-specific feedback and focus', async () => {
+    mockPost.mockRejectedValueOnce(new Error('reply down'));
+    renderPage();
+
+    const row = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Reply' }));
+    const composer = await within(row).findByRole('textbox', { name: 'Reply in thread…' });
+    fireEvent.change(composer, { target: { value: 'please check this' } });
+    composer.focus();
+    fireEvent.keyDown(composer, { key: 'Enter', ctrlKey: true });
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/Your reply could not be sent/i);
+    await waitFor(() => expect(composer).toHaveFocus());
   });
 
   test('opens an inline reply and posts it into the source thread', async () => {

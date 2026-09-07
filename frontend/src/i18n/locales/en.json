@@ -62,7 +62,8 @@
       "placeholder": "Reply in thread…",
       "send": "Send",
       "working": "Sending…",
-      "sent": "Reply posted"
+      "sent": "Reply posted",
+      "actionFailed": "Your reply could not be sent. Try again."
     },
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",

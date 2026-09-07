@@ -62,7 +62,8 @@
       "placeholder": "在话题中回复…",
       "send": "发送",
       "working": "发送中…",
-      "sent": "已回复"
+      "sent": "已回复",
+      "actionFailed": "回复发送失败，请重试。"
     },
     "lastActive": "{{time}}前活跃",
     "updatesCount_one": "{{count}} 条更新",
