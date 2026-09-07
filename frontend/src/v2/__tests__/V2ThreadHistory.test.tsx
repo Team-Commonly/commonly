@@ -2,7 +2,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2ThreadMessages from '../components/V2ThreadMessages';
+import V2ThreadMessages, { V2ThreadHistoryStatus } from '../components/V2ThreadMessages';
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer' } }),
@@ -17,6 +17,14 @@ const msg = (id) => ({
 
 const renderThread = (props = {}) => {
   const messages = props.messages || [msg('1'), msg('2')];
+  const historySearch = props.historySearch || {
+    targetId: null,
+    status: 'idle',
+    attempt: 0,
+    maxAttempts: 5,
+    error: null,
+  };
+  const { onRetryHistorySearch, historySearch: _historySearch, ...messageProps } = props;
   return render(
     <MemoryRouter>
       <V2ThreadMessages
@@ -35,7 +43,12 @@ const renderThread = (props = {}) => {
         error={null}
         messagesContainerRef={React.createRef()}
         messagesEndRef={React.createRef()}
-        {...props}
+        {...messageProps}
+      />
+      <V2ThreadHistoryStatus
+        historySearch={historySearch}
+        onRetryHistorySearch={onRetryHistorySearch}
+        viewport
       />
     </MemoryRouter>,
   );
@@ -72,6 +85,7 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
     const first = renderThread({
       historySearch: { targetId: 'missing', status: 'searching', attempt: 2, maxAttempts: 5, error: null },
     });
+    expect(screen.getByRole('status')).toHaveClass('v2-thread__history-status--viewport');
     expect(screen.getByRole('status')).toHaveTextContent('Searching older messages (2/5)');
 
     first.unmount();
@@ -79,6 +93,7 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
       historySearch: { targetId: 'missing', status: 'failed', attempt: 2, maxAttempts: 5, error: 'offline' },
       onRetryHistorySearch: onRetry,
     });
+    expect(screen.getByRole('alert')).toHaveClass('v2-thread__history-status--viewport');
     expect(screen.getByRole('alert')).toHaveTextContent('Automatic search stopped');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);

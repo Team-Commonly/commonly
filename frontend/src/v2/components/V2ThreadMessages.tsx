@@ -30,12 +30,6 @@ interface V2ThreadMessagesProps {
   hasMore: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
-  historySearch?: HistorySearchState;
-  onRetryHistorySearch?: () => void;
-  // Production renders this recovery affordance against the chat viewport,
-  // outside this scroll container. Standalone transcript callers keep the
-  // inline form by default for compatibility.
-  renderHistoryStatus?: boolean;
   // Direction C history edge: the sentinel V2Thread observes to auto-load the
   // previous page when the reader reaches the top.
   edgeRef?: React.RefObject<HTMLDivElement | null>;
@@ -130,9 +124,6 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   hasMore,
   loadingOlder,
   onLoadOlder,
-  historySearch,
-  onRetryHistorySearch,
-  renderHistoryStatus = true,
   edgeRef,
   jumpCount = 0,
   showJump = false,
@@ -148,13 +139,6 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
-  const effectiveHistorySearch = historySearch || {
-    targetId: null,
-    status: 'idle' as const,
-    attempt: 0,
-    maxAttempts: 5,
-    error: null,
-  };
   // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
   // reveals the rest for that root (walk-3 §3).
   const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
@@ -214,13 +198,6 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     };
   };
 
-  const historyStatus = renderHistoryStatus ? (
-    <V2ThreadHistoryStatus
-      historySearch={effectiveHistorySearch}
-      onRetryHistorySearch={onRetryHistorySearch}
-    />
-  ) : null;
-
   return (
     <div className="v2-chat__messages" ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
@@ -234,7 +211,6 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           <span className="v2-thread__edge-line">{t('podChat.history.beginning')}</span>
         ) : null}
       </div>
-      {historyStatus}
       {error && <div className="v2-chat__error">{error}</div>}
       {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}

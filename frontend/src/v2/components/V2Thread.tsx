@@ -1252,9 +1252,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             hasMore={hasMore}
             loadingOlder={loadingOlder}
             onLoadOlder={() => { void handleExplicitLoadOlder(); }}
-            historySearch={historySearch}
-            onRetryHistorySearch={() => { void retryHistorySearch(); }}
-            renderHistoryStatus={false}
             edgeRef={edgeRef}
             jumpCount={jumpCount}
             showJump={scrolledUp}
