@@ -1094,6 +1094,20 @@ describe('V2ActivityPage', () => {
     expect(picker).toHaveFocus();
   });
 
+  test('keeps the trigger focused when Escape closes an open destination menu', async () => {
+    const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Tell your agents' });
+    const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
+    expect(picker).not.toBeNull();
+    picker.focus();
+    fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
+
   test('closes the destination menu on an outside mouse or touch press', async () => {
     const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
