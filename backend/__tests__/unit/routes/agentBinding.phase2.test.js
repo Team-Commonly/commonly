@@ -57,6 +57,7 @@ beforeEach(async () => {
         skills: { claude: ['common'] },
         mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
         effort: 'high',
+        privateKey: 'must-not-travel',
       },
     },
   });
@@ -129,6 +130,7 @@ describe('daemon work list', () => {
 
     const seenByA = await assigned(DAEMON_A);
     expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0].environment).not.toHaveProperty('privateKey');
     expect(seenByA.body.agents).toEqual([expect.objectContaining({
       agentName: 'wren-test',
       instanceId: 'default',

@@ -35,6 +35,62 @@ const bindingRateLimit = rateLimit({
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
+// The daemon needs the driver-neutral ADR-008 shape, but its bearer must not
+// become a read-all projection of an installation's opaque config. Keep this
+// allow-list aligned with environment.js and discard future/accidental keys at
+// the server boundary. MCP env values are declarations (usually placeholders);
+// provider secrets remain out-of-band per ADR-008.
+const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const source = raw as Record<string, any>;
+  const projected: Record<string, any> = {};
+  for (const key of ['version', 'model', 'effort']) {
+    if (source[key] !== undefined) projected[key] = source[key];
+  }
+  if (source.workspace && typeof source.workspace === 'object' && !Array.isArray(source.workspace)) {
+    projected.workspace = {};
+    for (const key of ['path', 'seed']) {
+      if (source.workspace[key] !== undefined) projected.workspace[key] = source.workspace[key];
+    }
+  }
+  if (source.sandbox && typeof source.sandbox === 'object' && !Array.isArray(source.sandbox)) {
+    projected.sandbox = {};
+    for (const key of ['mode', 'trust']) {
+      if (source.sandbox[key] !== undefined) projected.sandbox[key] = source.sandbox[key];
+    }
+    if (source.sandbox.network && typeof source.sandbox.network === 'object') {
+      projected.sandbox.network = {};
+      for (const key of ['policy', 'allow-hosts']) {
+        if (source.sandbox.network[key] !== undefined) projected.sandbox.network[key] = source.sandbox.network[key];
+      }
+    }
+    if (source.sandbox.filesystem && typeof source.sandbox.filesystem === 'object') {
+      projected.sandbox.filesystem = {};
+      for (const key of ['read-outside', 'write-outside']) {
+        if (source.sandbox.filesystem[key] !== undefined) projected.sandbox.filesystem[key] = source.sandbox.filesystem[key];
+      }
+    }
+  }
+  if (source.skills && typeof source.skills === 'object' && !Array.isArray(source.skills)) {
+    projected.skills = {};
+    for (const key of ['claude', 'commonly']) {
+      if (source.skills[key] !== undefined) projected.skills[key] = source.skills[key];
+    }
+  }
+  if (Array.isArray(source.mcp)) {
+    projected.mcp = source.mcp
+      .filter((server: any) => server && typeof server === 'object' && !Array.isArray(server))
+      .map((server: Record<string, any>) => {
+        const entry: Record<string, unknown> = {};
+        for (const key of ['name', 'transport', 'url', 'command', 'env']) {
+          if (server[key] !== undefined) entry[key] = server[key];
+        }
+        return entry;
+      });
+  }
+  return projected;
+};
+
 // Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
 // both must hold: an active installation of (agentName, instanceId)
 // installedBy the owner exists, AND no active installation of that identity
@@ -205,7 +261,7 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       };
       if (install.podId) entry.podIds.push(String(install.podId));
       if (!entry.runtime && config.runtime) entry.runtime = config.runtime;
-      if (!entry.environment && config.environment) entry.environment = config.environment;
+      if (!entry.environment && config.environment) entry.environment = projectEnvironment(config.environment);
       byIdentity.set(key, entry);
     }
 
