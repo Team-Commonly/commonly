@@ -520,6 +520,22 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByDisplayValue('Private unsent draft from account A')).not.toBeInTheDocument();
   });
 
+  test('does not display the previous scope rows when the new scope fails', async () => {
+    const scopedRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: scopedRecap });
+      if (config?.params?.podId === 'pod-2') return Promise.reject(new Error('scope read failed'));
+      return Promise.resolve({ data: decisionQueue });
+    });
+    renderPage();
+    await screen.findByText('Review requested');
+    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs', exact: true }));
+    await screen.findByRole('button', { name: 'Retry' });
+    expect(screen.getByRole('button', { name: 'GTM Programs', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
+    expect(screen.getByText('Count unavailable')).toBeInTheDocument();
+  });
+
   test('revalidates every loaded page on a same-scope refresh', async () => {
     const firstPage = Array.from({ length: 50 }, (_, index) => ({
       id: `refresh-extent-${index}`, attentionItemId: `refresh-extent-attention-${index}`, kind: 'mention', title: `Extent ${index}`,

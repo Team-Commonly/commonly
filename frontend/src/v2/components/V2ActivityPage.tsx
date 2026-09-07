@@ -193,6 +193,7 @@ const V2ActivityPage: React.FC = () => {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
       setRecap(snapshot.recap || null);
+      queueScopeRef.current = snapshot.podId || 'all';
       queueRef.current = snapshot.queue || [];
       setQueue(queueRef.current);
       setQueueCount(snapshot.queueCount ?? null);
@@ -209,6 +210,7 @@ const V2ActivityPage: React.FC = () => {
       setWindow('today');
       setPodId('all');
       setRecap(null);
+      queueScopeRef.current = 'all';
       queueRef.current = [];
       setQueue(queueRef.current);
       setQueueCount(null);
@@ -263,17 +265,29 @@ const V2ActivityPage: React.FC = () => {
     queueGenerationRef.current = generation;
     const previousScope = queueScopeRef.current;
     queueScopeRef.current = podId;
-    const previousQueue = queueRef.current;
+    const sameScope = previousScope === podId;
+    const previousQueue = sameScope ? queueRef.current : [];
+    if (!sameScope) {
+      // Retained rows are evidence for their own scope only. If the new
+      // request fails, showing them under the newly selected pod is false.
+      queueRef.current = [];
+      setQueue([]);
+      setQueueCount(null);
+      setQueueRemaining(0);
+      setQueueFailed(false);
+      revalidationExtentRef.current = 0;
+      revalidationScopeRef.current = null;
+    }
     // Refreshes in the same scope must revalidate every loaded page before
     // replacing the visible queue. Otherwise a 56-row queue briefly regresses
     // to the first 50 rows while the refresh response is settling.
-    if (previousScope === podId && previousQueue.length > 0) {
+    if (sameScope && previousQueue.length > 0) {
       revalidationScopeRef.current = podId;
       revalidationExtentRef.current = Math.max(revalidationExtentRef.current, previousQueue.length);
     }
     queueMoreFailureOffsetRef.current = null;
     setQueueHydrated(false);
-    setLoading((current) => (recap ? current : true));
+    setLoading((current) => (sameScope && recap ? current : true));
     setError(null);
     setQueueMoreError(false);
     setQueueLoadingMore(false);
