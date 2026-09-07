@@ -9,7 +9,10 @@ interface SendResult {
   messageId?: number;
 }
 
-async function sendMessage(botToken: string, chatId: string | number, text: string): Promise<SendResult> {
+async function sendMessage(botToken: string, chatId: string | number, text: string, options?: {
+  replyToMessageId?: string;
+  plainText?: boolean;
+}): Promise<SendResult> {
   if (!botToken || !chatId || !text) {
     return { success: false, error: 'Missing botToken, chatId, or text' };
   }
@@ -20,7 +23,8 @@ async function sendMessage(botToken: string, chatId: string | number, text: stri
       {
         chat_id: chatId,
         text,
-        parse_mode: 'HTML',
+        ...(!options?.plainText ? { parse_mode: 'HTML' } : {}),
+        ...(options?.replyToMessageId ? { reply_parameters: { message_id: Number(options.replyToMessageId) } } : {}),
         disable_web_page_preview: true,
       },
     );

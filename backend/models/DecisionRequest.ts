@@ -100,6 +100,8 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
 // index supplies its pod/status filter; individual pod thread lookups use the
 // messageId stored on the row.
 DecisionRequestSchema.index({ podId: 1, status: 1, createdAt: -1 });
+// Channel receipts resolve by the ask's PG message id, including across pods.
+DecisionRequestSchema.index({ messageId: 1 });
 
 const DecisionRequest: Model<IDecisionRequest> = (mongoose.models.DecisionRequest as Model<IDecisionRequest>)
   || mongoose.model<IDecisionRequest>('DecisionRequest', DecisionRequestSchema);

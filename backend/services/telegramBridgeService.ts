@@ -29,6 +29,8 @@ const { shouldEscalate } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
+import { resolveDecisionCardReply } from './decisionCardReply';
+import type { ChannelCardEntry } from './decisionCardReply';
 
 const RELAY_MAP_CAP = 100;
 const OUTBOUND_TEXT_CAP = 900;
@@ -54,6 +56,7 @@ interface TelegramIntegrationDoc {
     linkedUserId?: string;
     leadAgentUsername?: string;
     relayMap?: RelayMapEntry[];
+    cards?: ChannelCardEntry[];
     relayAllAgentMessages?: boolean;
     gates?: Record<string, { enabled?: boolean }>;
     adminPause?: { reason?: string; at?: Date | string; adminId?: string };
@@ -289,6 +292,9 @@ export const relayAgentMessageToTelegram = async (opts: {
           $each: [{ tgMessageId, agentUsername, podMessageId: podMessageId || null }],
           $slice: -RELAY_MAP_CAP,
         },
+        ...(opts.card && podMessageId ? {
+          'config.cards': { podMessageId, tgMessageId, sentAt: new Date() },
+        } : {}),
       },
     });
     if (opts.card && podMessageId) {
@@ -315,6 +321,7 @@ export const relayTelegramMessageToPod = async (opts: {
   telegramMessage: {
     text?: string;
     caption?: string;
+    chat?: { type?: string };
     message_id?: number;
     from?: { first_name?: string; last_name?: string };
     reply_to_message_id?: number;
@@ -325,7 +332,7 @@ export const relayTelegramMessageToPod = async (opts: {
   const rawText = (telegramMessage.text || telegramMessage.caption || '').trim();
   if (!rawText) return { relayed: false };
   if (rawText.startsWith('/')) return { relayed: false }; // commands keep legacy handling
-  if (!integration.podId) {
+  if (!integration.podId && !integration.config?.cards?.length) {
     // `podId` is optional for user-scoped rows, but inbound has one active
     // destination. Never stringify null into a query or author into a pod the
     // connector cannot name.
@@ -334,7 +341,7 @@ export const relayTelegramMessageToPod = async (opts: {
     return { relayed: false };
   }
 
-  const podId = String(integration.podId);
+  let podId = String(integration.podId);
   const linkedUserId = integration.config?.linkedUserId;
   if (!linkedUserId || !isInboundRelayableIntegration(integration, podId)) {
     console.warn('[tg-bridge] live relay without linkedUserId — inbound dropped');
@@ -375,7 +382,7 @@ export const relayTelegramMessageToPod = async (opts: {
   // Widening this needs a real Telegram-sender → Commonly-user mapping, not a
   // longer list of accepted chat types.
   const chatType = integration.config?.chatType;
-  if (chatType !== 'private') {
+  if (chatType !== 'private' || (telegramMessage.chat && telegramMessage.chat.type !== 'private')) {
     console.warn(
       `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} `
         + 'cannot guarantee the sender is them',
@@ -386,10 +393,36 @@ export const relayTelegramMessageToPod = async (opts: {
   const replyToTgMessageId = telegramMessage.reply_to_message?.message_id
     ?? telegramMessage.reply_to_message_id
     ?? null;
+  const cardReply = await resolveDecisionCardReply({
+    integrationId: integration._id,
+    linkedUserId: String(linkedUserId),
+    cards: integration.config?.cards,
+    provider: 'telegram',
+    text: rawText,
+    replyToExternalId: replyToTgMessageId != null ? String(replyToTgMessageId) : undefined,
+  });
+  if (cardReply.confirmation) {
+    try {
+      const sent = await telegramSend.sendMessage(
+        process.env.TELEGRAM_BOT_TOKEN, integration.config?.chatId, cardReply.confirmation,
+        { replyToMessageId: cardReply.externalMessageId, plainText: true },
+      );
+      if (!sent?.success) console.warn('[tg-bridge] card confirmation was not sent');
+    } catch (error) {
+      console.warn('[tg-bridge] card confirmation failed:', (error as Error).message);
+    }
+  }
+  if (cardReply.handled && !cardReply.lateReply) return { relayed: false };
+  if (!cardReply.lateReply && !integration.podId) {
+    await replyNoActivePod(integration);
+    return { relayed: false };
+  }
+  if (cardReply.lateReply) podId = cardReply.lateReply.podId;
+  const replyToMessageId = cardReply.lateReply?.messageId || null;
   const { content: routedText, routedAgent } = routeReplyContent({
     content: rawText,
     replyToTgMessageId: replyToTgMessageId != null ? String(replyToTgMessageId) : null,
-    relayMap: integration.config?.relayMap,
+    relayMap: cardReply.lateReply ? [] : integration.config?.relayMap,
   });
 
   const senderName = [
@@ -438,7 +471,15 @@ export const relayTelegramMessageToPod = async (opts: {
     console.warn('[tg-bridge] PG pod backfill skipped:', (syncErr as Error).message);
   }
 
-  const created = await PGMessage.create(podId, String(linkedUserId), content, 'text', null, null, null);
+  let threadRootId: number | null = null;
+  if (cardReply.lateReply?.threadRootId) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    threadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId: cardReply.lateReply.threadRootId });
+  }
+  const created = await PGMessage.create(
+    podId, String(linkedUserId), content, 'text', replyToMessageId, null, threadRootId,
+  );
   let message: Record<string, unknown> = created;
   try {
     const populated = created?.id ? await PGMessage.findById(created.id) : null;
@@ -460,7 +501,7 @@ export const relayTelegramMessageToPod = async (opts: {
       message,
       userId: String(linkedUserId),
       requestUser: { username: linkedUser.username },
-      replyToMessageId: null,
+      replyToMessageId,
     });
   } catch (deliverErr) {
     console.error('[tg-bridge] agent delivery failed after pod write:', (deliverErr as Error).message);
@@ -484,8 +525,8 @@ export const relayTelegramMessageToPod = async (opts: {
         username: linkedUser.username,
         profile_picture: linkedUser.profilePicture,
         createdAt: (message as { created_at?: unknown }).created_at || new Date(),
-        replyTo: null,
-        thread_root_id: null,
+        replyTo: replyToMessageId,
+        thread_root_id: (message as { thread_root_id?: unknown }).thread_root_id ?? threadRootId ?? replyToMessageId,
         payload: null,
       });
     }
