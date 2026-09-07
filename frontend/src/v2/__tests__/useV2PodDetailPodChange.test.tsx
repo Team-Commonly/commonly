@@ -83,6 +83,8 @@ describe('useV2PodDetail room changes', () => {
       newMessages.resolve([]);
       await newMessages.promise;
     });
+    await waitFor(() => expect(result.current.pod?._id).toBe('new-room'));
+    await waitFor(() => expect(result.current.initialLoadComplete).toBe(true));
     expect(result.current.messages).toEqual([]);
 
     await act(async () => {
