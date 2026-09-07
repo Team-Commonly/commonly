@@ -157,6 +157,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
+    initialLoadComplete: detailInitialLoadComplete,
     historySearch: detailHistorySearch,
     searchOlderForMessage: detailSearchOlderForMessage,
     retryHistorySearch: detailRetryHistorySearch,
@@ -579,9 +580,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     error: null,
   };
   const historySearch = detailHistorySearch || idleHistorySearch;
+  // Older fixtures and read-only embeds predate the readiness field; their
+  // supplied messages are already settled. The real hook keeps this false
+  // through its first pod/message read, even though `loading` starts false.
+  const initialLoadComplete = detailInitialLoadComplete ?? true;
   const legacySearchOlder = useCallback(async () => { await handleLoadOlder(); }, [handleLoadOlder]);
   const searchOlderForMessage = detailSearchOlderForMessage || legacySearchOlder;
-  const retryHistorySearch = detailRetryHistorySearch || legacySearchOlder;
 
   useLayoutEffect(() => {
     const el = messagesContainerRef.current;
@@ -618,6 +622,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // decision-card producer may use either canonical `#message-<id>` or the
   // legacy `?message=<id>` form; both must share one retry/reveal lifecycle.
   const landedTargetRef = useRef<string | null>(null);
+  // A URL target remains in the address bar after landing. Keep automatic
+  // prepends paused until the reader deliberately uses the edge control, so
+  // the focused row cannot be pushed out while a landing is settling.
+  const releasedLandingTargetRef = useRef<string | null>(null);
+  const releasedHistorySearchTargetRef = useRef<string | null>(null);
   // A target that is loaded but not rendered (collapsed thread, `N more
   // replies` fold) is REVEALED, not fetched: the transcript opens the thread
   // and bumps `revealTick` so this effect runs again against the new DOM.
@@ -630,6 +639,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     // reopens the fold instead of being treated as an already-landed hash.
     landedTargetRef.current = null;
     revealTriedRef.current = null;
+    releasedLandingTargetRef.current = null;
+    releasedHistorySearchTargetRef.current = null;
     setRevealTick((tick) => tick + 1);
   }, []);
   const onRevealed = useCallback((messageId: string, found: boolean) => {
@@ -643,9 +654,31 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     if (hashMatch) return hashMatch[1];
     return new URLSearchParams(location.search || '').get('message');
   }, [location.hash, location.search]);
+  const retryHistorySearch = useCallback(async () => {
+    // Retry is a new automatic target search, so a previous deliberate edge
+    // release must not let the sentinel bypass the fresh bounded search.
+    releasedLandingTargetRef.current = null;
+    releasedHistorySearchTargetRef.current = null;
+    await (detailRetryHistorySearch || legacySearchOlder)();
+  }, [detailRetryHistorySearch, legacySearchOlder]);
+  const handleExplicitLoadOlder = useCallback(async () => {
+    // The edge button is deliberate. It is the reader's explicit signal that
+    // ordinary browsing should resume after a targeted landing/search.
+    if (landingTarget) releasedLandingTargetRef.current = landingTarget;
+    if (historySearch.targetId) releasedHistorySearchTargetRef.current = historySearch.targetId;
+    await handleLoadOlder();
+  }, [landingTarget, historySearch.targetId, handleLoadOlder]);
   useEffect(() => {
     const target = landingTarget;
-    if (!target) { landedTargetRef.current = null; return; }
+    if (!target) {
+      landedTargetRef.current = null;
+      releasedLandingTargetRef.current = null;
+      return;
+    }
+    if (releasedLandingTargetRef.current && releasedLandingTargetRef.current !== target) {
+      releasedLandingTargetRef.current = null;
+    }
+    if (!initialLoadComplete) return;
     if (landedTargetRef.current === target) return;
     if (landOnMessage(target)) { landedTargetRef.current = target; return; }
     const folded = threadView.some((item) => item.kind === 'card'
@@ -665,7 +698,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           || historySearch.status === 'not-found'))) {
       void searchOlderForMessage(target);
     }
-  }, [landingTarget, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+  }, [landingTarget, initialLoadComplete, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -675,11 +708,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
       if (!hasMore || loadingOlder || loading) return;
+      // The sentinel is automatic. During a target landing (including a
+      // stopped search) it must not prepend a page behind the focused row or
+      // silently bypass the bound. The edge button remains deliberate and
+      // continues to call handleLoadOlder normally.
+      const landingBlocked = landingTarget
+        && (landedTargetRef.current !== landingTarget
+          || releasedLandingTargetRef.current !== landingTarget);
+      const searchBlocked = historySearch.targetId
+        && historySearch.status !== 'idle'
+        && releasedHistorySearchTargetRef.current !== historySearch.targetId;
+      if (landingBlocked || searchBlocked) return;
       void handleLoadOlder();
     }, { root, rootMargin: '120px 0px 0px 0px' });
     observer.observe(edge);
     return () => observer.disconnect();
-  }, [hasMore, loadingOlder, loading, handleLoadOlder, pod?._id]);
+  }, [hasMore, loadingOlder, loading, landingTarget, historySearch.targetId, historySearch.status, handleLoadOlder, pod?._id]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -1206,7 +1250,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           onAimAtThread={aimAtThread}
           hasMore={hasMore}
           loadingOlder={loadingOlder}
-          onLoadOlder={() => { void handleLoadOlder(); }}
+          onLoadOlder={() => { void handleExplicitLoadOlder(); }}
           historySearch={historySearch}
           onRetryHistorySearch={() => { void retryHistorySearch(); }}
           edgeRef={edgeRef}
