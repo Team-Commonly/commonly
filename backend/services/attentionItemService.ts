@@ -379,6 +379,11 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     counts[podId] = (counts[podId] || 0) + 1;
     return counts;
   }, {});
+  // The composer target is an account-level fact, not a property of the
+  // rendered page. A priority-heavy first page can contain no mentions even
+  // while an accessible mention exists later in the global ordering.
+  const composeMention = valid.find((row: any) => row.kind === 'mention');
+  const composePodId = composeMention?.podId ? String(composeMention.podId) : null;
   const scoped = requestedPodId
     ? valid.filter((row: any) => String(row.podId) === requestedPodId)
     : valid;
@@ -396,7 +401,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     items: picked,
     count: scoped.length,
     countsByPod,
-    composePodId: picked.find((row) => row.kind === 'mention')?.podId || null,
+    composePodId,
     offset,
     limit,
     remaining,

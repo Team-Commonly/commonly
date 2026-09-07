@@ -130,6 +130,32 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('keeps the composer target from the newest global mention beyond the page', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    const rows = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        _id: `decision-${index}`, recipientUserId: recipient, podId: 'pod-1', kind: 'decision',
+        source: { type: 'decision', id: `decision-${index}` }, title: `Decision ${index}`,
+        createdAt: new Date(`2026-09-01T00:${String(index).padStart(2, '0')}:00.000Z`),
+      })),
+      {
+        _id: 'mention-1', recipientUserId: recipient, podId: 'pod-2', kind: 'mention',
+        source: { type: 'message', id: 'message-1' }, title: 'Mention',
+        createdAt: new Date('2026-09-02T00:00:00.000Z'),
+      },
+    ];
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
+    mockPodFind.mockReturnValue(chain([
+      { _id: 'pod-1', name: 'Decisions', createdBy: recipient, members: [] },
+      { _id: 'pod-2', name: 'Mentions', createdBy: recipient, members: [] },
+    ]));
+
+    const queue = await AttentionItemService.getOpenQueue(recipient, { limit: 12 });
+    expect(queue.items.every((item) => item.kind === 'decision')).toBe(true);
+    expect(queue.composePodId).toBe('pod-2');
+    expect((await AttentionItemService.getOpenQueue(recipient, { podId: 'pod-1' })).composePodId).toBe('pod-2');
+  });
+
   it('does not let projection-resolution storage turn a completed source into a failure', async () => {
     mockUpdateMany.mockRejectedValueOnce(new Error('mongo unavailable'));
     await expect(AttentionItemService.resolve('approval', 'a-1')).resolves.toBeUndefined();
