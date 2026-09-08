@@ -130,7 +130,7 @@ const V2PodBoard: React.FC = () => {
   const api = useV2Api();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { socket, connected } = useSocket();
+  const { socket, connected, joinPod, leavePod } = useSocket();
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [podName, setPodName] = useState<string>('');
@@ -164,6 +164,7 @@ const V2PodBoard: React.FC = () => {
   const closeFocusEditorRef = useRef<() => void>(() => undefined);
   const focusRequestRef = useRef(0);
   const focusMutationRef = useRef(0);
+  const focusWasConnectedRef = useRef(connected);
 
   const openCreateTask = useCallback(() => {
     setCreateError(null);
@@ -237,6 +238,12 @@ const V2PodBoard: React.FC = () => {
   }, [loadFocus]);
 
   useEffect(() => {
+    const wasConnected = focusWasConnectedRef.current;
+    focusWasConnectedRef.current = connected;
+    if (connected && !wasConnected) loadFocus();
+  }, [connected, loadFocus]);
+
+  useEffect(() => {
     if (!focusConflictLatest || !focusRead || focusRead.revision <= focusConflictLatest.revision) return;
     setFocusConflictLatest(focusRead);
     setFocusConflictReviewed(false);
@@ -258,6 +265,12 @@ const V2PodBoard: React.FC = () => {
     })();
     return () => { cancelled = true; };
   }, [api, podId]);
+
+  useEffect(() => {
+    if (!podId || !socket || !connected) return undefined;
+    joinPod(podId);
+    return () => { leavePod(podId); };
+  }, [podId, socket, connected, joinPod, leavePod]);
 
   useEffect(() => {
     if (!podId || !socket || !connected) return undefined;

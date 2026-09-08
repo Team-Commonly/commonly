@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2PodBoard from '../components/V2PodBoard';
 import { AuthContext } from '../../context/AuthContext';
 
-let mockSocketValue = { socket: null, connected: false };
+let mockSocketValue = { socket: null, connected: false, joinPod: jest.fn(), leavePod: jest.fn() };
 jest.mock('../../context/SocketContext', () => ({
   useSocket: () => mockSocketValue,
 }));
@@ -72,7 +72,7 @@ const wireAxios = (tasks = TASKS) => {
   });
 };
 
-const renderBoard = (entry = '/v2/pods/pod-1/board') => render(
+const boardTree = (entry = '/v2/pods/pod-1/board') => (
   <AuthContext.Provider value={authValue}>
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
@@ -80,8 +80,10 @@ const renderBoard = (entry = '/v2/pods/pod-1/board') => render(
         <Route path="/v2/pods/:podId" element={<div>chat page</div>} />
       </Routes>
     </MemoryRouter>
-  </AuthContext.Provider>,
+  </AuthContext.Provider>
 );
+
+const renderBoard = (entry = '/v2/pods/pod-1/board') => render(boardTree(entry));
 
 const SwitchPod = () => {
   const navigate = useNavigate();
@@ -102,7 +104,7 @@ const renderNavigableBoard = () => render(
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockSocketValue = { socket: null, connected: false };
+  mockSocketValue = { socket: null, connected: false, joinPod: jest.fn(), leavePod: jest.fn() };
   wireAxios();
 });
 
@@ -174,6 +176,8 @@ describe('V2PodBoard', () => {
 
   test('refetches when a task_updated socket event lands for this pod', async () => {
     const handlers = {};
+    const joinPod = jest.fn();
+    const leavePod = jest.fn();
     mockSocketValue = {
       socket: {
         on: (event, fn) => { handlers[event] = fn; },
@@ -181,6 +185,8 @@ describe('V2PodBoard', () => {
         emit: jest.fn(),
       },
       connected: true,
+      joinPod,
+      leavePod,
     };
     renderBoard();
     await screen.findByRole('region', { name: 'Pending' });
@@ -197,6 +203,58 @@ describe('V2PodBoard', () => {
       const focusCallsAfter = axios.get.mock.calls.filter(([url]) => url.endsWith('/focus')).length;
       expect(focusCallsAfter).toBeGreaterThan(focusCallsBefore);
     });
+  });
+
+  test('joins the current pod room and hands ownership across navigation', async () => {
+    const handlers = {};
+    const joinPod = jest.fn();
+    const leavePod = jest.fn();
+    mockSocketValue = {
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+        emit: jest.fn(),
+      },
+      connected: true,
+      joinPod,
+      leavePod,
+    };
+    renderNavigableBoard();
+
+    await screen.findByRole('region', { name: 'Pending' });
+    expect(joinPod).toHaveBeenCalledWith('pod-a');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch pod' }));
+    await screen.findByRole('region', { name: 'Pending' });
+    expect(leavePod).toHaveBeenCalledWith('pod-a');
+    expect(joinPod).toHaveBeenCalledWith('pod-b');
+  });
+
+  test('refreshes focus after reconnecting without a visibility change', async () => {
+    const refreshed = { ...FOCUS, revision: 3, focus: { ...FOCUS.focus, goal: 'Reconnected focus' } };
+    let focusCalls = 0;
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) {
+        focusCalls += 1;
+        return Promise.resolve({ data: focusCalls === 1 ? FOCUS : refreshed });
+      }
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace' } });
+      return Promise.resolve({ data: {} });
+    });
+    const view = renderBoard();
+    expect(await screen.findByText('Ship the pilot')).toBeInTheDocument();
+    expect(focusCalls).toBe(1);
+
+    mockSocketValue = {
+      socket: { on: jest.fn(), off: jest.fn() },
+      connected: true,
+      joinPod: jest.fn(),
+      leavePod: jest.fn(),
+    };
+    act(() => { view.rerender(boardTree()); });
+    await waitFor(() => expect(screen.getByText('Reconnected focus')).toBeInTheDocument());
+    expect(focusCalls).toBe(2);
   });
 
   test('renders a populated focus and saves an explicit ordered edit', async () => {
@@ -290,12 +348,16 @@ describe('V2PodBoard', () => {
     const refreshed = { ...FOCUS, revision: 3, focus: { ...FOCUS.focus, goal: 'Background update' } };
     let focusCalls = 0;
     const handlers = {};
+    const joinPod = jest.fn();
+    const leavePod = jest.fn();
     mockSocketValue = {
       socket: {
         on: (event, fn) => { handlers[event] = fn; },
         off: jest.fn(),
       },
       connected: true,
+      joinPod,
+      leavePod,
     };
     axios.get.mockImplementation((url) => {
       if (url.endsWith('/focus')) {
