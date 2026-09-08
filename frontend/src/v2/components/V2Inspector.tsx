@@ -15,6 +15,21 @@ interface V2InspectorProps {
   onOpenInvite?: () => void;
 }
 
+interface ArtifactRow { id: string; fileName: string; name: string; kind: 'image' | 'page' | 'doc'; createdAt: string | null }
+interface ArtifactsPage { items?: ArtifactRow[]; total?: number }
+
+const extOf = (name: string): string => { const m = /\.([a-z0-9]{1,5})$/i.exec(name || ''); return m ? m[1].toUpperCase() : 'FILE'; };
+const whenLabel = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const minutes = Math.floor(Math.max(0, Date.now() - new Date(value).getTime()) / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `${days}d` : `${Math.floor(days / 30)}mo`;
+};
+
 interface TaskItem {
   taskId: string;
   title: string;
@@ -69,6 +84,8 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [files, setFiles] = useState<ArtifactRow[]>([]);
+  const [filesTotal, setFilesTotal] = useState(0);
   const attention = useMemo(
     () => attentionItems.filter((item) => item.podId === pod?._id),
     [attentionItems, pod?._id],
@@ -99,6 +116,20 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
       .slice(0, 3);
     return { open, inProgress, done, rows };
   }, [tasks]);
+
+  // Files pane (PR 5, 66366 §4): the same /api/artifacts query with podId fixed.
+  useEffect(() => {
+    if (!pod?._id) { setFiles([]); setFilesTotal(0); return undefined; }
+    let active = true;
+    api.get<ArtifactsPage>(`/api/artifacts?podId=${encodeURIComponent(pod._id)}&limit=5`)
+      .then((data) => {
+        if (!active) return;
+        setFiles(Array.isArray(data?.items) ? data.items : []);
+        setFilesTotal(typeof data?.total === 'number' ? data.total : (Array.isArray(data?.items) ? data.items.length : 0));
+      })
+      .catch(() => { if (active) { setFiles([]); setFilesTotal(0); } });
+    return () => { active = false; };
+  }, [api, pod?._id]);
 
   if (!pod) return null;
 
@@ -195,6 +226,27 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
                 <span className="v2-workspace-inspector__task-meta">{task.assignee || (isWorkingTask(task) ? t('inspector.workspace.wip') : task.status)}</span>
               </button>
             ))}
+          </div>
+        </section>
+
+        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-files">
+          <h2 id="workspace-inspector-files" className="v2-workspace-inspector__label">
+            {t('inspector.workspace.filesIn', { pod: shortRoomName(pod.name).toLowerCase() })}
+          </h2>
+          <div className="v2-workspace-inspector__rows">
+            {files.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noFiles')}</p>}
+            {files.map((file) => (
+              <button key={file.id} type="button" className="v2-workspace-inspector__file" onClick={() => navigate(`/v2/artifacts?podId=${encodeURIComponent(pod._id)}&q=${encodeURIComponent(file.name)}`)}>
+                <span className="v2-workspace-inspector__ext" aria-hidden="true">{extOf(file.name)}</span>
+                <span>{file.name}</span>
+                <span className="v2-workspace-inspector__task-meta">{whenLabel(file.createdAt)}</span>
+              </button>
+            ))}
+            {filesTotal > 0 && (
+              <button type="button" className="v2-workspace-inspector__all-files" onClick={() => navigate(`/v2/artifacts?podId=${encodeURIComponent(pod._id)}`)}>
+                {t('inspector.workspace.allFiles', { count: filesTotal })}
+              </button>
+            )}
           </div>
         </section>
 

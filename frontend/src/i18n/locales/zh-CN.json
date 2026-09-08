@@ -20,7 +20,8 @@
       "settings": "设置",
       "connectors": "连接器",
       "needsYou": "待处理",
-      "team": "团队"
+      "team": "团队",
+      "artifacts": "产物"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
@@ -1069,7 +1070,10 @@
         "workingTask": "进行中 · {{title}}",
         "working": "进行中",
         "idle": "空闲"
-      }
+      },
+      "filesIn": "{{pod}} 中的文件",
+      "noFiles": "暂无文件",
+      "allFiles": "全部 {{count}} 个文件"
     },
     "goal": {
       "title": "目标",
@@ -1838,5 +1842,39 @@
     "creating": "创建中…",
     "createTelegram": "新建 Telegram 连接器",
     "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
+  },
+  "artifacts": {
+    "title": "产物",
+    "meta": "你所有 Pod 中共享的文件与页面",
+    "kindLabel": "类型",
+    "podLabel": "Pod",
+    "allPods": "全部 Pod",
+    "morePods": "更多 ▾",
+    "searchPlaceholder": "搜索文件",
+    "kinds": {
+      "all": "全部",
+      "images": "图片",
+      "docs": "文档",
+      "pages": "页面"
+    },
+    "kindNames": {
+      "image": "图片",
+      "page": "页面",
+      "doc": "文档"
+    },
+    "columns": {
+      "file": "文件",
+      "kind": "类型",
+      "pod": "Pod",
+      "sharedBy": "分享者",
+      "when": "时间",
+      "size": "大小"
+    },
+    "foot": "{{shown}} / {{total}} · 最新在前",
+    "more": "还有 {{count}} 项",
+    "loadingMore": "加载中…",
+    "empty": "还没有共享内容。在任意 Pod 里附加文件，就会出现在这里。",
+    "emptyFiltered": "没有匹配项。清除筛选或搜索。",
+    "loadFailed": "无法加载产物。"
   }
 }

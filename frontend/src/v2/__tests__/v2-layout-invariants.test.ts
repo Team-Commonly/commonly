@@ -507,6 +507,31 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
   });
 
+  test('Artifacts (direction C, PR 5): display head, one segment grammar, bordered ext chip, mono numbers, phone block', () => {
+    const artifactsPage = fs.readFileSync(path.join(__dirname, '../components/V2ArtifactsPage.tsx'), 'utf8');
+    expect(v2App).toContain("'v2-feature--artifacts'");
+    expect(v2App).toContain('<V2ArtifactsPage />');
+    expect(ruleBody(v2, '.v2-artifacts__title')).toContain('32px/1.1 var(--v2-font-display)');
+    expect(ruleBody(v2, '.v2-artifacts__meta')).toContain('color: var(--v2-text-muted)');
+    expect(ruleBody(v2, '.v2-artifacts__seg')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).not.toContain('var(--v2-ink)');
+    const ext = ruleBody(v2, '.v2-artifacts__ext');
+    expect(ext).toContain('border: 1px solid var(--v2-border)');
+    expect(ext).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts__mono')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts__table-wrap')).toContain('overflow-x: auto');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__more')).toContain('color: var(--v2-accent-text)');
+    // page = text/html only shows no size; the ext chip is the extension, never a colour square.
+    expect(artifactsPage).toContain("item.kind === 'page' ? '—' : formatSize(item.size)");
+    expect(artifactsPage).toContain('extOf(item.name)');
+    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__controls \{ flex-direction: column; align-items: stretch; \}/);
+    // Inspector Files pane: same rows, ext chip in front, All N files as cobalt text.
+    expect(workspaceInspector).toContain("'inspector.workspace.filesIn'");
+    expect(workspaceInspector).toContain('/api/artifacts?podId=');
+    expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
+  });
+
   test('workspace inspector is the small three-card replacement, with a phone sheet rather than legacy tabs', () => {
     // TASK-129 replaces the 86KB tabbed inspector in the same cutover as the
     // artboard cards. Keeping the old component anywhere in the route would
