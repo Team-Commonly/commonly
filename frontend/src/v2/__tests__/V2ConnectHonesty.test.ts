@@ -90,4 +90,24 @@ describe('the connect flow states what it does not do', () => {
     const app = read('../../App.tsx');
     expect(app).toContain(`<Route path="${verify![1]}" element={<V2CliAuthorize />} />`);
   });
+
+  test('nginx lets the two URLs the backend and CLI print reach the app', () => {
+    // The real-404 change (58294673, 2026-08-24) made nginx an allowlist of
+    // SPA routes. /cli/authorize was never on it, so the device-code login
+    // 404'd in the browser from that day — the React route restore (#1627)
+    // alone changed nothing live. Same for /settings/devices, which the CLI
+    // prints after a login. The regex is read from the real config and run.
+    const nginx = fs.readFileSync(path.join(__dirname, '../../../nginx.conf'), 'utf8');
+    const location = nginx.match(/location ~ \^\/\((.*)\) \{\n\s*try_files \$uri \$uri\/ \/index\.html;/);
+    expect(location).not.toBeNull();
+    const spa = new RegExp(`^/(${location![1]})`);
+    const backendAuth = fs.readFileSync(path.join(__dirname, '../../../../backend/routes/auth.ts'), 'utf8');
+    const verify = backendAuth.match(/verifyUrl: `\$\{origin\}(\/[^`]+)`/)![1];
+    const cliLogin = fs.readFileSync(path.join(__dirname, '../../../../cli/src/commands/login.js'), 'utf8');
+    const devices = cliLogin.match(/new URL\('(\/[^']+)'/)![1];
+    for (const route of [verify, devices, '/verify-email', '/v2/settings']) {
+      expect(spa.test(route)).toBe(true);
+    }
+    expect(spa.test('/definitely-not-a-route')).toBe(false);
+  });
 });
