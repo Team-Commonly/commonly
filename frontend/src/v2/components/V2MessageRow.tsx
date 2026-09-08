@@ -614,8 +614,8 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             <span className="v2-msg__author">{author}</span>
           )}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
-          {time && <span className="v2-msg__time">{time}</span>}
           {runtimeTag && <span className="v2-msg__tag">{runtimeTag}</span>}
+          {time && <span className="v2-msg__time">{time}</span>}
           {isDecisionRuling && <span className="v2-msg__ruled">· {t('activity.decision.ruledShort')}</span>}
         </div>
         )}
