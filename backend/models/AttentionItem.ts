@@ -12,6 +12,13 @@ export interface IAttentionItem extends Document {
   detail?: string;
   podName?: string;
   actorName?: string;
+  /**
+   * The principal whose ask this item carries: the mention's author, the
+   * approval's requester, the decision's agent. Keyed by id because
+   * `actorName` holds three different shapes across the three writers and
+   * is absent on decisions entirely.
+   */
+  actorUserId?: Types.ObjectId;
   messageId?: string;
   threadRootId?: string;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
@@ -48,6 +55,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   detail: { type: String },
   podName: { type: String },
   actorName: { type: String },
+  actorUserId: { type: Schema.Types.ObjectId, ref: 'User' },
   messageId: { type: String },
   threadRootId: { type: String },
   options: [optionSchema],

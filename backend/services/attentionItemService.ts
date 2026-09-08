@@ -55,6 +55,7 @@ const recordForRecipients = async (
         detail: payload.detail,
         podName: payload.podName,
         actorName: payload.actorName,
+        actorUserId: payload.actorUserId,
         messageId: payload.messageId,
         threadRootId: payload.threadRootId,
         options: payload.options,
@@ -101,7 +102,7 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
     const authorName = message?.username || message?.userId?.username || await resolveAuthorName(authorId);
     await recordForRecipients(recipients, {
       podId, kind: 'mention' as Kind, sourceType: 'message' as SourceType, sourceId: sourceKey('message', messageId),
-      title: `${authorName} mentioned you`, actorName: authorName, detail: compact(content), podName: pod?.name || 'Pod',
+      title: `${authorName} mentioned you`, actorName: authorName, actorUserId: authorId || undefined, detail: compact(content), podName: pod?.name || 'Pod',
       messageId: String(messageId), threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),
       sourceCreatedAt: message?.createdAt || message?.created_at || undefined,
     });
@@ -246,7 +247,11 @@ export const recordApproval = async (approval: any): Promise<void> => {
     const agentName = approval?.agentMetadata?.agentName;
     await recordForRecipients(recipients, {
       podId, kind: 'approval' as Kind, sourceType: 'approval' as SourceType, sourceId: sourceKey('approval', id),
-      title: agentName ? `${agentName} requests approval` : 'Approval requested', actorName: agentName || undefined, detail: compact(approval?.content, 180), podName: pod?.name || 'Pod',
+      title: agentName ? `${agentName} requests approval` : 'Approval requested', actorName: agentName || undefined,
+      // The approval writer has no agent user id of its own today; take the
+      // requester when the source carries one, else leave it unset.
+      actorUserId: approval?.approval?.requestedBy || approval?.agentUserId || approval?.actorId || undefined,
+      detail: compact(approval?.content, 180), podName: pod?.name || 'Pod',
     });
   } catch (error) {
     console.warn('[attention] approval materialization failed:', (error as Error).message);
@@ -267,6 +272,7 @@ export const recordDecision = async (decision: any): Promise<void> => {
     await recordForRecipients(recipients, {
       podId, kind: 'decision' as Kind, sourceType: 'decision_request' as SourceType, sourceId: sourceKey('decision_request', id),
       title: String(decision.title || 'Decision requested'), detail: compact(decision.question || decision.context, 1000),
+      actorUserId: decision.agentUserId || undefined,
       podName: pod?.name || 'Pod', messageId: decision.messageId ? String(decision.messageId) : undefined,
       threadRootId: String(decision.threadRootId || decision.messageId || ''), options,
     });
@@ -412,7 +418,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
-      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), title: row.title, actorName: row.actorName || undefined, detail: row.detail || '',
+      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
