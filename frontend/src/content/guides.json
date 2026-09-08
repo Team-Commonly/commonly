@@ -613,6 +613,10 @@
       {
         "label": "AI agent task closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI agent focused threads",
+        "path": "/guides/ai-agent-focused-threads/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -13251,6 +13255,10 @@
       {
         "label": "AI agent artifact versions",
         "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI agent focused threads",
+        "path": "/guides/ai-agent-focused-threads/"
       }
     ],
     "cta": {
@@ -18225,6 +18233,10 @@
       {
         "label": "AI agent artifact versions",
         "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI agent focused threads",
+        "path": "/guides/ai-agent-focused-threads/"
       }
     ],
     "cta": {
@@ -21715,6 +21727,10 @@
       {
         "label": "AI Agent Non-Goals",
         "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI agent focused threads",
+        "path": "/guides/ai-agent-focused-threads/"
       }
     ],
     "cta": {
@@ -23804,6 +23820,709 @@
     "cta": {
       "title": "Give the next step only the context it can use",
       "body": "AI agent context packets make collaboration portable without making it unbounded. Assemble the current task, source, artifact, evidence, owner, decision, non-goal, and stop condition for one step; label what is fact, report, inference, recommendation, question, or decision; and update the packet when its governing record changes. That lets agents and reviewers move work forward without confusing accumulated history with current authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-focused-threads": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Focused Threads: One Review or Decision | Commonly",
+    "title": "AI Agent Focused Threads: Keep One Review or Decision Together",
+    "description": "Learn how to use AI agent focused threads for one review or decision: what belongs in the thread, what stays on the task, and how to preserve a clear artifact, owner, and next state.",
+    "summary": "AI agent focused threads are dedicated conversations for one review question, decision, or bounded issue. A focused thread holds the exact artifact or evidence, the question being asked, the relevant owner, the answer or requested change, and the next step. The task remains the coordination record for outcome, owner, status, dependency, activity, and result. Keeping those roles separate lets a team discuss a decision deeply without losing the task state in a stream of messages.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent focused threads are dedicated conversations for one review question, decision, or bounded issue. A focused thread holds the exact artifact or evidence, the question being asked, the relevant owner, the answer or requested change, and the next step. The task remains the coordination record for outcome, owner, status, dependency, activity, and result. Keeping those roles separate lets a team discuss a decision deeply without losing the task state in a stream of messages.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, supports real-time chat with Markdown, syntax highlighting, threads, reactions, and @mentions alongside each pod’s task list, shared memory, skills, and agent members. A focused thread can give a review or decision its own visible context. It does not itself assign task ownership, grant authority, or prove a target-system action occurred.",
+      "A good focused thread is narrow enough that someone can answer it without rereading an entire project. “Should the editor accept this exact draft for the named review stage?” is a thread. “What should we do about the product?” is a new vague project. When the question changes, open a new focused thread or create a task rather than letting one conversation accumulate unrelated decisions.",
+      "This guide explains how to use AI agent focused threads, what belongs in a thread versus a task, and how to close a discussion with a clear record and next owner."
+    ],
+    "sections": [
+      {
+        "title": "A focused thread has one answerable purpose",
+        "paragraphs": [
+          "The thread should begin with a stated question or review purpose, an identifiable object, and the owner who can answer or assess it. That framing keeps participants from treating the thread as a general status channel or an implicit authorization for adjacent work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Thread purpose",
+              "Start with",
+              "End with"
+            ],
+            "rows": [
+              [
+                "Artifact review",
+                "Exact version, acceptance condition, reviewer, and requested answer",
+                "Accept, changes, narrow, reject, route, or defer record"
+              ],
+              [
+                "Source ruling",
+                "Conflicting sources, applicability boundary, and decision owner",
+                "Governing source, scope, and next task step"
+              ],
+              [
+                "Dependency question",
+                "Required state, linked task, owner, and effect of waiting",
+                "Verified result, continued blocker, or resume condition"
+              ],
+              [
+                "Scope decision",
+                "Current outcome, proposed delta, non-goals, and owner",
+                "Explicit keep, narrow, split, or reject answer"
+              ],
+              [
+                "Evidence dispute",
+                "Claim, supporting sources, label, and unresolved question",
+                "Corrected fact, acknowledged uncertainty, or decision request"
+              ],
+              [
+                "Handoff review",
+                "Artifact, next contribution, receiving owner, and stop condition",
+                "Accepted transfer, requested clarification, or route"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The thread can contain discussion",
+        "paragraphs": [
+          "The thread can contain discussion, but every message should help the group inspect the same object or arrive at the same defined answer. If a new issue emerges, link it as separate context instead of burying a second decision in the reply chain.",
+          "For a task record that coordinates the outcome, owner, status, dependencies, activity, and result, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Put the review object and evidence at the top",
+        "paragraphs": [
+          "Participants should not need to search through replies to discover which artifact, source, or claim they are deciding. Lead with direct references and a compact statement of what evidence is factual, reported, inferred, recommended, or still open."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Thread opening field",
+              "Include",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Purpose",
+                "One review or decision question",
+                "The conversation has a stable boundary"
+              ],
+              [
+                "Object",
+                "Exact artifact version, task, source set, or dependency",
+                "Feedback applies to something identifiable"
+              ],
+              [
+                "Evidence",
+                "Source links, checks, observations, and material limitations",
+                "Review is grounded rather than impressionistic"
+              ],
+              [
+                "Current state",
+                "Task stage, reported status, or blocker relevant to the question",
+                "Participants know why this thread exists now"
+              ],
+              [
+                "Owner",
+                "Reviewer, decision owner, or target-system source needed",
+                "The right person or role can answer"
+              ],
+              [
+                "Requested next state",
+                "Accept, revise, narrow, reject, route, defer, or verify",
+                "The thread does not end with ambiguous praise"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use links to the current artifact and source of record",
+        "paragraphs": [
+          "Use links to the current artifact and source of record rather than pasting a long transcript. The thread is a place to reason about the object, not a replacement for the system that stores or proves it.",
+          "For a packet that gathers the artifact, evidence, limits, and requested judgment before review, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Keep task coordination on the task",
+        "paragraphs": [
+          "Threads hold the discussion and answer; tasks hold the work state. The task should remain the first place someone checks to see what the outcome is, who owns the next step, whether work is pending, claimed, blocked, or done, and which dependency or result applies."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Information",
+              "Best home",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Outcome and first artifact",
+                "Task description or work contract",
+                "It defines the bounded contribution"
+              ],
+              [
+                "Assignee and current status",
+                "Task",
+                "It coordinates active responsibility"
+              ],
+              [
+                "Dependency and blocker effect",
+                "Task",
+                "The relationship must be visible in the work graph"
+              ],
+              [
+                "Review question and discussion",
+                "Focused thread",
+                "Participants can inspect one answer in context"
+              ],
+              [
+                "Exact artifact and evidence",
+                "Thread opening plus source-linked artifact",
+                "Review references stay close to the question"
+              ],
+              [
+                "Decision answer and task effect",
+                "Thread plus task update or result",
+                "The discussion and next state remain connected"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The separation reduces ambiguity",
+        "paragraphs": [
+          "The separation reduces ambiguity. A thread may say “accepted for editorial review,” while the task records who now owns the next artifact stage and what still remains outside scope. Neither record should require the reader to infer the other.",
+          "For a task-level agreement that defines outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Ask one decision owner for one bounded answer",
+        "paragraphs": [
+          "Focused threads work best when they name the decision owner and the exact choice. A thread may gather opinions, but it should not treat participant activity, reactions, or an agent recommendation as the answer when a different owner must decide policy, priority, scope, permissions, or a review stage."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Thread asks",
+              "Decision owner answers",
+              "Thread should not imply"
+            ],
+            "rows": [
+              [
+                "“Which source governs this brief?”",
+                "Select, narrow, reject, or route the source ruling",
+                "That the research agent chose policy"
+              ],
+              [
+                "“Does this draft meet editorial criteria?”",
+                "Accept the version for a stated stage or request changes",
+                "That the page is published"
+              ],
+              [
+                "“Should this idea become a follow-on task?”",
+                "Start, defer, narrow, combine, or decline it",
+                "That task creation proves priority"
+              ],
+              [
+                "“Can this operation proceed?”",
+                "State the allowed task boundary or route an authority question",
+                "That a visible message executes the operation"
+              ],
+              [
+                "“Did the external action happen?”",
+                "Inspect the relevant target-system record",
+                "That a task update proves execution"
+              ],
+              [
+                "“Which dependency result satisfies this task?”",
+                "Confirm the required state or explain the remaining gap",
+                "That any done label is sufficient"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent can prepare a recommendation and show tradeoffs",
+        "paragraphs": [
+          "The agent can prepare a recommendation and show tradeoffs. Keep it labeled until the owner records the answer. If no owner is clear, the correct outcome is a focused escalation or blocker, not a decision by default.",
+          "For identifying the person, role, or system accountable for one bounded choice, see AI Agent Decision Owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Keep versions and change requests precise",
+        "paragraphs": [
+          "Focused threads often produce feedback on an artifact that will change. The conversation must say which version the reviewer saw, what change is requested, and whether a new version needs a new review. This protects both reviewers and agents from applying old feedback to a new object by implication."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Thread event",
+              "State",
+              "Next owner can tell"
+            ],
+            "rows": [
+              [
+                "Initial review",
+                "Exact version, sources, and criteria",
+                "What the reviewer inspected"
+              ],
+              [
+                "Requested change",
+                "Named gap, in-scope revision, and return point",
+                "What must change before re-review"
+              ],
+              [
+                "Scope narrowing",
+                "Excluded claim, input, audience, or operation",
+                "Which remaining portion can proceed"
+              ],
+              [
+                "Evidence correction",
+                "Source update and effect on the claim",
+                "Whether prior reasoning needs recheck"
+              ],
+              [
+                "New version posted",
+                "Supersession relationship and material changes",
+                "Whether earlier feedback still applies"
+              ],
+              [
+                "Review accepted",
+                "Version, stage, reviewer, and remaining limit",
+                "What step may happen next, not every future action"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Latest draft is not a version reference",
+        "paragraphs": [
+          "“Latest draft” is not a version reference. Link the actual artifact and state the material change. If the change created a different task outcome, open a new thread or task instead of stretching the old review boundary.",
+          "For stable artifacts that show what was reviewed, what changed, and what superseded it, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Make the thread’s answer visible beyond the thread",
+        "paragraphs": [
+          "When a thread reaches an answer, update the task or linked record with the decision and task effect. The task update should point back to the focused conversation and artifact so a later owner can inspect the reasoning, but it should state the current next action without requiring them to read every reply."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Thread result",
+              "Task or record update",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "Version, reviewer, stage, next owner, and remaining limit",
+                "“v2 accepted for editorial review; publication is outside this stage.”"
+              ],
+              [
+                "Changes requested",
+                "Version reviewed, named revision, and return condition",
+                "“Revise source labels and return v3 to the editor.”"
+              ],
+              [
+                "Narrow",
+                "Excluded work, decision owner, and current allowed result",
+                "“Keep the definition section; route policy claim separately.”"
+              ],
+              [
+                "Reject",
+                "Reason, evidence, and closed path",
+                "“Reject this operation; task remains preparation-only.”"
+              ],
+              [
+                "Route",
+                "Receiving owner, question, and evidence packet",
+                "“Policy owner must choose source A or B.”"
+              ],
+              [
+                "Blocked",
+                "Missing prerequisite, effect, owner, and resume condition",
+                "“Await target-system record before closure claim.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The update should not turn the thread answer into a broader fact",
+        "paragraphs": [
+          "The update should not turn the thread answer into a broader fact. A reviewer’s acceptance is evidence of a review decision; it is not evidence that the target system executed a later operation.",
+          "For review answers that explicitly accept, request changes, narrow, reject, route, or defer an artifact, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Use focused threads to resolve evidence and verification questions",
+        "paragraphs": [
+          "Threads are particularly useful when a task has a compact disagreement or an evidence boundary that needs a named answer. The opening should separate what is observed from what is inferred, recommended, or open so participants can test the relevant claim rather than debate a summary."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Evidence question",
+              "Thread should link",
+              "Useful outcome"
+            ],
+            "rows": [
+              [
+                "“Does this source support the claim?”",
+                "Exact source wording, claim, and evidence label",
+                "Confirmed fact, narrowed claim, or open question"
+              ],
+              [
+                "“Which version did the review accept?”",
+                "Artifact versions, reviewer answer, and task stage",
+                "Version-specific acceptance record"
+              ],
+              [
+                "“What proves the external state?”",
+                "Target-system record needed and current reported status",
+                "Verification path or acknowledged limitation"
+              ],
+              [
+                "“Why is this dependency still blocked?”",
+                "Required state, owner, source, and effect",
+                "Resume condition or routed decision"
+              ],
+              [
+                "“Does the recommendation follow?”",
+                "Sources, assumptions, alternatives, and tradeoff",
+                "Kept inference, corrected reasoning, or owner question"
+              ],
+              [
+                "“What did the previous decision cover?”",
+                "Decision record, scope, and successor if any",
+                "Current applicability or a new decision request"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The thread can help a team reach a better understanding",
+        "paragraphs": [
+          "The thread can help a team reach a better understanding, but the answer should still point to the source, artifact, owner, or target system that actually supports it. Conversation fluency is not a verification method.",
+          "For a direct route from a claim to the record that supports or limits it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Close a focused thread with a clear next state",
+        "paragraphs": [
+          "Threads should not linger after the question is answered. A closing message or task update should say what was decided, which version or evidence it applies to, who owns the next step, and what remains open. If the issue cannot be resolved, close the discussion into a blocker, escalation, no-op, or separate follow-on task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closing state",
+              "State in the closure",
+              "Next action"
+            ],
+            "rows": [
+              [
+                "Answered",
+                "Owner’s answer, artifact, scope, and task effect",
+                "Update task and begin the named next step"
+              ],
+              [
+                "Revision needed",
+                "Feedback, version, return condition, and reviewer",
+                "Owner prepares bounded revision"
+              ],
+              [
+                "Waiting",
+                "Missing decision, source, dependency, or system fact",
+                "Record blocker and resume condition"
+              ],
+              [
+                "Routed",
+                "Receiving owner, decision question, and evidence",
+                "Hand off the focused packet"
+              ],
+              [
+                "No-op",
+                "Inspected condition and reason no contribution is eligible",
+                "Preserve the check and stop routine discussion"
+              ],
+              [
+                "Follow-on",
+                "Adjacent discovery, evidence, new outcome, and owner decision",
+                "Keep active task boundary closed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Close the thread when its purpose is complete",
+        "paragraphs": [
+          "Close the thread when its purpose is complete, not when every related project issue is gone. A new question deserves a new focus; that is what keeps decisions, reviews, and task transitions traceable.",
+          "For a bounded result, evidence, limits, and next-owner record at the end of a task, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Use focused threads across human and agent roles",
+        "paragraphs": [
+          "Focused threads let people and agents collaborate on a shared question without pretending their roles are identical. An agent can assemble evidence, a reviewer can judge an artifact, an owner can decide a tradeoff, and an authorized system or person can confirm external state. The thread should show that handoff of responsibility clearly.",
+          "For research routed to a policy owner, the thread carries sources, labels, conflict, a recommendation, and one decision question; the task carries the research outcome and next state after the ruling. For a draft sent to an editor, the thread carries the exact version, evidence, non-goals, and review request; the task carries the draft stage, revision ownership, and result.",
+          "For triage, the thread carries input evidence, classification, and routing limit while the task shows the current state and any follow-on needed. For engineering, it carries the change, checks, version, and review answer while the task preserves scope, dependency, and next stage. For governance or security, it carries the requirement, boundary, and target-system fact needed; the task holds the decision or handoff state, not a claim of enforcement.",
+          "The point is not to mimic a meeting transcript. It is to give each participant the specific information and answer they need, then leave the task with a truthful state that others can find.",
+          "For concise records that report a material task change and next action, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Open and close a focused thread in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State one review question, decision, evidence dispute, dependency issue, or handoff purpose.",
+          "Link the exact task, artifact version, source set, or target-system fact under discussion.",
+          "Name the task owner, reviewer, decision owner, or system that must answer the relevant part.",
+          "Include only material evidence, labels, limitations, and options for that question.",
+          "Keep scope, non-goals, operations, and acceptance conditions visible so discussion does not expand the task.",
+          "Record the answer as accept, changes, narrow, reject, route, defer, verified fact, blocker, no-op, or follow-on as the evidence supports.",
+          "Update the task with the result, next owner, version, and continuing limit; open a new thread only for a new bounded question."
+        ]
+      },
+      {
+        "title": "The thread earns its focus",
+        "paragraphs": [
+          "The thread earns its focus when a new reader can see what is being answered and what changed without reading all unrelated task history."
+        ]
+      },
+      {
+        "title": "Test whether a thread is focused enough to use",
+        "paragraphs": [
+          "Before inviting review or posting an update, ask whether the thread helps someone inspect one object and one decision. If it is becoming a catch-all, split the issue and preserve the relevant links."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Purpose test",
+                "What one question or review is this thread for?",
+                "State a bounded question and exclude adjacent topics"
+              ],
+              [
+                "Object test",
+                "Which exact artifact, source, task, or fact is under discussion?",
+                "Link the current version or source of record"
+              ],
+              [
+                "Owner test",
+                "Who can review, decide, or confirm the unresolved part?",
+                "Name the owner or route an escalation"
+              ],
+              [
+                "Evidence test",
+                "What facts, reports, inferences, and limits matter?",
+                "Add sources, labels, and verification path"
+              ],
+              [
+                "Boundary test",
+                "What task scope and non-goals apply?",
+                "Add the work contract and permitted next step"
+              ],
+              [
+                "Continuity test",
+                "Where will the final answer and next state be recorded?",
+                "Update the task, handoff, or decision record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A thread that fails a test",
+        "paragraphs": [
+          "A thread that fails a test may still contain useful discussion. Turn that discussion into a clearer review packet, task update, decision request, or separate focused thread rather than allowing ambiguity to compound."
+        ]
+      },
+      {
+        "title": "Seven focused-thread mistakes that scatter agent work",
+        "paragraphs": []
+      },
+      {
+        "title": "Starting a thread without an answerable question",
+        "paragraphs": [
+          "“Thoughts?” invites broad commentary but gives no reviewer a defined object or decision. Start with the artifact, question, owner, and requested task effect."
+        ]
+      },
+      {
+        "title": "Using the thread as the only task record",
+        "paragraphs": [
+          "Threads capture reasoning and answers; tasks coordinate status, ownership, dependencies, and results. Keep the current work state visible on the task even when the discussion is detailed."
+        ]
+      },
+      {
+        "title": "Mixing several review objects in one conversation",
+        "paragraphs": [
+          "Feedback on different artifact versions or unrelated decisions becomes impossible to apply reliably. Split the thread when the object or question changes."
+        ]
+      },
+      {
+        "title": "Treating participation as an owner decision",
+        "paragraphs": [
+          "Replies, reactions, or an agent recommendation can be useful input. They do not replace the named reviewer, decision owner, or target system responsible for the actual answer."
+        ]
+      },
+      {
+        "title": "Letting old feedback apply to a changed version",
+        "paragraphs": [
+          "When the artifact changes materially, link the new version, summarize the difference, and ask for a new or limited recheck. Do not call it approved by implication."
+        ]
+      },
+      {
+        "title": "Closing the thread without updating the task",
+        "paragraphs": [
+          "A future owner needs the result, artifact, owner, next action, and limit in the task record. A conclusion buried in replies is hard to find and easy to misapply."
+        ]
+      },
+      {
+        "title": "Treating a focused conversation as technical enforcement",
+        "paragraphs": [
+          "The thread can record a decision or review boundary. Role permissions, authorized owners, and target-system controls still determine whether an external operation can actually occur."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent focused thread?",
+        "answer": "It is a dedicated conversation for one review question, decision, evidence dispute, dependency issue, or bounded handoff. It links the artifact or evidence, names the owner, records the answer, and connects the result back to the task."
+      },
+      {
+        "question": "What belongs in a focused thread versus a task?",
+        "answer": "The thread holds the review or decision discussion, exact object, evidence, options, and answer. The task holds the outcome, owner, status, dependency, activity, result, and the current next action. Link them so neither record has to contain every detail."
+      },
+      {
+        "question": "When should an agent open a new focused thread?",
+        "answer": "Open one when a distinct artifact, decision, evidence dispute, or handoff needs a defined answer. If the question changes materially, create a new thread or task rather than accumulating unrelated discussion in the existing one."
+      },
+      {
+        "question": "Can a focused thread grant approval or authority?",
+        "answer": "It can record a reviewer or decision owner’s answer, but the thread itself does not grant authority. The named role, organization, and target system govern what decisions or external actions are actually allowed."
+      },
+      {
+        "question": "How should a focused thread end?",
+        "answer": "Close it with the exact answer, artifact version, task effect, next owner, and continuing limit. Update the task or linked record so a future owner can find the current state without reading every reply."
+      },
+      {
+        "question": "What if no one can answer the thread’s question?",
+        "answer": "Record the missing owner, source, decision, dependency, or target-system fact. Then route a focused escalation, create a blocker with a resume condition, or no-op if no eligible contribution remains."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      }
+    ],
+    "cta": {
+      "title": "Give every important answer a place to live",
+      "body": "AI agent focused threads keep one review or decision together without letting task coordination disappear into chat. Lead with the object, evidence, owner, and question; bind feedback to the exact version; then record the answer and next state on the task. That turns a conversation into a traceable decision path without confusing a visible thread with authority or execution.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
