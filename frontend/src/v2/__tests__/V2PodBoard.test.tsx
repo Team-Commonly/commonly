@@ -332,8 +332,15 @@ describe('V2PodBoard', () => {
     fireEvent.change(screen.getByDisplayValue('B focus'), { target: { value: 'B draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
     await waitFor(() => expect(patchResolvers).toHaveLength(2));
-    act(() => { patchResolvers[0]({ data: aFocus }); });
+    await act(async () => {
+      patchResolvers[0]({ data: aFocus });
+      await Promise.resolve();
+    });
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
-    act(() => { patchResolvers[1]({ data: bFocus }); });
+    await act(async () => {
+      patchResolvers[1]({ data: bFocus });
+      await Promise.resolve();
+    });
+    expect(screen.getByText('B focus')).toBeInTheDocument();
   });
 });
