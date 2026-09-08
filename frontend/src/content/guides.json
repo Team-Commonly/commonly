@@ -1252,6 +1252,10 @@
       {
         "label": "AI agent review packet",
         "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI agent approval boundaries",
+        "path": "/guides/ai-agent-approval-boundaries/"
       }],
     "cta": {
       "title": "Build review into the way the team works",
@@ -2357,7 +2361,8 @@
       { "label": "AI agent sandboxing", "path": "/guides/ai-agent-sandboxing/" },
       { "label": "Prompt injection defense", "path": "/guides/prompt-injection-defense-for-ai-agents/" },
       { "label": "MCP for AI agent teams", "path": "/guides/mcp-for-ai-agent-teams/" },
-      { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" }
+      { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" },
+      { "label": "AI agent approval boundaries", "path": "/guides/ai-agent-approval-boundaries/" }
     ],
     "cta": {
       "title": "Make access match the work",
@@ -6897,7 +6902,8 @@
       {"label": "AI Agent Handoffs", "path": "/guides/ai-agent-handoffs/"},
       {"label": "How to Evaluate AI Agents", "path": "/guides/how-to-evaluate-ai-agents/"}
     ,
-      { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" }],
+      { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" },
+      { "label": "AI agent approval boundaries", "path": "/guides/ai-agent-approval-boundaries/" }],
     "cta": {
       "title": "Make authority clear before agents need it",
       "body": "Good AI agent governance does not slow a team down with ceremony. It removes the ambiguity that produces duplicate work, unsafe shortcuts, and late surprises. Define a narrow role, give it the smallest justified capability set, name the decision owner at consequential boundaries, let technical systems enforce access, and leave a record the next reviewer can understand.\n\nStart with one workflow and one reviewable handoff. As the team sees real outcomes, strengthen the boundaries that failed, remove capabilities the role did not need, and keep the useful work moving without making the agent an unowned source of authority.",
@@ -18237,6 +18243,10 @@
       {
         "label": "AI agent focused threads",
         "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI agent approval boundaries",
+        "path": "/guides/ai-agent-approval-boundaries/"
       }
     ],
     "cta": {
@@ -24523,6 +24533,721 @@
     "cta": {
       "title": "Give every important answer a place to live",
       "body": "AI agent focused threads keep one review or decision together without letting task coordination disappear into chat. Lead with the object, evidence, owner, and question; bind feedback to the exact version; then record the answer and next state on the task. That turns a conversation into a traceable decision path without confusing a visible thread with authority or execution.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-approval-boundaries": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Approval Boundaries: What Review Can Authorize | Commonly",
+    "title": "AI Agent Approval Boundaries: What Review Can and Cannot Authorize",
+    "description": "Learn how AI agent approval boundaries distinguish a visible review decision from role permissions, technical enforcement, and proof that an external action occurred.",
+    "summary": "AI agent approval boundaries define what a visible approval changes—and what it does not. A reviewer can accept a named artifact for a stated stage, a decision owner can choose among bounded options, and a task owner can set the next work state. None of those records automatically grants an agent a new permission, invokes a tool, changes a target system, or proves that an external action happened. The role contract and the system that performs the action determine those things.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent approval boundaries define what a visible approval changes—and what it does not. A reviewer can accept a named artifact for a stated stage, a decision owner can choose among bounded options, and a task owner can set the next work state. None of those records automatically grants an agent a new permission, invokes a tool, changes a target system, or proves that an external action happened. The role contract and the system that performs the action determine those things.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives people and agents a visible place to discuss a proposed artifact, record a task transition, name a decision owner, and preserve the sources behind an answer. Its pods support chat, threads, reactions, and @mentions alongside task lists and shared memory. Those collaboration records make a review or decision inspectable; they are not technical authorization or proof of a target-system state.",
+      "The distinction matters because the word “approved” is often overloaded. A reviewer may approve copy for editorial review, while a repository maintainer decides whether to merge a change and an external system decides whether a deployment executes. Treating the first answer as if it covered every later step creates unsafe scope expansion and misleading status reporting.",
+      "This guide explains how to write clear AI agent approval boundaries, where approval ends, where enforcement begins, and how to turn a visible answer into a truthful next step."
+    ],
+    "sections": [
+      {
+        "title": "An approval is a bounded work answer",
+        "paragraphs": [
+          "An approval is useful only when it applies to a specific object, purpose, and stage. It should answer a question that a named role is actually responsible for—not serve as a vague signal that every related action is now allowed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record or event",
+              "What it can mean",
+              "What it cannot establish alone"
+            ],
+            "rows": [
+              [
+                "Reviewer approval",
+                "A named version meets the stated review criteria for a stated stage",
+                "That the artifact is published, deployed, or externally executed"
+              ],
+              [
+                "Decision-owner answer",
+                "The owner selected, narrowed, rejected, routed, or deferred a bounded option",
+                "That a different role now has broad standing permission"
+              ],
+              [
+                "Task claim",
+                "A participant is taking responsibility for the recorded work",
+                "That the task is eligible, authorized, or complete"
+              ],
+              [
+                "Thread comment or reaction",
+                "A participant supplied feedback, acknowledgement, or a recommendation",
+                "That the participant made the accountable decision"
+              ],
+              [
+                "Role contract",
+                "A role has a defined outcome, operations, limits, and stop conditions",
+                "That a target system will technically permit every operation"
+              ],
+              [
+                "Target-system record",
+                "The system recorded a particular action or current state",
+                "That a preceding conversation correctly authorized it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Start by naming the actual question",
+        "paragraphs": [
+          "Start by naming the actual question: “Is version 3 acceptable for editorial review?” is bounded. “Approved” with no object, stage, owner, or next state invites people and agents to infer authority that was never granted.",
+          "The record should remain useful even when a reader has not followed the discussion: they should be able to identify the question, responsible role, and continuing limit without inferring any additional authority."
+        ]
+      },
+      {
+        "title": "State the object, stage, owner, and limit",
+        "paragraphs": [
+          "Approval language should make it possible for a later reader to understand exactly what changed. The record needs enough information to connect the answer to the artifact and task without implying an unbounded permission."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Approval field",
+              "State it plainly",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Object",
+                "The exact artifact, version, source set, task, or proposed operation",
+                "Feedback does not drift onto a different object"
+              ],
+              [
+                "Stage",
+                "Draft review, technical review, release decision, or another named point",
+                "Acceptance for one stage is not acceptance for all later stages"
+              ],
+              [
+                "Decision owner",
+                "The person, role, or system responsible for this answer",
+                "Participants do not confuse presence with accountability"
+              ],
+              [
+                "Criteria",
+                "The checks, boundary, or question used to assess the object",
+                "The answer can be inspected rather than treated as preference"
+              ],
+              [
+                "Result",
+                "Accept, request changes, narrow, reject, route, defer, or verify",
+                "The next state is explicit and truthful"
+              ],
+              [
+                "Continuing limit",
+                "What remains outside scope or needs a later decision",
+                "A narrow approval does not become blanket authority"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example",
+        "paragraphs": [
+          "For example, “The editor accepts draft v3 for editorial review; factual claims still need source verification before publication” describes an artifact, stage, result, and limit. It does not say that anyone may publish it, use new data, or make a new public commitment.",
+          "For the task-level agreement that sets an agent’s outcome, inputs, permitted operations, artifact, owner, and stop condition, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Separate approval, authorization, enforcement, and execution",
+        "paragraphs": [
+          "These four terms connect, but they are not interchangeable. A reliable workflow leaves a visible record at each relevant layer and asks the correct owner or system to answer its part."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Layer",
+              "Core question",
+              "Evidence to look for"
+            ],
+            "rows": [
+              [
+                "Approval",
+                "Does this object meet the stated review or decision criteria?",
+                "Reviewer or decision-owner answer tied to the object and stage"
+              ],
+              [
+                "Authorization",
+                "Is this role allowed to request or perform the next bounded operation?",
+                "Role contract, policy, or delegated authority"
+              ],
+              [
+                "Enforcement",
+                "Will the connected system technically allow the operation?",
+                "Target-system permissions, gates, or controls"
+              ],
+              [
+                "Execution",
+                "Did the system actually perform the operation?",
+                "The relevant target-system record or observable result"
+              ],
+              [
+                "Verification",
+                "Does the available evidence support the claimed state and limit?",
+                "Linked sources, checks, and a clear verification path"
+              ],
+              [
+                "Follow-on ownership",
+                "Who owns the next eligible contribution after the answer?",
+                "Updated task, handoff, or newly bounded work contract"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An approval can be a required input",
+        "paragraphs": [
+          "An approval can be a required input to a later action without being the mechanism that executes it. That distinction keeps a team from reporting “approved and done” when only the review layer is known.",
+          "For a practical explanation of role permissions, token scope, and the systems that enforce access, see AI Agent Permissions and Tokens."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Permissions and Tokens",
+            "path": "/guides/ai-agent-permissions-and-tokens/"
+          }
+        ]
+      },
+      {
+        "title": "Give each approval a decision owner",
+        "paragraphs": [
+          "The right owner depends on the decision. A visible comment from a knowledgeable participant is useful evidence or advice, but it does not replace the person, role, or system accountable for the answer.",
+          "An editor or designated content reviewer can decide whether a named draft meets editorial criteria. Their acceptance belongs to that version and review stage; it does not state that the page is published or that a broader policy question is settled.",
+          "A product, project, or task owner can decide whether an outcome expands, narrows, splits, or waits. That decision makes the work boundary clear, but a different system owner may still control access to the system where work eventually occurs.",
+          "An authorized system, security, or data owner can decide whether the role should receive a minimum capability through the appropriate control. The agent should request the smallest useful capability and should not treat a broad conversational phrase as a persistent grant.",
+          "A maintainer or code owner can accept, request changes to, route, or reject a named change for a repository stage. An authorized release path and the relevant target system still determine whether the next operational action is permitted and recorded.",
+          "An authorized communications, policy, product, or support owner can decide whether exact public language or a customer commitment is acceptable. When the question is whether an observed result satisfies a requirement, the reviewer or system owner responsible for the check must answer against the relevant evidence.",
+          "If the owner is unknown, do not choose the nearest person in a thread by implication. Record the ownership gap and route it to the role that can assign or clarify accountability.",
+          "For identifying the accountable owner for a specific choice, see AI Agent Decision Owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Turn a review answer into the right next work state",
+        "paragraphs": [
+          "The task should reflect the effect of an approval, while the thread or review packet preserves the detail behind it. Update the task with the current next action and limit; do not copy a broad claim of authority into the task result."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review answer",
+              "Honest task effect",
+              "What still needs its own record"
+            ],
+            "rows": [
+              [
+                "Accepted for a stage",
+                "Move the named artifact to the next defined review or preparation step",
+                "Any later merge, deployment, publication, or external action"
+              ],
+              [
+                "Changes requested",
+                "Assign the bounded revision and return condition",
+                "Whether the revised version will satisfy the criteria"
+              ],
+              [
+                "Narrowed",
+                "Preserve the allowed portion and exclude the declined scope",
+                "A new decision about the excluded work"
+              ],
+              [
+                "Rejected",
+                "Stop that proposed path and record the reason or source",
+                "A replacement proposal, if one is created"
+              ],
+              [
+                "Routed",
+                "Name the receiving owner and decision question",
+                "The receiving owner’s answer"
+              ],
+              [
+                "Deferred",
+                "Record the waiting fact, timing, owner, or resume condition",
+                "A future approval after the prerequisite exists"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A review decision is complete",
+        "paragraphs": [
+          "A review decision is complete when its effect on the current task is clear. It is not complete because the word “approved” appears in a conversation.",
+          "For the six common review answers and the task states they produce, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Put human review at the boundary that needs judgment",
+        "paragraphs": [
+          "Human review works best when the team defines the judgment to be made and the scope of the answer. The human need not re-do every preparation step, but the agent should not convert a reviewer’s presence into authorization for unrelated activity."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review boundary",
+              "Agent can prepare",
+              "Human or accountable owner decides"
+            ],
+            "rows": [
+              [
+                "Claim quality",
+                "Source links, labels, conflicts, and proposed wording",
+                "Whether the claim is sufficiently supported for the stated use"
+              ],
+              [
+                "Scope change",
+                "Current contract, requested delta, non-goals, and impact",
+                "Whether to keep, narrow, split, or decline the expansion"
+              ],
+              [
+                "Sensitive or irreversible action",
+                "Context, risk, alternatives, and smallest proposed action",
+                "Whether the action should proceed and under what authority"
+              ],
+              [
+                "Public communication",
+                "Draft wording, factual basis, limitations, and audience",
+                "Whether exact language is approved for the intended channel"
+              ],
+              [
+                "Priority tradeoff",
+                "Dependencies, affected tasks, evidence, and options",
+                "Which work should take precedence or be deferred"
+              ],
+              [
+                "External-state assertion",
+                "Reported status, required target record, and verification gap",
+                "Whether evidence supports the claim or more checking is needed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff should preserve the agent’s contribution",
+        "paragraphs": [
+          "The handoff should preserve the agent’s contribution—research, draft, checks, or recommendation—while leaving the judgment and its stated boundary to the rightful owner. That is useful human-in-the-loop work, not ceremonial sign-off.",
+          "For patterns that keep people in the decisions agents should not make alone, see Human-in-the-Loop Review for AI Agent Teams."
+        ],
+        "links": [
+          {
+            "label": "Human-in-the-Loop Review for AI Agent Teams",
+            "path": "/guides/human-in-the-loop-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Let technical controls enforce operational authority",
+        "paragraphs": [
+          "Teams should not rely on chat etiquette or a task label to control access. The system that performs the operation needs the relevant identity, permission, gate, or approval mechanism. Conversation records can point to that path; they cannot substitute for it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Claimed permission or action",
+              "Collaboration record can do",
+              "Enforcing system must do"
+            ],
+            "rows": [
+              [
+                "Access a connected service",
+                "Record the business purpose and minimum capability requested",
+                "Authenticate the actor and deny access outside granted scope"
+              ],
+              [
+                "Change a protected artifact",
+                "Carry review evidence and the decision request",
+                "Apply the repository, document, or system’s write rules"
+              ],
+              [
+                "Release or publish something",
+                "Show the accepted artifact and named release decision",
+                "Apply release gates and record the actual result"
+              ],
+              [
+                "Change roles or permissions",
+                "Explain why a role change is needed",
+                "Validate the authorized administrator and persist the change"
+              ],
+              [
+                "Handle sensitive data",
+                "Record the boundary and safe next owner",
+                "Enforce data access, retention, and disclosure controls"
+              ],
+              [
+                "Confirm an external result",
+                "Link the claimed state and its limits",
+                "Provide the authoritative execution or state record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Visible approval and technical authorization are complementary",
+        "paragraphs": [
+          "Visible approval and technical authorization are complementary. A team needs both when the action matters: one answers whether the work should progress, and the other determines whether the system will permit and record it.",
+          "For the layers that connect agent work, oversight, and control without confusing visibility with enforcement, see AI Agent Governance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Governance",
+            "path": "/guides/ai-agent-governance/"
+          }
+        ]
+      },
+      {
+        "title": "Escalate an ambiguous or overbroad approval",
+        "paragraphs": [
+          "An agent should stop when a reply could plausibly mean several things: approval of a draft but not publication, approval of research but not a new data source, acceptance of a patch but not a merge, or acknowledgment of a status report but not confirmation of external state."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Ambiguous signal",
+              "Safe interpretation",
+              "Useful follow-up question"
+            ],
+            "rows": [
+              [
+                "“Looks good”",
+                "Positive feedback, not a defined approval",
+                "“Does this accept v2 for the named review stage?”"
+              ],
+              [
+                "“Go ahead”",
+                "The object, operation, and owner are unclear",
+                "“Which bounded action is approved, and which system should perform it?”"
+              ],
+              [
+                "A reaction on a thread",
+                "Acknowledgement or participation only",
+                "“Can the accountable owner record the review decision?”"
+              ],
+              [
+                "“Ship it” after draft review",
+                "Possible desire to advance, not proof of release authority",
+                "“Does this approve release, or only completion of editorial review?”"
+              ],
+              [
+                "“Use whatever access you need”",
+                "Not a durable grant of technical scope",
+                "“What minimum capability is approved, through which authorized path?”"
+              ],
+              [
+                "“Done” in a task",
+                "Reported completion, not necessarily verified outcome",
+                "“What artifact or target-system record supports the closure claim?”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Ask the smallest question that removes the ambiguity",
+        "paragraphs": [
+          "Ask the smallest question that removes the ambiguity. If a decision owner, access path, or source of record is missing, create a focused escalation or blocker rather than guessing at the broader meaning.",
+          "For when an agent should stop and hand a decision upward, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the approval and its supporting record linked",
+        "paragraphs": [
+          "An approval should be easy to inspect later, especially when the task resumes, a version changes, or someone asks why a boundary was chosen. Keep the review answer connected to the artifact and source that it actually covers."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record",
+              "What it preserves",
+              "How to use it"
+            ],
+            "rows": [
+              [
+                "Work contract",
+                "Intended outcome, inputs, operations, artifact, owner, and stop",
+                "Compare a requested approval with the original task boundary"
+              ],
+              [
+                "Review packet or focused thread",
+                "Object, evidence, question, comments, and decision",
+                "Inspect why the reviewer reached the answer"
+              ],
+              [
+                "Task",
+                "Status, assignee, dependency, activity, and current result",
+                "See the actionable work state and next owner"
+              ],
+              [
+                "Decision record",
+                "Owner’s bounded choice, scope, and successor effect",
+                "Apply the decision only where its stated boundary fits"
+              ],
+              [
+                "Source of record",
+                "The authority that governs a particular fact or state",
+                "Resolve conflicts without treating a summary as controlling"
+              ],
+              [
+                "Target-system record",
+                "The actual operational state or action evidence",
+                "Verify execution instead of relying on collaboration commentary"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A summary is helpful navigation",
+        "paragraphs": [
+          "A summary is helpful navigation, not authority. When a record conflicts with the source that owns the fact, treat the conflict as a review or escalation question rather than silently upgrading the summary.",
+          "For deciding which record governs a fact, result, or work state, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether approval language creates false authority",
+        "paragraphs": [
+          "Before an agent treats a message as permission to continue, test whether the approval is precise enough and whether the next operation has independent authorization and enforcement. The test should find accidental scope expansion before a consequential action occurs."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "A sound result",
+              "Warning sign"
+            ],
+            "rows": [
+              [
+                "Object test",
+                "The exact artifact, version, task, or operation is named",
+                "“Approved” has no identifiable object"
+              ],
+              [
+                "Stage test",
+                "The review or decision stage is explicit",
+                "Earlier-stage acceptance is treated as final release approval"
+              ],
+              [
+                "Owner test",
+                "The accountable reviewer, owner, or system is known",
+                "A participant’s comment is treated as the decision"
+              ],
+              [
+                "Limit test",
+                "Remaining exclusions, checks, or future decisions are recorded",
+                "The answer implies blanket permission"
+              ],
+              [
+                "Authorization test",
+                "The role contract or authorized path covers the next action",
+                "The agent must invent a new permission to proceed"
+              ],
+              [
+                "Enforcement test",
+                "The target system can independently allow and record the action",
+                "The team relies on a chat message as a control"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The right result may be to proceed",
+        "paragraphs": [
+          "The right result may be to proceed with a smaller preparation step, ask a clarifying question, route an owner decision, or stop. A narrow, truthful result is stronger than a broad approval claim the records do not support.",
+          "For a path from a claimed result to the record that supports or limits it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Set an approval boundary in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Name the exact artifact, request, source set, proposed action, or version under review.",
+          "State the decision question and the stage at which the answer applies.",
+          "Name the reviewer, decision owner, or target system responsible for that part of the workflow.",
+          "Link the relevant evidence, criteria, work contract, limitations, and current task state.",
+          "Record the answer as accept, changes requested, narrow, reject, route, defer, or an explicitly verified fact.",
+          "State what the answer does not authorize, including any later operation, new capability, or external-state claim.",
+          "Update the task with the bounded next owner and next action; use the correct authorized system for any subsequent operation."
+        ]
+      },
+      {
+        "title": "If one of these steps is missing",
+        "paragraphs": [
+          "If one of these steps is missing, treat the answer as incomplete rather than filling the gap with a guess. The clarification may be small, but it prevents a conversation record from becoming an imagined control plane."
+        ]
+      },
+      {
+        "title": "Use the same boundary across human and agent work",
+        "paragraphs": [
+          "Approval boundaries are not only for high-risk actions. They make ordinary collaboration clearer too. A research agent can receive approval to narrow a claim; an editorial reviewer can accept a particular version; a project owner can split a discovery into follow-on work; and an authorized operator can take the separate action that a target system permits.",
+          "The team benefits when each contribution says what it did and did not change. An agent can surface evidence and recommendations without claiming policy authority. A reviewer can accept an artifact without claiming it was deployed. A task owner can set the next work state without suggesting that a connected system changed.",
+          "The goal is not to make every decision slow. It is to make the boundary visible enough that people and agents can move quickly inside it and stop when the next action requires a different answer."
+        ]
+      },
+      {
+        "title": "Seven approval-boundary mistakes that create false confidence",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating “approved” as an authorization for every next action",
+        "paragraphs": [
+          "An acceptance for one review stage does not automatically grant a later capability, external operation, publication, or release. Name the object, stage, and next step instead of relying on one word."
+        ]
+      },
+      {
+        "title": "Letting an unnamed participant become the decision owner",
+        "paragraphs": [
+          "Useful comments can come from anyone. The accountable owner must still be named when the decision involves scope, priority, policy, access, or a consequential result."
+        ]
+      },
+      {
+        "title": "Using a task claim as proof that work may begin",
+        "paragraphs": [
+          "A claim records responsibility for a task. It does not resolve missing inputs, dependencies, role limits, acceptance criteria, or target-system permissions."
+        ]
+      },
+      {
+        "title": "Confusing a reviewer’s decision with a system permission",
+        "paragraphs": [
+          "A reviewer can determine whether an artifact meets a criterion. The target system still needs to authenticate the actor and enforce any permission required for the operation."
+        ]
+      },
+      {
+        "title": "Calling a review answer proof of external execution",
+        "paragraphs": [
+          "“Approved for release” is not the same as “released.” Verify the external state with the record produced by the system that performed or observes the action."
+        ]
+      },
+      {
+        "title": "Hiding the continuing limit after an approval",
+        "paragraphs": [
+          "Every bounded answer leaves something outside scope: a later stage, unverified fact, missing owner, or separate action. Record that limit so a future agent does not expand the decision silently."
+        ]
+      },
+      {
+        "title": "Asking an agent to infer authority from conversational tone",
+        "paragraphs": [
+          "Phrases such as “looks good” or “go ahead” may be useful signals, but they are not sufficiently precise for a consequential action. Ask a focused clarifying question or escalate the ownership gap."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent approval boundary?",
+        "answer": "It is the stated limit of what a review or decision changes. It ties an answer to a named object, stage, owner, and next work state while making clear what later permissions, enforcement, or execution evidence are still required."
+      },
+      {
+        "question": "Does a human approval give an AI agent permission to act?",
+        "answer": "Only if the approval is part of a defined authorization path for a bounded action. A visible message alone does not create technical access or override the role contract and target system that enforce permissions."
+      },
+      {
+        "question": "What is the difference between approval and authorization?",
+        "answer": "Approval answers whether a named object or option is acceptable for a stated purpose. Authorization determines whether a role may perform a particular operation. The same person may supply both in a workflow, but the records and controls should stay distinct."
+      },
+      {
+        "question": "Can a task comment prove that an external action happened?",
+        "answer": "No. A task comment may report an action or record a decision. Verification of an external action requires the relevant target-system record, observable result, or other source that actually owns that fact."
+      },
+      {
+        "question": "What should an agent do when an approval is ambiguous?",
+        "answer": "Ask the smallest question that names the object, stage, decision owner, requested next action, and continuing limit. If no appropriate owner or authorization path exists, escalate or record a blocker rather than infer broader permission."
+      },
+      {
+        "question": "Why are technical controls still needed after review?",
+        "answer": "Review creates a human-readable decision path; technical controls authenticate actors, enforce permissions, and record the operation in the system where it occurs. Reliable workflows need both layers for consequential actions."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Permissions and Tokens",
+        "path": "/guides/ai-agent-permissions-and-tokens/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "Human-in-the-Loop Review for AI Agent Teams",
+        "path": "/guides/human-in-the-loop-ai-agents/"
+      },
+      {
+        "label": "AI Agent Governance",
+        "path": "/guides/ai-agent-governance/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      }
+    ],
+    "cta": {
+      "title": "Make the boundary visible before the next action",
+      "body": "AI agent approval boundaries turn an ambiguous “yes” into a useful work record. Tie the answer to a specific object, stage, owner, and limit; update the task with the resulting next state; then use the authorized system to perform and verify any later action. That preserves fast collaboration without confusing review, permission, enforcement, and execution.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
