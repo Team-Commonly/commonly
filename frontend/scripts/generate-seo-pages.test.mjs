@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 85);
+  assert.equal(pages.length, 86);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -106,6 +106,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-context-packet/',
     '/guides/ai-agent-focused-threads/',
     '/guides/ai-agent-approval-boundaries/',
+    '/guides/ai-agent-retained-context/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -141,7 +142,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 75);
+  assert.equal(guidePages.length, 76);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -731,6 +732,43 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const retainedContextGuide = guidePages.find((page) => page.path === '/guides/ai-agent-retained-context/');
+  assert.equal(retainedContextGuide.title, 'AI Agent Retained Context: Keep Useful Context | Commonly');
+  const retainedContext = guides['ai-agent-retained-context'];
+  assert.deepEqual(retainedContext.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(retainedContext.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(retainedContext.sections.flatMap((section) => section.links || []).length, 9);
+  for (const [title, path] of [
+    ['Retain the work boundary, not an implied permission', '/guides/ai-agent-work-contract/'],
+    ['Make follow-on work explicit instead of burying it in memory', '/guides/ai-agent-follow-on-work/'],
+  ]) {
+    const section = retainedContext.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 6);
+    assert.equal(section.tables, undefined);
+    assert.deepEqual(section.links.map((link) => link.path), [path]);
+  }
+  for (const title of ['Shared memory can preserve provenance and version history', 'If the note fails a test', 'The resulting note should help a future reader']) {
+    const section = retainedContext.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(retainedContext.intro[0], /^AI agent retained context is the selected information kept after a task so a later person or agent can reuse a sourced conclusion, understand where it applies, and find the record that supersedes or verifies it\./);
+  const retainedContextHtml = renderStaticPage(guideTemplate, retainedContextGuide);
+  assert.match(retainedContextHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-retained-context\/"/);
+  assert.match(retainedContextHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(retainedContextHtml, /successor record/);
+  assert.doesNotMatch(retainedContextHtml, /seo-page-dark/);
+  assert.doesNotMatch(retainedContextHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((retainedContextHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-task-closure/',
+    '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-artifact-versions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-retained-context\/"/g) || []).length, 1);
   }
   const approvalBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-approval-boundaries/');
   assert.equal(approvalBoundariesGuide.title, 'AI Agent Approval Boundaries: What Review Can Authorize | Commonly');
