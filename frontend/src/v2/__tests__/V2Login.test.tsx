@@ -547,6 +547,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent dependency-management guide preserves its required-state boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-dependency-management/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Dependency Management: Make Required States Visible' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'The distinction makes the board easier to read' })).toBeInTheDocument();
+    expect(screen.getByText(/If the required result is partial, the dependent task should record the remaining boundary/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -554,7 +562,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(67);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(68);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
