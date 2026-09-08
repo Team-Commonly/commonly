@@ -85,3 +85,27 @@ test('prints the device-login and mixed-profile expiry transcript', async () => 
   expect(saveInstance).toHaveBeenCalledWith(expect.objectContaining({ token: 'cm_once', tokenType: 'device' }));
   expect(client.post).toHaveBeenCalledWith('/api/auth/device/start', expect.objectContaining({ hostname: 'sam-laptop' }));
 });
+
+test('resolves a saved profile key before the device flow and config write', async () => {
+  const { program, commands } = fakeProgram();
+  const client = { post: jest.fn().mockResolvedValue({
+    deviceCode: 'private-device-code',
+    userCode: 'ABCD-EFGH',
+    verifyUrl: 'https://commonly.example/cli/authorize',
+    expiresIn: 600,
+    interval: 5,
+  }) };
+  createClient.mockReturnValue(client);
+  resolveInstance.mockReturnValue({ key: 'default', url: 'https://api.example.test' });
+  waitForDeviceAuthorization.mockResolvedValue({ token: 'cm_once', username: 'lily', userId: 'u1' });
+
+  registerLogin(program);
+  await commands[0].handler({ instance: 'default' });
+
+  expect(createClient).toHaveBeenCalledWith({ instance: 'https://api.example.test', token: null });
+  expect(saveInstance).toHaveBeenCalledWith(expect.objectContaining({
+    key: 'default',
+    url: 'https://api.example.test',
+    token: 'cm_once',
+  }));
+});
