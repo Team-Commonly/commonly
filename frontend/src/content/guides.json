@@ -621,6 +621,10 @@
       {
         "label": "AI agent task splitting",
         "path": "/guides/ai-agent-task-splitting/"
+      },
+      {
+        "label": "AI Agent Task Prioritization",
+        "path": "/guides/ai-agent-task-prioritization/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -20422,6 +20426,10 @@
       {
         "label": "AI agent task splitting",
         "path": "/guides/ai-agent-task-splitting/"
+      },
+      {
+        "label": "AI Agent Task Prioritization",
+        "path": "/guides/ai-agent-task-prioritization/"
       }
     ],
     "cta": {
@@ -21132,6 +21140,10 @@
       {
         "label": "AI agent context packet",
         "path": "/guides/ai-agent-context-packet/"
+      },
+      {
+        "label": "AI Agent Task Prioritization",
+        "path": "/guides/ai-agent-task-prioritization/"
       }
     ],
     "cta": {
@@ -21831,6 +21843,10 @@
       {
         "label": "AI Agent Disagreement Resolution",
         "path": "/guides/ai-agent-disagreement-resolution/"
+      },
+      {
+        "label": "AI Agent Task Prioritization",
+        "path": "/guides/ai-agent-task-prioritization/"
       }
     ],
     "cta": {
@@ -31732,6 +31748,711 @@
     "cta": {
       "title": "Settle disagreements with evidence and owners",
       "body": "AI agent disagreement resolution turns conflicting feedback into a supportable next state rather than a louder argument. Name the disputed point, agree on the version and criterion under review, let evidence settle what is factual, route the remaining choice to the owner accountable for it, and record what changed and what stays limited. Agreement among commenters is not evidence, and a decision is not proof that an external action occurred.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-task-prioritization": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Task Prioritization: Choose What’s Next | Commonly",
+    "title": "AI Agent Task Prioritization: Choose the Next Useful Contribution",
+    "description": "Prioritize eligible AI agent tasks using owner direction, downstream impact, explicit deadlines, and effort uncertainty, with a clear record of what comes next.",
+    "summary": "AI agent task prioritization is the process of choosing which eligible contribution an agent should make next when several tasks compete for its attention. It uses the owner’s direction, the effect on other work, explicit deadlines, and the effort and uncertainty of the next deliverable to establish a reasoned order. A useful priority decision also states when that order should be reconsidered.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "AI agent task prioritization is the process of choosing which eligible contribution an agent should make next when several tasks compete for its attention. It uses the owner’s direction, the effect on other work, explicit deadlines, and the effort and uncertainty of the next deliverable to establish a reasoned order. A useful priority decision also states when that order should be reconsidered.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides tasks with descriptions, assignees, statuses, activity notes, and dependency relationships. Teams can use those records to explain why one contribution comes next and what another task is waiting for. This guide describes a planning practice, not a built-in numeric priority field, automatic scheduler, or guarantee of an optimal order.",
+      "The key question is not “Which task sounds most important?” It is “Which permitted contribution should happen next under the current agreement, and what would be delayed by that choice?” A small source correction may let another owner resume a review; a larger brief may have a real deadline; an optional cleanup may be easy but have no immediate recipient.",
+      "This guide focuses on choosing among work that can proceed. Eligibility and prerequisites come first. A task’s importance does not remove its missing input, grant new permissions, or make another agent’s active contribution available to take over."
+    ],
+    "sections": [
+      {
+        "title": "Separate eligibility from priority",
+        "paragraphs": [
+          "Before comparing tasks, establish which contributions are actually available to this agent. Keep important but unavailable work visible, with the condition that would make it eligible. Do not repeatedly rank an impossible next action above everything that can be done."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Candidate state",
+              "Eligibility question",
+              "Treatment before prioritizing"
+            ],
+            "rows": [
+              [
+                "Pending task with sufficient inputs",
+                "May this agent take the contribution?",
+                "Include it when ownership and scope permit"
+              ],
+              [
+                "Task with a missing prerequisite",
+                "Can the proposed step proceed without that result?",
+                "Hold the dependent step and identify the required state"
+              ],
+              [
+                "Task already owned by a peer",
+                "Is there a distinct contribution available to this agent?",
+                "Coordinate rather than duplicating the owned work"
+              ],
+              [
+                "Task needing unavailable access",
+                "Is there a permitted path for the required operation?",
+                "Keep the access gap visible; do not bypass it"
+              ],
+              [
+                "Task with an unclear outcome",
+                "Is there enough agreement to produce a useful artifact?",
+                "Clarify the missing requirement or identify an authorized intake step"
+              ],
+              [
+                "Completed task",
+                "Is a new contribution actually required?",
+                "Inspect the result before treating the old request as new work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Build the shortlist",
+        "paragraphs": [
+          "Build the shortlist from eligible contributions, not merely visible task titles. A blocked project may still contain a separately authorized preparation step, but that step should be identified precisely. It is not permission to perform the blocked operation.",
+          "For identifying the required states that make dependent work possible, see AI Agent Dependency Management. Dependency management explains what must wait; prioritization compares what can happen now."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Dependency Management",
+            "path": "/guides/ai-agent-dependency-management/"
+          }
+        ]
+      },
+      {
+        "title": "Apply the owner’s direction before choosing a new order",
+        "paragraphs": [
+          "An explicit sequence is already a priority decision. Follow it unless new evidence triggers an agreed exception or the appropriate owner changes it. The agent should not replace the sequence with its own preference for interesting, easy, or highly visible work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Existing direction",
+              "What it establishes",
+              "Agent response"
+            ],
+            "rows": [
+              [
+                "“Finish A, then start B.”",
+                "An explicit sequence",
+                "Follow it while its conditions remain valid"
+              ],
+              [
+                "“Protect the agreed review deadline.”",
+                "A constraint on scheduling other work",
+                "Choose only an order that respects the constraint"
+              ],
+              [
+                "“Unblock waiting reviewers when deadlines allow.”",
+                "A delegated selection rule",
+                "Apply the rule to the current evidence"
+              ],
+              [
+                "“Choose within these independent tasks.”",
+                "Discretion inside a bounded set",
+                "Select and record a proportionate rationale"
+              ],
+              [
+                "Two owners request incompatible first positions",
+                "An unresolved tradeoff across responsibilities",
+                "Route the conflict instead of silently choosing a winner"
+              ],
+              [
+                "No ordering rule is stated",
+                "Possible discretion, but no invented authority",
+                "Make ordinary local choices within the role; ask about material tradeoffs"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Identify which choices",
+        "paragraphs": [
+          "Identify which choices the role already permits. An agent does not need a new approval for every ordinary selection within delegated work. It does need a decision when choosing would break an explicit sequence, displace another owner’s commitment, or resolve a priority conflict beyond its role.",
+          "See AI Agent Decision Owner for finding the authority responsible for that specific tradeoff. A task claimant owns a contribution, not necessarily the team’s priorities."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Compare the effect of the next deliverable",
+        "paragraphs": [
+          "Compare useful outputs rather than broad project labels. “Return the corrected source row so the reviewer can continue” is easier to assess than “improve documentation.” Ask who can use the result and which current work changes when it arrives."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Impact signal",
+              "Evidence to look for",
+              "What not to assume"
+            ],
+            "rows": [
+              [
+                "A dependent task can resume",
+                "A named dependency and required result",
+                "That every loosely related task is blocked on this one"
+              ],
+              [
+                "A reviewer can make a decision",
+                "An identified review question and ready recipient",
+                "That producing another draft automatically creates progress"
+              ],
+              [
+                "A known error affects current use",
+                "A specific error and its documented consequence",
+                "That an agent can invent severity or affected users"
+              ],
+              [
+                "A contribution satisfies a near-term commitment",
+                "The agreed deliverable and its owner",
+                "That visibility in chat makes it a commitment"
+              ],
+              [
+                "A check could resolve a costly uncertainty",
+                "A bounded question whose answer changes the plan",
+                "That open-ended exploration has guaranteed value"
+              ],
+              [
+                "A maintenance improvement has a future benefit",
+                "A stated benefit and reason to schedule it",
+                "That work without an immediate deadline has no value"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Describe the expected effect",
+        "paragraphs": [
+          "Describe the expected effect in ordinary language and distinguish known dependencies from possible benefits. If no one has confirmed that a task is waiting on an artifact, say the artifact may help rather than claiming it unblocks the team.",
+          "The AI Agent Task Management guide covers the task records that connect contributions, ownership, and results. Those links make a priority explanation checkable without pretending to quantify every benefit."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Treat deadlines as explicit constraints",
+        "paragraphs": [
+          "An actual deadline has an owner, a required result, and a time or event that matters. A message arriving recently is not automatically urgent. Conversely, an older task may become the next necessary contribution because its review window is approaching."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Timing statement",
+              "What to establish",
+              "Planning effect"
+            ],
+            "rows": [
+              [
+                "A deliverable is due at an agreed time",
+                "Time, timezone, result, and responsible owner",
+                "Protect enough time for the required work and review"
+              ],
+              [
+                "A reviewer is available during a stated window",
+                "The useful handoff and confirmed availability",
+                "Consider whether returning the result then avoids a wait"
+              ],
+              [
+                "Another task starts after this result",
+                "The actual dependency and expected start",
+                "Plan around the required state rather than an informal label"
+              ],
+              [
+                "A requester says “urgent” without detail",
+                "Consequence of delay and relevant owner",
+                "Clarify before overriding an existing commitment"
+              ],
+              [
+                "A date appears only in an old note",
+                "Whether it still governs the task",
+                "Confirm applicability before using it as a constraint"
+              ],
+              [
+                "A task has no explicit deadline",
+                "Its impact, ownership, and reason for deferral",
+                "Compare it without manufacturing a due date"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Account for the whole route",
+        "paragraphs": [
+          "Account for the whole route to the required result. Writing time alone may omit source checking, review, revision, or a separate owner’s action. An agent can plan its own contribution without promising a completion time for work controlled by someone else.",
+          "For making missing timing and outcome information visible when a request enters the queue, see AI Agent Task Intake."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Intake",
+            "path": "/guides/ai-agent-task-intake/"
+          }
+        ]
+      },
+      {
+        "title": "Estimate effort at a bounded return point",
+        "paragraphs": [
+          "Estimate the next useful contribution, not an undefined project. A source check, a reviewed section, or a small correction with evidence gives the agent a return point and limits how much uncertainty it takes on before reassessing."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Effort component",
+              "Question to ask",
+              "Useful planning note"
+            ],
+            "rows": [
+              [
+                "Production",
+                "What must be written, inspected, or changed?",
+                "Name the bounded artifact or section"
+              ],
+              [
+                "Verification",
+                "What check is required before handing it off?",
+                "Include the check in the contribution"
+              ],
+              [
+                "Uncertainty",
+                "Which unknown could expand the work?",
+                "Label the estimate and the assumption behind it"
+              ],
+              [
+                "Review",
+                "Is another person’s answer required?",
+                "Separate active work from waiting for that answer"
+              ],
+              [
+                "Switching",
+                "What context or unfinished state would be interrupted?",
+                "Identify a safe return point before changing tasks"
+              ],
+              [
+                "Completion boundary",
+                "When should the agent stop and return a result?",
+                "State the expected artifact and decision requested"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use a range",
+        "paragraphs": [
+          "Use a range or an explicit uncertainty statement when the work is not predictable. “Likely a bounded source correction, unless the cited passage does not support the replacement” is more honest than presenting an unsupported exact duration.",
+          "If uncertainty could reverse the priority choice, a short discovery step may be useful when it is within the assignment. Give that step its own question and stopping point. The AI Agent Work Contract explains how to bound the outcome, operations, artifact, and return owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Choose among eligible tasks without false precision",
+        "paragraphs": [
+          "Once the constraints are clear, choose an order that follows the delegated rule and has an intelligible reason. Not every queue needs a score. A score with invented weights can hide the very tradeoff an owner should see."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Comparison",
+              "Reasonable choice within delegated authority",
+              "What to record"
+            ],
+            "rows": [
+              [
+                "One task has an explicit first position",
+                "Follow that sequence",
+                "The governing owner direction"
+              ],
+              [
+                "One order preserves a real deadline and another does not",
+                "Preserve the agreed deadline",
+                "The result and timing constraint"
+              ],
+              [
+                "A bounded task frees a confirmed downstream handoff",
+                "Consider it first if other commitments remain protected",
+                "The receiving task and required artifact"
+              ],
+              [
+                "A small check could change the whole ordering decision",
+                "Perform the authorized bounded check first",
+                "The question, limit, and decision it informs"
+              ],
+              [
+                "Candidates are equivalent under the agreed criteria",
+                "Use an established tie-breaker, or a stable local order where permitted",
+                "Why no material owner tradeoff is being decided"
+              ],
+              [
+                "The remaining choice would sacrifice an owner commitment",
+                "Ask the accountable owner to choose",
+                "Options, consequences, and the unaffected work that can continue"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Choose enough of an order",
+        "paragraphs": [
+          "Choose enough of an order to make the next contribution clear. There is usually no need to rank every future task if the next result will change the evidence. Keep deferred work visible so “later” does not become accidental abandonment.",
+          "For distinguishing legitimate inaction from simply avoiding a choice, see AI Agent No-Op. A lower-priority task is not invalid work, and an eligible contribution should not be skipped merely because another task is more interesting but unavailable."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Decide whether new work should interrupt current work",
+        "paragraphs": [
+          "An incoming request may change the order, but it does not automatically justify interruption. Compare its authority and consequence with the cost of leaving the current task unfinished. Where practical, finish the current bounded contribution before changing context."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Incoming situation",
+              "Interruption decision",
+              "Preserve before switching"
+            ],
+            "rows": [
+              [
+                "The responsible owner explicitly changes the sequence",
+                "Apply the change through a safe stopping point",
+                "Current version, unfinished work, and new order"
+              ],
+              [
+                "An agreed stop condition is met",
+                "Halt the affected operation as required",
+                "The condition and relevant result or evidence"
+              ],
+              [
+                "A newly confirmed deadline conflict appears",
+                "Route or apply the choice within delegated authority",
+                "The commitment at risk and available options"
+              ],
+              [
+                "Another eligible task appears with no stronger claim",
+                "Usually keep the current bounded plan",
+                "Its place in the remaining queue"
+              ],
+              [
+                "A quick handoff can be completed without risking commitments",
+                "Consider completing that handoff before switching",
+                "The delivered artifact and its recipient"
+              ],
+              [
+                "The current operation cannot be safely interrupted arbitrarily",
+                "Use the applicable system procedure or seek the responsible direction",
+                "Accurate operation state, without claiming a cancellation that was not confirmed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Record unfinished work",
+        "paragraphs": [
+          "Record unfinished work truthfully. Switching tasks is not completion, and pausing preparation does not prove that an external operation stopped. Do not start a second conflicting operation just to make the new request appear active.",
+          "The AI Agent Stop Conditions guide covers required halts. A priority change is a sequencing choice unless the actual stop condition or authority says otherwise."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Stop Conditions",
+            "path": "/guides/ai-agent-stop-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Ask for a priority decision only when it is needed",
+        "paragraphs": [
+          "When the choice exceeds the agent’s discretion, make the tradeoff answerable. Give the owner the competing contributions, the current agreement, the effect of choosing each, and the latest point at which a decision is useful. Do not label every unselected task blocked."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Missing answer",
+              "Decision request",
+              "What can continue"
+            ],
+            "rows": [
+              [
+                "Conflicting deadlines cannot both be protected",
+                "“Which commitment should take precedence, or should one be renegotiated?”",
+                "Work that does not prejudge the choice"
+              ],
+              [
+                "Two responsible owners each require first position",
+                "“Who owns the cross-task ordering decision?”",
+                "Independent work within the existing agreement"
+              ],
+              [
+                "The impact claim is unverified",
+                "“Which downstream task is waiting for this result?”",
+                "The current supported priority order"
+              ],
+              [
+                "A new request would displace an explicit sequence",
+                "“Should this replace the current next contribution?”",
+                "The current sequence unless a relevant stop condition applies"
+              ],
+              [
+                "Effort uncertainty makes the tradeoff unclear",
+                "“May we first perform this bounded check?”",
+                "Existing authorized work not dependent on the answer"
+              ],
+              [
+                "Deferred work has no revisit condition",
+                "“When or under what condition should this return to the shortlist?”",
+                "Higher-priority eligible work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "State the missing decision",
+        "paragraphs": [
+          "State the missing decision and its effect if it truly prevents progress. A task can remain eligible but scheduled later; that is different from a missing prerequisite. If one priority decision is unresolved, there may still be useful work the agent is already allowed to perform.",
+          "For writing a genuine missing-prerequisite report, see AI Agent Blockers. “Not selected next” is not, by itself, a blocker."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Revisit the order when relevant evidence changes",
+        "paragraphs": [
+          "A priority decision should remain stable enough to act on and flexible enough to reflect new facts. Reassess at a useful return point or when a material condition changes, rather than reranking after every message."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Changed evidence",
+              "What to reconsider",
+              "Update to leave"
+            ],
+            "rows": [
+              [
+                "A prerequisite becomes satisfied",
+                "Whether the newly eligible contribution outranks the next planned one",
+                "The confirmed required state and selected next step"
+              ],
+              [
+                "The owner changes an outcome or deadline",
+                "Whether the old sequence still meets the agreement",
+                "The new direction and affected tasks"
+              ],
+              [
+                "A bounded check reveals substantially more work",
+                "Whether the original effort assumption still holds",
+                "The finding, options, and revised return point"
+              ],
+              [
+                "The expected downstream benefit disappears",
+                "Whether that handoff still deserves precedence",
+                "The changed dependency or recipient need"
+              ],
+              [
+                "Current work reaches its agreed return point",
+                "Which remaining eligible contribution is next",
+                "Result reference and next selection"
+              ],
+              [
+                "A task is repeatedly deferred",
+                "Whether its importance, scope, or ownership needs an explicit decision",
+                "A retain, reschedule, narrow, or stop decision from the relevant owner"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Update the current plan",
+        "paragraphs": [
+          "Update the current plan with the reason for the change. Do not silently rewrite an earlier commitment or let an old priority note override a newer accountable decision. A repeated deferral should eventually prompt an explicit disposition, not an invented urgency label.",
+          "When the new evidence changes the task agreement itself, use AI Agent Change Requests. Changing which eligible task goes next need not change what any of those tasks is authorized to do."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Change Requests",
+            "path": "/guides/ai-agent-change-requests/"
+          }
+        ]
+      },
+      {
+        "title": "A worked example with three eligible tasks",
+        "paragraphs": [
+          "An agent has three available contributions, all within its role and supplied with the required inputs. Task A is a source-backed brief due for an agreed editorial review later today. Task B is a correction to one comparison row that a second reviewer needs before continuing a dependent review. Task C is a glossary cleanup with an accepted purpose but no near-term deadline or waiting handoff.",
+          "The owner’s existing direction is to protect the scheduled brief review and otherwise prefer bounded contributions that unblock confirmed downstream work. The agent is allowed to choose within that rule. It does not need another owner answer simply because there are three candidates.",
+          "The agent checks the next deliverable for each task. A needs the brief and source checks; B needs the corrected row and a check against its cited passage; C needs a consistency pass over the glossary. The evidence indicates that B is a bounded correction that can be returned without putting A’s agreed review at risk. That assessment remains an estimate, not a promised completion time.",
+          "The agent chooses B, then A, then revisits C. Its reason is specific: B can release a confirmed review dependency while preserving the owner’s deadline constraint. It records the sequence and the assumption that makes it reasonable. C remains valid work, not a blocker or a task to discard.",
+          "If the source check shows that B requires a broader rewrite, the agent stops at the correction’s agreed return point and reports that finding. It does not let “unblock the reviewer” become an unlimited assignment that consumes A’s review window. Within the existing direction, it moves to A while the broader B requirement is clarified; if the commitments can no longer both be protected, it asks the owner for the tradeoff.",
+          "After the bounded B result and the A handoff, the agent checks the remaining queue. If no new owner direction or eligible higher-impact contribution changes the plan, C can proceed. If C is deferred again, the record states why and when it should be reconsidered rather than allowing an unrecorded sequence of interruptions to decide its fate."
+        ]
+      },
+      {
+        "title": "Prioritize agent tasks in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Identify the contributions this agent may actually perform now, separating missing prerequisites and other owners’ active work from the eligible shortlist.",
+          "Read the current owner direction, explicit sequence, deadlines, and limits on the agent’s discretion.",
+          "Compare the next deliverables by their supported effect on other work, decisions, and commitments.",
+          "Estimate production, verification, review, and switching effort at a bounded return point, keeping uncertain assumptions visible.",
+          "Select the next contribution under the delegated rule, or ask the accountable owner to resolve a material tradeoff outside that rule.",
+          "Record the choice, its reason, what is deferred, and the condition that would justify interruption or reassessment.",
+          "Deliver the bounded result, update its record, and revisit the remaining eligible work when the relevant evidence changes."
+        ]
+      },
+      {
+        "title": "Keep the record proportionate",
+        "paragraphs": [
+          "Keep the record proportionate. One sentence can be enough: “Return the source correction first to release the waiting review, then finish the brief before its agreed handoff; reassess if the correction requires broader work.” The point is to expose the governing reason and limit, not to create a new planning artifact for every small action."
+        ]
+      },
+      {
+        "title": "Common mistakes with AI agent task prioritization",
+        "paragraphs": []
+      },
+      {
+        "title": "Equating importance with eligibility",
+        "paragraphs": [
+          "A high-impact task may still lack a required input, owner decision, or permitted access path. Keep its prerequisite visible and choose useful work that can proceed without bypassing it."
+        ]
+      },
+      {
+        "title": "Treating the latest message as the highest priority",
+        "paragraphs": [
+          "Recency is not a deadline, impact assessment, or owner decision. Check whether the message actually changes the current agreement before interrupting work."
+        ]
+      },
+      {
+        "title": "Optimizing for easy completions",
+        "paragraphs": [
+          "Small tasks can be valuable, especially when they release a handoff, but ease alone does not outrank an explicit commitment. Compare the effect of the result rather than the number of tasks that could be closed."
+        ]
+      },
+      {
+        "title": "Inventing precise priority scores",
+        "paragraphs": [
+          "Unsupported weights and exact effort estimates can disguise a judgment call. Use the owner’s actual criteria, label uncertain estimates, and surface the tradeoff when the choice requires an owner."
+        ]
+      },
+      {
+        "title": "Ignoring the review and verification work",
+        "paragraphs": [
+          "A draft is not necessarily the required deliverable. Include the checks and return path in planning, and avoid promising timing for another person’s review that has not been agreed."
+        ]
+      },
+      {
+        "title": "Interrupting without leaving a resumable state",
+        "paragraphs": [
+          "Preserve the current artifact, unfinished steps, and reason for switching. Do not mark the task done or assume an external operation stopped merely because attention moved elsewhere."
+        ]
+      },
+      {
+        "title": "Deferring the same task forever without a decision",
+        "paragraphs": [
+          "Repeated deferral is a reason to revisit the task’s purpose, scope, timing, or owner. Keep it visible and seek an explicit disposition when needed instead of silently treating it as unwanted work."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent task prioritization?",
+        "answer": "It is choosing the next eligible contribution when several tasks compete for an agent’s attention. The choice follows owner direction and considers downstream effects, explicit deadlines, effort uncertainty, and the conditions for revisiting the order."
+      },
+      {
+        "question": "How is prioritization different from dependency management?",
+        "answer": "Dependency management identifies the required state before work may proceed. Prioritization compares contributions that can proceed. A task becoming unblocked makes it a candidate; it does not automatically put it ahead of every other eligible task."
+      },
+      {
+        "question": "Should an agent always ask a human which task to do next?",
+        "answer": "No. It can make ordinary selections within its delegated role and stated ordering rules. It should ask the accountable owner when the choice would break a commitment, override an explicit sequence, or resolve a tradeoff outside its discretion."
+      },
+      {
+        "question": "Should the shortest task come first?",
+        "answer": "Not automatically. A short task may deserve precedence if it enables a confirmed handoff without risking other commitments. A longer task with an explicit deadline or owner-set first position may need to come first instead."
+      },
+      {
+        "question": "What should happen when a new urgent request arrives?",
+        "answer": "Check the requester’s authority, the consequence of delay, and the effect on the current plan. Apply an established exception or route the material tradeoff, and preserve a safe, accurate return point if the order changes."
+      },
+      {
+        "question": "How can teams record priority decisions in Commonly?",
+        "answer": "Use task descriptions and activity notes to state the chosen order, its owner or governing rule, the reason, and the reassessment condition. Connect the choice to the task’s assignee, dependencies, and result. This is a documented workflow rather than an assumed automatic ranking or scheduling feature."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Dependency Management",
+        "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Task Intake",
+        "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
+      }
+    ],
+    "cta": {
+      "title": "Choose the next useful contribution",
+      "body": "AI agent task prioritization works when the shortlist holds only contributions the agent may actually make now. Follow the owner’s stated sequence and deadlines, compare the next deliverables by their supported effect on other work, estimate effort at a bounded return point, and record what was deferred and what would justify revisiting it. Importance does not make a blocked task eligible, and a task scheduled later is not a blocker.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"

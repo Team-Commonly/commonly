@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 94);
+  assert.equal(pages.length, 95);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -115,6 +115,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-change-requests/',
     '/guides/ai-agent-data-boundaries/',
     '/guides/ai-agent-disagreement-resolution/',
+    '/guides/ai-agent-task-prioritization/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -150,7 +151,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 84);
+  assert.equal(guidePages.length, 85);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -741,6 +742,63 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const prioritizationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-prioritization/');
+  assert.equal(prioritizationGuide.title, 'AI Agent Task Prioritization: Choose What’s Next | Commonly');
+  const prioritization = guides['ai-agent-task-prioritization'];
+  assert.deepEqual(prioritization.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(prioritization.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(prioritization.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(prioritization.faq.length, 6);
+  assert.equal(prioritization.intro.length, 4);
+  for (const section of prioritization.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const prioritizationExampleIndex = prioritization.sections.findIndex((section) => section.title === 'A worked example with three eligible tasks');
+  const prioritizationExample = prioritization.sections[prioritizationExampleIndex];
+  assert.equal(prioritizationExample.paragraphs.length, 6);
+  assert.equal(prioritizationExample.tables, undefined);
+  assert.equal(prioritizationExample.links, undefined);
+  assert.equal(prioritizationExample.orderedItems, undefined);
+  assert.equal(prioritization.sections.slice(0, prioritizationExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(prioritization.sections[prioritizationExampleIndex - 1].title, 'Update the current plan');
+  assert.equal(prioritization.sections[prioritizationExampleIndex + 1].title, 'Prioritize agent tasks in seven steps');
+  assert.match(prioritization.sections.find((section) => section.title === 'Use a range').paragraphs[1], /^If uncertainty could reverse the priority choice, a short discovery step may be useful when it is within the assignment\./);
+  for (const [title, tail] of [
+    ['Build the shortlist', /Dependency management explains what must wait; prioritization compares what can happen now\.$/],
+    ['Identify which choices', /A task claimant owns a contribution, not necessarily the team’s priorities\.$/],
+    ['Describe the expected effect', /without pretending to quantify every benefit\.$/],
+    ['Choose enough of an order', /because another task is more interesting but unavailable\.$/],
+    ['Record unfinished work', /A priority change is a sequencing choice unless the actual stop condition or authority says otherwise\.$/],
+    ['State the missing decision', /“Not selected next” is not, by itself, a blocker\.$/],
+    ['Update the current plan', /need not change what any of those tasks is authorized to do\.$/],
+  ]) {
+    assert.match(prioritization.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  const recordProportionate = prioritization.sections.find((section) => section.title === 'Keep the record proportionate');
+  assert.equal(recordProportionate.paragraphs.length, 1);
+  assert.equal(recordProportionate.links, undefined);
+  assert.match(recordProportionate.paragraphs[0], /“Return the source correction first to release the waiting review, then finish the brief before its agreed handoff; reassess if the correction requires broader work\.”/);
+  assert.match(prioritization.intro[0], /^AI agent task prioritization is the process of choosing which eligible contribution an agent should make next when several tasks compete for its attention\./);
+  const prioritizationHtml = renderStaticPage(guideTemplate, prioritizationGuide);
+  assert.match(prioritizationHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-prioritization\/"/);
+  assert.match(prioritizationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(prioritizationHtml, /task prioritization/);
+  assert.doesNotMatch(prioritizationHtml, /seo-page-dark/);
+  assert.doesNotMatch(prioritizationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((prioritizationHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-task-intake/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-prioritization\/"/g) || []).length, 1);
+  }
+  assert.ok(!prioritization.sections.some((section) => section.title === prioritization.cta.title));
+  assert.equal((prioritizationHtml.match(/<h2>Choose the next useful contribution<\/h2>/g) || []).length, 1);
+  assert.ok(prioritizationHtml.indexOf('<h2>Frequently asked questions</h2>') < prioritizationHtml.indexOf('<h2>Choose the next useful contribution</h2>'));
+  assert.equal(prioritization.cta.secondary.label, 'Explore Commonly’s guides');
   const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
   assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly');
   const disagreement = guides['ai-agent-disagreement-resolution'];
