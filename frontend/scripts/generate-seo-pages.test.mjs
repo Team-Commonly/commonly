@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 88);
+  assert.equal(pages.length, 89);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -109,6 +109,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-retained-context/',
     '/guides/ai-agent-revision-loop/',
     '/guides/ai-agent-task-splitting/',
+    '/guides/ai-agent-interim-results/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -144,7 +145,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 78);
+  assert.equal(guidePages.length, 79);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -734,6 +735,39 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const interimResultsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-interim-results/');
+  assert.equal(interimResultsGuide.title, 'AI Agent Interim Results: Useful Work Before Completion | Commonly');
+  const interimResults = guides['ai-agent-interim-results'];
+  assert.deepEqual(interimResults.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(interimResults.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(interimResults.sections.flatMap((section) => section.links || []).length, 9);
+  const preservedInterim = interimResults.sections.find((section) => section.title === 'Preserve an interim result for the next owner without turning it into authority');
+  assert.equal(preservedInterim.paragraphs.length, 6);
+  assert.equal(preservedInterim.tables, undefined);
+  assert.deepEqual(preservedInterim.links.map((link) => link.path), ['/guides/ai-agent-retained-context/']);
+  assert.ok(interimResults.sections.some((section) => section.title === 'For example, an interim result names its gap'));
+  for (const title of ['If the result fails a test', 'The result is complete']) {
+    const section = interimResults.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(interimResults.intro[0], /^An AI agent interim result is a bounded artifact, finding, check, or status record returned before the primary task is complete\./);
+  const interimResultsHtml = renderStaticPage(guideTemplate, interimResultsGuide);
+  assert.match(interimResultsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-interim-results\/"/);
+  assert.match(interimResultsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(interimResultsHtml, /remaining gap/);
+  assert.doesNotMatch(interimResultsHtml, /seo-page-dark/);
+  assert.doesNotMatch(interimResultsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((interimResultsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-no-op/',
+    '/guides/ai-agent-status-updates/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-interim-results\/"/g) || []).length, 1);
   }
   const taskSplittingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-splitting/');
   assert.equal(taskSplittingGuide.title, 'AI Agent Task Splitting: Divide Work Clearly | Commonly');

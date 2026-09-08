@@ -635,6 +635,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent interim-results guide preserves its completion boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-interim-results/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Interim Results: Return Useful Work Before Completion' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Preserve an interim result for the next owner without turning it into authority' })).toBeInTheDocument();
+    expect(screen.getByText(/The saved note is an input to a future task, review, or handoff/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -642,7 +650,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(78);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(79);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

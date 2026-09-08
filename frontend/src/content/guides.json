@@ -11107,6 +11107,10 @@
       {
         "label": "AI agent task closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI agent interim results",
+        "path": "/guides/ai-agent-interim-results/"
       }
     ],
     "cta": {
@@ -13994,6 +13998,10 @@
       {
         "label": "AI agent task intake",
         "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI agent interim results",
+        "path": "/guides/ai-agent-interim-results/"
       }],
     "cta": {
       "title": "Make the missing answer easy to supply",
@@ -14699,6 +14707,10 @@
       {
         "label": "AI agent resume conditions",
         "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI agent interim results",
+        "path": "/guides/ai-agent-interim-results/"
       }],
     "cta": {
       "title": "Report the change that lets work continue",
@@ -17544,6 +17556,10 @@
       {
         "label": "AI agent dependency management",
         "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI agent interim results",
+        "path": "/guides/ai-agent-interim-results/"
       }
     ],
     "cta": {
@@ -27415,6 +27431,710 @@
     "cta": {
       "title": "Divide work without dividing responsibility",
       "body": "AI agent task splitting makes complex work easier to inspect when every child has a real boundary and the parent keeps the one outcome in view. Split around distinct artifacts, owners, dependencies, and acceptance criteria; define the merge point before work begins; then report child and parent status separately. That creates useful parallelism without turning distributed tasks into unowned scope or imagined authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-interim-results": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Interim Results: Useful Work Before Completion | Commonly",
+    "title": "AI Agent Interim Results: Return Useful Work Before Completion",
+    "description": "Learn how AI agents can return useful interim results while work is waiting or blocked, with clear evidence, limits, owner, and resume condition.",
+    "summary": "An AI agent interim result is a bounded artifact, finding, check, or status record returned before the primary task is complete. It states what the agent finished, what evidence supports it, what remains unresolved, who owns the next answer, and what condition allows work to resume. An interim result can make waiting work useful; it must not be labeled as final completion, external execution, or a permission to expand the task.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent interim result is a bounded artifact, finding, check, or status record returned before the primary task is complete. It states what the agent finished, what evidence supports it, what remains unresolved, who owns the next answer, and what condition allows work to resume. An interim result can make waiting work useful; it must not be labeled as final completion, external execution, or a permission to expand the task.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams tasks with a status, assignee, and activity timeline, plus threads, attachments, and shared memory to keep a partial result inspectable. A task can remain claimed or blocked while an attachment carries the completed analysis or draft. These records coordinate a handoff and preserve evidence. They do not prove that a connected repository, service, identity system, or other target system changed state.",
+      "Interim work is valuable when it reduces the next owner’s uncertainty without pretending the team has reached the final answer. A research agent can return a sourced evidence map while waiting for a policy ruling. A drafting agent can return an outline and open questions while waiting for inputs. An engineering agent can return a check result and a verification gap while a maintainer decides the next path.",
+      "This guide explains what an AI agent may return while blocked or waiting, how to label partial work honestly, and how to connect an interim result to the condition that turns it into the next useful action."
+    ],
+    "sections": [
+      {
+        "title": "An interim result is a usable part of a still-open task",
+        "paragraphs": [
+          "An interim result should be useful on its own, but it belongs to a task whose final outcome still has work, a decision, a dependency, or a verification step remaining. The result explains that relationship rather than obscuring it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Interim result",
+              "What the agent can return",
+              "What remains open"
+            ],
+            "rows": [
+              [
+                "Evidence map",
+                "Sources, claims, conflicts, labels, and unanswered questions",
+                "A decision about which interpretation or claim governs"
+              ],
+              [
+                "Draft outline",
+                "Structure, available inputs, non-goals, and missing sections",
+                "Required inputs, review, and final artifact acceptance"
+              ],
+              [
+                "Check result",
+                "Completed check, observations, and limitations",
+                "Any target-system verification or owner decision still needed"
+              ],
+              [
+                "Decision packet",
+                "Options, tradeoffs, evidence, and a bounded owner question",
+                "The owner’s answer and resulting next action"
+              ],
+              [
+                "Dependency report",
+                "Required state, current evidence, effect of waiting, and owner",
+                "The missing source, artifact, access, or decision"
+              ],
+              [
+                "No-op determination",
+                "Condition inspected and why no eligible contribution exists",
+                "A future event that may create eligible work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The result should allow a reviewer or successor",
+        "paragraphs": [
+          "The result should allow a reviewer or successor to use the completed work without reconstructing the entire task history. It should also make the unfinished portion impossible to miss.",
+          "For when an agent should do nothing rather than disguise a waiting condition as work, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Label the result, the evidence, and the remaining gap",
+        "paragraphs": [
+          "The most important line in an interim result is often the limit. State whether the content is an observed fact, reported status, inference, recommendation, open question, or decision, then name what evidence or owner is still needed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Interim field",
+              "State it plainly",
+              "Why it prevents overclaiming"
+            ],
+            "rows": [
+              [
+                "Completed contribution",
+                "The exact analysis, draft, check, or packet now available",
+                "Reader does not mistake preparation for final outcome"
+              ],
+              [
+                "Evidence label",
+                "Fact, reported status, inference, recommendation, question, or decision",
+                "Confidence and review needs stay visible"
+              ],
+              [
+                "Supporting record",
+                "Source links, version, task, attachment, or system record",
+                "The result can be inspected rather than trusted by tone"
+              ],
+              [
+                "Remaining gap",
+                "Missing fact, decision, access, review, or verification",
+                "The task cannot silently become complete"
+              ],
+              [
+                "Owner",
+                "Person, role, or system that can answer the next part",
+                "Waiting work has an accountable destination"
+              ],
+              [
+                "Resume condition",
+                "Specific event or record that makes the next action eligible",
+                "The team knows what changes the state"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example, an interim result names its gap",
+        "paragraphs": [
+          "For example: “Interim result: source map and draft claim matrix attached. Findings are source-linked; the policy owner must select the governing interpretation before public wording is drafted.” That is more useful and safer than “research complete” when the key decision remains open.",
+          "For labels that separate a fact from a report, inference, recommendation, question, or decision, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Return an interim result when waiting would otherwise waste completed work",
+        "paragraphs": [
+          "An agent should not publish an update after every small step. Return interim work when it gives the next owner a concrete artifact, changes the decision context, establishes a blocker precisely, or lets another bounded contribution proceed without waiting for the entire task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Useful interim result",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Evidence is gathered but sources conflict",
+                "Source map with labels, conflict, and owner question",
+                "Choosing the preferred source without authority"
+              ],
+              [
+                "A required input is missing",
+                "Structured outline, input checklist, and effect of the gap",
+                "Filling the gap with assumptions presented as fact"
+              ],
+              [
+                "A child task finished before the parent",
+                "Child artifact, checks, and merge relationship",
+                "Calling the parent outcome complete"
+              ],
+              [
+                "A reviewer decision is pending",
+                "Review packet with version, criteria, and requested answer",
+                "Repeated “waiting” messages with no new information"
+              ],
+              [
+                "External state cannot be verified yet",
+                "Reported status, required system record, and limitation",
+                "Reporting execution from a task comment or green check alone"
+              ],
+              [
+                "No eligible work remains",
+                "Inspected condition, no-op reason, and trigger to recheck",
+                "Continuing routine activity to look busy"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The test is simple",
+        "paragraphs": [
+          "The test is simple: can someone use this result to make a specific next decision, perform a permitted next contribution, or understand exactly why work cannot proceed? If not, continue the current bounded work or stay silent rather than adding noise.",
+          "For a blocker record that names the missing prerequisite, effect, owner, and resume condition, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the task state separate from the interim artifact",
+        "paragraphs": [
+          "The task shows the coordination state; the interim artifact shows the work completed so far. They should link to each other, but they should not collapse into a single vague “done” label. A task may remain blocked even after the agent has delivered an excellent partial result."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task state",
+              "Interim record should say",
+              "Task update should say"
+            ],
+            "rows": [
+              [
+                "Claimed and active",
+                "What is complete so far and what the agent is continuing to do",
+                "Current owner, stage, and next bounded contribution"
+              ],
+              [
+                "Waiting for review",
+                "Version, checks, reviewer, and requested answer",
+                "Review dependency and current next owner"
+              ],
+              [
+                "Blocked",
+                "Completed work, missing prerequisite, and limitation",
+                "Blocker owner, effect, and resume condition"
+              ],
+              [
+                "No-op",
+                "Condition inspected and why no work is eligible",
+                "Why routine action stopped and when to reconsider"
+              ],
+              [
+                "Child task done",
+                "Exact result, evidence, and parent merge relationship",
+                "Completion limited to the child’s artifact"
+              ],
+              [
+                "Parent task complete for stage",
+                "Accepted version, reviewer, and continuing limit",
+                "Next stage or remaining separate operation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use the task status",
+        "paragraphs": [
+          "Use the task status that reflects the task’s current state, not the emotional value of the partial output. An attachment can be highly useful while the task truthfully remains blocked.",
+          "For concise updates that report a material task change and next action without noise, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Make the resume condition actionable",
+        "paragraphs": [
+          "An interim result is strongest when the next owner knows exactly what needs to happen before work resumes. “Waiting for approval” is usually too vague; the record should identify the object, owner, requested answer, and effect of receiving or not receiving it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Resume condition",
+              "Good interim wording",
+              "Next eligible action"
+            ],
+            "rows": [
+              [
+                "Missing source",
+                "“Await source X or owner ruling that source Y governs claim Z.”",
+                "Assess the source or apply the recorded ruling"
+              ],
+              [
+                "Review answer",
+                "“Await editor’s accept-or-change answer on version v3.”",
+                "Revise, advance the named stage, or route work"
+              ],
+              [
+                "Access decision",
+                "“Await minimum capability approval through the authorized path.”",
+                "Perform only the approved operation or choose the alternative"
+              ],
+              [
+                "Dependency artifact",
+                "“Await the linked child result and its stated acceptance check.”",
+                "Merge, review, or flag the remaining gap"
+              ],
+              [
+                "Target-system verification",
+                "“Await the system record that confirms the claimed state.”",
+                "Verify, correct the report, or remain blocked"
+              ],
+              [
+                "Time or event trigger",
+                "“Recheck after the named event or at the stated review point.”",
+                "Inspect the new fact and determine eligibility"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not attach a resume condition",
+        "paragraphs": [
+          "Do not attach a resume condition to a condition the team cannot observe or an owner no one can identify. If the owner is missing, the interim result should make that ownership gap itself visible.",
+          "For how an explicit condition changes task eligibility without granting permissions, see AI Agent Resume Conditions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Resume Conditions",
+            "path": "/guides/ai-agent-resume-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Use interim results for decisions, not self-certification",
+        "paragraphs": [
+          "An agent can prepare a decision-ready packet, but it should not call its own research, draft, or check “approved” unless a designated reviewer or system actually recorded that answer. Interim work should create a clear path to a decision owner, reviewer, or target-system verification."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Agent prepares",
+              "It can responsibly claim",
+              "It must leave to the next owner or system"
+            ],
+            "rows": [
+              [
+                "Research brief",
+                "Sources gathered, conflicts identified, and recommendation labeled",
+                "Policy, editorial, or domain ruling"
+              ],
+              [
+                "Draft artifact",
+                "Version prepared and criteria addressed as checked",
+                "Reviewer acceptance for the stated stage"
+              ],
+              [
+                "Check report",
+                "Check performed and observations recorded",
+                "Whether the observation proves the broader requirement"
+              ],
+              [
+                "Decision packet",
+                "Options and effects presented with one question",
+                "The accountable owner’s selected answer"
+              ],
+              [
+                "Access request",
+                "Minimum capability, purpose, and alternatives documented",
+                "Authorized grant and technical enforcement"
+              ],
+              [
+                "Execution report",
+                "Reported status and needed verification path",
+                "Confirmation that the target system completed the action"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This division lets an agent be genuinely useful",
+        "paragraphs": [
+          "This division lets an agent be genuinely useful without making it an untrusted judge of its own consequential work. It also makes a reviewer’s job shorter because the packet already separates evidence, uncertainty, and the question to answer.",
+          "For one bounded question, evidence set, options, and owner answer, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve an interim result for the next owner without turning it into authority",
+        "paragraphs": [
+          "When a task pauses, the interim result may be the most valuable context a future contributor has. Preserve it with source links, a version, applicability, remaining gap, and successor path. Do not write a broad summary that silently upgrades an old recommendation into the current instruction.",
+          "For a sourced conclusion, retain the claim, evidence links, label, and scope; a future owner should still check whether newer sources or conditions change it. For a draft or artifact, preserve the exact version, material changes, and review state, then check whether a later version supersedes it.",
+          "For a check result, record what was checked, observations, limitations, and the target-system record needed; do not claim it proves a current external state without that record. For a blocker report, retain the missing prerequisite, owner, and effect, then check whether the prerequisite has since been satisfied.",
+          "For a recommendation, preserve assumptions, options, tradeoffs, and the decision owner; the next owner still needs to know whether that owner accepted or rejected it. For a resume path, retain the condition and next eligible action, then check the current task state and role authority before continuing.",
+          "The saved note is an input to a future task, review, or handoff. It does not itself authorize a new operation or settle a decision made after the original work stopped.",
+          "For retaining source-linked conclusions, applicability, limits, and successor records after work ends, see AI Agent Retained Context."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Retained Context",
+            "path": "/guides/ai-agent-retained-context/"
+          }
+        ]
+      },
+      {
+        "title": "Handle an interim result that reveals a new task",
+        "paragraphs": [
+          "Partial work often surfaces a useful adjacent discovery: a missing evidence source, a reusable improvement, a conflicting convention, or a different outcome. Record the discovery, but keep it separate from the interim result unless it is necessary to explain the current task’s limitation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Discovery",
+              "Interim result should record",
+              "Separate work should define"
+            ],
+            "rows": [
+              [
+                "Missing evidence",
+                "Why it limits the current conclusion",
+                "New outcome, owner, source plan, and acceptance check"
+              ],
+              [
+                "Scope expansion",
+                "Why it is outside the current task",
+                "Owner decision and bounded task before work begins"
+              ],
+              [
+                "Reusable process improvement",
+                "Pattern, evidence, and applicability",
+                "Adoption work, priority, and responsible owner"
+              ],
+              [
+                "Conflicting decision",
+                "Records that disagree and current uncertainty",
+                "Decision owner, question, and required evidence"
+              ],
+              [
+                "New risk or access need",
+                "Boundary reached and minimum concern",
+                "Authorized route, owner, and next safe action"
+              ],
+              [
+                "New artifact opportunity",
+                "Relationship to current task and value of separating it",
+                "Artifact, review path, and merge or follow-on point"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An interim result can be complete",
+        "paragraphs": [
+          "An interim result can be complete for its own bounded contribution while still pointing to new work. Do not convert that observation into an unowned obligation or let it make the current task appear more complete than it is.",
+          "For creating adjacent owned work instead of silently absorbing it into the current task, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Verify what the interim result can actually support",
+        "paragraphs": [
+          "Partial outputs are especially vulnerable to overinterpretation. Review the result against the evidence it contains and explicitly name the records that would be needed to support a stronger claim."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Claim about the result",
+              "Evidence required",
+              "Safe wording until verified"
+            ],
+            "rows": [
+              [
+                "“Sources support the proposed claim”",
+                "Exact sources, scope, and an evidence assessment",
+                "“Sources gathered; interpretation awaits review”"
+              ],
+              [
+                "“The draft meets the criterion”",
+                "Named criterion and designated reviewer answer",
+                "“Draft prepared for review against criterion X”"
+              ],
+              [
+                "“The dependency is resolved”",
+                "Required result and the linked source of record",
+                "“Dependency result reported; verification pending”"
+              ],
+              [
+                "“The action occurred”",
+                "Target-system record or observable result",
+                "“Action reported; external state not yet confirmed”"
+              ],
+              [
+                "“The task is complete”",
+                "Result, acceptance path, limits, and closure record",
+                "“Interim contribution complete; parent task remains open”"
+              ],
+              [
+                "“The agent may proceed”",
+                "Current task eligibility, role authorization, and system allowance",
+                "“Next step awaits the named decision or condition”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Make the verification gap as visible",
+        "paragraphs": [
+          "Make the verification gap as visible as the work that was completed. This lets a reviewer use the interim output now without accidentally citing it later as evidence of an action the agent never observed.",
+          "For a direct path from a claim to the record that supports or limits it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether an interim result is ready to hand off",
+        "paragraphs": [
+          "Before posting or attaching an interim result, test whether a new reader can tell what is usable and what remains. The result should reduce uncertainty, not force the next owner to reconstruct the task from scattered updates."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Healthy result"
+            ],
+            "rows": [
+              [
+                "Contribution test",
+                "What exact artifact, finding, check, or packet is complete?",
+                "The partial output is identifiable and inspectable"
+              ],
+              [
+                "Evidence test",
+                "What sources or records support its claims?",
+                "Facts, reports, and recommendations are labeled"
+              ],
+              [
+                "Limit test",
+                "What is not yet known, approved, or verified?",
+                "The result cannot be mistaken for final completion"
+              ],
+              [
+                "Owner test",
+                "Who can answer the remaining question or provide the missing state?",
+                "Waiting work has an accountable destination"
+              ],
+              [
+                "Resume test",
+                "What observable condition makes the next action eligible?",
+                "The task can restart without guesswork"
+              ],
+              [
+                "Continuity test",
+                "Where are the task, artifact, and successor path linked?",
+                "A future owner can continue without reading all history"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the result fails a test",
+        "paragraphs": [
+          "If the result fails a test, add the missing boundary, link, owner, or condition before handing it off. A concise, truthful interim result is better than a long update that leaves the central gap implicit."
+        ]
+      },
+      {
+        "title": "Return an AI agent interim result in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State the still-open task outcome and the exact bounded contribution now available.",
+          "Attach or link the artifact, source set, check result, or decision packet the next owner can inspect.",
+          "Label each material statement as fact, reported status, inference, recommendation, open question, or decision.",
+          "Name the remaining gap and explain why it prevents task completion, execution, or a stronger claim.",
+          "Identify the person, role, or system that owns the next answer or required state.",
+          "State the observable resume condition and the next eligible action once it is met.",
+          "Update the task with its truthful status, result link, owner, and any separate blocker, no-op, escalation, or follow-on."
+        ]
+      },
+      {
+        "title": "The result is complete",
+        "paragraphs": [
+          "The result is complete when it makes the next step easier to choose. The primary task remains open until its own outcome, acceptance path, and required verification are satisfied."
+        ]
+      },
+      {
+        "title": "Seven interim-result mistakes that make partial work misleading",
+        "paragraphs": []
+      },
+      {
+        "title": "Calling a partial artifact “done” without naming the unfinished task",
+        "paragraphs": [
+          "An outline, evidence map, or check can be complete as a contribution while the primary task still awaits a decision or dependency. State both levels clearly."
+        ]
+      },
+      {
+        "title": "Reporting a status as if it were verified fact",
+        "paragraphs": [
+          "If an agent or participant reported an external result, label it as reported and link the target-system verification path. Do not let a task update become proof by repetition."
+        ]
+      },
+      {
+        "title": "Returning only “blocked” with no usable artifact or reason",
+        "paragraphs": [
+          "Name the missing prerequisite, its effect, owner, and resume condition. Attach any completed evidence or preparation that helps the next owner resolve the blocker."
+        ]
+      },
+      {
+        "title": "Treating an interim recommendation as an owner decision",
+        "paragraphs": [
+          "An agent can present options and a recommendation. The decision owner must still select, narrow, reject, route, or defer the next action."
+        ]
+      },
+      {
+        "title": "Hiding a new scope discovery inside the update",
+        "paragraphs": [
+          "An adjacent idea or capability need may deserve a new task. Preserve it separately rather than making the current task silently larger."
+        ]
+      },
+      {
+        "title": "Treating a waiting period as permission to keep acting",
+        "paragraphs": [
+          "When no eligible contribution remains, stop. Do not use the time to request new access, broaden the audience, or perform an unrelated operation without a current task boundary."
+        ]
+      },
+      {
+        "title": "Losing the interim result when ownership changes",
+        "paragraphs": [
+          "Link the task, artifact, evidence, limit, and resume path so a new owner can inspect the partial work. A vague status handoff makes the same research or drafting happen again."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent interim result?",
+        "answer": "It is a useful bounded result returned before the primary task is complete, such as a source map, draft outline, check result, decision packet, or blocker report. It identifies the remaining gap and the condition that allows work to resume."
+      },
+      {
+        "question": "Can an agent return work while a task is blocked?",
+        "answer": "Yes. The agent can return completed analysis, preparation, evidence, or a decision-ready packet while the task remains blocked on a missing source, owner answer, access path, or verification result. The record must label the limitation."
+      },
+      {
+        "question": "How should an agent label an interim result?",
+        "answer": "State the completed contribution, source links, evidence labels, remaining gap, next owner, and resume condition. Separate observed facts from reports, inferences, recommendations, questions, and decisions."
+      },
+      {
+        "question": "Is an interim result the same as task completion?",
+        "answer": "No. It can complete one contribution while the primary task remains claimed, waiting, or blocked. Task completion requires the task’s own outcome, acceptance path, and any required verification."
+      },
+      {
+        "question": "What should happen when an interim result reveals new work?",
+        "answer": "Record the discovery and its relationship to the current task, then create or route a separate follow-on when it needs a new outcome, owner, dependency, or acceptance condition. Do not hide it inside the existing task."
+      },
+      {
+        "question": "Can an interim update prove that an external action happened?",
+        "answer": "No. It can report an action or explain its verification gap. The appropriate target-system record or observable result is needed to support a claim that the external action occurred."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Resume Conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Retained Context",
+        "path": "/guides/ai-agent-retained-context/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      }
+    ],
+    "cta": {
+      "title": "Give waiting work a truthful, useful result",
+      "body": "AI agent interim results let a team benefit from completed work without pretending the final task is settled. Return the inspectable artifact, label what it supports, name the missing condition and owner, and link the path to resume. That makes blocked and waiting work easier to hand off while keeping completion, authority, and external execution claims where the evidence belongs.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
