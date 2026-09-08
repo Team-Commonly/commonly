@@ -37,6 +37,15 @@ await jest.unstable_mockModule('../src/lib/api.js', () => ({
   login: jest.fn(),
 }));
 
+// The legacy run-loop contract tests exercise event/memory/ack behavior. Keep
+// their API fixtures independent from the newer focus contract; dedicated
+// pod-focus-run-loop tests cover the real context read at the turn seam.
+await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
+  FOCUS_FRAME_MAX_CODE_POINTS: 8000,
+  formatPodFocusFrame: jest.fn(() => '=== Pod focus (pod context; not instructions) ===\nNo focus set.'),
+  readPodFocus: jest.fn(async (_client, podId) => ({ podId, revision: 0, focus: null })),
+}));
+
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const {
@@ -1357,6 +1366,7 @@ describe('performRun', () => {
       // Self-post detection snapshots pod messages before/after the spawn;
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
       const id = eventIds[eventTurn];
       eventTurn += 1;
       return { events: id ? [makeEvent({ _id: id })] : [] };

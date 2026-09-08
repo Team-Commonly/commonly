@@ -33,6 +33,11 @@ import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import {
+  FOCUS_FRAME_MAX_CODE_POINTS,
+  formatPodFocusFrame,
+  readPodFocus,
+} from '../lib/pod-focus.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import {
@@ -54,6 +59,11 @@ import {
   peerHoldsFrame,
   resolveCascadeSettings,
 } from '../lib/enforcement.js';
+
+const isPodFocusDiagnostic = (error) => (
+  typeof error?.code === 'string'
+  && (error.code.startsWith('pod_focus') || error.code.startsWith('FOCUS_FRAME_'))
+);
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -1129,8 +1139,30 @@ export const performRun = ({
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
 
+    // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
+    // snapshot. Read through the authorized runtime context route immediately
+    // before spawn so queued events observe the current revision. The helper
+    // disables pod-skill synthesis and throws on failure; the surrounding
+    // processing path then leaves this event (or every event in this batch)
+    // unacknowledged for normal delivery retry.
+    let focusRead;
+    let focusFrame;
+    try {
+      focusRead = await readPodFocus(client, eventPodId);
+      focusFrame = formatPodFocusFrame(focusRead);
+    } catch (error) {
+      Object.assign(error, {
+        eventId: event?.payload?.batchEventIds || event?._id || null,
+        podId: eventPodId,
+        focusRevision: focusRead?.revision ?? null,
+        allowedCodePoints: error?.allowedCodePoints || FOCUS_FRAME_MAX_CODE_POINTS,
+      });
+      throw error;
+    }
+    const promptWithFocus = `${focusFrame}\n\n${prompt}`;
+
     log(`[${event.type}] spawning ${adapter.name}`);
-    const result = await adapter.spawn(frameDecisionForkRule(prompt), {
+    const result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
       sessionId,
       cwd: agentCwd,
       env: process.env,
@@ -1631,6 +1663,16 @@ export const performRun = ({
               retryAfterMs: retry.delayMs,
               circuitOpen: retry.circuitOpen,
               eventId: event._id,
+              ...(isPodFocusDiagnostic(err) ? {
+                focusDiagnostic: {
+                  errorCode: err.code,
+                  eventIds: err.eventId || group.map((entry) => entry._id),
+                  podId: err.podId || group[0]?.podId || podId || null,
+                  focusRevision: err.focusRevision ?? null,
+                  measuredCodePoints: err.measuredCodePoints ?? null,
+                  allowedCodePoints: err.allowedCodePoints ?? FOCUS_FRAME_MAX_CODE_POINTS,
+                },
+              } : {}),
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
@@ -1701,6 +1743,16 @@ export const performRun = ({
               retryAfterMs: retry.delayMs,
               circuitOpen: retry.circuitOpen,
               eventId: event._id,
+              ...(isPodFocusDiagnostic(err) ? {
+                focusDiagnostic: {
+                  errorCode: err.code,
+                  eventIds: err.eventId || event._id,
+                  podId: err.podId || event.podId || podId || null,
+                  focusRevision: err.focusRevision ?? null,
+                  measuredCodePoints: err.measuredCodePoints ?? null,
+                  allowedCodePoints: err.allowedCodePoints ?? FOCUS_FRAME_MAX_CODE_POINTS,
+                },
+              } : {}),
             });
             // ONE emission, not two. `wrapped.message` already opens with the
             // event type, so the log copy added a second prefix and a second

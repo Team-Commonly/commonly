@@ -223,6 +223,62 @@ describe('delivery nonce', () => {
     expect(forged).toBeNull();
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
   });
+
+  test('retires an exhausted event and delivers only a newly enqueued event', async () => {
+    // This is deliberately stateful: the query-shape lifecycle tests prove
+    // that the predicates are disjoint, but only a real store can prove that
+    // an exhausted row is no longer listed while a fresh pending row is.
+    const exhausted = await seedEvent();
+
+    const first = await claim();
+    expect(String(first._id)).toBe(String(exhausted._id));
+    await requeue(exhausted._id);
+
+    const second = await claim();
+    expect(String(second._id)).toBe(String(exhausted._id));
+    await requeue(exhausted._id);
+
+    const third = await claim();
+    expect(String(third._id)).toBe(String(exhausted._id));
+    expect(third.attempts).toBe(3);
+
+    // Age only the third delivery; invoking GC now must take the cap-exhausted
+    // branch rather than requeueing it for a fourth delivery.
+    await AgentEvent.updateOne(
+      { _id: exhausted._id },
+      { $set: { deliveredAt: new Date(Date.now() - 60 * 60 * 1000) } },
+    );
+    const collected = await AgentEventService.garbageCollect({
+      requeueDeliveredMinutes: 10,
+      requeueMaxAttempts: 3,
+    });
+
+    expect(collected.expiredDelivered).toBe(1);
+    expect((await AgentEvent.findById(exhausted._id).lean()).status).toBe('failed');
+    expect(await AgentEventService.list({
+      agentName: AGENT,
+      instanceId: INSTANCE,
+      limit: 5,
+    })).toHaveLength(0);
+
+    const fresh = await AgentEventService.enqueue({
+      agentName: AGENT,
+      instanceId: INSTANCE,
+      podId: POD_ID,
+      type: 'chat.mention',
+      payload: { text: 'fresh event' },
+    });
+    const deliverable = await AgentEventService.list({
+      agentName: AGENT,
+      instanceId: INSTANCE,
+      limit: 5,
+    });
+
+    expect(deliverable).toHaveLength(1);
+    expect(String(deliverable[0]._id)).toBe(String(fresh._id));
+    expect(deliverable[0].attempts).toBe(1);
+    expect(deliverable[0].payload.text).toBe('fresh event');
+  });
 });
 
 describe('isSupersededDelivery — telling "replaced" apart from "gone"', () => {
