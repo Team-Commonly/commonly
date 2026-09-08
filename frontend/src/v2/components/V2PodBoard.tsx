@@ -368,7 +368,7 @@ const V2PodBoard: React.FC = () => {
         setFocusSaveError(t('board.focus.saveError'));
       }
     } finally {
-      setFocusSaving(false);
+      if (requestId === focusMutationRef.current && requestPodId === podId) setFocusSaving(false);
     }
   }, [api, podId, focusSaving, focusGoal, focusScope, focusOwner, focusTaskIds, focusBaseRevision, t]);
 
