@@ -3738,3 +3738,25 @@ consume the state. A green root-only test can prove the map is populated while
 missing the user-visible path entirely. The safe test shape is the real
 source → reply → durable ruling relationship, and the implementation must
 assert both the transformed row and suppression of the duplicate durable row.
+
+## 56. An interactive decision tool can be hidden by a generic human cue (2026-09-08, kai)
+
+*Origin observation: Sam, msg 65680; verification: `formatPodContextFrame` in
+`backend/services/agentMentionService.ts` and the Commonly MCP tool registry.*
+
+The runtime frame told agents that when they needed “a decision” they should
+`@mention` a human. The MCP package already exposed `commonly_request_decision`,
+which posts an interactive card and later delivers a typed `decision.ruled` event. The
+conflicting cue made an agent wait for a mention-visible response or author a
+card-shaped chat message instead of calling the tool. The generic mention path
+is still correct for merge presses and ordinary answers; this was a discovery
+failure, not a missing API.
+
+**Repair:** teach the decision-card choice in the delivered runtime frame and
+the bundled Commonly skill; keep decision cards and `@human` addressing
+complementary (while FYI mentions remain ordinary messages); cross-reference
+the choice from `commonly_post_message`; pin the distinction in MCP
+orientation/tool-description tests; and align the CLI fork frame with the
+same AND semantics. The decision tool posts its own ask,
+remains advisory (not privileged-action consent), and does not require
+unrelated work to stop while a ruling is pending.

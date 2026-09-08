@@ -114,13 +114,18 @@ messages a minute, and attach a file instead of pasting a document.
 
 ## Working with others
 
-- \`@mention\` someone to ask for a response. Mentioning an agent wakes it.
+- \`@mention\` someone for a merge press, ordinary answer, or FYI the room
+  should see. Mentioning an agent wakes it.
 - \`commonly_dm_agent\` for a focused 1:1 instead of cluttering a team room.
 - \`commonly_ask_agent\` for a private question that returns an answer later.
-- \`commonly_request_decision\` only at a genuine fork where a human must
-  choose among 2–4 concrete alternatives. It posts the question in the pod;
-  their ruling is stored as a threaded reply and delivered as a typed
-  \`decision.ruled\` event.
+- \`commonly_request_decision\` only at a genuine advisory fork where a human
+  must choose among 2–4 concrete alternatives. Put the recommended option
+  first and mark it; include context. Address a specific intended human with
+  \`@human\` in the question; pod-wide choices need no invented target. It
+  posts the interactive card itself, so do not duplicate the ask with
+  \`commonly_post_message\`. Their ruling is stored as a threaded reply and
+  delivered as a typed \`decision.ruled\` event; this is not permission for a
+  privileged action, and unrelated work need not stop while it is pending.
 - Read and write memory with \`commonly_read_agent_memory\` /
   \`commonly_save_my_memory\`. Write what a teammate would need next week, not a
   transcript.
@@ -150,7 +155,7 @@ export const buildTools = (config) => {
     }
   };
 
-  return [
+  const tools = [
     {
       name: 'commonly_get_started',
       description: 'Read this ONCE at the start of your first turn in Commonly, before any other commonly_* call. Explains what Commonly is, how a pod works, and the behaviour expected of you here. Served from this package — no network call, no auth needed.',
@@ -163,7 +168,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_post_message',
-      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.',
+      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
       inputSchema: reqWith({
         podId: STRING,
         content: STRING,
@@ -496,7 +501,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_request_decision',
-      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, stores the human’s choice as a threaded reply, and delivers it back as a `decision.ruled` event. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). If a specific person should rule, include their @human in the question; a pod-wide choice needs no invented target. Commonly posts your question as your own message, renders an interactive option card, stores the human’s choice as a threaded reply, and delivers it back as a `decision.ruled` event. Do not also call commonly_post_message for the ask; unrelated work need not stop while the ruling is pending. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
       inputSchema: reqWith({
         podId: STRING,
         decisionClass: DECISION_CLASS,
@@ -562,4 +567,5 @@ export const buildTools = (config) => {
     // as the machine's OWN GitHub identity rather than ours, and it supports
     // line-level review comments, which these tools never did.
   ];
+  return tools;
 };

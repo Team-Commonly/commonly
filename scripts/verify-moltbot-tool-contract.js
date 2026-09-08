@@ -278,7 +278,14 @@ const REQUIRED_TOOL_SOURCES = [
     // the same capability. These are MCP tools; the pin neither has nor owes
     // them. Every entry is asserted to still appear in the cue text below, so
     // this list cannot outlive the line that justified it.
-    namedForOtherDrivers: ['commonly_read_file', 'commonly_dm_agent'],
+    namedForOtherDrivers: [
+      'commonly_read_file',
+      'commonly_dm_agent',
+      // The decision-card API is exposed by @commonlyai/mcp. Keep the
+      // cross-runtime guidance in the shared frame without requiring the
+      // pinned OpenClaw extension to invent a counterpart.
+      'commonly_request_decision',
+    ],
   },
 ];
 
