@@ -124,6 +124,29 @@ describe('/api/hosted', () => {
     expect(amb.body).toMatchObject({ code: 'ambiguous_instance', instanceIds: ['scout', 'demo'] });
   });
 
+  it('prefers the hosted row over a non-hosted "default" when no instanceId is sent (sprint-review on #1644)', async () => {
+    const hosted = makeInstallation({ instanceId: 'scout' });
+    const byo = makeInstallation({ instanceId: 'default', config: new Map([['runtime', { runtimeType: 'byo' }]]) });
+    mockHosted.isHostedInstallation.mockImplementation((row) => row.config.get('runtime').runtimeType === 'hosted');
+    mockFind.mockResolvedValue([byo, hosted]);
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(res.body.instanceId).toBe('scout');
+    expect(mockHosted.provisionAgent).toHaveBeenCalledWith(expect.objectContaining({ instanceId: 'scout' }));
+    // Nothing hosted at all → the honest not_hosted answer survives.
+    mockFind.mockResolvedValue([byo]);
+    const none = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(none.status).toBe(409);
+    expect(none.body.code).toBe('not_hosted');
+  });
+
+  it('deprovision without an instanceId resolves the same single owned seat — deliberate symmetry, caller-scoped', async () => {
+    mockFind.mockResolvedValue([makeInstallation({ instanceId: 'scout' })]);
+    const res = await request(app).post('/api/hosted/deprovision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(mockFind).toHaveBeenCalledWith({ agentName: 'scout', status: 'active', installedBy: 'owner-1' });
+  });
+
   it('an explicit instanceId still resolves by findOne exactly as before', async () => {
     mockFindOne.mockResolvedValue(makeInstallation({ instanceId: 'demo' }));
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout', instanceId: 'demo' });

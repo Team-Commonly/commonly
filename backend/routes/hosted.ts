@@ -79,6 +79,9 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
   } else {
     // No instanceId in the request: resolve the caller's own active
     // installation of this agent, whatever instanceId the install derived.
+    // This resolver serves deprovision too, deliberately: the same client
+    // that provisioned without an instanceId must be able to tear the seat
+    // down without one, and both verbs stay caller-scoped (installedBy).
     // The install route derives instanceId from displayName (a persona hire
     // named "Scout" becomes instanceId "scout"), while the hire UI sends only
     // agentName — so defaulting to "default" here made every persona hire
@@ -88,7 +91,13 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
       status: 'active',
       installedBy: getUserId(req),
     });
-    const rows: any[] = Array.isArray(owned) ? owned : [];
+    // Hosted rows first (sprint-review on #1644): a non-hosted "default" beside
+    // a hosted "scout" must resolve to the seat that can actually be
+    // provisioned, not 409 not_hosted about the wrong row. Falling back to
+    // every row keeps the honest not_hosted answer when nothing is hosted.
+    const all: any[] = Array.isArray(owned) ? owned : [];
+    const hostedRows = all.filter((row: any) => hostedRuntime.isHostedInstallation(row));
+    const rows: any[] = hostedRows.length ? hostedRows : all;
     if (rows.length === 1) [installation] = rows;
     else if (rows.length > 1) {
       installation = rows.find((row: any) => String(row.instanceId || '') === 'default') || null;
