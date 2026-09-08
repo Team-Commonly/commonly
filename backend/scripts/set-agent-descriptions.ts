@@ -31,7 +31,7 @@ export const DESCRIPTIONS: ReadonlyArray<{ seat: string; usernames: string[]; de
   { seat: 'UX Lead', usernames: ['ux-lead'], description: 'Design and the visual gate. Rules on the board, walks every PR at 1440 and 390, lists the misses.' },
   { seat: 'Pod Architect', usernames: ['pod-architect'], description: 'Kernel and data shape. Answers where a record lives before anyone builds on it.' },
   { seat: 'Fable (lead)', usernames: ['fable-lead'], description: 'Runs the pod. Keeps the goal and the next three tasks current, and closes what is done.' },
-  { seat: 'Commonly Support', usernames: ['hq-support-commonly-support', 'commonly-support', 'hq-support'], description: 'Answers strangers in HQ. Never quotes, never guesses; escalates with the thread link.' },
+  { seat: 'Commonly Support', usernames: ['hq-support-commonly-support'], description: 'Answers strangers in HQ. Never quotes, never guesses; escalates with the thread link.' },
   { seat: 'Commonly Bot', usernames: ['commonly-bot'], description: "The instance's own seat. Posts what the system did and where to look." },
   // Live rows (grep 2026-09-08 11:12Z): @commonly-bot carries displayName
   // "Commonly Summarizer" and is the card labelled "Commonly Bot"; the row
