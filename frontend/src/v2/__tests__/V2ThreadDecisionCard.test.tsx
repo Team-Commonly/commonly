@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -460,7 +460,8 @@ describe('V2Thread decision cards', () => {
     const second = screen.getByRole('button', { name: 'Rule: Ship the rebuilt workspace (Recommended)' });
     expect(first).toHaveClass('v2-decision-card__choice--primary');
     expect(second).not.toHaveClass('v2-decision-card__choice--primary');
-    expect(second).toHaveTextContent('Recommended');
+    expect(second).not.toHaveTextContent('Recommended');
+    expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -148,7 +148,6 @@ const ALLOWLIST: string[] = [
   '.v2-board__card-id', // 10.5px — no-mono-family
   '.v2-board__detail-update-author', // 11.5px — no-mono-family
   '.v2-connect__number', // 11.0px — no-mono-family
-  '.v2-decision-card__option > span', // 11.0px — no-mono-family
   '.v2-feature__eyebrow', // 11.0px — no-mono-family
   '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family
