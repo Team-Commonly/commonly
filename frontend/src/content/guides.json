@@ -11051,7 +11051,12 @@
       {
         "label": "AI agent resume conditions",
         "path": "/guides/ai-agent-resume-conditions/"
-      }],
+      },
+      {
+        "label": "AI agent non-goals",
+        "path": "/guides/ai-agent-non-goals/"
+      }
+    ],
     "cta": {
       "title": "Make restraint a reviewable contribution",
       "body": "An AI agent no-op is useful when it prevents the wrong work without hiding the right work. Define the trigger, eligibility rule, material-change threshold, and escalation path before the agent runs. Then let silence mean something precise: the agent checked the work it was responsible for and found no safe, useful, authorized contribution to make.",
@@ -12473,7 +12478,12 @@
       {
         "label": "AI agent follow-on work",
         "path": "/guides/ai-agent-follow-on-work/"
-      }],
+      },
+      {
+        "label": "AI agent non-goals",
+        "path": "/guides/ai-agent-non-goals/"
+      }
+    ],
     "cta": {
       "title": "Let useful work grow only with a visible boundary",
       "body": "AI agent scope creep is easier to prevent when the team treats additional work as a decision rather than a side effect of capability. Give the agent a checkable contract, make new inputs and operations visible, preserve non-goals, and route any material expansion to the owner who can accept it. That lets the team pursue useful follow-on work without losing the ability to review who asked for it, why it matters, and what the agent may do next.",
@@ -15322,7 +15332,12 @@
       {
         "label": "AI agent follow-on work",
         "path": "/guides/ai-agent-follow-on-work/"
-      }],
+      },
+      {
+        "label": "AI agent non-goals",
+        "path": "/guides/ai-agent-non-goals/"
+      }
+    ],
     "cta": {
       "title": "Give every contribution a clear boundary",
       "body": "An AI agent work contract makes a task easier to start, review, and hand off because it names the intended contribution before the agent begins. Define the outcome, inputs, operations, artifact, owner, acceptance condition, and stop path. Then let new work become an explicit decision instead of a quiet expansion of capability into authority.",
@@ -16028,6 +16043,10 @@
       {
         "label": "AI Agent Handoffs",
         "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "AI agent non-goals",
+        "path": "/guides/ai-agent-non-goals/"
       }
     ],
     "cta": {
@@ -18116,6 +18135,697 @@
     "cta": {
       "title": "Turn feedback into a clear next state",
       "body": "AI agent review decisions give work a legible answer: accept it for the stated stage, request a bounded revision, narrow it to supported scope, reject the unsupported path, or route the decision to its proper owner. By linking the artifact, evidence, boundary, and next action, a reviewer makes progress visible without granting authority or treating collaboration records as proof of execution.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-non-goals": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Non-Goals: Write Clear Task Boundaries | Commonly",
+    "title": "AI Agent Non-Goals: Write Boundaries Agents Can Recognize",
+    "description": "Learn how to write AI agent non-goals that make task boundaries explicit, prevent scope creep, preserve reviewability, and turn adjacent work into a visible decision.",
+    "summary": "AI agent non-goals are explicit statements of work a task, role, or review stage will not do. They make the boundary of a useful contribution visible: which outcomes, inputs, operations, audiences, decisions, and external effects remain outside the current assignment. A good non-goal is not “be careful” or “do not overreach.” It is “do not change the target system,” “do not add sources beyond the named set,” or “do not decide priority for a follow-on task.”",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent non-goals are explicit statements of work a task, role, or review stage will not do. They make the boundary of a useful contribution visible: which outcomes, inputs, operations, audiences, decisions, and external effects remain outside the current assignment. A good non-goal is not “be careful” or “do not overreach.” It is “do not change the target system,” “do not add sources beyond the named set,” or “do not decide priority for a follow-on task.”",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams coordination records for these boundaries: tasks carry descriptions, owners, status, dependencies, activity, and results; focused threads hold decisions; attachments preserve evidence; and selected shared memory can retain sourced context. Those records make a boundary reviewable. They do not create permissions, determine external system state, or authorize actions beyond a role and target system’s own controls.",
+      "Non-goals are valuable because agents can find useful adjacent work almost everywhere. An explicit exclusion tells the agent when to stop, when to no-op, when to ask for a scope decision, and when to create a distinct follow-on proposal. It also lets reviewers see whether an artifact is incomplete or deliberately limited.",
+      "This guide explains how to write AI agent non-goals, distinguish them from blockers and acceptance criteria, and keep a boundary clear from intake through review and handoff."
+    ],
+    "sections": [
+      {
+        "title": "Non-goals name excluded work, not vague caution",
+        "paragraphs": [
+          "The most useful non-goal is concrete enough for someone new to the task to recognize an out-of-bounds request. It connects an exclusion to the current outcome and explains what should happen instead when the excluded work becomes relevant."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Weak boundary",
+              "Explicit non-goal",
+              "If it becomes relevant"
+            ],
+            "rows": [
+              [
+                "“Stay focused.”",
+                "“Do not add a second audience or use case beyond the named review audience.”",
+                "Propose a separately owned follow-on task"
+              ],
+              [
+                "“Do not overdo it.”",
+                "“Do not modify the target system; prepare an evidence packet only.”",
+                "Route an authorized execution decision"
+              ],
+              [
+                "“Avoid extras.”",
+                "“Do not add sources outside the supplied set without an owner decision.”",
+                "Ask for a source-boundary decision"
+              ],
+              [
+                "“Keep it small.”",
+                "“Do not rewrite adjacent artifacts that are not needed for this task’s outcome.”",
+                "Record the observation with evidence"
+              ],
+              [
+                "“No risky actions.”",
+                "“Do not make permission, delivery, deployment, or identity changes.”",
+                "Escalate the bounded request to the responsible owner"
+              ],
+              [
+                "“Finish the assignment.”",
+                "“Do not continue after the stated artifact is ready for its named review.”",
+                "Stop, hand off, or no-op"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The wording should be testable",
+        "paragraphs": [
+          "The wording should be testable against the artifact and next action. “No vendor claims” is clear; “make it objective” leaves a reviewer guessing what content or operation is excluded.",
+          "For the task-level contract that holds outcome, inputs, operations, artifact, owner, and stop condition, see AI Agent Work Contract.",
+          "For the task record that makes status, ownership, dependencies, and results visible, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          },
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Separate non-goals from requirements, blockers, and acceptance criteria",
+        "paragraphs": [
+          "Several task fields constrain work, but they answer different questions. Keeping them separate prevents an agent from treating a missing prerequisite as an exclusion or treating an excluded operation as a failed acceptance condition."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task element",
+              "What it says",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Goal",
+                "The bounded contribution the task should produce",
+                "“Prepare a source-linked comparison brief.”"
+              ],
+              [
+                "Requirement",
+                "A condition the contribution must meet",
+                "“Label source conflict and link each cited source.”"
+              ],
+              [
+                "Non-goal",
+                "Work deliberately outside the current boundary",
+                "“Do not resolve the policy conflict or change production content.”"
+              ],
+              [
+                "Acceptance criterion",
+                "What makes the artifact ready for the named review",
+                "“The brief has one decision question and stated limits.”"
+              ],
+              [
+                "Blocker",
+                "A missing prerequisite prevents eligible work",
+                "“The governing source has not been selected.”"
+              ],
+              [
+                "Resume condition",
+                "A fact that would make waiting work eligible again",
+                "“Resume after the policy owner records the governing source.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An artifact can meet its acceptance criteria",
+        "paragraphs": [
+          "An artifact can meet its acceptance criteria and still intentionally omit an excluded action. Conversely, a task can be blocked even though its non-goals are perfectly clear. The distinctions let the agent state the right result instead of making an incomplete artifact look like a failure.",
+          "For readiness conditions at a particular review stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Put non-goals beside the outcome they protect",
+        "paragraphs": [
+          "Non-goals work best when they are close to the task’s stated outcome, not buried in a long instruction or left in a prior conversation. The task, brief, review packet, or decision record should make the relationship visible so a reviewer can understand both what the agent is meant to do and what it must leave alone."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work record",
+              "Put non-goals next to",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Task description",
+                "Outcome, in-scope inputs, and permitted operations",
+                "The owner can judge eligibility before starting"
+              ],
+              [
+                "Work contract",
+                "Artifact, owner, acceptance condition, and stop",
+                "The boundary survives a handoff"
+              ],
+              [
+                "Review packet",
+                "Exact artifact and requested decision",
+                "The reviewer can distinguish a limit from a missing revision"
+              ],
+              [
+                "Decision packet",
+                "Proposed choice and options",
+                "The owner sees what the decision does not settle"
+              ],
+              [
+                "Status update",
+                "Changed state and next action",
+                "The update does not imply work outside the current task happened"
+              ],
+              [
+                "Handoff",
+                "Next contribution and evidence links",
+                "The receiving role does not inherit an unlimited mandate"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The record should use the same boundary",
+        "paragraphs": [
+          "The record should use the same boundary across its parts. If the task says “evidence packet only” but the handoff asks the next agent to change a system, the team needs a visible scope decision rather than an inferred expansion.",
+          "For a reviewable artifact that states evidence, limits, and the requested judgment, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Write non-goals for the kinds of scope that actually expand",
+        "paragraphs": [
+          "Scope does not grow only through extra writing. It can expand through new outcomes, source sets, operations, audiences, ownership commitments, time horizons, or claims about external state. Name the dimensions most likely to drift for the task at hand."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Scope dimension",
+              "Useful non-goal",
+              "Boundary it preserves"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "“Do not redesign the workflow; identify one reviewable failure point.”",
+                "A diagnostic task stays diagnostic"
+              ],
+              [
+                "Inputs",
+                "“Do not use unlinked or newly requested data sources.”",
+                "Evidence stays inside the approved source boundary"
+              ],
+              [
+                "Operations",
+                "“Do not run external changes; prepare a proposed change and checks.”",
+                "Preparation stays separate from execution"
+              ],
+              [
+                "Audience",
+                "“Do not rewrite this for a second audience.”",
+                "The artifact remains fit for its named reader"
+              ],
+              [
+                "Authority",
+                "“Do not select policy, priority, or permissions on the owner’s behalf.”",
+                "Recommendations remain recommendations"
+              ],
+              [
+                "Time horizon",
+                "“Do not create ongoing monitoring beyond the stated check.”",
+                "A one-time task does not become an open-ended service"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The non-goal does not have to list every impossible activity",
+        "paragraphs": [
+          "The non-goal does not have to list every impossible activity. It should exclude the plausible adjacent work that would otherwise look helpful and silently alter the task’s cost, risk, or decision boundary.",
+          "For spotting expansion that enters an active task without a reviewed change, see AI Agent Scope Creep."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Scope Creep",
+            "path": "/guides/ai-agent-scope-creep/"
+          }
+        ]
+      },
+      {
+        "title": "Use non-goals to make agent stops legitimate",
+        "paragraphs": [
+          "An agent can stop responsibly when the requested artifact is ready for review, a non-goal applies, a blocker prevents eligible work, or no eligible contribution exists. Without an explicit boundary, agents may keep searching, rewriting, or accumulating context in an attempt to appear helpful."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Non-goal or stop statement",
+              "Correct result"
+            ],
+            "rows": [
+              [
+                "Required artifact is ready",
+                "“Do not continue researching after the named evidence packet is ready for review.”",
+                "Hand off to the reviewer"
+              ],
+              [
+                "Adjacent issue appears",
+                "“Do not investigate the separate issue within this task.”",
+                "Record evidence and propose follow-on work if warranted"
+              ],
+              [
+                "Source cannot be expanded",
+                "“Do not seek new sources without a source-boundary decision.”",
+                "Record a blocker, limitation, or decision request"
+              ],
+              [
+                "Execution is requested",
+                "“Do not change the external system from this preparation task.”",
+                "Route an authorized next step"
+              ],
+              [
+                "No useful contribution remains",
+                "“Do not create routine updates when the condition is unchanged.”",
+                "Record an appropriate no-op"
+              ],
+              [
+                "Review answer excludes an option",
+                "“Do not revive the rejected approach without new evidence or owner decision.”",
+                "Preserve the reason and stop that path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Stopping is not concealment",
+        "paragraphs": [
+          "Stopping is not concealment. The agent should leave enough evidence, status, and next-owner information for a reviewer to see why it stopped and what would change the result later.",
+          "For the valid result when no bounded contribution is eligible, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Turn an excluded request into the right next record",
+        "paragraphs": [
+          "When a non-goal becomes relevant, the response depends on why it is outside the task. The agent should not simply comply because the work is useful, nor should it discard a meaningful observation. It should create the smallest visible record that lets the right owner decide what happens next."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Excluded request",
+              "Better next record",
+              "What it asks for"
+            ],
+            "rows": [
+              [
+                "New outcome or audience",
+                "Follow-on proposal with evidence and a bounded first artifact",
+                "Whether separate work belongs in the plan"
+              ],
+              [
+                "Missing prerequisite",
+                "Blocker with effect, owner, and required state",
+                "Who resolves the condition and how"
+              ],
+              [
+                "Decision outside role",
+                "Decision packet or escalation",
+                "One answer from the accountable owner"
+              ],
+              [
+                "New source or input",
+                "Source-boundary question with relevance and handling limit",
+                "Whether the added input is allowed"
+              ],
+              [
+                "External action",
+                "Review packet plus target-system owner or authorized handoff",
+                "Whether and how the operation may proceed"
+              ],
+              [
+                "Duplicate or obsolete idea",
+                "Linked existing task, no-op, or rejection record",
+                "Whether any distinct contribution remains"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This preserves useful discoveries",
+        "paragraphs": [
+          "This preserves useful discoveries without making the active agent responsible for every possible next step. A well-written non-goal converts “we should also…” into a checkable choice rather than a hidden assignment.",
+          "For a separately bounded task created from an adjacent discovery, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Review non-goals when the task boundary changes",
+        "paragraphs": [
+          "Non-goals are not immutable boilerplate. A reviewer may accept a deliberate scope change, narrow the task further, reject an excluded path, or route a new decision. When that happens, update the boundary explicitly so the active task does not carry contradictory instructions."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review event",
+              "Update the non-goals by",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Limited scope expansion accepted",
+                "Removing only the exclusion the owner explicitly changed",
+                "Treating one added input as approval for every related operation"
+              ],
+              [
+                "Artifact narrowed",
+                "Adding the excluded claim, source, or audience to the visible boundary",
+                "Calling the omitted portion a failed requirement"
+              ],
+              [
+                "Request for changes",
+                "Keeping non-goals intact while naming the in-scope revision",
+                "Letting feedback create a broader task"
+              ],
+              [
+                "Rejection",
+                "Stating that the proposed path remains out of scope and why",
+                "Erasing useful evidence or implying a later retry is approved"
+              ],
+              [
+                "Routed decision",
+                "Keeping the question excluded until the receiving owner answers",
+                "Starting the proposed work while waiting"
+              ],
+              [
+                "New dependency",
+                "Recording the prerequisite without expanding the outcome",
+                "Turning a blocker into an unlimited investigation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The reviewer’s answer should apply to an exact task",
+        "paragraphs": [
+          "The reviewer’s answer should apply to an exact task and artifact. It does not automatically update every role, later task, or external system that shares a topic.",
+          "For the five explicit answers a reviewer can use to change a task’s next state, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Make non-goals visible across roles and handoffs",
+        "paragraphs": [
+          "Different roles encounter different temptations to exceed the assignment. A non-goal should name the likely boundary failure for that role and travel with the artifact so a receiver can continue the work without reinterpreting the mandate."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Example non-goal",
+              "Handoff should preserve"
+            ],
+            "rows": [
+              [
+                "Research",
+                "“Do not turn source analysis into a policy ruling.”",
+                "Sources, evidence labels, and the named decision question"
+              ],
+              [
+                "Editorial",
+                "“Do not make unverified product or customer claims.”",
+                "Source boundary, approved draft scope, and review stage"
+              ],
+              [
+                "Project management",
+                "“Do not assign priority or commitments without the owner’s decision.”",
+                "Dependency state, proposed next task, and decision owner"
+              ],
+              [
+                "Software development",
+                "“Do not merge, deploy, or change runtime settings from a preparation task.”",
+                "Exact change, checks, and maintainer review boundary"
+              ],
+              [
+                "Support triage",
+                "“Do not resolve a customer issue or promise an outcome from classification alone.”",
+                "Input evidence, routing limit, and receiving owner"
+              ],
+              [
+                "Governance or security",
+                "“Do not treat visible review as technical enforcement.”",
+                "Requirement, decision boundary, and target-system fact to verify"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff should repeat only the non-goals",
+        "paragraphs": [
+          "The handoff should repeat only the non-goals that remain material. A long generic prohibition list can hide the boundary the next owner actually needs to observe.",
+          "For transferring a bounded next contribution with evidence and ownership, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Write non-goals in seven steps",
+        "orderedItems": [
+          "State the task’s one bounded outcome, exact artifact, and named review stage.",
+          "Identify the plausible adjacent outcome, input, operation, audience, authority decision, or time horizon that would change the task.",
+          "Write each material exclusion in observable terms: “do not X,” not “be cautious.”",
+          "Place the non-goals next to the outcome, inputs, permitted operations, acceptance conditions, and stop rule.",
+          "Name the correct next record if excluded work becomes relevant: follow-on task, blocker, decision packet, escalation, handoff, or no-op.",
+          "Check that the exclusions do not contradict a required artifact, accepted decision, or explicit role permission.",
+          "Revisit them only when a named owner changes the task boundary, then record exactly what changed and what remains excluded."
+        ]
+      },
+      {
+        "title": "The purpose is not to make a task defensive",
+        "paragraphs": [
+          "The purpose is not to make a task defensive. It is to leave enough room for a useful, reviewable contribution while making the boundary visible before an agent crosses it."
+        ]
+      },
+      {
+        "title": "Test whether a non-goal is usable",
+        "paragraphs": [
+          "Before assigning work, ask whether a new agent could use the non-goals to decide what to do when it encounters a plausible adjacent request. If the answer depends on a hidden conversation or subjective interpretation, rewrite the boundary."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Recognition test",
+                "Which action, input, claim, or outcome is excluded?",
+                "Replace general caution with a named exclusion"
+              ],
+              [
+                "Relationship test",
+                "What goal or risk does the exclusion protect?",
+                "Put it beside the bounded outcome and operations"
+              ],
+              [
+                "Routing test",
+                "What should happen if excluded work becomes relevant?",
+                "Name a blocker, decision, follow-on, handoff, or no-op"
+              ],
+              [
+                "Authority test",
+                "Does the non-goal preserve the role and target-system boundary?",
+                "State the owner or system that must decide or execute"
+              ],
+              [
+                "Review test",
+                "Can a reviewer distinguish an intentional limit from a missing requirement?",
+                "Link the acceptance condition and explain the scope limit"
+              ],
+              [
+                "Continuity test",
+                "Will the next owner see the same exclusion with the artifact?",
+                "Carry it into the task, packet, and handoff"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A non-goal that fails a test",
+        "paragraphs": [
+          "A non-goal that fails a test does not constrain work reliably. Make it smaller and more concrete until a reviewer can see what the agent should stop doing and what record should handle the excluded request."
+        ]
+      },
+      {
+        "title": "Seven non-goal mistakes that quietly reopen the boundary",
+        "paragraphs": []
+      },
+      {
+        "title": "Calling a preference a boundary",
+        "paragraphs": [
+          "“Try not to be broad” does not tell an agent what is excluded. State the outcome, operation, source set, audience, or decision that remains out of scope."
+        ]
+      },
+      {
+        "title": "Hiding non-goals in a long instruction",
+        "paragraphs": [
+          "An exclusion that is far from the task outcome may be missed during a handoff or review. Put material non-goals beside the fields they protect."
+        ]
+      },
+      {
+        "title": "Treating an excluded operation as a failed acceptance criterion",
+        "paragraphs": [
+          "If a task is preparation-only, the absence of an external change may be correct. Acceptance criteria should test the artifact the task actually owns."
+        ]
+      },
+      {
+        "title": "Using non-goals to avoid naming a blocker",
+        "paragraphs": [
+          "“Do not proceed” is not enough when a missing source, decision, or dependency prevents eligible work. Record the blocker and the condition that would resolve it."
+        ]
+      },
+      {
+        "title": "Turning every excluded idea into a new task",
+        "paragraphs": [
+          "Some observations are not ready for ownership. Keep a concise, sourced note or no-op unless there is a bounded outcome, evidence, owner, and review path."
+        ]
+      },
+      {
+        "title": "Letting a review comment erase the boundary by implication",
+        "paragraphs": [
+          "Feedback can request an in-scope revision without authorizing new inputs or operations. Update non-goals only when the designated owner explicitly changes the contract."
+        ]
+      },
+      {
+        "title": "Treating a task boundary as technical enforcement",
+        "paragraphs": [
+          "Visible instructions and task records guide coordination. The relevant target system, permission model, and authorized owner remain responsible for enforcing external effects."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent non-goals?",
+        "answer": "They are explicit statements of work a task, role, or review stage will not do. They identify excluded outcomes, inputs, operations, audiences, decisions, or external effects so an agent can recognize the boundary of its current contribution."
+      },
+      {
+        "question": "Are non-goals the same as acceptance criteria?",
+        "answer": "No. Acceptance criteria say what an artifact must contain or demonstrate to be ready for a particular review. Non-goals say what the task deliberately does not include, even when the artifact meets its criteria."
+      },
+      {
+        "question": "How many non-goals should an agent task have?",
+        "answer": "Include the material exclusions most likely to cause scope drift or authority confusion. A short, specific list is more useful than exhaustive boilerplate that hides the boundary a reviewer needs to see."
+      },
+      {
+        "question": "What should an agent do when a non-goal becomes important?",
+        "answer": "Do not silently expand the active task. Record the evidence and use the appropriate next record: a blocker for a missing prerequisite, a decision or escalation for an owner answer, a follow-on proposal for separate work, or a no-op when no eligible contribution exists."
+      },
+      {
+        "question": "Can a reviewer change a non-goal?",
+        "answer": "Yes, when the designated owner makes an explicit scope decision for the exact task and artifact. The record should say which exclusion changed, why, and which limits remain; a general comment should not be treated as broad permission."
+      },
+      {
+        "question": "Do non-goals stop an agent from taking external action?",
+        "answer": "They are a coordination boundary, not a technical control. They should be paired with appropriate role permissions, review requirements, and target-system controls that govern whether an external action can actually occur."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Scope Creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Follow-On Work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      }
+    ],
+    "cta": {
+      "title": "Let boundaries make good work easier to review",
+      "body": "AI agent non-goals turn the unspoken edge of a task into something agents and reviewers can use. State the bounded outcome, name the material exclusions, link the right record for adjacent work, and preserve those limits through review and handoff. The result is a contribution that can stop at the right point without losing useful discoveries or confusing a task boundary with authority.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"

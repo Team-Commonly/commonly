@@ -532,6 +532,13 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/review stage/).length).toBeGreaterThan(0);
   });
 
+  test('AI agent non-goals guide preserves its task boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-non-goals/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Non-Goals: Write Boundaries Agents Can Recognize' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Treating a task boundary as technical enforcement' })).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -539,7 +546,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(65);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(66);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
