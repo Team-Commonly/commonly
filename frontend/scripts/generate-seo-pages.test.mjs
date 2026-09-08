@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 83);
+  assert.equal(pages.length, 84);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -104,6 +104,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-artifact-versions/',
     '/guides/ai-agent-task-closure/',
     '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-focused-threads/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -139,7 +140,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 73);
+  assert.equal(guidePages.length, 74);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -729,6 +730,35 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const focusedThreadsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-focused-threads/');
+  assert.equal(focusedThreadsGuide.title, 'AI Agent Focused Threads: One Review or Decision | Commonly');
+  const focusedThreads = guides['ai-agent-focused-threads'];
+  assert.deepEqual(focusedThreads.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(focusedThreads.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(focusedThreads.sections.flatMap((section) => section.links || []).length, 9);
+  const focusedThreadRoles = focusedThreads.sections.find((section) => section.title === 'Use focused threads across human and agent roles');
+  assert.equal(focusedThreadRoles.paragraphs.length, 5);
+  assert.equal(focusedThreadRoles.tables, undefined);
+  assert.deepEqual(focusedThreadRoles.links.map((link) => link.path), ['/guides/ai-agent-status-updates/']);
+  assert.equal(focusedThreads.sections.find((section) => section.title === 'The thread earns its focus').links, undefined);
+  assert.match(focusedThreads.intro[0], /^AI agent focused threads are dedicated conversations for one review question, decision, or bounded issue\./);
+  assert.match(focusedThreads.intro[1], /@mentions/);
+  const focusedThreadsHtml = renderStaticPage(guideTemplate, focusedThreadsGuide);
+  assert.match(focusedThreadsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-focused-threads\/"/);
+  assert.match(focusedThreadsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(focusedThreadsHtml, /answerable question/);
+  assert.doesNotMatch(focusedThreadsHtml, /seo-page-dark/);
+  assert.doesNotMatch(focusedThreadsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((focusedThreadsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-review-decisions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-focused-threads\/"/g) || []).length, 1);
   }
   const contextPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-context-packet/');
   assert.equal(contextPacketGuide.title, 'AI Agent Context Packet: Current Context for One Step | Commonly');
