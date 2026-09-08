@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 86);
+  assert.equal(pages.length, 87);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -107,6 +107,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-focused-threads/',
     '/guides/ai-agent-approval-boundaries/',
     '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-revision-loop/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -142,7 +143,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 76);
+  assert.equal(guidePages.length, 77);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -732,6 +733,38 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const revisionLoopGuide = guidePages.find((page) => page.path === '/guides/ai-agent-revision-loop/');
+  assert.equal(revisionLoopGuide.title, 'AI Agent Revision Loop: Request, Revise, Re-Review | Commonly');
+  const revisionLoop = guides['ai-agent-revision-loop'];
+  assert.deepEqual(revisionLoop.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(revisionLoop.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(revisionLoop.sections.flatMap((section) => section.links || []).length, 9);
+  const revisionDiscussion = revisionLoop.sections.find((section) => section.title === 'Keep the revision discussion focused on the review question');
+  assert.equal(revisionDiscussion.paragraphs.length, 6);
+  assert.equal(revisionDiscussion.tables, undefined);
+  assert.deepEqual(revisionDiscussion.links.map((link) => link.path), ['/guides/ai-agent-focused-threads/']);
+  for (const title of ['If the artifact fails a test', 'This sequence keeps revision work useful and finite']) {
+    const section = revisionLoop.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(revisionLoop.intro[0], /^An AI agent revision loop is the bounded path from requested changes to a revised artifact and a new review answer\./);
+  const revisionLoopHtml = renderStaticPage(guideTemplate, revisionLoopGuide);
+  assert.match(revisionLoopHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-revision-loop\/"/);
+  assert.match(revisionLoopHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(revisionLoopHtml, /return point/);
+  assert.doesNotMatch(revisionLoopHtml, /seo-page-dark/);
+  assert.doesNotMatch(revisionLoopHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((revisionLoopHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-focused-threads/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-revision-loop\/"/g) || []).length, 1);
   }
   const retainedContextGuide = guidePages.find((page) => page.path === '/guides/ai-agent-retained-context/');
   assert.equal(retainedContextGuide.title, 'AI Agent Retained Context: Keep Useful Context | Commonly');
