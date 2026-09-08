@@ -1847,6 +1847,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ min-height: 56px; align-items: baseline;/);
       // 390: decision options stack to 44px full width like every other action (66422 miss 2).
+      // …and that block must come AFTER the inline option rules, or they outrank it (66428).
+      const inlineOptionsAt = v2.indexOf('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice {');
+      const stackedOptionsAt = v2.indexOf('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }');
+      expect(inlineOptionsAt).toBeGreaterThan(-1);
+      expect(stackedOptionsAt).toBeGreaterThan(inlineOptionsAt);
+      expect(v2.slice(0, stackedOptionsAt).lastIndexOf('@media (max-width: 640px)')).toBeGreaterThan(inlineOptionsAt);
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
       // 0-state (66422 miss 1): the dashed panel renders whenever nothing is open, settled cards under it, no kicker.
       expect(activityPage).toContain('{(queueCount === 0 || visibleQueue.length === 0) && (');
