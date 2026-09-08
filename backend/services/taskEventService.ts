@@ -24,6 +24,11 @@ export interface TaskEventPayload {
   kind: TaskEventKind;
 }
 
+export interface PodFocusEventPayload {
+  podId: string;
+  revision: number;
+}
+
 export function bindSocketIO(io: SocketIOLike): void {
   ioRef = io;
 }
@@ -41,6 +46,18 @@ export function emitTaskUpdated(podId: unknown, task: unknown, kind: TaskEventKi
     ioRef.to(`pod_${normalizedPodId}`).emit('task_updated', payload);
   } catch (err) {
     console.warn('[task-event] emit failed:', (err as Error).message);
+  }
+}
+
+/** Notify pod clients that the shared focus projection changed. */
+export function emitPodFocusUpdated(podId: unknown, revision: number): void {
+  if (!ioRef || !podId || !Number.isInteger(revision)) return;
+  const normalizedPodId = String(podId);
+  try {
+    const payload: PodFocusEventPayload = { podId: normalizedPodId, revision };
+    ioRef.to(`pod_${normalizedPodId}`).emit('pod_focus_updated', payload);
+  } catch (err) {
+    console.warn('[task-event] focus emit failed:', (err as Error).message);
   }
 }
 
@@ -444,6 +461,7 @@ export async function notifyLeaseWarning(
 export default {
   bindSocketIO,
   emitTaskUpdated,
+  emitPodFocusUpdated,
   notifyPodAgents,
   notifyFoundWork,
   notifyLeaseWarning,
