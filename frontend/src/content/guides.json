@@ -13266,6 +13266,10 @@
       {
         "label": "AI agent focused threads",
         "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI agent revision loop",
+        "path": "/guides/ai-agent-revision-loop/"
       }
     ],
     "cta": {
@@ -18248,6 +18252,10 @@
       {
         "label": "AI agent approval boundaries",
         "path": "/guides/ai-agent-approval-boundaries/"
+      },
+      {
+        "label": "AI agent revision loop",
+        "path": "/guides/ai-agent-revision-loop/"
       }
     ],
     "cta": {
@@ -22442,6 +22450,10 @@
       {
         "label": "AI agent retained context",
         "path": "/guides/ai-agent-retained-context/"
+      },
+      {
+        "label": "AI agent revision loop",
+        "path": "/guides/ai-agent-revision-loop/"
       }
     ],
     "cta": {
@@ -24541,6 +24553,10 @@
       {
         "label": "AI Agent Verification Path",
         "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI agent revision loop",
+        "path": "/guides/ai-agent-revision-loop/"
       }
     ],
     "cta": {
@@ -25975,6 +25991,710 @@
     "cta": {
       "title": "Keep context useful without making it controlling",
       "body": "AI agent retained context helps a team carry the right knowledge across tasks without carrying forward accidental authority. Preserve the sourced conclusion, label its confidence, state where it applies, and link the successor or verification path. That gives future work a fast, truthful starting point while leaving current decisions, permissions, and execution evidence where they belong.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-revision-loop": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Revision Loop: Request, Revise, Re-Review | Commonly",
+    "title": "AI Agent Revision Loop: Request Changes, Revise, and Re-Review",
+    "description": "Learn how to run an AI agent revision loop: turn review feedback into a bounded revision, preserve version context, and return the right artifact for re-review.",
+    "summary": "An AI agent revision loop is the bounded path from requested changes to a revised artifact and a new review answer. It names the version reviewed, the specific gaps to address, the part of the task that remains in scope, the return point for re-review, and which earlier feedback still applies. A revision loop is not a standing instruction to keep changing work forever, and a new version does not inherit approval or feedback by implication.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent revision loop is the bounded path from requested changes to a revised artifact and a new review answer. It names the version reviewed, the specific gaps to address, the part of the task that remains in scope, the return point for re-review, and which earlier feedback still applies. A revision loop is not a standing instruction to keep changing work forever, and a new version does not inherit approval or feedback by implication.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives reviewers and agents a visible place to connect a review thread, task, attachment, and next owner. A task can show the current owner and status; a focused thread can hold the specific review question; attachments can preserve the exact artifact. Those records help people trace a revision. They do not make a reviewer’s comment a permission to publish, merge, deploy, or perform any other external operation.",
+      "The strongest revision loops are narrow. “Correct the three unsupported claims in draft v2, keep the approved outline, then return v3 to the editor” gives an agent a usable boundary. “Make it better” leaves the object, standards, owner, and stopping point unclear—so it encourages scope creep and makes re-review hard.",
+      "This guide explains how to request changes from an AI agent, limit a revision to the actual review gap, decide what old feedback still covers, and return the new version for a truthful review decision."
+    ],
+    "sections": [
+      {
+        "title": "A revision loop has one object, one gap, and one return point",
+        "paragraphs": [
+          "The loop begins when a reviewer or decision owner identifies a specific gap in a named object. It ends when the revised version receives the next appropriate review answer, is routed elsewhere, or is stopped as out of scope. Keeping those endpoints visible prevents a change request from becoming an open-ended project."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Loop stage",
+              "What the record should state",
+              "Result"
+            ],
+            "rows": [
+              [
+                "Review",
+                "Exact artifact version, criteria, and reviewer question",
+                "The team knows what was inspected"
+              ],
+              [
+                "Requested changes",
+                "Named gap, expected correction, and scope limit",
+                "The agent can revise without guessing"
+              ],
+              [
+                "Revision",
+                "New version, material changes, and checks performed",
+                "The revised object is identifiable"
+              ],
+              [
+                "Re-review",
+                "Return owner, criteria, and decision requested",
+                "The right reviewer sees the right object"
+              ],
+              [
+                "Decision",
+                "Accept, changes, narrow, reject, route, or defer answer",
+                "The task gets a truthful next state"
+              ],
+              [
+                "Follow-on",
+                "Any adjacent discovery, owner, and separate outcome",
+                "New work does not hide inside the revision"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The loop may be short",
+        "paragraphs": [
+          "The loop may be short—a single source correction and re-check—or may need several cycles. Either way, each cycle should preserve the object, scope, and return condition instead of relying on memory of a prior conversation.",
+          "For the review answers that establish the next work state, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Write requested changes an agent can carry out",
+        "paragraphs": [
+          "Good feedback describes an observable gap, the artifact it applies to, and the requested outcome. It does not require an agent to infer new policy, discover hidden acceptance criteria, or choose an owner’s priority tradeoff."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change-request field",
+              "Include",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Reviewed object",
+                "Exact title, version, source set, or task artifact",
+                "“The latest thing” with no stable reference"
+              ],
+              [
+                "Gap",
+                "Missing evidence, incorrect claim, requirement miss, or unclear section",
+                "“It feels off” with no reviewable reason"
+              ],
+              [
+                "Requested correction",
+                "What must be added, removed, clarified, tested, or narrowed",
+                "A vague demand to improve everything"
+              ],
+              [
+                "Constraint",
+                "Preserved scope, non-goal, source rule, or allowed operation",
+                "An implied permission to change adjacent work"
+              ],
+              [
+                "Check",
+                "The criterion or evidence the reviewer will inspect",
+                "A promise that the agent can self-certify completion"
+              ],
+              [
+                "Return point",
+                "Named reviewer, review stage, and question for the new version",
+                "An unowned “send it back when done”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A request such as",
+        "paragraphs": [
+          "A request such as “Remove the unsupported comparative claim in v2, keep the definition and cited sources, and return v3 to the editor for claim review” gives the agent a bounded transformation. It also gives the reviewer a way to test the result.",
+          "For the artifact, checks, limits, and decision request a reviewer needs, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Separate feedback that still applies from feedback that must be rechecked",
+        "paragraphs": [
+          "Old feedback is not automatically reusable. It may still cover an unchanged section or a standing constraint, but material changes can invalidate a reviewer’s earlier assessment. Record the relationship rather than assuming every comment carries forward."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Earlier feedback",
+              "It can carry forward when",
+              "Re-review is needed when"
+            ],
+            "rows": [
+              [
+                "Source correction",
+                "The same claim and source relationship remain unchanged",
+                "The claim, source, or interpretation changes materially"
+              ],
+              [
+                "Structural guidance",
+                "The revised artifact preserves the agreed structure",
+                "The revision changes audience, scope, or the governing outline"
+              ],
+              [
+                "Style preference",
+                "The relevant section remains the same",
+                "The new version introduces new sections or a different voice requirement"
+              ],
+              [
+                "Acceptance criterion",
+                "The criterion still applies to the same bounded outcome",
+                "The task contract or expected artifact changes"
+              ],
+              [
+                "Security or policy limit",
+                "The operation and data boundary are unchanged",
+                "The revision requests a new capability, system, or sensitive action"
+              ],
+              [
+                "Approval for a stage",
+                "The object remains the reviewed version with non-material edits",
+                "A new version changes what the reviewer actually needs to assess"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Write Earlier feedback on sections one and two still applies",
+        "paragraphs": [
+          "Write “Earlier feedback on sections one and two still applies; section three needs a new source review” rather than leaving an agent or reviewer to infer the coverage. A clear boundary reduces repeated review without reusing approval beyond its evidence.",
+          "For recording what changed, what was inspected, and what superseded it, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the revision discussion focused on the review question",
+        "paragraphs": [
+          "A focused thread gives one version and one review question a place to live. It should preserve the reviewer’s evidence, the requested change, the agent’s bounded response, and the new answer—while the task continues to hold the broader outcome, ownership, status, dependency, and result.",
+          "Keep the exact review question, reviewer feedback, sources, requested correction, revision response, version link, and re-review answer in the focused discussion. That is where participants need to inspect one object and one decision in context.",
+          "Keep the broader outcome, current work state, next assignee, status transition, dependency, blocker, and follow-on relationship on the task. An unrelated discovery belongs in a separate bounded task if it changes the outcome, not as a hidden extension of the review thread.",
+          "If someone asserts an external result during the discussion, keep the verification question and its needed target-system record visible. Link the independently verified state into the task only after the relevant system can support the claim.",
+          "Do not use the thread as the only task record. A reviewer should be able to inspect the narrow reasoning there, while a new owner can locate the active work state on the task without reading every reply.",
+          "For one-question review and decision conversations, see AI Agent Focused Threads."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Focused Threads",
+            "path": "/guides/ai-agent-focused-threads/"
+          }
+        ]
+      },
+      {
+        "title": "Bound the revision before the agent starts changing work",
+        "paragraphs": [
+          "Revision is not permission to re-open every choice in the original task. Before work begins, state which portions must change, which parts must remain, and what a new issue should trigger: a clarification, escalation, blocker, or follow-on task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Boundary type",
+              "State before revision",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Required change",
+                "The specific gap or criterion the revision must address",
+                "The agent has a testable goal"
+              ],
+              [
+                "Preserved material",
+                "Approved sections, sources, interface, or non-goals",
+                "Useful work is not undone unnecessarily"
+              ],
+              [
+                "Allowed operations",
+                "Draft, analyze, revise, test, or prepare within the task contract",
+                "A review request does not create new system authority"
+              ],
+              [
+                "Excluded work",
+                "Adjacent scope, new audience, new capability, or policy decision",
+                "Scope creep becomes visible early"
+              ],
+              [
+                "Stop condition",
+                "Evidence gap, owner decision, failed check, or blocked dependency",
+                "The agent knows when to stop rather than guess"
+              ],
+              [
+                "Return condition",
+                "Version, checks, reviewer, and decision question",
+                "Re-review has a clear endpoint"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the requested correction exposes a different problem",
+        "paragraphs": [
+          "If the requested correction exposes a different problem—for example, a new audience, unsupported policy claim, missing access, or larger task outcome—the agent should preserve the discovery and route it. It should not silently absorb the expansion because it began as feedback.",
+          "For acceptance criteria that make a revised artifact reviewable, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Make the return point as explicit as the original review",
+        "paragraphs": [
+          "A re-review should not be an informal “please take another look.” The return record needs the new version, what changed, what remained unchanged, which checks ran, which earlier feedback still applies, and what answer the reviewer is now being asked to give."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Re-review field",
+              "State it clearly",
+              "Reviewer can decide"
+            ],
+            "rows": [
+              [
+                "Version",
+                "Exact revised artifact and its relationship to the reviewed version",
+                "What object is being evaluated now"
+              ],
+              [
+                "Change summary",
+                "Material corrections and retained sections",
+                "Whether the request addressed the named gap"
+              ],
+              [
+                "Checks",
+                "Sources, tests, criteria, or limitations inspected",
+                "What evidence supports the revision"
+              ],
+              [
+                "Carried feedback",
+                "Earlier comments that still apply and why",
+                "What does not need to be rediscovered"
+              ],
+              [
+                "Rechecked feedback",
+                "Prior comments affected by the material change",
+                "What needs a fresh judgment"
+              ],
+              [
+                "Requested answer",
+                "Accept, changes, narrow, reject, route, or defer for the stated stage",
+                "What next state to record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The reviewer can then answer narrowly",
+        "paragraphs": [
+          "The reviewer can then answer narrowly: “Accept v3 for editorial review; source verification remains required before publication,” or “Request changes: claim two still lacks a source.” The answer should describe this stage, not promise a later operation.",
+          "For the boundary between a visible review answer and technical authorization or execution, see AI Agent Approval Boundaries."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Approval Boundaries",
+            "path": "/guides/ai-agent-approval-boundaries/"
+          }
+        ]
+      },
+      {
+        "title": "Update the task when the revision changes its state",
+        "paragraphs": [
+          "The task should show the current owner and status after every material review answer. The thread preserves detailed reasoning; the task makes the work visible to the next contributor and makes it clear whether the revision is active, waiting, blocked, done for its stage, or routed elsewhere."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Revision event",
+              "Task update should show",
+              "Do not claim"
+            ],
+            "rows": [
+              [
+                "Changes requested",
+                "Reviewed version, bounded gap, revising owner, and return point",
+                "That the reviewer rejected all related work"
+              ],
+              [
+                "Revision started",
+                "Active version, preserved boundary, and current task state",
+                "That the agent may expand scope or use new capabilities"
+              ],
+              [
+                "Revision blocked",
+                "Missing input, effect, owner, and resume condition",
+                "That a draft is complete despite the gap"
+              ],
+              [
+                "Re-review returned",
+                "New version, checks, reviewer, and question",
+                "That re-review itself is approval"
+              ],
+              [
+                "Accepted for stage",
+                "Version, stage, next owner, and continuing limit",
+                "That a later release or external action occurred"
+              ],
+              [
+                "Follow-on discovered",
+                "Separate task relationship and decision needed",
+                "That the original task now includes the new outcome"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An accurate task update is a handoff aid",
+        "paragraphs": [
+          "An accurate task update is a handoff aid, not a substitute for the artifact or verification record. It should link the relevant review discussion and version so a future owner can inspect the basis for the next step.",
+          "For defining the current task boundary and its stop conditions, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Handle conflicting feedback with a named decision, not averaging",
+        "paragraphs": [
+          "Agents should not average two reviewers’ views, select the more emphatic comment, or rewrite toward an imagined consensus when feedback conflicts. Preserve the competing criteria or evidence, identify the owner who can decide, and ask one bounded question."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Feedback conflict",
+              "Agent should preserve",
+              "Decision needed"
+            ],
+            "rows": [
+              [
+                "Two sources support different claims",
+                "Source links, labels, scope, and consequences",
+                "Which source governs the stated use"
+              ],
+              [
+                "Reviewer asks for expansion; task excludes it",
+                "Requested change and the existing non-goal",
+                "Whether to keep, narrow, split, or change the task"
+              ],
+              [
+                "Style feedback conflicts with policy boundary",
+                "Both requirements and their owners",
+                "Which requirement has priority for this artifact"
+              ],
+              [
+                "Reviewers disagree on acceptance",
+                "Exact version, criteria, and reasons",
+                "Accountable review answer or routed owner decision"
+              ],
+              [
+                "New capability is proposed during revision",
+                "Minimum capability, purpose, alternatives, and current limit",
+                "Whether the authorized path may grant it"
+              ],
+              [
+                "A result is asserted without evidence",
+                "Reported status and required verification record",
+                "Whether the claim can be accepted or must remain open"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The revision loop may pause at this point",
+        "paragraphs": [
+          "The revision loop may pause at this point. That is a correct result when the next change depends on a decision outside the agent’s role. A compact decision request is more useful than a speculative compromise.",
+          "For a direct route from a claimed result to the record that supports or limits it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Close a revision loop with the right outcome",
+        "paragraphs": [
+          "The loop closes when the reviewer’s answer has been connected to the task and the next owner or stopping state is clear. “No more comments” is not enough if the version, stage, remaining limit, or follow-on is still ambiguous."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closing outcome",
+              "Record",
+              "Next action"
+            ],
+            "rows": [
+              [
+                "Accepted",
+                "Version, review stage, reviewer, and remaining limit",
+                "Move to the named next work stage"
+              ],
+              [
+                "More changes",
+                "Specific gap, return condition, and revising owner",
+                "Start the next bounded revision cycle"
+              ],
+              [
+                "Narrowed",
+                "Accepted portion, excluded portion, and decision owner",
+                "Continue only on the preserved scope"
+              ],
+              [
+                "Rejected",
+                "Reason, evidence, and closed path",
+                "Stop the proposal or create a separately approved alternative"
+              ],
+              [
+                "Routed",
+                "Receiving owner, question, and packet",
+                "Hand off without pretending the decision is made"
+              ],
+              [
+                "Blocked or no-op",
+                "Missing prerequisite or ineligible condition",
+                "Record a resume condition or stop routine work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Closure is a claim about this review cycle",
+        "paragraphs": [
+          "Closure is a claim about this review cycle, not a reward for effort. An accepted draft may still need a different decision, technical check, or target-system operation before any external state changes.",
+          "For closing a task with a result, verification path, limits, and explicit follow-ons, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether the revised artifact is ready for re-review",
+        "paragraphs": [
+          "Before returning an artifact, test the review record itself. The goal is not to make the agent certify its own work; it is to ensure the reviewer receives the object, evidence, and question needed to make an informed decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Ready result"
+            ],
+            "rows": [
+              [
+                "Object test",
+                "Is the revised version linked and distinct from the reviewed version?",
+                "The reviewer can inspect the exact artifact"
+              ],
+              [
+                "Gap test",
+                "Did the change address each named requested correction?",
+                "The response maps changes to review feedback"
+              ],
+              [
+                "Boundary test",
+                "Did the revision preserve non-goals and avoid new unapproved work?",
+                "Scope expansion is routed rather than hidden"
+              ],
+              [
+                "Evidence test",
+                "Are sources, checks, and limitations visible?",
+                "The reviewer can evaluate support for the revised claim"
+              ],
+              [
+                "Feedback test",
+                "Is old feedback marked as carried forward or rechecked?",
+                "Earlier approval is not overextended"
+              ],
+              [
+                "Owner test",
+                "Is the reviewer and requested decision named?",
+                "The thread returns to someone who can answer"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the artifact fails a test",
+        "paragraphs": [
+          "If the artifact fails a test, the agent can correct the packet, clarify the boundary, or stop for the missing owner or evidence. Do not send an ambiguous version back and call the cycle complete."
+        ]
+      },
+      {
+        "title": "Run an AI agent revision loop in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Link the exact artifact or version the reviewer assessed and state the review criterion.",
+          "Record each requested change as an observable gap, a bounded correction, and a preserved constraint.",
+          "Name the revising owner, the reviewer who will receive the return, and the decision requested at re-review.",
+          "Mark which prior feedback carries forward and which material change requires new review.",
+          "Produce a distinct revised version, summarize material changes, and preserve relevant evidence and limitations.",
+          "Return the version with the checks performed, remaining uncertainty, and a precise accept-or-change question.",
+          "Update the task with the review answer, next owner, current limit, and any separate follow-on, blocker, or escalation."
+        ]
+      },
+      {
+        "title": "This sequence keeps revision work useful and finite",
+        "paragraphs": [
+          "This sequence keeps revision work useful and finite. If the required correction changes the outcome, authority, or system boundary, split or escalate it rather than calling it another ordinary revision."
+        ]
+      },
+      {
+        "title": "Seven revision-loop mistakes that make review drift",
+        "paragraphs": []
+      },
+      {
+        "title": "Asking for “better” instead of naming the gap",
+        "paragraphs": [
+          "Vague feedback forces the agent to invent criteria and increases the chance of unnecessary changes. State the object, observed gap, requested correction, and re-review question."
+        ]
+      },
+      {
+        "title": "Applying old approval to a materially new version",
+        "paragraphs": [
+          "An approval belongs to the version and stage the reviewer inspected. Link the new version and request a fresh or explicitly limited review when the object changes materially."
+        ]
+      },
+      {
+        "title": "Letting requested changes expand the task silently",
+        "paragraphs": [
+          "Feedback can reveal useful adjacent work, but that work still needs a new decision, owner, or task boundary. Preserve the discovery and route it rather than absorbing it into the revision."
+        ]
+      },
+      {
+        "title": "Treating reviewer participation as a decision",
+        "paragraphs": [
+          "Comments and reactions can inform a revision. The named reviewer or decision owner must still record the answer that controls the next state."
+        ]
+      },
+      {
+        "title": "Returning a revision without a change summary",
+        "paragraphs": [
+          "A reviewer cannot reliably compare an unnamed “new draft” with the old one. State the new version, material changes, checks, carried feedback, and what remains open."
+        ]
+      },
+      {
+        "title": "Calling a review acceptance proof of external execution",
+        "paragraphs": [
+          "Acceptance for a review stage does not show that a page was published, a change merged, or a release occurred. Verify those facts through the relevant target-system record."
+        ]
+      },
+      {
+        "title": "Looping when the real need is a decision or blocker",
+        "paragraphs": [
+          "When feedback conflicts, evidence is missing, or the operation needs new authority, another revision cannot resolve it. Stop with the evidence and route the owner question or blocker."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent revision loop?",
+        "answer": "It is the bounded cycle from requested changes to a distinct revised version and a new review answer. It records the object, gap, scope, return point, and relationship between old and new feedback."
+      },
+      {
+        "question": "How should an agent handle requested changes?",
+        "answer": "The agent should tie each change to an exact version and observable gap, preserve stated constraints and non-goals, produce a distinct revised artifact, and return it to the named reviewer with the checks and decision question."
+      },
+      {
+        "question": "Does old feedback apply to a new artifact version?",
+        "answer": "Only when the relevant object and condition remain unchanged. Record which feedback carries forward and request re-review for material changes, new claims, new sources, new scope, or a new operation."
+      },
+      {
+        "question": "What should a re-review request include?",
+        "answer": "Include the revised version, material change summary, checks or sources, carried and rechecked feedback, remaining limitations, the reviewer, and the exact answer requested for the current stage."
+      },
+      {
+        "question": "Can a reviewer’s approval authorize publication or deployment?",
+        "answer": "Not by itself. It can accept a named artifact for a stated review stage. Current role authority and the target system’s controls determine whether a later publication, merge, deployment, or other operation is allowed and performed."
+      },
+      {
+        "question": "When should a revision become a new task?",
+        "answer": "Create or route a new task when the requested change creates a distinct outcome, owner, audience, dependency, system capability, or acceptance condition. Do not hide that expansion inside an existing revision loop."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Focused Threads",
+        "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Approval Boundaries",
+        "path": "/guides/ai-agent-approval-boundaries/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      }
+    ],
+    "cta": {
+      "title": "Keep each revision tied to the review that requested it",
+      "body": "AI agent revision loops turn feedback into a clear path: name the version, describe the observable gap, preserve the boundary, create a distinct revision, and ask the right reviewer for the next answer. By showing exactly what old feedback covers and what needs a new decision, teams can revise quickly without silently expanding scope or confusing a review stage with execution.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
