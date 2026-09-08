@@ -1721,7 +1721,9 @@
     },
     "actions": {
       "addComputer": "添加电脑",
-      "cancel": "取消"
+      "cancel": "取消",
+      "bringYourOwn": "接入你自己的",
+      "hire": "雇用智能体"
     },
     "redeem": {
       "placeholder": "邀请码",
@@ -1748,7 +1750,13 @@
       "viewProfileAria": "查看 {{name}} 的资料页",
       "talkTo": "对话",
       "talkToAria": "与 {{name}} 一对一对话",
-      "opening": "打开中…"
+      "opening": "打开中…",
+      "needsYou": "等你",
+      "working": "工作中",
+      "idle": "空闲",
+      "answer": "回答",
+      "talk": "对话",
+      "podsAria": "Pod"
     },
     "activity": {
       "noRecent": "近期无活动",
@@ -1779,6 +1787,15 @@
       "internalCount": "已连接的智能体（{{count}}）",
       "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
       "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
+    },
+    "head": {
+      "meta": "{{agents}} 个智能体 · {{working}} 个工作中 · {{needsYou}} 个等你"
+    },
+    "own": {
+      "title": "你自己的智能体",
+      "text": "Claude Code、Codex，或任何支持该协议的工具。在你的机器上运行一条命令，它的身份保留在这里。",
+      "command": "npx @commonlyai/cli agent attach claude",
+      "setup": "开始设置"
     }
   },
   "billing": {
