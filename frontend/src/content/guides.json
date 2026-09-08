@@ -8962,6 +8962,10 @@
       {
         "label": "AI agent review decisions",
         "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
       }],
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
@@ -12564,6 +12568,10 @@
       {
         "label": "AI agent non-goals",
         "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
       }
     ],
     "cta": {
@@ -15463,6 +15471,10 @@
       {
         "label": "AI agent task intake",
         "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
       }
     ],
     "cta": {
@@ -26747,6 +26759,10 @@
       {
         "label": "AI Agent Task Closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
       }
     ],
     "cta": {
@@ -29568,6 +29584,711 @@
     "cta": {
       "title": "Make stopping a useful, truthful contribution",
       "body": "AI agent stop conditions keep work safe and usable when the next step is not the agent’s to take. Define observable triggers, select the right state, return any valid partial work, name the next owner and resume path, and close only when the task’s own boundary is met. A precise halt prevents invented progress while giving the team everything it needs to continue responsibly.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-change-requests": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Change Requests: Update Scope Clearly | Commonly",
+    "title": "AI Agent Change Requests: Update Scope Without Silent Drift",
+    "description": "Learn how to handle AI agent change requests: record the proposed change, assess its impact, identify the owner, and update the task and review criteria.",
+    "summary": "An AI agent change request is a recorded proposal to alter a task’s outcome, requirements, inputs, permitted operations, audience, or acceptance criteria. It identifies the current agreement, the proposed difference, why the change is needed, what work it affects, and who can decide. Once that owner answers, the task records the accepted scope and next action so the agent can continue against a clear requirement.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "An AI agent change request is a recorded proposal to alter a task’s outcome, requirements, inputs, permitted operations, audience, or acceptance criteria. It identifies the current agreement, the proposed difference, why the change is needed, what work it affects, and who can decide. Once that owner answers, the task records the accepted scope and next action so the agent can continue against a clear requirement.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides task descriptions, assignees, statuses, activity timelines, and parent-task and dependency relationships. Teams can use those records to document a requested change and its effect on related work. The workflow in this guide is a practice for using those records; it does not imply a dedicated change-approval feature or automatic enforcement of a task description.",
+      "A useful change request can be short: “The brief currently covers one workflow. Add a second workflow using the attached source; this requires one more comparison section and a new review criterion. Does the task owner want that addition here or in a follow-on?” The important part is that the proposed addition remains distinguishable from the work already agreed.",
+      "Routine edits should stay routine. Fixing a typo or repairing an artifact to meet an existing criterion usually falls within the current task. Changing what counts as success, who receives the result, or which systems the agent may use needs a clearer decision. This guide explains how to make that distinction and carry an accepted change through the task."
+    ],
+    "sections": [
+      {
+        "title": "Identify what kind of change arrived",
+        "paragraphs": [
+          "Start by comparing the request with the current task. The size of the edit is a poor guide to its significance: one added sentence can create a new commitment, while a substantial rewrite may simply satisfy an existing requirement."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Incoming request",
+              "Classification",
+              "Appropriate response"
+            ],
+            "rows": [
+              [
+                "Correct a misspelling in the draft",
+                "Routine correction within the existing outcome",
+                "Make the correction under the current task"
+              ],
+              [
+                "Add a citation already required by the brief",
+                "Revision to meet existing criteria",
+                "Revise and return for the stated review"
+              ],
+              [
+                "Cover another workflow or audience",
+                "Proposed change to the outcome or scope",
+                "Record the addition and ask the relevant owner"
+              ],
+              [
+                "Use a previously excluded source",
+                "Proposed change to the input boundary",
+                "Explain the need and obtain the appropriate decision"
+              ],
+              [
+                "Publish an artifact that was assigned for review",
+                "Proposed change to operations and audience",
+                "Route the sending or publishing decision before acting"
+              ],
+              [
+                "Apply a new definition of success",
+                "Proposed change to acceptance criteria",
+                "Record which criterion replaces the old one and why"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Classify the request by its effect",
+        "paragraphs": [
+          "Classify the request by its effect on the agreement. If the task owner has already explicitly authorized that effect, carry out the change and record it; a separate round of permission is unnecessary. If the request came from an unverified source or an owner whose authority is unclear, resolve that gap first.",
+          "For recognizing how scope can expand through outcomes, inputs, operations, and audiences, see AI Agent Scope Creep."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Scope Creep",
+            "path": "/guides/ai-agent-scope-creep/"
+          }
+        ]
+      },
+      {
+        "title": "Record the current agreement and proposed difference",
+        "paragraphs": [
+          "A change request should let the owner compare two concrete states. Link the task or version that defines the current agreement, then describe the proposed replacement or addition. Preserve the reason for the change so later contributors can understand why the task evolved."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Request field",
+              "What to record",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Current agreement",
+                "Task, version, outcome, and relevant criterion",
+                "“Prepare a brief about workflow A for the editor.”"
+              ],
+              [
+                "Proposed difference",
+                "Exact addition, removal, replacement, or boundary change",
+                "“Add workflow B and a comparison section.”"
+              ],
+              [
+                "Reason",
+                "New evidence, corrected assumption, or owner need",
+                "“The supplied source describes a second supported workflow.”"
+              ],
+              [
+                "Impact",
+                "Affected artifact, checks, dependencies, or owner work",
+                "“The comparison needs source review before the brief is accepted.”"
+              ],
+              [
+                "Decision requested",
+                "The choice needed from the accountable owner",
+                "“Extend this brief or create a separate follow-on?”"
+              ],
+              [
+                "Work pending the answer",
+                "What can continue and what must wait",
+                "“Continue the existing section; hold the proposed comparison.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The request can live in the task",
+        "paragraphs": [
+          "The request can live in the task’s description or activity record, with a linked discussion when the decision needs more space. These are suggested content fields, not a claim that the task system implements each as a separate field.",
+          "For the agreement that defines a task’s outcome, inputs, operations, artifact, owner, and stop condition, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Assess the effect on acceptance before estimating the work",
+        "paragraphs": [
+          "An agent should explain what the change does to the result and how it will be judged. A statement such as “small change” is insufficient when the request introduces a new claim, an additional reviewer, or a different audience. Describe known consequences and label estimates as estimates."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Impact area",
+              "Question to answer",
+              "Update needed if accepted"
+            ],
+            "rows": [
+              [
+                "Artifact",
+                "Does the result change in format, coverage, or intended use?",
+                "Revise the deliverable description"
+              ],
+              [
+                "Evidence",
+                "Does a new claim require a source or another check?",
+                "Add the evidence requirement and its limitation"
+              ],
+              [
+                "Acceptance",
+                "Which criterion changes or becomes newly required?",
+                "State the new criterion and reviewer"
+              ],
+              [
+                "Review effort",
+                "Must previously reviewed material be inspected again?",
+                "Identify the affected sections and return point"
+              ],
+              [
+                "Dependencies",
+                "Does the task need another result before it can proceed?",
+                "Record the required state and its owner"
+              ],
+              [
+                "Timing",
+                "Does the additional work affect an agreed sequence or deadline?",
+                "Ask the owner to choose the relevant tradeoff"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Avoid precise effort or delivery promises",
+        "paragraphs": [
+          "Avoid precise effort or delivery promises without evidence. “Adds a second source review; timing needs the editor’s answer” is a usable assessment when the reviewer’s availability is unknown. It gives the owner the actual constraint without inventing a schedule.",
+          "For criteria that let a reviewer evaluate an agent’s result, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Route the change to the owner of the affected decision",
+        "paragraphs": [
+          "The requester and the decision owner may be different people. A reviewer can identify a gap; a project owner may need to decide whether addressing it changes the task’s scope. A system owner may separately control the access needed to implement that decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Requested change",
+              "Relevant decision owner",
+              "Agent prepares"
+            ],
+            "rows": [
+              [
+                "Add or remove an outcome",
+                "Task, project, or product owner",
+                "Current outcome, proposed result, and consequences"
+              ],
+              [
+                "Replace an acceptance criterion",
+                "Owner accountable for the requirement",
+                "Old criterion, proposed criterion, and review impact"
+              ],
+              [
+                "Resolve conflicting editorial directions",
+                "Designated editor or content owner",
+                "Exact versions, feedback, and one disputed choice"
+              ],
+              [
+                "Change a dependency or priority",
+                "Owner coordinating the affected work",
+                "Required states, affected tasks, and options"
+              ],
+              [
+                "Use a new capability or restricted source",
+                "Authorized system or data owner",
+                "Minimum need, purpose, and alternatives"
+              ],
+              [
+                "Change recipients or make a commitment",
+                "Authorized communications or domain owner",
+                "Exact wording, audience, evidence, and proposed action"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Name the decision",
+        "paragraphs": [
+          "Name the decision that each owner must make. Approval to extend a research brief does not by itself grant access to a restricted service or authorize publication. If the change requires several decisions, record which one has been answered and which still blocks a particular operation.",
+          "For identifying accountability for a specific choice, see AI Agent Decision Owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Record an answer that changes the task clearly",
+        "paragraphs": [
+          "A useful answer resolves the requested difference. The owner may accept it, narrow it, defer it, reject it, separate it into another task, or route it to someone else. Each answer should leave the agent able to identify the current agreement."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Owner answer",
+              "Effect on the current task",
+              "Record to leave"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "The specified change becomes part of the task",
+                "Updated outcome, criteria, owner, and next action"
+              ],
+              [
+                "Narrow",
+                "Only the stated portion of the proposal enters scope",
+                "Accepted portion and explicit exclusions"
+              ],
+              [
+                "Defer",
+                "The proposal waits while the existing agreement governs eligible work",
+                "Revisit condition and current work boundary"
+              ],
+              [
+                "Reject",
+                "The proposed change is excluded",
+                "Reason and the task that remains in effect"
+              ],
+              [
+                "Split",
+                "The proposal becomes a separately owned contribution",
+                "New task relationship and any dependency"
+              ],
+              [
+                "Route",
+                "Another owner must answer the unresolved decision",
+                "Receiving owner, question, and work allowed meanwhile"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Keep the proposal separate",
+        "paragraphs": [
+          "Keep the proposal separate from the accepted answer in the record. Creating a follow-on task can make an idea visible, but the new task still needs ownership and priority; its existence does not resolve a blocker in the original task.",
+          "For giving adjacent work its own outcome and owner, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Apply the accepted change before continuing the affected work",
+        "paragraphs": [
+          "Once the authorized owner has answered, update the task where the next contributor will look. Preserve a reference to the previous agreement and the decision, then make the current description unambiguous. An accepted change buried in discussion is easy to miss during a handoff."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task element",
+              "Update after acceptance",
+              "Check before resuming"
+            ],
+            "rows": [
+              [
+                "Outcome and description",
+                "State the accepted result and its scope",
+                "The old and new requirements are not both presented as current"
+              ],
+              [
+                "Acceptance criteria",
+                "Add or replace the affected checks",
+                "The reviewer can test the revised outcome"
+              ],
+              [
+                "Inputs and operations",
+                "Name the accepted sources and allowed work",
+                "Any required technical access exists separately"
+              ],
+              [
+                "Owner and review point",
+                "Assign the next contribution and its return",
+                "The person receiving the result is identified"
+              ],
+              [
+                "Dependencies and status",
+                "Reflect the required state and remaining blocker",
+                "A decision has not been mistaken for a satisfied dependency"
+              ],
+              [
+                "Artifact reference",
+                "Link the version that will be revised",
+                "Earlier review applies only where its scope still fits"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Continue with the authorized work",
+        "paragraphs": [
+          "Continue with the authorized work once the updated agreement is clear. A second confirmation is unnecessary when the owner’s instruction already specifies the change and the next action falls within the role’s permitted operations.",
+          "For returning a changed artifact with its version, checks, and re-review question, see AI Agent Revision Loop."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Revision Loop",
+            "path": "/guides/ai-agent-revision-loop/"
+          }
+        ]
+      },
+      {
+        "title": "Check the change against dependent tasks",
+        "paragraphs": [
+          "Changing one task can alter the input another task expects. Identify consumers of the affected result and state whether they can keep using the current artifact, need a new version, or must wait. Do not silently rewrite another owner’s task or assume that every related task must stop."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Dependency situation",
+              "What the change affects",
+              "Coordination needed"
+            ],
+            "rows": [
+              [
+                "Another task consumes the draft",
+                "Expected content or version",
+                "Tell its owner which version will satisfy the dependency"
+              ],
+              [
+                "A shared source is replaced",
+                "Evidence used by several outputs",
+                "Identify affected claims and the governing source decision"
+              ],
+              [
+                "A prerequisite becomes unnecessary",
+                "Reason for an existing wait",
+                "Confirm and record the removal with the affected owner"
+              ],
+              [
+                "A new review is required",
+                "The stage at which the result becomes usable",
+                "Update the required review answer"
+              ],
+              [
+                "Part of the work moves to a child task",
+                "Where a required artifact is produced",
+                "Link the new task and define its contribution"
+              ],
+              [
+                "The parent outcome changes",
+                "How child results will be combined",
+                "Revisit the combination criteria with the parent owner"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Describe the dependency",
+        "paragraphs": [
+          "Describe the dependency as a required state. “Consumer waits for the reviewed comparison section” is more actionable than “consumer waits for this task,” especially when part of the result remains usable during the change.",
+          "For required states, owners, and the distinction between sequence and blocking, see AI Agent Dependency Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Dependency Management",
+            "path": "/guides/ai-agent-dependency-management/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve the artifact that was reviewed",
+        "paragraphs": [
+          "An accepted requirement change may invalidate part of an earlier review. Keep a stable reference to what the reviewer inspected, identify the new version, and state the material difference. Reuse prior feedback only where the relevant object and criterion remain applicable."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Artifact event",
+              "Record",
+              "Review consequence"
+            ],
+            "rows": [
+              [
+                "Wording corrected under existing criteria",
+                "Correction and current version",
+                "Use the existing review process for the correction"
+              ],
+              [
+                "New section added",
+                "Added section, evidence, and new version",
+                "Review the addition and its effect on surrounding claims"
+              ],
+              [
+                "Source or interpretation replaced",
+                "Old source, new source, and affected conclusion",
+                "Recheck claims that depended on the prior evidence"
+              ],
+              [
+                "Acceptance criterion changed",
+                "Owner answer and replacement criterion",
+                "Evaluate the artifact against the current requirement"
+              ],
+              [
+                "Intended audience changed",
+                "New audience and permitted use",
+                "Revisit wording, detail, and any commitment"
+              ],
+              [
+                "Proposal rejected",
+                "Decision and retained artifact reference",
+                "Avoid presenting the proposed version as the accepted result"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Keep the version relationship explicit",
+        "paragraphs": [
+          "Keep the version relationship explicit even when the change seems simple. A new artifact can preserve useful earlier work while requiring a fresh answer about the changed portion; approval should identify that portion and stage.",
+          "For tracking reviewed versions, material differences, and successor artifacts, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Work through a change request from proposal to revision",
+        "paragraphs": [
+          "Consider a hypothetical research task: prepare an internal brief about workflow A using two supplied sources, return it to an editor, and include a citation for every capability claim. During review, a teammate asks for workflow B and a public announcement based on the comparison.",
+          "The agent separates two proposed changes. Adding workflow B changes coverage and evidence requirements. Preparing or sending a public announcement changes the deliverable and audience. Neither is a routine correction to the existing brief.",
+          "The agent records the current agreement, links the teammate’s request, identifies the source needed for workflow B, and explains which parts of the original brief can still proceed. It asks the task owner whether to expand the brief and routes the communication question to the owner responsible for public wording.",
+          "Suppose the task owner accepts the comparison but limits this task to the internal brief. The task now names both workflows, adds a requirement to explain unsupported comparisons, and returns the new version to the editor. The announcement remains a separate proposed task with its own owner decision.",
+          "The agent produces the next version and identifies the added comparison, its sources, and the earlier sections that remain unchanged. The editor reviews the new material and its effect on the brief. Acceptance of that internal artifact leaves publication and sending decisions outside this task.",
+          "The sequence keeps useful work moving while making the changed requirement easy to inspect. It also leaves a record of why the brief expanded and why the external communication did not enter the same assignment."
+        ]
+      },
+      {
+        "title": "Check whether the change is ready to apply",
+        "paragraphs": [
+          "Before starting the affected work, check that the request has enough evidence and authority to become a current requirement. The check should be brief for a small change and more detailed when several owners, artifacts, or systems are involved."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Check",
+              "Question",
+              "If unresolved"
+            ],
+            "rows": [
+              [
+                "Baseline",
+                "Which task agreement or version is being changed?",
+                "Locate the current record before editing scope"
+              ],
+              [
+                "Difference",
+                "What exactly is added, removed, or replaced?",
+                "Ask a focused clarification"
+              ],
+              [
+                "Authority",
+                "Has the appropriate owner answered this decision?",
+                "Route the request to that owner"
+              ],
+              [
+                "Acceptance",
+                "Can the revised outcome be evaluated?",
+                "State the missing criterion or review point"
+              ],
+              [
+                "Dependency",
+                "Are affected inputs and consumers accounted for?",
+                "Coordinate the required state with their owners"
+              ],
+              [
+                "Operations",
+                "Does the next action fit the authorized role and system path?",
+                "Stop that operation and resolve the specific gap"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An unresolved proposal",
+        "paragraphs": [
+          "An unresolved proposal need not halt unrelated, eligible work. Continue the part covered by the current agreement when the change does not invalidate it. Stop the affected path when it depends on a missing decision, evidence, or authority.",
+          "For observable boundaries that tell an agent when to halt and what to leave behind, see AI Agent Stop Conditions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Stop Conditions",
+            "path": "/guides/ai-agent-stop-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Handle an AI agent change request in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Find the current task agreement and exact artifact or requirement affected by the request.",
+          "Classify the request as a routine correction, an in-scope revision, or a material change to the task.",
+          "Describe the proposed difference, its reason, and its effect on evidence, acceptance, dependencies, and timing.",
+          "Identify the owner of the changed decision and check whether their existing instruction already authorizes it.",
+          "Record the answer: accept, narrow, defer, reject, split, or route, including the work that may continue meanwhile.",
+          "Update the task, criteria, owner, dependencies, and version references to reflect the accepted change.",
+          "Deliver the revised artifact for the stated review and record the resulting next action and remaining limits."
+        ]
+      },
+      {
+        "title": "This process can fit in a short task update",
+        "paragraphs": [
+          "This process can fit in a short task update. Its purpose is to make the current requirement clear enough that another person or agent can continue without replaying the conversation."
+        ]
+      },
+      {
+        "title": "Seven change-request mistakes that cause drift",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating every correction as a new approval process",
+        "paragraphs": [
+          "Ordinary edits that satisfy existing requirements belong within the task. Escalate material changes to the agreement; do not delay authorized work by asking an owner to approve the same boundary again."
+        ]
+      },
+      {
+        "title": "Treating a suggestion as an accepted requirement",
+        "paragraphs": [
+          "Record who proposed the change and who can decide it. A comment can identify useful work without authorizing a new outcome or operation."
+        ]
+      },
+      {
+        "title": "Replacing the old requirement without recording the decision",
+        "paragraphs": [
+          "Keep a reference to the previous agreement and the owner’s answer. A future reviewer needs to understand why the task and acceptance criteria changed."
+        ]
+      },
+      {
+        "title": "Estimating effort while ignoring acceptance",
+        "paragraphs": [
+          "A short edit can introduce an unsupported claim or new audience. State how the changed artifact will be checked before describing the addition as easy."
+        ]
+      },
+      {
+        "title": "Updating the producer while leaving consumers on old assumptions",
+        "paragraphs": [
+          "Identify the tasks that depend on the affected result. Tell their owners which version or required state now applies and whether existing work remains usable."
+        ]
+      },
+      {
+        "title": "Extending earlier approval to changed material",
+        "paragraphs": [
+          "Link the new version and identify the affected review scope. Earlier acceptance can inform the next review, but it does not settle new claims, criteria, or audiences automatically."
+        ]
+      },
+      {
+        "title": "Using scope approval as system access",
+        "paragraphs": [
+          "An owner can accept a new task outcome while access or execution remains subject to a different authority. Use the appropriate system path for those operations and keep unresolved requirements visible."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent change request?",
+        "answer": "It is a recorded proposal to change a task’s outcome, requirements, inputs, operations, audience, or acceptance criteria. It connects the proposed difference with its reason, impact, accountable owner, and resulting task update."
+      },
+      {
+        "question": "Does every agent edit need a change request?",
+        "answer": "No. Routine corrections and revisions that meet existing criteria can proceed under the current task. A change request is useful when the agreement itself changes or the agent needs a decision outside that agreement."
+      },
+      {
+        "question": "How does a change request differ from a revision request?",
+        "answer": "A revision request usually asks the agent to meet an existing requirement. A change request alters the requirement or another part of the task boundary. One review comment can contain both, so identify each effect before acting."
+      },
+      {
+        "question": "Can an agent keep working while a change is undecided?",
+        "answer": "Yes, on work that remains eligible under the current agreement and is unaffected by the proposed change. The affected path should wait when it requires an unresolved decision, evidence, access, or revised acceptance criterion."
+      },
+      {
+        "question": "What should happen after the owner accepts a change?",
+        "answer": "Update the task’s current scope, acceptance criteria, owner, dependencies, and artifact references. Then perform the authorized revision and return the result for the specified review. Avoid asking for the same authorization again when the answer is already clear."
+      },
+      {
+        "question": "Does an accepted change authorize publishing or other external actions?",
+        "answer": "Only when those actions are explicitly covered by the appropriate authority and permitted system path. Acceptance of a changed brief or requirement alone does not grant technical access or prove an external action occurred."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Scope Creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Revision Loop",
+        "path": "/guides/ai-agent-revision-loop/"
+      },
+      {
+        "label": "AI Agent Dependency Management",
+        "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
+      }
+    ],
+    "cta": {
+      "title": "Update scope without silent drift",
+      "body": "AI agent change requests keep a task’s agreement current without letting scope drift unnoticed. Record the proposed difference and its reason, route the decision to the owner who can answer it, update the task and acceptance criteria once the change is accepted, and continue the authorized work against a requirement the next contributor can read.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
