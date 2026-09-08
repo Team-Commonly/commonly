@@ -242,17 +242,21 @@ describe('V2PodBoard', () => {
       if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace' } });
       return Promise.resolve({ data: {} });
     });
-    const view = renderBoard();
-    expect(await screen.findByText('Ship the pilot')).toBeInTheDocument();
-    expect(focusCalls).toBe(1);
-
+    const handlers = {};
     mockSocketValue = {
-      socket: { on: jest.fn(), off: jest.fn() },
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+      },
       connected: true,
       joinPod: jest.fn(),
       leavePod: jest.fn(),
     };
-    act(() => { view.rerender(boardTree()); });
+    renderBoard();
+    expect(await screen.findByText('Ship the pilot')).toBeInTheDocument();
+    expect(focusCalls).toBe(1);
+
+    act(() => { handlers.connect(); });
     await waitFor(() => expect(screen.getByText('Reconnected focus')).toBeInTheDocument());
     expect(focusCalls).toBe(2);
   });

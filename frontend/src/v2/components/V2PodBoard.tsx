@@ -164,7 +164,6 @@ const V2PodBoard: React.FC = () => {
   const closeFocusEditorRef = useRef<() => void>(() => undefined);
   const focusRequestRef = useRef(0);
   const focusMutationRef = useRef(0);
-  const focusWasConnectedRef = useRef(connected);
 
   const openCreateTask = useCallback(() => {
     setCreateError(null);
@@ -238,12 +237,6 @@ const V2PodBoard: React.FC = () => {
   }, [loadFocus]);
 
   useEffect(() => {
-    const wasConnected = focusWasConnectedRef.current;
-    focusWasConnectedRef.current = connected;
-    if (connected && !wasConnected) loadFocus();
-  }, [connected, loadFocus]);
-
-  useEffect(() => {
     if (!focusConflictLatest || !focusRead || focusRead.revision <= focusConflictLatest.revision) return;
     setFocusConflictLatest(focusRead);
     setFocusConflictReviewed(false);
@@ -281,6 +274,13 @@ const V2PodBoard: React.FC = () => {
     socket.on('pod_focus_updated', onFocusUpdated);
     return () => { socket.off('pod_focus_updated', onFocusUpdated); };
   }, [podId, socket, connected, loadFocus]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onConnect = () => { loadFocus(); };
+    socket.on('connect', onConnect);
+    return () => { socket.off('connect', onConnect); };
+  }, [socket, loadFocus]);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'visible') loadFocus(); };
