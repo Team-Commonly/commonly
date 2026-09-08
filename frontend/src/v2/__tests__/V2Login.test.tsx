@@ -555,6 +555,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent task-intake guide preserves its handoff context after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-intake/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Intake: Turn a Request Into Bounded, Eligible Work' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Preserve intake context in the task and handoff' })).toBeInTheDocument();
+    expect(screen.getByText(/Retaining this context does not require copying every conversation message/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -562,7 +570,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(68);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(69);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
