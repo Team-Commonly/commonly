@@ -2,10 +2,12 @@ jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }
 jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
 
 const mockGetOpenQueue = jest.fn();
+const mockHasEverHadAttention = jest.fn();
 const mockAcknowledgeAttention = jest.fn();
 const mockResolve = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   getOpenQueue: (...args) => mockGetOpenQueue(...args),
+  hasEverHadAttention: (...args) => mockHasEverHadAttention(...args),
   acknowledgeAttention: (...args) => mockAcknowledgeAttention(...args),
   resolve: (...args) => mockResolve(...args),
 }));
@@ -37,6 +39,7 @@ describe('ActivityService recap and legacy approval authorization', () => {
     Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
     Task.find.mockReturnValue(taskQuery([]));
     mockGetOpenQueue.mockResolvedValue({ items: [], count: 0, composePodId: null });
+    mockHasEverHadAttention.mockResolvedValue(false);
     mockAcknowledgeAttention.mockResolvedValue({ success: true });
     mockResolve.mockResolvedValue(undefined);
     feedSpy = jest.spyOn(ActivityService, 'getUserFeed').mockResolvedValue({ activities: [] });
@@ -67,7 +70,29 @@ describe('ActivityService recap and legacy approval authorization', () => {
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
 
     expect(result.needsYou).toEqual([]);
+    expect(result.hasEverHadAttention).toBe(false);
     expect(mockGetOpenQueue).toHaveBeenCalledWith(ownerId);
+  });
+
+  test('returns the durable ever-had-attention fact for the account', async () => {
+    mockHasEverHadAttention.mockResolvedValue(true);
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.hasEverHadAttention).toBe(true);
+    expect(mockHasEverHadAttention).toHaveBeenCalledWith(ownerId);
+  });
+
+  test('keeps day-zero onboarding gated when the durable history check fails', async () => {
+    mockHasEverHadAttention.mockRejectedValue(new Error('history unavailable'));
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+      expect(result.hasEverHadAttention).toBeNull();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   test('acknowledges attention only through the recipient-owned attention record', async () => {

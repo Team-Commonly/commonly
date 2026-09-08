@@ -1,4 +1,5 @@
 const mockGetOpenQueue = jest.fn();
+const mockHasEverHadAttention = jest.fn();
 const mockPodFind = jest.fn();
 const mockTaskFind = jest.fn();
 const mockDecisionFind = jest.fn();
@@ -16,6 +17,7 @@ jest.mock('../../../models/DecisionRequest', () => ({
 }));
 jest.mock('../../../services/attentionItemService', () => ({
   getOpenQueue: (...args) => mockGetOpenQueue(...args),
+  hasEverHadAttention: (...args) => mockHasEverHadAttention(...args),
 }));
 
 const ActivityService = require('../../../services/activityService');
@@ -34,6 +36,7 @@ const decisionChain = (value) => ({
 describe('ActivityService.getDecisionQueue', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHasEverHadAttention.mockResolvedValue(false);
   });
 
   it('reads the recipient-owned AttentionItem projection without a source-store fallback', async () => {
