@@ -4,6 +4,7 @@ const request = require('supertest');
 const express = require('express');
 
 const mockFindOne = jest.fn();
+const mockFind = jest.fn();
 const mockUserFindOne = jest.fn();
 const mockIssueToken = jest.fn();
 const mockHosted = {
@@ -26,7 +27,7 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   next();
 });
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: (...args) => mockFindOne(...args) },
+  AgentInstallation: { findOne: (...args) => mockFindOne(...args), find: (...args) => mockFind(...args) },
 }));
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockUserFindOne(...args) }));
 const mockCredentialUpdateMany = jest.fn();
@@ -57,6 +58,10 @@ const makeInstallation = (overrides = {}) => ({
 describe('/api/hosted', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Requests without an instanceId now resolve through find(); the older
+    // tests mock findOne, so by default find() answers with that same row.
+    mockFind.mockReset();
+    mockFind.mockImplementation(async () => { const one = await mockFindOne(); return one ? [one] : []; });
     mockHosted.isConfigured.mockReturnValue(true);
     mockHosted.isHostedInstallation.mockReturnValue(true);
     mockHosted.countHostedAgentsForUser.mockResolvedValue(1);
@@ -90,13 +95,41 @@ describe('/api/hosted', () => {
   });
 
   it('404s unless the caller is the installer of an active installation', async () => {
-    mockFindOne.mockResolvedValue(null);
+    mockFind.mockResolvedValue([]);
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('not_owner_or_missing');
-    expect(mockFindOne).toHaveBeenCalledWith({
-      agentName: 'scout', instanceId: 'default', status: 'active', installedBy: 'owner-1',
-    });
+    // No instanceId in the request → the lookup is by owner + agent, never by an assumed "default".
+    expect(mockFind).toHaveBeenCalledWith({ agentName: 'scout', status: 'active', installedBy: 'owner-1' });
+    expect(mockFindOne).not.toHaveBeenCalled();
+  });
+
+  it('a persona hire provisions without an instanceId: the install derived "scout" from the display name and the UI sends only agentName (stranger smoke, 2026-09-08)', async () => {
+    mockFind.mockResolvedValue([makeInstallation({ agentName: 'scout-678386', instanceId: 'scout' })]);
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout-678386' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ provisioned: true, agentName: 'scout-678386', instanceId: 'scout', podId: 'pod-1' });
+    expect(mockHosted.provisionAgent).toHaveBeenCalledWith({ agentName: 'scout-678386', instanceId: 'scout', runtimeToken: 'cm_agent_secret' });
+    expect(mockFindOne).not.toHaveBeenCalled();
+  });
+
+  it('with two owned instances and no instanceId, prefers "default" and otherwise asks for one (409)', async () => {
+    mockFind.mockResolvedValue([makeInstallation({ instanceId: 'scout' }), makeInstallation({ instanceId: 'default' })]);
+    const ok = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.instanceId).toBe('default');
+    mockFind.mockResolvedValue([makeInstallation({ instanceId: 'scout' }), makeInstallation({ instanceId: 'demo' })]);
+    const amb = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(amb.status).toBe(409);
+    expect(amb.body).toMatchObject({ code: 'ambiguous_instance', instanceIds: ['scout', 'demo'] });
+  });
+
+  it('an explicit instanceId still resolves by findOne exactly as before', async () => {
+    mockFindOne.mockResolvedValue(makeInstallation({ instanceId: 'demo' }));
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout', instanceId: 'demo' });
+    expect(res.status).toBe(200);
+    expect(mockFindOne).toHaveBeenCalledWith({ agentName: 'scout', instanceId: 'demo', status: 'active', installedBy: 'owner-1' });
+    expect(mockFind).not.toHaveBeenCalled();
   });
 
   it('409s when the owned installation is not a hosted one', async () => {
