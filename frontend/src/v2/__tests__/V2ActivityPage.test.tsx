@@ -556,6 +556,23 @@ describe('V2ActivityPage', () => {
     expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
   });
 
+  test('a human whose name matches an agent label keeps the human mark when the id is present', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { ...decisionQueue, items: [
+        { id: 'm-human', attentionItemId: 'a-human', kind: 'mention', title: 'Kai mentioned you', detail: 'x', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', actorUserId: 'human-user-99', createdAt: '2026-08-26T11:00:00.000Z' },
+        { id: 'm-agent', attentionItemId: 'a-agent', kind: 'mention', title: 'Kai mentioned you', detail: 'y', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', createdAt: '2026-08-26T10:00:00.000Z' },
+      ], count: 2, countsByPod: { 'pod-1': 2 } }
+      : { ...recap, agents: [{ ...recap.agents[0], id: 'agent-kai', name: 'Kai' }] } }));
+    renderPage();
+    await screen.findAllByText('Kai');
+    const marks = [...document.querySelectorAll('.v2-activity__queue-mark')];
+    const human = document.querySelector('[data-activity-item-id="m-human"] .v2-activity__queue-mark') as HTMLElement;
+    const agent = document.querySelector('[data-activity-item-id="m-agent"] .v2-activity__queue-mark') as HTMLElement;
+    expect(marks.length).toBeGreaterThanOrEqual(2);
+    expect(human.className).toContain('v2-activity__queue-mark--human');
+    expect(agent.className).toContain('v2-activity__queue-mark--agent');
+  });
+
   test('renders a handoff as a handled action, never as a decision', async () => {
     const handoffQueue = {
       items: [{

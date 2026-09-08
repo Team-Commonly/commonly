@@ -1773,8 +1773,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test('Needs you never folds; one count; toggles are tint-selected; kicker and marks per 66389/66390', () => {
       // Pages after the first load themselves — the only queue control left is Retry/Loading.
       expect(activityPage).toContain('void loadMoreQueue(true);');
-      expect(activityPage).toContain('(queueLoadingMore || queueMoreError) && (');
-      expect(activityPage).not.toContain("(queueRemaining > 0 || queueMoreError) && (");
+      // The remaining arm stays as the way back if auto-load ever stops short (sprint-review 66398).
+      expect(activityPage).toContain('(queueRemaining > 0 || queueLoadingMore || queueMoreError) && (');
+      expect(activityPage).toContain('item.actorUserId\n      ? agentUserIds.has(item.actorUserId)');
       // Oldest waiting first.
       expect(activityPage).toContain('new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()');
       // The section count is mono text beside the heading, not an ink pill.

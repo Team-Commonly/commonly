@@ -725,9 +725,12 @@ const V2ActivityPage: React.FC = () => {
   // name is the second door.
   const agentUserIds = useMemo(() => new Set((recap?.agents || []).map((agent) => String(agent.id))), [recap]);
   const agentNames = useMemo(() => new Set((recap?.agents || []).map((agent) => agent.name.trim().toLowerCase())), [recap]);
+  // The id is the authority when it exists — a failed id lookup means "not an
+  // agent", not "unknown" — so the name door opens only for rows with no id.
   const isAgentActor = (item: NeedsYouItem): boolean => (
-    (!!item.actorUserId && agentUserIds.has(item.actorUserId))
-    || (!!item.actorName && agentNames.has(item.actorName.trim().toLowerCase()))
+    item.actorUserId
+      ? agentUserIds.has(item.actorUserId)
+      : (!!item.actorName && agentNames.has(item.actorName.trim().toLowerCase()))
   );
   const visibleQueue = useMemo(() => {
     const settled = Object.values(settledQueueDecisions)
@@ -1284,7 +1287,7 @@ const V2ActivityPage: React.FC = () => {
                 ))}
               </div>
             )}
-            {visibleQueue.length > 0 && (queueLoadingMore || queueMoreError) && (
+            {visibleQueue.length > 0 && (queueRemaining > 0 || queueLoadingMore || queueMoreError) && (
               <button
                 type="button"
                 ref={queueMoreButtonRef}
