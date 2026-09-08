@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 87);
+  assert.equal(pages.length, 88);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -108,6 +108,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-approval-boundaries/',
     '/guides/ai-agent-retained-context/',
     '/guides/ai-agent-revision-loop/',
+    '/guides/ai-agent-task-splitting/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -143,7 +144,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 77);
+  assert.equal(guidePages.length, 78);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -733,6 +734,39 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const taskSplittingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-splitting/');
+  assert.equal(taskSplittingGuide.title, 'AI Agent Task Splitting: Divide Work Clearly | Commonly');
+  const taskSplitting = guides['ai-agent-task-splitting'];
+  assert.deepEqual(taskSplitting.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(taskSplitting.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 9);
+  const sharedDecision = taskSplitting.sections.find((section) => section.title === 'Do not split work that still needs one shared decision');
+  assert.equal(sharedDecision.paragraphs.length, 6);
+  assert.equal(sharedDecision.tables, undefined);
+  assert.deepEqual(sharedDecision.links.map((link) => link.path), ['/guides/ai-agent-work-contract/']);
+  assert.match(taskSplitting.sections.find((section) => section.title === 'An @mention').paragraphs[0], /^An @mention, a reaction, or a helpful reply can show participation\./);
+  for (const title of ['If the split fails a test', 'The split is successful']) {
+    const section = taskSplitting.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(taskSplitting.intro[0], /^AI agent task splitting is the practice of turning one broad request into several bounded tasks when the work needs distinct artifacts, owners, dependencies, acceptance criteria, or review points\./);
+  const taskSplittingHtml = renderStaticPage(guideTemplate, taskSplittingGuide);
+  assert.match(taskSplittingHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-splitting\/"/);
+  assert.match(taskSplittingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(taskSplittingHtml, /merge point/);
+  assert.doesNotMatch(taskSplittingHtml, /seo-page-dark/);
+  assert.doesNotMatch(taskSplittingHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((taskSplittingHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-task-closure/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-splitting\/"/g) || []).length, 1);
   }
   const revisionLoopGuide = guidePages.find((page) => page.path === '/guides/ai-agent-revision-loop/');
   assert.equal(revisionLoopGuide.title, 'AI Agent Revision Loop: Request, Revise, Re-Review | Commonly');
