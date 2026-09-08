@@ -10361,6 +10361,10 @@
       {
         "label": "AI agent source of record",
         "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }],
     "cta": {
       "title": "Make the answer easy to inspect",
@@ -13227,6 +13231,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -16791,6 +16799,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -18189,6 +18201,10 @@
       {
         "label": "AI agent decision owner",
         "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -21680,6 +21696,698 @@
     "cta": {
       "title": "Give every choice an accountable answerer",
       "body": "AI agent decision ownership makes a task’s authority boundary visible. Define the smallest question, prepare the relevant evidence and options, name the person, role, or system accountable for that choice, and record what the answer changes—and does not change. That lets agents do useful preparatory work without turning a recommendation, task claim, or visible conversation into unearned authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-artifact-versions": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Artifact Versions: Make Work Reviewable | Commonly",
+    "title": "AI Agent Artifact Versions: Make Reviewable Work Identifiable",
+    "description": "Learn how to manage AI agent artifact versions so reviewers can identify what they inspected, what changed, what was superseded, and which evidence or decision applies.",
+    "summary": "AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product. A version tells a reviewer what they inspected, what evidence and limits applied, what feedback or decision refers to it, and whether a later artifact superseded it. “I updated the draft” is not enough; a reviewer needs the exact version, the material change, and the current state of the artifact.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product. A version tells a reviewer what they inspected, what evidence and limits applied, what feedback or decision refers to it, and whether a later artifact superseded it. “I updated the draft” is not enough; a reviewer needs the exact version, the material change, and the current state of the artifact.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams coordination records that can link to versions: tasks hold scope, owner, status, activity, and results; focused threads hold review questions and answers; attachments preserve substantial artifacts; and selected shared memory can retain sourced durable context. These records help a team locate and discuss an artifact. They do not replace the repository, document system, deployment platform, or another target system that owns the authoritative version or external state.",
+      "Clear versioning keeps agent work reviewable. A reviewer can accept version A for one stage, request bounded changes, then inspect version B without assuming the earlier answer applies. A later task can carry forward useful evidence while pointing to the current source rather than treating a stale draft or summary as authoritative.",
+      "This guide explains how to identify AI agent artifact versions, attach review decisions to the right version, and make changes and supersession visible across tasks and handoffs."
+    ],
+    "sections": [
+      {
+        "title": "A version identifies the reviewed artifact, not just its topic",
+        "paragraphs": [
+          "Two artifacts can share a title and still differ in sources, claims, scope, checks, or requested decision. The version should identify the object precisely enough that another person can retrieve the same artifact and understand what the review or decision applied to."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Ambiguous reference",
+              "Versioned reference",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "“The draft”",
+                "“The linked draft version reviewed on the named task.”",
+                "The reviewer knows which text the answer applies to"
+              ],
+              [
+                "“The research”",
+                "“The evidence packet with the listed source set and labeled limits.”",
+                "Facts and inferences can be inspected"
+              ],
+              [
+                "“The plan”",
+                "“The plan artifact tied to the current milestone and dependency state.”",
+                "Later changes do not rewrite the prior decision"
+              ],
+              [
+                "“The fix”",
+                "“The exact proposed change and its attached checks.”",
+                "Review is not confused with deployment or merge"
+              ],
+              [
+                "“The decision”",
+                "“The packet containing the options and evidence considered.”",
+                "The owner’s answer has a clear basis"
+              ],
+              [
+                "“The result”",
+                "“The task result linked to its artifact and verification path.”",
+                "A report can be traced to the supporting record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Version identity can be a document revision",
+        "paragraphs": [
+          "Version identity can be a document revision, pull request, attachment, dated artifact, or another system-native identifier. The key is not a particular tool. It is that the record lets a reviewer find the exact content without guessing from a moving title or chat summary.",
+          "For the artifact, evidence, limits, and requested judgment assembled before review, see AI Agent Review Packet.",
+          "For the hierarchy that identifies which system or record is authoritative for a fact or artifact type, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          },
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Record the material context that travels with a version",
+        "paragraphs": [
+          "A version should be more than a timestamp. It needs enough context to establish what changed, why it exists, which inputs and scope apply, and what a reviewer is being asked to assess. This makes the artifact understandable when the original agent session is no longer available."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Version field",
+              "Include",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Identity",
+                "Link, system identifier, attachment, or unambiguous version name",
+                "“Evidence packet v2, attached to the task.”"
+              ],
+              [
+                "Task boundary",
+                "Outcome, permitted inputs, non-goals, and intended stage",
+                "“Comparison brief only; no policy ruling or external action.”"
+              ],
+              [
+                "Change summary",
+                "Material additions, removals, corrections, or scope changes",
+                "“Added source B and narrowed the conclusion.”"
+              ],
+              [
+                "Evidence state",
+                "Sources, checks, labels, uncertainty, and open questions",
+                "“Conflict remains between source A and B.”"
+              ],
+              [
+                "Review request",
+                "Reviewer, criterion, and answer needed",
+                "“Editor checks definition against the stated brief.”"
+              ],
+              [
+                "Current state",
+                "Draft, under review, accepted for a stage, superseded, or rejected",
+                "“v1 is superseded by v2 for the current review.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The fields do not need a long narrative",
+        "paragraphs": [
+          "The fields do not need a long narrative. They give the next reader enough information to decide whether they are looking at a current candidate, a historical artifact, or a source of evidence for a later decision.",
+          "For the labels that distinguish fact, reported status, inference, recommendation, open question, and decision, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Bind review decisions to the exact version",
+        "paragraphs": [
+          "Review feedback and acceptance should state the artifact version they apply to. This prevents a common failure: an agent revises a draft after a reviewer responds, then later treats the old answer as approval of the new content. The reviewer may accept a stage, request changes, narrow scope, reject a path, route a question, or defer—but that answer has an object."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review answer",
+              "Version record should show",
+              "Later reader can tell"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "Exact version, review stage, reviewer, and continuing limits",
+                "What is ready for the named next step"
+              ],
+              [
+                "Request changes",
+                "Version reviewed, cited gap, and bounded revision needed",
+                "Which changes must be addressed before return"
+              ],
+              [
+                "Narrow",
+                "Version’s excluded claim, input, audience, or operation",
+                "What portion remains acceptable"
+              ],
+              [
+                "Reject",
+                "Version, evidence or boundary reason, and closed path",
+                "Why the approach should not proceed"
+              ],
+              [
+                "Route",
+                "Version, question, receiving owner, and supplied evidence",
+                "What another owner must decide"
+              ],
+              [
+                "Defer",
+                "Version, decision date or condition, and current status",
+                "Whether a later review can reuse it or needs an update"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An accepted version is not automatically the final artifact",
+        "paragraphs": [
+          "An accepted version is not automatically the final artifact. It may be ready for a next review, an editorial step, or a maintainer decision. The target system that would later execute a change remains responsible for confirming its own state.",
+          "For the explicit review answers and their task effects, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Show what changed without overstating what changed",
+        "paragraphs": [
+          "The change summary should describe material differences that affect review, evidence, scope, or task state. It should not claim a broader improvement than the version record can support. A brief, concrete summary helps reviewers decide whether they can recheck only the changed section or need a new review of the artifact."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change type",
+              "State",
+              "Do not imply"
+            ],
+            "rows": [
+              [
+                "Source correction",
+                "Which source or quotation was replaced and why",
+                "That every conclusion is now automatically verified"
+              ],
+              [
+                "Scope narrowing",
+                "Which claim, audience, input, or operation was removed",
+                "That excluded work is no longer relevant anywhere"
+              ],
+              [
+                "Requested revision",
+                "Which reviewer condition was addressed",
+                "That the reviewer accepted the new version already"
+              ],
+              [
+                "New evidence",
+                "Source, provenance, and claim it supports or complicates",
+                "That the new source resolves a policy choice"
+              ],
+              [
+                "Structural revision",
+                "Which task artifact fields or sections changed",
+                "That the underlying system state changed"
+              ],
+              [
+                "Superseding draft",
+                "Which prior version it replaces for the current stage",
+                "That historical records should be erased"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the change is too large to summarize",
+        "paragraphs": [
+          "If the change is too large to summarize, split the artifact or route it for a fresh review. A vague “major rewrite” does not give a reviewer enough basis to decide whether earlier feedback still applies.",
+          "For a direct route from a claim to the records that support or limit it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Mark superseded versions and preserve the reason",
+        "paragraphs": [
+          "Supersession is a relationship, not deletion. The current version should point to the earlier artifact it replaces and state why: a corrected source, a changed task boundary, a requested revision, a new decision, or a different owner’s answer. Historical versions remain useful for audit, reasoning, and explaining why a conclusion changed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Supersession reason",
+              "Current record should state",
+              "Historical version remains useful for"
+            ],
+            "rows": [
+              [
+                "Source update",
+                "Old and new source basis plus effect on the claim",
+                "Understanding why the analysis changed"
+              ],
+              [
+                "Review revision",
+                "Reviewer request and the change made",
+                "Checking that feedback was addressed"
+              ],
+              [
+                "Scope decision",
+                "Prior boundary, approved delta, and continuing non-goals",
+                "Showing what the owner actually changed"
+              ],
+              [
+                "Dependency change",
+                "Required state that changed and new task effect",
+                "Explaining why work resumed or shifted"
+              ],
+              [
+                "Incorrect artifact",
+                "Specific error and corrected version",
+                "Avoiding repetition of the invalid path"
+              ],
+              [
+                "New owner decision",
+                "Answer that makes the earlier option obsolete",
+                "Preserving the alternatives and tradeoff considered"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not use latest as a substitute for a relationship",
+        "paragraphs": [
+          "Do not use “latest” as a substitute for a relationship. Latest can change silently. “Superseded by the linked v2 because the source ruling changed” gives a future reviewer an inspectable path from the old record to the new one.",
+          "For the history of task records, threads, artifacts, and accepted decisions, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the task result aligned with the current artifact",
+        "paragraphs": [
+          "The task should link the version that supports its current reported result. If a task says an artifact is ready for review, the result should name the exact candidate and its evidence boundary. If a version is superseded or rejected, update the task so the next owner does not follow a stale reference."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task state",
+              "Version relationship",
+              "Task should record"
+            ],
+            "rows": [
+              [
+                "Active drafting",
+                "Current working artifact and its known limits",
+                "What is being prepared and what remains open"
+              ],
+              [
+                "Ready for review",
+                "Exact candidate version and requested decision",
+                "Reviewer, acceptance condition, and evidence links"
+              ],
+              [
+                "Changes requested",
+                "Reviewed version plus revision target",
+                "Which feedback applies to the next version"
+              ],
+              [
+                "Blocked",
+                "Artifact that revealed the missing prerequisite",
+                "Blocker, required state, and resume condition"
+              ],
+              [
+                "Done for stage",
+                "Accepted version and next task or handoff",
+                "Result reference, decision boundary, and follow-on if any"
+              ],
+              [
+                "Superseded",
+                "Current version and reason the former one no longer governs",
+                "What should be used for future review"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task is a coordination record",
+        "paragraphs": [
+          "The task is a coordination record, not the authoritative version store for every artifact type. Where a repository, document service, or other target system owns the version, link that source rather than copying a summary into the result field.",
+          "For task fields that coordinate scope, owner, status, dependencies, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve version boundaries in decisions and handoffs",
+        "paragraphs": [
+          "Decision packets and handoffs should carry the exact artifact version under discussion. Without it, a receiving owner can accept a recommendation, review a changed artifact, or take a next step based on a version they did not actually inspect. The record should also state whether later updates require a fresh decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work transition",
+              "Include version information",
+              "Next owner should know"
+            ],
+            "rows": [
+              [
+                "Decision packet",
+                "Artifact version, source set, options, and evidence date",
+                "What the owner’s answer applies to"
+              ],
+              [
+                "Review handoff",
+                "Exact version, checks, limits, and requested stage",
+                "Whether review is new or a return after changes"
+              ],
+              [
+                "Blocker escalation",
+                "Artifact that exposed the gap and source of the missing condition",
+                "What work can resume if the answer arrives"
+              ],
+              [
+                "Follow-on proposal",
+                "Current artifact and the separate evidence prompting later work",
+                "That the active task’s result remains bounded"
+              ],
+              [
+                "Durable context",
+                "Versioned source, decision scope, and successor record",
+                "Whether a historical conclusion remains applicable"
+              ],
+              [
+                "Target-system proposal",
+                "Proposed artifact plus the system record still needed",
+                "That a draft or decision is not execution evidence"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff can be brief when the links are clear",
+        "paragraphs": [
+          "The handoff can be brief when the links are clear. It should never require the receiver to infer which version the prior owner meant by “the final draft” or “the approved plan.”",
+          "For a bounded transfer that names the next contribution, evidence, and owner, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Use versioning across different agent roles",
+        "paragraphs": [
+          "Each role creates different artifacts, but the same questions apply: what was reviewed, what changed, which version is current for the stage, and which source owns any external fact. Match the record to the contribution instead of imposing one tool-specific format."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Artifact version to identify",
+              "Important boundary"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Evidence packet, source set, and analysis version",
+                "An updated packet does not itself decide policy"
+              ],
+              [
+                "Editorial",
+                "Exact draft and source-backed claim set",
+                "Review-stage acceptance is not publication"
+              ],
+              [
+                "Project management",
+                "Plan, dependency map, and decision basis",
+                "A versioned plan does not assign priority by itself"
+              ],
+              [
+                "Software development",
+                "Exact change, checks, and maintainer-reviewed object",
+                "A proposed change is not merge or deployment evidence"
+              ],
+              [
+                "Support triage",
+                "Classified report and routing note",
+                "The version does not prove a customer outcome"
+              ],
+              [
+                "Governance or security",
+                "Requirement analysis and decision packet",
+                "Visible approval is not technical enforcement"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The role should preserve only material version context",
+        "paragraphs": [
+          "The role should preserve only material version context. A stable source link and a clear change summary are often more useful than a verbose chronology of minor wording changes.",
+          "For reviewable conditions that tell a reviewer what the artifact must demonstrate at its current stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Version an artifact in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Give the artifact an unambiguous link, identifier, attachment, or system-native version reference.",
+          "Record the task boundary, evidence set, current limits, and intended review stage for that version.",
+          "State the material change from the prior version or state that it is the first candidate.",
+          "Link the reviewer, decision owner, acceptance condition, or verification path relevant to the artifact.",
+          "Record the review answer against the exact version, not a moving title or later draft.",
+          "When a later artifact replaces it, mark the supersession relationship and preserve the reason.",
+          "Update the task result, handoff, and durable context to point to the version that currently governs the next step."
+        ]
+      },
+      {
+        "title": "The goal is not a ceremonial version number",
+        "paragraphs": [
+          "The goal is not a ceremonial version number for every sentence. It is an artifact identity clear enough that review, decision, and later verification apply to the object they actually concern."
+        ]
+      },
+      {
+        "title": "Test whether a version is reviewable",
+        "paragraphs": [
+          "Before asking for a review or decision, ask whether a new reader can retrieve the artifact and determine what its record means. If they cannot, the work may be useful but it is not yet a stable review object."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Identity test",
+                "Which exact artifact is under review?",
+                "Add a link, identifier, attachment, or version reference"
+              ],
+              [
+                "Boundary test",
+                "What outcome, inputs, and non-goals apply to it?",
+                "Add the task and source boundary"
+              ],
+              [
+                "Change test",
+                "What materially differs from the prior version?",
+                "Write a concise change summary or split the artifact"
+              ],
+              [
+                "Evidence test",
+                "Which facts, checks, and limitations support the version?",
+                "Link the source set and label uncertainty"
+              ],
+              [
+                "Decision test",
+                "Which reviewer or owner answer applies to this object?",
+                "State the requested review stage or decision question"
+              ],
+              [
+                "Currency test",
+                "Is this current, historical, rejected, or superseded?",
+                "Link the successor record and reason for change"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A version that fails a test",
+        "paragraphs": [
+          "A version that fails a test can still be a working draft. Keep it in preparation until the artifact and its review context are stable enough for another owner to assess without reconstructing the session."
+        ]
+      },
+      {
+        "title": "Seven artifact-version mistakes that make review unreliable",
+        "paragraphs": []
+      },
+      {
+        "title": "Calling a moving document “the final version”",
+        "paragraphs": [
+          "Final means little without a stage, link, and current state. Identify the exact artifact and whether it is ready for review, accepted for a stage, or superseded."
+        ]
+      },
+      {
+        "title": "Applying an old review answer to a new artifact",
+        "paragraphs": [
+          "If material claims, sources, scope, or checks changed, the earlier answer may not apply. Link the reviewed version and request a new or limited recheck as appropriate."
+        ]
+      },
+      {
+        "title": "Recording a change without naming what changed",
+        "paragraphs": [
+          "“Updated” does not tell a reviewer whether sources, conclusions, operations, or only formatting changed. State the material difference and its effect on review."
+        ]
+      },
+      {
+        "title": "Deleting the earlier version when it is superseded",
+        "paragraphs": [
+          "Historical artifacts can explain the decision, correction, or scope change that produced the current version. Preserve the relationship and reason even when the older version no longer governs."
+        ]
+      },
+      {
+        "title": "Treating an accepted draft as proof of external execution",
+        "paragraphs": [
+          "Acceptance may advance a task stage. A repository, deployment, identity, delivery, or other target system remains the source that confirms its own external state."
+        ]
+      },
+      {
+        "title": "Letting a handoff omit the artifact identity",
+        "paragraphs": [
+          "The receiving owner cannot safely review or act on “the latest draft.” Carry the exact version, evidence boundary, and requested decision with the handoff."
+        ]
+      },
+      {
+        "title": "Treating a task result as the only version record",
+        "paragraphs": [
+          "The task coordinates work but may not own the authoritative artifact. Link the repository, document, attachment, or other source that holds the version being referenced."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent artifact versions?",
+        "answer": "They are stable, identifiable states of drafts, evidence packets, plans, review packets, decisions, task results, and other work products. They let reviewers see what they inspected, what changed, what was superseded, and which decision or evidence applies."
+      },
+      {
+        "question": "Why do agent artifacts need versions?",
+        "answer": "Agents and people may revise quickly across tasks and handoffs. A version prevents review feedback, acceptance, evidence, and task results from being applied to a moving artifact or mistaken for a later one."
+      },
+      {
+        "question": "Does every small edit need a new version?",
+        "answer": "Use a stable reference whenever a change affects review, evidence, scope, a decision, or a task result. Minor local edits can remain part of preparation until the artifact becomes a reviewable object; the important part is that the version under review is identifiable."
+      },
+      {
+        "question": "What does superseded mean for an agent artifact?",
+        "answer": "It means a later version now governs the current task stage, with a stated reason such as a source correction, requested revision, scope decision, dependency change, or new owner answer. The earlier artifact remains context rather than current authority."
+      },
+      {
+        "question": "Can a reviewer accept an artifact version and still request another review later?",
+        "answer": "Yes. Acceptance should name its stage and boundary. An artifact can be accepted for one review step while later publication, implementation, decision, or target-system verification still requires another owner or record."
+      },
+      {
+        "question": "Do artifact versions prove external actions occurred?",
+        "answer": "No. They identify a work product and its review context. The relevant target system remains responsible for proving its own merge, deployment, permission, delivery, or other external state."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent Audit Trail",
+        "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      }
+    ],
+    "cta": {
+      "title": "Make the artifact behind every decision findable",
+      "body": "AI agent artifact versions give collaboration a stable object. Identify the draft or packet, record its boundary and material changes, connect the review answer to that exact version, and mark what later supersedes it. That lets people and agents work quickly without letting a moving artifact turn old feedback, a task update, or a recommendation into a claim about something nobody actually reviewed or executed.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
