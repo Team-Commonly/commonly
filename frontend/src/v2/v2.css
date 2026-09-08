@@ -11608,12 +11608,10 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 .v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
-/* ≤760 (66390): the two toggles stack; card actions drop under the context line at 44px full width. */
+/* ≤760 (66390): the two toggles stack. The card-action stack lives in the trailing ≤760
+   block at the end of the Activity rules, after every row/action rule it must outrank. */
 @media (max-width: 760px) {
   .v2-activity__controls { flex-direction: column; align-items: stretch; }
-  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .v2-activity__queue-actions { grid-column: 1 / -1; flex-wrap: wrap; }
-  .v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }
 }
 .v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
 .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3; grid-row: 1; max-width: 320px; justify-content: flex-end; flex-wrap: wrap; margin-top: 0; }
@@ -11707,6 +11705,11 @@ body.modern-ui.v2-canvas {
    641–760 band stacks too): decision options stack like every other action — 44px, full
    width. This block sits AFTER the inline option rules above so it wins at equal specificity. */
 @media (max-width: 760px) {
+  /* Every card action drops under the context line at 44px full width (66390 / 66438 at 720):
+     same selectors as the desktop rules above so this block wins by order, not by luck. */
+  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; flex-wrap: wrap; }
+  .v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }

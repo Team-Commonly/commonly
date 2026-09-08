@@ -1826,6 +1826,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("pod: shortPodName(group.name)");
       // ≤760: toggles stack, actions drop to 44px full width.
       expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
+      // …and the stack outranks the desktop action column by ORDER: the ≤760 rule for
+      // `.v2-activity__queue-row .v2-activity__queue-actions` comes after the grid-column: 3 rule (66438 at 720).
+      const desktopActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3;');
+      const stackedActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none;');
+      expect(desktopActionsAt).toBeGreaterThan(-1);
+      expect(stackedActionsAt).toBeGreaterThan(desktopActionsAt);
     });
 
     test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
