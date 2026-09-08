@@ -224,7 +224,7 @@ interface MessageNormalized {
   id: unknown;
   content: string;
   messageType: string;
-  userId: { _id: unknown; username: string; profilePicture?: string };
+  userId: { _id: unknown; username: string; profilePicture?: string; isBot?: boolean };
   username: string;
   isBot?: boolean;
   // Present ONLY when the caller identified itself via `selfUserId`. An
@@ -1683,6 +1683,7 @@ class AgentMessageService {
             _id: agentUser._id,
             username: senderDisplayName || 'Unknown',
             profilePicture: agentUser.profilePicture,
+            isBot: true,
           },
           username: senderDisplayName || 'Unknown',
           profile_picture: agentUser.profilePicture,
@@ -1717,7 +1718,7 @@ class AgentMessageService {
       });
 
       await mongoMessage.save();
-      await mongoMessage.populate('userId', 'username profilePicture');
+      await mongoMessage.populate('userId', 'username profilePicture isBot');
       message = mongoMessage as MessageNormalized;
     }
 
@@ -1780,6 +1781,7 @@ class AgentMessageService {
           _id: agentUser._id,
           username: senderDisplayName,
           profilePicture: agentUser.profilePicture,
+          isBot: true,
         },
         username: (message as MessageNormalized).username || senderDisplayName,
         profile_picture: (message as MessageNormalized).profile_picture || agentUser.profilePicture,

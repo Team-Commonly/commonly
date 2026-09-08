@@ -29,11 +29,9 @@ interface V2AvatarProps {
    */
   seed?: string | null;
   /**
-   * `flat` is the transcript tier (direction C, ux-lead 64476): a photo still
-   * wins, otherwise a two-tone square with initials — human tint, agent
-   * cobalt — instead of the illustrated character. Presentation only; the
-   * species still comes from `kind`, so an unknown kind reads as human tint
-   * rather than guessing agent.
+   * `flat` keeps the transcript's compact square frame. Photos and Big Smile
+   * characters retain their identity in this frame; initials are only the
+   * fallback when the kind is unknown or character generation fails.
    */
   tone?: 'flat';
 }
@@ -79,8 +77,8 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   // Falls back to gradient+initials on any generation failure — the character
   // is presentation, never load-bearing.
   const characterSrc = React.useMemo(
-    () => (kind && !flat ? characterAvatarFor(seedProp || seed, kind) : null),
-    [kind, seedProp, seed, flat],
+    () => (kind ? characterAvatarFor(seedProp || seed, kind) : null),
+    [kind, seedProp, seed],
   );
 
   React.useEffect(() => {

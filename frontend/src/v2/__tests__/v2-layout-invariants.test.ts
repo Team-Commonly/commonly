@@ -1040,6 +1040,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-team-card__command')).toContain('14px/20px');
     expect(ruleBody(v2, '.v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark')).toContain('font: 600 12px/1');
+    const teamAvatar = ruleBody(v2, '.v2-root button.v2-team-card__mark .v2-avatar');
+    expect(teamAvatar).toContain('width: 100%');
+    expect(teamAvatar).toContain('height: 100%');
+    expect(teamAvatar).toContain('border-radius: inherit');
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
     const teamPhone = teamPhoneBlock(v2);

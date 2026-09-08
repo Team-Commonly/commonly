@@ -188,6 +188,8 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
                     name={name}
                     src={agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || undefined}
                     size="sm"
+                    kind="agent"
+                    seed={agent.userId || `${agent.agentName}:${agent.instanceId || 'default'}`}
                   />
                   <span className="v2-workspace-inspector__agent-copy">
                     <span className="v2-workspace-inspector__agent-name">{name}</span>

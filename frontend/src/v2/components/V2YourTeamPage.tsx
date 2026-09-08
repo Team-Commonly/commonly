@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import { initialsFor } from '../utils/avatars';
+import V2Avatar from './V2Avatar';
 
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
  * under the Signal identity (`docs/design/signal-identity.md`).
  *
- * One card per agent in a three-column grid. The card is: a 40px square mark
- * whose colour IS the state (cobalt needs-you, ink working, divider idle), the
+ * One card per agent in a three-column grid. The card is: a 40px square avatar,
+ * with state carried by the status line and card ring, the
  * name in display 18, one mono status line, one sentence from the curated
  * description (or no line — never a quote), the pods it sits in as mono
  * chips, and an action row: Answer (ink) + Talk (bordered) when the agent is
@@ -36,7 +36,7 @@ interface AgentInstallationSummary {
   name: string;
   instanceId: string;
   displayName?: string;
-  iconUrl?: string; // never rendered on the card: the mark is the state (identity §4)
+  iconUrl?: string;
   status?: string;
   installedAt?: string;
   lastHeartbeatAt?: string | null;
@@ -345,7 +345,7 @@ const V2YourTeamPage: React.FC = () => {
             onClick={() => goToProfile(a)}
             aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
           >
-            {initialsFor(display)}
+            <V2Avatar name={display} src={a.iconUrl} kind="agent" seed={a.userId || `${a.name}:${a.instanceId}`} />
           </button>
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>

@@ -140,12 +140,12 @@ describe('Your Team (direction C)', () => {
     expect(screen.queryByText(/TASK-999/)).toBeNull();
   });
 
-  test('the mark is initials in the state colour — an iconUrl never covers it', async () => {
+  test('cards preserve uploaded avatars and generate Big Smile faces for other agents', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
     const mark = cardOf('Kai').querySelector('.v2-team-card__mark');
-    expect(mark.querySelector('img')).toBeNull();
-    expect(mark).toHaveTextContent('KA');
+    expect(mark.querySelector('img')).toHaveAttribute('src', 'https://x/kai.png');
+    expect(cardOf('Wren').querySelector('.v2-team-card__mark img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/svg\+xml/));
   });
 
   test('internal seats stay behind the mono disclosure and out of the counts', async () => {
