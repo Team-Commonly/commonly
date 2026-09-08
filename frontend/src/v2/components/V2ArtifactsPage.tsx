@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import V2Lightbox from './V2Lightbox';
 
 export type ArtifactKind = 'image' | 'page' | 'doc';
 export interface ArtifactItem {
@@ -77,6 +78,8 @@ const V2ArtifactsPage: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [podMenuOpen, setPodMenuOpen] = useState(false);
+  // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
+  const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -147,6 +150,7 @@ const V2ArtifactsPage: React.FC = () => {
   };
 
   const openItem = async (item: ArtifactItem) => {
+    if (item.kind === 'image') { setLightbox(item); return; }
     const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
     if (url) globalThis.window.open(url, '_blank', 'noopener');
   };
@@ -219,6 +223,8 @@ const V2ArtifactsPage: React.FC = () => {
                     <div className="v2-artifacts__file">
                       <span className="v2-artifacts__ext" aria-hidden="true">{extOf(item.name)}</span>
                       <button type="button" className="v2-artifacts__name" onClick={() => { void openItem(item); }}>{item.name}</button>
+                      {/* ≤760 (66462 miss 2): the pod folds under the name as a mono line; the pod column hides. */}
+                      <span className="v2-artifacts__pod-line">{shortPodName(item.podName)}</span>
                     </div>
                   </td>
                   <td className="v2-artifacts__mono">{t(`artifacts.kindNames.${item.kind}`)}</td>
@@ -232,6 +238,7 @@ const V2ArtifactsPage: React.FC = () => {
           </table>
         </div>
       )}
+      {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
       {!loading && items.length > 0 && (
         <div className="v2-artifacts__foot">
           <span className="v2-artifacts__mono">{t('artifacts.foot', { shown: items.length, total })}</span>

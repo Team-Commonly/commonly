@@ -62,7 +62,8 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(first.getByText('HTML')).toBeInTheDocument();
     expect(first.getByRole('button', { name: 'workspace-at-scale.html' })).toBeInTheDocument();
     expect(first.getByText('page')).toBeInTheDocument();
-    expect(first.getByText('Sharpen')).toBeInTheDocument();
+    // The pod cell plus the ≤760 pod line under the name (hidden by CSS on desktop).
+    expect(first.getAllByText('Sharpen')).toHaveLength(2);
     expect(first.getByText('lily-shen')).toBeInTheDocument();
     expect(first.getByText('20m')).toBeInTheDocument();
     // A page has no size on the board.
@@ -71,7 +72,7 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(second.getByText('PNG')).toBeInTheDocument();
     expect(second.getByText('UX Lead')).toBeInTheDocument();
     expect(second.getByText('412 KB')).toBeInTheDocument();
-    expect(within(rows[3]).getByText('Connectors v2')).toBeInTheDocument();
+    expect(within(rows[3]).getAllByText('Connectors v2').length).toBeGreaterThan(0);
     expect(screen.getByText('3 of 3 · newest first')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/api/artifacts', expect.objectContaining({ params: { limit: 50 } }));
   });
@@ -110,9 +111,13 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(await screen.findByRole('button', { name: 'skydeck-b23.pdf' })).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/api/artifacts', expect.objectContaining({ params: expect.objectContaining({ after: 'cur-1' }) }));
     expect(screen.getByText('4 of 4 · newest first')).toBeInTheDocument();
+    // A doc opens in a new tab through a signed URL; an image opens the chat lightbox.
+    fireEvent.click(screen.getByRole('button', { name: 'plan.md' }));
+    await waitFor(() => expect(mockSigned).toHaveBeenCalledWith('/api/uploads/x3.md'));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('/api/uploads/x3.md?t=signed', '_blank', 'noopener'));
     fireEvent.click(screen.getByRole('button', { name: 'walk-1440.png' }));
-    await waitFor(() => expect(mockSigned).toHaveBeenCalledWith('/api/uploads/x2.png'));
-    await waitFor(() => expect(open).toHaveBeenCalledWith('/api/uploads/x2.png?t=signed', '_blank', 'noopener'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(open).toHaveBeenCalledTimes(1);
     open.mockRestore();
   });
 

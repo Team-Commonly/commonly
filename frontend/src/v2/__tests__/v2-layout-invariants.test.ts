@@ -526,6 +526,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(artifactsPage).toContain("item.kind === 'page' ? '—' : formatSize(item.size)");
     expect(artifactsPage).toContain('extOf(item.name)');
     expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__controls \{ flex-direction: column; align-items: stretch; \}/);
+    // ux-lead 66462: mono floor 11 on the chip; the table spans the content area (no centred cap);
+    // ≤760 hides pod / shared-by / size and folds the pod under the name; the head stays 32.
+    expect(ext).toContain('11px/14px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-workspace-inspector__ext')).toContain('11px/14px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts')).not.toContain('1040px');
+    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__pod-line \{ display: block; flex: 1 1 100%; \}/);
+    expect(v2).not.toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__title \{ font-size: 28px; \}/);
+    // An image row opens the chat lightbox; pages and docs open in a new tab (66462 overrule).
+    expect(artifactsPage).toContain("if (item.kind === 'image') { setLightbox(item); return; }");
+    expect(workspaceInspector).toContain("if (file.kind === 'image') { setLightbox(file); return; }");
     // Inspector Files pane: same rows, ext chip in front, All N files as cobalt text.
     expect(workspaceInspector).toContain("'inspector.workspace.filesIn'");
     expect(workspaceInspector).toContain('/api/artifacts?podId=');

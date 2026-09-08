@@ -75,8 +75,10 @@ describe('V2Inspector', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/artifacts?podId=pod-1&limit=5');
     fireEvent.click(screen.getByRole('button', { name: 'All 7 files' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/artifacts?podId=pod-1');
+    // A file row opens the file: an image in the lightbox, not a name search.
     fireEvent.click(row);
-    expect(mockNavigate).toHaveBeenCalledWith('/v2/artifacts?podId=pod-1&q=walk-1440.png');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining('q=walk-1440.png'));
   });
 
   test('says no files yet when the pod has none', async () => {

@@ -33,16 +33,16 @@ describe('GET /api/artifacts (dualAuth, two scope resolvers)', () => {
     mockPodFind.mockReset();
     mockPodFind.mockReturnValue({ select: () => ({ lean: async () => [{ _id: 'pod-x' }, { _id: 'pod-y' }] }) });
     mockPodFindById.mockReset();
-    mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-z', type: 'agent-dm', members: [] }) }) });
+    mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: '64b7f0c2e4b0a1a2b3c4d5e6', type: 'agent-dm', members: [] }) }) });
     mockCanView.mockReset();
     mockCanView.mockResolvedValue(false);
   });
 
   it('a named pod outside membership still reads when canViewPod says yes (admin / agent-dm fan-out), scoped to that pod', async () => {
     mockCanView.mockResolvedValue(true);
-    await request(app).get('/api/artifacts?podId=pod-z').set('Authorization', 'Bearer human-u1').expect(200);
-    expect(mockCanView).toHaveBeenCalledWith('u1', expect.objectContaining({ _id: 'pod-z' }));
-    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ scopePodIds: ['pod-z'], podId: 'pod-z' }));
+    await request(app).get('/api/artifacts?podId=64b7f0c2e4b0a1a2b3c4d5e6').set('Authorization', 'Bearer human-u1').expect(200);
+    expect(mockCanView).toHaveBeenCalledWith('u1', expect.objectContaining({ _id: '64b7f0c2e4b0a1a2b3c4d5e6' }));
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ scopePodIds: ['64b7f0c2e4b0a1a2b3c4d5e6'], podId: '64b7f0c2e4b0a1a2b3c4d5e6' }));
   });
 
   it('resolves a human scope from pod membership, never from admin bypass', async () => {
@@ -58,8 +58,21 @@ describe('GET /api/artifacts (dualAuth, two scope resolvers)', () => {
     expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ scopePodIds: ['pod-a', 'pod-b'], podId: 'pod-a' }));
   });
 
+  it('an agent never widens through canViewPod: an out-of-scope podId is 403 even where membership would grant (sprint-review 66465)', async () => {
+    mockCanView.mockResolvedValue(true);
+    await request(app).get('/api/artifacts?podId=pod-z').set('Authorization', 'Bearer cm_agent_abc').expect(403);
+    expect(mockPodFindById).not.toHaveBeenCalled();
+    expect(mockCanView).not.toHaveBeenCalled();
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('a malformed podId outside the scope is 403, never a CastError 500', async () => {
+    await request(app).get('/api/artifacts?podId=not-an-object-id').set('Authorization', 'Bearer human-u1').expect(403);
+    expect(mockPodFindById).not.toHaveBeenCalled();
+  });
+
   it('refuses a fixed podId outside the scope with 403 and an unknown kind with 400', async () => {
-    await request(app).get('/api/artifacts?podId=pod-z').set('Authorization', 'Bearer human-u1').expect(403);
+    await request(app).get('/api/artifacts?podId=64b7f0c2e4b0a1a2b3c4d5e6').set('Authorization', 'Bearer human-u1').expect(403);
     await request(app).get('/api/artifacts?kind=video').set('Authorization', 'Bearer human-u1').expect(400);
     expect(mockList).not.toHaveBeenCalled();
   });

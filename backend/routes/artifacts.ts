@@ -15,6 +15,7 @@
  */
 import rateLimit from 'express-rate-limit';
 import type { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { ARTIFACT_KINDS, listArtifacts } from '../services/artifactService';
 
@@ -80,7 +81,9 @@ router.get('/', artifactsRateLimit, dualAuth, async (req: AuthReq, res: Res) => 
       // (members + admins + the agent-dm fan-out). Membership alone would make
       // the cutover strictly more restrictive on a content read (PR #375 keeps
       // admins off the *listing* surface; a named pod is not the listing).
-      const pod = req.agentUser ? null : await Pod.findById(podId).select('type members').lean();
+      // Agents never widen here: their scope is AgentInstallation, not membership
+      // (sprint-review 66465). A malformed id is a 403 too, not a CastError 500.
+      const pod = req.agentUser || !mongoose.isValidObjectId(podId) ? null : await Pod.findById(podId).select('type members').lean();
       const canView = pod ? await DMService.canViewPod(req.userId || req.user?.id, pod) : false;
       if (!canView) return res.status(403).json({ msg: 'not a member of this pod' });
       scopePodIds = [podId];

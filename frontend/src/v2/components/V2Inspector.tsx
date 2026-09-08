@@ -6,6 +6,8 @@ import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
+import V2Lightbox from './V2Lightbox';
+import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
@@ -86,6 +88,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [files, setFiles] = useState<ArtifactRow[]>([]);
   const [filesTotal, setFilesTotal] = useState(0);
+  const [lightbox, setLightbox] = useState<ArtifactRow | null>(null);
   const attention = useMemo(
     () => attentionItems.filter((item) => item.podId === pod?._id),
     [attentionItems, pod?._id],
@@ -236,7 +239,11 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
           <div className="v2-workspace-inspector__rows">
             {files.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noFiles')}</p>}
             {files.map((file) => (
-              <button key={file.id} type="button" className="v2-workspace-inspector__file" onClick={() => navigate(`/v2/artifacts?podId=${encodeURIComponent(pod._id)}&q=${encodeURIComponent(file.name)}`)}>
+              <button key={file.id} type="button" className="v2-workspace-inspector__file" onClick={() => {
+                // ux-lead 66462: a file row opens the file — images in the lightbox, the rest in a new tab.
+                if (file.kind === 'image') { setLightbox(file); return; }
+                void getSignedAttachmentUrl(`/api/uploads/${file.fileName}`).then((url) => { if (url) globalThis.window.open(url, '_blank', 'noopener'); });
+              }}>
                 <span className="v2-workspace-inspector__ext" aria-hidden="true">{extOf(file.name)}</span>
                 <span>{file.name}</span>
                 <span className="v2-workspace-inspector__task-meta">{whenLabel(file.createdAt)}</span>
@@ -250,6 +257,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
           </div>
         </section>
 
+        {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
         <footer className="v2-workspace-inspector__foot">
           {onOpenInvite && <button type="button" onClick={onOpenInvite}>{t('inspector.workspace.members')}</button>}
           <button type="button" onClick={() => navigate(`/v2/agents/manage?podId=${encodeURIComponent(pod._id)}`)}>{t('inspector.workspace.manage')}</button>
