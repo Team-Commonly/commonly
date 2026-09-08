@@ -8449,10 +8449,17 @@ body.modern-ui.v2-canvas {
     min-height: 44px;
   }
 
+  .v2-root button.v2-board__focus-task-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
   .v2-board__focus-editor .v2-modal__close,
   .v2-board__focus-editor .v2-board__field input,
   .v2-board__focus-editor .v2-board__field textarea,
   .v2-board__focus-editor .v2-board__field select,
+  .v2-board__focus-editor .v2-board__create-submit,
   .v2-board__focus-task-option {
     min-height: 44px;
   }

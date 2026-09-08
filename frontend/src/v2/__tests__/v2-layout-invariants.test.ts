@@ -1793,6 +1793,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus \{[\s\S]*?padding: 14px;/);
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks li \{[\s\S]*?min-height: 44px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-editor \.v2-board__create-submit,[\s\S]*?min-height: 44px;/);
     });
   });
 
