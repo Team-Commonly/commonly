@@ -627,6 +627,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent task-splitting guide preserves parent acceptance after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-splitting/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Splitting: Divide Work Without Losing the Outcome' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Do not split work that still needs one shared decision' })).toBeInTheDocument();
+    expect(screen.getByText(/Children can finish their own results while the parent still needs synthesis/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -634,7 +642,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(77);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(78);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

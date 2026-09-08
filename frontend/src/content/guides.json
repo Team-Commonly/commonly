@@ -617,6 +617,10 @@
       {
         "label": "AI agent focused threads",
         "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI agent task splitting",
+        "path": "/guides/ai-agent-task-splitting/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -16141,6 +16145,10 @@
       {
         "label": "AI agent task closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI agent task splitting",
+        "path": "/guides/ai-agent-task-splitting/"
       }
     ],
     "cta": {
@@ -20345,6 +20353,10 @@
       {
         "label": "AI Agent Status Updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent task splitting",
+        "path": "/guides/ai-agent-task-splitting/"
       }
     ],
     "cta": {
@@ -23154,6 +23166,10 @@
       {
         "label": "AI agent retained context",
         "path": "/guides/ai-agent-retained-context/"
+      },
+      {
+        "label": "AI agent task splitting",
+        "path": "/guides/ai-agent-task-splitting/"
       }
     ],
     "cta": {
@@ -26695,6 +26711,710 @@
     "cta": {
       "title": "Keep each revision tied to the review that requested it",
       "body": "AI agent revision loops turn feedback into a clear path: name the version, describe the observable gap, preserve the boundary, create a distinct revision, and ask the right reviewer for the next answer. By showing exactly what old feedback covers and what needs a new decision, teams can revise quickly without silently expanding scope or confusing a review stage with execution.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-task-splitting": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Task Splitting: Divide Work Clearly | Commonly",
+    "title": "AI Agent Task Splitting: Divide Work Without Losing the Outcome",
+    "description": "Learn when and how to split AI agent work into bounded tasks with distinct artifacts, owners, dependencies, acceptance criteria, and a clear merge point.",
+    "summary": "AI agent task splitting is the practice of turning one broad request into several bounded tasks when the work needs distinct artifacts, owners, dependencies, acceptance criteria, or review points. A useful split preserves the original outcome while making each contribution independently understandable and reviewable. It names what each task produces, who owns it, what it waits on, and where the separate results come back together.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent task splitting is the practice of turning one broad request into several bounded tasks when the work needs distinct artifacts, owners, dependencies, acceptance criteria, or review points. A useful split preserves the original outcome while making each contribution independently understandable and reviewable. It names what each task produces, who owns it, what it waits on, and where the separate results come back together.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams task records with status, assignee, activity timeline, parent-task, and dependency relationships. A parent task can coordinate the broader outcome while related tasks hold smaller contributions and their owners. Those records help a team see the work graph; they do not grant an agent extra authority, merge separate work automatically, or prove that a target system applied the resulting artifacts.",
+      "The point is not to make more tasks. Splitting helps only when it reduces an ambiguity that one task cannot carry well. If two agents would produce the same artifact, need the same decision at the same time, or cannot be reviewed independently, dividing the work may create coordination overhead without making progress safer.",
+      "This guide explains when to split AI agent tasks, how to define boundaries and merge points, and how to keep parent and child work from losing ownership, verification, or review discipline."
+    ],
+    "sections": [
+      {
+        "title": "Split a task when the work has independent boundaries",
+        "paragraphs": [
+          "A task is a good candidate for splitting when its parts no longer share one clear artifact, owner, dependency path, or acceptance decision. The split should reveal those boundaries, not invent them because more agents happen to be available."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Signal",
+              "Why a split helps",
+              "Example bounded result"
+            ],
+            "rows": [
+              [
+                "Distinct artifacts",
+                "Each part produces an object a reviewer can inspect separately",
+                "Research brief, implementation proposal, and review packet"
+              ],
+              [
+                "Distinct owners",
+                "Different roles are accountable for different contributions",
+                "Researcher gathers sources; editor reviews claims"
+              ],
+              [
+                "Independent dependencies",
+                "One part can proceed while another waits on a named prerequisite",
+                "Draft outline proceeds while an access decision remains blocked"
+              ],
+              [
+                "Different acceptance criteria",
+                "One output needs a different test or reviewer than another",
+                "Evidence check versus a scope decision"
+              ],
+              [
+                "Separate risk boundary",
+                "One part needs a decision, capability, or review the rest does not",
+                "Prepare a change separately from an irreversible operation"
+              ],
+              [
+                "Clear merge point",
+                "Separate outputs later inform one defined decision or artifact",
+                "Combine approved sources into a named final brief"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the split does not yield a distinct result",
+        "paragraphs": [
+          "If the split does not yield a distinct result and a clear relationship to the original outcome, leave the work together. A named subtask is not automatically a useful unit of collaboration.",
+          "For the fields that make a task’s outcome, owner, status, dependency, and result visible, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Do not split work that still needs one shared decision",
+        "paragraphs": [
+          "Some work is naturally sequential or inseparable. Splitting it too early makes agents compete for the same context, causes duplicated analysis, or creates several incomplete answers that no one can accept independently.",
+          "Keep one artifact together when the same owner and reviewer need one coherent object. Split only when the resulting artifacts have independent review criteria. Keep one source question together when its evidence must be interpreted as one claim; separate source sets can split when they support different claims or different owner decisions.",
+          "Keep one policy or priority choice together when one accountable owner must make the central tradeoff. Preparation and a decision packet may be separate tasks, but they do not divide the decision itself. Keep one technical change together when its parts cannot be verified apart; split only across stable interfaces and separate checks.",
+          "Keep preparation and execution together when they must remain under one authorized path. Research, preparation, and independent approval can become separate bounded contributions only if their outcomes and owners are clear. Finally, keep work together when every contribution needs the same missing fact; split only if useful work remains eligible while another task waits.",
+          "The question is not “Can two agents work on this?” It is “Can each contribution stop with a truthful, useful result before the parent outcome is complete?” If not, preserve the single task boundary and use a focused thread or decision packet for the shared question.",
+          "For defining the outcome, operations, artifact, owner, and stop condition of a bounded contribution, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Give each split task its own compact contract",
+        "paragraphs": [
+          "Every child or related task should be understandable without reconstructing the entire parent task. It needs a clear outcome and artifact, but it should also state the boundary that prevents it from quietly becoming a second copy of the parent."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Contract field",
+              "Child task should state",
+              "Parent task should retain"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "The smaller contribution it is responsible for",
+                "The combined goal and final success condition"
+              ],
+              [
+                "Inputs",
+                "Sources, prior artifacts, constraints, and dependency links needed now",
+                "The overall context and cross-task relationships"
+              ],
+              [
+                "Operations",
+                "Preparation, analysis, drafting, review, or other permitted work",
+                "The allocation of work across the whole plan"
+              ],
+              [
+                "Artifact",
+                "The specific memo, version, check, decision packet, or result",
+                "The final artifact or merge decision"
+              ],
+              [
+                "Owner",
+                "The participant accountable for that contribution",
+                "The parent owner responsible for coordination"
+              ],
+              [
+                "Stop condition",
+                "Acceptance, blocker, handoff, or return point for the child",
+                "The condition under which the original outcome is complete"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use the parent for the whole picture",
+        "paragraphs": [
+          "Use the parent for the whole picture and the child for the smallest independently useful result. A child can link to the parent’s scope and non-goals rather than duplicate every paragraph, but it should not depend on invisible assumptions.",
+          "For preventing child tasks from silently expanding beyond their stated boundary, see AI Agent Scope Creep."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Scope Creep",
+            "path": "/guides/ai-agent-scope-creep/"
+          }
+        ]
+      },
+      {
+        "title": "Assign owners without creating parallel claims on the same work",
+        "paragraphs": [
+          "Task splitting is often triggered by overlapping owners: several people or agents want to contribute, but they do not own the same decision or artifact. Give each contribution one accountable owner and make collaboration with other roles visible as input, review, or a dependency rather than duplicate ownership."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Ownership pattern",
+              "Clear assignment",
+              "What to avoid"
+            ],
+            "rows": [
+              [
+                "Research and editorial review",
+                "Research agent owns the evidence brief; editor owns the review answer",
+                "Two agents independently deciding the final claim"
+              ],
+              [
+                "Draft and technical check",
+                "Writer owns the draft; reviewer owns the named check",
+                "Both changing the same version without a handoff"
+              ],
+              [
+                "Preparation and authorization",
+                "Agent owns preparation; authorized owner decides whether the next action may proceed",
+                "Treating preparation as authority to execute"
+              ],
+              [
+                "Discovery and follow-on work",
+                "Current owner records the discovery; new task owner accepts the adjacent outcome",
+                "Silently adding the discovery to the original task"
+              ],
+              [
+                "Parent coordination and child delivery",
+                "Parent owner tracks merge point; child owner delivers one result",
+                "A parent task with no accountable coordinator"
+              ],
+              [
+                "Shared evidence need",
+                "One owner gathers the source set; other tasks consume the linked result",
+                "Each child repeating unbounded source collection"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An @mention",
+        "paragraphs": [
+          "An @mention, a reaction, or a helpful reply can show participation. It does not make the participant the owner of the task’s decision. If ownership is unclear, route that gap before agents begin overlapping work.",
+          "For identifying the accountable owner for a single bounded choice, see AI Agent Decision Owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Model dependencies as required state, not a vague order",
+        "paragraphs": [
+          "Some split tasks may run independently; others must wait for a source, decision, artifact, or target-system state. A dependency should state the required condition and effect of waiting so the team can distinguish work that is merely sequenced from work that is blocked."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Dependency type",
+              "Child task waits for",
+              "It may still do"
+            ],
+            "rows": [
+              [
+                "Evidence dependency",
+                "A source set, check result, or verified fact",
+                "Prepare the question, structure, or review packet"
+              ],
+              [
+                "Decision dependency",
+                "A scope, policy, priority, or owner answer",
+                "Analyze options and surface the bounded decision"
+              ],
+              [
+                "Artifact dependency",
+                "A specific draft, version, interface, or result",
+                "Define acceptance criteria and test plan"
+              ],
+              [
+                "Access dependency",
+                "Authorized availability of the required system capability",
+                "Prepare the minimum capability request and alternative path"
+              ],
+              [
+                "Review dependency",
+                "A reviewer answer for an earlier stage",
+                "Preserve the version and identify the re-review question"
+              ],
+              [
+                "Merge dependency",
+                "Required child results and the parent’s combination criterion",
+                "Verify each child record and prepare the merge packet"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not call every ordered step a blocker",
+        "paragraphs": [
+          "Do not call every ordered step a blocker. A task is blocked when its next eligible contribution depends on a missing required state. If useful preparation remains, make that contribution a clear task rather than hiding it behind a broad waiting label.",
+          "For dependencies, waiting conditions, and their owners in agent work, see AI Agent Dependency Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Dependency Management",
+            "path": "/guides/ai-agent-dependency-management/"
+          }
+        ]
+      },
+      {
+        "title": "Define the merge point before children begin",
+        "paragraphs": [
+          "A split task needs a place where the parent becomes useful again. The merge point says which child outputs matter, who evaluates their relationship, what combination artifact or decision is expected, and what remains outside the merge."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Merge-point field",
+              "State it before splitting",
+              "Why it prevents drift"
+            ],
+            "rows": [
+              [
+                "Parent outcome",
+                "The single result the related tasks serve",
+                "Children do not optimize unrelated local goals"
+              ],
+              [
+                "Required child outputs",
+                "Exact artifacts, evidence, decisions, or checks needed",
+                "The parent can tell when inputs are missing"
+              ],
+              [
+                "Combination owner",
+                "Role that assembles, compares, or reviews the outputs",
+                "No agent assumes merge authority by convenience"
+              ],
+              [
+                "Combination rule",
+                "How outputs are reconciled, cited, tested, or selected",
+                "Conflicts have a visible path to resolution"
+              ],
+              [
+                "Parent acceptance",
+                "Review question and criteria for the combined result",
+                "Child completion is not mistaken for final acceptance"
+              ],
+              [
+                "Continuing boundary",
+                "Separate action, owner, system check, or decision still needed",
+                "The merge does not overstate external execution"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example",
+        "paragraphs": [
+          "For example, three research tasks may each return a sourced brief, but the parent’s merge point is an editor’s decision about which claims belong in the final artifact. The research children can be done while the parent remains pending or blocked on that decision.",
+          "For turning adjacent discoveries into their own owned tasks rather than silent expansion, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Set acceptance criteria at both levels",
+        "paragraphs": [
+          "Child acceptance tells the team whether a contribution is usable. Parent acceptance tells the team whether the combined outcome is ready for its next stage. These are related but distinct: a child can meet its criteria while the parent still needs a decision, conflict resolution, or verification."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Level",
+              "Acceptance question",
+              "Example evidence"
+            ],
+            "rows": [
+              [
+                "Child research task",
+                "Does the brief identify sources, conclusions, limits, and open questions?",
+                "Linked sources and labeled findings"
+              ],
+              [
+                "Child artifact task",
+                "Is the named version complete for the stated boundary?",
+                "Version reference, checks, and reviewer request"
+              ],
+              [
+                "Child decision-prep task",
+                "Is the decision packet sufficient for the owner to answer?",
+                "Options, tradeoffs, evidence, and question"
+              ],
+              [
+                "Parent merge task",
+                "Do the required child outputs support the combined artifact?",
+                "Parent packet linking each child result"
+              ],
+              [
+                "Parent review stage",
+                "Does the named owner accept the combined version for this stage?",
+                "Version-specific review answer"
+              ],
+              [
+                "External-state claim",
+                "Does the appropriate target system support the asserted result?",
+                "System-native record or an acknowledged verification gap"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Write acceptance criteria before agents divide the task",
+        "paragraphs": [
+          "Write acceptance criteria before agents divide the task. That makes it possible to stop individual contributions truthfully rather than claiming success because a child posted some output.",
+          "For writing criteria an agent can be evaluated against, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Keep split-task status honest while work converges",
+        "paragraphs": [
+          "The parent and children can be in different states at the same time. One child may be done, another claimed, and a third blocked; the parent remains the coordination record for the combined outcome. Status updates should state the relationship, not compress every child into a premature parent completion."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "State pattern",
+              "Parent should report",
+              "Child should report"
+            ],
+            "rows": [
+              [
+                "One child done, others active",
+                "Which required output is available and what remains",
+                "Result link and next relationship to the parent"
+              ],
+              [
+                "One child blocked, useful work continues",
+                "Required state, owner, effect, and still-eligible work",
+                "Specific blocker and resume condition"
+              ],
+              [
+                "All required children done",
+                "Inputs available for merge or parent review",
+                "Completion limited to the child’s accepted result"
+              ],
+              [
+                "Child result rejected",
+                "Parent impact and whether alternate work is needed",
+                "Reviewed version, decision, and closed or revised path"
+              ],
+              [
+                "New scope discovered",
+                "Parent decision needed and whether a follow-on is separate",
+                "Observation, evidence, and no implied task expansion"
+              ],
+              [
+                "Parent accepted for stage",
+                "Combined version, next owner, and continuing limit",
+                "Child records remain historical inputs, not execution proof"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Make updates easy to inspect",
+        "paragraphs": [
+          "Make updates easy to inspect. “Evidence task complete; parent awaits editor’s source ruling” is more useful than “all done” because it preserves both the available result and the unresolved merge condition.",
+          "For useful blockers that state the missing prerequisite, effect, and owner, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Recombine results with a reviewable parent packet",
+        "paragraphs": [
+          "The parent should not merely collect links. It should state how the child outputs relate, which evidence or artifacts are current, where they conflict, and what answer or next operation is now requested. That gives the merge owner a compact way to inspect the combined work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Parent packet element",
+              "Include",
+              "Merge owner can answer"
+            ],
+            "rows": [
+              [
+                "Parent outcome",
+                "Original bounded goal and current stage",
+                "What combined result is under review"
+              ],
+              [
+                "Child results",
+                "Links to exact artifacts, sources, checks, and status",
+                "Which required inputs are present"
+              ],
+              [
+                "Relationship",
+                "How each child contributes or conflicts",
+                "What must be reconciled rather than averaged"
+              ],
+              [
+                "Gaps",
+                "Missing dependency, evidence, owner answer, or verification",
+                "Whether the parent should wait, narrow, or route work"
+              ],
+              [
+                "Proposed combination",
+                "Draft, decision, checklist, or selected path",
+                "Whether the merge meets stated criteria"
+              ],
+              [
+                "Requested answer",
+                "Accept, changes, narrow, reject, route, defer, or verify",
+                "What happens to the parent next"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The merge owner can accept a combination for a stated stage",
+        "paragraphs": [
+          "The merge owner can accept a combination for a stated stage, request a targeted revision, or route a conflict. That answer does not automatically make a later external action authorized or executed; use the relevant role and target-system controls for those steps.",
+          "For closing the parent task with its result, verification path, limits, and follow-ons, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether a split makes work easier to verify",
+        "paragraphs": [
+          "Before creating child tasks, test whether the split leaves a reader with clearer boundaries than the original request. A good split lets each contributor stop honestly and lets the parent owner see the path back to one outcome."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Healthy result"
+            ],
+            "rows": [
+              [
+                "Artifact test",
+                "Does each child have a distinct, reviewable result?",
+                "No two children are creating the same ambiguous object"
+              ],
+              [
+                "Owner test",
+                "Is one person or agent accountable for each child and for the merge?",
+                "Participation does not become duplicate ownership"
+              ],
+              [
+                "Dependency test",
+                "Is the required state and effect of waiting visible?",
+                "A blocker is distinguishable from ordinary sequence"
+              ],
+              [
+                "Boundary test",
+                "Does each child preserve the parent’s non-goals and stop condition?",
+                "Work does not expand because it was divided"
+              ],
+              [
+                "Acceptance test",
+                "Can each child and the parent be evaluated at their own level?",
+                "Child completion does not masquerade as final success"
+              ],
+              [
+                "Merge test",
+                "Is there one clear combination artifact, decision, or review point?",
+                "Results can converge without an unowned synthesis"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the split fails a test",
+        "paragraphs": [
+          "If the split fails a test, keep the work together, revise the contracts, or open a focused decision about the boundary. More tasks are not evidence of better coordination."
+        ]
+      },
+      {
+        "title": "Split an AI agent task in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State the parent outcome, current stage, and final acceptance question.",
+          "Identify distinct artifacts, owners, dependencies, risk boundaries, or review criteria that make separate tasks useful.",
+          "Give each child a compact contract with outcome, inputs, permitted operations, artifact, owner, and stop condition.",
+          "Link each child to the parent and name any required dependency state, owner, and effect of waiting.",
+          "Define child acceptance criteria and the parent’s merge criteria before work begins.",
+          "Name the merge owner, combination artifact or decision, and the continuing boundary after the merge.",
+          "Update parent and child tasks with truthful status, result links, blockers, and follow-ons until the parent receives its own review answer."
+        ]
+      },
+      {
+        "title": "The split is successful",
+        "paragraphs": [
+          "The split is successful when each task has a finite contribution and the original outcome remains visible. It is not successful merely because work was distributed across several agents."
+        ]
+      },
+      {
+        "title": "Seven task-splitting mistakes that fragment agent work",
+        "paragraphs": []
+      },
+      {
+        "title": "Splitting one inseparable artifact into competing tasks",
+        "paragraphs": [
+          "If several agents must continually edit or decide the same object, the split creates merge churn. Keep the artifact together or define a stable boundary and handoff between versions."
+        ]
+      },
+      {
+        "title": "Making child tasks copies of the parent",
+        "paragraphs": [
+          "Each child needs a smaller distinct outcome, not the parent description repeated under new owners. Clarify the artifact, stop condition, and acceptance result for every contribution."
+        ]
+      },
+      {
+        "title": "Giving several agents ownership of the same decision",
+        "paragraphs": [
+          "Agents can prepare options and evidence in parallel, but one accountable owner must make the policy, priority, scope, or review answer. Do not infer shared authority from shared participation."
+        ]
+      },
+      {
+        "title": "Treating task order as a dependency without naming the required state",
+        "paragraphs": [
+          "“Do this after that” is not enough. State which source, artifact, decision, access path, or verification result the child needs and what work can still proceed while it waits."
+        ]
+      },
+      {
+        "title": "Omitting the merge point until every child is done",
+        "paragraphs": [
+          "Without a combination owner and acceptance question, outputs accumulate without becoming a usable parent result. Define the merge packet and review rule before agents start."
+        ]
+      },
+      {
+        "title": "Calling all child completion parent completion",
+        "paragraphs": [
+          "Children can finish their own results while the parent still needs synthesis, a decision, review, or an external verification. Report both levels honestly."
+        ]
+      },
+      {
+        "title": "Letting a split create new authority or scope",
+        "paragraphs": [
+          "Dividing preparation, review, and execution does not authorize any later operation. Preserve the role boundaries and target-system controls for each child and the parent merge."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent task splitting?",
+        "answer": "It is the process of dividing a broad request into bounded related tasks when the work has distinct artifacts, owners, dependencies, acceptance criteria, or a clear merge point. The parent retains the combined outcome while children deliver independently useful results."
+      },
+      {
+        "question": "When should an agent split a task?",
+        "answer": "Split when separate contributions can be owned, reviewed, and stopped independently and later contribute to one defined parent outcome. Keep work together when it still needs one artifact, one decision, or one inseparable verification path."
+      },
+      {
+        "question": "Can several agents work on one parent task?",
+        "answer": "Yes, when each has a distinct child or related task with an explicit artifact, owner, boundary, and merge relationship. Several agents should not silently claim the same decision or edit the same artifact without a handoff."
+      },
+      {
+        "question": "What is a merge point in agent work?",
+        "answer": "It is the named point where a parent owner combines or reviews required child results against one outcome and acceptance question. It can be a combined artifact, decision packet, review, or another bounded result—not an implied automatic merge."
+      },
+      {
+        "question": "How should split tasks handle blockers?",
+        "answer": "Name the missing required state, its owner, the effect of waiting, and any work that remains eligible. One blocked child does not necessarily block every related task, but the parent must state how it affects the merge."
+      },
+      {
+        "question": "Does a completed child task prove the parent outcome is complete?",
+        "answer": "No. It proves only the child result was completed or accepted for its own stated boundary. The parent still needs its merge criteria, reviewer answer, and any appropriate target-system verification before claiming the combined outcome."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Dependency Management",
+        "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Follow-On Work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      }
+    ],
+    "cta": {
+      "title": "Divide work without dividing responsibility",
+      "body": "AI agent task splitting makes complex work easier to inspect when every child has a real boundary and the parent keeps the one outcome in view. Split around distinct artifacts, owners, dependencies, and acceptance criteria; define the merge point before work begins; then report child and parent status separately. That creates useful parallelism without turning distributed tasks into unowned scope or imagined authority.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
