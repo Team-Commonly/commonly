@@ -605,6 +605,10 @@
       {
         "label": "AI agent dependency management",
         "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI agent task intake",
+        "path": "/guides/ai-agent-task-intake/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -13931,6 +13935,10 @@
       {
         "label": "AI agent dependency management",
         "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI agent task intake",
+        "path": "/guides/ai-agent-task-intake/"
       }],
     "cta": {
       "title": "Make the missing answer easy to supply",
@@ -15363,6 +15371,10 @@
       {
         "label": "AI agent dependency management",
         "path": "/guides/ai-agent-dependency-management/"
+      },
+      {
+        "label": "AI agent task intake",
+        "path": "/guides/ai-agent-task-intake/"
       }
     ],
     "cta": {
@@ -18856,6 +18868,10 @@
       {
         "label": "AI Agent Review Packet",
         "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI agent task intake",
+        "path": "/guides/ai-agent-task-intake/"
       }
     ],
     "cta": {
@@ -20255,6 +20271,708 @@
     "cta": {
       "title": "Make every wait state explainable",
       "body": "AI agent dependency management turns “waiting on something” into a reviewable relationship. Name the required state, owner, record, effect, and resume condition; verify the prerequisite before proceeding; and restart only the next bounded step. That makes the task graph a source of coordination rather than a collection of vague pauses or implied permissions.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-task-intake": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Task Intake: Make Work Eligible | Commonly",
+    "title": "AI Agent Task Intake: Turn a Request Into Bounded, Eligible Work",
+    "description": "Learn how to intake AI agent work requests: identify the outcome, inputs, owner, first artifact, review path, dependencies, and stop condition before claiming a task.",
+    "summary": "AI agent task intake is the process of turning a request, observation, or decision into a bounded task that an agent or person can responsibly own. A request becomes eligible work only when its outcome, inputs, operations, owner, first artifact, review point, dependencies, and stop condition are clear enough to inspect. “Please improve this” is a request. “Prepare a source-linked review packet for the named claim, using the supplied sources, for the editor to review” is a task someone can claim.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent task intake is the process of turning a request, observation, or decision into a bounded task that an agent or person can responsibly own. A request becomes eligible work only when its outcome, inputs, operations, owner, first artifact, review point, dependencies, and stop condition are clear enough to inspect. “Please improve this” is a request. “Prepare a source-linked review packet for the named claim, using the supplied sources, for the editor to review” is a task someone can claim.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams records to make intake visible: tasks carry descriptions, owners, status, dependencies, activity, and results; focused threads hold questions and decisions; attachments preserve substantial source material; and selected shared memory can retain sourced durable context. Those records organize collaborative work. They do not assign organizational priority, grant permissions, or prove an external action occurred.",
+      "Good intake prevents two opposite failures: agents accepting vague work and drifting into an unlimited mandate, or agents refusing a useful request because the first description is incomplete. The answer is not more generic instruction. It is a short intake process that identifies what is known, what is missing, who must decide, and whether the right next state is task, blocker, escalation, follow-on proposal, or no-op.",
+      "This guide explains how to intake AI agent tasks, recognize when a request is ready to claim, and keep the first contribution reviewable from the start."
+    ],
+    "sections": [
+      {
+        "title": "A request is not automatically a claimable task",
+        "paragraphs": [
+          "A request can be valuable without yet being eligible for work. It may lack a bounded outcome, an owner, a source boundary, a decision, or a reason to act now. Intake translates the request into a task only when the next contribution can be stated and reviewed without filling those gaps by assumption."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Incoming request",
+              "Intake result",
+              "Why"
+            ],
+            "rows": [
+              [
+                "“Investigate why this changed.”",
+                "Create a task after naming the affected artifact, evidence boundary, and first diagnostic output",
+                "The verb alone does not define a useful result"
+              ],
+              [
+                "“Can you ship this?”",
+                "Route to an authorized owner or preparation task",
+                "The request does not establish permission or target-system state"
+              ],
+              [
+                "“Compare these two sources.”",
+                "Claimable research task if sources, question, reviewer, and stop are named",
+                "The artifact and decision path can be bounded"
+              ],
+              [
+                "“Fix all related issues.”",
+                "Ask to narrow, create separate proposals, or no-op",
+                "The requested outcome is unlimited"
+              ],
+              [
+                "“We need an answer today.”",
+                "Intake the decision question and evidence needed",
+                "Urgency does not replace scope or ownership"
+              ],
+              [
+                "“Please look into this later.”",
+                "Keep as an observation or define a follow-on proposal",
+                "A vague future idea is not active owned work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The aim is not to reject imperfect requests",
+        "paragraphs": [
+          "The aim is not to reject imperfect requests. It is to identify the smallest useful next contribution, such as a clarification question, evidence packet, bounded draft, dependency check, or decision request.",
+          "For the task record that carries the description, owner, status, dependency, activity, and result, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Start intake with a clear outcome and first artifact",
+        "paragraphs": [
+          "The outcome should describe what the task will produce or establish, not simply the topic it concerns. The first artifact makes the outcome concrete enough for an owner and reviewer to recognize. A task can later expand through an explicit decision, but it should begin with one reviewable contribution."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Topic-only request",
+              "Bounded outcome",
+              "First artifact"
+            ],
+            "rows": [
+              [
+                "“Research agent security”",
+                "Identify one source-supported risk boundary for the named workflow",
+                "Evidence packet with sources, labels, and one decision question"
+              ],
+              [
+                "“Improve this page”",
+                "Prepare a revision of the named section against the approved brief",
+                "Exact draft version with source links and stated non-goals"
+              ],
+              [
+                "“Help with the launch”",
+                "Classify the listed readiness dependencies and their owners",
+                "Dependency table with required states and blockers"
+              ],
+              [
+                "“Review the integration”",
+                "Inspect the named change against the stated acceptance conditions",
+                "Review packet with checks, limits, and request for a decision"
+              ],
+              [
+                "“Handle customer feedback”",
+                "Triage the supplied report to the accountable owner with evidence and limit",
+                "Classified routing note, not a promised customer outcome"
+              ],
+              [
+                "“Make a plan”",
+                "Draft one bounded plan for the stated milestone and decision owner",
+                "Plan artifact with assumptions, dependencies, and open questions"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The first artifact should be proportionate",
+        "paragraphs": [
+          "The first artifact should be proportionate. It is not a promise to produce every later implementation, publication, decision, or external action connected to the topic.",
+          "For the task-level fields that turn an outcome into a reviewable work contract, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Identify inputs, source boundary, and permitted operations",
+        "paragraphs": [
+          "Before a task is claimed, the owner should know which inputs it may use and which operations it may perform. Intake does not need to predict every detail, but it should prevent the agent from assuming access to new sources, customer data, external systems, or broad edits because they seem helpful."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Intake question",
+              "Record",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Which inputs are in scope?",
+                "Supplied sources, linked artifacts, or named task records",
+                "The agent does not invent an evidence set"
+              ],
+              [
+                "Which inputs are excluded?",
+                "Explicit non-goals and source boundary",
+                "Adjacent data or claims need a visible decision"
+              ],
+              [
+                "Which operations are allowed?",
+                "Preparation, analysis, drafting, review, or another named contribution",
+                "Work does not imply external execution"
+              ],
+              [
+                "Which target-system facts matter?",
+                "System and record to verify if the claim requires it",
+                "A task update does not substitute for system evidence"
+              ],
+              [
+                "Which sensitive boundaries apply?",
+                "Handling constraint or owner who must decide",
+                "The agent does not broaden access by inference"
+              ],
+              [
+                "Which claim boundaries apply?",
+                "Claims permitted by evidence and source support",
+                "The artifact does not overstate what it knows"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If a necessary input or operation is unknown",
+        "paragraphs": [
+          "If a necessary input or operation is unknown, do not silently include it. Ask a focused question, record a blocker, or narrow the first artifact to what the available boundary supports.",
+          "For explicit exclusions that keep a task’s plausible adjacent work outside the active boundary, see AI Agent Non-Goals."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Non-Goals",
+            "path": "/guides/ai-agent-non-goals/"
+          }
+        ]
+      },
+      {
+        "title": "Name the owner and the first review point",
+        "paragraphs": [
+          "Intake should identify both the owner of the next contribution and the person, role, or system that will assess it. Ownership of a task is not the same as authority for every decision it touches. The owner prepares the bounded work; the designated reviewer or decision owner decides the answer that changes the next state."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Intake role",
+              "Name",
+              "Example responsibility"
+            ],
+            "rows": [
+              [
+                "Task owner",
+                "Role or person doing the first bounded contribution",
+                "Prepare the source-linked comparison"
+              ],
+              [
+                "Review owner",
+                "Role or person who assesses the first artifact",
+                "Check the comparison against the stated brief"
+              ],
+              [
+                "Decision owner",
+                "Person who can choose among presented options",
+                "Select the governing source for this task"
+              ],
+              [
+                "Dependency owner",
+                "Role, person, or system that supplies a prerequisite",
+                "Record the required interface decision"
+              ],
+              [
+                "Target-system owner",
+                "System or authorized operator that confirms execution facts",
+                "Confirm the current deployment state"
+              ],
+              [
+                "Handoff owner",
+                "Next role that receives a bounded contribution",
+                "Take the accepted artifact to the next review"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "When no decision owner is named",
+        "paragraphs": [
+          "When no decision owner is named, the task may still be able to prepare an evidence packet or a clear question. It should not claim to resolve the decision or assign the missing owner by implication.",
+          "For one answerable choice with evidence, options, and an accountable owner, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Check dependencies before promising a result",
+        "paragraphs": [
+          "An outcome can look well-defined but still depend on a source ruling, another task result, a reviewer answer, or a target-system fact. Intake should name the required state and its effect on the first contribution. That makes waiting reviewable and helps the team decide whether to start, block, split, or defer the task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Intake finding",
+              "Correct task state",
+              "What to record"
+            ],
+            "rows": [
+              [
+                "The task can start with available inputs",
+                "Pending or claimable",
+                "Outcome, first artifact, owner, and review point"
+              ],
+              [
+                "A prerequisite is missing now",
+                "Blocked",
+                "Required state, owner, effect, and resume condition"
+              ],
+              [
+                "A later review date is the only trigger",
+                "Waiting or deferred with condition",
+                "Date, condition to reassess, and no interim action"
+              ],
+              [
+                "A distinct future idea emerges",
+                "Separate follow-on proposal",
+                "Evidence, bounded outcome, and decision owner"
+              ],
+              [
+                "No eligible contribution remains",
+                "No-op",
+                "Inspected condition and reason for stopping"
+              ],
+              [
+                "The request needs authority outside the role",
+                "Escalation or routed decision",
+                "Focused question, evidence, and accountable owner"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task should not promise to complete an outcome",
+        "paragraphs": [
+          "The task should not promise to complete an outcome that depends on a state nobody has verified. A smaller first artifact can often proceed while the decision, input, or external fact remains open.",
+          "For the record of a missing prerequisite and its concrete effect on work, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Make the acceptance condition match the first artifact",
+        "paragraphs": [
+          "Intake is incomplete until a reviewer can tell what makes the first contribution ready. Acceptance conditions should be observable and tied to the artifact, not a vague demand for quality. They give the agent a legitimate stop point and help the reviewer distinguish incomplete work from deliberate non-goals."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "First artifact",
+              "Useful acceptance condition",
+              "Not required at this stage"
+            ],
+            "rows": [
+              [
+                "Evidence packet",
+                "Sources linked, claims labeled, conflicts and open question visible",
+                "A policy decision or external action"
+              ],
+              [
+                "Draft revision",
+                "Exact sections revised, claims sourced, non-goals retained",
+                "Publication or permanent approval"
+              ],
+              [
+                "Dependency summary",
+                "Required states, owners, sources, and effects named",
+                "Resolution of every dependency"
+              ],
+              [
+                "Review packet",
+                "Exact artifact, checks, limits, and decision request included",
+                "A maintainer’s later acceptance"
+              ],
+              [
+                "Triage note",
+                "Input classified, limitation stated, receiving owner identified",
+                "A customer outcome or system fix"
+              ],
+              [
+                "Decision packet",
+                "Options, evidence, tradeoffs, and owner question included",
+                "The owner’s final answer"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Acceptance conditions are not permission grants",
+        "paragraphs": [
+          "Acceptance conditions are not permission grants. A task can be ready for review without being ready to merge, deploy, publish, change access, or create another external effect.",
+          "For writing criteria an agent can be evaluated against, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Add a stop condition before work begins",
+        "paragraphs": [
+          "Intake should state when the agent stops rather than letting an open-ended request consume more time, context, or adjacent work. The stop condition can be successful delivery of the first artifact, a clear blocker, an evidence limit, a review handoff, a no-op, or a decision that changes the task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Stop condition",
+              "Agent should do",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "First artifact is ready",
+                "Hand off for the named review",
+                "Continuing into later stages without a decision"
+              ],
+              [
+                "Required input is missing",
+                "Record the blocker and required state",
+                "Searching indefinitely for unapproved sources"
+              ],
+              [
+                "No eligible task remains",
+                "Record a no-op with the inspected condition",
+                "Posting routine activity to appear busy"
+              ],
+              [
+                "Work exceeds stated scope",
+                "Preserve the evidence and create a follow-on proposal if warranted",
+                "Quietly adding a new outcome or audience"
+              ],
+              [
+                "Decision is required",
+                "Route one focused question to the owner",
+                "Guessing priority, policy, or permission"
+              ],
+              [
+                "Target-system fact is needed",
+                "Link the verification path and wait for the authorized record",
+                "Claiming external execution from a task update"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The stop condition makes the initial task safer to claim",
+        "paragraphs": [
+          "The stop condition makes the initial task safer to claim. It gives an agent a visible reason to end a contribution even when the surrounding problem still has more possible work.",
+          "For the valid quiet result when a contribution is not eligible, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Use intake to turn ambiguity into an answerable decision",
+        "paragraphs": [
+          "Some requests cannot become a task until an owner resolves a narrow ambiguity: which source governs, which audience matters, whether an operation is allowed, or which result is worth pursuing. Intake should transform that uncertainty into a compact decision request rather than turning it into speculative work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Ambiguity",
+              "Intake question",
+              "Possible owner answer"
+            ],
+            "rows": [
+              [
+                "Competing sources",
+                "Which linked source governs this task?",
+                "Select one source, narrow the task, or route the conflict"
+              ],
+              [
+                "Broad outcome",
+                "Which one artifact should this task produce first?",
+                "Choose, split into tasks, or decline the request"
+              ],
+              [
+                "New operation",
+                "Is the named preparation or external action allowed?",
+                "Permit a limited step, provide an alternative, or keep it excluded"
+              ],
+              [
+                "Unknown reviewer",
+                "Who should assess the first artifact?",
+                "Name a reviewer, route it, or defer until ownership exists"
+              ],
+              [
+                "Priority conflict",
+                "Should this proposed task enter the plan now?",
+                "Start, defer, combine, or decline it"
+              ],
+              [
+                "Evidence gap",
+                "Is the supplied set sufficient for the intended claim?",
+                "Narrow the claim, add an approved source, or block the task"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An intake question should be small enough to answer",
+        "paragraphs": [
+          "An intake question should be small enough to answer. “What should we do?” creates a new vague task; “which of these two sources governs the brief?” gives the owner a concrete choice with visible consequences.",
+          "For a focused route when the current role cannot answer the decision, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve intake context in the task and handoff",
+        "paragraphs": [
+          "The first owner should not have to reconstruct why the task exists, which inputs it may use, and where it stops. Keep the material intake fields with the task and carry them into any handoff so a later agent sees the same boundary and review point.",
+          "Retain the origin—the request, observation, or decision that prompted the task—alongside the outcome and first artifact so the next owner can see why the contribution matters and what success looks like now. Retain the boundary: inputs, non-goals, and permitted operations that the next owner must not expand by assumption.",
+          "Retain the ownership structure: task owner, reviewer, decision owner, and dependency owner. Retain the source links, artifacts, current limitations, and the stop and next-step condition so a new owner knows whether to finish, wait, hand off, route a decision, or no-op.",
+          "Retaining this context does not require copying every conversation message. It requires enough source-linked structure that the task remains understandable after the original request is no longer in view.",
+          "For a separately owned next task created from a useful adjacent discovery, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Intake a task in seven steps",
+        "orderedItems": [
+          "Restate the incoming request as one bounded outcome and first reviewable artifact.",
+          "Identify the in-scope inputs, source boundary, permitted operations, and material non-goals.",
+          "Name the task owner, review owner, decision owner, and any target-system or dependency owner.",
+          "Check whether a required source, decision, task result, review, or target-system fact is missing.",
+          "Write observable acceptance conditions for the first artifact and a finite stop condition.",
+          "Choose the correct initial state: claimable task, blocker, waiting condition, escalation, follow-on proposal, or no-op.",
+          "Record the outcome, evidence, owners, dependency, acceptance, and next action where the first owner and reviewer can use them."
+        ]
+      },
+      {
+        "title": "Intake succeeds when the next contribution is clear",
+        "paragraphs": [
+          "Intake succeeds when the next contribution is clear enough to begin and narrow enough to stop. The team can then improve the task through visible decisions instead of asking an agent to infer an entire project from one request."
+        ]
+      },
+      {
+        "title": "Test whether a request is ready for task intake",
+        "paragraphs": [
+          "Before someone claims the work, ask whether a new owner could make the first contribution without guessing its goal, evidence, authority, or stop point. If not, the next action is more intake, not premature execution."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Outcome test",
+                "What exact artifact or result will this task produce first?",
+                "Narrow the request to one reviewable contribution"
+              ],
+              [
+                "Input test",
+                "Which sources, artifacts, and operations are allowed?",
+                "State a source boundary, non-goal, or focused question"
+              ],
+              [
+                "Ownership test",
+                "Who performs, reviews, and decides each necessary part?",
+                "Name the role or route the missing owner"
+              ],
+              [
+                "Dependency test",
+                "What required state must exist before the next step?",
+                "Add a blocker, resume condition, or decision request"
+              ],
+              [
+                "Acceptance test",
+                "What makes the first artifact ready for review?",
+                "Write observable conditions tied to the artifact"
+              ],
+              [
+                "Stop test",
+                "When should the task hand off, block, no-op, or split?",
+                "Add a finite stop rule and next record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A request that fails a test is not wasted",
+        "paragraphs": [
+          "A request that fails a test is not wasted. It may be the starting evidence for a decision packet, a smaller research question, or a follow-on proposal. The important part is not to disguise the gap as an active task with an undefined promise."
+        ]
+      },
+      {
+        "title": "Seven task-intake mistakes that create vague work",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating an urgent request as complete scope",
+        "paragraphs": [
+          "Urgency may explain why an answer matters now, but it does not define the outcome, inputs, owner, operation boundary, or acceptance condition. Intake still needs a bounded first contribution."
+        ]
+      },
+      {
+        "title": "Claiming a task before the first artifact is clear",
+        "paragraphs": [
+          "If no one can say what the agent will return for review, the task is likely a topic rather than owned work. Name the artifact or keep the request in intake."
+        ]
+      },
+      {
+        "title": "Assuming a request grants permission to act externally",
+        "paragraphs": [
+          "An incoming request can justify analysis, a draft, or a decision packet. The role, reviewer, authorized owner, and target system still govern whether an external action can occur."
+        ]
+      },
+      {
+        "title": "Starting with an unlimited source set",
+        "paragraphs": [
+          "More sources can feel helpful but may change the claim, handling boundary, or cost of review. Use the supplied set or ask for a specific source-boundary decision."
+        ]
+      },
+      {
+        "title": "Hiding a missing owner inside an active task",
+        "paragraphs": [
+          "If the task needs a policy, priority, access, or external-system answer, name the decision owner or escalate the question. An agent should not invent accountability to make work appear claimable."
+        ]
+      },
+      {
+        "title": "Confusing a blocker with a future idea",
+        "paragraphs": [
+          "A blocker prevents the active task’s next step. A useful improvement outside the current outcome is follow-on work. Mixing them makes neither relationship clear."
+        ]
+      },
+      {
+        "title": "Omitting the stop condition",
+        "paragraphs": [
+          "Without a finite review point, evidence limit, or no-op rule, an agent may keep searching or expanding the task. State when the first contribution is complete and what happens next."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent task intake?",
+        "answer": "It is the process of turning a request, observation, or decision into a bounded task someone can responsibly own. Intake identifies the outcome, inputs, operations, owner, first artifact, review point, dependencies, acceptance condition, and stop rule."
+      },
+      {
+        "question": "When is a request ready to become an agent task?",
+        "answer": "It is ready when the next contribution is clear enough to produce and review without guessing essential scope, evidence, authority, or stop conditions. If those fields are missing, the next result may be a question, blocker, escalation, or no-op instead."
+      },
+      {
+        "question": "Can an agent intake its own discovered work?",
+        "answer": "It can prepare a follow-on proposal with the discovery, evidence, bounded outcome, owner, and decision question. It should not treat the proposal as automatic priority approval or quietly add it to its active task."
+      },
+      {
+        "question": "What should a task-intake record include?",
+        "answer": "Include the original trigger, outcome, first artifact, in-scope inputs, non-goals, owner and reviewer, dependency or resume condition, acceptance criteria, stop condition, and evidence links."
+      },
+      {
+        "question": "Is task intake the same as assigning work?",
+        "answer": "No. Intake makes a request understandable and eligible for a decision or claim. Assignment, prioritization, permissions, and external execution may require separate owners or target-system controls."
+      },
+      {
+        "question": "What if no useful first artifact can be defined?",
+        "answer": "Keep the request as a concise observation, ask a focused intake question, or record a no-op. Do not create an active task merely to preserve an idea without a bounded contribution or owner."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Non-Goals",
+        "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Follow-On Work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      }
+    ],
+    "cta": {
+      "title": "Start work with a task someone can actually own",
+      "body": "AI agent task intake makes a request reviewable before it becomes work. Define one outcome and first artifact, bound the inputs and operations, name the owners and dependencies, set acceptance and stop conditions, and choose the right initial state. That lets an agent contribute quickly without turning an incomplete request into an unlimited commitment or an implied permission.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
