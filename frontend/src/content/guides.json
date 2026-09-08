@@ -8218,6 +8218,10 @@
       {
         "label": "AI agent review decisions",
         "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI agent decision owner",
+        "path": "/guides/ai-agent-decision-owner/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -9647,6 +9651,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent decision owner",
+        "path": "/guides/ai-agent-decision-owner/"
       }
     ],
     "cta": {
@@ -18177,6 +18185,10 @@
       {
         "label": "AI Agent Decision Packet",
         "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI agent decision owner",
+        "path": "/guides/ai-agent-decision-owner/"
       }
     ],
     "cta": {
@@ -20968,11 +20980,706 @@
       {
         "label": "AI Agent Follow-On Work",
         "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI agent decision owner",
+        "path": "/guides/ai-agent-decision-owner/"
       }
     ],
     "cta": {
       "title": "Start work with a task someone can actually own",
       "body": "AI agent task intake makes a request reviewable before it becomes work. Define one outcome and first artifact, bound the inputs and operations, name the owners and dependencies, set acceptance and stop conditions, and choose the right initial state. That lets an agent contribute quickly without turning an incomplete request into an unlimited commitment or an implied permission.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-decision-owner": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Decision Owner: Who Can Give the Answer? | Commonly",
+    "title": "AI Agent Decision Owner: Identify Who Can Give the Answer",
+    "description": "Learn how to identify the AI agent decision owner for a bounded question, distinguish ownership from review and execution, and route work safely when no accountable owner is named.",
+    "summary": "An AI agent decision owner is the person, role, or designated authority accountable for answering a specific bounded question. The decision owner is not automatically the task owner, reviewer, agent that prepared the evidence, or system that executes a later action. A clear record says: “The policy owner chooses which source governs this task,” “the maintainer accepts or requests changes to this exact artifact,” or “the target system confirms whether the external action occurred.”",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent decision owner is the person, role, or designated authority accountable for answering a specific bounded question. The decision owner is not automatically the task owner, reviewer, agent that prepared the evidence, or system that executes a later action. A clear record says: “The policy owner chooses which source governs this task,” “the maintainer accepts or requests changes to this exact artifact,” or “the target system confirms whether the external action occurred.”",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams places to make that ownership visible: tasks carry a description, owner, status, dependency, activity, and result; focused threads hold questions and answers; attachments preserve evidence; and selected shared memory can retain sourced durable context. These records help coordinate a decision. They do not grant a person, agent, or thread authority that the organization, role structure, or target system does not provide.",
+      "Identifying the decision owner keeps agents useful without making them pretend to decide policy, priority, permissions, or external actions. An agent can prepare evidence, state options, recommend a path, and route a question. The owner gives the answer; the task records what changes; the executing system remains responsible for its own current state.",
+      "This guide explains how to find an AI agent decision owner, distinguish the owner from adjacent roles, and handle work when no accountable owner is named."
+    ],
+    "sections": [
+      {
+        "title": "A decision owner owns one answer, not every part of the task",
+        "paragraphs": [
+          "Decision ownership should be scoped to the question. A task may have several owners for different contributions: one person prepares evidence, another reviews the artifact, a third decides a policy question, and a target system records an external effect. Giving every role the same generic “owner” label hides the actual authority boundary."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Owns",
+              "Does not automatically own"
+            ],
+            "rows": [
+              [
+                "Task owner",
+                "The next bounded contribution and its coordination record",
+                "Policy, priority, or permissions beyond the task"
+              ],
+              [
+                "Evidence owner",
+                "The supplied source, analysis, or observation",
+                "The decision that uses the evidence"
+              ],
+              [
+                "Reviewer",
+                "An acceptance, revision, narrow, reject, or route answer for a stage",
+                "All future stages or external execution"
+              ],
+              [
+                "Decision owner",
+                "One defined choice and its task effect",
+                "The implementation or target-system result"
+              ],
+              [
+                "Executor or system",
+                "Performing or recording its own action and current state",
+                "The upstream policy or product decision"
+              ],
+              [
+                "Handoff owner",
+                "Receiving the next bounded contribution",
+                "The sender’s unapproved scope or recommendation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The question should make ownership legible",
+        "paragraphs": [
+          "The question should make ownership legible: “Which source governs this brief?” is different from “Is the draft ready for editorial review?” and from “Did the release system deploy the change?” Each may have a different answerer and source of truth.",
+          "For a compact record that gives an owner one answerable choice with evidence and options, see AI Agent Decision Packet.",
+          "For the hierarchy that identifies the authoritative record for each kind of fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          },
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Start with the decision, not a presumed person",
+        "paragraphs": [
+          "Teams often begin by asking “who owns this?” before they have named the question. That can produce a broad, overloaded owner. Instead, write the smallest decision that changes the next task state, identify the evidence and consequences, then find the role accountable for that type of choice."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Vague request",
+              "Bounded decision",
+              "Likely decision owner"
+            ],
+            "rows": [
+              [
+                "“Can we move forward?”",
+                "“Does the reviewed artifact meet the stated acceptance condition for editorial review?”",
+                "Named reviewer or editor"
+              ],
+              [
+                "“Which approach is best?”",
+                "“Which of the two evidence-backed options should govern this task?”",
+                "Policy, product, or domain owner"
+              ],
+              [
+                "“Can the agent do this?”",
+                "“Is the proposed preparation operation allowed within the stated role boundary?”",
+                "Authorized system or policy owner"
+              ],
+              [
+                "“Should we fix it?”",
+                "“Should the separate issue become a bounded follow-on task now?”",
+                "Planning or product owner"
+              ],
+              [
+                "“Is it live?”",
+                "“Does the target system record the named current state?”",
+                "Target system’s record, inspected by an authorized role"
+              ],
+              [
+                "“Who handles the dependency?”",
+                "“Who is accountable for providing the required result by the named condition?”",
+                "Dependency owner or escalation path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The decision can be smaller",
+        "paragraphs": [
+          "The decision can be smaller than the surrounding problem. A source ruling does not decide publication; an acceptance decision does not decide priority; a dependency answer does not approve every resulting operation.",
+          "For the review answers that accept, request changes, narrow, reject, route, or defer a bounded artifact, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Match the owner to the type of decision",
+        "paragraphs": [
+          "The right owner depends on what the answer changes. A role may have deep knowledge but still not be accountable for a policy, external system, or priority decision. Match the owner to the actual decision boundary rather than to who happens to be available."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision type",
+              "Owner should be able to",
+              "Evidence to provide"
+            ],
+            "rows": [
+              [
+                "Source or policy ruling",
+                "Select the governing interpretation for the stated scope",
+                "Source comparison, conflict, and impact on the task"
+              ],
+              [
+                "Artifact review",
+                "Assess the exact version against named criteria",
+                "Artifact, checks, limitations, and review request"
+              ],
+              [
+                "Priority or planning",
+                "Decide whether a proposed task enters, waits, narrows, or exits the plan",
+                "Outcome, dependency, tradeoff, and cost of delay"
+              ],
+              [
+                "Permission or operation boundary",
+                "Decide the allowed preparation or action within applicable controls",
+                "Requested operation, reason, and affected boundary"
+              ],
+              [
+                "External-state confirmation",
+                "Inspect the target system’s own record",
+                "System-native fact and precise claim to check"
+              ],
+              [
+                "Dependency resolution",
+                "Supply or route the required state another task needs",
+                "Linked task, required result, and effect of waiting"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An agent can map the relationship",
+        "paragraphs": [
+          "An agent can map the relationship and make a recommendation, but it should not elevate itself from evidence preparer to owner merely because the answer is inconveniently missing.",
+          "For the task-intake fields that identify owners and decision points before work is claimed, see AI Agent Task Intake."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Intake",
+            "path": "/guides/ai-agent-task-intake/"
+          }
+        ]
+      },
+      {
+        "title": "Make the owner visible in the task and packet",
+        "paragraphs": [
+          "Once identified, the decision owner should be named beside the question, evidence, options, and expected task effect. A bare name in a message is not enough if the next owner cannot tell what answer is requested or whether the person has responsibility for it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record field",
+              "Include",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Decision question",
+                "One choice that changes the task’s next state",
+                "“Which source governs this comparison?”"
+              ],
+              [
+                "Decision owner",
+                "Person, role, or authorized system for that choice",
+                "“Policy owner”"
+              ],
+              [
+                "Evidence",
+                "Sources, artifact, checks, and stated limitation",
+                "“Attached comparison with conflicting source text.”"
+              ],
+              [
+                "Options",
+                "Concrete possible answers and tradeoffs",
+                "“Use A, use B, narrow the claim, or route the conflict.”"
+              ],
+              [
+                "Task effect",
+                "What each answer permits, blocks, or changes",
+                "“Research uses selected source for the bounded brief.”"
+              ],
+              [
+                "Boundary",
+                "What the decision does not authorize or prove",
+                "“This does not approve publication or external changes.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task may assign an agent",
+        "paragraphs": [
+          "The task may assign an agent to prepare the packet and notify the decision owner. It should not mark the choice resolved until the relevant owner’s answer or target-system record is actually present.",
+          "For the coordination fields that carry status, owner, dependencies, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Give the owner an answerable choice with evidence",
+        "paragraphs": [
+          "Owners can make better, faster decisions when the packet reduces the question to the evidence and tradeoff that matter. Do not hand an owner an unfiltered transcript and ask them to “take a look.” Prepare a decision that can be accepted, narrowed, rejected, deferred, or routed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision packet element",
+              "Owner needs",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Context",
+                "Why the choice matters to this task now",
+                "Reconstructing the entire project history"
+              ],
+              [
+                "Fact base",
+                "Source-linked facts, checks, and reported status labels",
+                "Unsupported conclusions presented as fact"
+              ],
+              [
+                "Options",
+                "Feasible choices within the stated boundary",
+                "A single recommendation disguised as the only option"
+              ],
+              [
+                "Tradeoff",
+                "What each option changes, risks, delays, or excludes",
+                "Invented priority, impact, or certainty claims"
+              ],
+              [
+                "Recommendation",
+                "Agent’s reasoned view, clearly labeled",
+                "Treating it as the owner’s decision"
+              ],
+              [
+                "Requested answer",
+                "The exact selection, narrow, reject, route, or defer action needed",
+                "A broad request to “decide everything”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet can be short",
+        "paragraphs": [
+          "The packet can be short. The goal is not to transfer all judgment to the owner; it is to preserve the owner’s actual choice while giving them the evidence needed to exercise it.",
+          "For a shared vocabulary that distinguishes fact, reported status, inference, recommendation, open question, and decision, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Handle a missing or ambiguous owner without guessing",
+        "paragraphs": [
+          "If the owner is missing, unclear, unavailable, or responsible only for part of the question, keep that uncertainty explicit. The task may still prepare an evidence packet, narrow its work, or create a blocker. It should not make a decision by default just because no one answered quickly."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Owner problem",
+              "Safe response",
+              "Do not"
+            ],
+            "rows": [
+              [
+                "No owner is named",
+                "Record the decision question and route an escalation to identify the owner",
+                "Assign authority to the nearest participant by implication"
+              ],
+              [
+                "Two owners may disagree",
+                "Separate the policy question from the artifact review and name each boundary",
+                "Ask both for an unbounded “approval”"
+              ],
+              [
+                "Owner is unavailable",
+                "State the waiting effect and resume condition or defer date",
+                "Repeatedly re-open the same request without new evidence"
+              ],
+              [
+                "Owner lacks target-system control",
+                "Route state confirmation to the relevant system or authorized operator",
+                "Treat a decision message as proof of execution"
+              ],
+              [
+                "Agent has a recommendation only",
+                "Label it as recommendation and preserve the open question",
+                "Write the recommendation as an accepted choice"
+              ],
+              [
+                "Current task cannot continue",
+                "Record a blocker with missing owner, effect, and escalation path",
+                "Hide the missing decision in a confident update"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is a useful stop point for agents",
+        "paragraphs": [
+          "This is a useful stop point for agents. Preparing the right question and evidence can be complete work even when the task must wait for a person or system outside the agent’s role.",
+          "For a focused route when the current role needs an authority outside its boundary, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve the decision’s scope after the owner answers",
+        "paragraphs": [
+          "An answer changes only the task state it names. Record the owner, answer, evidence considered, artifact or task it applies to, and the next bounded action. State any continuing non-goal or target-system fact that still needs separate verification."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Owner answer",
+              "Record",
+              "Next task effect"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "Exact artifact and accepted review stage",
+                "Move to the named next review or handoff"
+              ],
+              [
+                "Request changes",
+                "Revision conditions within the current scope",
+                "Return the artifact to the owner for bounded revision"
+              ],
+              [
+                "Narrow",
+                "Excluded claim, input, audience, or operation",
+                "Continue only the remaining allowed work"
+              ],
+              [
+                "Reject",
+                "Reason, evidence, and path that is closed",
+                "Stop, no-op, or create a separately owned proposal if justified"
+              ],
+              [
+                "Route",
+                "Receiving owner, question, and supplied evidence",
+                "Keep the task waiting for the next answer"
+              ],
+              [
+                "Defer",
+                "Condition or date for reconsideration",
+                "Record a resume condition and avoid routine retries"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The answer does not make every related task eligible",
+        "paragraphs": [
+          "The answer does not make every related task eligible, grant new access, or prove an external action occurred. A decision may authorize a bounded next contribution; the executing role and target system still govern later operations and facts.",
+          "For non-goals that keep a decision from silently enlarging a task, see AI Agent Non-Goals."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Non-Goals",
+            "path": "/guides/ai-agent-non-goals/"
+          }
+        ]
+      },
+      {
+        "title": "Carry decision ownership through dependencies and handoffs",
+        "paragraphs": [
+          "Decision ownership should remain visible when work moves between people or tasks. A dependency can name the owner of the required state; a handoff can name the decision that the next role still needs. This prevents the receiver from treating an unresolved question as settled context."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work transition",
+              "Carry forward",
+              "Next owner can see"
+            ],
+            "rows": [
+              [
+                "Blocked task",
+                "Missing decision, owner, effect, and resume condition",
+                "Why the task cannot proceed and who must answer"
+              ],
+              [
+                "Review handoff",
+                "Artifact, review owner, criteria, and requested decision",
+                "What to inspect before answering"
+              ],
+              [
+                "Follow-on proposal",
+                "Proposed outcome, planning owner, and decision question",
+                "Whether the future task enters the plan"
+              ],
+              [
+                "Source conflict",
+                "Governing-source owner, evidence, and applicability boundary",
+                "Which question remains open"
+              ],
+              [
+                "External action proposal",
+                "Decision owner, allowed preparation, and target-system fact needed",
+                "What still requires authorization or confirmation"
+              ],
+              [
+                "Durable context",
+                "Original owner, answer, scope, and successor record",
+                "Whether the decision is still current"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The next owner should be able to distinguish a fact",
+        "paragraphs": [
+          "The next owner should be able to distinguish a fact from an unresolved recommendation. If the record says “the owner will decide,” it should also say what they are deciding and where the answer belongs.",
+          "For a bounded transfer of work, evidence, and next-owner responsibility, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Identify a decision owner in seven steps",
+        "orderedItems": [
+          "State the smallest question that changes the current task’s next state.",
+          "Separate that question from adjacent review, planning, execution, and external-state questions.",
+          "Identify the evidence, options, tradeoff, and task effect the answer requires.",
+          "Match the decision type to the person, role, or system accountable for that kind of answer.",
+          "Name the owner in the task or packet beside the question and the boundary of their decision.",
+          "If no owner is clear, record the ambiguity, prepare the evidence, and route an escalation or blocker rather than guessing.",
+          "When the answer arrives, verify the record, state its scope and continuing limits, and advance only the named next step."
+        ]
+      },
+      {
+        "title": "The process makes ownership a property of a defined choice",
+        "paragraphs": [
+          "The process makes ownership a property of a defined choice, not a title placed on a task after the fact. That lets agents contribute evidence and recommendations without absorbing accountability that belongs elsewhere."
+        ]
+      },
+      {
+        "title": "Test whether a decision owner is clear",
+        "paragraphs": [
+          "Before routing a packet, ask whether someone unfamiliar with the task could tell exactly who must answer what and why. If the question or effect is vague, ownership will be vague too."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Question test",
+                "What single choice needs an answer?",
+                "Split a broad request into bounded decisions"
+              ],
+              [
+                "Authority test",
+                "Who is accountable for this type of answer?",
+                "Identify the role, target system, or escalation path"
+              ],
+              [
+                "Evidence test",
+                "What source, artifact, and limitation does the owner need?",
+                "Prepare a packet instead of sending a vague request"
+              ],
+              [
+                "Effect test",
+                "What task state changes after each possible answer?",
+                "State accept, revise, narrow, reject, route, or defer effects"
+              ],
+              [
+                "Boundary test",
+                "What does this owner not decide, authorize, or prove?",
+                "Add non-goals and target-system limitations"
+              ],
+              [
+                "Continuity test",
+                "Where will the answer and its successor record live?",
+                "Link the task, decision, handoff, or source of record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An unclear owner is itself a result worth recording",
+        "paragraphs": [
+          "An unclear owner is itself a result worth recording. It tells the team where accountability is missing rather than encouraging an agent to fill the gap invisibly."
+        ]
+      },
+      {
+        "title": "Seven decision-owner mistakes that blur accountability",
+        "paragraphs": []
+      },
+      {
+        "title": "Naming a task owner as the decision owner by default",
+        "paragraphs": [
+          "The task owner may prepare the work but lack authority for policy, priority, permissions, review, or target-system confirmation. Match ownership to the question, not availability."
+        ]
+      },
+      {
+        "title": "Asking for approval without defining the object or stage",
+        "paragraphs": [
+          "“Approved” can mean many things. Name the exact artifact, decision question, acceptance condition, and next task effect so the owner knows what their answer changes."
+        ]
+      },
+      {
+        "title": "Treating a recommendation as the owner’s answer",
+        "paragraphs": [
+          "An agent can recommend an option and explain the tradeoff. Keep the recommendation labeled until the accountable owner records a decision."
+        ]
+      },
+      {
+        "title": "Asking one person to decide several unrelated boundaries",
+        "paragraphs": [
+          "Source ruling, review, priority, access, and execution may have different owners. Split them into answerable questions rather than creating an overloaded approval request."
+        ]
+      },
+      {
+        "title": "Treating a decision record as proof of external execution",
+        "paragraphs": [
+          "An owner can authorize a bounded next task step. The target system remains responsible for confirming whether an external action actually occurred and what its state is."
+        ]
+      },
+      {
+        "title": "Hiding a missing owner inside a waiting task",
+        "paragraphs": [
+          "Record the missing decision owner, effect, and escalation path. A vague waiting status does not help anyone resolve the accountability gap."
+        ]
+      },
+      {
+        "title": "Forgetting to record the decision boundary after an answer",
+        "paragraphs": [
+          "An accepted answer can be misapplied to later work if the task, artifact, scope, and continuing non-goals are not stated. Preserve the exact boundary with the result."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent decision owner?",
+        "answer": "It is the person, role, or designated authority accountable for answering a specific bounded question that changes a task’s next state. The decision owner is distinct from the task owner, reviewer, evidence preparer, and executing system unless the task explicitly says otherwise."
+      },
+      {
+        "question": "How is a decision owner different from a task owner?",
+        "answer": "The task owner performs and coordinates the next bounded contribution. The decision owner selects among options or answers a question within their authority. One person may hold both roles for a particular task, but the record should not assume that by default."
+      },
+      {
+        "question": "What should an agent do when no decision owner is named?",
+        "answer": "Prepare the focused question, evidence, options, and effect of waiting; then record a blocker or route an escalation to identify the owner. The agent should not infer authority from proximity, availability, or its own recommendation."
+      },
+      {
+        "question": "Can a reviewer be the decision owner?",
+        "answer": "Yes, when the decision is whether an exact artifact meets stated criteria for a defined review stage. That review answer does not automatically make the reviewer the owner of policy, priority, or external execution decisions."
+      },
+      {
+        "question": "Does a decision owner prove an external action happened?",
+        "answer": "No. The owner’s decision can authorize or redirect task work. The repository, deployment, identity, delivery, or other target system remains responsible for confirming its own external state."
+      },
+      {
+        "question": "Should every task name a decision owner?",
+        "answer": "Name one when a current or expected decision materially changes the task’s next state. A simple bounded task may only need an owner and reviewer; a missing decision owner becomes important when the work reaches a policy, priority, scope, permission, or dependency question."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Task Intake",
+        "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Non-Goals",
+        "path": "/guides/ai-agent-non-goals/"
+      }
+    ],
+    "cta": {
+      "title": "Give every choice an accountable answerer",
+      "body": "AI agent decision ownership makes a task’s authority boundary visible. Define the smallest question, prepare the relevant evidence and options, name the person, role, or system accountable for that choice, and record what the answer changes—and does not change. That lets agents do useful preparatory work without turning a recommendation, task claim, or visible conversation into unearned authority.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
