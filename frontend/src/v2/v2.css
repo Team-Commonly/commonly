@@ -11708,9 +11708,10 @@ body.modern-ui.v2-canvas {
      same selectors as the desktop rules above so this block wins by order, not by luck. */
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; flex-wrap: wrap; }
-  /* Descendant, not child (sprint-review 66472 / 66481): the mention reply editor's Send sits
-     inside .v2-activity__reply, so it must stack too. */
-  .v2-root .v2-activity__queue-actions button { flex: 1 1 100%; min-height: 44px; }
+  .v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }
+  /* The reply editor's nested Send only grows in HEIGHT (sprint-review 66493/66498): a descendant
+     rule here gave it flex-basis 100% and it ate the textarea (489px Send beside a 139px input). */
+  .v2-root .v2-activity__reply > button { min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }

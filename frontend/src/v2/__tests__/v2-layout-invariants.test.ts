@@ -1860,9 +1860,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // Moved forward: no section count; N more in <pod>.
       expect(activityPage).toContain("pod: shortPodName(group.name)");
       // ≤760: toggles stack, actions drop to 44px full width.
-      // Descendant `button`, so the reply editor's nested Send stacks in the 641–760 band too (66481).
-      expect(v2).toContain('.v2-root .v2-activity__queue-actions button { flex: 1 1 100%; min-height: 44px; }');
-      expect(v2).not.toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
+      expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
+      // The reply editor's nested Send takes only height at ≤760 — never a descendant width rule (66493/66498).
+      expect(v2).toContain('.v2-root .v2-activity__reply > button { min-height: 44px; }');
+      expect(v2).not.toContain('.v2-root .v2-activity__queue-actions button { flex: 1 1 100%;');
       // …and the stack outranks the desktop action column by ORDER: the ≤760 rule for
       // `.v2-activity__queue-row .v2-activity__queue-actions` comes after the grid-column: 3 rule (66438 at 720).
       const desktopActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3;');
