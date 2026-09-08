@@ -20,6 +20,27 @@ describe('set-agent-descriptions plan', () => {
     expect(unmatched).toEqual(DESCRIPTIONS.map((d) => d.seat).filter((s) => !['UX Lead', 'Commonly Support', 'Kai'].includes(s)));
   });
 
+  test('a duplicate displayName is ambiguous: refused, reported, and never decided by row order', () => {
+    const rows = [
+      { _id: 'k1', username: 'kai', botMetadata: { displayName: 'Kai' } },
+      { _id: 'k2', username: 'kai-demo', botMetadata: { displayName: 'Kai' } },
+    ];
+    const a = planDescriptions(rows);
+    const b = planDescriptions([...rows].reverse());
+    expect(a.plan.find((p) => p.seat === 'Kai')).toBeUndefined();
+    expect(b.plan.find((p) => p.seat === 'Kai')).toBeUndefined();
+    expect(a.ambiguous).toEqual([{ seat: 'Kai', usernames: ['kai', 'kai-demo'] }]);
+  });
+
+  test('one row claimed by two seats is a conflict: neither writes, both are named', () => {
+    // The hq-support username with the Commonly Bot display name — the exact
+    // mapping flagged as uncertain — must not take two sentences.
+    const rows = [{ _id: 'h1', username: 'hq-support', botMetadata: { displayName: 'Commonly Bot' } }];
+    const { plan, conflicts } = planDescriptions(rows);
+    expect(plan.filter((p) => String(p.userId) === 'h1')).toHaveLength(0);
+    expect(conflicts).toEqual([{ userId: 'h1', username: 'hq-support', seats: ['Commonly Support', 'Commonly Bot'] }]);
+  });
+
   test('every sentence obeys the brief: one sentence, under 100 characters, no quotes, role first', () => {
     for (const d of DESCRIPTIONS) {
       expect(d.description.length).toBeLessThan(100);

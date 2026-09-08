@@ -40,18 +40,45 @@ const norm = (v: unknown) => String(v || '').trim().toLowerCase();
 
 export type BotRow = { _id: unknown; username?: string; botMetadata?: { displayName?: string; description?: string } };
 
-/** Pure: which sentence applies to which row, and what would change. */
+/**
+ * Pure: which sentence applies to which row, and what would change.
+ *
+ * Refuses instead of guessing (sprint-review, PR #1636): a seat whose name
+ * matches MORE than one row is `ambiguous` and skipped, so result order can
+ * never decide the target; a row that two seats both claim is a `conflict`
+ * and neither writes, so one `_id` never takes two sentences. Both are
+ * reported, because the dry run cannot show either — an ambiguous match
+ * prints as one confident line and a double write as two ordinary ones.
+ */
 export const planDescriptions = (rows: BotRow[]) => {
   const plan: Array<{ seat: string; userId: unknown; username: string; from: string | undefined; to: string; changed: boolean }> = [];
   const unmatched: string[] = [];
+  const ambiguous: Array<{ seat: string; usernames: string[] }> = [];
+  const conflicts: Array<{ userId: unknown; username: string; seats: string[] }> = [];
+  const claimed = new Map<string, string>(); // _id → seat
+  const candidatesFor = (entry: typeof DESCRIPTIONS[number]) => {
+    const byName = rows.filter((r) => norm(r.botMetadata?.displayName) === norm(entry.seat));
+    if (byName.length) return byName;
+    return rows.filter((r) => entry.usernames.includes(norm(r.username)));
+  };
   for (const entry of DESCRIPTIONS) {
-    const row = rows.find((r) => norm(r.botMetadata?.displayName) === norm(entry.seat))
-      || rows.find((r) => entry.usernames.includes(norm(r.username)));
-    if (!row) { unmatched.push(entry.seat); continue; }
+    const found = candidatesFor(entry);
+    if (found.length === 0) { unmatched.push(entry.seat); continue; }
+    if (found.length > 1) { ambiguous.push({ seat: entry.seat, usernames: found.map((r) => String(r.username || '')) }); continue; }
+    const row = found[0];
+    const id = String(row._id);
+    const holder = claimed.get(id);
+    if (holder) {
+      conflicts.push({ userId: row._id, username: String(row.username || ''), seats: [holder, entry.seat] });
+      const i = plan.findIndex((p) => String(p.userId) === id);
+      if (i >= 0) plan.splice(i, 1);
+      continue;
+    }
+    claimed.set(id, entry.seat);
     const from = row.botMetadata?.description;
     plan.push({ seat: entry.seat, userId: row._id, username: String(row.username || ''), from, to: entry.description, changed: (from || '').trim() !== entry.description });
   }
-  return { plan, unmatched };
+  return { plan, unmatched, ambiguous, conflicts };
 };
 
 const APPLY = process.argv.includes('--apply');
@@ -61,7 +88,9 @@ export const main = async (): Promise<void> => {
   await mongoose.connect(process.env.MONGO_URI);
   try {
     const rows = await User.find({ isBot: true }).select('_id username botMetadata.displayName botMetadata.description').lean() as BotRow[];
-    const { plan, unmatched } = planDescriptions(rows);
+    const { plan, unmatched, ambiguous, conflicts } = planDescriptions(rows);
+    for (const a of ambiguous) console.log(`REFUSE ${a.seat}: ${a.usernames.length} rows match (@${a.usernames.join(', @')}) — fix the duplicate displayName first`);
+    for (const c of conflicts) console.log(`REFUSE @${c.username}: claimed by ${c.seats.join(' and ')} — one row, two sentences`);
     let written = 0;
     for (const p of plan) {
       console.log(`${p.changed ? (APPLY ? 'WRITE ' : 'would ') : 'same  '} ${p.seat} (@${p.username}): ${p.changed ? JSON.stringify(p.from || '') + ' → ' : ''}${JSON.stringify(p.to)}`);
@@ -70,7 +99,7 @@ export const main = async (): Promise<void> => {
         written += Number(r.modifiedCount || 0);
       }
     }
-    console.log(JSON.stringify({ matched: plan.length, changed: plan.filter((p) => p.changed).length, written, unmatched, apply: APPLY }));
+    console.log(JSON.stringify({ matched: plan.length, changed: plan.filter((p) => p.changed).length, written, unmatched, ambiguous: ambiguous.map((a) => a.seat), conflicts: conflicts.map((c) => c.username), apply: APPLY }));
     if (!APPLY) console.log('DRY RUN — no User rows changed. Re-run with --apply after review.');
   } finally {
     await mongoose.disconnect();
