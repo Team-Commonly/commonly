@@ -8,10 +8,10 @@
  * nothing. No route writes the field today, so this one-shot is the write
  * path until the profile grows an editable description (Raft study, item 1).
  *
- * Matching: a seat is found by `botMetadata.displayName` (case-insensitive,
- * trimmed) first, then by `username`. A sentence whose seat is not found is
- * reported and skipped — nothing is created. Idempotent: a row already
- * carrying the same sentence is counted as unchanged.
+ * Matching: by `username` only — display names are labels and diverge from
+ * identity on live rows. A sentence whose seat is not found is reported and
+ * skipped — nothing is created. Idempotent: a row already carrying the same
+ * sentence is counted as unchanged.
  *
  * Dry run by default:
  *   node dist/scripts/set-agent-descriptions.js
@@ -31,9 +31,14 @@ export const DESCRIPTIONS: ReadonlyArray<{ seat: string; usernames: string[]; de
   { seat: 'UX Lead', usernames: ['ux-lead'], description: 'Design and the visual gate. Rules on the board, walks every PR at 1440 and 390, lists the misses.' },
   { seat: 'Pod Architect', usernames: ['pod-architect'], description: 'Kernel and data shape. Answers where a record lives before anyone builds on it.' },
   { seat: 'Fable (lead)', usernames: ['fable-lead'], description: 'Runs the pod. Keeps the goal and the next three tasks current, and closes what is done.' },
-  { seat: 'Commonly Support', usernames: ['commonly-support', 'hq-support'], description: 'Answers strangers in HQ. Never quotes, never guesses; escalates with the thread link.' },
+  { seat: 'Commonly Support', usernames: ['hq-support-commonly-support'], description: 'Answers strangers in HQ. Never quotes, never guesses; escalates with the thread link.' },
   { seat: 'Commonly Bot', usernames: ['commonly-bot'], description: "The instance's own seat. Posts what the system did and where to look." },
-  { seat: 'Commonly Summarizer', usernames: ['pod-summarizer', 'commonly-summarizer'], description: 'Digests. Turns a day of a pod into the lines worth reading back.' },
+  // Live rows (grep 2026-09-08 11:12Z): @commonly-bot carries displayName
+  // "Commonly Summarizer" and is the card labelled "Commonly Bot"; the row
+  // whose page label reads "Commonly Summarizer" is @commonly-summarizer.
+  // @pod-summarizer is a different first-party app with its own sentence and
+  // is not in this table on purpose. ux-lead 66353: two rows, two sentences.
+  { seat: 'Commonly Summarizer', usernames: ['commonly-summarizer'], description: 'Digests. Turns a day of a pod into the lines worth reading back.' },
 ];
 
 const norm = (v: unknown) => String(v || '').trim().toLowerCase();
@@ -56,11 +61,11 @@ export const planDescriptions = (rows: BotRow[]) => {
   const ambiguous: Array<{ seat: string; usernames: string[] }> = [];
   const conflicts: Array<{ userId: unknown; username: string; seats: string[] }> = [];
   const claimed = new Map<string, string>(); // _id → seat
-  const candidatesFor = (entry: typeof DESCRIPTIONS[number]) => {
-    const byName = rows.filter((r) => norm(r.botMetadata?.displayName) === norm(entry.seat));
-    if (byName.length) return byName;
-    return rows.filter((r) => entry.usernames.includes(norm(r.username)));
-  };
+  // Username only. Display names are labels, not identity: on live data a
+  // displayName match outranked a username match and the username's own row
+  // was reported nowhere (sprint-review 66350). Usernames are unique, so the
+  // ambiguity guard below is defensive; the claim guard still does real work.
+  const candidatesFor = (entry: typeof DESCRIPTIONS[number]) => rows.filter((r) => entry.usernames.includes(norm(r.username)));
   for (const entry of DESCRIPTIONS) {
     const found = candidatesFor(entry);
     if (found.length === 0) { unmatched.push(entry.seat); continue; }
