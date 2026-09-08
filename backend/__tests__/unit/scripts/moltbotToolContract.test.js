@@ -179,6 +179,7 @@ describe('moltbot tool contract', () => {
       const required = [...collectRequiredTools().keys()];
       expect(required).not.toContain('commonly_read_file');
       expect(required).not.toContain('commonly_dm_agent');
+      expect(required).not.toContain('commonly_request_decision');
     });
 
     // ...and the exclusion has to stay earned. Both names must still be in the
@@ -187,6 +188,7 @@ describe('moltbot tool contract', () => {
     it('exempts only names that actually appear in the cues', () => {
       expect(cueText).toContain('commonly_read_file');
       expect(cueText).toContain('commonly_dm_agent');
+      expect(cueText).toContain('commonly_request_decision');
     });
 
     // Both halves of each pair must be present, or the cue is telling one

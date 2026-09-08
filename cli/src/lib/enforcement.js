@@ -35,7 +35,7 @@ export const CLAIMABLE_EVENT_TYPES = new Set([
 // whether the work genuinely cannot continue without a human ruling.
 export const DECISION_FORK_FRAME = [
   '[Decision forks]',
-  'If you are blocked on a genuine fork that needs a human choice, call commonly_request_decision; do not post a prose @ask.',
+  'If you are blocked on a genuine fork that needs a human choice, use your runtime\'s decision-card tool (MCP: commonly_request_decision); include @human when a specific person should rule, and do not duplicate the card with a prose @ask.',
   'Use it only when you cannot safely continue before a ruling. Give 2–4 concrete options and mark one recommendation.',
   'Use ordinary pod messages for status, factual questions, and coordination that do not require a human choice.',
 ].join('\n');
