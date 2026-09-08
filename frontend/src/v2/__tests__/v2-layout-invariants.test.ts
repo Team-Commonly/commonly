@@ -971,6 +971,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
+    // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
+    // the mark is 600, and the title stacks over its meta on a phone.
+    expect(ruleBody(v2, '.v2-team-card__status--needsYou')).toContain('white-space: normal');
+    expect(ruleBody(v2, '.v2-team-card__command')).toContain('white-space: pre-wrap');
+    expect(ruleBody(v2, '.v2-team-card__command')).toContain('14px/20px');
+    expect(ruleBody(v2, '.v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark')).toContain('font: 600 12px/1');
+    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-team__heading \{[\s\S]*?flex-direction: column/);
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
     expect(v2).not.toContain('.v2-team-feature ');
     expect(v2).not.toContain('.v2-team-quiet');

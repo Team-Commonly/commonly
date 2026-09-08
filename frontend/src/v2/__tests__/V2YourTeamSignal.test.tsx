@@ -23,7 +23,7 @@ const minutesAgo = (m) => new Date(Date.now() - m * 60000).toISOString();
 const agents = {
   p1: [
     { name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user', lastActiveAt: minutesAgo(3), description: 'Connectors. Presses PRs, watches deploys.' },
-    { name: 'kai', instanceId: 'default', displayName: 'Kai', userId: 'kai-user', lastActiveAt: minutesAgo(2), description: 'Fixes. Small PRs with a test each.' },
+    { name: 'kai', instanceId: 'default', displayName: 'Kai', userId: 'kai-user', iconUrl: 'https://x/kai.png', lastActiveAt: minutesAgo(2), description: 'Fixes. Small PRs with a test each.' },
     { name: 'sage', instanceId: 'default', displayName: 'Sage', userId: 'sage-user', lastActiveAt: minutesAgo(41), description: null },
     { name: 'hosted-smoke', instanceId: 'default', displayName: 'Hosted Smoke', lastActiveAt: minutesAgo(1), internal: true },
   ],
@@ -38,8 +38,8 @@ const renderPage = (over = {}) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' }, { _id: 'p2', name: 'Connectors v2 — channel routing' }] });
     if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: agents.p1 } });
     if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agents.p2 } });
-    if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'default' === 'x' ? '' : 'kai' }] } });
-    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [] } });
+    if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'kai' }, { taskId: 'TASK-140', status: 'claimed', claimedBy: null, assignee: 'sage' }] } });
+    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [{ status: 'claimed', claimedBy: 'wren' }] } });
     if (url.startsWith('/api/activity/decision-queue')) return Promise.resolve({ data: { items: queue } });
     return Promise.resolve({ data: {} });
   });
@@ -99,7 +99,7 @@ describe('Your Team (direction C)', () => {
     const card = cardOf('Sage');
     expect(card).toHaveAttribute('data-state', 'idle');
     expect(card.querySelector('.v2-team-card__mark--idle')).not.toBeNull();
-    expect(card.querySelector('.v2-team-card__status')).toHaveTextContent('idle · 41m ago');
+    expect(card.querySelector('.v2-team-card__status')).toHaveTextContent('idle · 41m');
     expect(card.querySelector('.v2-team-card__status')).not.toHaveTextContent('●');
     expect(card.querySelector('.v2-team-card__desc')).toBeNull();
     expect(card.textContent).not.toMatch(/[“”]/);
@@ -108,9 +108,12 @@ describe('Your Team (direction C)', () => {
   test('without a matching actorUserId nobody needs you, even if a name would match', async () => {
     renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p1' }] });
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
-    // Wren holds no claimed task, so recency alone never reads as working.
-    expect(cardOf('Wren')).toHaveAttribute('data-state', 'idle');
-    expect(screen.getByText('3 agents · 1 working · 0 needs you')).toBeInTheDocument();
+    // Wren holds a claim without a task id: working, `working · <pod>`; Sage is only
+    // ASSIGNED (never claimed) and stays idle — assignment is not work.
+    expect(cardOf('Wren')).toHaveAttribute('data-state', 'working');
+    expect(cardOf('Wren').querySelector('.v2-team-card__status')).toHaveTextContent('working · Connectors v2');
+    expect(cardOf('Sage')).toHaveAttribute('data-state', 'idle');
+    expect(screen.getByText('3 agents · 2 working · 0 needs you')).toBeInTheDocument();
   });
 
   test('cards order needs-you → working → idle; the Your-own-agent card closes the grid with the attach command', async () => {
@@ -125,6 +128,14 @@ describe('Your Team (direction C)', () => {
     expect(own).toHaveTextContent('npx @commonlyai/cli agent attach claude');
     fireEvent.click(within(own).getByRole('button', { name: 'Set it up' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo');
+  });
+
+  test('the mark is initials in the state colour — an iconUrl never covers it', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
+    const mark = cardOf('Kai').querySelector('.v2-team-card__mark');
+    expect(mark.querySelector('img')).toBeNull();
+    expect(mark).toHaveTextContent('KA');
   });
 
   test('internal seats stay behind the mono disclosure and out of the counts', async () => {

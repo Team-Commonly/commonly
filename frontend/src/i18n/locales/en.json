@@ -1764,7 +1764,13 @@
       "idle": "idle",
       "answer": "Answer",
       "talk": "Talk",
-      "podsAria": "Pods"
+      "podsAria": "Pods",
+      "age": {
+        "now": "now",
+        "minutes": "{{count}}m",
+        "hours": "{{count}}h",
+        "days": "{{count}}d"
+      }
     },
     "activity": {
       "noRecent": "No recent activity",

@@ -11662,7 +11662,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-team__link { padding: 0; border: 0; background: transparent; color: var(--v2-accent-text); font: 500 13px/20px var(--v2-font); cursor: pointer; }
 .v2-team__error { font-size: 13px; color: var(--v2-text-primary); border: 1px solid var(--v2-border); border-radius: 4px; padding: 10px 12px; }
 .v2-team__empty { border: 1px dashed var(--v2-border); border-radius: 4px; padding: 20px; }
-.v2-team__empty-title { font: 700 18px/1.2 var(--v2-font-display); letter-spacing: -0.02em; margin-bottom: 6px; }
+.v2-team__empty-title { font: 700 var(--v2-fs-feature)/1.2 var(--v2-font-display); letter-spacing: -0.02em; margin-bottom: 6px; }
 .v2-team__empty-text { font-size: 13px; color: var(--v2-text-secondary); }
 
 .v2-team__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -11688,7 +11688,7 @@ body.modern-ui.v2-canvas {
   place-items: center;
   border: 0;
   border-radius: 4px;
-  font: 650 12px/1 var(--v2-font);
+  font: 600 12px/1 var(--v2-font);
   letter-spacing: 0.02em;
   text-transform: uppercase;
   cursor: pointer;
@@ -11703,7 +11703,7 @@ body.modern-ui.v2-canvas {
 /* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
    two lines, then clamp; min-width 0 so the grid column can shrink under it. */
 .v2-team-card__name {
-  font: 700 var(--v2-fs-feature)/1.2 var(--v2-font-display);
+  font: 700 18px/1.2 var(--v2-font-display);
   letter-spacing: -0.02em;
   color: var(--v2-text-primary);
   overflow-wrap: anywhere;
@@ -11717,6 +11717,8 @@ body.modern-ui.v2-canvas {
 .v2-team-card__status { margin-top: 2px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-team-card__status--needsYou,
 .v2-team-card__status--working { color: var(--v2-accent-text); }
+/* The ask is the line's content — it wraps, it never ellipsizes (66246 (3)). */
+.v2-team-card__status--needsYou { white-space: normal; overflow: visible; text-overflow: clip; }
 .v2-team-card__status--working .v2-team-card__dot { animation: v2-team-pulse 1.6s ease-in-out infinite; }
 @keyframes v2-team-pulse {
   0%, 100% { opacity: 1; }
@@ -11728,7 +11730,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
 .v2-team-card__pods { display: flex; gap: 6px; flex-wrap: wrap; }
 .v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
-.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 12px/18px var(--v2-font-mono); overflow-x: auto; white-space: nowrap; }
+.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
@@ -11740,6 +11742,9 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 760px) {
   .v2-team__head { flex-direction: column; align-items: flex-start; }
+  /* The title never wraps beside its meta: stack them (66246 (1)). */
+  .v2-team__heading { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .v2-team__meta { white-space: normal; }
   .v2-team__grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
   .v2-root button.v2-team-card__answer,
   .v2-root button.v2-team-card__talk,

@@ -1756,7 +1756,13 @@
       "idle": "空闲",
       "answer": "回答",
       "talk": "对话",
-      "podsAria": "Pod"
+      "podsAria": "Pod",
+      "age": {
+        "now": "刚刚",
+        "minutes": "{{count}}分",
+        "hours": "{{count}}时",
+        "days": "{{count}}天"
+      }
     },
     "activity": {
       "noRecent": "近期无活动",

@@ -36,7 +36,7 @@ interface AgentInstallationSummary {
   name: string;
   instanceId: string;
   displayName?: string;
-  iconUrl?: string;
+  iconUrl?: string; // never rendered on the card: the mark is the state (identity §4)
   status?: string;
   installedAt?: string;
   lastHeartbeatAt?: string | null;
@@ -77,18 +77,20 @@ const lastSeenTime = (a: AgentInstallationSummary): number => {
   return Number.isNaN(ms) ? 0 : ms;
 };
 
-// Short mono age for the idle line: `41m`, `2h`, `3d`. Never a sentence.
+// Short mono age for the idle line: `41m`, `2h`, `3d` — data, not a
+// sentence, so no "ago" (ux-lead 66246 (2)). A seat that never connected
+// keeps saying so: that is a fact about the wrapper, not an age.
 const shortAge = (iso: string | null | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string => {
   if (!iso) return t('yourTeam.activity.neverConnected');
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return t('yourTeam.activity.noRecent');
   const min = Math.floor(ms / 60000);
-  if (min < 1) return t('yourTeam.activity.justNow');
-  if (min < 60) return t('yourTeam.activity.minutesAgo', { count: min });
+  if (min < 1) return t('yourTeam.card.age.now');
+  if (min < 60) return t('yourTeam.card.age.minutes', { count: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return t('yourTeam.activity.hoursAgo', { count: hr });
+  if (hr < 24) return t('yourTeam.card.age.hours', { count: hr });
   const d = Math.floor(hr / 24);
-  return t('yourTeam.activity.daysAgo', { count: d });
+  return t('yourTeam.card.age.days', { count: d });
 };
 const formatRelative = shortAge;
 
@@ -131,7 +133,8 @@ const V2YourTeamPage: React.FC = () => {
   }, [user]);
 
   const [agents, setAgents] = useState<AgentInstallationSummary[]>([]);
-  const [tasksByClaimer, setTasksByClaimer] = useState<Map<string, string>>(new Map());
+  // holder → the claim it holds: the task id when the row has one, else the pod it lives in.
+  const [tasksByClaimer, setTasksByClaimer] = useState<Map<string, { taskId: string | null; podName: string }>>(new Map());
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,14 +196,18 @@ const V2YourTeamPage: React.FC = () => {
         }));
         // Claimed tasks per pod → who holds which task. Advisory: a pod whose
         // board fails to load just shows `working · <pod>`.
-        const claims = new Map<string, string>();
+        const claims = new Map<string, { taskId: string | null; podName: string }>();
         await Promise.all(podList.map(async (p) => {
           try {
             const r = await axios.get<{ tasks: TaskRow[] } | TaskRow[]>(`/api/v1/tasks/${p._id}?status=claimed`, { headers });
             const rows = Array.isArray(r.data) ? r.data : r.data?.tasks || [];
             for (const task of rows) {
-              const holder = task.claimedBy || task.assignee;
-              if (holder && task.taskId && !claims.has(String(holder))) claims.set(String(holder), String(task.taskId));
+              // `claimedBy` only: `assignee` is written by PATCH and can sit on a
+              // row nobody claimed (sprint-review, PR review at fa98adf7). A
+              // claimed row without an id still marks its holder — the status
+              // then reads `working · <pod>` (ruling 66163 (2)).
+              const holder = task.claimedBy;
+              if (holder && !claims.has(String(holder))) claims.set(String(holder), { taskId: task.taskId ? String(task.taskId) : null, podName: p.name || p.title || '' });
             }
           } catch { /* advisory */ }
         }));
@@ -226,7 +233,8 @@ const V2YourTeamPage: React.FC = () => {
   }, [t]);
 
   // A seat claims as its instanceId (agentName fallback) — tasksApi.ts:134.
-  const claimedTaskFor = (a: AgentInstallationSummary): string | null => (
+  // The claim this seat holds, or null. A claim without a task id still counts.
+  const claimedTaskFor = (a: AgentInstallationSummary): { taskId: string | null; podName: string } | null => (
     tasksByClaimer.get(a.instanceId || 'default') || tasksByClaimer.get(a.name) || null
   );
 
@@ -248,7 +256,7 @@ const V2YourTeamPage: React.FC = () => {
   // liveness is what the idle line's age already says.
   const stateOf = (a: AgentInstallationSummary): CardState => {
     if (a.userId && asksByActor.has(a.userId)) return 'needsYou';
-    if (claimedTaskFor(a)) return 'working';
+    if (claimedTaskFor(a) !== null) return 'working';
     return 'idle';
   };
 
@@ -316,7 +324,7 @@ const V2YourTeamPage: React.FC = () => {
     const statusText = state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
       : state === 'working'
-        ? `${t('yourTeam.card.working')} · ${task || shortPodName(a.podName || '')}`.replace(/ · $/, '')
+        ? `${t('yourTeam.card.working')} · ${task?.taskId || shortPodName(task?.podName || a.podName || '')}`.replace(/ · $/, '')
         : `${t('yourTeam.card.idle')} · ${formatRelative(lastSeenIso(a), t).toLowerCase()}`;
     return (
       <article
@@ -332,7 +340,7 @@ const V2YourTeamPage: React.FC = () => {
             onClick={() => goToProfile(a)}
             aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
           >
-            {a.iconUrl ? <img src={a.iconUrl} alt="" /> : initialsFor(display)}
+            {initialsFor(display)}
           </button>
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
