@@ -23,6 +23,9 @@ runtime API.
    on fresh and
    resumed runs and passes reasoning effort as `model_reasoning_effort` through
    `-c`, which is the supported Codex CLI surface.
+   Claude detection and child launches also append the operator's
+   `~/.local/bin` to the child `PATH`; launchd daemon environments commonly omit
+   that directory even though the Claude executable is installed there.
 2. **Existing-agent editing.** The existing registry PATCH route remains the
    source of truth: `PATCH /api/registry/pods/:podId/agents/:name` with
    `config.runtime` (including `adapter`, `model`, and `effort`) and/or a
@@ -64,6 +67,9 @@ require moving the already-proven seats back.
 ## Acceptance evidence
 
 - Codex fresh and resume each receive the selected model and effort.
+- A Claude adapter configured through the daemon resolves and launches when its
+  binary is installed under `~/.local/bin`, including a launchd-style restricted
+  parent `PATH`.
 - An existing-agent model/config edit is visible through the UI and CLI and is
   applied by the daemon without replacing identity or memory.
 - Exactly one runner owns the migrated seat after handoff; old ownership is

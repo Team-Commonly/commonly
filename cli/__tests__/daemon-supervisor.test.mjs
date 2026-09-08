@@ -194,6 +194,37 @@ describe('tick', () => {
     expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
   });
 
+  test('server runtime row wins when local adapter and model disagree', async () => {
+    let runtime = { runtimeType: 'wrapper', adapter: 'codex', model: 'local-model' };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        adapter: 'codex',
+        environment: { model: 'local-model' },
+      },
+    };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime })],
+      tokens,
+      resolveAdapter: async (rowRuntime) => rowRuntime?.adapter || 'claude',
+    });
+
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    // Adoption/reload is server-authoritative: the next process must consume
+    // the row, never silently preserve stale local adapter/model values.
+    runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'server-model' };
+    await supervisor.tick();
+
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      adapter: 'claude',
+      environment: { model: 'server-model' },
+    }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
   test('a declared adapter that resolves to a fallback is rejected without spawning', async () => {
     const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
     const { supervisor, children, saveToken } = makeHarness({
