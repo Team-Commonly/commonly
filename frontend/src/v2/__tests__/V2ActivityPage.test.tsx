@@ -204,7 +204,9 @@ describe('V2ActivityPage', () => {
     })));
 
     // findAll: the window change reloads both requests and the rows remount.
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Open' }))[0]);
+    // Oldest waiting first (66311) decides row order, so aim at the row itself.
+    const row = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1#message-699');
   });
 
@@ -222,7 +224,7 @@ describe('V2ActivityPage', () => {
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('keeps an empty Needs you state honest', async () => {
@@ -230,7 +232,7 @@ describe('V2ActivityPage', () => {
       ? { items: [], count: 0, countsByPod: {} } : recap }));
     renderPage();
 
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByText(/0 needs you/i)).not.toBeInTheDocument();
   });
 
@@ -244,7 +246,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByRole('button', { name: 'Meet your Guide' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hire your first agent' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a task' })).toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Meet your Guide' }));
     expect(onGuide).toHaveBeenCalledTimes(1);
@@ -279,7 +281,7 @@ describe('V2ActivityPage', () => {
       { notes: 'Approved via Activity' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('offers Reject as the approval secondary action', async () => {
@@ -554,6 +556,41 @@ describe('V2ActivityPage', () => {
     expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
   });
 
+  test('0 open asks with a ruled history item: the dashed panel and its time line render first, the settled card under it, no kicker', async () => {
+    const ruledAt = new Date(Date.now() - 41 * 60000).toISOString();
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {}, remaining: 0 } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [
+        { id: 'd-old', kind: 'decision', title: 'Settled earlier', detail: 'x', podId: 'pod-1', podName: 'Launch pod', options: [{ label: 'A' }], status: 'ruled', ruling: { value: 'A', by: 'sam', at: ruledAt }, createdAt: ruledAt },
+      ], count: 1, remaining: 0 } });
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+    const panel = (await screen.findByText('Nothing needs you.')).closest('.v2-activity__empty') as HTMLElement;
+    expect(within(panel).getByText('The last ask was answered 41m ago.')).toBeInTheDocument();
+    const settled = await screen.findByText('Settled earlier');
+    // Panel first, settled card under it.
+    expect(panel.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('oldest waiting first')).not.toBeInTheDocument();
+  });
+
+  test('a human whose name matches an agent label keeps the human mark when the id is present', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { ...decisionQueue, items: [
+        { id: 'm-human', attentionItemId: 'a-human', kind: 'mention', title: 'Kai mentioned you', detail: 'x', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', actorUserId: 'human-user-99', createdAt: '2026-08-26T11:00:00.000Z' },
+        { id: 'm-agent', attentionItemId: 'a-agent', kind: 'mention', title: 'Kai mentioned you', detail: 'y', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', createdAt: '2026-08-26T10:00:00.000Z' },
+      ], count: 2, countsByPod: { 'pod-1': 2 } }
+      : { ...recap, agents: [{ ...recap.agents[0], id: 'agent-kai', name: 'Kai' }] } }));
+    renderPage();
+    await screen.findAllByText('Kai');
+    const marks = [...document.querySelectorAll('.v2-activity__queue-mark')];
+    const human = document.querySelector('[data-activity-item-id="m-human"] .v2-activity__queue-mark') as HTMLElement;
+    const agent = document.querySelector('[data-activity-item-id="m-agent"] .v2-activity__queue-mark') as HTMLElement;
+    expect(marks.length).toBeGreaterThanOrEqual(2);
+    expect(human.className).toContain('v2-activity__queue-mark--human');
+    expect(agent.className).toContain('v2-activity__queue-mark--agent');
+  });
+
   test('renders a handoff as a handled action, never as a decision', async () => {
     const handoffQueue = {
       items: [{
@@ -578,7 +615,7 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
-    expect(screen.getByText(/Handoff · Launch pod/)).toBeInTheDocument();
+    expect(screen.getByText(/handoff · launch pod/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
 
@@ -588,7 +625,7 @@ describe('V2ActivityPage', () => {
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('keeps a failed handoff acknowledgement and retry beside its row', async () => {
@@ -630,7 +667,7 @@ describe('V2ActivityPage', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('does not steal focus when the user moves during a failed action', async () => {
@@ -811,10 +848,10 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
 
-    expect(await screen.findByText('Open items across all pods')).toBeInTheDocument();
+    expect(await screen.findByText('oldest waiting first')).toBeInTheDocument();
     expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
     fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
-    expect(await screen.findByText('Open items in this pod')).toBeInTheDocument();
+    expect(await screen.findByText('oldest waiting first · this pod')).toBeInTheDocument();
     expect(screen.getByLabelText('9 waiting on you')).toHaveTextContent('9');
   });
 
@@ -843,11 +880,16 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Mention 0')).toBeInTheDocument();
-    const more = await screen.findByRole('button', { name: 'Show more · 6 remaining' });
-    fireEvent.click(more);
+    // Needs you never folds (66311): the second page loads itself, with no
+    // Show more control and no focus move — the reader did not ask for it.
     expect(await screen.findByText('Mention 55')).toBeInTheDocument();
-    await waitFor(() => expect(document.querySelector('[data-activity-item-id="mention-50"]')).toHaveFocus());
-    expect(screen.queryByRole('button', { name: 'Show more · 6 remaining' })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-activity-item-id="mention-50"]')).not.toHaveFocus();
+    expect(screen.queryByRole('button', { name: /Show more/ })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.v2-activity__queue-row')).toHaveLength(56);
+    // Between pages no control renders either: the fetch stays under the fold (66405 miss 8).
+    expect(document.querySelector('.v2-activity__queue-more')).toBeNull();
+    // The one count: the rendered rows equal the ledger's number.
+    expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ limit: 50, offset: 50 }),
     }));
@@ -880,7 +922,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Refresh 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
     await waitFor(() => expect(resolveMore).not.toBeNull());
 
     await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
@@ -908,7 +949,7 @@ describe('V2ActivityPage', () => {
     await screen.findByText('Review requested');
     fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
     expect(await screen.findByText('GTM 8')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ podId: 'pod-2', limit: 50, offset: 0 }),
     }));
@@ -969,7 +1010,7 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Count unavailable')).toBeInTheDocument();
     expect(screen.queryByText('the same 0 as the rail and the inspector')).not.toBeInTheDocument();
     expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
   });
 
   test('retains rows and offers Retry when a refresh fails', async () => {
@@ -1059,7 +1100,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Extent 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 6 remaining' }));
     expect(await screen.findByText('Extent 55')).toBeInTheDocument();
 
     await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
@@ -1087,7 +1127,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Append 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Append 50')).toBeInTheDocument();
@@ -1195,15 +1234,15 @@ describe('V2ActivityPage', () => {
     }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }] } }));
     renderPage();
-    const more = await screen.findByRole('button', { name: '17 more' });
+    const more = await screen.findByRole('button', { name: '17 more in launch pod' });
     const group = more.closest('article');
     const lines = () => group.querySelectorAll('.v2-activity__moved-line');
     expect(lines()).toHaveLength(3);
     fireEvent.click(more);
     expect(lines()).toHaveLength(20);
-    fireEvent.click(within(group).getByRole('button', { name: '20 more' }));
+    fireEvent.click(within(group).getByRole('button', { name: '20 more in launch pod' }));
     expect(lines()).toHaveLength(40);
-    const lastMore = within(group).getByRole('button', { name: '6 more' });
+    const lastMore = within(group).getByRole('button', { name: '6 more in launch pod' });
     lastMore.focus();
     fireEvent.click(lastMore);
     expect(lines()).toHaveLength(46);
@@ -1212,7 +1251,7 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(less).toHaveFocus());
     fireEvent.click(less);
     expect(lines()).toHaveLength(3);
-    await waitFor(() => expect(within(group).getByRole('button', { name: '17 more' })).toHaveFocus());
+    await waitFor(() => expect(within(group).getByRole('button', { name: '17 more in launch pod' })).toHaveFocus());
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {
