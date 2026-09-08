@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 84);
+  assert.equal(pages.length, 85);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -105,6 +105,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-closure/',
     '/guides/ai-agent-context-packet/',
     '/guides/ai-agent-focused-threads/',
+    '/guides/ai-agent-approval-boundaries/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -140,7 +141,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 74);
+  assert.equal(guidePages.length, 75);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -730,6 +731,42 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const approvalBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-approval-boundaries/');
+  assert.equal(approvalBoundariesGuide.title, 'AI Agent Approval Boundaries: What Review Can Authorize | Commonly');
+  const approvalBoundaries = guides['ai-agent-approval-boundaries'];
+  assert.deepEqual(approvalBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(approvalBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(approvalBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  const approvalOwner = approvalBoundaries.sections.find((section) => section.title === 'Give each approval a decision owner');
+  assert.equal(approvalOwner.paragraphs.length, 8);
+  assert.equal(approvalOwner.tables, undefined);
+  assert.deepEqual(approvalOwner.links.map((link) => link.path), ['/guides/ai-agent-decision-owner/']);
+  const sharedApprovalBoundary = approvalBoundaries.sections.find((section) => section.title === 'Use the same boundary across human and agent work');
+  assert.equal(sharedApprovalBoundary.paragraphs.length, 3);
+  assert.equal(sharedApprovalBoundary.tables, undefined);
+  assert.equal(sharedApprovalBoundary.links, undefined);
+  const boundedAnswer = approvalBoundaries.sections.find((section) => section.title === 'Start by naming the actual question');
+  assert.equal(boundedAnswer.paragraphs.length, 2);
+  assert.equal(boundedAnswer.links, undefined);
+  assert.equal(approvalBoundaries.sections.find((section) => section.title === 'If one of these steps is missing').links, undefined);
+  assert.match(approvalBoundaries.intro[0], /^AI agent approval boundaries define what a visible approval changes—and what it does not\./);
+  assert.match(approvalBoundaries.intro[1], /@mentions/);
+  const approvalBoundariesHtml = renderStaticPage(guideTemplate, approvalBoundariesGuide);
+  assert.match(approvalBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-approval-boundaries\/"/);
+  assert.match(approvalBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(approvalBoundariesHtml, /continuing limit/);
+  assert.doesNotMatch(approvalBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(approvalBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((approvalBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-governance/',
+    '/guides/ai-agent-review-decisions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-approval-boundaries\/"/g) || []).length, 1);
   }
   const focusedThreadsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-focused-threads/');
   assert.equal(focusedThreadsGuide.title, 'AI Agent Focused Threads: One Review or Decision | Commonly');
