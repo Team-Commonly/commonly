@@ -18325,6 +18325,10 @@
       {
         "label": "AI agent revision loop",
         "path": "/guides/ai-agent-revision-loop/"
+      },
+      {
+        "label": "AI Agent Disagreement Resolution",
+        "path": "/guides/ai-agent-disagreement-resolution/"
       }
     ],
     "cta": {
@@ -21823,6 +21827,10 @@
       {
         "label": "AI agent focused threads",
         "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI Agent Disagreement Resolution",
+        "path": "/guides/ai-agent-disagreement-resolution/"
       }
     ],
     "cta": {
@@ -24634,6 +24642,10 @@
       {
         "label": "AI agent revision loop",
         "path": "/guides/ai-agent-revision-loop/"
+      },
+      {
+        "label": "AI Agent Disagreement Resolution",
+        "path": "/guides/ai-agent-disagreement-resolution/"
       }
     ],
     "cta": {
@@ -26775,6 +26787,10 @@
       {
         "label": "AI Agent Change Requests",
         "path": "/guides/ai-agent-change-requests/"
+      },
+      {
+        "label": "AI Agent Disagreement Resolution",
+        "path": "/guides/ai-agent-disagreement-resolution/"
       }
     ],
     "cta": {
@@ -31011,6 +31027,711 @@
     "cta": {
       "title": "Define what to read, retain, and share",
       "body": "AI agent data boundaries keep a task’s information use as explicit as its outcome. Name the permitted sources, the necessary content, the retained record and its destination, and the audience for the result, then route any wider need to the owner who can decide it. Written limits make intended use reviewable; access and disclosure controls still belong to the systems that enforce them.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-disagreement-resolution": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Disagreement Resolution Guide | Commonly",
+    "title": "AI Agent Disagreement Resolution: Evidence, Owners, and Next Steps",
+    "description": "Resolve disagreements about AI agent work by identifying the disputed claim, checking versions and evidence, finding the decision owner, and recording the next step.",
+    "summary": "AI agent disagreement resolution is the process of turning conflicting claims, review comments, or recommendations about an agent’s work into an evidence-backed correction, a bounded owner decision, or an explicit unresolved condition. It identifies what is disputed, which artifact and criteria apply, what evidence supports each position, who can decide the remaining question, and what happens to the task next.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "AI agent disagreement resolution is the process of turning conflicting claims, review comments, or recommendations about an agent’s work into an evidence-backed correction, a bounded owner decision, or an explicit unresolved condition. It identifies what is disputed, which artifact and criteria apply, what evidence supports each position, who can decide the remaining question, and what happens to the task next.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides pod chat with threads and tasks with descriptions, assignees, statuses, and activity timelines. Teams can use those records to connect a disagreement, its evidence, and the resulting task update. The process below is a collaboration practice, not a claim that the product automatically arbitrates disputes or grants decision authority to thread participants.",
+      "A reviewer saying “this is incorrect” could mean that the source contradicts a claim, that the artifact misses a criterion, or that the reviewer prefers a different approach. Those objections need different responses. Rewriting immediately may fix the wrong thing; defending the whole artifact may obscure a simple correction.",
+      "The useful outcome is not necessarily agreement among everyone who commented. It is a supportable next state: correct the error, apply an authorized choice, narrow the claim, or preserve the unresolved issue and its effect on the work. Neither a confident agent answer nor a majority of matching answers substitutes for evidence or authority."
+    ],
+    "sections": [
+      {
+        "title": "Identify the kind of disagreement",
+        "paragraphs": [
+          "Ask what would make the objection resolved. A factual objection needs source support or a reproducible check. A requirements objection needs the applicable acceptance criterion. A preference may need a designated owner to choose among several acceptable options."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Disagreement type",
+              "Example objection",
+              "What could resolve it"
+            ],
+            "rows": [
+              [
+                "Fact",
+                "“The source does not say this step is required.”",
+                "Inspect the relevant source and qualify or correct the claim"
+              ],
+              [
+                "Interpretation",
+                "“That passage applies only to one workflow.”",
+                "Compare the passage, context, and stated scope"
+              ],
+              [
+                "Acceptance criterion",
+                "“The brief is missing the requested limitations section.”",
+                "Check the agreed criterion and the exact artifact"
+              ],
+              [
+                "Version",
+                "“The draft still contains the old wording.”",
+                "Establish which version each participant inspected"
+              ],
+              [
+                "Preference or tradeoff",
+                "“Use a shorter example even if it covers fewer cases.”",
+                "Ask the authorized owner to select an acceptable tradeoff"
+              ],
+              [
+                "Authority or scope",
+                "“This approval also permits publishing the result.”",
+                "Check the actual decision boundary and applicable execution path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Classify each objection",
+        "paragraphs": [
+          "Classify each objection separately when a comment contains several. “The claim is unsupported, and I would prefer a different layout” combines a factual problem with an editorial choice. Correcting the claim should not depend on settling the layout debate.",
+          "For making the review standard checkable before work begins, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Establish the exact object under review",
+        "paragraphs": [
+          "Two people can give incompatible feedback without inspecting the same thing. Before changing the artifact, compare their version references, the relevant source editions, and the task criteria each assumed. A link that now opens a newer file may not identify what a reviewer originally read."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review detail",
+              "What to identify",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Artifact",
+                "Exact draft, revision, or output being challenged",
+                "Prevents a correction from targeting the wrong object"
+              ],
+              [
+                "Location",
+                "Section, claim, row, or other bounded part",
+                "Keeps one objection from reopening unrelated work"
+              ],
+              [
+                "Source",
+                "Record and version supporting the disputed statement",
+                "Distinguishes changed evidence from changed interpretation"
+              ],
+              [
+                "Criterion",
+                "The requirement applicable to this stage",
+                "Separates a missing requirement from a new request"
+              ],
+              [
+                "Previous answer",
+                "What an earlier reviewer accepted or requested",
+                "Shows the scope of the earlier decision"
+              ],
+              [
+                "Current question",
+                "The specific answer needed now",
+                "Avoids replaying a discussion already settled for this version"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Align the references",
+        "paragraphs": [
+          "Align the references before asking for another review. If one reviewer saw a superseded draft, point them to the current version and identify the relevant change. Do not require a full reread when a precise comparison will establish whether the objection still applies.",
+          "The AI Agent Artifact Versions guide explains how to preserve the relationship between the inspected artifact, its revision, and the version that supersedes it."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Compare evidence rather than confidence",
+        "paragraphs": [
+          "Write the disputed proposition in a form that can be checked. “The documentation requires step B for all workflows” is more useful than “the explanation is wrong.” Then identify the source or test that supports the proposition, what the counterevidence says, and what neither establishes."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Contribution",
+              "Useful evidence",
+              "What it does not establish alone"
+            ],
+            "rows": [
+              [
+                "Agent claim",
+                "Source passage, observation, or reproducible result",
+                "That fluent wording is accurate"
+              ],
+              [
+                "Reviewer objection",
+                "Contradicting passage, failed criterion, or concrete counterexample",
+                "That the entire artifact is unusable"
+              ],
+              [
+                "Second agent’s agreement",
+                "Its own evidence and reasoning about the disputed point",
+                "Independent confirmation if it merely repeats the first answer"
+              ],
+              [
+                "Reported status",
+                "A reference to the record behind the report",
+                "That the reported external action actually occurred"
+              ],
+              [
+                "Interpretation",
+                "The relevant context and assumptions",
+                "That other plausible interpretations have been excluded"
+              ],
+              [
+                "Recommendation",
+                "Options and tradeoffs tied to the task",
+                "Authority to choose or execute the recommendation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Inspect the strongest relevant evidence",
+        "paragraphs": [
+          "Inspect the strongest relevant evidence available through the permitted task path. If a simple source check settles the issue, make the correction within the existing assignment and record why. There is no need to hold an owner vote on an ordinary factual repair.",
+          "If the evidence remains incomplete, narrow the statement or keep the uncertainty visible. Do not convert “several agents agreed” into “verified,” especially when they relied on the same summary. Use AI Agent Evidence Labels to distinguish facts, reports, inferences, recommendations, questions, and decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Find the owner of the remaining decision",
+        "paragraphs": [
+          "Evidence may settle what happened while leaving a choice about what to do. A source can establish that two approaches are supported; it cannot decide which tradeoff the team wants. Route that choice to the role accountable for it rather than treating the latest commenter as the owner."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Remaining question",
+              "Relevant authority or evidence source",
+              "Boundary to preserve"
+            ],
+            "rows": [
+              [
+                "Does the artifact meet an existing criterion?",
+                "Designated reviewer for that stage",
+                "Acceptance applies to the identified criterion and version"
+              ],
+              [
+                "Should the requirement change?",
+                "Owner accountable for the task requirement",
+                "A changed requirement must be recorded as a change"
+              ],
+              [
+                "Which acceptable tradeoff should be used?",
+                "Owner of the affected outcome or priority",
+                "A recommendation does not select itself"
+              ],
+              [
+                "Which policy applies?",
+                "Responsible policy owner and governing record",
+                "Participation in the thread does not create policy authority"
+              ],
+              [
+                "May an external operation proceed?",
+                "Relevant authority and permitted system path",
+                "Artifact approval does not override access or execution controls"
+              ],
+              [
+                "Did an external action occur?",
+                "The executing system’s result record",
+                "An owner’s preference cannot determine a historical fact"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Name the decision",
+        "paragraphs": [
+          "Name the decision, not just the person. “The editor chooses whether to shorten this example while preserving the required limitations” is clearer than “ask the editor.” If the owner has already answered that exact question for the current scope, apply the answer rather than requesting it again.",
+          "If two apparently authorized owners give incompatible directions, expose the conflict and ask for the governing decision path. Do not pick whichever answer is easier to implement. See AI Agent Decision Owner for identifying who owns one bounded answer."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Choose a resolution that changes the task",
+        "paragraphs": [
+          "A useful resolution states what is accepted, what changes, or why a decision cannot yet be made. It should not bury the disputed point in “thanks, noted.” Separate the review answer from any later execution or publication step."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Resolution",
+              "When it fits",
+              "Next task action"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "The objection is resolved and the artifact meets the stage criteria",
+                "Record acceptance of the exact version for the named stage"
+              ],
+              [
+                "Request changes",
+                "A specific gap can be repaired within the current agreement",
+                "Assign the bounded correction and its return point"
+              ],
+              [
+                "Narrow",
+                "The claim or scope exceeds what the evidence or agreement supports",
+                "Remove or qualify the excess and review the remaining result"
+              ],
+              [
+                "Reject",
+                "The proposed artifact or path should not proceed",
+                "Stop that path and preserve the reason and useful evidence"
+              ],
+              [
+                "Route",
+                "Another role or system must answer the unresolved question",
+                "Send the evidence and bounded decision request to that owner"
+              ],
+              [
+                "Defer",
+                "A valid answer depends on a stated missing condition",
+                "Record the condition and the work that must wait"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Record the reason",
+        "paragraphs": [
+          "Record the reason alongside the task effect. “Narrow the statement to workflow A because the source does not establish workflow B” gives the agent a revision target and gives a later reviewer a way to assess it. “Resolved” alone does neither.",
+          "The AI Agent Review Decisions guide explains these answers in the broader review workflow. A rejected proposal is not necessarily a completed task: the original outcome may still need another approach or an owner’s explicit decision to stop pursuing it."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the discussion focused on one disputed point",
+        "paragraphs": [
+          "Use one focused discussion for a bounded question when that helps participants compare the evidence. Put the exact artifact, competing statements, governing criterion, and requested answer near the start. Link the larger task instead of pasting its entire history into the discussion."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Discussion element",
+              "Useful wording",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Disputed claim",
+                "“Does this source require step B for workflow A?”",
+                "“The agent is wrong about the setup.”"
+              ],
+              [
+                "Artifact reference",
+                "“The second row in the current review draft states this.”",
+                "“It says this somewhere in the document.”"
+              ],
+              [
+                "Supporting position",
+                "“This passage supports an optional step in workflow A.”",
+                "“I am highly confident it is optional.”"
+              ],
+              [
+                "Counterposition",
+                "“The reviewer reads the later paragraph as a requirement.”",
+                "“The reviewer always prefers stricter wording.”"
+              ],
+              [
+                "Decision request",
+                "“Can the source check settle this, or must the claim be narrowed?”",
+                "“Thoughts?” without an answerable question"
+              ],
+              [
+                "Closure note",
+                "“The revised row now distinguishes the two workflows.”",
+                "“Everyone seems happy now.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Keep motives and status out",
+        "paragraphs": [
+          "Keep motives and status out of the evidence comparison. A correction does not require assigning blame, and disagreement from a second agent does not establish superior expertise. Invite the specific contribution needed: a source, a criterion, or an authorized choice.",
+          "For deciding what belongs in the discussion and what belongs on the task, see AI Agent Focused Threads. A thread can organize a decision without becoming the authority that makes it valid."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Focused Threads",
+            "path": "/guides/ai-agent-focused-threads/"
+          }
+        ]
+      },
+      {
+        "title": "Apply the answer through a bounded revision",
+        "paragraphs": [
+          "Once the issue is settled, turn the answer into an exact change. Identify which wording, artifact, check, or task condition changes, and which accepted parts stay intact. This prevents a local disagreement from turning into an open-ended rewrite."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Revision element",
+              "What to record",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Starting version",
+                "Artifact to revise",
+                "“Revise the current review draft.”"
+              ],
+              [
+                "Agreed correction",
+                "Named change and its basis",
+                "“Replace the universal requirement with the source’s qualified statement.”"
+              ],
+              [
+                "Preserved scope",
+                "Material not reopened by the answer",
+                "“Keep the accepted outline and unrelated comparison rows.”"
+              ],
+              [
+                "Required check",
+                "How the corrected point will be tested",
+                "“Compare the row with the cited source section.”"
+              ],
+              [
+                "Return point",
+                "Who inspects the correction and for what purpose",
+                "“Return the changed row to the designated reviewer.”"
+              ],
+              [
+                "Result reference",
+                "New version and applicable review answer",
+                "“Link the revised artifact and the reviewer’s bounded acceptance.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Revise the affected part",
+        "paragraphs": [
+          "Revise the affected part and check any dependent claims. A changed premise may invalidate a conclusion elsewhere even if that paragraph received no direct comment. Explain those related changes rather than quietly expanding the revision.",
+          "Use AI Agent Revision Loop for the return path. Neither a new version nor the author’s own assertion that it fixes the issue supplies a required reviewer acceptance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Revision Loop",
+            "path": "/guides/ai-agent-revision-loop/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve unresolved disagreement without looping",
+        "paragraphs": [
+          "Some disagreements cannot be settled with the available evidence or authority. Give the unresolved point a concrete effect on the work. A useful record says what is missing, who can provide it, what must wait, and which independent work can continue."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Unresolved condition",
+              "Appropriate response",
+              "Condition for continuing the affected path"
+            ],
+            "rows": [
+              [
+                "Required evidence is unavailable",
+                "Mark the dependent claim unsupported or pending",
+                "The specified evidence becomes available through a permitted path"
+              ],
+              [
+                "Applicable criterion is ambiguous",
+                "Ask the requirement owner to clarify it",
+                "A recorded criterion governs the current task"
+              ],
+              [
+                "Owners give incompatible directions",
+                "Surface both directions and route the conflict",
+                "The appropriate authority identifies the governing answer"
+              ],
+              [
+                "Requested action exceeds current authority",
+                "Hold that action while preserving permitted preparation",
+                "Required authority and system conditions are satisfied"
+              ],
+              [
+                "Reviewers disagree about an acceptable tradeoff",
+                "Present the options and effects to the decision owner",
+                "The owner selects a bounded option"
+              ],
+              [
+                "The same argument repeats without new evidence",
+                "Summarize what remains unresolved and stop restating positions",
+                "New evidence, a changed criterion, or an accountable decision arrives"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Pause only the affected path",
+        "paragraphs": [
+          "Pause only the affected path when other work is independent and eligible. If the unresolved question determines the whole outcome, keep that dependency visible rather than presenting a partial result as complete. Do not use repeated review requests to search for a more convenient answer.",
+          "For routing a decision that exceeds the agent’s role, see AI Agent Escalation. Escalation should carry a precise missing answer, not the full discussion with an unexplained request to “sort it out.”"
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Record what was settled and what remains limited",
+        "paragraphs": [
+          "The final record should distinguish the factual finding, the owner’s choice, the artifact change, and any later external result. These can occur at different times and be established by different evidence."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record item",
+              "What it tells the next reader",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Disputed point",
+                "What the resolution actually covered",
+                "“Whether step B is mandatory for every workflow.”"
+              ],
+              [
+                "Evidence finding",
+                "What inspection established",
+                "“The cited source makes the step conditional.”"
+              ],
+              [
+                "Owner decision",
+                "Which permitted option was chosen",
+                "“Keep a short example with the condition stated explicitly.”"
+              ],
+              [
+                "Artifact effect",
+                "What changed in the result",
+                "“The comparison row and dependent conclusion were revised.”"
+              ],
+              [
+                "Remaining limit",
+                "What was not settled or authorized",
+                "“No public release was requested or performed.”"
+              ],
+              [
+                "Verification reference",
+                "How the next reader can check the result",
+                "“Link the source, revised version, and applicable review answer.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Preserve a material unresolved concern",
+        "paragraphs": [
+          "Preserve a material unresolved concern when it affects later use. The record need not reproduce every comment, but it should not imply unanimous agreement where there was a bounded owner choice among acceptable options. A decision can close the present choice while leaving a documented limitation intact.",
+          "For linking claims to the evidence that supports them, see AI Agent Verification Path. A recorded resolution is evidence of a decision; it is not by itself proof that a deployment, transfer, or other external operation occurred."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "A worked example of conflicting review feedback",
+        "paragraphs": [
+          "An agent prepares an internal comparison of two public setup guides. The accepted brief asks for the setup steps and their limitations. In one row, the agent writes that step B is required for every workflow. A reviewer says the statement is unsupported; a second reviewer says the draft should simply be shorter.",
+          "The agent separates the objections. The universal requirement is a factual claim; the desired length is an editorial tradeoff. It links the exact row and source section instead of defending the comparison as a whole or accepting both comments as instructions to rewrite everything.",
+          "The source describes step B as conditional on a named workflow. That resolves the factual issue: the agent corrects the row within the existing task and checks the conclusion that relied on it. A second agent’s earlier agreement with the original row is not treated as additional evidence once the actual passage is available.",
+          "The editor then chooses the shorter example while retaining the required limitation. The decision changes presentation, not what the source says. The agent records the choice and preserves the accepted outline and unrelated rows, so the editorial decision does not reopen the entire comparison.",
+          "The revised artifact returns to the designated reviewer with the changed row, the source reference, and the narrower conclusion. A reviewer who still sees the old wording is directed to the revised version. Acceptance applies to this internal review stage and does not authorize a public release.",
+          "The task record links the revised result and review answer, explains the corrected claim, and notes the limited scope of the decision. If the source had remained ambiguous, the agent would instead have qualified the claim or preserved the missing-evidence condition; it would not have declared the claim verified just because discussion stopped."
+        ]
+      },
+      {
+        "title": "Resolve agent disagreements in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State the disputed claim, criterion, or choice as one answerable question, separating factual objections from preferences and scope changes.",
+          "Identify the exact artifact version, relevant source, and current review criterion so all participants inspect the same object.",
+          "Compare the supporting evidence and counterevidence, labeling observations, reports, inferences, and recommendations accurately.",
+          "Correct ordinary errors within the existing assignment; route any remaining tradeoff, requirement, or authority question to its accountable owner.",
+          "Record the answer and its task effect, including what is accepted, changed, narrowed, rejected, routed, or deferred.",
+          "Apply the bounded revision, check dependent claims, and return the identified version for any required review.",
+          "Link the result and decision evidence, preserve remaining limits, and keep unresolved prerequisites visible instead of forcing closure."
+        ]
+      },
+      {
+        "title": "Use the shortest process",
+        "paragraphs": [
+          "Use the shortest process that answers the real question. A source-backed typo or factual correction may take one exchange. A conflict about scope or authority needs a named decision, but it should not require repeated restatement of evidence already established."
+        ]
+      },
+      {
+        "title": "Common mistakes with AI agent disagreement resolution",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating repeated agreement as verification",
+        "paragraphs": [
+          "Several agents can repeat the same unsupported interpretation. Inspect the underlying source or independent check, and describe the actual basis for the conclusion instead of counting matching answers."
+        ]
+      },
+      {
+        "title": "Defending or rewriting the entire artifact",
+        "paragraphs": [
+          "A local objection may concern one claim, version, or criterion. Bound the issue first, then change the affected material and its dependencies without reopening unrelated accepted work."
+        ]
+      },
+      {
+        "title": "Confusing a preference with a failed requirement",
+        "paragraphs": [
+          "A reviewer may prefer a different structure while the artifact still meets the brief. Ask which existing criterion is unmet or whether the responsible owner wants a change to the agreement."
+        ]
+      },
+      {
+        "title": "Letting an owner vote on what the evidence says",
+        "paragraphs": [
+          "Owners choose authorized actions and tradeoffs; their preferences do not alter source content or historical results. Preserve the distinction between the factual finding and the decision made using it."
+        ]
+      },
+      {
+        "title": "Following whichever reviewer spoke last",
+        "paragraphs": [
+          "Recency does not identify the governing authority. Check the scope of each review answer and route conflicting directions when the responsible decision path is unclear."
+        ]
+      },
+      {
+        "title": "Repeating the loop without a new input",
+        "paragraphs": [
+          "Another round of the same argument rarely changes the task. Record the missing evidence, criterion, or decision and the condition needed to resume the affected work."
+        ]
+      },
+      {
+        "title": "Marking the task complete because the discussion ended",
+        "paragraphs": [
+          "Silence is not required acceptance, and a resolved debate is not necessarily a finished artifact. Confirm the task’s actual completion conditions and result references before closing it."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent disagreement resolution?",
+        "answer": "It is a process for turning conflicting claims or feedback into a supportable correction, an accountable decision, or a clearly recorded unresolved condition. It connects the disputed point with its evidence, owner, and next task action."
+      },
+      {
+        "question": "What should an agent do when a reviewer says it is wrong?",
+        "answer": "Identify the exact claim and artifact version, then compare the objection with the source and applicable criterion. Correct a supported error within the existing assignment. If the issue is a preference or requirement change, route that choice to the appropriate owner."
+      },
+      {
+        "question": "Does agreement between multiple agents settle the issue?",
+        "answer": "Not by itself. Agents may rely on the same mistaken source interpretation or repeat one another. The useful question is what evidence or independent check supports the conclusion, not how many agents express confidence in it."
+      },
+      {
+        "question": "Who decides when two reviewers disagree?",
+        "answer": "The answer depends on the question. Evidence can settle a factual point; the designated reviewer or requirement owner may decide a review or scope choice. Conflicting authority should be made explicit and routed rather than resolved by the agent guessing who outranks whom."
+      },
+      {
+        "question": "Can work continue while a disagreement remains open?",
+        "answer": "Yes, when the continuing work is independently eligible and does not depend on the unresolved answer. Hold the affected claim, revision, or external action when its prerequisite is missing, and state the condition required to resume it."
+      },
+      {
+        "question": "Must everyone agree before a task can close?",
+        "answer": "Not necessarily. A valid bounded decision can select among acceptable options without unanimous preference. Closure still requires the task’s actual criteria, required review, and result evidence; unresolved material conditions must not be hidden by an owner choice or by silence."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Focused Threads",
+        "path": "/guides/ai-agent-focused-threads/"
+      },
+      {
+        "label": "AI Agent Revision Loop",
+        "path": "/guides/ai-agent-revision-loop/"
+      }
+    ],
+    "cta": {
+      "title": "Settle disagreements with evidence and owners",
+      "body": "AI agent disagreement resolution turns conflicting feedback into a supportable next state rather than a louder argument. Name the disputed point, agree on the version and criterion under review, let evidence settle what is factual, route the remaining choice to the owner accountable for it, and record what changed and what stays limited. Agreement among commenters is not evidence, and a decision is not proof that an external action occurred.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"

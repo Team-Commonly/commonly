@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 93);
+  assert.equal(pages.length, 94);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -114,6 +114,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-stop-conditions/',
     '/guides/ai-agent-change-requests/',
     '/guides/ai-agent-data-boundaries/',
+    '/guides/ai-agent-disagreement-resolution/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -149,7 +150,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 83);
+  assert.equal(guidePages.length, 84);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -740,6 +741,65 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
+  assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly');
+  const disagreement = guides['ai-agent-disagreement-resolution'];
+  assert.deepEqual(disagreement.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(disagreement.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(disagreement.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(disagreement.faq.length, 6);
+  assert.equal(disagreement.intro.length, 4);
+  for (const section of disagreement.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const disagreementExampleIndex = disagreement.sections.findIndex((section) => section.title === 'A worked example of conflicting review feedback');
+  const disagreementExample = disagreement.sections[disagreementExampleIndex];
+  assert.equal(disagreementExample.paragraphs.length, 6);
+  assert.equal(disagreementExample.tables, undefined);
+  assert.equal(disagreementExample.links, undefined);
+  assert.equal(disagreementExample.orderedItems, undefined);
+  assert.equal(disagreement.sections.slice(0, disagreementExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(disagreement.sections[disagreementExampleIndex - 1].title, 'Preserve a material unresolved concern');
+  assert.equal(disagreement.sections[disagreementExampleIndex + 1].title, 'Resolve agent disagreements in seven steps');
+  for (const [title, tail] of [
+    ['Inspect the strongest relevant evidence', /^If the evidence remains incomplete, narrow the statement or keep the uncertainty visible\./],
+    ['Name the decision', /^If two apparently authorized owners give incompatible directions/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  for (const [title, tail] of [
+    ['Record the reason', /the original outcome may still need another approach or an owner’s explicit decision to stop pursuing it\.$/],
+    ['Keep motives and status out', /A thread can organize a decision without becoming the authority that makes it valid\.$/],
+    ['Revise the affected part', /supplies a required reviewer acceptance\.$/],
+    ['Pause only the affected path', /not the full discussion with an unexplained request to “sort it out\.”$/],
+    ['Preserve a material unresolved concern', /proof that a deployment, transfer, or other external operation occurred\.$/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  const shortestProcess = disagreement.sections.find((section) => section.title === 'Use the shortest process');
+  assert.equal(shortestProcess.paragraphs.length, 1);
+  assert.equal(shortestProcess.links, undefined);
+  assert.match(disagreement.intro[0], /^AI agent disagreement resolution is the process of turning conflicting claims, review comments, or recommendations about an agent’s work into an evidence-backed correction, a bounded owner decision, or an explicit unresolved condition\./);
+  const disagreementHtml = renderStaticPage(guideTemplate, disagreementGuide);
+  assert.match(disagreementHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-disagreement-resolution\/"/);
+  assert.match(disagreementHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(disagreementHtml, /disagreement resolution/);
+  assert.doesNotMatch(disagreementHtml, /seo-page-dark/);
+  assert.doesNotMatch(disagreementHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((disagreementHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-focused-threads/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-disagreement-resolution\/"/g) || []).length, 1);
+  }
+  assert.ok(!disagreement.sections.some((section) => section.title === disagreement.cta.title));
+  assert.equal((disagreementHtml.match(/<h2>Settle disagreements with evidence and owners<\/h2>/g) || []).length, 1);
+  assert.ok(disagreementHtml.indexOf('<h2>Frequently asked questions</h2>') < disagreementHtml.indexOf('<h2>Settle disagreements with evidence and owners</h2>'));
+  assert.equal(disagreement.cta.secondary.label, 'Explore Commonly’s guides');
   const dataBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-data-boundaries/');
   assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly');
   const dataBoundaries = guides['ai-agent-data-boundaries'];
