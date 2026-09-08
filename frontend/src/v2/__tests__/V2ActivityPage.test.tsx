@@ -146,6 +146,40 @@ describe('V2ActivityPage', () => {
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  test('keeps long decision labels and descriptions readable when the recommendation is second', async () => {
+    const longCopyQueue = {
+      ...decisionQueue,
+      items: [{
+        ...decisionQueue.items[1],
+        title: 'Scope of the five-post daily X cap',
+        detail: 'Choose how the daily publication cap should apply across the GTM workspace.',
+        options: [
+          {
+            label: 'Keep the five-post cap for every workspace day',
+            description: 'Preserve the current limit so the publishing rhythm stays predictable for the team.',
+            recommended: false,
+          },
+          {
+            label: 'Raise the cap for approved launch windows',
+            description: 'Allow a bounded exception when a launch needs additional posts, with the existing audit trail.',
+            recommended: true,
+          },
+        ],
+      }],
+      count: 1,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? longCopyQueue : recap }));
+    renderPage();
+
+    const first = await screen.findByRole('button', { name: 'Rule: Keep the five-post cap for every workspace day' });
+    const second = screen.getByRole('button', { name: 'Rule: Raise the cap for approved launch windows (Recommended)' });
+    expect(first).toHaveClass('v2-activity__option--primary');
+    expect(second).not.toHaveClass('v2-activity__option--primary');
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Preserve the current limit so the publishing rhythm stays predictable for the team.')).toBeInTheDocument();
+    expect(screen.getByText('Allow a bounded exception when a launch needs additional posts, with the existing audit trail.')).toBeInTheDocument();
+  });
+
   test('changes the read window and opens the source pod from a factual queue row', async () => {
     renderPage();
     await screen.findByText('Review requested');
