@@ -150,9 +150,16 @@ describe('config.js', () => {
     const target = resolveLoginTarget({ instanceArg: 'staging' });
     expect(target).toEqual({
       instanceUrl: 'https://api.commonly.me',
-      configKey: 'default',
+      configKey: 'staging',
     });
 
+    saveInstance({
+      key: 'default',
+      url: 'https://api.commonly.me',
+      token: 'cm_existing',
+      userId: 'u1',
+      username: 'alice',
+    });
     saveInstance({
       key: target.configKey,
       url: target.instanceUrl,
@@ -161,7 +168,8 @@ describe('config.js', () => {
       username: 'alice',
     });
     const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    expect(config.instances.default.url).toBe('https://api.commonly.me');
+    expect(config.instances.default.token).toBe('cm_existing');
+    expect(config.instances.staging.url).toBe('https://api.commonly.me');
   });
 
   test('getToken("https://...") returns the saved token when the URL matches a saved key', () => {

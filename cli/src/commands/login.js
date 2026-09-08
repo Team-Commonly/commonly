@@ -54,8 +54,8 @@ export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
   const isUrl = /^https?:\/\//i.test(instanceArg || '');
   const instanceUrl = (resolved?.url || (isUrl ? instanceArg : DEFAULT_URL)).replace(/\/$/, '');
   const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
-  const isSavedKey = instanceArg && !isUrl && resolved?.key;
-  const configKey = keyArg || (isSavedKey ? resolved.key : (isLocal ? 'local' : 'default'));
+  const isKey = instanceArg && !isUrl;
+  const configKey = keyArg || (isKey ? (resolved?.key || instanceArg) : (isLocal ? 'local' : 'default'));
 
   return { instanceUrl, configKey };
 };
