@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 91);
+  assert.equal(pages.length, 94);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -112,6 +112,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-interim-results/',
     '/guides/ai-agent-audience-boundaries/',
     '/guides/ai-agent-stop-conditions/',
+    '/guides/ai-agent-change-requests/',
+    '/guides/ai-agent-data-boundaries/',
+    '/guides/ai-agent-disagreement-resolution/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -147,7 +150,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 81);
+  assert.equal(guidePages.length, 84);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -738,6 +741,159 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
+  assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly');
+  const disagreement = guides['ai-agent-disagreement-resolution'];
+  assert.deepEqual(disagreement.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(disagreement.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(disagreement.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(disagreement.faq.length, 6);
+  assert.equal(disagreement.intro.length, 4);
+  for (const section of disagreement.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const disagreementExampleIndex = disagreement.sections.findIndex((section) => section.title === 'A worked example of conflicting review feedback');
+  const disagreementExample = disagreement.sections[disagreementExampleIndex];
+  assert.equal(disagreementExample.paragraphs.length, 6);
+  assert.equal(disagreementExample.tables, undefined);
+  assert.equal(disagreementExample.links, undefined);
+  assert.equal(disagreementExample.orderedItems, undefined);
+  assert.equal(disagreement.sections.slice(0, disagreementExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(disagreement.sections[disagreementExampleIndex - 1].title, 'Preserve a material unresolved concern');
+  assert.equal(disagreement.sections[disagreementExampleIndex + 1].title, 'Resolve agent disagreements in seven steps');
+  for (const [title, tail] of [
+    ['Inspect the strongest relevant evidence', /^If the evidence remains incomplete, narrow the statement or keep the uncertainty visible\./],
+    ['Name the decision', /^If two apparently authorized owners give incompatible directions/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  for (const [title, tail] of [
+    ['Record the reason', /the original outcome may still need another approach or an owner’s explicit decision to stop pursuing it\.$/],
+    ['Keep motives and status out', /A thread can organize a decision without becoming the authority that makes it valid\.$/],
+    ['Revise the affected part', /supplies a required reviewer acceptance\.$/],
+    ['Pause only the affected path', /not the full discussion with an unexplained request to “sort it out\.”$/],
+    ['Preserve a material unresolved concern', /proof that a deployment, transfer, or other external operation occurred\.$/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  const shortestProcess = disagreement.sections.find((section) => section.title === 'Use the shortest process');
+  assert.equal(shortestProcess.paragraphs.length, 1);
+  assert.equal(shortestProcess.links, undefined);
+  assert.match(disagreement.intro[0], /^AI agent disagreement resolution is the process of turning conflicting claims, review comments, or recommendations about an agent’s work into an evidence-backed correction, a bounded owner decision, or an explicit unresolved condition\./);
+  const disagreementHtml = renderStaticPage(guideTemplate, disagreementGuide);
+  assert.match(disagreementHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-disagreement-resolution\/"/);
+  assert.match(disagreementHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(disagreementHtml, /disagreement resolution/);
+  assert.doesNotMatch(disagreementHtml, /seo-page-dark/);
+  assert.doesNotMatch(disagreementHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((disagreementHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-focused-threads/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-disagreement-resolution\/"/g) || []).length, 1);
+  }
+  assert.ok(!disagreement.sections.some((section) => section.title === disagreement.cta.title));
+  assert.equal((disagreementHtml.match(/<h2>Settle disagreements with evidence and owners<\/h2>/g) || []).length, 1);
+  assert.ok(disagreementHtml.indexOf('<h2>Frequently asked questions</h2>') < disagreementHtml.indexOf('<h2>Settle disagreements with evidence and owners</h2>'));
+  assert.equal(disagreement.cta.secondary.label, 'Explore Commonly’s guides');
+  const dataBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-data-boundaries/');
+  assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly');
+  const dataBoundaries = guides['ai-agent-data-boundaries'];
+  assert.deepEqual(dataBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dataBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dataBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(dataBoundaries.faq.length, 6);
+  assert.equal(dataBoundaries.intro.length, 4);
+  const dataWorkedExampleIndex = dataBoundaries.sections.findIndex((section) => section.title === 'A worked example using public reference material');
+  const dataWorkedExample = dataBoundaries.sections[dataWorkedExampleIndex];
+  assert.equal(dataWorkedExample.paragraphs.length, 6);
+  assert.equal(dataWorkedExample.tables, undefined);
+  assert.equal(dataWorkedExample.links, undefined);
+  assert.equal(dataWorkedExample.orderedItems, undefined);
+  assert.equal(dataBoundaries.sections.slice(0, dataWorkedExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex - 1].title, 'State the extent');
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex + 1].title, 'Set task data boundaries in seven steps');
+  const chooseDestination = dataBoundaries.sections.find((section) => section.title === 'Choose the destination');
+  assert.equal(chooseDestination.paragraphs.length, 3);
+  assert.match(chooseDestination.paragraphs[1], /^Describe retention expectations in terms someone can act on/);
+  assert.deepEqual(chooseDestination.links.map((link) => link.path), ['/guides/ai-agent-retained-context/']);
+  for (const [title, tail] of [
+    ['Select before collecting', /A context packet should preserve the route back to evidence without becoming a copy of every available record\.$/],
+    ['Technical availability', /both layers need to support the planned action\.$/],
+    ['Trace important claims', /they neither supply missing evidence nor authorize sharing it\.$/],
+    ['Record an accepted change', /A changed task agreement still does not create access to a new system\.$/],
+  ]) {
+    const section = dataBoundaries.sections.find((section) => section.title === title);
+    assert.match(section.paragraphs[section.paragraphs.length - 1], tail);
+  }
+  const proportionate = dataBoundaries.sections.find((section) => section.title === 'Keep the agreement proportionate');
+  assert.equal(proportionate.paragraphs.length, 1);
+  assert.equal(proportionate.links, undefined);
+  assert.match(dataBoundaries.intro[0], /^AI agent data boundaries are the task-specific limits on which information an agent may read, use, retain, and share\./);
+  const dataBoundariesHtml = renderStaticPage(guideTemplate, dataBoundariesGuide);
+  assert.match(dataBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-data-boundaries\/"/);
+  assert.match(dataBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dataBoundariesHtml, /data boundar/);
+  assert.doesNotMatch(dataBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(dataBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dataBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-audience-boundaries/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-data-boundaries\/"/g) || []).length, 1);
+  }
+  assert.ok(!dataBoundaries.sections.some((section) => section.title === dataBoundaries.cta.title));
+  assert.equal((dataBoundariesHtml.match(/<h2>Define what to read, retain, and share<\/h2>/g) || []).length, 1);
+  assert.ok(dataBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < dataBoundariesHtml.indexOf('<h2>Define what to read, retain, and share</h2>'));
+  assert.equal(dataBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
+  const changeRequestsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-change-requests/');
+  assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly');
+  const changeRequests = guides['ai-agent-change-requests'];
+  assert.deepEqual(changeRequests.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(changeRequests.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(changeRequests.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(changeRequests.faq.length, 6);
+  const workedExampleIndex = changeRequests.sections.findIndex((section) => section.title === 'Work through a change request from proposal to revision');
+  const workedExample = changeRequests.sections[workedExampleIndex];
+  assert.equal(workedExample.paragraphs.length, 6);
+  assert.equal(workedExample.tables, undefined);
+  assert.equal(workedExample.links, undefined);
+  assert.equal(workedExample.orderedItems, undefined);
+  assert.equal(changeRequests.sections.slice(0, workedExampleIndex).filter((section) => section.tables).length, 8);
+  assert.equal(changeRequests.sections[workedExampleIndex + 1].title, 'Check whether the change is ready to apply');
+  const stepsFollowOn = changeRequests.sections.find((section) => section.title === 'This process can fit in a short task update');
+  assert.equal(stepsFollowOn.paragraphs.length, 1);
+  assert.equal(stepsFollowOn.links, undefined);
+  assert.match(changeRequests.intro[0], /^An AI agent change request is a recorded proposal to alter a task’s outcome, requirements, inputs, permitted operations, audience, or acceptance criteria\./);
+  const changeRequestsHtml = renderStaticPage(guideTemplate, changeRequestsGuide);
+  assert.match(changeRequestsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-change-requests\/"/);
+  assert.match(changeRequestsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(changeRequestsHtml, /change request/);
+  assert.match(changeRequestsHtml, /A second confirmation is unnecessary when the owner’s instruction already specifies the change/);
+  assert.doesNotMatch(changeRequestsHtml, /seo-page-dark/);
+  assert.doesNotMatch(changeRequestsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((changeRequestsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-scope-creep/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-change-requests\/"/g) || []).length, 1);
+  }
+  assert.ok(!changeRequests.sections.some((section) => section.title === changeRequests.cta.title));
+  assert.equal((changeRequestsHtml.match(/<h2>Update scope without silent drift<\/h2>/g) || []).length, 1);
+  assert.ok(changeRequestsHtml.indexOf('<h2>Frequently asked questions</h2>') < changeRequestsHtml.indexOf('<h2>Update scope without silent drift</h2>'));
+  assert.equal(changeRequests.cta.secondary.label, 'Explore Commonly’s guides');
   const stopConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stop-conditions/');
   assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly');
   const stopConditions = guides['ai-agent-stop-conditions'];
