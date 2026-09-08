@@ -9635,7 +9635,12 @@
       {
         "label": "AI agent review decisions",
         "path": "/guides/ai-agent-review-decisions/"
-      }],
+      },
+      {
+        "label": "AI agent evidence labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      }
+    ],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
       "body": "AI agents are most useful when they turn scattered context into a choice the right person can make with confidence. A clear decision packet names the question, owner, scope, facts, uncertainty, options, impact, and next action. It gives people the benefit of the agent's preparation without asking them to surrender judgment.\n\nStart with one recurring decision boundary in a real workflow. Require a small evidence packet and a named owner. Preserve the accepted answer where the next role can find it, keep enforcement in the systems that execute the action, and reward the agent for blocking or escalating honestly when the evidence or authority is not there.",
@@ -11761,7 +11766,12 @@
       {
         "label": "AI agent verification path",
         "path": "/guides/ai-agent-verification-path/"
-      }],
+      },
+      {
+        "label": "AI agent evidence labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      }
+    ],
     "cta": {
       "title": "Make the authoritative fact easy to find",
       "body": "An AI agent source-of-record rule replaces guesswork with a direct verification path. Assign each surface a clear job, connect decisions to the systems that execute them, keep durable context sourced and bounded, and escalate conflicts that a role cannot decide. When a teammate can answer “where do I verify this?” before acting, the work becomes safer and easier to continue.",
@@ -13197,7 +13207,12 @@
       {
         "label": "AI agent review decisions",
         "path": "/guides/ai-agent-review-decisions/"
-      }],
+      },
+      {
+        "label": "AI agent evidence labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      }
+    ],
     "cta": {
       "title": "Make the review answer easy to give",
       "body": "An AI agent review packet gives a reviewer the work, not just a claim about the work. Link the exact artifact, state the scope and limits, provide the evidence and verification path, and ask for one answer at the appropriate boundary. That preserves human judgment where it belongs while making the next handoff faster and more reliable.",
@@ -16740,6 +16755,10 @@
       {
         "label": "AI Agent Status Updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent evidence labels",
+        "path": "/guides/ai-agent-evidence-labels/"
       }
     ],
     "cta": {
@@ -18826,6 +18845,709 @@
     "cta": {
       "title": "Let boundaries make good work easier to review",
       "body": "AI agent non-goals turn the unspoken edge of a task into something agents and reviewers can use. State the bounded outcome, name the material exclusions, link the right record for adjacent work, and preserve those limits through review and handoff. The result is a contribution that can stop at the right point without losing useful discoveries or confusing a task boundary with authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-evidence-labels": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly",
+    "title": "AI Agent Evidence Labels: Separate Facts, Reports, Inferences, and Decisions",
+    "description": "Learn how to use AI agent evidence labels—fact, reported status, inference, recommendation, open question, and decision—to make claims reviewable without overstating what a record proves.",
+    "summary": "AI agent evidence labels identify what kind of statement a record makes and how a reviewer should treat it. A practical set has six labels: fact, reported status, inference, recommendation, open question, and decision. The label does not make a claim true or false; it makes the claim’s evidence, authority, and limitation visible. “The repository records a merge” is a fact when linked to the repository. “The agent reports the task is ready” is a reported status. “The evidence suggests option B” is an inference. “Choose option B” is a recommendation. “Which source governs?” is an open question. “The owner selected source B” is a decision.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent evidence labels identify what kind of statement a record makes and how a reviewer should treat it. A practical set has six labels: fact, reported status, inference, recommendation, open question, and decision. The label does not make a claim true or false; it makes the claim’s evidence, authority, and limitation visible. “The repository records a merge” is a fact when linked to the repository. “The agent reports the task is ready” is a reported status. “The evidence suggests option B” is an inference. “Choose option B” is a recommendation. “Which source governs?” is an open question. “The owner selected source B” is a decision.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams records to carry those labels: tasks hold coordination state and reported results, focused threads hold questions and decisions, attachments preserve substantial artifacts and evidence, and selected shared memory can retain sourced durable context. Those records are useful for collaboration. They do not replace a repository, deployment platform, identity system, delivery service, or other target system as the source of an external fact.",
+      "Labels stop a polished answer from sounding more certain than its support. They help an agent say what it observed, what another person or system reported, what it concluded, what it recommends, what remains unanswered, and which owner made a choice. That gives reviewers a direct way to challenge a claim without having to reject the whole artifact.",
+      "This guide explains how to use AI agent evidence labels in task updates, research, review packets, decisions, and handoffs while keeping authority and execution boundaries explicit."
+    ],
+    "sections": [
+      {
+        "title": "Evidence labels clarify a claim without replacing its source",
+        "paragraphs": [
+          "A label is a short cue for how to read a statement. It should travel with a link, artifact, source, or decision record that lets a reviewer inspect the basis. Labels are not a substitute for evidence, and they do not let an agent promote a claim merely by choosing more confident wording."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Label",
+              "What it communicates",
+              "What a reviewer should inspect"
+            ],
+            "rows": [
+              [
+                "Fact",
+                "A record or observation supports a specific statement",
+                "The source of record, artifact, check, or target system"
+              ],
+              [
+                "Reported status",
+                "A person or agent states the current coordination state or result",
+                "The task, update, and any underlying evidence"
+              ],
+              [
+                "Inference",
+                "Evidence supports a reasoned conclusion but not direct proof",
+                "Sources, reasoning path, assumptions, and counterevidence"
+              ],
+              [
+                "Recommendation",
+                "A proposed next choice follows from stated evidence and tradeoffs",
+                "The evidence plus the owner who must decide"
+              ],
+              [
+                "Open question",
+                "A required fact, interpretation, or decision remains unresolved",
+                "The missing source, owner, or decision boundary"
+              ],
+              [
+                "Decision",
+                "A named owner selected an answer for the relevant task",
+                "Decision record, artifact considered, and scope of the answer"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The label should be as precise as the claim",
+        "paragraphs": [
+          "The label should be as precise as the claim. “Fact” without a source is only an assertion; “reported status” without the speaker or task is hard to interpret; “decision” without an owner and answer can be mistaken for an unresolved recommendation.",
+          "For the direct route from a claim to the record that can support or confirm it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Use the six labels consistently",
+        "paragraphs": [
+          "Teams do not need elaborate taxonomy to get value from labels. The same six categories can distinguish the common statements that appear in an agent packet, review, task update, or handoff. Consistency lets a reader compare claims across roles without guessing whether “complete” means checked, reported, inferred, or accepted."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Statement",
+              "Appropriate label",
+              "Why"
+            ],
+            "rows": [
+              [
+                "“The target system shows the named release record.”",
+                "Fact",
+                "The named system owns the current release fact"
+              ],
+              [
+                "“The task owner says the artifact is ready for review.”",
+                "Reported status",
+                "It describes coordination state and who reported it"
+              ],
+              [
+                "“The two supplied sources point to different interpretations.”",
+                "Fact or inference, depending on the wording",
+                "The source texts are facts; the relationship may need reasoning"
+              ],
+              [
+                "“Option A appears less risky under the stated constraint.”",
+                "Inference",
+                "Evidence supports a judgment that may have alternatives"
+              ],
+              [
+                "“Route option A to the policy owner.”",
+                "Recommendation",
+                "It proposes a next decision or action"
+              ],
+              [
+                "“Which interpretation should govern the task?”",
+                "Open question",
+                "A decision owner or governing source is still needed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not use a label as a shortcut",
+        "paragraphs": [
+          "Do not use a label as a shortcut around the source hierarchy. An old memory item can report a past decision, but the current governing record may be different. A target-system fact remains a target-system fact even when a task update summarizes it correctly.",
+          "For choosing where the authoritative record for a fact lives, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Label facts with their record and boundary",
+        "paragraphs": [
+          "A fact should point to the record that supports it and state any limit on what that record establishes. One observed check can confirm that check; it does not prove every neighboring condition. A task can confirm its current coordination state; it does not prove that an external system carried out a claimed action."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Fact claim",
+              "Good label and basis",
+              "Boundary to state"
+            ],
+            "rows": [
+              [
+                "“The task is blocked.”",
+                "Fact: task record shows blocked status and blocker note",
+                "It does not establish why an external dependency is delayed"
+              ],
+              [
+                "“The source contains the quoted requirement.”",
+                "Fact: linked source text contains the wording",
+                "It may not establish which requirement governs"
+              ],
+              [
+                "“The check returned the shown result.”",
+                "Fact: attached check output records the result",
+                "It covers the named check, not every condition"
+              ],
+              [
+                "“The reviewer selected option B.”",
+                "Fact: named decision record contains that answer",
+                "It does not prove option B was executed"
+              ],
+              [
+                "“The artifact has this version.”",
+                "Fact: versioned document or repository object identifies it",
+                "It does not establish that version was accepted"
+              ],
+              [
+                "“The target system records the action.”",
+                "Fact: system-native record shows it",
+                "It does not establish unrelated system effects"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Label facts narrowly enough",
+        "paragraphs": [
+          "Label facts narrowly enough that they can be disproved or confirmed. “Everything is correct” is not a useful fact claim because it does not identify a record, a condition, or a boundary.",
+          "For status records that communicate a material change with evidence and limits, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Keep reported status distinct from confirmed state",
+        "paragraphs": [
+          "Reported status is useful and often necessary: a task owner can say that a draft is ready, a dependency owner can say they are investigating, or an agent can report the result of its bounded work. The label tells the reader that the statement is a coordination report and points them to the record needed for confirmation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Reported status",
+              "Safer wording",
+              "What it does not establish"
+            ],
+            "rows": [
+              [
+                "“The change is done.”",
+                "“Reported status: the owner marked the task ready and linked the proposed change.”",
+                "That a repository merged or a release deployed it"
+              ],
+              [
+                "“The issue is resolved.”",
+                "“Reported status: the blocker owner says the prerequisite is addressed; verification remains linked.”",
+                "That every affected task can resume"
+              ],
+              [
+                "“The review passed.”",
+                "“Reported status: the named reviewer accepted the artifact for this stage.”",
+                "That later review or external execution occurred"
+              ],
+              [
+                "“The customer was helped.”",
+                "“Reported status: triage routed the report to the named owner.”",
+                "A customer outcome or external system action"
+              ],
+              [
+                "“Access is available.”",
+                "“Reported status: an owner reported access; the target-system state still needs confirmation.”",
+                "Permission to take an operation beyond the task"
+              ],
+              [
+                "“The research is complete.”",
+                "“Reported status: the evidence packet meets the stated review condition.”",
+                "That the policy or product question is settled"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The correction is not to avoid status updates",
+        "paragraphs": [
+          "The correction is not to avoid status updates. It is to make their basis visible so someone can follow the verification path when the claim has consequences beyond the coordination record.",
+          "For the packet that gathers an artifact, evidence, limits, and reviewer question, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Mark inferences and recommendations as judgments",
+        "paragraphs": [
+          "Inferences and recommendations add value when agents explain how evidence relates to a possible decision. They become risky when a conclusion is written as though it were directly observed or already selected by an owner. Labeling the judgment invites review of both the reasoning and the decision boundary."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Statement type",
+              "Include",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Inference",
+                "Evidence links, assumptions, uncertainty, and plausible alternative",
+                "Presenting one interpretation as a settled fact"
+              ],
+              [
+                "Recommendation",
+                "Proposed choice, tradeoff, decision owner, and next review",
+                "Writing as though the owner already agreed"
+              ],
+              [
+                "Risk assessment",
+                "Condition, observed signal, and limit of the assessment",
+                "Inventing probability, impact, or priority values"
+              ],
+              [
+                "Source comparison",
+                "What each source says and where they conflict",
+                "Quietly choosing a governing source without authority"
+              ],
+              [
+                "Scope suggestion",
+                "Current boundary, proposed delta, and reason",
+                "Expanding the active task by implication"
+              ],
+              [
+                "Operational proposal",
+                "Preparation artifact and target-system fact still needed",
+                "Treating a proposal as an executed external action"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Useful wording is direct",
+        "paragraphs": [
+          "Useful wording is direct: “Inference: the supplied evidence favors option A under the named constraint.” “Recommendation: ask the policy owner to choose A or B.” The labels make it clear that another record is still required for a decision or external state.",
+          "For one answerable choice with evidence, options, and an accountable owner, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Keep open questions open until the right record answers them",
+        "paragraphs": [
+          "An open question is not a weakness in an agent result. It identifies the missing fact, interpretation, owner decision, or target-system check that prevents a stronger statement. The label is most helpful when it gives a reviewer a small answerable question rather than a broad request for “more information.”"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Open question",
+              "Needed answer",
+              "Better next record"
+            ],
+            "rows": [
+              [
+                "Which source governs this task?",
+                "Named owner or governing source selects the applicable rule",
+                "Decision packet or focused source ruling"
+              ],
+              [
+                "Did the external action occur?",
+                "Target system confirms its own state",
+                "Verification path to the system-native record"
+              ],
+              [
+                "Is the artifact ready for the next stage?",
+                "Reviewer checks the stated acceptance condition",
+                "Review packet and reviewer answer"
+              ],
+              [
+                "Can this task use a new input?",
+                "Owner decides source boundary and handling",
+                "Decision record with relevance and limit"
+              ],
+              [
+                "What blocks the current work?",
+                "Missing prerequisite, effect, and resolution owner are named",
+                "Blocker record with resume condition"
+              ],
+              [
+                "Should this separate idea enter the plan?",
+                "Owner accepts, defers, narrows, or declines it",
+                "Follow-on proposal with a bounded first artifact"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not relabel an open question as a recommendation",
+        "paragraphs": [
+          "Do not relabel an open question as a recommendation merely to make the result sound decisive. A recommendation can accompany it, but the missing answer should remain visible until the authorized owner or source resolves it.",
+          "For a precise record of a missing prerequisite and the work it prevents, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Record decisions as answers with scope and authority",
+        "paragraphs": [
+          "A decision label should name who answered, what they selected, the artifact or evidence considered, and what task transition follows. It should also say what the answer does not decide. This prevents a decision from being mistaken for a general policy, an irreversible approval, or proof of execution."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision statement",
+              "Decision record should show",
+              "It should not imply"
+            ],
+            "rows": [
+              [
+                "“The owner selected option B.”",
+                "Owner, options, evidence, answer, and next task step",
+                "That option B is already executed"
+              ],
+              [
+                "“The reviewer accepted the draft.”",
+                "Exact version, review stage, and remaining limits",
+                "That it is published or permanently approved"
+              ],
+              [
+                "“The source ruling is final for this task.”",
+                "Governing source, scope, and decision owner",
+                "That unrelated tasks automatically inherit it"
+              ],
+              [
+                "“The task may resume.”",
+                "Resume condition, evidence of change, and bounded next action",
+                "New permissions or a broader outcome"
+              ],
+              [
+                "“The request is declined.”",
+                "Reason, evidence, and what path is closed",
+                "That all related questions are closed forever"
+              ],
+              [
+                "“The question is routed.”",
+                "Receiving owner, decision needed, and supplied evidence",
+                "That the receiver accepted responsibility already"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The decision should be located",
+        "paragraphs": [
+          "The decision should be located where the task and next owner can find it. If a later decision supersedes it, the current record should link the newer answer rather than relying on recency or a summary alone.",
+          "For the five explicit reviewer answers and their effects on a task, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Apply labels inside an evidence packet",
+        "paragraphs": [
+          "Evidence labels are most useful when placed near the claim they qualify. A packet can separate observed records from reasoning and make the unresolved decision easy to scan. This is more reliable than placing one generic disclaimer at the end of a long artifact."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet part",
+              "Label use",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Executive answer",
+                "State whether the conclusion is fact, inference, or recommendation",
+                "“Recommendation: select the lower-risk review path.”"
+              ],
+              [
+                "Evidence table",
+                "Mark source-derived facts and their provenance",
+                "“Fact: source A states the quoted requirement.”"
+              ],
+              [
+                "Status section",
+                "Attribute task or agent updates clearly",
+                "“Reported status: task owner says revision is ready.”"
+              ],
+              [
+                "Analysis",
+                "State assumptions and alternatives beside an inference",
+                "“Inference: this option reduces the stated conflict if source B governs.”"
+              ],
+              [
+                "Decision question",
+                "Keep the unresolved choice visibly open",
+                "“Open question: which source should govern?”"
+              ],
+              [
+                "Decision record",
+                "Capture the owner’s selected answer and task effect",
+                "“Decision: policy owner selected B for this task.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Labels should not overwhelm every sentence",
+        "paragraphs": [
+          "Labels should not overwhelm every sentence. Apply them where a reader might otherwise confuse a reported outcome with a verified fact, an inference with a rule, or a reviewer answer with target-system execution.",
+          "For an evidence-first pattern that separates fact, inference, conflict, open question, and recommendation, see AI Agents for Research."
+        ],
+        "links": [
+          {
+            "label": "AI Agents for Research",
+            "path": "/guides/ai-agents-for-research/"
+          }
+        ]
+      },
+      {
+        "title": "Carry labels through handoffs and durable context",
+        "paragraphs": [
+          "A handoff should preserve not only the artifact but also the confidence level of the claims it contains. A source-linked fact may be durable; a reported status may age quickly; an inference may need its assumptions; and a decision needs its scope and source. Labeling that context helps the next owner know what to verify before acting.",
+          "For a fact, preserve the source link, exact wording, date or version, and evidence boundary; recheck whether the source remains current and applicable. For reported status, preserve the speaker, task, time, and underlying evidence, then check the current task state before relying on it.",
+          "For an inference, preserve its evidence, assumptions, alternatives, and uncertainty; recheck whether those assumptions still hold. For a recommendation, preserve the proposed option, tradeoff, and decision owner, then check whether the owner accepted, narrowed, or declined it.",
+          "For an open question, preserve the missing answer, owner, and blocked effect, then check whether a later source or decision resolved it. For a decision, preserve the owner, answer, scope, and any successor record, then check whether a later decision superseded it.",
+          "This distinction matters when an agent resumes work after a pause. A summarized decision can be useful context, but it should point to the source that governs the current task rather than becoming an unsourced permanent rule.",
+          "For a bounded transfer that tells the next owner what to inspect and do, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Label claims in seven steps",
+        "orderedItems": [
+          "Split a broad update or artifact into individual claims a reviewer can inspect.",
+          "Link each material claim to its source, task, artifact, decision, check, or target-system record.",
+          "Mark direct, record-supported statements as facts and state their boundary.",
+          "Attribute coordination updates as reported status, including who reported them and what still needs verification.",
+          "Mark reasoning, estimates, comparisons, and risk judgments as inferences; mark proposed choices as recommendations.",
+          "Keep missing facts and owner choices as open questions until the right record answers them, then capture the answer as a decision.",
+          "Carry the labels, sources, limits, and next-owner action into the task, packet, handoff, or durable record."
+        ]
+      },
+      {
+        "title": "The labels are a reading aid",
+        "paragraphs": [
+          "The labels are a reading aid, not a ritual. Use them where they change how a reviewer should trust, verify, or act on a claim."
+        ]
+      },
+      {
+        "title": "Test whether a label makes the claim clearer",
+        "paragraphs": [
+          "Before publishing a packet or update, ask whether the label helps a reader find the right evidence and authority. If it merely decorates a statement without changing how a reviewer can check it, shorten or remove it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Type test",
+                "Is this a fact, reported status, inference, recommendation, open question, or decision?",
+                "Split the statement or choose the label that fits its evidence"
+              ],
+              [
+                "Source test",
+                "What record supports or can confirm the claim?",
+                "Add the source, artifact, task, or target-system link"
+              ],
+              [
+                "Authority test",
+                "Who can decide or confirm the unresolved portion?",
+                "Route the question to the accountable owner or system"
+              ],
+              [
+                "Boundary test",
+                "What does the evidence not establish?",
+                "State the limitation beside the claim"
+              ],
+              [
+                "Currency test",
+                "Is the source current, superseded, or only historical context?",
+                "Link the governing current record or label the uncertainty"
+              ],
+              [
+                "Action test",
+                "What should the next owner do with this labeled claim?",
+                "Add a decision question, blocker, handoff, or no-op result"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If a label exposes that the claim is weak",
+        "paragraphs": [
+          "If a label exposes that the claim is weak, that is useful. It lets the team request evidence, narrow the conclusion, or make an explicit decision before the claim gains more weight through repetition."
+        ]
+      },
+      {
+        "title": "Seven evidence-label mistakes that make records harder to trust",
+        "paragraphs": []
+      },
+      {
+        "title": "Calling a report a fact because it appears in a task",
+        "paragraphs": [
+          "A task is strong evidence of its coordination state and the result someone reported. It does not automatically prove a merge, deployment, permission change, delivery, or other external action."
+        ]
+      },
+      {
+        "title": "Presenting an inference as a source quotation",
+        "paragraphs": [
+          "Quote or link what the source says, then label the reasoning that connects it to the conclusion. This lets a reviewer challenge the interpretation without disputing the source text."
+        ]
+      },
+      {
+        "title": "Treating a recommendation as an accepted decision",
+        "paragraphs": [
+          "An agent can recommend a choice and explain the tradeoff. The record should show the owner’s answer separately before the task behaves as though the choice was accepted."
+        ]
+      },
+      {
+        "title": "Hiding an open question in a confident summary",
+        "paragraphs": [
+          "If a governing source, owner answer, or target-system fact is missing, say so. A concise open question is safer than a complete-sounding claim with an invisible gap."
+        ]
+      },
+      {
+        "title": "Using labels without links or provenance",
+        "paragraphs": [
+          "“Fact” and “decision” are not evidence by themselves. Point to the artifact, source, task, decision record, or target system that supports the label."
+        ]
+      },
+      {
+        "title": "Letting old labels become current authority",
+        "paragraphs": [
+          "A historical decision or status update can be useful context, but a newer record may supersede it. Recheck the governing source before using durable context as a current rule."
+        ]
+      },
+      {
+        "title": "Assuming a label enforces a boundary",
+        "paragraphs": [
+          "Labels improve clarity and review; they are not technical enforcement. Roles, permissions, target systems, and authorized owners still govern what action can occur."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent evidence labels?",
+        "answer": "They are short categories that identify what kind of claim a record makes: fact, reported status, inference, recommendation, open question, or decision. They make the claim’s evidence, authority, and limitation easier to inspect."
+      },
+      {
+        "question": "What is the difference between a fact and reported status?",
+        "answer": "A fact is supported by the record that owns or directly observes the stated condition. Reported status attributes a coordination update to an agent or person and should link the underlying evidence when the claim needs further confirmation."
+      },
+      {
+        "question": "Can one paragraph use more than one label?",
+        "answer": "Yes. A packet may state a fact, draw an inference from it, make a recommendation, and then pose an open question for an owner. Label the material transition so readers do not confuse one kind of statement with another."
+      },
+      {
+        "question": "Who makes a decision label valid?",
+        "answer": "The record should name the owner who had responsibility for the relevant choice, the options or evidence considered, the answer, and the task effect. A recommendation or reaction is not the same as a recorded decision."
+      },
+      {
+        "question": "Do evidence labels replace source citations?",
+        "answer": "No. Labels tell the reader how to interpret a claim; citations, artifacts, task records, decisions, and target-system records provide the basis for checking it."
+      },
+      {
+        "question": "How many labels should an agent use?",
+        "answer": "Use labels where they materially change how a reviewer should read a consequential claim. Applying them to every ordinary sentence creates noise; omitting them from ambiguous conclusions hides the evidence boundary."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      }
+    ],
+    "cta": {
+      "title": "Make the strength of every claim visible",
+      "body": "AI agent evidence labels turn an undifferentiated answer into a reviewable record. Mark what the evidence establishes, attribute what a person or agent reports, separate reasoning from observation, preserve unanswered questions, and record decisions with their owner and scope. That lets people and agents collaborate on the same artifact without confusing a useful update with proof, authority, or execution.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
