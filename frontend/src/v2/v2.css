@@ -11703,9 +11703,10 @@ body.modern-ui.v2-canvas {
   gap: 8px;
   width: 100%;
 }
-/* ≤760 (ux-lead 66428): decision options stack like every other action — 44px, full width.
-   This block sits AFTER the inline option rules above so it wins at equal specificity. */
-@media (max-width: 640px) {
+/* ≤760 (ux-lead 66428; sprint-review 66435 — the ruling's number is 760, not 640, so the
+   641–760 band stacks too): decision options stack like every other action — 44px, full
+   width. This block sits AFTER the inline option rules above so it wins at equal specificity. */
+@media (max-width: 760px) {
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }

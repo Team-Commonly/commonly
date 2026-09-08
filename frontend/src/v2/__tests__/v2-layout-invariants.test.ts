@@ -1852,8 +1852,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const stackedOptionsAt = v2.indexOf('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }');
       expect(inlineOptionsAt).toBeGreaterThan(-1);
       expect(stackedOptionsAt).toBeGreaterThan(inlineOptionsAt);
-      expect(v2.slice(0, stackedOptionsAt).lastIndexOf('@media (max-width: 640px)')).toBeGreaterThan(inlineOptionsAt);
-      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
+      expect(v2.slice(0, stackedOptionsAt).lastIndexOf('@media (max-width: 760px)')).toBeGreaterThan(inlineOptionsAt);
+      expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
       // 0-state (66422 miss 1): the dashed panel renders whenever nothing is open, settled cards under it, no kicker.
       expect(activityPage).toContain('{(queueCount === 0 || visibleQueue.length === 0) && (');
       expect(activityPage).toContain('{queueCount !== 0 && <p>{queueCount === null');
