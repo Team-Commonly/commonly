@@ -33,7 +33,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude' } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -58,7 +58,7 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
     }),
     loadToken: (name) => tokens[name] || null,
     saveToken,
-    resolveAdapter: jest.fn(async () => 'claude'),
+    resolveAdapter: jest.fn(resolveAdapter),
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
@@ -173,6 +173,37 @@ describe('tick', () => {
     expect(children).toHaveLength(1);
     children[0].child.emit('exit', 0);
     // desired stays true → exit handler schedules the respawn.
+  });
+
+  test('a declared adapter change updates the token record and restarts the seat', async () => {
+    let adapter = 'claude';
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter } };
+    const { supervisor, client, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter } })],
+      tokens,
+      resolveAdapter: async (runtime) => runtime?.adapter || 'claude',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    adapter = 'codex';
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({ adapter: 'codex' }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+  });
+
+  test('a declared adapter that resolves to a fallback is rejected without spawning', async () => {
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } })],
+      tokens,
+      resolveAdapter: async () => 'codex',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(0);
+    expect(saveToken).not.toHaveBeenCalled();
   });
 
   test('a row without a model never strips a hand-set environment', async () => {

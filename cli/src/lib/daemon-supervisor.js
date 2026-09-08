@@ -133,6 +133,26 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
+      const declaredAdapter = row.runtime && typeof row.runtime === 'object'
+        && typeof row.runtime.adapter === 'string'
+        ? row.runtime.adapter.trim().toLowerCase()
+        : null;
+      let adapterChanged = false;
+      let nextAdapter = existing.adapter;
+      if (declaredAdapter) {
+        const detectedAdapter = await resolveAdapter(row.runtime || null);
+        // resolveAdapterForRuntime historically probes fallbacks when a
+        // declared adapter is absent. A configuration edit must never accept
+        // that fallback: it would report claude while running codex (or vice
+        // versa). Keep the existing child/token untouched until the exact
+        // requested adapter is detected locally.
+        if (detectedAdapter !== declaredAdapter) {
+          log(`[${row.agentName}] requested adapter '${declaredAdapter}' is not available on this machine — keeping the current seat`);
+          return false;
+        }
+        nextAdapter = declaredAdapter;
+        adapterChanged = existing.adapter !== nextAdapter;
+      }
       if (wanted) {
         const nextEnvironment = wanted.declared
           ? wanted.value
@@ -140,17 +160,36 @@ export const createDaemonSupervisor = ({
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
+          ...(adapterChanged ? { adapter: nextAdapter } : {}),
           environment: nextEnvironment,
           ...(workspacePath ? { workspacePath } : {}),
         };
-        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment)
+        if (adapterChanged
+          || !isDeepStrictEqual(existing.environment || null, nextEnvironment)
           || (workspacePath && existing.workspacePath !== workspacePath)) {
           saveToken(row.agentName, nextRecord);
           log('runtime config changed — restarting the seat to load it');
           return 'changed';
         }
       }
+      if (adapterChanged) {
+        saveToken(row.agentName, { ...existing, adapter: nextAdapter });
+        log('runtime adapter changed — restarting the seat to load it');
+        return 'changed';
+      }
       return 'ready';
+    }
+    const requestedAdapter = row.runtime && typeof row.runtime === 'object'
+      && typeof row.runtime.adapter === 'string'
+      ? row.runtime.adapter.trim().toLowerCase()
+      : null;
+    let adapter = null;
+    if (requestedAdapter) {
+      adapter = await resolveAdapter(row.runtime || null);
+      if (adapter !== requestedAdapter) {
+        log(`[${row.agentName}] requested adapter '${requestedAdapter}' is not available on this machine — skipping token mint`);
+        return false;
+      }
     }
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
@@ -174,7 +213,7 @@ export const createDaemonSupervisor = ({
       log(`[${row.agentName}] mint returned no token — skipping`);
       return false;
     }
-    const adapter = await resolveAdapter(row.runtime || null);
+    if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
       log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
       return false;
