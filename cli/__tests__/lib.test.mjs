@@ -49,6 +49,7 @@ const {
   recordHandledEvent,
   clearSessions,
 } = await import('../src/lib/session-store.js');
+const { resolveLoginTarget } = await import('../src/commands/login.js');
 
 // ── config.js tests ───────────────────────────────────────────────────────────
 
@@ -119,6 +120,30 @@ describe('config.js', () => {
       userId: 'u1', username: 'alice',
     });
     expect(resolveInstanceUrl('dev')).toBe('https://api-dev.commonly.me');
+  });
+
+  test('login target resolves a saved key before persisting the profile URL', () => {
+    saveInstance({
+      key: 'default', url: 'https://api.commonly.me', token: 'cm_existing',
+      userId: 'u1', username: 'alice',
+    });
+
+    const target = resolveLoginTarget({ instanceArg: 'default' });
+    expect(target).toEqual({
+      instanceUrl: 'https://api.commonly.me',
+      configKey: 'default',
+    });
+
+    saveInstance({
+      key: target.configKey,
+      url: target.instanceUrl,
+      token: 'cm_refreshed',
+      userId: 'u1',
+      username: 'alice',
+      tokenType: 'device',
+    });
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    expect(config.instances.default.url).toBe('https://api.commonly.me');
   });
 
   test('getToken("https://...") returns the saved token when the URL matches a saved key', () => {

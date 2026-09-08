@@ -3,6 +3,7 @@ import * as os from 'os';
 
 const createClient = jest.fn();
 const saveInstance = jest.fn();
+const resolveInstance = jest.fn(() => null);
 const listInstances = jest.fn();
 const waitForDeviceAuthorization = jest.fn();
 
@@ -10,7 +11,12 @@ await jest.unstable_mockModule('../src/lib/api.js', () => ({
   createClient,
   login: jest.fn(),
 }));
-await jest.unstable_mockModule('../src/lib/config.js', () => ({ saveInstance, listInstances }));
+await jest.unstable_mockModule('../src/lib/config.js', () => ({
+  DEFAULT_URL: 'https://api.commonly.me',
+  resolveInstance,
+  saveInstance,
+  listInstances,
+}));
 await jest.unstable_mockModule('../src/lib/device-login.js', () => ({
   DeviceLoginCancelledError: class DeviceLoginCancelledError extends Error {},
   DeviceLoginDeniedError: class DeviceLoginDeniedError extends Error {},

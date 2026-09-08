@@ -8,7 +8,7 @@
 import { createInterface } from 'readline';
 import { hostname } from 'os';
 import { createClient, login as apiLogin } from '../lib/api.js';
-import { saveInstance } from '../lib/config.js';
+import { DEFAULT_URL, resolveInstance, saveInstance } from '../lib/config.js';
 import {
   DeviceLoginCancelledError,
   DeviceLoginDeniedError,
@@ -42,11 +42,28 @@ const promptSecret = (question) => new Promise((resolve) => {
   stdin.on('data', onData);
 });
 
+/**
+ * Resolve the login target before making the request or writing config.
+ *
+ * `--instance` accepts either a URL or a saved profile key. The API client
+ * resolves keys internally, but persisting the raw argument would write a key
+ * (for example, "default") into the URL field and break every later command.
+ */
+export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
+  const resolved = instanceArg ? resolveInstance(instanceArg) : null;
+  const instanceUrl = (resolved?.url || instanceArg || DEFAULT_URL).replace(/\/$/, '');
+  const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
+  const isSavedKey = instanceArg && !/^https?:\/\//i.test(instanceArg) && resolved?.key;
+  const configKey = keyArg || (isSavedKey ? resolved.key : (isLocal ? 'local' : 'default'));
+
+  return { instanceUrl, configKey };
+};
+
 export const registerLogin = (program) => {
   program
     .command('login')
     .description('Authenticate to a Commonly instance')
-    .option('--instance <url>', 'Instance URL (default: https://api.commonly.me)')
+    .option('--instance <url-or-key>', 'Instance URL or saved profile key (default: https://api.commonly.me)')
     .option('--key <name>', 'Config key to save as (default: "default" or "local")')
     .option('--password', 'Use the legacy email/password prompt instead of device authorization')
     .addHelpText('after', `
@@ -59,12 +76,10 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
 --instance <url-or-key> to target the right profile.
 `)
     .action(async (opts) => {
-      const instanceUrl = opts.instance
-        ? opts.instance.replace(/\/$/, '')
-        : 'https://api.commonly.me';
-
-      const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
-      const configKey = opts.key || (isLocal ? 'local' : 'default');
+      const { instanceUrl, configKey } = resolveLoginTarget({
+        instanceArg: opts.instance,
+        keyArg: opts.key,
+      });
 
       try {
         if (!opts.password) {
