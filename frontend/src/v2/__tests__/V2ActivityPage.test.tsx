@@ -264,7 +264,8 @@ describe('V2ActivityPage', () => {
     first.unmount();
 
     // An agent exists but has not answered, no connector: steps 2 and 3, composer back, step 2 is the ink act.
-    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: null }, { name: 'hosted-smoke', lastActiveAt: '2026-09-08T10:00:00.000Z', internal: true }], []));
+    // A provisioned seat has lastActiveAt (runtime-token use) but lastMessage null: it has never spoken.
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null }, { name: 'hosted-smoke', lastMessage: { content: 'x' }, internal: true }], []));
     const second = renderPage();
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
@@ -273,7 +274,7 @@ describe('V2ActivityPage', () => {
     second.unmount();
 
     // Everything done: no card at all — the 0-state board already gated.
-    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z' }], [{ status: 'active' }]));
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi there', createdAt: '2026-09-08T10:00:03.000Z' } }], [{ status: 'active' }]));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();

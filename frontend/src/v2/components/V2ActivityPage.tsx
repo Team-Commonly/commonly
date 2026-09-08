@@ -199,8 +199,11 @@ const V2ActivityPage: React.FC = () => {
   const [connectorCount, setConnectorCount] = useState<number | null>(null);
   // "Hired" and "has answered" are facts about the account's seats, not about the last 24h
   // (sprint-review 66671: recap.agents only carries agents that acted inside the recap window).
-  // The registry's per-pod agent list is what Your Team reads; lastActiveAt is "ever".
-  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastActiveAt: string | null; internal?: boolean }> | null>(null);
+  // The registry's per-pod agent list is what Your Team reads. `lastMessage` is proof of speech
+  // (null when the seat has never spoken in that pod); `lastActiveAt` is only proof of life —
+  // provisioning uses a runtime token and sets it (sprint-review 66678) — so it must not close
+  // the step whose job is to notice a seat that never answered.
+  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastMessage?: unknown; internal?: boolean }> | null>(null);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -555,7 +558,7 @@ const V2ActivityPage: React.FC = () => {
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     Promise.all(recap.pods.slice(0, 20).map((pod) => axios
-      .get<{ agents?: Array<{ name: string; lastActiveAt: string | null; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
+      .get<{ agents?: Array<{ name: string; lastMessage?: unknown; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
       .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []))
       .catch(() => [])))
       .then((lists) => { if (active) setHiredAgents(lists.flat().filter((agent) => !agent.internal)); });
@@ -565,7 +568,7 @@ const V2ActivityPage: React.FC = () => {
     if (!recap || podId !== 'all' || hiredAgents === null) return [] as Array<'hire' | 'speak' | 'connect'>;
     const open: Array<'hire' | 'speak' | 'connect'> = [];
     if (hiredAgents.length === 0) open.push('hire');
-    if (!hiredAgents.some((agent) => !!agent.lastActiveAt)) open.push('speak');
+    if (!hiredAgents.some((agent) => agent.lastMessage != null)) open.push('speak');
     if (connectorCount !== null && connectorCount === 0) open.push('connect');
     return open;
   }, [recap, podId, hiredAgents, connectorCount]);
