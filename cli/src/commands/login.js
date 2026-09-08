@@ -55,7 +55,10 @@ export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
   const instanceUrl = (resolved?.url || (isUrl ? instanceArg : DEFAULT_URL)).replace(/\/$/, '');
   const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
   const isKey = instanceArg && !isUrl;
-  const configKey = keyArg || (isKey ? (resolved?.key || instanceArg) : (isLocal ? 'local' : 'default'));
+  // A URL may resolve back to an existing named profile too. Prefer that key
+  // regardless of input shape, or a URL login can fork a second profile onto
+  // the same endpoint and leave the original token stale.
+  const configKey = keyArg || resolved?.key || (isKey ? instanceArg : (isLocal ? 'local' : 'default'));
 
   return { instanceUrl, configKey };
 };
