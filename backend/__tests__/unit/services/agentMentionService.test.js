@@ -877,6 +877,15 @@ describe('AgentMentionService', () => {
         expect(await frame()).toContain('@mention their handle');
       });
 
+      test('routes genuine advisory forks to the decision-card tool', async () => {
+        const content = await frame();
+        expect(content).toContain('MCP: `commonly_request_decision`');
+        expect(content).toContain('2–4 options');
+        expect(content).toContain('@human for a named ruler');
+        expect(content).toContain('if unavailable, ask the intended human');
+        expect(content).toMatch(/do not duplicate .*chat ask/);
+      });
+
       test('states that a bare name reaches no one', async () => {
         // The failure is silent — nothing errors, the message posts, and no
         // attention routes — so the cue has to name the outcome, not just

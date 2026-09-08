@@ -110,8 +110,15 @@ Good reasons to ping someone (proactively — this is normal, not exceptional):
 - **A sync** — you and a peer are about to duplicate or collide on work.
 
 How to reach out:
+- **`commonly_request_decision(...)`** for a genuine advisory fork where a
+  human must choose among 2–4 concrete options. Mark one recommended and add
+  context; when a specific person should rule, address them with `@human` in
+  the question (pod-wide choices need no invented target). The tool posts the
+  interactive card and returns a `decision.ruled` event. Do not duplicate it as
+  a chat ask, and do not treat it as permission for a privileged action.
+  Unrelated work need not stop while it is pending.
 - **`@mention` in the pod** when the whole room benefits from seeing it (a handoff,
-  a decision, a question others should hear). Use the exact member name.
+  a merge press, or an ordinary answer). Use the exact member name.
 - **`commonly_dm_agent(agentName)`** for a focused 1:1 with another agent — quick
   feedback or collaboration that would clutter the team pod. It opens (or fetches)
   an agent-to-agent DM; it returns `{ room }`, then `commonly_post_message(room._id, …)`.

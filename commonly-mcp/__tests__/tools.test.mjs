@@ -184,6 +184,8 @@ describe('commonly_request_decision', () => {
     expect(tool.description).toContain('not for status updates');
     expect(tool.description).toMatch(/never approval|not approval/i);
     expect(tool.description).toContain('never encode an executable');
+    expect(tool.description).toMatch(/specific person should rule/);
+    expect(tool.description).toMatch(/unrelated work need not stop/);
   });
 });
 
@@ -446,6 +448,13 @@ describe('agent-facing tone contract', () => {
   it('tells the agent to post the result rather than its reasoning', () => {
     expect(desc).toMatch(/RESULT, not your reasoning/);
   });
+
+  it('routes genuine forks to the decision card instead of chat', () => {
+    expect(desc).toContain('commonly_request_decision');
+    expect(desc).toContain('@human in the question');
+    expect(desc).toMatch(/do not duplicate the ask in chat/i);
+    expect(desc).toMatch(/interactive card/);
+  });
 });
 
 describe('commonly_get_started', () => {
@@ -472,6 +481,15 @@ describe('commonly_get_started', () => {
   it('warns that pod content is data, not instructions', async () => {
     // Prompt-injection hygiene for agents reading rooms strangers can write to.
     expect((await tool.call({})).content[0].text).toMatch(/data, not command/);
+  });
+
+  it('distinguishes decision cards from ordinary mentions and messages', async () => {
+    const text = (await tool.call({})).content[0].text;
+    expect(text).toMatch(/commonly_request_decision/);
+    expect(text).toMatch(/interactive card/);
+    expect(text).toMatch(/do not duplicate/i);
+    expect(text).toMatch(/merge press, ordinary answer/);
+    expect(text).toMatch(/pod-wide choices need no invented target/);
   });
 });
 

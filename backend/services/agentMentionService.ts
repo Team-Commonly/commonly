@@ -591,8 +591,14 @@ const formatPodContextFrame = (podId: string): string =>
   // only-interrupter rule reserves push for the escalation envelope — so "I mentioned them" is never "they
   // know", and an agent that stops there has blocked itself on a filter
   // nobody may have opened.
-  `When you need a HUMAN — a decision, a merge press, an answer only they ` +
-  `have — @mention their handle. A bare name reaches no one: human attention ` +
+  `At a genuine HUMAN fork, use the card tool ` +
+  `(MCP: \`commonly_request_decision\`): give 2–4 options; mark one ` +
+  `recommended, ` +
+  `include context; add @human for a named ruler. It posts the card; ` +
+  `if unavailable, ask the intended human with a plain @human question; do not ` +
+  `duplicate chat ask. For ` +
+  `merge press or ordinary ` +
+  `answer, @mention their handle. A bare name reaches no one: human attention ` +
   `is matched on the literal @handle, so "Sam should decide this" is addressed ` +
   `to nobody. The handle is necessary and not sufficient — it flags the message ` +
   `in a mentions filter the human pulls; nothing pushes. Say plainly what you ` +
