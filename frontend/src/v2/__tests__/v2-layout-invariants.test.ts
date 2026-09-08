@@ -25,6 +25,29 @@ const read = (rel: string): string =>
 
 // Grab the body of the first `<selector> { ... }` block. Selectors here have no
 // nested braces, so a naive slice to the next `}` is sufficient.
+// The team's phone block: the `@media (max-width: 760px)` block that carries
+// `.v2-team__grid`, wherever it sits in the sheet — not the last one.
+const teamPhoneBlock = (css: string): string => {
+  const marker = '@media (max-width: 760px)';
+  let from = 0;
+  for (;;) {
+    const at = css.indexOf(marker, from);
+    if (at < 0) return '';
+    // Walk to the block's own closing brace so a base rule after the block
+    // can never be read as part of it.
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    const block = css.slice(at, end + 1);
+    if (block.includes('.v2-team__grid')) return block;
+    from = end + 1;
+  }
+};
+
 const ruleBody = (css: string, selector: string): string => {
   // Prefer a selector at the start of a CSS line. A descendant selector can
   // contain the same text (`.parent .target {`) and is not the rule being
@@ -665,7 +688,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // at ≤760 — the same guarantee (a column never wider than its container)
     // expressed on the new grid.
     expect(ruleBody(v2, '.v2-team__grid')).toContain('repeat(3, minmax(0, 1fr))');
-    expect(ruleBody(v2.slice(v2.lastIndexOf('@media (max-width: 760px)')), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
   });
 
   test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
@@ -980,7 +1003,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark')).toContain('font: 600 12px/1');
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
-    const teamPhone = v2.slice(v2.lastIndexOf('@media (max-width: 760px)'));
+    const teamPhone = teamPhoneBlock(v2);
     expect(ruleBody(teamPhone, '.v2-team__heading')).toContain('flex-direction: column');
     expect(ruleBody(teamPhone, '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
@@ -1644,7 +1667,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   it('team card on a phone: one column, so the name column never one-chars (spec §5, #568 class, re-pinned on direction C)', () => {
     // The featured row is gone; the same guarantee on the card grid is one
     // column at ≤760 and a card head whose name column can shrink.
-    expect(ruleBody(v2.slice(v2.lastIndexOf('@media (max-width: 760px)')), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
     expect(ruleBody(v2, '.v2-team-card__title')).toContain('min-width: 0');
   });
 

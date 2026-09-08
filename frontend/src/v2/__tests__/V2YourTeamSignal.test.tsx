@@ -38,10 +38,10 @@ const renderPage = (over = {}) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' }, { _id: 'p2', name: 'Connectors v2 — channel routing' }] });
     if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: agents.p1 } });
     if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agents.p2 } });
-    if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'kai' }, { taskId: 'TASK-140', status: 'claimed', claimedBy: null, assignee: 'sage' }] } });
-    // TASK-999 is claimed as the literal 'default' — an installation with no
-    // instanceId — and must light nobody (sprint-review at 58fb4147).
-    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [{ status: 'claimed', claimedBy: 'wren' }, { taskId: 'TASK-999', status: 'claimed', claimedBy: 'default' }] } });
+    // `claimedBy` is the claimer's User id (never a name); `assignee` is a name
+    // written by PATCH and is not a claim.
+    if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'kai-user' }, { taskId: 'TASK-140', status: 'claimed', claimedBy: null, assignee: 'sage' }] } });
+    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [{ status: 'claimed', claimedBy: 'wren-user' }, { taskId: 'TASK-999', status: 'claimed', claimedBy: 'nobody-on-the-page' }] } });
     if (url.startsWith('/api/activity/decision-queue')) return Promise.resolve({ data: { items: queue } });
     return Promise.resolve({ data: {} });
   });
@@ -132,7 +132,7 @@ describe('Your Team (direction C)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo');
   });
 
-  test("a claim held as 'default' lights no card and never overwrites a seat's own claim", async () => {
+  test('claims match on the User id only — a name never matches, and a claim by someone off the page lights no card', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
     expect(cardOf('Kai').querySelector('.v2-team-card__status')).toHaveTextContent('working · TASK-131');

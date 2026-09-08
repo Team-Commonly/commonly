@@ -20,8 +20,8 @@ import { initialsFor } from '../utils/avatars';
  * Rulings carried (ux-lead, Sharpen 66163–66165):
  *  - the sentence is `description` from the listing (botMetadata), else nothing;
  *  - `working · TASK-nnn` comes from the tasks API: a claimed task whose
- *    `claimedBy` is this seat's instanceId (agentName fallback); `working ·
- *    <pod>` when it holds none;
+ *    `claimedBy` is this seat's User id; `working · <pod>` when the claim has
+ *    no task id;
  *  - needs-you is keyed on the queue item's `actorUserId`, never on a name;
  *  - Hire an agent is ink; Bring your own is bordered.
  */
@@ -206,12 +206,12 @@ const V2YourTeamPage: React.FC = () => {
               // row nobody claimed (sprint-review, PR review at fa98adf7). A
               // claimed row without an id still marks its holder — the status
               // then reads `working · <pod>` (ruling 66163 (2)).
-              // `claimedBy` is the runtime's instanceId, or the agentName when the
-              // seat has none — and an installation without an instanceId writes the
-              // literal 'default' (agentRuntimeAuth), which identifies nobody. Such a
-              // claim must never light a card (sprint-review, 58fb4147).
+              // `claimedBy` is the claimer's User id: tasksApi's agent branch gates on
+              // `req.user.isBot`, which no auth path sets, so every claim falls through
+              // to `userId.toString()` (sprint-review at 9774aedc). The listing's
+              // `userId` (4a) is the same id, so the two keys already agree.
               const holder = task.claimedBy ? String(task.claimedBy) : '';
-              if (holder && holder !== 'default' && !claims.has(holder)) claims.set(holder, { taskId: task.taskId ? String(task.taskId) : null, podName: p.name || p.title || '' });
+              if (holder && !claims.has(holder)) claims.set(holder, { taskId: task.taskId ? String(task.taskId) : null, podName: p.name || p.title || '' });
             }
           } catch { /* advisory */ }
         }));
@@ -236,12 +236,11 @@ const V2YourTeamPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [t]);
 
-  // A seat claims as its instanceId (agentName fallback) — tasksApi.ts:134.
   // The claim this seat holds, or null. A claim without a task id still counts.
-  // One mechanism: 'default' claims are dropped at ingest (above), so a seat on
-  // the default instance can only ever match by its agentName.
+  // Keyed on the User id — the one key both `claimedBy` and `actorUserId` are
+  // written in — so an id names exactly one seat and nothing needs filtering.
   const claimedTaskFor = (a: AgentInstallationSummary): { taskId: string | null; podName: string } | null => (
-    tasksByClaimer.get(a.instanceId || 'default') || tasksByClaimer.get(a.name) || null
+    (a.userId && tasksByClaimer.get(a.userId)) || null
   );
 
   // Needs-you per agent, keyed on the principal's id (never a name).
