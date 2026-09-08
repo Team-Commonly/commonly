@@ -526,8 +526,9 @@ const V2PodBoard: React.FC = () => {
             </div>
             {focusRead.focus.nextTasks.length > 0 && (
               <ol className="v2-board__focus-tasks">
-                {focusRead.focus.nextTasks.map((task) => (
+                {focusRead.focus.nextTasks.map((task, index) => (
                   <li key={task.taskId} className={!task.available ? 'v2-board__focus-task--unavailable' : undefined}>
+                    <span className="v2-board__focus-task-position" aria-hidden="true">{index + 1}</span>
                     <span className="v2-board__focus-task-id">{task.taskId}</span>
                     {task.available && tasks.some((item) => item.taskId === task.taskId) ? (
                       <button type="button" className="v2-board__focus-task-link" onClick={() => {

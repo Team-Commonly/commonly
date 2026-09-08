@@ -8086,6 +8086,14 @@ body.modern-ui.v2-canvas {
   min-width: 0;
 }
 
+.v2-board__focus-task-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+
 .v2-root button.v2-board__focus-task-link {
   border: 0;
   padding: 0;

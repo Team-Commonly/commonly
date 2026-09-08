@@ -1791,6 +1791,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(podBoard).toContain('aria-live="polite"');
       expect(podBoard).toContain('className="v2-board__focus-save"');
       expect(podBoard).toContain('v2-board__focus-position');
+      expect(podBoard).toContain('className="v2-board__focus-task-position"');
       expect(podBoard).toContain('focusConflictLatest.focus.owner');
       expect(ruleBody(v2, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
       expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
