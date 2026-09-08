@@ -1193,6 +1193,7 @@
       "up": "上移",
       "down": "下移",
       "remove": "移除",
+      "moved": "{{taskId}} 已移至第 {{position}} 项，共 {{count}} 项。",
       "clear": "清除焦点",
       "save": "保存焦点",
       "saving": "保存中…",

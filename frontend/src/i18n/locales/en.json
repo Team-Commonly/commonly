@@ -1201,6 +1201,7 @@
       "up": "Up",
       "down": "Down",
       "remove": "Remove",
+      "moved": "{{taskId}} moved to position {{position}} of {{count}}.",
       "clear": "Clear focus",
       "save": "Save focus",
       "saving": "Saving…",

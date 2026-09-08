@@ -8160,9 +8160,25 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-board__focus-selected li { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.v2-board__focus-selected li:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 .v2-board__focus-selected li > span { flex: 1 1 100%; }
 .v2-board__focus-selected button { border: 0; background: none; color: var(--v2-accent-text); cursor: pointer; font-size: 12px; padding: 2px 0; }
 .v2-board__focus-selected button:disabled { color: var(--v2-text-muted); cursor: default; }
+.v2-board__focus-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 
 .v2-board__focus-conflict {

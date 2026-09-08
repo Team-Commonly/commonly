@@ -224,6 +224,36 @@ describe('V2PodBoard', () => {
     ));
   });
 
+  test('keeps focus on a moved task and announces its new position', async () => {
+    const orderedFocus = {
+      ...FOCUS,
+      focus: {
+        ...FOCUS.focus,
+        nextTasks: [
+          { taskId: 'TASK-001', available: true, title: 'Connect your first agent', status: 'done', assignee: null, updatedAt: null },
+          { taskId: 'TASK-002', available: true, title: 'Give your agent its first task', status: 'pending', assignee: null, updatedAt: null },
+        ],
+      },
+    };
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) return Promise.resolve({ data: orderedFocus });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'u1', username: 'alice', isBot: false }] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderBoard();
+
+    await screen.findByText('Ship the pilot');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    const selected = screen.getByTestId('focus-selected');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Up' })[1]);
+
+    expect(await screen.findByText('TASK-002 moved to position 1 of 2.')).toBeInTheDocument();
+    const rows = selected.querySelectorAll('li');
+    expect(rows[0]).toHaveTextContent('TASK-002');
+    expect(document.activeElement).toBe(rows[0]);
+  });
+
   test('keeps the draft visible and shows the latest focus after a revision conflict', async () => {
     const latest = { ...FOCUS, revision: 3, focus: { ...FOCUS.focus, goal: 'A newer goal' } };
     axios.get.mockImplementation((url) => {

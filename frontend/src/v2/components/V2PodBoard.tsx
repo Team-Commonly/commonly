@@ -12,7 +12,7 @@
 // Status moves PATCH `/api/v1/tasks/:podId/:taskId` with optimistic
 // update + revert — the same call the v1 board makes, so both boards stay
 // behaviorally interchangeable while v1 winds down.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import AddIcon from '@mui/icons-material/Add';
@@ -151,6 +151,7 @@ const V2PodBoard: React.FC = () => {
   const [focusScope, setFocusScope] = useState('');
   const [focusOwner, setFocusOwner] = useState('');
   const [focusTaskIds, setFocusTaskIds] = useState<string[]>([]);
+  const [focusMoveAnnouncement, setFocusMoveAnnouncement] = useState('');
   const [focusSaving, setFocusSaving] = useState(false);
   const [focusSaveError, setFocusSaveError] = useState<string | null>(null);
   const [focusConflictLatest, setFocusConflictLatest] = useState<FocusRead | null>(null);
@@ -158,6 +159,8 @@ const V2PodBoard: React.FC = () => {
   const [focusBaseRevision, setFocusBaseRevision] = useState<number | null>(null);
   const focusDialogRef = useRef<HTMLDivElement | null>(null);
   const focusReturnRef = useRef<HTMLElement | null>(null);
+  const focusTaskRowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const focusMoveTargetRef = useRef<string | null>(null);
   const closeFocusEditorRef = useRef<() => void>(() => undefined);
   const focusRequestRef = useRef(0);
   const focusMutationRef = useRef(0);
@@ -378,15 +381,23 @@ const V2PodBoard: React.FC = () => {
       : current.length < 10 ? [...current, taskId] : current);
   };
 
-  const moveFocusTask = (index: number, delta: number) => {
-    setFocusTaskIds((current) => {
-      const next = index + delta;
-      if (next < 0 || next >= current.length) return current;
-      const copy = current.slice();
-      [copy[index], copy[next]] = [copy[next], copy[index]];
-      return copy;
-    });
-  };
+  const moveFocusTask = useCallback((index: number, delta: number) => {
+    const next = index + delta;
+    if (next < 0 || next >= focusTaskIds.length) return;
+    const taskId = focusTaskIds[index];
+    const copy = focusTaskIds.slice();
+    [copy[index], copy[next]] = [copy[next], copy[index]];
+    focusMoveTargetRef.current = taskId;
+    setFocusMoveAnnouncement(t('board.focus.moved', { taskId, position: next + 1, count: copy.length }));
+    setFocusTaskIds(copy);
+  }, [focusTaskIds, t]);
+
+  useLayoutEffect(() => {
+    const taskId = focusMoveTargetRef.current;
+    if (!taskId) return;
+    focusMoveTargetRef.current = null;
+    focusTaskRowRefs.current[taskId]?.focus();
+  }, [focusTaskIds]);
 
   // Same live wire the inspector uses — the board must never be staler than
   // the chat narrating it.
@@ -682,11 +693,15 @@ const V2PodBoard: React.FC = () => {
                 </div>
               </div>
               {focusTaskIds.length > 0 && (
-                <ol className="v2-board__focus-selected">
+                <ol className="v2-board__focus-selected" data-testid="focus-selected">
                   {focusTaskIds.map((taskId, index) => {
                     const task = tasks.find((item) => item.taskId === taskId);
                     return (
-                      <li key={taskId}>
+                      <li
+                        key={taskId}
+                        ref={(node) => { focusTaskRowRefs.current[taskId] = node; }}
+                        tabIndex={-1}
+                      >
                         <span>{taskId} — {task?.title || t('board.focus.taskUnavailable')}</span>
                         <button type="button" onClick={() => moveFocusTask(index, -1)} disabled={index === 0}>{t('board.focus.up')}</button>
                         <button type="button" onClick={() => moveFocusTask(index, 1)} disabled={index === focusTaskIds.length - 1}>{t('board.focus.down')}</button>
@@ -696,6 +711,7 @@ const V2PodBoard: React.FC = () => {
                   })}
                 </ol>
               )}
+              <div className="v2-board__focus-live" role="status" aria-live="polite">{focusMoveAnnouncement}</div>
               {focusSaveError && <div className="v2-modal__error">{focusSaveError}</div>}
               {focusConflictLatest && (
                 <section className="v2-board__focus-conflict" aria-label={t('board.focus.latestTitle')}>

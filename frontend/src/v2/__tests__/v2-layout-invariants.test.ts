@@ -1787,6 +1787,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-board__focus-tasks')).toContain('flex-direction: column');
       expect(podBoard).toContain('focusConflictLatest');
       expect(podBoard).toContain('focusConflictReviewed');
+      expect(podBoard).toContain('focusMoveTargetRef');
+      expect(podBoard).toContain('aria-live="polite"');
+      expect(ruleBody(v2, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
+      expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
       expect(podBoard).toContain('if (data?.podId && data.podId !== podId) return;');
       expect(podBoard).toContain('className="v2-board__focus-retry"');
       expect(ruleBody(v2, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
