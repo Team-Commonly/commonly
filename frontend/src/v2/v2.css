@@ -11751,6 +11751,7 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button {
   justify-content: flex-start;
   padding-block: 6px;
+  padding-inline: 12px;
   text-align: left;
   line-height: 20px;
   white-space: normal;
