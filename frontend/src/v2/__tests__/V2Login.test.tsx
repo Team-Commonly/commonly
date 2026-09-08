@@ -571,6 +571,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent artifact-versions guide preserves its version boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-artifact-versions/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Artifact Versions: Make Reviewable Work Identifiable' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Mark superseded versions and preserve the reason' })).toBeInTheDocument();
+    expect(screen.getByText(/Supersession is a relationship, not deletion/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -578,7 +586,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(70);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(71);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
