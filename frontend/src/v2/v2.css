@@ -9341,7 +9341,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__option-recommended,
-.v2-decision-card__recommended {
+.v2-decision-card__option-recommended {
   font: 500 11px/14px var(--v2-font-mono);
   opacity: 0.9;
 }
@@ -10238,24 +10238,33 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-decision-card__options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
+  display: grid;
+  gap: 12px;
 }
 
-.v2-decision-card__option { display: inline-flex; align-items: center; gap: 5px; }
+.v2-decision-card__option {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
 
 .v2-root button.v2-decision-card__choice,
 .v2-root button.v2-decision-card__other,
 .v2-root button.v2-decision-card__other-form button {
-  min-height: 30px;
-  padding: 5px 10px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
   background: var(--v2-surface);
   color: var(--v2-text-primary);
-  font: 500 12px/18px var(--v2-font);
+  font: 600 13px/20px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__choice {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
 }
 
 .v2-root button.v2-decision-card__choice--primary {
@@ -10268,15 +10277,27 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-decision-card__other:hover:not(:disabled) { background: var(--v2-surface-hover); }
 .v2-root button.v2-decision-card__choice--primary:hover:not(:disabled) { background: var(--v2-accent-strong); }
 
-.v2-decision-card__option > span {
+.v2-decision-card__option-description {
+  color: var(--v2-text-secondary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-decision-card__option-recommended {
   color: var(--v2-text-muted);
-  font: 400 11px/16px var(--v2-font);
+  font: 500 11px/14px var(--v2-font-mono);
 }
 
 .v2-root button.v2-decision-card__other {
   border: 0;
   background: transparent;
   color: var(--v2-accent-text);
+}
+
+.v2-decision-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .v2-decision-card__other-form {
@@ -10442,7 +10463,7 @@ body.modern-ui.v2-canvas {
   .v2-decision-card__options { align-items: stretch; flex-direction: column; }
   .v2-decision-card__option { width: 100%; }
   .v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }
-  .v2-root button.v2-decision-card__other { align-self: center; min-height: 30px; }
+  .v2-root button.v2-decision-card__other { align-self: flex-start; min-height: 44px; }
 
   /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
      while the transcript, composer, and tab bar share the white canvas. */
@@ -11702,4 +11723,57 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
   .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 2; grid-row: auto; max-width: none; justify-content: flex-start; }
   .v2-activity__queue-row .v2-activity__option-choice { max-width: 100%; }
+}
+
+/* Decision alternatives are a full-width content line below the question.
+   These rules intentionally come after the generic queue-row overrides above:
+   a decision's options must not be squeezed into the 320px action column or
+   capped at 150px each when the card contains long copy. */
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__queue-actions {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  max-width: none;
+  width: 100%;
+  justify-content: flex-start;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision {
+  align-items: start;
+  row-gap: 12px;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice {
+  width: 100%;
+  flex: none;
+  max-width: none;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button {
+  justify-content: flex-start;
+  padding-block: 6px;
+  padding-inline: 12px;
+  text-align: left;
+  line-height: 20px;
+  white-space: normal;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button.v2-activity__option:not(.v2-activity__option--primary):hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-recommended {
+  display: block;
+  color: var(--v2-text-muted);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-description {
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.v2-activity__decision-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }

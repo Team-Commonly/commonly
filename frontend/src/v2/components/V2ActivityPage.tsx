@@ -1155,65 +1155,86 @@ const V2ActivityPage: React.FC = () => {
                       {item.kind === 'decision' && (item.options || []).length > 0 && (
                         <>
                           {ruledDecisions[item.id] ? (
-                            <span className="v2-activity__decision-ruled" role="status">
-                              {t('activity.decision.ruled', ruledDecisions[item.id])}
-                            </span>
+                            <>
+                              <span className="v2-activity__decision-ruled" role="status">
+                                {t('activity.decision.ruled', ruledDecisions[item.id])}
+                              </span>
+                              <div className="v2-activity__decision-footer">
+                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                                  {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                                </button>
+                              </div>
+                            </>
                           ) : (
                             <>
-                              {(item.options || []).map((option, index) => (
-                                <div className="v2-activity__option-choice" key={option.label}>
-                                  <button
-                                    type="button"
-                                    className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
-                                    onClick={() => ruleDecision(item, option.label)}
-                                    disabled={rulingId === item.id}
-                                    aria-label={t(option.recommended
-                                      ? 'activity.decision.ruleOptionRecommended'
-                                      : 'activity.decision.ruleOption', { option: option.label })}
-                                  >
-                                    {rulingId === item.id ? t('activity.decision.working') : <>
-                                      {option.label}
-                                      {option.recommended && <span className="v2-activity__option-recommended"> · {t('activity.decision.recommended')}</span>}
-                                    </>}
-                                  </button>
-                                  {option.description && (
-                                    <span className="v2-activity__option-description">{option.description}</span>
-                                  )}
-                                </div>
-                              ))}
-                              <button
-                                type="button"
-                                className="v2-activity__queue-action--secondary v2-activity__option"
-                                onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
-                                disabled={rulingId === item.id}
-                              >
-                                {t('activity.decision.other')}
-                              </button>
-                              {otherDecisionId === item.id && (
-                                <div className="v2-activity__decision-other" data-testid="decision-other">
-                                  <textarea
-                                    aria-label={t('activity.decision.otherPlaceholder')}
-                                    rows={2}
-                                    value={otherDecisionValue}
-                                    onChange={(event) => setOtherDecisionValue(event.target.value)}
-                                    disabled={rulingId === item.id}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => ruleDecision(item, otherDecisionValue)}
-                                    disabled={rulingId === item.id || !otherDecisionValue.trim()}
-                                  >
-                                    {rulingId === item.id ? t('activity.decision.working') : t('activity.decision.sendOther')}
-                                  </button>
-                                </div>
-                              )}
+                              {(item.options || []).map((option, index) => {
+                                const optionId = `${item.id}-${index}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+                                const recommendedId = `${optionId}-recommended`;
+                                const descriptionId = `${optionId}-description`;
+                                const describedBy = option.description ? descriptionId : undefined;
+                                return (
+                                  <div className="v2-activity__option-choice" key={option.label}>
+                                    <button
+                                      type="button"
+                                      className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
+                                      onClick={() => ruleDecision(item, option.label)}
+                                      disabled={rulingId === item.id}
+                                      aria-label={t(option.recommended
+                                        ? 'activity.decision.ruleOptionRecommended'
+                                        : 'activity.decision.ruleOption', { option: option.label })}
+                                      aria-describedby={describedBy}
+                                    >
+                                      {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                    </button>
+                                    {option.recommended && (
+                                      <span id={recommendedId} className="v2-activity__option-recommended">{t('activity.decision.recommended')}</span>
+                                    )}
+                                    {option.description && (
+                                      <span id={descriptionId} className="v2-activity__option-description">{option.description}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              <div className="v2-activity__decision-footer">
+                                <button
+                                  type="button"
+                                  className="v2-activity__queue-action--secondary v2-activity__option"
+                                  onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
+                                  disabled={rulingId === item.id}
+                                >
+                                  {t('activity.decision.other')}
+                                </button>
+                                {otherDecisionId === item.id && (
+                                  <div className="v2-activity__decision-other" data-testid="decision-other">
+                                    <textarea
+                                      aria-label={t('activity.decision.otherPlaceholder')}
+                                      rows={2}
+                                      value={otherDecisionValue}
+                                      onChange={(event) => setOtherDecisionValue(event.target.value)}
+                                      disabled={rulingId === item.id}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => ruleDecision(item, otherDecisionValue)}
+                                      disabled={rulingId === item.id || !otherDecisionValue.trim()}
+                                    >
+                                      {rulingId === item.id ? t('activity.decision.working') : t('activity.decision.sendOther')}
+                                    </button>
+                                  </div>
+                                )}
+                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                                  {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                                </button>
+                              </div>
                             </>
                           )}
                         </>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                        {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
-                      </button>
+                      {(item.kind !== 'decision' || (item.options || []).length === 0) && (
+                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                          {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                        </button>
+                      )}
                     </div>
                     {actionErrorItemId === item.id && actionError && (
                       <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
