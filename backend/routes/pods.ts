@@ -29,6 +29,10 @@ const File = require('../models/File');
 const PodContextService = require('../services/podContextService');
 // eslint-disable-next-line global-require
 const PodMemorySearchService = require('../services/podMemorySearchService');
+// eslint-disable-next-line global-require
+const PodFocusService = require('../services/podFocusService');
+// eslint-disable-next-line global-require
+const { emitPodFocusUpdated } = require('../services/taskEventService');
 
 interface AuthReq {
   user?: { id: string };
@@ -57,6 +61,14 @@ const podJoinRateLimitKey = (req: any) => {
   }
   return req.ip ? ipKeyGenerator(req.ip) : 'anon';
 };
+
+const podFocusRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
 
 const storage = multer.diskStorage({
   destination: (req: unknown, file: unknown, cb: (err: Error | null, dir: string) => void) => {
@@ -298,6 +310,52 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
     if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code });
     console.error('Error building pod context:', error);
     return res.status(500).json({ message: 'Failed to build pod context' });
+  }
+});
+
+router.get('/:id/focus', auth, async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  try {
+    const focus = await PodFocusService.read({ podId, userId });
+    const permissions = await PodFocusService.permissions({ podId, userId });
+    return res.status(200).json({ ...focus, permissions });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error reading pod focus:', error);
+    return res.status(500).json({ message: 'Failed to read pod focus' });
+  }
+});
+
+router.patch('/:id/focus', podFocusRateLimit, auth, async (req: AuthReq, res: Res) => {
+  const userId = req.user?.id || req.userId;
+  const podId = req.params?.id;
+  const body = req.body || {};
+  try {
+    const keys = Object.keys(body).sort().join(',');
+    if (keys !== 'expectedRevision,focus') {
+      return res.status(400).json({ message: 'Body must contain expectedRevision and focus only', code: 'INVALID_FOCUS_REQUEST' });
+    }
+    if (typeof body.expectedRevision !== 'number' || !Number.isInteger(body.expectedRevision)) {
+      return res.status(400).json({ message: 'expectedRevision must be a non-negative integer', code: 'INVALID_REVISION' });
+    }
+    if (body.focus !== null && (typeof body.focus !== 'object' || Array.isArray(body.focus))) {
+      return res.status(400).json({ message: 'focus must be an object or null', code: 'INVALID_FOCUS' });
+    }
+    const focus = await PodFocusService.update({ podId, userId, expectedRevision: body.expectedRevision, focus: body.focus as any });
+    emitPodFocusUpdated(podId, focus.revision);
+    return res.status(200).json({ ...focus, permissions: { canEdit: true } });
+  } catch (error) {
+    const e = error as { status?: number; message?: string; code?: string; fields?: Record<string, string> };
+    if (e?.status === 409) {
+      let current: unknown;
+      try { current = await PodFocusService.read({ podId, userId }); } catch { /* retain the conflict response if the pod disappeared */ }
+      return res.status(409).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}), ...(current ? { current } : {}) });
+    }
+    if (e?.status) return res.status(e.status).json({ message: e.message, code: e.code, ...(e.fields ? { fields: e.fields } : {}) });
+    console.error('Error updating pod focus:', error);
+    return res.status(500).json({ message: 'Failed to update pod focus' });
   }
 });
 

@@ -50,6 +50,20 @@ const TASKS = [
   { taskId: 'N-4', title: 'Legacy alias completed', status: 'completed', updates: [] },
 ];
 
+const FOCUS = {
+  podId: 'pod-1',
+  revision: 2,
+  permissions: { canEdit: true },
+  focus: {
+    goal: 'Ship the pilot',
+    scope: 'Sharpen only',
+    owner: { userId: 'u1', label: 'alice', available: true },
+    nextTasks: [{ taskId: 'TASK-002', available: true, title: 'Give your agent its first task', status: 'pending', assignee: null, updatedAt: null }],
+    updatedAt: '2026-09-08T00:00:00.000Z',
+    updatedBy: { userId: 'u1', label: 'alice' },
+  },
+};
+
 const wireAxios = (tasks = TASKS) => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks } });
@@ -155,6 +169,7 @@ describe('V2PodBoard', () => {
     await screen.findByRole('region', { name: 'Pending' });
 
     const tasksCallsBefore = axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/')).length;
+    const focusCallsBefore = axios.get.mock.calls.filter(([url]) => url.endsWith('/focus')).length;
     act(() => {
       handlers.task_updated({ podId: 'pod-1', task: {}, kind: 'created' });
     });
@@ -162,6 +177,65 @@ describe('V2PodBoard', () => {
     await waitFor(() => {
       const tasksCallsAfter = axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/')).length;
       expect(tasksCallsAfter).toBeGreaterThan(tasksCallsBefore);
+      const focusCallsAfter = axios.get.mock.calls.filter(([url]) => url.endsWith('/focus')).length;
+      expect(focusCallsAfter).toBeGreaterThan(focusCallsBefore);
     });
+  });
+
+  test('renders a populated focus and saves an explicit ordered edit', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'u1', username: 'alice', isBot: false }] } });
+      return Promise.resolve({ data: {} });
+    });
+    axios.patch.mockResolvedValue({ data: FOCUS });
+    renderBoard();
+
+    expect(await screen.findByText('Ship the pilot')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    fireEvent.change(screen.getByDisplayValue('Ship the pilot'), { target: { value: 'Ship the pilot safely' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/pods/pod-1/focus',
+      {
+        expectedRevision: 2,
+        focus: { goal: 'Ship the pilot safely', scope: 'Sharpen only', ownerUserId: 'u1', nextTaskIds: ['TASK-002'] },
+      },
+      expect.any(Object),
+    ));
+  });
+
+  test('keeps the draft visible and shows the latest focus after a revision conflict', async () => {
+    const latest = { ...FOCUS, revision: 3, focus: { ...FOCUS.focus, goal: 'A newer goal' } };
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'u1', username: 'alice', isBot: false }] } });
+      return Promise.resolve({ data: {} });
+    });
+    axios.patch.mockRejectedValueOnce({ response: { status: 409, data: { current: latest } } });
+    renderBoard();
+
+    await screen.findByText('Ship the pilot');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    fireEvent.change(screen.getByDisplayValue('Ship the pilot'), { target: { value: 'My retained draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+
+    expect(await screen.findByRole('heading', { name: 'Latest focus' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('My retained draft')).toBeInTheDocument();
+    expect(screen.getAllByText('A newer goal').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: 'Save focus' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Review latest' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenLastCalledWith(
+      '/api/pods/pod-1/focus',
+      {
+        expectedRevision: 3,
+        focus: { goal: 'My retained draft', scope: 'Sharpen only', ownerUserId: 'u1', nextTaskIds: ['TASK-002'] },
+      },
+      expect.any(Object),
+    ));
   });
 });

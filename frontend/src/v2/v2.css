@@ -7954,6 +7954,238 @@ body.modern-ui.v2-canvas {
   background: var(--v2-accent-strong);
 }
 
+.v2-board__focus {
+  margin: 16px 20px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-bg);
+  flex: 0 0 auto;
+}
+
+.v2-board__focus-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v2-board__focus-eyebrow {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v2-board__focus-title {
+  margin: 2px 0 0;
+  color: var(--v2-text-primary);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.v2-root button.v2-board__focus-edit,
+.v2-root button.v2-board__focus-clear {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 11px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-edit:hover,
+.v2-root button.v2-board__focus-clear:hover {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-board__focus-muted,
+.v2-board__focus-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 13px;
+}
+
+.v2-board__focus-error { color: var(--v2-danger, #b42318); }
+
+.v2-root button.v2-board__focus-retry,
+.v2-root button.v2-board__focus-review-latest {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 4px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-retry:hover,
+.v2-root button.v2-board__focus-review-latest:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-board__focus-review-latest:disabled {
+  color: var(--v2-text-muted);
+  cursor: default;
+}
+
+.v2-board__focus-goal {
+  margin: 10px 0 4px;
+  color: var(--v2-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.v2-board__focus-scope {
+  margin: 0;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.v2-board__focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-meta strong { color: var(--v2-text-secondary); }
+
+.v2-board__focus-tasks {
+  margin: 12px 0 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+}
+
+.v2-board__focus-tasks li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-root button.v2-board__focus-task-link {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  color: var(--v2-accent-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.v2-root button.v2-board__focus-task-link:hover { text-decoration: underline; }
+
+.v2-board__focus-task-id {
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.v2-board__focus-task-status {
+  margin-left: auto;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-task--unavailable { color: var(--v2-text-muted); font-style: italic; }
+
+.v2-board__focus-editor { width: min(640px, calc(100vw - 28px)); }
+
+.v2-board__focus-editor .v2-modal__close {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.v2-board__field textarea,
+.v2-board__field select {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.v2-board__field textarea:focus,
+.v2-board__field select:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+
+.v2-board__focus-task-picker {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+}
+
+.v2-board__focus-task-option { display: flex; align-items: baseline; gap: 8px; color: var(--v2-text-secondary); font-size: 12.5px; }
+
+.v2-board__focus-selected {
+  margin: -3px 0 12px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+}
+
+.v2-board__focus-selected li { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.v2-board__focus-selected li > span { flex: 1 1 100%; }
+.v2-board__focus-selected button { border: 0; background: none; color: var(--v2-accent-text); cursor: pointer; font-size: 12px; padding: 2px 0; }
+.v2-board__focus-selected button:disabled { color: var(--v2-text-muted); cursor: default; }
+.v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+.v2-board__focus-conflict {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.v2-board__focus-conflict h3 {
+  margin: 0 0 6px;
+  color: var(--v2-text-primary);
+  font-size: 12px;
+}
+
+.v2-board__focus-conflict p { margin: 4px 0; }
+.v2-board__focus-conflict ol { margin: 6px 0 0; padding-left: 20px; }
+.v2-board__focus-conflict .v2-board__focus-review-latest { margin-top: 8px; }
+
 .v2-board__columns {
   display: flex;
   gap: 14px;
@@ -8198,6 +8430,35 @@ body.modern-ui.v2-canvas {
 
   .v2-board__columns {
     padding: 12px 14px 20px;
+  }
+
+  .v2-board__focus {
+    margin: 12px 14px 0;
+    padding: 14px;
+  }
+
+  .v2-root button.v2-board__focus-edit,
+  .v2-root button.v2-board__focus-clear,
+  .v2-root button.v2-board__focus-retry,
+  .v2-root button.v2-board__focus-review-latest,
+  .v2-board__focus-selected button {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-tasks li {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-editor .v2-modal__close,
+  .v2-board__focus-editor .v2-board__field input,
+  .v2-board__focus-editor .v2-board__field textarea,
+  .v2-board__focus-editor .v2-board__field select,
+  .v2-board__focus-task-option {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-task-option {
+    align-items: center;
   }
 
   .v2-board__col {

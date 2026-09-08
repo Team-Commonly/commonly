@@ -1777,6 +1777,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(pkg.dependencies['@fontsource/ibm-plex-sans']).toBeDefined();
       expect(pkg.dependencies['@fontsource-variable/bricolage-grotesque']).toBeDefined();
     });
+
+    test('pod focus keeps one bounded panel above the existing board and stays usable on phones', () => {
+      expect(podBoard).toContain('className="v2-board__focus"');
+      expect(podBoard).toContain('v2-board__focus-editor');
+      expect(podBoard).toContain('expectedRevision: focusBaseRevision ?? 0');
+      expect(ruleBody(v2, '.v2-board__focus')).toContain('border: 1px solid var(--v2-border)');
+      expect(ruleBody(v2, '.v2-board__focus')).toContain('background: var(--v2-bg)');
+      expect(ruleBody(v2, '.v2-board__focus-tasks')).toContain('flex-direction: column');
+      expect(podBoard).toContain('focusConflictLatest');
+      expect(podBoard).toContain('focusConflictReviewed');
+      expect(podBoard).toContain('if (data?.podId && data.podId !== podId) return;');
+      expect(podBoard).toContain('className="v2-board__focus-retry"');
+      expect(ruleBody(v2, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus \{[\s\S]*?padding: 14px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks li \{[\s\S]*?min-height: 44px;/);
+    });
   });
 
 });
