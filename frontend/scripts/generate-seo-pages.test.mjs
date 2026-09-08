@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 75);
+  assert.equal(pages.length, 76);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -96,6 +96,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-verification-path/',
     '/guides/ai-agent-resume-conditions/',
     '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-non-goals/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -131,7 +132,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 65);
+  assert.equal(guidePages.length, 66);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -721,6 +722,32 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const nonGoalsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-non-goals/');
+  assert.equal(nonGoalsGuide.title, 'AI Agent Non-Goals: Write Clear Task Boundaries | Commonly');
+  const nonGoals = guides['ai-agent-non-goals'];
+  assert.deepEqual(nonGoals.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(nonGoals.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(nonGoals.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(nonGoals.sections.find((section) => section.title === 'The wording should be testable').links.map((link) => link.path), ['/guides/ai-agent-work-contract/', '/guides/ai-agent-task-management/']);
+  assert.equal(nonGoals.sections.find((section) => section.title === 'The purpose is not to make a task defensive').links, undefined);
+  assert.match(nonGoals.intro[0], /^AI agent non-goals are explicit statements of work a task, role, or review stage will not do\./);
+  const nonGoalsHtml = renderStaticPage(guideTemplate, nonGoalsGuide);
+  assert.match(nonGoalsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-non-goals\/"/);
+  assert.match(nonGoalsHtml, /AI agent non-goals are explicit statements of work/);
+  assert.match(nonGoalsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(nonGoalsHtml, /seo-page-dark/);
+  assert.match(nonGoalsHtml, /excluded work/);
+  assert.doesNotMatch(nonGoalsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((nonGoalsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-scope-creep/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-no-op/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-non-goals\/"/g) || []).length, 1);
   }
   const reviewDecisionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-review-decisions/');
   assert.equal(reviewDecisionsGuide.title, 'AI Agent Review Decisions: Five Clear Answers | Commonly');
