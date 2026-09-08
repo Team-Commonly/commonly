@@ -113,6 +113,24 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
           </button>
         )}
 
+        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-needs-you">
+          <h2 id="workspace-inspector-needs-you" className="v2-workspace-inspector__label">{t('inspector.workspace.needsYou')}</h2>
+          <div className="v2-workspace-inspector__rows">
+            {attentionCount === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
+            {attentionCount !== null && attentionCount > 0 && (
+              <button type="button" className="v2-workspace-inspector__attention" onClick={() => navigate('/v2/activity')}>
+                {t('activity.needsYou.countLabel', { count: attentionCount })}
+              </button>
+            )}
+            {attention.map((item) => (
+              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
+                <span>{item.title}</span>
+                {item.actorName && <span className="v2-workspace-inspector__actor">{item.actorName}</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-agents">
           <h2 id="workspace-inspector-agents" className="v2-workspace-inspector__label">
             {t('inspector.workspace.agentsIn', { pod: shortRoomName(pod.name).toLowerCase() })}
@@ -145,24 +163,6 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
                 </button>
               );
             })}
-          </div>
-        </section>
-
-        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-needs-you">
-          <h2 id="workspace-inspector-needs-you" className="v2-workspace-inspector__label">{t('inspector.workspace.needsYou')}</h2>
-          <div className="v2-workspace-inspector__rows">
-            {attentionCount === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
-            {attentionCount !== null && attentionCount > 0 && (
-              <button type="button" className="v2-workspace-inspector__attention" onClick={() => navigate('/v2/activity')}>
-                {t('activity.needsYou.countLabel', { count: attentionCount })}
-              </button>
-            )}
-            {attention.map((item) => (
-              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
-                <span>{item.title}</span>
-                {item.actorName && <span className="v2-workspace-inspector__actor">{item.actorName}</span>}
-              </button>
-            ))}
           </div>
         </section>
 
