@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 92);
+  assert.equal(pages.length, 93);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -113,6 +113,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-audience-boundaries/',
     '/guides/ai-agent-stop-conditions/',
     '/guides/ai-agent-change-requests/',
+    '/guides/ai-agent-data-boundaries/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -148,7 +149,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 82);
+  assert.equal(guidePages.length, 83);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -739,6 +740,60 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const dataBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-data-boundaries/');
+  assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly');
+  const dataBoundaries = guides['ai-agent-data-boundaries'];
+  assert.deepEqual(dataBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dataBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dataBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(dataBoundaries.faq.length, 6);
+  assert.equal(dataBoundaries.intro.length, 4);
+  const dataWorkedExampleIndex = dataBoundaries.sections.findIndex((section) => section.title === 'A worked example using public reference material');
+  const dataWorkedExample = dataBoundaries.sections[dataWorkedExampleIndex];
+  assert.equal(dataWorkedExample.paragraphs.length, 6);
+  assert.equal(dataWorkedExample.tables, undefined);
+  assert.equal(dataWorkedExample.links, undefined);
+  assert.equal(dataWorkedExample.orderedItems, undefined);
+  assert.equal(dataBoundaries.sections.slice(0, dataWorkedExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex - 1].title, 'State the extent');
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex + 1].title, 'Set task data boundaries in seven steps');
+  const chooseDestination = dataBoundaries.sections.find((section) => section.title === 'Choose the destination');
+  assert.equal(chooseDestination.paragraphs.length, 3);
+  assert.match(chooseDestination.paragraphs[1], /^Describe retention expectations in terms someone can act on/);
+  assert.deepEqual(chooseDestination.links.map((link) => link.path), ['/guides/ai-agent-retained-context/']);
+  for (const [title, tail] of [
+    ['Select before collecting', /A context packet should preserve the route back to evidence without becoming a copy of every available record\.$/],
+    ['Technical availability', /both layers need to support the planned action\.$/],
+    ['Trace important claims', /they neither supply missing evidence nor authorize sharing it\.$/],
+    ['Record an accepted change', /A changed task agreement still does not create access to a new system\.$/],
+  ]) {
+    const section = dataBoundaries.sections.find((section) => section.title === title);
+    assert.match(section.paragraphs[section.paragraphs.length - 1], tail);
+  }
+  const proportionate = dataBoundaries.sections.find((section) => section.title === 'Keep the agreement proportionate');
+  assert.equal(proportionate.paragraphs.length, 1);
+  assert.equal(proportionate.links, undefined);
+  assert.match(dataBoundaries.intro[0], /^AI agent data boundaries are the task-specific limits on which information an agent may read, use, retain, and share\./);
+  const dataBoundariesHtml = renderStaticPage(guideTemplate, dataBoundariesGuide);
+  assert.match(dataBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-data-boundaries\/"/);
+  assert.match(dataBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dataBoundariesHtml, /data boundar/);
+  assert.doesNotMatch(dataBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(dataBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dataBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-audience-boundaries/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-data-boundaries\/"/g) || []).length, 1);
+  }
+  assert.ok(!dataBoundaries.sections.some((section) => section.title === dataBoundaries.cta.title));
+  assert.equal((dataBoundariesHtml.match(/<h2>Define what to read, retain, and share<\/h2>/g) || []).length, 1);
+  assert.ok(dataBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < dataBoundariesHtml.indexOf('<h2>Define what to read, retain, and share</h2>'));
+  assert.equal(dataBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
   const changeRequestsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-change-requests/');
   assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly');
   const changeRequests = guides['ai-agent-change-requests'];
