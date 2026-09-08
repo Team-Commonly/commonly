@@ -146,6 +146,24 @@ describe('config.js', () => {
     expect(config.instances.default.url).toBe('https://api.commonly.me');
   });
 
+  test('login target maps an unsaved profile key to the default URL', () => {
+    const target = resolveLoginTarget({ instanceArg: 'staging' });
+    expect(target).toEqual({
+      instanceUrl: 'https://api.commonly.me',
+      configKey: 'default',
+    });
+
+    saveInstance({
+      key: target.configKey,
+      url: target.instanceUrl,
+      token: 'cm_new',
+      userId: 'u1',
+      username: 'alice',
+    });
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    expect(config.instances.default.url).toBe('https://api.commonly.me');
+  });
+
   test('getToken("https://...") returns the saved token when the URL matches a saved key', () => {
     // Mirror of the above: historically this returned null because getToken
     // treated the arg as a config key and looked up instances["https://..."].

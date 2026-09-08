@@ -51,9 +51,10 @@ const promptSecret = (question) => new Promise((resolve) => {
  */
 export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
   const resolved = instanceArg ? resolveInstance(instanceArg) : null;
-  const instanceUrl = (resolved?.url || instanceArg || DEFAULT_URL).replace(/\/$/, '');
+  const isUrl = /^https?:\/\//i.test(instanceArg || '');
+  const instanceUrl = (resolved?.url || (isUrl ? instanceArg : DEFAULT_URL)).replace(/\/$/, '');
   const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
-  const isSavedKey = instanceArg && !/^https?:\/\//i.test(instanceArg) && resolved?.key;
+  const isSavedKey = instanceArg && !isUrl && resolved?.key;
   const configKey = keyArg || (isSavedKey ? resolved.key : (isLocal ? 'local' : 'default'));
 
   return { instanceUrl, configKey };
