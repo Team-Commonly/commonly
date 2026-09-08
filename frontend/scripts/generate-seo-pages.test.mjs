@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 91);
+  assert.equal(pages.length, 92);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -112,6 +112,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-interim-results/',
     '/guides/ai-agent-audience-boundaries/',
     '/guides/ai-agent-stop-conditions/',
+    '/guides/ai-agent-change-requests/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -147,7 +148,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 81);
+  assert.equal(guidePages.length, 82);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -738,6 +739,46 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const changeRequestsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-change-requests/');
+  assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly');
+  const changeRequests = guides['ai-agent-change-requests'];
+  assert.deepEqual(changeRequests.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(changeRequests.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(changeRequests.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(changeRequests.faq.length, 6);
+  const workedExampleIndex = changeRequests.sections.findIndex((section) => section.title === 'Work through a change request from proposal to revision');
+  const workedExample = changeRequests.sections[workedExampleIndex];
+  assert.equal(workedExample.paragraphs.length, 6);
+  assert.equal(workedExample.tables, undefined);
+  assert.equal(workedExample.links, undefined);
+  assert.equal(workedExample.orderedItems, undefined);
+  assert.equal(changeRequests.sections.slice(0, workedExampleIndex).filter((section) => section.tables).length, 8);
+  assert.equal(changeRequests.sections[workedExampleIndex + 1].title, 'Check whether the change is ready to apply');
+  const stepsFollowOn = changeRequests.sections.find((section) => section.title === 'This process can fit in a short task update');
+  assert.equal(stepsFollowOn.paragraphs.length, 1);
+  assert.equal(stepsFollowOn.links, undefined);
+  assert.match(changeRequests.intro[0], /^An AI agent change request is a recorded proposal to alter a task’s outcome, requirements, inputs, permitted operations, audience, or acceptance criteria\./);
+  const changeRequestsHtml = renderStaticPage(guideTemplate, changeRequestsGuide);
+  assert.match(changeRequestsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-change-requests\/"/);
+  assert.match(changeRequestsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(changeRequestsHtml, /change request/);
+  assert.match(changeRequestsHtml, /A second confirmation is unnecessary when the owner’s instruction already specifies the change/);
+  assert.doesNotMatch(changeRequestsHtml, /seo-page-dark/);
+  assert.doesNotMatch(changeRequestsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((changeRequestsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-scope-creep/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-change-requests\/"/g) || []).length, 1);
+  }
+  assert.ok(!changeRequests.sections.some((section) => section.title === changeRequests.cta.title));
+  assert.equal((changeRequestsHtml.match(/<h2>Update scope without silent drift<\/h2>/g) || []).length, 1);
+  assert.ok(changeRequestsHtml.indexOf('<h2>Frequently asked questions</h2>') < changeRequestsHtml.indexOf('<h2>Update scope without silent drift</h2>'));
+  assert.equal(changeRequests.cta.secondary.label, 'Explore Commonly’s guides');
   const stopConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stop-conditions/');
   assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly');
   const stopConditions = guides['ai-agent-stop-conditions'];
