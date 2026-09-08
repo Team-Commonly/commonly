@@ -111,6 +111,62 @@ describe('attentionItemService', () => {
     expect(rows[0]).toMatchObject({ status: 'resolved', source: { type: 'message', id: '42' } });
   });
 
+  // actorUserId (ux-lead 66164): actorName holds three shapes across the three
+  // writers (author username, runtime agentName, nothing on decisions), so the
+  // Your Team ring keys on the principal's id instead. Each writer is pinned.
+  it('a mention carries its author id as actorUserId', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'owner', username: 'owner', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordMentionedUsers({ id: 42, podId: 'pod-1', userId: 'wren-user', username: 'Wren', content: '@sam pick one' });
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'sam' }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ actorName: 'Wren', actorUserId: 'wren-user' }) }),
+      expect.any(Object),
+    );
+  });
+
+  it('a decision carries the agent user id as actorUserId (it has no actorName at all)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordDecision({ _id: 'd-1', podId: 'pod-1', agentUserId: 'kai-user', title: 'Which cursor?', options: [{ label: 'A' }, { label: 'B' }] });
+
+    const [, update] = mockUpdateOne.mock.calls.at(-1);
+    expect(update.$setOnInsert).toEqual(expect.objectContaining({ kind: 'decision', actorUserId: 'kai-user' }));
+    expect(update.$setOnInsert.actorName).toBeUndefined();
+  });
+
+  it('an approval carries the requester id as actorUserId when the source has one', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordApproval({ _id: 'a-1', podId: 'pod-1', agentMetadata: { agentName: 'openclaw' }, approval: { requestedBy: 'aria-user' }, content: 'needs repo scope' });
+
+    const [, update] = mockUpdateOne.mock.calls.at(-1);
+    expect(update.$setOnInsert).toEqual(expect.objectContaining({ kind: 'approval', actorName: 'openclaw', actorUserId: 'aria-user' }));
+  });
+
+  it('the queue item carries actorUserId as a string, and omits it when the row has none', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
+      { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'decision', source: { type: 'decision_request', id: 'd-1' }, title: 'Which?', actorUserId: { toString: () => 'kai-user' }, createdAt: new Date() },
+      { _id: 'attention-2', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
+    ] }) });
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] }]));
+
+    const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
+    expect(queue.items.find((item) => item.id === 'd-1').actorUserId).toBe('kai-user');
+    // undefined, never a stringified 'undefined' — JSON drops it on the wire.
+    expect(queue.items.find((item) => item.id === '41').actorUserId).toBeUndefined();
+  });
+
   it('returns only rows whose recipient is still a member and resolves by recipient-owned id', async () => {
     mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
       { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
