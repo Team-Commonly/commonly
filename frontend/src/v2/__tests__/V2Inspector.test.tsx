@@ -5,6 +5,7 @@ import {
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Inspector from '../components/V2Inspector';
+import V2Avatar from '../components/V2Avatar';
 
 const mockNavigate = jest.fn();
 const mockGet = jest.fn();
@@ -18,13 +19,11 @@ jest.mock('../hooks/useV2Api', () => ({
   useV2Api: () => ({ get: mockGet }),
 }));
 
-jest.mock('../components/V2Avatar', () => ({ name }: { name: string }) => <span data-testid="avatar">{name}</span>);
-
 const detail = {
   pod: { _id: 'pod-1', name: 'Sharpen', type: 'team' },
   members: [],
   agents: [
-    { agentName: 'wren', instanceId: 'default', displayName: 'Wren', status: 'working' },
+    { agentName: 'wren', userId: 'wren-user-id', instanceId: 'default', displayName: 'Wren', status: 'working' },
     { agentName: 'kai', instanceId: 'default', displayName: 'Kai' },
   ],
   messages: [], loading: false, error: null, sendError: null,
@@ -58,6 +57,15 @@ describe('V2Inspector', () => {
       }
       return Promise.resolve({});
     });
+  });
+
+  test('renders the same generated agent face as chat', async () => {
+    renderInspector();
+    await screen.findByText('Slack default mode');
+    render(<V2Avatar name="Wren in chat" kind="agent" seed="wren-user-id" tone="flat" />);
+    expect(screen.getByRole('img', { name: 'Wren' })).toHaveAttribute(
+      'src', screen.getByRole('img', { name: 'Wren in chat' }).getAttribute('src'),
+    );
   });
 
   test('renders the two artboard cards from the pod’s existing data', async () => {
