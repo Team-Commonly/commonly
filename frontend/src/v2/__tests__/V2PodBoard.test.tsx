@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2PodBoard from '../components/V2PodBoard';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -75,6 +75,23 @@ const wireAxios = (tasks = TASKS) => {
 const renderBoard = (entry = '/v2/pods/pod-1/board') => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/v2/pods/:podId/board" element={<V2PodBoard />} />
+        <Route path="/v2/pods/:podId" element={<div>chat page</div>} />
+      </Routes>
+    </MemoryRouter>
+  </AuthContext.Provider>,
+);
+
+const SwitchPod = () => {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate('/v2/pods/pod-b/board')}>Switch pod</button>;
+};
+
+const renderNavigableBoard = () => render(
+  <AuthContext.Provider value={authValue}>
+    <MemoryRouter initialEntries={['/v2/pods/pod-a/board']}>
+      <SwitchPod />
       <Routes>
         <Route path="/v2/pods/:podId/board" element={<V2PodBoard />} />
         <Route path="/v2/pods/:podId" element={<div>chat page</div>} />
@@ -237,5 +254,86 @@ describe('V2PodBoard', () => {
       },
       expect.any(Object),
     ));
+  });
+
+  test('pins the draft revision while a background refresh lands', async () => {
+    const refreshed = { ...FOCUS, revision: 3, focus: { ...FOCUS.focus, goal: 'Background update' } };
+    let focusCalls = 0;
+    const handlers = {};
+    mockSocketValue = {
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+      },
+      connected: true,
+    };
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) {
+        focusCalls += 1;
+        return Promise.resolve({ data: focusCalls === 1 ? FOCUS : refreshed });
+      }
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'u1', username: 'alice', isBot: false }] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderBoard();
+
+    await screen.findByText('Ship the pilot');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    fireEvent.change(screen.getByDisplayValue('Ship the pilot'), { target: { value: 'Draft from revision 2' } });
+    act(() => { handlers.pod_focus_updated({ podId: 'pod-1', revision: 3 }); });
+    await waitFor(() => expect(screen.getByText('Background update')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/pods/pod-1/focus',
+      expect.objectContaining({ expectedRevision: 2 }),
+      expect.any(Object),
+    ));
+  });
+
+  test('drops late pod reads and saves without clearing the next pod state', async () => {
+    const aFocus = { ...FOCUS, podId: 'pod-a', revision: 9, focus: { ...FOCUS.focus, goal: 'A focus' } };
+    const bFocus = { ...FOCUS, podId: 'pod-b', revision: 1, focus: { ...FOCUS.focus, goal: 'B focus' } };
+    const lateARead = { ...aFocus, revision: 10, focus: { ...aFocus.focus, goal: 'Late A focus' } };
+    let focusCalls = 0;
+    let resolveLateARead;
+    const lateAReadPromise = new Promise((resolve) => { resolveLateARead = resolve; });
+    const patchResolvers = [];
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) {
+        focusCalls += 1;
+        if (focusCalls === 1) return Promise.resolve({ data: aFocus });
+        if (focusCalls === 2) return lateAReadPromise;
+        return Promise.resolve({ data: bFocus });
+      }
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: TASKS } });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'u1', username: 'alice', isBot: false }] } });
+      return Promise.resolve({ data: {} });
+    });
+    axios.patch.mockImplementation(() => new Promise((resolve) => { patchResolvers.push(resolve); }));
+    renderNavigableBoard();
+
+    await screen.findByText('A focus');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    fireEvent.change(screen.getByDisplayValue('A focus'), { target: { value: 'A draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+    await waitFor(() => expect(patchResolvers).toHaveLength(1));
+
+    // Start a second A read through the page visibility path, then navigate.
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(focusCalls).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch pod' }));
+    await screen.findByText('B focus');
+    resolveLateARead({ data: lateARead });
+    await waitFor(() => expect(screen.queryByText('Late A focus')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    fireEvent.change(screen.getByDisplayValue('B focus'), { target: { value: 'B draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
+    await waitFor(() => expect(patchResolvers).toHaveLength(2));
+    act(() => { patchResolvers[0]({ data: aFocus }); });
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    act(() => { patchResolvers[1]({ data: bFocus }); });
   });
 });
