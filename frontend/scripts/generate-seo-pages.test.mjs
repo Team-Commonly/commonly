@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 89);
+  assert.equal(pages.length, 90);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -110,6 +110,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-revision-loop/',
     '/guides/ai-agent-task-splitting/',
     '/guides/ai-agent-interim-results/',
+    '/guides/ai-agent-audience-boundaries/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -145,7 +146,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 79);
+  assert.equal(guidePages.length, 80);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -736,6 +737,42 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const audienceBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audience-boundaries/');
+  assert.equal(audienceBoundariesGuide.title, 'AI Agent Audience Boundaries: Who an Agent May Address | Commonly');
+  const audienceBoundaries = guides['ai-agent-audience-boundaries'];
+  assert.deepEqual(audienceBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(audienceBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(audienceBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  const boundedReview = audienceBoundaries.sections.find((section) => section.title === 'Use a named reviewer for bounded review, not a general audience');
+  assert.equal(boundedReview.paragraphs.length, 6);
+  assert.equal(boundedReview.tables, undefined);
+  assert.deepEqual(boundedReview.links.map((link) => link.path), ['/guides/ai-agent-focused-threads/']);
+  for (const title of ['If a test fails', 'The boundary is complete']) {
+    const section = audienceBoundaries.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(audienceBoundaries.intro[0], /^AI agent audience boundaries define who an agent may address, what it may share with each audience, and which messages require a named owner before they become a commitment\./);
+  const audienceBoundariesHtml = renderStaticPage(guideTemplate, audienceBoundariesGuide);
+  assert.match(audienceBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-audience-boundaries\/"/);
+  assert.match(audienceBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(audienceBoundariesHtml, /audience boundary/);
+  assert.doesNotMatch(audienceBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(audienceBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((audienceBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-roles/',
+    '/guides/ai-agent-escalation/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-audience-boundaries\/"/g) || []).length, 1);
+  }
+  assert.ok(!audienceBoundaries.sections.some((section) => section.title === audienceBoundaries.cta.title));
+  assert.equal((audienceBoundariesHtml.match(/<h2>Keep the right message with the right owner<\/h2>/g) || []).length, 1);
+  assert.ok(audienceBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < audienceBoundariesHtml.indexOf('<h2>Keep the right message with the right owner</h2>'));
+  assert.equal(audienceBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
   const interimResultsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-interim-results/');
   assert.equal(interimResultsGuide.title, 'AI Agent Interim Results: Useful Work Before Completion | Commonly');
   const interimResults = guides['ai-agent-interim-results'];
