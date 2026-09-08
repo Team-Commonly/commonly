@@ -5,7 +5,6 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
 import V2ActivityPage from '../components/V2ActivityPage';
-import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
 import { AuthContext } from '../../context/AuthContext';
 import { setupFocusManagement } from '../../utils/focusUtils';
@@ -236,23 +235,49 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByText(/0 needs you/i)).not.toBeInTheDocument();
   });
 
-  test('turns a truly empty workspace into the three factual onboarding rows', async () => {
-    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
-      ? { items: [], count: 0, countsByPod: {} } : { ...recap, needsYou: [], agents: [], board: [] } }));
-    const onGuide = jest.fn();
-    window.addEventListener(FIRST_RUN_REOPEN_EVENT, onGuide);
+  test('day zero: Get started is its own card above Needs you, the composer hides until an agent exists, and steps leave one by one (66658/66666)', async () => {
+    const empty = { ...recap, needsYou: [], agents: [], board: [] };
+    // Facts come from the registry's per-pod agent list (what Your Team reads), never from the
+    // 24h recap window (sprint-review 66671): a hired seat that has not acted is absent from recap.
+    const mockFor = (seats, connectors) => (url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: connectors });
+      if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: seats } });
+      return Promise.resolve({ data: empty });
+    };
+    mockGet.mockImplementation(mockFor([], []));
+    const first = renderPage();
+    expect(await screen.findByRole('heading', { name: 'Get started' })).toBeInTheDocument();
+    expect(await screen.findByText('3 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hire an agent' })).toHaveClass('v2-activity__start-cta--current');
+    expect(screen.getByRole('button', { name: 'Open My Workspace' })).not.toHaveClass('v2-activity__start-cta--current');
+    expect(screen.getByRole('button', { name: 'Add a connector' })).toBeInTheDocument();
+    // Needs you still renders its panel underneath, with no count.
+    expect(screen.getByText('Nothing needs you.')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/waiting on you/)).not.toBeInTheDocument();
+    // Nobody to wake: the composer is hidden while step 1 is open.
+    expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument();
+    const card = screen.getByRole('heading', { name: 'Get started' }).closest('section') as HTMLElement;
+    expect(card.compareDocumentPosition(screen.getByRole('heading', { name: 'Needs you' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/agents');
+    first.unmount();
+
+    // An agent exists but has not answered, no connector: steps 2 and 3, composer back, step 2 is the ink act.
+    // A provisioned seat has lastActiveAt (runtime-token use) but lastMessage null: it has never spoken.
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null }, { name: 'hosted-smoke', lastMessage: { content: 'x' }, internal: true }], []));
+    const second = renderPage();
+    expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open My Workspace' })).toHaveClass('v2-activity__start-cta--current');
+    expect(screen.getByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    second.unmount();
+
+    // Everything done: no card at all — the 0-state board already gated.
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi there', createdAt: '2026-09-08T10:00:03.000Z' } }], [{ status: 'active' }]));
     renderPage();
-
-    expect(await screen.findByRole('button', { name: 'Meet your Guide' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Hire your first agent' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create a task' })).toBeInTheDocument();
-    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Meet your Guide' }));
-    expect(onGuide).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Create a task' }));
-    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1/board?createTask=1');
-    window.removeEventListener(FIRST_RUN_REOPEN_EVENT, onGuide);
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
   });
 
   test('keeps an approval actionable and refreshes the fact after approval', async () => {

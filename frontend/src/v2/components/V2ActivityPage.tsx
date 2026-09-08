@@ -3,7 +3,6 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AuthContext } from '../../context/AuthContext';
-import { requestFirstRunGuide } from '../firstRunGuide';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
 type ActivityWindow = 'today' | '7d';
@@ -194,6 +193,17 @@ const V2ActivityPage: React.FC = () => {
   // a stall, which the auto-load effect makes unreachable in practice
   // (sprint-review 66408: deterministic under the fold, never Loading).
   const [queueAutoPending, setQueueAutoPending] = useState(false);
+  // Day zero (ux-lead 66658/66666): Get started is its own card above Needs you and a step is
+  // not an ask — no actor, no ring, no count, no badge; a step leaves when the account does
+  // something. hire ← an agent exists; speak ← an agent has answered; connect ← a connector row.
+  const [connectorCount, setConnectorCount] = useState<number | null>(null);
+  // "Hired" and "has answered" are facts about the account's seats, not about the last 24h
+  // (sprint-review 66671: recap.agents only carries agents that acted inside the recap window).
+  // The registry's per-pod agent list is what Your Team reads. `lastMessage` is proof of speech
+  // (null when the seat has never spoken in that pod); `lastActiveAt` is only proof of life —
+  // provisioning uses a runtime token and sets it (sprint-review 66678) — so it must not close
+  // the step whose job is to notice a seat that never answered.
+  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastMessage?: unknown; internal?: boolean }> | null>(null);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -533,6 +543,41 @@ const V2ActivityPage: React.FC = () => {
     };
   }, [accountId, podId, reloadKey, snapshotReady, t, window]);
 
+  useEffect(() => {
+    if (!snapshotReady) return undefined;
+    let active = true;
+    const token = localStorage.getItem('token');
+    axios.get<Array<{ status?: string }>>('/api/integrations/user/all', { headers: { 'x-auth-token': token ?? '' } })
+      .then((res) => { if (active) setConnectorCount(Array.isArray(res.data) ? res.data.filter((row) => row.status !== 'error').length : 0); })
+      .catch(() => { if (active) setConnectorCount(0); });
+    return () => { active = false; };
+  }, [snapshotReady, reloadKey]);
+  useEffect(() => {
+    if (!recap || podId !== 'all') return undefined;
+    let active = true;
+    const token = localStorage.getItem('token');
+    const headers = { 'x-auth-token': token ?? '' };
+    Promise.all(recap.pods.slice(0, 20).map((pod) => axios
+      .get<{ agents?: Array<{ name: string; lastMessage?: unknown; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
+      .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []))
+      .catch(() => [])))
+      .then((lists) => { if (active) setHiredAgents(lists.flat().filter((agent) => !agent.internal)); });
+    return () => { active = false; };
+  }, [recap, podId]);
+  const startSteps = useMemo(() => {
+    if (!recap || podId !== 'all' || hiredAgents === null) return [] as Array<'hire' | 'speak' | 'connect'>;
+    const open: Array<'hire' | 'speak' | 'connect'> = [];
+    if (hiredAgents.length === 0) open.push('hire');
+    if (!hiredAgents.some((agent) => agent.lastMessage != null)) open.push('speak');
+    if (connectorCount !== null && connectorCount === 0) open.push('connect');
+    return open;
+  }, [recap, podId, hiredAgents, connectorCount]);
+  const startStepTarget = (step: 'hire' | 'speak' | 'connect') => {
+    if (step === 'hire') return '/v2/agents';
+    if (step === 'speak') return recap?.pods[0] ? `/v2/pods/${recap.pods[0].id}` : '/v2';
+    return '/v2/connectors';
+  };
+
   const loadMoreQueue = async (auto = false) => {
     if (queueMoreError && queueMoreFailureOffsetRef.current === null) {
       setReloadKey((value) => value + 1);
@@ -806,14 +851,6 @@ const V2ActivityPage: React.FC = () => {
     navigate(`/v2/pods/${targetPodId}${target}`);
   };
 
-  const openFirstBoard = () => {
-    const firstPod = recap?.pods[0];
-    if (firstPod) {
-      navigate(`/v2/pods/${firstPod.id}/board?createTask=1`);
-      return;
-    }
-    navigate('/v2');
-  };
 
   const captureActionFocus = (item: NeedsYouItem) => {
     const generation = ++actionFocusGenerationRef.current;
@@ -993,11 +1030,6 @@ const V2ActivityPage: React.FC = () => {
   const acknowledgeMention = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.mention.actionFailed');
   const markHandoffHandled = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.handoff.actionFailed');
 
-  const isDayZero = podId === 'all'
-    && queueCount === 0
-    && visibleQueue.length === 0
-    && recap?.agents.length === 0
-    && recap.board.length === 0;
 
   return (
     <div className="v2-activity" aria-busy={loading}>
@@ -1041,6 +1073,8 @@ const V2ActivityPage: React.FC = () => {
       </div>}
       {!loading && !error && recap && (
         <>
+          {/* The composer stays hidden while step 1 is open — nobody to wake — and returns the moment an agent exists. */}
+          {!startSteps.includes('hire') && (
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
             <div className="v2-activity__compose-top">
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
@@ -1131,11 +1165,32 @@ const V2ActivityPage: React.FC = () => {
             </div>
             {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
           </section>
+          )}
+          {startSteps.length > 0 && (
+            <section className="v2-activity__start" aria-labelledby="activity-get-started">
+              <div className="v2-activity__start-head">
+                <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
+                <span className="v2-activity__start-kicker">{t('activity.getStarted.kicker', { count: startSteps.length })}</span>
+              </div>
+              {startSteps.map((step, index) => (
+                <div key={step} className="v2-activity__start-row" data-step={step}>
+                  <span className="v2-activity__start-num" aria-hidden="true">{({ hire: 1, speak: 2, connect: 3 })[step]}</span>
+                  <div className="v2-activity__start-copy">
+                    <strong>{t(`activity.getStarted.${step}.title`)}</strong>
+                    <p>{t(`activity.getStarted.${step}.description`)}</p>
+                  </div>
+                  <div className="v2-activity__start-act">
+                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`)}</button>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
-              {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
+              {queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
               {queueCount !== 0 && <p>{queueCount === null
                 ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
                 : t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}</p>}
@@ -1143,47 +1198,7 @@ const V2ActivityPage: React.FC = () => {
             {queueFailed ? <>
               <p role="status">{t('activity.loadFailed')}</p>
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
-            </> : isDayZero ? (
-              <div className="v2-activity__queue">
-                <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
-                  <span className="v2-activity__queue-mark" aria-hidden="true">1</span>
-                  <div className="v2-activity__queue-copy">
-                    <div className="v2-activity__queue-kind">{t('activity.dayZero.kind')}</div>
-                    <strong>{t('activity.dayZero.guide.title')}</strong>
-                    <p>{t('activity.dayZero.guide.description')}</p>
-                    <span>{t('activity.dayZero.guide.leaves')}</span>
-                  </div>
-                  <div className="v2-activity__queue-actions">
-                    <button type="button" onClick={requestFirstRunGuide}>{t('activity.dayZero.guide.cta')}</button>
-                  </div>
-                </article>
-                <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
-                  <span className="v2-activity__queue-mark" aria-hidden="true">2</span>
-                  <div className="v2-activity__queue-copy">
-                    <div className="v2-activity__queue-kind">{t('activity.dayZero.kind')}</div>
-                    <strong>{t('activity.dayZero.agent.title')}</strong>
-                    <p>{t('activity.dayZero.agent.description')}</p>
-                    <span>{t('activity.dayZero.agent.leaves')}</span>
-                  </div>
-                  <div className="v2-activity__queue-actions">
-                    <button type="button" onClick={() => navigate('/v2/agents')}>{t('activity.dayZero.agent.cta')}</button>
-                    <button type="button" className="v2-activity__queue-action--secondary" onClick={() => navigate('/v2/agents/byo')}>{t('activity.dayZero.agent.secondary')}</button>
-                  </div>
-                </article>
-                <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
-                  <span className="v2-activity__queue-mark" aria-hidden="true">3</span>
-                  <div className="v2-activity__queue-copy">
-                    <div className="v2-activity__queue-kind">{t('activity.dayZero.kind')}</div>
-                    <strong>{t('activity.dayZero.task.title')}</strong>
-                    <p>{t('activity.dayZero.task.description')}</p>
-                    <span>{t('activity.dayZero.task.leaves')}</span>
-                  </div>
-                  <div className="v2-activity__queue-actions">
-                    <button type="button" onClick={openFirstBoard}>{t('activity.dayZero.task.cta')}</button>
-                  </div>
-                </article>
-              </div>
-            ) : (
+            </> : (
               <>
               {(queueCount === 0 || visibleQueue.length === 0) && (
                 <div className="v2-activity__empty v2-activity__empty--plain">

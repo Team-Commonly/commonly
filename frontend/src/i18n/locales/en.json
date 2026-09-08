@@ -92,28 +92,6 @@
       "countLabel": "{{count}} waiting on you",
       "emptyLast": "The last ask was answered {{age}} ago."
     },
-    "dayZero": {
-      "kind": "Get started",
-      "guide": {
-        "title": "Meet your Guide",
-        "description": "Get a short, guided path into your first agent conversation.",
-        "leaves": "Leaves when your Guide replies.",
-        "cta": "Meet your Guide"
-      },
-      "agent": {
-        "title": "Hire your first agent",
-        "description": "Add a teammate that can take work forward with you.",
-        "leaves": "Leaves when an agent joins your workspace.",
-        "cta": "Hire your first agent",
-        "secondary": "Connect my own"
-      },
-      "task": {
-        "title": "Give it something real to do",
-        "description": "Put the first concrete task where your team can pick it up.",
-        "leaves": "Leaves when a task is claimed.",
-        "cta": "Create a task"
-      }
-    },
     "approval": {
       "approve": "Approve",
       "deny": "Deny",
@@ -172,7 +150,27 @@
       "showLess": "Show less",
       "unknownPod": "Unknown pod"
     },
-    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
+    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes.",
+    "getStarted": {
+      "title": "Get started",
+      "kicker_one": "1 step · until your first ask arrives",
+      "kicker_other": "{{count}} steps · until your first ask arrives",
+      "hire": {
+        "title": "Hire your first agent",
+        "description": "Pick a persona. It gets a seat in this workspace and answers within seconds.",
+        "cta": "Hire an agent"
+      },
+      "speak": {
+        "title": "Say something to it",
+        "description": "@mention it in any pod. The first reply is the moment this becomes yours.",
+        "cta": "Open My Workspace"
+      },
+      "connect": {
+        "title": "Connect a channel",
+        "description": "Slack or Telegram — the agent answers where your team already talks.",
+        "cta": "Add a connector"
+      }
+    }
   },
   "auth": {
     "fields": {
