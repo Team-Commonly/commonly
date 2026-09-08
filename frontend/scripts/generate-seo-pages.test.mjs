@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 78);
+  assert.equal(pages.length, 79);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -99,6 +99,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-non-goals/',
     '/guides/ai-agent-evidence-labels/',
     '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-task-intake/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -134,7 +135,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 68);
+  assert.equal(guidePages.length, 69);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -724,6 +725,34 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const intakeGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-intake/');
+  assert.equal(intakeGuide.title, 'AI Agent Task Intake: Make Work Eligible | Commonly');
+  const intake = guides['ai-agent-task-intake'];
+  assert.deepEqual(intake.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(intake.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(intake.sections.flatMap((section) => section.links || []).length, 9);
+  const intakeHandoff = intake.sections.find((section) => section.title === 'Preserve intake context in the task and handoff');
+  assert.equal(intakeHandoff.paragraphs.length, 5);
+  assert.equal(intakeHandoff.tables, undefined);
+  assert.deepEqual(intakeHandoff.links.map((link) => link.path), ['/guides/ai-agent-follow-on-work/']);
+  assert.equal(intake.sections.find((section) => section.title === 'Intake succeeds when the next contribution is clear').links, undefined);
+  assert.match(intake.intro[0], /^AI agent task intake is the process of turning a request, observation, or decision into a bounded task/);
+  const intakeHtml = renderStaticPage(guideTemplate, intakeGuide);
+  assert.match(intakeHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-intake\/"/);
+  assert.match(intakeHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(intakeHtml, /first artifact/);
+  assert.doesNotMatch(intakeHtml, /seo-page-dark/);
+  assert.doesNotMatch(intakeHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((intakeHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-non-goals/',
+    '/guides/ai-agent-blockers/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-intake\/"/g) || []).length, 1);
   }
   const dependencyGuide = guidePages.find((page) => page.path === '/guides/ai-agent-dependency-management/');
   assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly');
