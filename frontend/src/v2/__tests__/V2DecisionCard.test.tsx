@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2DecisionCard from '../components/V2DecisionCard';
 
 const mockPost = jest.fn();
@@ -33,7 +33,9 @@ describe('V2DecisionCard', () => {
     expect(screen.getByText('Sprint impl')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ship the rebuilt workspace' })).toHaveClass('v2-decision-card__choice--primary');
     expect(screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' })).not.toHaveClass('v2-decision-card__choice--primary');
-    expect(screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' })).toHaveTextContent('Recommended');
+    const recommendedChoice = screen.getByRole('button', { name: 'Rule: Keep the legacy chat (Recommended)' });
+    expect(recommendedChoice).not.toHaveTextContent('Recommended');
+    expect(within(recommendedChoice.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Ship the rebuilt workspace' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(

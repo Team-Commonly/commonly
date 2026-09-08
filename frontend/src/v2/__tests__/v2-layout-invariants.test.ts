@@ -394,8 +394,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const decisionActionsOverride = lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__queue-actions');
     expect(decisionActionsOverride).toContain('grid-column: 1 / -1');
     expect(decisionActionsOverride).toContain('max-width: none');
+    expect(decisionActionsOverride).toContain('width: 100%');
+    expect(decisionActionsOverride).toContain('flex-direction: column');
+    expect(decisionActionsOverride).toContain('gap: 12px');
+    expect(ruleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision')).toContain('align-items: start');
     expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice'))
       .toContain('max-width: none');
+    expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice'))
+      .toContain('width: 100%');
+    expect(activityPage).toContain('aria-describedby={describedBy}');
+    expect(activityPage).toContain('v2-activity__decision-footer');
+    expect(decisionCard).toContain('aria-describedby={describedBy}');
+    expect(decisionCard).toContain('v2-decision-card__option-recommended');
+    expect(decisionCard).toContain('v2-decision-card__option-description');
 
     const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
     expect(neutralOption).toContain('border: 1px solid var(--v2-border)');

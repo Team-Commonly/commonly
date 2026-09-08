@@ -117,52 +117,59 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         </p>
       ) : (
         <div className="v2-decision-card__options">
-          {options.map((option, index) => (
-            <div className="v2-decision-card__option" key={option.label}>
-              <button
-                type="button"
-                className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
-                onClick={() => { void choose(option.label); }}
-                disabled={saving}
-                aria-label={option.recommended
-                  ? t('activity.decision.ruleOptionRecommended', { option: option.label })
-                  : undefined}
-              >
-                {saving ? t('activity.decision.working') : <>
-                  {option.label}
-                  {option.recommended && <span className="v2-decision-card__recommended"> · {t('activity.decision.recommended')}</span>}
-                </>}
-              </button>
-              {option.description && <span>{option.description}</span>}
-            </div>
-          ))}
-          <button
-            type="button"
-            className="v2-decision-card__other"
-            onClick={() => setOtherOpen((open) => !open)}
-            disabled={saving}
-          >
-            {t('activity.decision.other')}
-          </button>
-          {otherOpen && (
-            <div className="v2-decision-card__other-form">
-              <input
-                ref={otherInputRef}
-                aria-label={t('activity.decision.otherPlaceholder')}
-                value={otherValue}
-                onChange={(event) => setOtherValue(event.target.value)}
-                disabled={saving}
-              />
-              <button
-                ref={otherSubmitRef}
-                type="button"
-                onClick={() => { otherSubmissionRef.current = true; void choose(otherValue); }}
-                disabled={saving || !otherValue.trim()}
-              >
-                {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
-              </button>
-            </div>
-          )}
+          {options.map((option, index) => {
+            const optionId = `${decision.id}-${index}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+            const recommendedId = `${optionId}-recommended`;
+            const descriptionId = `${optionId}-description`;
+            const describedBy = option.description ? descriptionId : undefined;
+            return (
+              <div className="v2-decision-card__option" key={option.label}>
+                <button
+                  type="button"
+                  className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
+                  onClick={() => { void choose(option.label); }}
+                  disabled={saving}
+                  aria-label={option.recommended
+                    ? t('activity.decision.ruleOptionRecommended', { option: option.label })
+                    : undefined}
+                  aria-describedby={describedBy}
+                >
+                  {saving ? t('activity.decision.working') : option.label}
+                </button>
+                {option.recommended && <span id={recommendedId} className="v2-decision-card__option-recommended">{t('activity.decision.recommended')}</span>}
+                {option.description && <span id={descriptionId} className="v2-decision-card__option-description">{option.description}</span>}
+              </div>
+            );
+          })}
+          <div className="v2-decision-card__footer">
+            <button
+              type="button"
+              className="v2-decision-card__other"
+              onClick={() => setOtherOpen((open) => !open)}
+              disabled={saving}
+            >
+              {t('activity.decision.other')}
+            </button>
+            {otherOpen && (
+              <div className="v2-decision-card__other-form">
+                <input
+                  ref={otherInputRef}
+                  aria-label={t('activity.decision.otherPlaceholder')}
+                  value={otherValue}
+                  onChange={(event) => setOtherValue(event.target.value)}
+                  disabled={saving}
+                />
+                <button
+                  ref={otherSubmitRef}
+                  type="button"
+                  onClick={() => { otherSubmissionRef.current = true; void choose(otherValue); }}
+                  disabled={saving || !otherValue.trim()}
+                >
+                  {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {error && <p className="v2-decision-card__error" role="alert">{error}</p>}

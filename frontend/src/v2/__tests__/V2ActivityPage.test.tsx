@@ -141,7 +141,8 @@ describe('V2ActivityPage', () => {
     const second = screen.getByRole('button', { name: 'Rule: Ship now (Recommended)' });
     expect(first).toHaveClass('v2-activity__option--primary');
     expect(second).not.toHaveClass('v2-activity__option--primary');
-    expect(second).toHaveTextContent('Recommended');
+    expect(second).not.toHaveTextContent('Recommended');
+    expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
     expect(first).not.toHaveTextContent('Recommended');
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -152,17 +153,22 @@ describe('V2ActivityPage', () => {
       items: [{
         ...decisionQueue.items[1],
         title: 'Scope of the five-post daily X cap',
-        detail: 'Choose how the daily publication cap should apply across the GTM workspace.',
+        detail: '@Sam should we keep the five-post daily cap across every account post, or change it to count only squad-drafted sends?',
         options: [
           {
-            label: 'Keep the five-post cap for every workspace day',
-            description: 'Preserve the current limit so the publishing rhythm stays predictable for the team.',
+            label: 'Keep account-wide cap',
+            description: 'Recommended default: retain five total X posts per day, including casual replies. Simple to count and limits total volume; casual use reduces squad capacity.',
             recommended: false,
           },
           {
-            label: 'Raise the cap for approved launch windows',
-            description: 'Allow a bounded exception when a launch needs additional posts, with the existing audit trail.',
+            label: 'Change to squad-drafted only',
+            description: 'Change the current rule to five squad-drafted sends per day, excluding Sam’s casual replies. Preserves squad capacity but permits more than five total posts and requires identifying draft origin.',
             recommended: true,
+          },
+          {
+            label: 'Use a rolling seven-day cap for all sends',
+            description: 'Spread the same total volume across a longer window while retaining one auditable limit.',
+            recommended: false,
           },
         ],
       }],
@@ -171,13 +177,19 @@ describe('V2ActivityPage', () => {
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? longCopyQueue : recap }));
     renderPage();
 
-    const first = await screen.findByRole('button', { name: 'Rule: Keep the five-post cap for every workspace day' });
-    const second = screen.getByRole('button', { name: 'Rule: Raise the cap for approved launch windows (Recommended)' });
+    const first = await screen.findByRole('button', { name: 'Rule: Keep account-wide cap' });
+    const second = screen.getByRole('button', { name: 'Rule: Change to squad-drafted only (Recommended)' });
+    const third = screen.getByRole('button', { name: 'Rule: Use a rolling seven-day cap for all sends' });
     expect(first).toHaveClass('v2-activity__option--primary');
     expect(second).not.toHaveClass('v2-activity__option--primary');
+    expect(third).not.toHaveClass('v2-activity__option--primary');
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText('Preserve the current limit so the publishing rhythm stays predictable for the team.')).toBeInTheDocument();
-    expect(screen.getByText('Allow a bounded exception when a launch needs additional posts, with the existing audit trail.')).toBeInTheDocument();
+    expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Recommended default: retain five total X posts per day, including casual replies. Simple to count and limits total volume; casual use reduces squad capacity.')).toBeInTheDocument();
+    expect(screen.getByText('Change the current rule to five squad-drafted sends per day, excluding Sam’s casual replies. Preserves squad capacity but permits more than five total posts and requires identifying draft origin.')).toBeInTheDocument();
+    expect(second).not.toHaveTextContent('Recommended');
+    expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
+    expect(second).toHaveAttribute('aria-describedby', expect.stringContaining('description'));
   });
 
   test('changes the read window and opens the source pod from a factual queue row', async () => {
