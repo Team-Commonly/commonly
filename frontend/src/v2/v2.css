@@ -7568,6 +7568,23 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
+/* Administration (admin-only): two bordered link rows, ink label + muted detail. */
+.v2-settings__admin-links { display: flex; flex-direction: column; gap: 8px; }
+.v2-settings__admin-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  color: var(--v2-text-primary);
+  text-decoration: none;
+}
+.v2-settings__admin-link:hover { background: var(--v2-surface-hover); }
+.v2-settings__admin-link-label { font: 600 13px/18px var(--v2-font); }
+.v2-settings__admin-link-detail { font-size: 12px; color: var(--v2-text-muted); text-align: right; }
+
 .v2-settings__account-type {
   margin-left: auto;
   text-transform: lowercase;
