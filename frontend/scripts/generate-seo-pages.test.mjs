@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 77);
+  assert.equal(pages.length, 78);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -98,6 +98,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-review-decisions/',
     '/guides/ai-agent-non-goals/',
     '/guides/ai-agent-evidence-labels/',
+    '/guides/ai-agent-dependency-management/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -133,7 +134,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 67);
+  assert.equal(guidePages.length, 68);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -723,6 +724,31 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const dependencyGuide = guidePages.find((page) => page.path === '/guides/ai-agent-dependency-management/');
+  assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly');
+  const dependency = guides['ai-agent-dependency-management'];
+  assert.deepEqual(dependency.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dependency.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dependency.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(dependency.sections.find((section) => section.title === 'The distinction makes the board easier to read').links.map((link) => link.path), ['/guides/ai-agent-blockers/', '/guides/ai-agent-follow-on-work/']);
+  assert.equal(dependency.sections.find((section) => section.title === 'This keeps dependencies from becoming a background excuse').links, undefined);
+  assert.match(dependency.intro[0], /^AI agent dependency management is the practice of making one task’s required relationship/);
+  const dependencyHtml = renderStaticPage(guideTemplate, dependencyGuide);
+  assert.match(dependencyHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-dependency-management\/"/);
+  assert.match(dependencyHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dependencyHtml, /prerequisite owner/);
+  assert.doesNotMatch(dependencyHtml, /seo-page-dark/);
+  assert.doesNotMatch(dependencyHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dependencyHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-dependency-management\/"/g) || []).length, 1);
   }
   const evidenceLabelsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-evidence-labels/');
   assert.equal(evidenceLabelsGuide.title, 'AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly');
