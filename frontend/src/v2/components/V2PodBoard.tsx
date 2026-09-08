@@ -531,13 +531,15 @@ const V2PodBoard: React.FC = () => {
                     <span className="v2-board__focus-task-position" aria-hidden="true">{index + 1}</span>
                     <span className="v2-board__focus-task-id">{task.taskId}</span>
                     {task.available && tasks.some((item) => item.taskId === task.taskId) ? (
-                      <button type="button" className="v2-board__focus-task-link" onClick={() => {
+                      <button type="button" className="v2-board__focus-task-title v2-board__focus-task-link" onClick={() => {
                         const boardTask = tasks.find((item) => item.taskId === task.taskId);
                         if (boardTask) setSelected(boardTask);
                       }}>{task.title}</button>
-                    ) : <span>{t('board.focus.taskUnavailable')}</span>}
-                    {task.status && <span className="v2-board__focus-task-status">{task.status}</span>}
-                    {task.assignee && <span className="v2-board__focus-task-status">@{task.assignee}</span>}
+                    ) : <span className="v2-board__focus-task-title">{t('board.focus.taskUnavailable')}</span>}
+                    {(task.status || task.assignee) && <span className="v2-board__focus-task-meta">
+                      {task.status && <span className="v2-board__focus-task-status">{task.status}</span>}
+                      {task.assignee && <span className="v2-board__focus-task-status">@{task.assignee}</span>}
+                    </span>}
                   </li>
                 ))}
               </ol>

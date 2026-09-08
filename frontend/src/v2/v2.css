@@ -8106,6 +8106,12 @@ body.modern-ui.v2-canvas {
   overflow-wrap: anywhere;
 }
 
+.v2-board__focus-task-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
 .v2-root button.v2-board__focus-task-link:hover { text-decoration: underline; }
 
 .v2-board__focus-task-id {
@@ -8116,9 +8122,17 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-board__focus-task-status {
-  margin-left: auto;
   color: var(--v2-text-muted);
   font-size: 12px;
+}
+
+.v2-board__focus-task-meta {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-left: auto;
 }
 
 .v2-board__focus-task--unavailable { color: var(--v2-text-muted); font-style: italic; }
@@ -8155,7 +8169,22 @@ body.modern-ui.v2-canvas {
   border-radius: 8px;
 }
 
-.v2-board__focus-task-option { display: flex; align-items: baseline; gap: 8px; color: var(--v2-text-secondary); font-size: 12.5px; }
+.v2-board__focus-task-option {
+  display: flex;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--v2-text-secondary);
+  font-size: 12.5px;
+}
+.v2-board__focus-task-option input { flex: 0 0 auto; margin-top: 4px; }
+.v2-board__focus-task-option > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
 
 .v2-board__focus-selected {
   margin: -3px 0 12px;
@@ -8503,12 +8532,40 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-board__focus-clear,
   .v2-root button.v2-board__focus-retry,
   .v2-root button.v2-board__focus-review-latest,
-  .v2-board__focus-selected button {
+  .v2-root .v2-board__focus-selected button {
     min-height: 44px;
+    border: 1px solid var(--v2-border);
   }
 
   .v2-board__focus-tasks li {
-    min-height: 44px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-areas:
+      "position id"
+      "title title"
+      "meta meta";
+    align-items: center;
+    gap: 4px 8px;
+    min-height: 0;
+  }
+
+  .v2-board__focus-tasks {
+    padding-left: 0;
+  }
+
+  .v2-board__focus-tasks li .v2-board__focus-task-position { grid-area: position; }
+  .v2-board__focus-tasks li .v2-board__focus-task-id { grid-area: id; }
+  .v2-board__focus-tasks li .v2-board__focus-task-title {
+    grid-area: title;
+    width: 100%;
+  }
+  .v2-board__focus-tasks li .v2-board__focus-task-meta {
+    grid-area: meta;
+    margin-left: 0;
+  }
+
+  .v2-root button.v2-board__focus-task-link {
+    width: 100%;
   }
 
   .v2-root button.v2-board__focus-task-link {
@@ -8521,13 +8578,15 @@ body.modern-ui.v2-canvas {
   .v2-board__focus-editor .v2-board__field input,
   .v2-board__focus-editor .v2-board__field textarea,
   .v2-board__focus-editor .v2-board__field select,
-  .v2-board__focus-editor .v2-board__focus-save,
+  .v2-root .v2-board__focus-editor button.v2-board__focus-save,
   .v2-board__focus-task-option {
     min-height: 44px;
   }
 
   .v2-board__focus-task-option {
-    align-items: center;
+    height: auto;
+    align-items: flex-start;
+    padding: 8px 0;
   }
 
   .v2-board__col {
