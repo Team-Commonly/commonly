@@ -206,8 +206,12 @@ const V2YourTeamPage: React.FC = () => {
               // row nobody claimed (sprint-review, PR review at fa98adf7). A
               // claimed row without an id still marks its holder — the status
               // then reads `working · <pod>` (ruling 66163 (2)).
-              const holder = task.claimedBy;
-              if (holder && !claims.has(String(holder))) claims.set(String(holder), { taskId: task.taskId ? String(task.taskId) : null, podName: p.name || p.title || '' });
+              // `claimedBy` is the runtime's instanceId, or the agentName when the
+              // seat has none — and an installation without an instanceId writes the
+              // literal 'default' (agentRuntimeAuth), which identifies nobody. Such a
+              // claim must never light a card (sprint-review, 58fb4147).
+              const holder = task.claimedBy ? String(task.claimedBy) : '';
+              if (holder && holder !== 'default' && !claims.has(holder)) claims.set(holder, { taskId: task.taskId ? String(task.taskId) : null, podName: p.name || p.title || '' });
             }
           } catch { /* advisory */ }
         }));
@@ -234,6 +238,8 @@ const V2YourTeamPage: React.FC = () => {
 
   // A seat claims as its instanceId (agentName fallback) — tasksApi.ts:134.
   // The claim this seat holds, or null. A claim without a task id still counts.
+  // One mechanism: 'default' claims are dropped at ingest (above), so a seat on
+  // the default instance can only ever match by its agentName.
   const claimedTaskFor = (a: AgentInstallationSummary): { taskId: string | null; podName: string } | null => (
     tasksByClaimer.get(a.instanceId || 'default') || tasksByClaimer.get(a.name) || null
   );

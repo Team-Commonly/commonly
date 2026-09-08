@@ -39,7 +39,9 @@ const renderPage = (over = {}) => {
     if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: agents.p1 } });
     if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agents.p2 } });
     if (url.startsWith('/api/v1/tasks/p1')) return Promise.resolve({ data: { tasks: [{ taskId: 'TASK-131', status: 'claimed', claimedBy: 'kai' }, { taskId: 'TASK-140', status: 'claimed', claimedBy: null, assignee: 'sage' }] } });
-    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [{ status: 'claimed', claimedBy: 'wren' }] } });
+    // TASK-999 is claimed as the literal 'default' — an installation with no
+    // instanceId — and must light nobody (sprint-review at 58fb4147).
+    if (url.startsWith('/api/v1/tasks/p2')) return Promise.resolve({ data: { tasks: [{ status: 'claimed', claimedBy: 'wren' }, { taskId: 'TASK-999', status: 'claimed', claimedBy: 'default' }] } });
     if (url.startsWith('/api/activity/decision-queue')) return Promise.resolve({ data: { items: queue } });
     return Promise.resolve({ data: {} });
   });
@@ -128,6 +130,14 @@ describe('Your Team (direction C)', () => {
     expect(own).toHaveTextContent('npx @commonlyai/cli agent attach claude');
     fireEvent.click(within(own).getByRole('button', { name: 'Set it up' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo');
+  });
+
+  test("a claim held as 'default' lights no card and never overwrites a seat's own claim", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
+    expect(cardOf('Kai').querySelector('.v2-team-card__status')).toHaveTextContent('working · TASK-131');
+    expect(cardOf('Sage')).toHaveAttribute('data-state', 'idle');
+    expect(screen.queryByText(/TASK-999/)).toBeNull();
   });
 
   test('the mark is initials in the state colour — an iconUrl never covers it', async () => {
