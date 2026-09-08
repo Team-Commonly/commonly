@@ -276,7 +276,7 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(buttons[0]).toBeDisabled();
   });
 
-  test('transcript avatars are flat two-tone squares: agent cobalt, human tint, no illustration', () => {
+  test('transcript avatars keep Big Smile faces inside compact square frames', () => {
     const { container } = render(
       <MemoryRouter>
         <V2MessageRow message={msg(30, { user: { username: 'sprint-impl', isBot: true } })} />
@@ -287,7 +287,7 @@ describe('direction C threading restyle (PR 2b)', () => {
     const human = container.querySelector('#message-31 .v2-avatar');
     expect(agent).toHaveClass('v2-avatar--flat', 'v2-avatar--flat-agent');
     expect(human).toHaveClass('v2-avatar--flat', 'v2-avatar--flat-human');
-    expect(agent.querySelector('img')).toBeNull();
-    expect(agent.textContent).toBe('SI');
+    expect(agent.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/svg\+xml/));
+    expect(human.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/svg\+xml/));
   });
 });
