@@ -20,7 +20,7 @@ describe('V2MessageRow', () => {
         <V2MessageRow
           message={{ id: 'runtime-label', content: 'Review complete.',
             created_at: '2026-09-08T20:00:00.000Z',
-            user: { username: 'vale', displayName: 'Vale', isBot: true } }}
+            user: { username: 'vale', isBot: true } }}
           agentTags={new Map([['vale', 'claude']])}
           agentDisplayNames={new Map([['vale', 'Vale']])}
         />
