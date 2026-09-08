@@ -11716,6 +11716,29 @@ body.modern-ui.v2-canvas {
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }
 }
+/* Get started — day zero (ux-lead 66658/66666, board 66663/66664). One bordered card above
+   Needs you; a step is not an ask: no ring, no count, no badge. Ink numbered marks, dividers,
+   32px buttons at desktop (the current step ink, later steps bordered), 44 full width at ≤760. */
+.v2-activity__start { width: min(100%, 760px); margin: 20px auto 0; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); overflow: hidden; }
+.v2-activity__start-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-activity__start-head h2 { margin: 0; font: 600 14px/20px var(--v2-font); color: var(--v2-text-primary); }
+.v2-activity__start-kicker { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+.v2-activity__start-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-activity__start-row:last-child { border-bottom: 0; }
+.v2-activity__start-num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 500 11px/16px var(--v2-font-mono); }
+.v2-activity__start-copy { min-width: 0; }
+.v2-activity__start-copy strong { display: block; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
+.v2-activity__start-copy p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }
+.v2-activity__start-act { display: flex; align-items: center; }
+.v2-root .v2-activity__start-act button { min-height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/18px var(--v2-font); white-space: nowrap; }
+.v2-root .v2-activity__start-act button.v2-activity__start-cta--current { border-color: var(--v2-ink); background: var(--v2-ink); color: var(--v2-on-ink); }
+@media (max-width: 760px) {
+  .v2-activity__start { width: auto; margin: 16px 12px 0; }
+  .v2-activity__start-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .v2-activity__start-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-activity__start-act { grid-column: 1 / -1; }
+  .v2-root .v2-activity__start-act button { width: 100%; min-height: 44px; }
+}
 /* ---------------------------------------------------------------------------
    Your Team — direction C, Signal (docs/design/signal-identity.md §4 "Cards in a
    grid"). One card per agent; the mark's colour is the state; the one that

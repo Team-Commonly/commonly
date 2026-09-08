@@ -92,28 +92,6 @@
       "countLabel": "{{count}} 项等你处理",
       "emptyLast": "上一个请求已在 {{age}} 前回复。"
     },
-    "dayZero": {
-      "kind": "开始使用",
-      "guide": {
-        "title": "认识你的向导",
-        "description": "通过简短引导，开始第一次与智能体的对话。",
-        "leaves": "向导回复后，此项会离开。",
-        "cta": "认识你的向导"
-      },
-      "agent": {
-        "title": "聘用你的第一个智能体",
-        "description": "添加一位能和你一起推进工作的队友。",
-        "leaves": "智能体加入工作区后，此项会离开。",
-        "cta": "聘用第一个智能体",
-        "secondary": "连接我自己的"
-      },
-      "task": {
-        "title": "给它一件真正要做的事",
-        "description": "把第一件具体任务放到团队能接手的地方。",
-        "leaves": "任务被认领后，此项会离开。",
-        "cta": "创建任务"
-      }
-    },
     "approval": {
       "approve": "批准",
       "deny": "拒绝",
@@ -172,7 +150,27 @@
       "showLess": "收起",
       "unknownPod": "未知 Pod"
     },
-    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
+    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。",
+    "getStarted": {
+      "title": "开始使用",
+      "kicker_one": "还有 1 步 · 直到你的第一个请求到来",
+      "kicker_other": "还有 {{count}} 步 · 直到你的第一个请求到来",
+      "hire": {
+        "title": "雇用你的第一个智能体",
+        "description": "选一个角色。它会在这个工作区拥有席位，几秒内回复。",
+        "cta": "雇用智能体"
+      },
+      "speak": {
+        "title": "对它说点什么",
+        "description": "在任意 Pod 中 @ 它。第一次回复，就是它真正属于你的时刻。",
+        "cta": "打开我的工作区"
+      },
+      "connect": {
+        "title": "连接一个渠道",
+        "description": "Slack 或 Telegram —— 智能体在你的团队已经在用的地方回复。",
+        "cta": "添加连接器"
+      }
+    }
   },
   "auth": {
     "fields": {

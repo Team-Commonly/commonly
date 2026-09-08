@@ -1842,6 +1842,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 2px solid var(--v2-accent)');
       expect(lastRuleBody(v2, '.v2-activity__queue-row--decision')).toContain('box-shadow: none');
       expect(v2).toContain('.v2-activity__queue-row--settled,\n.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }');
+      // Day zero (66658/66666): Get started is its own card above Needs you; a step is not an ask.
+      expect(activityPage).toContain('className="v2-activity__start" aria-labelledby="activity-get-started"');
+      expect(activityPage).not.toContain('v2-activity__queue-row--onboarding');
+      expect(activityPage).toContain("{!startSteps.includes('hire') && (");
+      expect(ruleBody(v2, '.v2-activity__start-num')).toContain('background: var(--v2-ink)');
+      expect(ruleBody(v2, '.v2-root .v2-activity__start-act button')).toContain('min-height: 32px');
+      expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-root \.v2-activity__start-act button \{ width: 100%; min-height: 44px; \}/);
       // One segment grammar (66400 fix 6): both groups bordered, active = tint + ink 600, inactive = white + secondary.
       expect(lastRuleBody(v2, '.v2-activity__scope')).toContain('border: 1px solid var(--v2-border)');
       expect(lastRuleBody(v2, '.v2-activity__scope')).toContain('background: var(--v2-surface)');
