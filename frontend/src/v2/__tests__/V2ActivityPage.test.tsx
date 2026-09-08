@@ -204,7 +204,9 @@ describe('V2ActivityPage', () => {
     })));
 
     // findAll: the window change reloads both requests and the rows remount.
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Open' }))[0]);
+    // Oldest waiting first (66311) decides row order, so aim at the row itself.
+    const row = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1#message-699');
   });
 
@@ -578,7 +580,7 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
-    expect(screen.getByText(/Handoff · Launch pod/)).toBeInTheDocument();
+    expect(screen.getByText(/Handoff · launch pod/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
 
@@ -811,10 +813,10 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
 
-    expect(await screen.findByText('Open items across all pods')).toBeInTheDocument();
+    expect(await screen.findByText('oldest waiting first')).toBeInTheDocument();
     expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
     fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
-    expect(await screen.findByText('Open items in this pod')).toBeInTheDocument();
+    expect(await screen.findByText('oldest waiting first · this pod')).toBeInTheDocument();
     expect(screen.getByLabelText('9 waiting on you')).toHaveTextContent('9');
   });
 
@@ -843,11 +845,14 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Mention 0')).toBeInTheDocument();
-    const more = await screen.findByRole('button', { name: 'Show more · 6 remaining' });
-    fireEvent.click(more);
+    // Needs you never folds (66311): the second page loads itself, with no
+    // Show more control and no focus move — the reader did not ask for it.
     expect(await screen.findByText('Mention 55')).toBeInTheDocument();
-    await waitFor(() => expect(document.querySelector('[data-activity-item-id="mention-50"]')).toHaveFocus());
-    expect(screen.queryByRole('button', { name: 'Show more · 6 remaining' })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-activity-item-id="mention-50"]')).not.toHaveFocus();
+    expect(screen.queryByRole('button', { name: /Show more/ })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.v2-activity__queue-row')).toHaveLength(56);
+    // The one count: the rendered rows equal the ledger's number.
+    expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ limit: 50, offset: 50 }),
     }));
@@ -880,7 +885,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Refresh 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
     await waitFor(() => expect(resolveMore).not.toBeNull());
 
     await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
@@ -1059,7 +1063,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Extent 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 6 remaining' }));
     expect(await screen.findByText('Extent 55')).toBeInTheDocument();
 
     await act(async () => { window.dispatchEvent(new Event(ATTENTION_CHANGED)); });
@@ -1087,7 +1090,6 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Append 0');
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more · 1 remaining' }));
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Append 50')).toBeInTheDocument();
@@ -1195,15 +1197,15 @@ describe('V2ActivityPage', () => {
     }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }] } }));
     renderPage();
-    const more = await screen.findByRole('button', { name: '17 more' });
+    const more = await screen.findByRole('button', { name: '17 more in launch pod' });
     const group = more.closest('article');
     const lines = () => group.querySelectorAll('.v2-activity__moved-line');
     expect(lines()).toHaveLength(3);
     fireEvent.click(more);
     expect(lines()).toHaveLength(20);
-    fireEvent.click(within(group).getByRole('button', { name: '20 more' }));
+    fireEvent.click(within(group).getByRole('button', { name: '20 more in launch pod' }));
     expect(lines()).toHaveLength(40);
-    const lastMore = within(group).getByRole('button', { name: '6 more' });
+    const lastMore = within(group).getByRole('button', { name: '6 more in launch pod' });
     lastMore.focus();
     fireEvent.click(lastMore);
     expect(lines()).toHaveLength(46);
@@ -1212,7 +1214,7 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(less).toHaveFocus());
     fireEvent.click(less);
     expect(lines()).toHaveLength(3);
-    await waitFor(() => expect(within(group).getByRole('button', { name: '17 more' })).toHaveFocus());
+    await waitFor(() => expect(within(group).getByRole('button', { name: '17 more in launch pod' })).toHaveFocus());
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {

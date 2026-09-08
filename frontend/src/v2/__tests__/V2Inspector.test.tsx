@@ -60,14 +60,14 @@ describe('V2Inspector', () => {
     });
   });
 
-  test('renders the three artboard cards from the pod’s existing data', async () => {
+  test('renders the two artboard cards from the pod’s existing data', async () => {
     renderInspector();
 
     expect(screen.getByRole('heading', { name: 'agents in sharpen' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'needs you' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'board · today' })).toBeInTheDocument();
+    // board · today left the inspector (ruling 66311): the board has its own tab.
+    expect(screen.queryByRole('heading', { name: 'board · today' })).not.toBeInTheDocument();
     expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
-    expect(screen.getByText('1 open · 1 in progress · 1 done')).toBeInTheDocument();
     expect(screen.getByText('needs you · Slack default mode')).toBeInTheDocument();
     expect(screen.getByText('working · Build the card')).toBeInTheDocument();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
@@ -80,15 +80,12 @@ describe('V2Inspector', () => {
     expect(screen.queryByRole('heading', { name: /decision loop/i })).not.toBeInTheDocument();
   });
 
-  test('links attention, board, profile, invite, and manage exits without legacy tabs', async () => {
+  test('links attention, profile, invite, and manage exits without legacy tabs', async () => {
     const onOpenInvite = jest.fn();
     renderInspector({ onOpenInvite });
 
     fireEvent.click(await screen.findByRole('button', { name: 'Slack default mode Wren' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/pod-1#message-message-7');
-
-    fireEvent.click(screen.getByRole('button', { name: '1 open · 1 in progress · 1 done' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/pod-1/board');
 
     fireEvent.click(screen.getByRole('button', { name: /Wren needs you/ }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agent/wren/default');

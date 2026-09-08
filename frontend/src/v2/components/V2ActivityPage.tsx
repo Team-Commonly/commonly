@@ -26,10 +26,17 @@ interface AgentRecap {
   updates: ActivityUpdate[];
 }
 
+const actorMark = (name: string): string => {
+  const parts = name.trim().split(/[\s·-]+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.length === 1 ? parts[0].slice(0, 2).toUpperCase() : (parts[0][0] + parts[1][0]).toUpperCase();
+};
+
 interface NeedsYouItem {
   id: string;
   attentionItemId?: string;
   actorName?: string;
+  actorUserId?: string;
   kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail: string;
@@ -511,7 +518,7 @@ const V2ActivityPage: React.FC = () => {
     };
   }, [accountId, podId, reloadKey, snapshotReady, t, window]);
 
-  const loadMoreQueue = async () => {
+  const loadMoreQueue = async (auto = false) => {
     if (queueMoreError && queueMoreFailureOffsetRef.current === null) {
       setReloadKey((value) => value + 1);
       return;
@@ -546,6 +553,7 @@ const V2ActivityPage: React.FC = () => {
       setQueueRemaining(typeof response.data?.remaining === 'number'
         ? response.data.remaining
         : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
+      if (auto) return;
       globalThis.window.requestAnimationFrame(() => {
         if (queueMoreButtonRef.current) {
           queueMoreButtonRef.current.focus();
@@ -563,6 +571,18 @@ const V2ActivityPage: React.FC = () => {
       if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
     }
   };
+
+  // Needs you never folds (66311): every open ask renders, so the pages after
+  // the first load themselves. A failed page stops here and offers Retry;
+  // the count stays the ledger's while the rows catch up.
+  // Not while a refresh is in flight: the retained rows still say "1 remaining"
+  // until the new first page lands, and a page fetched in that window would
+  // carry the new generation and append a row the refresh just discarded.
+  useEffect(() => {
+    if (!queueHydrated || queue.length === 0 || queueRemaining <= 0 || queueLoadingMore || queueMoreError || queueFailed) return;
+    void loadMoreQueue(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueHydrated, queue.length, queueRemaining, queueLoadingMore, queueMoreError, queueFailed]);
 
   const loadMoreHistory = async () => {
     if (historyLoadingMore || historyRemaining <= 0) return;
@@ -693,11 +713,19 @@ const V2ActivityPage: React.FC = () => {
     setComposeMenuOpen(true);
     globalThis.window.requestAnimationFrame(() => composePickerOptionRefs.current[option.id]?.focus());
   };
+  // One seat has one mark everywhere (66390): an agent actor takes the chat's
+  // cobalt mark, a human the tint mark. The kind glyph stays for asks with no actor.
+  const agentUserIds = useMemo(() => new Set((recap?.agents || []).map((agent) => String(agent.id))), [recap]);
   const visibleQueue = useMemo(() => {
     const settled = Object.values(settledQueueDecisions)
       .filter((item) => podId === 'all' || item.podId === podId)
       .filter((item) => !queue.some((open) => open.id === item.id));
-    return [...queue, ...settled];
+    // Ruling 66311: Needs you never folds and runs oldest waiting first —
+    // the ask that has waited longest sits at the top. Settled cards follow.
+    const open = [...queue].sort((a, b) => (
+      new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+    ));
+    return [...open, ...settled];
   }, [podId, queue, settledQueueDecisions]);
 
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
@@ -1115,11 +1143,11 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
-                    <span className="v2-activity__queue-mark" aria-hidden="true">
-                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
+                    <span className={`v2-activity__queue-mark${item.actorName ? (item.actorUserId && agentUserIds.has(item.actorUserId) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} aria-hidden="true">
+                      {item.actorName ? actorMark(item.actorName) : item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
-                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
+                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName.toLowerCase()}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
                       </div>
@@ -1148,7 +1176,7 @@ const V2ActivityPage: React.FC = () => {
                         </>
                       )}
                       {item.kind === 'handoff' && (
-                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>
                       )}
@@ -1198,7 +1226,7 @@ const V2ActivityPage: React.FC = () => {
                               <div className="v2-activity__decision-footer">
                                 <button
                                   type="button"
-                                  className="v2-activity__queue-action--secondary v2-activity__option"
+                                  className="v2-activity__queue-action--secondary v2-activity__option v2-activity__option--other"
                                   onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
                                   disabled={rulingId === item.id}
                                 >
@@ -1243,12 +1271,12 @@ const V2ActivityPage: React.FC = () => {
                 ))}
               </div>
             )}
-            {visibleQueue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
+            {visibleQueue.length > 0 && (queueLoadingMore || queueMoreError) && (
               <button
                 type="button"
                 ref={queueMoreButtonRef}
                 className="v2-activity__queue-more"
-                onClick={loadMoreQueue}
+                onClick={() => loadMoreQueue()}
                 disabled={queueLoadingMore}
               >
                 {queueLoadingMore
@@ -1281,7 +1309,6 @@ const V2ActivityPage: React.FC = () => {
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
             <div className="v2-activity__section-heading">
               <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
-              <span className="v2-activity__count">{movedGroups.reduce((total, group) => total + group.lines.length, 0)}</span>
               <p>{t('activity.movedForward.description')}</p>
             </div>
             {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
@@ -1292,7 +1319,7 @@ const V2ActivityPage: React.FC = () => {
                 const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
                 const omittedCount = Math.max(group.lines.length - visible.length, 0);
                 return <article key={group.id} className="v2-activity__moved-group">
-                  <div className="v2-activity__moved-head"><span>{group.name}</span><span>{group.lines.length}</span></div>
+                  <div className="v2-activity__moved-head"><span>{group.name.toLowerCase()}</span><span>{group.lines.length}</span></div>
                   <div className="v2-activity__moved-lines">
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
@@ -1308,7 +1335,7 @@ const V2ActivityPage: React.FC = () => {
                     if (nextCount === group.lines.length) {
                       globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
                     }
-                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount) })}</button>}
+                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount), pod: group.name.toLowerCase() })}</button>}
                   {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}

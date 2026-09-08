@@ -27,9 +27,6 @@ const isWorkingTask = (task: TaskItem): boolean => (
   task.status === 'claimed' || task.status === 'in_progress'
 );
 
-const isDoneTask = (task: TaskItem): boolean => (
-  task.status === 'done' || task.status === 'completed'
-);
 
 const labelForAgent = (agent: V2Agent): string => (
   agent.profile?.displayName || agent.displayName || agent.agentName
@@ -85,20 +82,6 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
       .catch(() => { if (active) setTasks([]); });
     return () => { active = false; };
   }, [api, pod?._id]);
-
-  const board = useMemo(() => {
-    const open = tasks.filter((task) => task.status === 'pending').length;
-    const inProgress = tasks.filter(isWorkingTask).length;
-    const done = tasks.filter(isDoneTask).length;
-    const rows = [...tasks]
-      .sort((left, right) => {
-        const rank = (task: TaskItem) => isWorkingTask(task) ? 0 : task.status === 'pending' ? 1 : isDoneTask(task) ? 2 : 3;
-        return rank(left) - rank(right)
-          || new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime();
-      })
-      .slice(0, 3);
-    return { open, inProgress, done, rows };
-  }, [tasks]);
 
   if (!pod) return null;
 
@@ -183,20 +166,6 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
           </div>
         </section>
 
-        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-board">
-          <h2 id="workspace-inspector-board" className="v2-workspace-inspector__label">{t('inspector.workspace.boardToday')}</h2>
-          <button type="button" className="v2-workspace-inspector__board-counts" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
-            {t('inspector.workspace.boardCounts', board)}
-          </button>
-          <div className="v2-workspace-inspector__rows">
-            {board.rows.map((task) => (
-              <button key={task.taskId} type="button" className="v2-workspace-inspector__task" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
-                <span>{task.title}</span>
-                <span className="v2-workspace-inspector__task-meta">{task.assignee || (isWorkingTask(task) ? t('inspector.workspace.wip') : task.status)}</span>
-              </button>
-            ))}
-          </div>
-        </section>
 
         <footer className="v2-workspace-inspector__foot">
           {onOpenInvite && <button type="button" onClick={onOpenInvite}>{t('inspector.workspace.members')}</button>}

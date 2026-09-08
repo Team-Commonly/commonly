@@ -515,7 +515,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(workspaceInspector).toContain('className="v2-workspace-inspector__card"');
     expect(workspaceInspector).toContain("'inspector.workspace.agentsIn'");
     expect(workspaceInspector).toContain("'inspector.workspace.needsYou'");
-    expect(workspaceInspector).toContain("'inspector.workspace.boardToday'");
+    // board · today left the inspector on ruling 66311; the board keeps its own tab.
+    expect(workspaceInspector).not.toContain("'inspector.workspace.boardToday'");
     expect(workspaceInspector).toContain('shortRoomName(pod.name).toLowerCase()');
     expect(workspaceInspector).toContain('v2-workspace-inspector__state--${state.kind}');
     expect(workspaceInspector).not.toContain('v2-inspector__tabs');
@@ -1748,21 +1749,56 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('Needs-you rows are stable on hover: transparent border, fill-only hover, no dividers', () => {
+    test('Needs-you rows: every open ask wears the 2px cobalt ring, no shadow, no dividers (66390)', () => {
       const row = ruleBody(v2, '.v2-activity__queue-row');
-      expect(row).toContain('border: 1px solid transparent');
+      expect(row).toContain('border: 2px solid var(--v2-accent)');
       expect(row).toContain('border-radius: var(--v2-radius)');
       expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
       const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
       const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
       expect(declarations.length).toBeGreaterThan(0);
       for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-      // Pending decision/approval rows sit one step up; a ruled decision settles back down.
+      // A pending decision or approval is a ring like every other ask — never a lift.
       const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
-      expect(pending).toContain('box-shadow: var(--v2-shadow-pending)');
+      expect(pending).toContain('border-color: var(--v2-accent)');
+      expect(pending).toContain('box-shadow: none');
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
-      expect(ruleBody(v2, '.v2-activity__queue-row--settled')).toContain('box-shadow: none');
+      // A ruled decision settles to a flat bordered row.
+      const settled = ruleBody(v2, '.v2-activity__queue-row--settled');
+      expect(settled).toContain('border: 1px solid var(--v2-border)');
+      expect(settled).toContain('box-shadow: none');
       expect(activityPage).toContain("' v2-activity__queue-row--settled'");
+    });
+
+    test('Needs you never folds; one count; toggles are tint-selected; kicker and marks per 66389/66390', () => {
+      // Pages after the first load themselves — the only queue control left is Retry/Loading.
+      expect(activityPage).toContain('void loadMoreQueue(true);');
+      expect(activityPage).toContain('(queueLoadingMore || queueMoreError) && (');
+      expect(activityPage).not.toContain("(queueRemaining > 0 || queueMoreError) && (");
+      // Oldest waiting first.
+      expect(activityPage).toContain('new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()');
+      // The section count is mono text beside the heading, not an ink pill.
+      const count = ruleBody(v2, '.v2-activity__count');
+      expect(count).toContain('var(--v2-font-mono)');
+      expect(count).not.toContain('var(--v2-ink)');
+      // Selected segment: tint ground + ink text inside the bordered group. Ink fill is for acts.
+      expect(ruleBody(v2, '.v2-root button.v2-activity__window-button--active')).toContain('background: var(--v2-surface-hover)');
+      expect(ruleBody(v2, '.v2-root button.v2-activity__window-button--active')).toContain('box-shadow: none');
+      expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).toContain('background: var(--v2-surface-hover)');
+      expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).not.toContain('var(--v2-ink)');
+      // Card kicker: kind · pod (lowercase) · time, in mono.
+      expect(activityPage).toContain('item.podName.toLowerCase()');
+      expect(ruleBody(v2, '.v2-activity__queue-kind')).toContain('var(--v2-font-mono)');
+      // One seat, one mark: agent cobalt, human tint.
+      expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
+      expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
+      // Other… is cobalt text; the handoff act is ink (no bordered modifier).
+      expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
+      expect(activityPage).toContain('className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)}');
+      // Moved forward: no section count; N more in <pod>.
+      expect(activityPage).toContain("pod: group.name.toLowerCase()");
+      // ≤760: toggles stack, actions drop to 44px full width.
+      expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
     });
 
     test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
