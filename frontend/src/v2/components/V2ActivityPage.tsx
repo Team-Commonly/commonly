@@ -1136,9 +1136,9 @@ const V2ActivityPage: React.FC = () => {
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              <p>{queueCount === null
+              {queueCount !== 0 && <p>{queueCount === null
                 ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
-                : t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}</p>
+                : t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}</p>}
             </div>
             {queueFailed ? <>
               <p role="status">{t('activity.loadFailed')}</p>
@@ -1183,14 +1183,17 @@ const V2ActivityPage: React.FC = () => {
                   </div>
                 </article>
               </div>
-            ) : visibleQueue.length === 0 ? (
-              <div className="v2-activity__empty v2-activity__empty--plain">
-                <span>{queueCount === 0
-                  ? t('activity.needsYou.emptyTitle')
-                  : t('activity.needsYou.countLabel', { count: queueCount })}</span>
-                {queueCount === 0 && lastAnsweredAt && <span>{t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
-              </div>
             ) : (
+              <>
+              {(queueCount === 0 || visibleQueue.length === 0) && (
+                <div className="v2-activity__empty v2-activity__empty--plain">
+                  <span>{queueCount === 0
+                    ? t('activity.needsYou.emptyTitle')
+                    : t('activity.needsYou.countLabel', { count: queueCount })}</span>
+                  {queueCount === 0 && lastAnsweredAt && <span>{t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
+                </div>
+              )}
+              {visibleQueue.length > 0 && (
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
@@ -1321,6 +1324,8 @@ const V2ActivityPage: React.FC = () => {
                   </article>
                 ))}
               </div>
+              )}
+              </>
             )}
             {/* 66311 keeps the fetch under the fold: normal paging shows nothing, not even
                 Loading; Retry on error; and a stalled auto-load (pages remain, none expected)

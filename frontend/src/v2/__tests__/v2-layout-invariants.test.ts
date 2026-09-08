@@ -1846,6 +1846,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('var(--v2-accent-text)');
       expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ min-height: 56px; align-items: baseline;/);
+      // 390: decision options stack to 44px full width like every other action (66422 miss 2).
+      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
+      // 0-state (66422 miss 1): the dashed panel renders whenever nothing is open, settled cards under it, no kicker.
+      expect(activityPage).toContain('{(queueCount === 0 || visibleQueue.length === 0) && (');
+      expect(activityPage).toContain('{queueCount !== 0 && <p>{queueCount === null');
       // 390: mention and handoff actions drop full width under the copy, like the decision options (66400 fix 7).
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row \.v2-activity__queue-actions \{ grid-column: 1 \/ -1;/);
       expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');

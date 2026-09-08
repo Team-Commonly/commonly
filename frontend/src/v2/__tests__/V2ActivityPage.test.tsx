@@ -556,6 +556,24 @@ describe('V2ActivityPage', () => {
     expect(screen.getAllByRole('button', { name: 'Open pod' })).not.toHaveLength(0);
   });
 
+  test('0 open asks with a ruled history item: the dashed panel and its time line render first, the settled card under it, no kicker', async () => {
+    const ruledAt = new Date(Date.now() - 41 * 60000).toISOString();
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {}, remaining: 0 } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [
+        { id: 'd-old', kind: 'decision', title: 'Settled earlier', detail: 'x', podId: 'pod-1', podName: 'Launch pod', options: [{ label: 'A' }], status: 'ruled', ruling: { value: 'A', by: 'sam', at: ruledAt }, createdAt: ruledAt },
+      ], count: 1, remaining: 0 } });
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+    const panel = (await screen.findByText('Nothing needs you.')).closest('.v2-activity__empty') as HTMLElement;
+    expect(within(panel).getByText('The last ask was answered 41m ago.')).toBeInTheDocument();
+    const settled = await screen.findByText('Settled earlier');
+    // Panel first, settled card under it.
+    expect(panel.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('oldest waiting first')).not.toBeInTheDocument();
+  });
+
   test('a human whose name matches an agent label keeps the human mark when the id is present', async () => {
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
       ? { ...decisionQueue, items: [
