@@ -183,6 +183,18 @@ describe('config.js', () => {
     });
   });
 
+  test('login target uses the active profile when no instance is provided', () => {
+    saveInstance({
+      key: 'dev', url: 'https://api.commonly.me', token: 'cm_existing',
+      userId: 'u1', username: 'alice',
+    });
+
+    expect(resolveLoginTarget({})).toEqual({
+      instanceUrl: 'https://api.commonly.me',
+      configKey: 'dev',
+    });
+  });
+
   test('getToken("https://...") returns the saved token when the URL matches a saved key', () => {
     // Mirror of the above: historically this returned null because getToken
     // treated the arg as a config key and looked up instances["https://..."].

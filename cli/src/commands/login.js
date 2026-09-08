@@ -50,7 +50,10 @@ const promptSecret = (question) => new Promise((resolve) => {
  * (for example, "default") into the URL field and break every later command.
  */
 export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
-  const resolved = instanceArg ? resolveInstance(instanceArg) : null;
+  // A missing --instance means "the active profile", just like the other
+  // config helpers. Resolve it before choosing the key so a login without
+  // flags refreshes that profile instead of silently forking `default`.
+  const resolved = resolveInstance(instanceArg);
   const isUrl = /^https?:\/\//i.test(instanceArg || '');
   const instanceUrl = (resolved?.url || (isUrl ? instanceArg : DEFAULT_URL)).replace(/\/$/, '');
   const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
