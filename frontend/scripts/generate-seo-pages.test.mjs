@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 77);
+  assert.equal(pages.length, 80);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -98,6 +98,9 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-review-decisions/',
     '/guides/ai-agent-non-goals/',
     '/guides/ai-agent-evidence-labels/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-decision-owner/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -133,7 +136,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 67);
+  assert.equal(guidePages.length, 70);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -723,6 +726,84 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const decisionOwnerGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-owner/');
+  assert.equal(decisionOwnerGuide.title, 'AI Agent Decision Owner: Who Can Give the Answer? | Commonly');
+  const decisionOwner = guides['ai-agent-decision-owner'];
+  assert.deepEqual(decisionOwner.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(decisionOwner.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(decisionOwner.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(decisionOwner.sections.find((section) => section.title === 'The question should make ownership legible').links.map((link) => link.path), ['/guides/ai-agent-decision-packet/', '/guides/ai-agent-source-of-record/']);
+  assert.equal(decisionOwner.sections.find((section) => section.title === 'The process makes ownership a property of a defined choice').links, undefined);
+  assert.match(decisionOwner.intro[0], /^An AI agent decision owner is the person, role, or designated authority accountable for answering a specific bounded question\./);
+  const decisionOwnerHtml = renderStaticPage(guideTemplate, decisionOwnerGuide);
+  assert.match(decisionOwnerHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-decision-owner\/"/);
+  assert.match(decisionOwnerHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(decisionOwnerHtml, /accountable owner/);
+  assert.doesNotMatch(decisionOwnerHtml, /seo-page-dark/);
+  assert.doesNotMatch(decisionOwnerHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((decisionOwnerHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-decision-packet/',
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-escalation/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-decision-owner\/"/g) || []).length, 1);
+  }
+  const intakeGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-intake/');
+  assert.equal(intakeGuide.title, 'AI Agent Task Intake: Make Work Eligible | Commonly');
+  const intake = guides['ai-agent-task-intake'];
+  assert.deepEqual(intake.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(intake.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(intake.sections.flatMap((section) => section.links || []).length, 9);
+  const intakeHandoff = intake.sections.find((section) => section.title === 'Preserve intake context in the task and handoff');
+  assert.equal(intakeHandoff.paragraphs.length, 5);
+  assert.equal(intakeHandoff.tables, undefined);
+  assert.deepEqual(intakeHandoff.links.map((link) => link.path), ['/guides/ai-agent-follow-on-work/']);
+  assert.equal(intake.sections.find((section) => section.title === 'Intake succeeds when the next contribution is clear').links, undefined);
+  assert.match(intake.intro[0], /^AI agent task intake is the process of turning a request, observation, or decision into a bounded task/);
+  const intakeHtml = renderStaticPage(guideTemplate, intakeGuide);
+  assert.match(intakeHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-intake\/"/);
+  assert.match(intakeHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(intakeHtml, /first artifact/);
+  assert.doesNotMatch(intakeHtml, /seo-page-dark/);
+  assert.doesNotMatch(intakeHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((intakeHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-non-goals/',
+    '/guides/ai-agent-blockers/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-intake\/"/g) || []).length, 1);
+  }
+  const dependencyGuide = guidePages.find((page) => page.path === '/guides/ai-agent-dependency-management/');
+  assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly');
+  const dependency = guides['ai-agent-dependency-management'];
+  assert.deepEqual(dependency.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dependency.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dependency.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(dependency.sections.find((section) => section.title === 'The distinction makes the board easier to read').links.map((link) => link.path), ['/guides/ai-agent-blockers/', '/guides/ai-agent-follow-on-work/']);
+  assert.equal(dependency.sections.find((section) => section.title === 'This keeps dependencies from becoming a background excuse').links, undefined);
+  assert.match(dependency.intro[0], /^AI agent dependency management is the practice of making one task’s required relationship/);
+  const dependencyHtml = renderStaticPage(guideTemplate, dependencyGuide);
+  assert.match(dependencyHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-dependency-management\/"/);
+  assert.match(dependencyHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dependencyHtml, /prerequisite owner/);
+  assert.doesNotMatch(dependencyHtml, /seo-page-dark/);
+  assert.doesNotMatch(dependencyHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dependencyHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-dependency-management\/"/g) || []).length, 1);
   }
   const evidenceLabelsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-evidence-labels/');
   assert.equal(evidenceLabelsGuide.title, 'AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly');

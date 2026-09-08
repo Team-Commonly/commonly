@@ -1777,6 +1777,43 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(pkg.dependencies['@fontsource/ibm-plex-sans']).toBeDefined();
       expect(pkg.dependencies['@fontsource-variable/bricolage-grotesque']).toBeDefined();
     });
+
+    test('pod focus keeps one bounded panel above the existing board and stays usable on phones', () => {
+      expect(podBoard).toContain('className="v2-board__focus"');
+      expect(podBoard).toContain('v2-board__focus-editor');
+      expect(podBoard).toContain('expectedRevision: focusBaseRevision ?? 0');
+      expect(ruleBody(v2, '.v2-board__focus')).toContain('border: 1px solid var(--v2-border)');
+      expect(ruleBody(v2, '.v2-board__focus')).toContain('background: var(--v2-bg)');
+      expect(ruleBody(v2, '.v2-board__focus-tasks')).toContain('flex-direction: column');
+      expect(podBoard).toContain('focusConflictLatest');
+      expect(podBoard).toContain('focusConflictReviewed');
+      expect(podBoard).toContain('focusMoveTargetRef');
+      expect(podBoard).toContain('aria-live="polite"');
+      expect(podBoard).toContain('className="v2-board__focus-save"');
+      expect(podBoard).toContain('v2-board__focus-position');
+      expect(podBoard).toContain('className="v2-board__focus-task-position"');
+      expect(podBoard).toContain('focusConflictLatest.focus.owner');
+      expect(ruleBody(v2, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
+      expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
+      expect(ruleBody(v2, '.v2-root button.v2-board__focus-save')).toContain('background: var(--v2-ink)');
+      expect(ruleBody(v2, '.v2-root .v2-board__focus-selected button')).toContain('min-height: 32px');
+      expect(ruleBody(v2, '.v2-root .v2-board__focus-selected button')).toContain('border: 1px solid var(--v2-border)');
+      expect(ruleBody(v2, '.v2-board__focus-task-option')).toContain('flex: 0 0 auto');
+      expect(ruleBody(v2, '.v2-board__focus-task-option > span')).toContain('overflow-wrap: anywhere');
+      expect(ruleBody(v2, '.v2-board__focus-task-meta')).toContain('flex-wrap: wrap');
+      expect(ruleBody(v2, '.v2-board__focus-goal')).toContain('font-size: 16px');
+      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('font-size: 14px');
+      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('line-height: 20px');
+      expect(podBoard).toContain('if (data?.podId && data.podId !== podId) return;');
+      expect(podBoard).toContain('className="v2-board__focus-retry"');
+      expect(ruleBody(v2, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus \{[\s\S]*?padding: 14px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks \{[\s\S]*?padding-left: 0;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks li \{[\s\S]*?grid-template-areas:[\s\S]*?\"title title\"[\s\S]*?\"meta meta\"/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-editor button\.v2-board__focus-save,[\s\S]*?min-height: 44px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-selected button \{[\s\S]*?border: 1px solid var\(--v2-border\);/);
+    });
   });
 
 });

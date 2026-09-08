@@ -21,6 +21,16 @@ export type PodJoinPolicy = 'open' | 'invite-only';
 export type EnsembleParticipantRole = 'starter' | 'responder' | 'synthesizer' | 'observer';
 export type HumanParticipation = 'none' | 'read-only' | 'participate';
 
+export interface IPodFocus {
+  goal: string;
+  scope: string;
+  ownerUserId: Types.ObjectId;
+  nextTaskIds: string[];
+  revision: number;
+  updatedAt: Date;
+  updatedBy: Types.ObjectId;
+}
+
 export interface IEnsembleParticipant {
   agentType: string;
   instanceId: string;
@@ -90,6 +100,10 @@ export interface IPod extends Document {
   // etc.) stay publicRead but unlisted. Listing is admin-curated for now; an
   // owner-side "request listing" flow is the planned phase 2 (Sam 2026-07-22).
   communityListed: boolean;
+  // Optional focus record. `focusRevision` is separate so a cleared focus
+  // retains its compare-and-swap tombstone on legacy and current pods.
+  focus?: IPodFocus | null;
+  focusRevision?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -160,6 +174,16 @@ const PodSchema = new Schema<IPod>(
     // /api/showcase read path. See backend/routes/showcase.ts.
     publicRead: { type: Boolean, default: false },
     communityListed: { type: Boolean, default: false },
+    focus: {
+      goal: { type: String },
+      scope: { type: String },
+      ownerUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+      nextTaskIds: [{ type: String }],
+      revision: { type: Number },
+      updatedAt: { type: Date },
+      updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    },
+    focusRevision: { type: Number },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },

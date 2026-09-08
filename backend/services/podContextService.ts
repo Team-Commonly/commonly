@@ -16,6 +16,8 @@ const File = require('../models/File');
 const AgentMessageService = require('./agentMessageService');
 // eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
+// eslint-disable-next-line global-require
+const PodFocusService = require('./podFocusService');
 
 const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
 
@@ -319,7 +321,7 @@ function buildSkillCandidates({ assets, summariesWithTags, maxSkills = 6 }: {
 class PodContextService {
   static async loadPodForMember({ podId, userId }: LoadPodOptions): Promise<Record<string, unknown>> {
     const pod = await Pod.findById(podId)
-      .select('_id name description type members createdAt updatedAt')
+      .select('_id name description type members focus focusRevision createdAt updatedAt')
       .lean() as Record<string, unknown> | null;
 
     if (!pod) {
@@ -382,6 +384,10 @@ class PodContextService {
       description: (pod.description as string) || '',
       type: pod.type as string,
     };
+    // Focus is the shared, member-scoped read contract. Resolve it from the
+    // same Pod snapshot used for the descriptor so board and runtime context
+    // cannot silently diverge on revision or ordered task references.
+    const focus = await PodFocusService.readForPod({ pod, podId });
 
     // Roster: who else is in this pod, so an agent knows who it can @mention or
     // DM. The `members` field is part of this endpoint's documented contract
@@ -619,6 +625,7 @@ class PodContextService {
       _status: 'success',
       activityAvailable: hasActivity,
       pod: podDescriptor,
+      focus,
       members,
       files,
       recentMessages,

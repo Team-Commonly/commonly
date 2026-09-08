@@ -547,6 +547,30 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent dependency-management guide preserves its required-state boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-dependency-management/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Dependency Management: Make Required States Visible' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'The distinction makes the board easier to read' })).toBeInTheDocument();
+    expect(screen.getByText(/If the required result is partial, the dependent task should record the remaining boundary/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent task-intake guide preserves its handoff context after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-intake/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Intake: Turn a Request Into Bounded, Eligible Work' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Preserve intake context in the task and handoff' })).toBeInTheDocument();
+    expect(screen.getByText(/Retaining this context does not require copying every conversation message/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent decision-owner guide preserves its authority boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-decision-owner/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Decision Owner: Identify Who Can Give the Answer' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Handle a missing or ambiguous owner without guessing' })).toBeInTheDocument();
+    expect(screen.getByText(/The answer does not make every related task eligible, grant new access/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -554,7 +578,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(67);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(70);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
