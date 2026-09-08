@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
-import { startPoller } from '../lib/poller.js';
+import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
@@ -32,7 +32,7 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
+import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import {
@@ -374,6 +374,73 @@ export const setWakeOnMessage = async ({ client, record, enabled }) => {
     { instanceId, config: { wakeOnMessage: { enabled: Boolean(enabled) } } },
   );
   return { agentName: record.agentName, podId: record.podId, instanceId, enabled: Boolean(enabled) };
+};
+
+/**
+ * Update the server-side configuration for an existing local agent. The
+ * registry PATCH route already fans this change out to accessible pod peers;
+ * keeping the CLI on that route avoids a second config API and lets the daemon
+ * pick up the change on its next work-list pass.
+ */
+export const updateAgentConfiguration = async ({
+  client,
+  record,
+  model = null,
+  effort = null,
+  envPath = null,
+  parseEnv = parseEnvironmentFile,
+}) => {
+  if (!record?.podId || !record?.agentName) {
+    throw new Error('token record is missing podId/agentName — re-attach the agent');
+  }
+  const instanceId = record.instanceId || 'default';
+  const runtime = {};
+  if (model !== null && model !== undefined) {
+    const normalizedModel = String(model);
+    const validation = validateEnvironmentSpec({ model: normalizedModel });
+    if (!validation.ok) throw new Error(validation.errors.join('; '));
+    runtime.model = normalizedModel;
+  }
+  if (effort !== null && effort !== undefined) {
+    const normalizedEffort = String(effort);
+    const validation = validateEnvironmentSpec({ effort: normalizedEffort });
+    if (!validation.ok) throw new Error(validation.errors.join('; '));
+    runtime.effort = normalizedEffort;
+  }
+  const config = {};
+  if (Object.keys(runtime).length) config.runtime = runtime;
+  let environment = null;
+  if (envPath) {
+    environment = await parseEnv(envPath);
+  } else if (record.environment && typeof record.environment === 'object' && !Array.isArray(record.environment)) {
+    environment = { ...record.environment };
+  }
+  // Keep the two historical control surfaces coherent. If a local token has
+  // an ADR-008 environment, a model/effort flag must update that declaration
+  // too; otherwise the daemon would correctly prefer the old explicit value
+  // over the new legacy runtime overlay.
+  if (environment && Object.keys(runtime).length) {
+    environment = { ...environment, ...runtime };
+  }
+  if (!environment && Object.keys(runtime).length) {
+    environment = { ...runtime };
+  }
+  if (environment) config.environment = environment;
+  if (!Object.keys(config).length) {
+    throw new Error('provide at least one of --model, --effort, or --env');
+  }
+
+  await client.patch(
+    `/api/registry/pods/${record.podId}/agents/${record.agentName}`,
+    { instanceId, config },
+  );
+  return {
+    agentName: record.agentName,
+    podId: record.podId,
+    instanceId,
+    changed: Object.keys(config),
+    ...(environment ? { environment } : {}),
+  };
 };
 
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
@@ -1586,6 +1653,12 @@ export const performRun = ({
                 ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
               });
             } catch (ackErr) {
+              const terminalError = terminalDeliveryAckError(ackErr, event._id, 'agent run');
+              if (terminalError) {
+                running = false;
+                onError?.(terminalError);
+                break;
+              }
               onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
             }
           }
@@ -1670,6 +1743,12 @@ export const performRun = ({
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
+          const terminalError = terminalDeliveryAckError(ackErr, event._id, 'agent run');
+          if (terminalError) {
+            running = false;
+            onError?.(terminalError);
+            return;
+          }
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
         }
       }
@@ -1946,6 +2025,7 @@ Examples:
 
   # List installed agents
   $ commonly agent list
+  $ commonly agent config my-claude --model gpt-5.4 --effort high
 
 Docs:
   https://github.com/Team-Commonly/commonly/blob/main/docs/agents/LOCAL_CLI_WRAPPER.md
@@ -2357,11 +2437,15 @@ Docs:
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
       });
 
-      process.on('SIGINT', () => {
-        console.log(`\n${stamp()} [${name}] stopping...`);
+      // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
+      // future polls but lets the in-flight turn finish and ack before the
+      // event loop drains; exiting here would cut a model turn in half.
+      const requestStop = () => {
+        console.log(`\n${stamp()} [${name}] stopping after the current turn...`);
         stop();
-        process.exit(0);
-      });
+      };
+      process.on('SIGINT', requestStop);
+      process.on('SIGTERM', requestStop);
     });
 
   // ── detach (ADR-005) ──────────────────────────────────────────────────────
@@ -2558,6 +2642,43 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
           console.log('Following... (Ctrl+C to stop)');
           setInterval(fetchAndPrint, 5000);
         }
+      } catch (err) {
+        console.error(`Failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── config (existing-agent edit) ─────────────────────────────────────────
+  agent
+    .command('config <name>')
+    .description('Update an attached agent\'s server-side runtime configuration')
+    .option('--model <id>', 'Model identifier to use on the next daemon restart')
+    .option('--effort <level>', 'Reasoning effort (low|medium|high|xhigh|max)')
+    .option('--env <path>', 'Replace the ADR-008 environment spec with this JSON file')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        process.exit(1);
+      }
+      const instance = opts.instance || record.instanceUrl;
+      const token = getToken(instance);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      const client = createClient({ instance: resolveInstanceUrl(instance), token });
+      try {
+        const result = await updateAgentConfiguration({
+          client,
+          record,
+          model: opts.model,
+          effort: opts.effort,
+          envPath: opts.env ? pathResolve(opts.env) : null,
+        });
+        if (result.environment) {
+          saveAgentToken(name, { ...record, environment: result.environment });
+        }
+        console.log(`✓ Updated ${result.agentName} in pod ${result.podId} (${result.changed.join(', ')})`);
+        console.log('  The daemon will apply the change on its next poll; a standalone agent run needs a restart.');
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);

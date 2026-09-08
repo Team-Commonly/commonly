@@ -73,3 +73,13 @@ export const saveDaemonRecord = (record) => {
     throw error;
   }
 };
+
+// Call this only after the owner has revoked the matching server-side machine.
+// Local deletion first would strand a live credential with no CLI path to
+// revoke it, which is exactly the failure this command exists to prevent.
+export const removeDaemonRecord = () => {
+  const path = daemonRecordPath();
+  if (!existsSync(path)) return false;
+  unlinkSync(path);
+  return true;
+};

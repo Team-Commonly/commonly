@@ -267,6 +267,8 @@ const buildArgs = ({
   outputFile,
   mcpFlags = [],
   publicSandboxMode = null,
+  model = null,
+  effort = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -293,6 +295,8 @@ const buildArgs = ({
     '--json',
     '--skip-git-repo-check',
     ...executionPolicy,
+    ...(model ? ['--model', String(model)] : []),
+    ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
     ...mcpFlags,
     '-o',
     outputFile,
@@ -444,6 +448,8 @@ export default {
         outputFile,
         mcpFlags: mcp.flags,
         publicSandboxMode,
+        model: ctx.environment?.model,
+        effort: ctx.environment?.effort,
       });
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
       if (publicSandboxMode !== null) {

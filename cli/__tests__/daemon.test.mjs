@@ -17,12 +17,14 @@ await jest.unstable_mockModule('os', () => {
 const {
   daemonRecordPath,
   loadDaemonRecord,
+  removeDaemonRecord,
   saveDaemonRecord,
 } = await import('../src/lib/daemon-store.js');
 const {
   getDaemonMachineStatus,
   heartbeatDaemonMachine,
   registerDaemonMachine,
+  unregisterDaemonMachine,
 } = await import('../src/commands/daemon.js');
 
 const daemonRecord = {
@@ -69,6 +71,13 @@ describe('daemon credential storage', () => {
     saveDaemonRecord(daemonRecord);
     fs.chmodSync(path.dirname(daemonRecordPath()), 0o755);
     expect(() => loadDaemonRecord()).toThrow(/directory permissions are insecure/i);
+  });
+
+  test('removes the local record only when explicitly asked after revocation', () => {
+    saveDaemonRecord(daemonRecord);
+    expect(removeDaemonRecord()).toBe(true);
+    expect(loadDaemonRecord()).toBeNull();
+    expect(removeDaemonRecord()).toBe(false);
   });
 });
 
@@ -124,6 +133,27 @@ describe('daemon machine calls', () => {
     expect(client.del).toHaveBeenCalledWith(`/api/machines/${daemonRecord.machineDbId}`);
   });
 
+  test('names the immutable machine id if persistence and revocation both fail', async () => {
+    const client = {
+      post: jest.fn().mockResolvedValue({
+        machine: {
+          id: daemonRecord.machineDbId,
+          machineId: daemonRecord.machineId,
+          name: daemonRecord.machineName,
+        },
+        daemonToken: daemonRecord.daemonToken,
+      }),
+      del: jest.fn().mockRejectedValue(new Error('network unavailable')),
+    };
+
+    await expect(registerDaemonMachine({
+      client,
+      instanceUrl: daemonRecord.instanceUrl,
+      name: daemonRecord.machineName,
+      persist: () => { throw new Error('disk full'); },
+    })).rejects.toThrow(daemonRecord.machineDbId);
+  });
+
   test('heartbeats only the machine id held by the daemon credential record', async () => {
     const client = { post: jest.fn().mockResolvedValue({ machine: { status: 'online' } }) };
     await heartbeatDaemonMachine({ client, record: daemonRecord });
@@ -139,5 +169,34 @@ describe('daemon machine calls', () => {
     await expect(getDaemonMachineStatus({ client, record: daemonRecord }))
       .resolves.toEqual({ id: daemonRecord.machineDbId, status: 'online' });
     expect(client.get).toHaveBeenCalledWith('/api/machines/me');
+  });
+
+  test('revokes server-side before deleting the local credential', async () => {
+    const remove = jest.fn();
+    const client = { del: jest.fn().mockResolvedValue({ success: true }) };
+
+    await unregisterDaemonMachine({ client, record: daemonRecord, remove });
+
+    expect(client.del).toHaveBeenCalledWith(`/api/machines/${daemonRecord.machineDbId}`);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps the local credential if server revocation fails', async () => {
+    const remove = jest.fn();
+    const client = { del: jest.fn().mockRejectedValue(new Error('network unavailable')) };
+
+    await expect(unregisterDaemonMachine({ client, record: daemonRecord, remove }))
+      .rejects.toThrow(/network unavailable/i);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  test('cleans up a local record when its machine was already removed server-side', async () => {
+    const remove = jest.fn();
+    const error = Object.assign(new Error('Machine not found'), { status: 404 });
+    const client = { del: jest.fn().mockRejectedValue(error) };
+
+    await unregisterDaemonMachine({ client, record: daemonRecord, remove });
+
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });

@@ -48,7 +48,35 @@ beforeEach(async () => {
   await AgentInstallation.create({
     agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
     version: '1.0.0', status: 'active', installedBy: owner._id,
-    config: { runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' } },
+    config: {
+      runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
+      environment: {
+        version: 1,
+        workspace: { path: './workspace', seed: ['README.md'] },
+        sandbox: {
+          mode: 'workspace',
+          trust: 'internal',
+          network: { policy: 'restricted', 'allow-hosts': ['api.commonly.me'] },
+          filesystem: { 'read-outside': ['/tmp'], 'write-outside': ['/tmp/workspace'] },
+        },
+        skills: { claude: ['common'], commonly: ['decision-cards'] },
+        mcp: [{
+          name: 'commonly',
+          transport: 'stdio',
+          url: 'https://mcp.commonly.me',
+          command: ['npx', 'commonly-mcp'],
+          env: {
+            COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            COMMONLY_API_URL: 'literal-api-value-must-not-travel',
+            COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
+            PRIVATE_API_KEY: 'literal-secret-must-not-travel',
+          },
+        }],
+        model: 'gpt-5.4',
+        effort: 'high',
+        privateKey: 'must-not-travel',
+      },
+    },
   });
   for (const [tok, mid] of [[DAEMON_A, 'machine-a'], [DAEMON_B, 'machine-b']]) {
     // eslint-disable-next-line no-await-in-loop
@@ -119,12 +147,37 @@ describe('daemon work list', () => {
 
     const seenByA = await assigned(DAEMON_A);
     expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0].environment).not.toHaveProperty('privateKey');
     expect(seenByA.body.agents).toEqual([expect.objectContaining({
       agentName: 'wren-test',
       instanceId: 'default',
       state: 'requested',
       runtime: expect.objectContaining({ model: 'claude-opus-5' }),
+      environment: expect.objectContaining({
+        version: 1,
+        workspace: { path: './workspace', seed: ['README.md'] },
+        sandbox: {
+          mode: 'workspace',
+          trust: 'internal',
+          network: { policy: 'restricted', 'allow-hosts': ['api.commonly.me'] },
+          filesystem: { 'read-outside': ['/tmp'], 'write-outside': ['/tmp/workspace'] },
+        },
+        skills: { claude: ['common'], commonly: ['decision-cards'] },
+        mcp: [{
+          name: 'commonly',
+          transport: 'stdio',
+          url: 'https://mcp.commonly.me',
+          command: ['npx', 'commonly-mcp'],
+          env: {
+            COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
+          },
+        }],
+        model: 'gpt-5.4',
+        effort: 'high',
+      }),
     })]);
+    expect(seenByA.body.agents[0].environment.mcp[0].env).not.toHaveProperty('PRIVATE_API_KEY');
 
     const seenByB = await assigned(DAEMON_B);
     expect(seenByB.body.agents).toEqual([]);
@@ -150,6 +203,47 @@ describe('daemon work list', () => {
     });
     const seenByA = await assigned(DAEMON_A);
     expect(seenByA.body.agents).toEqual([]);
+  });
+
+  it('warns when an embedded MCP placeholder is dropped', async () => {
+    const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
+    const environment = installation.config.get('environment');
+    installation.config.set('environment', {
+      ...environment,
+      mcp: [{ ...environment.mcp[0], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}/v1' } }],
+    });
+    await installation.save();
+    await requestPlacement('machine-a');
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const seenByA = await assigned(DAEMON_A);
+      expect(seenByA.status).toBe(200);
+      expect(seenByA.body.agents[0].environment.mcp[0]).not.toHaveProperty('env');
+      expect(warn).toHaveBeenCalledWith(
+        '[agent-binding] dropped MCP env placeholder declaration',
+        { server: 'commonly', key: 'COMMONLY_API_URL' },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not expose an empty environment projection as a declared spec', async () => {
+    const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
+    installation.config.set('environment', {
+      privateKey: 'must-not-travel',
+      workspace: { privatePath: '/Users/private' },
+      sandbox: { privateMode: 'unsafe', network: { privatePolicy: 'allow-all' } },
+      skills: { privateSkill: ['secret'] },
+      mcp: [{ privateCommand: ['secret'] }],
+    });
+    await installation.save();
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0]).not.toHaveProperty('environment');
   });
 });
 
