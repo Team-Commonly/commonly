@@ -70,6 +70,17 @@ const podFocusRateLimit = rateLimit({
   keyGenerator: podJoinRateLimitKey,
 });
 
+// Boards and runtime context readers refresh focus on entry, visibility and
+// task invalidation. Keep reads bounded without sharing the stricter write
+// budget; authorization remains the source of truth after this ingress guard.
+const podFocusReadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+
 const storage = multer.diskStorage({
   destination: (req: unknown, file: unknown, cb: (err: Error | null, dir: string) => void) => {
     const uploadDir = 'uploads/qrcodes';
@@ -313,7 +324,7 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/focus', auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/focus', podFocusReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   try {

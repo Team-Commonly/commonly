@@ -1789,15 +1789,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(podBoard).toContain('focusConflictReviewed');
       expect(podBoard).toContain('focusMoveTargetRef');
       expect(podBoard).toContain('aria-live="polite"');
+      expect(podBoard).toContain('className="v2-board__focus-save"');
+      expect(podBoard).toContain('v2-board__focus-position');
+      expect(podBoard).toContain('focusConflictLatest.focus.owner');
       expect(ruleBody(v2, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
       expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
+      expect(ruleBody(v2, '.v2-root button.v2-board__focus-save')).toContain('background: var(--v2-ink)');
+      expect(ruleBody(v2, '.v2-board__focus-selected button')).toContain('min-height: 32px');
+      expect(ruleBody(v2, '.v2-board__focus-goal')).toContain('font-size: 16px');
+      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('font-size: 14px');
+      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('line-height: 20px');
       expect(podBoard).toContain('if (data?.podId && data.podId !== podId) return;');
       expect(podBoard).toContain('className="v2-board__focus-retry"');
       expect(ruleBody(v2, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus \{[\s\S]*?padding: 14px;/);
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
       expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks li \{[\s\S]*?min-height: 44px;/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-editor \.v2-board__create-submit,[\s\S]*?min-height: 44px;/);
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-editor \.v2-board__focus-save,[\s\S]*?min-height: 44px;/);
     });
   });
 

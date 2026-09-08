@@ -282,6 +282,7 @@ const V2PodBoard: React.FC = () => {
     setFocusScope(current?.scope || '');
     setFocusOwner(current?.owner.userId || memberId(podMembers[0] || {}));
     setFocusTaskIds(current?.nextTasks.map((task) => task.taskId) || []);
+    setFocusMoveAnnouncement('');
     setFocusSaveError(null);
     setFocusConflictLatest(null);
     setFocusConflictReviewed(false);
@@ -702,7 +703,8 @@ const V2PodBoard: React.FC = () => {
                         ref={(node) => { focusTaskRowRefs.current[taskId] = node; }}
                         tabIndex={-1}
                       >
-                        <span>{taskId} — {task?.title || t('board.focus.taskUnavailable')}</span>
+                        <span className="v2-board__focus-position" aria-hidden="true">{index + 1}</span>
+                        <span className="v2-board__focus-task-label">{taskId} — {task?.title || t('board.focus.taskUnavailable')}</span>
                         <button type="button" onClick={() => moveFocusTask(index, -1)} disabled={index === 0}>{t('board.focus.up')}</button>
                         <button type="button" onClick={() => moveFocusTask(index, 1)} disabled={index === focusTaskIds.length - 1}>{t('board.focus.down')}</button>
                         <button type="button" onClick={() => toggleFocusTask(taskId)}>{t('board.focus.remove')}</button>
@@ -719,6 +721,7 @@ const V2PodBoard: React.FC = () => {
                   {focusConflictLatest.focus ? <>
                     <p><strong>{t('board.focus.goal')}:</strong> {focusConflictLatest.focus.goal}</p>
                     <p><strong>{t('board.focus.scope')}:</strong> {focusConflictLatest.focus.scope}</p>
+                    <p><strong>{t('board.focus.owner')}:</strong> {focusConflictLatest.focus.owner.label || t('board.focus.unavailable')}{!focusConflictLatest.focus.owner.available && ` — ${t('board.focus.unavailable')}`}</p>
                     <ol>
                       {focusConflictLatest.focus.nextTasks.map((task) => (
                         <li key={task.taskId}>{task.taskId} — {task.title || t('board.focus.taskUnavailable')}</li>
@@ -741,7 +744,7 @@ const V2PodBoard: React.FC = () => {
               )}
               <div className="v2-board__focus-actions">
                 {focusRead?.focus && <button type="button" className="v2-board__focus-clear" disabled={focusSaving} onClick={() => saveFocus(true)}>{t('board.focus.clear')}</button>}
-                <button type="button" className="v2-board__create-submit" disabled={focusSaving || !focusGoal.trim() || !focusScope.trim() || !focusOwner || Boolean(focusConflictLatest && !focusConflictReviewed)} onClick={() => saveFocus()}>{focusSaving ? t('board.focus.saving') : t('board.focus.save')}</button>
+                <button type="button" className="v2-board__focus-save" disabled={focusSaving || !focusGoal.trim() || !focusScope.trim() || !focusOwner || Boolean(focusConflictLatest && !focusConflictReviewed)} onClick={() => saveFocus()}>{focusSaving ? t('board.focus.saving') : t('board.focus.save')}</button>
               </div>
             </div>
           </div>

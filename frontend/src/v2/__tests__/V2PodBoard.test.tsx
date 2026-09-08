@@ -313,6 +313,7 @@ describe('V2PodBoard', () => {
     fireEvent.change(screen.getByDisplayValue('Ship the pilot'), { target: { value: 'Draft from revision 2' } });
     act(() => { handlers.pod_focus_updated({ podId: 'pod-1', revision: 3 }); });
     await waitFor(() => expect(screen.getByText('Background update')).toBeInTheDocument());
+    fireEvent.change(screen.getByDisplayValue('Draft from revision 2'), { target: { value: 'Draft after refresh' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save focus' }));
 
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(

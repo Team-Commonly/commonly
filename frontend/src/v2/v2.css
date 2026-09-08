@@ -8046,15 +8046,15 @@ body.modern-ui.v2-canvas {
 .v2-board__focus-goal {
   margin: 10px 0 4px;
   color: var(--v2-text-primary);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .v2-board__focus-scope {
   margin: 0;
   color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 20px;
   white-space: pre-wrap;
 }
 
@@ -8165,8 +8165,31 @@ body.modern-ui.v2-canvas {
   outline-offset: 2px;
   border-radius: 6px;
 }
-.v2-board__focus-selected li > span { flex: 1 1 100%; }
-.v2-board__focus-selected button { border: 0; background: none; color: var(--v2-accent-text); cursor: pointer; font-size: 12px; padding: 2px 0; }
+.v2-board__focus-selected li > span.v2-board__focus-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  text-align: right;
+}
+.v2-board__focus-selected li > span.v2-board__focus-task-label {
+  flex: 1 1 calc(100% - 25px);
+  min-width: 0;
+}
+.v2-board__focus-selected button {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+}
+.v2-board__focus-selected button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
 .v2-board__focus-selected button:disabled { color: var(--v2-text-muted); cursor: default; }
 .v2-board__focus-live {
   position: absolute;
@@ -8180,6 +8203,21 @@ body.modern-ui.v2-canvas {
   border: 0;
 }
 .v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+.v2-root button.v2-board__focus-save {
+  min-height: 32px;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  color: #fff;
+  background: var(--v2-ink);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-save:not(:disabled):hover { background: var(--v2-ink-hover); }
+.v2-root button.v2-board__focus-save:disabled { opacity: 0.55; cursor: default; }
 
 .v2-board__focus-conflict {
   margin-top: 8px;
@@ -8475,7 +8513,7 @@ body.modern-ui.v2-canvas {
   .v2-board__focus-editor .v2-board__field input,
   .v2-board__focus-editor .v2-board__field textarea,
   .v2-board__focus-editor .v2-board__field select,
-  .v2-board__focus-editor .v2-board__create-submit,
+  .v2-board__focus-editor .v2-board__focus-save,
   .v2-board__focus-task-option {
     min-height: 44px;
   }
