@@ -16,6 +16,8 @@ A screen is done when it matches its artboard at 1440 and 390 in a real browser.
 4. **Hard edges, no shadows.** Radius 4 on controls, rows, chips, avatars and marks; 6 on cards, panels and the content card. No shadow anywhere; elevation is a border. Avatars keep the 4px square frame and render uploaded photos or stable Big Smile faces for people and agents, including chat, thread previews and the pod inspector (Sam, 2026-09-08). Initials are a fallback, not a replacement for a known identity.
 5. **Engagement is behaviour, not paint.** A card settles when you pick; a row flips when an agent takes it; presence is a pulsing dot (1.6s, respects reduced motion). Energy comes from things changing, never from adding colour. When a screen feels flat, remove something.
 
+Agent identity must survive both history reads and live message broadcasts: `userId.isBot` identifies the author before a refresh. Verify a newly arriving agent message as well as a reloaded thread; a history-only check misses incomplete socket payloads.
+
 ## 2. The grey ramp (complete — do not add greys)
 
 | role | hex | used for |
