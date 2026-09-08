@@ -1778,6 +1778,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('void loadMoreQueue(true);');
       // The remaining arm stays as the way back if auto-load ever stops short (sprint-review 66398).
       expect(activityPage).toContain('(queueMoreError || (queueHydrated && queueRemaining > 0 && !queueLoadingMore && !queueAutoPending)) && (');
+      // Both arms plus the disabled bind, pinned together (ux-lead 66411): dropping the
+      // loading arm or the bind would make the control actionable mid-load.
+      expect(activityPage).toContain('disabled={queueLoadingMore}');
+      // The stall detector clears the expectation when nothing fetches the next page (sprint-review 66417).
+      expect(activityPage).toContain('globalThis.window.setTimeout(() => setQueueAutoPending(false), 1500)');
       expect(activityPage).toContain('item.actorUserId\n      ? agentUserIds.has(item.actorUserId)');
       // Oldest waiting first.
       expect(activityPage).toContain('new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()');

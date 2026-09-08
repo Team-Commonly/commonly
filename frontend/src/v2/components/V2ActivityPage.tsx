@@ -602,6 +602,17 @@ const V2ActivityPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueHydrated, queue.length, queueRemaining, queueLoadingMore, queueMoreError, queueFailed]);
 
+  // Stall detector (sprint-review 66417): a next page is expected, nothing is
+  // fetching it, and no error cleared the expectation. Normal paging starts
+  // the fetch in the same commit and cancels this timer; if 1.5s pass with
+  // pages remaining and nothing in flight, the expectation is wrong and the
+  // way back renders.
+  useEffect(() => {
+    if (!queueAutoPending || queueLoadingMore || queueRemaining <= 0 || queueMoreError) return undefined;
+    const timer = globalThis.window.setTimeout(() => setQueueAutoPending(false), 1500);
+    return () => globalThis.window.clearTimeout(timer);
+  }, [queueAutoPending, queueLoadingMore, queueRemaining, queueMoreError]);
+
   const loadMoreHistory = async () => {
     if (historyLoadingMore || historyRemaining <= 0) return;
     const requestedScope = podId;
