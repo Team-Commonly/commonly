@@ -14,6 +14,23 @@ describe('V2MessageRow', () => {
     process.env.REACT_APP_API_URL = previousApiUrl;
   });
 
+  it('keeps the runtime beside the agent name before its timestamp', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{ id: 'runtime-label', content: 'Review complete.',
+            created_at: '2026-09-08T20:00:00.000Z',
+            user: { username: 'vale', displayName: 'Vale', isBot: true } }}
+          agentTags={new Map([['vale', 'claude']])}
+          agentDisplayNames={new Map([['vale', 'Vale']])}
+        />
+      </MemoryRouter>,
+    );
+    const tag = screen.getByText('claude');
+    expect(tag.previousElementSibling).toHaveTextContent('Vale');
+    expect(tag.nextElementSibling).toHaveClass('v2-msg__time');
+  });
+
   it('resolves relative uploaded images against the configured API origin', () => {
     process.env.REACT_APP_API_URL = 'https://api.commonly.me';
 
