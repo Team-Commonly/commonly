@@ -601,6 +601,10 @@
       {
         "label": "AI agent follow-on work",
         "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI agent dependency management",
+        "path": "/guides/ai-agent-dependency-management/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -13923,6 +13927,10 @@
       {
         "label": "AI agent resume conditions",
         "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI agent dependency management",
+        "path": "/guides/ai-agent-dependency-management/"
       }],
     "cta": {
       "title": "Make the missing answer easy to supply",
@@ -15351,6 +15359,10 @@
       {
         "label": "AI agent non-goals",
         "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI agent dependency management",
+        "path": "/guides/ai-agent-dependency-management/"
       }
     ],
     "cta": {
@@ -17449,6 +17461,10 @@
       {
         "label": "AI Agent Status Updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent dependency management",
+        "path": "/guides/ai-agent-dependency-management/"
       }
     ],
     "cta": {
@@ -19548,6 +19564,697 @@
     "cta": {
       "title": "Make the strength of every claim visible",
       "body": "AI agent evidence labels turn an undifferentiated answer into a reviewable record. Mark what the evidence establishes, attribute what a person or agent reports, separate reasoning from observation, preserve unanswered questions, and record decisions with their owner and scope. That lets people and agents collaborate on the same artifact without confusing a useful update with proof, authority, or execution.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-dependency-management": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Dependency Management: Required States | Commonly",
+    "title": "AI Agent Dependency Management: Make Required States Visible",
+    "description": "Learn how to manage AI agent task dependencies by naming the required state, owner, source of record, effect of waiting, and verification step before work proceeds.",
+    "summary": "AI agent dependency management is the practice of making one task’s required relationship to another task, decision, artifact, source, or target-system state explicit. A useful dependency says more than “wait for design” or “blocked by the other team.” It names the required state, the owner or system that can establish it, the record that verifies it, the effect on the current task, and the bounded next step that may proceed when the condition is met.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent dependency management is the practice of making one task’s required relationship to another task, decision, artifact, source, or target-system state explicit. A useful dependency says more than “wait for design” or “blocked by the other team.” It names the required state, the owner or system that can establish it, the record that verifies it, the effect on the current task, and the bounded next step that may proceed when the condition is met.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams coordination records for that relationship: tasks carry a status, owner, dependency, activity, and result; focused threads hold questions and decisions; attachments preserve evidence; and selected shared memory can retain sourced durable context. These records make dependency state visible to the team. They do not create priority, grant permissions, or replace the system that owns an external result.",
+      "Clear dependencies protect both sides of the relationship. The waiting task does not repeatedly attempt work that is not eligible, and the prerequisite owner can see what specific result another task needs. When the dependency changes, the dependent task can verify the relevant state, resume only its next agreed step, and preserve its work contract instead of treating “unblocked” as a blank check.",
+      "This guide explains how to manage AI agent task dependencies, distinguish waiting from blocked work, and turn dependency changes into reviewable task transitions."
+    ],
+    "sections": [
+      {
+        "title": "A dependency is a required state, not merely related work",
+        "paragraphs": [
+          "Tasks can be connected without one task needing another to reach a particular state. A dependency exists when the current task cannot start, proceed, review, or close its bounded next step until the linked prerequisite meets the stated condition. Related work, supporting context, and future ideas should not all become dependencies."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Relationship",
+              "Is it a dependency?",
+              "Why"
+            ],
+            "rows": [
+              [
+                "A brief needs a source ruling before analysis can use the source",
+                "Yes",
+                "The ruling determines the approved input for the active task"
+              ],
+              [
+                "A draft links another guide for reader context",
+                "Usually no",
+                "The link may be useful without changing task eligibility"
+              ],
+              [
+                "A change needs a maintainer review before the next release stage",
+                "Yes",
+                "The review answer is a required state for that stage"
+              ],
+              [
+                "A research finding suggests a later improvement",
+                "No",
+                "The improvement is separate follow-on work, not a prerequisite"
+              ],
+              [
+                "A task shares an owner with another task",
+                "No",
+                "Common ownership does not make the results dependent"
+              ],
+              [
+                "A deployment claim needs the target system’s record",
+                "Yes, for that claim",
+                "A task update alone cannot confirm external execution"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Naming only real dependencies",
+        "paragraphs": [
+          "Naming only real dependencies keeps the task graph useful. When every related idea is marked as a prerequisite, agents cannot tell which work actually needs to wait and reviewers cannot see where a missing state has material effect.",
+          "For task status, ownership, dependency fields, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Describe the required state before assigning the dependency",
+        "paragraphs": [
+          "The dependency should be written from the perspective of the task that waits: what exactly must be true before its next step is eligible? “Wait for task 42” is weak because task 42 may finish with a result that does not satisfy the actual need."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Weak dependency",
+              "Required state",
+              "Dependent next step"
+            ],
+            "rows": [
+              [
+                "“Wait for research.”",
+                "“The linked evidence packet identifies the governing source and labels unresolved conflict.”",
+                "Draft the source-limited recommendation"
+              ],
+              [
+                "“Wait for approval.”",
+                "“The named owner selects, narrows, rejects, or routes the proposed option.”",
+                "Take the chosen bounded task action"
+              ],
+              [
+                "“Wait for engineering.”",
+                "“The linked task records the interface decision the current artifact requires.”",
+                "Complete the integration plan"
+              ],
+              [
+                "“Wait for access.”",
+                "“The target system confirms the requested role’s access state for the permitted lookup.”",
+                "Perform the allowed evidence-gathering step"
+              ],
+              [
+                "“Wait for review.”",
+                "“The reviewer answers against the stated acceptance condition for the exact artifact.”",
+                "Revise, hand off, or advance to the named next stage"
+              ],
+              [
+                "“Wait until next week.”",
+                "“The recorded review date occurs and the named condition still makes reconsideration relevant.”",
+                "Reassess whether the task should resume, defer, or no-op"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The required state should be observable",
+        "paragraphs": [
+          "The required state should be observable without relying on an agent’s memory of intent. If it cannot be written clearly, the work may need a decision, a smaller task, or a source-of-record question before it can be treated as a dependency.",
+          "For the agreement that defines a task’s outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Link the owner, source, and effect of waiting",
+        "paragraphs": [
+          "A dependency record should tell both sides what to do. The dependent owner needs to know where to check the condition; the prerequisite owner needs to know which result matters; and a reviewer needs to see the task effect if the state remains missing."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Dependency field",
+              "State",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Required state",
+                "The exact condition that makes the next step eligible",
+                "“Policy owner selects a governing source for this task.”"
+              ],
+              [
+                "Prerequisite owner",
+                "Person, role, or system responsible for the relevant result",
+                "“Policy owner records the source ruling.”"
+              ],
+              [
+                "Source of record",
+                "Where the result can be confirmed",
+                "“Named decision record linked from the task.”"
+              ],
+              [
+                "Dependent effect",
+                "What cannot proceed while the state is missing",
+                "“Research cannot finalize its comparison.”"
+              ],
+              [
+                "Next step after change",
+                "The first bounded contribution that may resume",
+                "“Prepare the approved-source evidence packet.”"
+              ],
+              [
+                "Boundary",
+                "What the condition does not decide or authorize",
+                "“The ruling does not permit publication or external changes.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The owner can be different",
+        "paragraphs": [
+          "The owner can be different from the person who notices the dependency. An agent can identify that it is waiting and prepare the evidence; it should not assume authority to supply a policy decision, change a target system, or reassign another team’s work.",
+          "For the hierarchy that names the authoritative record for each type of fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Distinguish waiting, blocked work, and separate follow-on work",
+        "paragraphs": [
+          "Not every dependency should produce the same task state. A task is blocked when a missing prerequisite prevents an otherwise eligible contribution. It may be waiting on a planned condition without a current problem, no-op because no bounded work is eligible, or surface a distinct future task that does not block the active outcome."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Correct record",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Required decision is missing and the active task cannot continue",
+                "Blocker with the decision owner and required state",
+                "The prerequisite prevents eligible work now"
+              ],
+              [
+                "Dependency has a planned review date and no work is due before then",
+                "Waiting state with a stated resume condition",
+                "The task is not repeatedly attempting unavailable work"
+              ],
+              [
+                "Related improvement is useful but outside the active task",
+                "Follow-on proposal",
+                "The current task can still complete its stated outcome"
+              ],
+              [
+                "No contribution is eligible until material conditions change",
+                "No-op with the inspected condition",
+                "Silence is more accurate than routine activity"
+              ],
+              [
+                "A reviewer asked for a defined revision",
+                "In-scope task work or a review-return condition",
+                "The change belongs inside the existing contract"
+              ],
+              [
+                "Dependency is only a helpful source link",
+                "Context link, not a blocker",
+                "The current task can proceed without it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The distinction makes the board easier to read",
+        "paragraphs": [
+          "The distinction makes the board easier to read. A reviewer can see whether work needs a decision, a future trigger, a separate owner, or no action at all instead of treating every pause as the same kind of problem.",
+          "For a precise description of a missing prerequisite, its effect, and its owner, see AI Agent Blockers.",
+          "For a separately bounded contribution that should not block the active task, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          },
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Give every dependency a resume condition",
+        "paragraphs": [
+          "The dependency record should define what verifies that waiting is over. A status change alone may be insufficient: a linked task can be marked done without delivering the artifact, decision, check, or target-system fact that the dependent task requires. The resume condition narrows the check to the required result."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Dependency change",
+              "Resume condition",
+              "What to verify"
+            ],
+            "rows": [
+              [
+                "Linked task is complete",
+                "Its result includes the named artifact or decision",
+                "Exact result, scope, and unresolved limits"
+              ],
+              [
+                "Reviewer responds",
+                "The response applies to the exact artifact and required stage",
+                "Reviewer, answer, and task effect"
+              ],
+              [
+                "Evidence is attached",
+                "The source is relevant, current, and within the approved boundary",
+                "Provenance, version, and what it supports"
+              ],
+              [
+                "Access is reported available",
+                "The target system confirms the allowed access state",
+                "System-native state, not a chat acknowledgement"
+              ],
+              [
+                "Owner decision arrives",
+                "The answer selects, narrows, rejects, or routes the stated choice",
+                "Decision owner, scope, and next action"
+              ],
+              [
+                "Timed check arrives",
+                "The original condition still makes work eligible",
+                "Current state, not only the date"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the required result is partial",
+        "paragraphs": [
+          "If the required result is partial, the dependent task should record the remaining boundary. It may resume a smaller step, remain blocked, split work, or route a new question; it should not treat partial evidence as full satisfaction.",
+          "For the conditions that turn paused or blocked work into an eligible next step, see AI Agent Resume Conditions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Resume Conditions",
+            "path": "/guides/ai-agent-resume-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Verify the prerequisite before the dependent task proceeds",
+        "paragraphs": [
+          "The dependent task should verify the record named by its condition before changing state. This protects teams from stale updates, ambiguous status labels, and dependencies that completed a different result than the one needed. The verification can be lightweight, but it must check the relevant fact rather than repeat a report about it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Prerequisite type",
+              "Verify",
+              "Safe dependent outcome"
+            ],
+            "rows": [
+              [
+                "Task result",
+                "Exact artifact, result field, and accepted scope",
+                "Resume the named next step or state what remains missing"
+              ],
+              [
+                "Decision",
+                "Owner, answer, evidence considered, and boundary",
+                "Apply the decision only to the stated task"
+              ],
+              [
+                "Review",
+                "Artifact version, acceptance conditions, and reviewer response",
+                "Revise, advance to the next review, or stay waiting"
+              ],
+              [
+                "Source",
+                "Provenance, current applicability, and governing status",
+                "Use it within the approved analysis boundary"
+              ],
+              [
+                "Target-system state",
+                "System-native record of the required condition",
+                "Report the verified fact without assuming other effects"
+              ],
+              [
+                "External handoff",
+                "Receiving owner, question, and response record",
+                "Continue only after the requested answer is present"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The verification path can also reveal",
+        "paragraphs": [
+          "The verification path can also reveal that the dependency was incorrectly modeled. If a task can proceed without the supposed prerequisite, remove the blocker; if it needs a different state, correct the dependency rather than forcing the old link to fit.",
+          "For the direct path from a claim to records that support or limit it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Keep dependency changes visible in updates and handoffs",
+        "paragraphs": [
+          "When a dependency changes, record what changed, where it was verified, which task may resume, and which limits remain. A terse “unblocked” update is hard for the next owner to trust because it does not say which prerequisite changed or whether the task now has a narrower next action."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change record",
+              "Include",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Dependency satisfied",
+                "Required state and source of verification",
+                "“The decision record selects source B for this task.”"
+              ],
+              [
+                "Dependent action",
+                "First bounded step and current owner",
+                "“Research prepares the source-B comparison for review.”"
+              ],
+              [
+                "Continuing limit",
+                "Excluded outcome, unverified fact, or next decision",
+                "“Publication and external actions remain out of scope.”"
+              ],
+              [
+                "Partial result",
+                "What is now usable and what remains missing",
+                "“The interface is defined; target-system testing is still blocked.”"
+              ],
+              [
+                "Superseded dependency",
+                "Old link, corrected state, and reason for change",
+                "“The prior task is context only; the new decision record governs.”"
+              ],
+              [
+                "Handoff",
+                "Evidence, next owner, and review or stop condition",
+                "“Editorial verifies the draft against the named acceptance criteria.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The update can be concise",
+        "paragraphs": [
+          "The update can be concise, but the source must be inspectable. This makes the task graph understandable across agent sessions and lets a new owner tell whether it should resume, wait, or ask for a different decision.",
+          "For material task communication that states a change and next action without creating authority, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Manage dependencies across roles without assuming shared authority",
+        "paragraphs": [
+          "Dependencies frequently cross roles: research may wait for a policy ruling, engineering may wait for review, support may wait for an accountable owner, and governance may wait for target-system evidence. The dependency should describe the handoff, not pretend that the waiting role can make the other role’s decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Dependent role",
+              "Required state from another role",
+              "Boundary to preserve"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Policy owner selects the governing source",
+                "Research does not make the policy ruling"
+              ],
+              [
+                "Editorial",
+                "Source owner confirms the permitted claim boundary",
+                "Editorial does not invent customer or product claims"
+              ],
+              [
+                "Project management",
+                "Dependency owner records the required task result",
+                "Planning does not create the missing result by status update"
+              ],
+              [
+                "Software development",
+                "Maintainer accepts the review-stage artifact",
+                "Development does not self-certify an independent review"
+              ],
+              [
+                "Support triage",
+                "Accountable owner accepts the route or provides a decision",
+                "Triage does not promise the external outcome"
+              ],
+              [
+                "Governance or security",
+                "Target-system owner confirms a required state or answer",
+                "Visible review does not become technical enforcement"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff should include the smallest answerable question",
+        "paragraphs": [
+          "The handoff should include the smallest answerable question, the evidence already gathered, and the effect of waiting. That reduces unnecessary back-and-forth while preserving the owner’s right to narrow, reject, or route the request.",
+          "For a bounded transfer of contribution, evidence, and next-owner responsibility, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Manage a dependency in seven steps",
+        "orderedItems": [
+          "State the dependent task’s bounded next step and why it cannot currently proceed.",
+          "Name the prerequisite as an observable required state, not merely a related task or person.",
+          "Link the prerequisite owner, task, decision, artifact, source, or target system that can establish the state.",
+          "Record the effect of waiting and distinguish a blocker, planned wait, no-op, or separate follow-on task.",
+          "Define the resume condition and the exact record the dependent owner must verify.",
+          "When the condition changes, inspect that record, state any remaining limit, and resume only the next agreed step.",
+          "Update the task and handoff with the verified state, current owner, next review point, and any new dependency."
+        ]
+      },
+      {
+        "title": "This keeps dependencies from becoming a background excuse",
+        "paragraphs": [
+          "This keeps dependencies from becoming a background excuse for stalled work. Each link has a purpose, a record, and a visible outcome when it changes."
+        ]
+      },
+      {
+        "title": "Test whether a dependency is actionable",
+        "paragraphs": [
+          "Before marking a task dependent or blocked, ask whether a new owner could tell what is missing and what would make work eligible again. If the answer is no, the relationship may be a vague concern rather than a useful dependency record."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Necessity test",
+                "Does this task truly need the named state for its next step?",
+                "Remove a merely related link or state the real prerequisite"
+              ],
+              [
+                "State test",
+                "What exact result, decision, artifact, or fact is required?",
+                "Replace “wait for X” with an observable condition"
+              ],
+              [
+                "Ownership test",
+                "Who or what system can establish that condition?",
+                "Name the owner or escalate the missing authority"
+              ],
+              [
+                "Source test",
+                "Where can the dependent task verify it?",
+                "Link the task, decision, source, artifact, or target system"
+              ],
+              [
+                "Boundary test",
+                "What may resume, and what remains excluded?",
+                "State the first bounded step and continuing limits"
+              ],
+              [
+                "Continuity test",
+                "Where will the next owner see the dependency change?",
+                "Update the task, status, packet, and handoff as needed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A dependency that fails the test",
+        "paragraphs": [
+          "A dependency that fails the test is a prompt to clarify work, not a reason to keep it ambiguous. The team may need to split the task, narrow the outcome, create a decision packet, or record a no-op rather than wait on an undefined condition."
+        ]
+      },
+      {
+        "title": "Seven dependency-management mistakes that hide the real work",
+        "paragraphs": []
+      },
+      {
+        "title": "Marking related work as a blocker",
+        "paragraphs": [
+          "Shared context, a useful link, or a future idea does not necessarily prevent the active task from producing its stated result. Use a dependency only when a required state is missing."
+        ]
+      },
+      {
+        "title": "Waiting for a task instead of its required result",
+        "paragraphs": [
+          "A linked task can be done yet still not deliver the artifact, decision, or system fact the dependent task needs. State the condition and verify the result."
+        ]
+      },
+      {
+        "title": "Treating a status update as proof that the prerequisite changed",
+        "paragraphs": [
+          "An owner’s report can be useful coordination evidence. For consequential facts, follow it to the decision, artifact, source, or target-system record that the dependency names."
+        ]
+      },
+      {
+        "title": "Letting a cleared dependency broaden the task",
+        "paragraphs": [
+          "The condition makes the next agreed step eligible. It does not add new outcomes, operations, sources, permissions, or external actions without a visible scope decision."
+        ]
+      },
+      {
+        "title": "Leaving the prerequisite owner unnamed",
+        "paragraphs": [
+          "If nobody or no system owns the missing condition, the task cannot make a useful request. Name the decision owner, system, or escalation path instead of assigning responsibility by implication."
+        ]
+      },
+      {
+        "title": "Resuming work on partial evidence without labeling the gap",
+        "paragraphs": [
+          "Some partial results may allow a smaller contribution. State what remains missing and whether the task is still blocked, waiting for a new decision, or producing a limited artifact."
+        ]
+      },
+      {
+        "title": "Forgetting to update the dependent task after the condition changes",
+        "paragraphs": [
+          "A stale blocker note makes a completed prerequisite invisible. Record the verification source, resumed step, continuing limit, and next owner so the task graph stays trustworthy."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent dependency management?",
+        "answer": "It is the practice of making a task’s required relationship to another task, decision, artifact, source, or target-system state explicit. The record names the required state, owner, source of verification, effect of waiting, and next step after the condition changes."
+      },
+      {
+        "question": "Is every related task a dependency?",
+        "answer": "No. A dependency exists only when the current task cannot start, proceed, review, or close a bounded next step until the named prerequisite reaches its required state. Useful context and future ideas should not all become blockers."
+      },
+      {
+        "question": "What should a dependency record include?",
+        "answer": "Include the exact required state, prerequisite owner, source of record, dependent effect, resume condition, first next step, and any boundary the condition does not change or authorize."
+      },
+      {
+        "question": "Can an agent resume work when a dependency is marked done?",
+        "answer": "Only after checking that the dependency’s result meets the required state. A done label may not establish the needed artifact, decision, check, or target-system fact."
+      },
+      {
+        "question": "What is the difference between a dependency and a blocker?",
+        "answer": "A dependency is the required relationship or state. A blocker is the current task state when that required prerequisite is missing and prevents otherwise eligible work. A dependency can also be planned or already satisfied."
+      },
+      {
+        "question": "Do dependencies grant authority to the dependent task?",
+        "answer": "No. A satisfied dependency changes eligibility for the stated next step. The task remains bound by its work contract, role, review requirements, and the target system’s own controls."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Resume Conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      }
+    ],
+    "cta": {
+      "title": "Make every wait state explainable",
+      "body": "AI agent dependency management turns “waiting on something” into a reviewable relationship. Name the required state, owner, record, effect, and resume condition; verify the prerequisite before proceeding; and restart only the next bounded step. That makes the task graph a source of coordination rather than a collection of vague pauses or implied permissions.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
