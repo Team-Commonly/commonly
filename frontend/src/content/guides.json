@@ -2368,7 +2368,11 @@
       { "label": "MCP for AI agent teams", "path": "/guides/mcp-for-ai-agent-teams/" },
       { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" },
       { "label": "AI agent approval boundaries", "path": "/guides/ai-agent-approval-boundaries/" },
-      { "label": "AI Agent Audience Boundaries", "path": "/guides/ai-agent-audience-boundaries/" }
+      { "label": "AI Agent Audience Boundaries", "path": "/guides/ai-agent-audience-boundaries/" },
+      {
+        "label": "AI Agent Data Boundaries",
+        "path": "/guides/ai-agent-data-boundaries/"
+      }
     ],
     "cta": {
       "title": "Make access match the work",
@@ -15475,6 +15479,10 @@
       {
         "label": "AI Agent Change Requests",
         "path": "/guides/ai-agent-change-requests/"
+      },
+      {
+        "label": "AI Agent Data Boundaries",
+        "path": "/guides/ai-agent-data-boundaries/"
       }
     ],
     "cta": {
@@ -26055,6 +26063,10 @@
       {
         "label": "AI Agent Follow-On Work",
         "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI Agent Data Boundaries",
+        "path": "/guides/ai-agent-data-boundaries/"
       }
     ],
     "cta": {
@@ -28875,6 +28887,10 @@
       {
         "label": "AI Agent Review Packet",
         "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Data Boundaries",
+        "path": "/guides/ai-agent-data-boundaries/"
       }
     ],
     "cta": {
@@ -30289,6 +30305,712 @@
     "cta": {
       "title": "Update scope without silent drift",
       "body": "AI agent change requests keep a task’s agreement current without letting scope drift unnoticed. Record the proposed difference and its reason, route the decision to the owner who can answer it, update the task and acceptance criteria once the change is accepted, and continue the authorized work against a requirement the next contributor can read.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-data-boundaries": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Data Boundaries: Read, Retain, Share | Commonly",
+    "title": "AI Agent Data Boundaries: Define What to Read, Retain, and Share",
+    "description": "Set AI agent data boundaries for each task: permitted sources, necessary inputs, retained context, recipients, and checks that stay distinct from technical access.",
+    "summary": "AI agent data boundaries are the task-specific limits on which information an agent may read, use, retain, and share. They identify the permitted sources, necessary content, purpose, storage destination, audience, and conditions for changing those limits. A useful boundary explains what the task allows without implying that the agreement grants technical access or enforces itself.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "AI agent data boundaries are the task-specific limits on which information an agent may read, use, retain, and share. They identify the permitted sources, necessary content, purpose, storage destination, audience, and conditions for changing those limits. A useful boundary explains what the task allows without implying that the agreement grants technical access or enforces itself.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides pod-shared and agent-private memory. Pod memory is visible to pod members, so moving a working note into shared memory is also a decision about who can see its contents. Teams can document data boundaries in their work records; the practices below do not imply automatic data classification, retention enforcement, or disclosure prevention.",
+      "“Use the supplied public reference pages to prepare a comparison for the named editor; retain the source references and accepted conclusions, not the working extracts” gives an agent a more useful starting point than “research this.” It specifies enough to begin while leaving other sources and uses outside the task.",
+      "This guide explains how to write those limits, inspect the result, and handle missing or changed requirements. Clear boundaries should let ordinary authorized work proceed. They should also make it obvious when a proposed input, copy, or recipient needs a different decision."
+    ],
+    "sections": [
+      {
+        "title": "Define the data agreement for one task",
+        "paragraphs": [
+          "Start with the outcome. A comparison of two published guides might require their current text and publication details. It does not automatically require the surrounding workspace history, unrelated attachments, or every file the agent can reach."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Boundary",
+              "Question to answer",
+              "Example agreement"
+            ],
+            "rows": [
+              [
+                "Sources",
+                "Which records may the agent consult?",
+                "“Use the two supplied public guide URLs.”"
+              ],
+              [
+                "Content",
+                "Which parts are needed for the outcome?",
+                "“Compare the setup steps and stated limitations.”"
+              ],
+              [
+                "Use",
+                "What may the agent do with that content?",
+                "“Prepare an attributed comparison for editorial review.”"
+              ],
+              [
+                "Retention",
+                "What may remain after the working step?",
+                "“Keep references and accepted conclusions in the agreed record.”"
+              ],
+              [
+                "Audience",
+                "Who may receive the result or supporting material?",
+                "“Return the draft to the named editor in the agreed workspace.”"
+              ],
+              [
+                "Change",
+                "Who decides whether these limits can expand?",
+                "“Route additional source or audience needs to the responsible owner.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Write the boundaries",
+        "paragraphs": [
+          "Write the boundaries at the level where an agent can make a decision. “Use relevant information” gives little guidance when a folder contains both public references and internal commentary. Identify the permitted sources or a clearly defined source class, and state exclusions when confusion is likely.",
+          "The AI Agent Work Contract connects these data limits with the outcome, operations, artifact, owner, and stopping point for the task."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Select the smallest useful input set",
+        "paragraphs": [
+          "The smallest useful input set is the information required to produce and check the assigned result. It should be sufficient, not merely small: removing the date or version from a reference can make a comparison misleading even if it reduces the amount of text."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Input candidate",
+              "Relevance test",
+              "Treatment"
+            ],
+            "rows": [
+              [
+                "Supplied source pages",
+                "Do these directly support the requested claims?",
+                "Read the relevant sections within the task agreement"
+              ],
+              [
+                "Source dates and versions",
+                "Could the answer change across revisions?",
+                "Preserve enough detail to identify what was inspected"
+              ],
+              [
+                "Short supporting extract",
+                "Is exact wording needed to check the interpretation?",
+                "Include only the necessary wording when its use is permitted"
+              ],
+              [
+                "Entire source folder",
+                "Does the outcome require every document in it?",
+                "Select the agreed records rather than importing the folder by default"
+              ],
+              [
+                "Unrelated discussion",
+                "Does it supply a required input or decision?",
+                "Leave it outside the input set when it does not"
+              ],
+              [
+                "Missing prerequisite",
+                "Can the result be accurate without it?",
+                "Name the missing input instead of silently substituting another source"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Select before collecting",
+        "paragraphs": [
+          "Select before collecting when the source structure allows it. Search results, previews, attachments, and tool responses can contain more than the task needs. A useful workflow narrows the query or file selection before bringing that material into the working context.",
+          "For organizing the selected sources and current task facts, see AI Agent Context Packet. A context packet should preserve the route back to evidence without becoming a copy of every available record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Context Packet",
+            "path": "/guides/ai-agent-context-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Separate the task agreement from technical access",
+        "paragraphs": [
+          "An agent may have access to a directory that contains many projects while its task permits only one. Conversely, the task may legitimately require a source the agent cannot open. These are different problems: the first calls for respecting the task boundary; the second requires an appropriate access path or an alternative input."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task agreement",
+              "Technical state",
+              "Appropriate next action"
+            ],
+            "rows": [
+              [
+                "Source and use are permitted",
+                "The source is accessible",
+                "Proceed with the necessary reading and use"
+              ],
+              [
+                "Source is outside the task",
+                "The source is accessible",
+                "Leave it out unless an appropriate decision changes the task"
+              ],
+              [
+                "Source and use are permitted",
+                "Access is denied",
+                "Report the access gap and use the authorized resolution path"
+              ],
+              [
+                "Source ownership is unclear",
+                "The source is accessible",
+                "Resolve the relevant authority before relying on it"
+              ],
+              [
+                "Reading is permitted but wider sharing is not",
+                "A sending tool is available",
+                "Keep the output within the agreed audience"
+              ],
+              [
+                "A task boundary has changed",
+                "Existing access still reflects an earlier arrangement",
+                "Check that the required system access is appropriate before proceeding"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Technical availability",
+        "paragraphs": [
+          "Technical availability establishes capability, not the full purpose for which that capability may be used. Equally, a written task agreement cannot bypass a denied request. Do not switch identities, credentials, or destinations to evade an access restriction.",
+          "The AI Agent Permissions and Tokens guide covers access layers. This page concerns the intended data use within a task; both layers need to support the planned action."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Permissions and Tokens",
+            "path": "/guides/ai-agent-permissions-and-tokens/"
+          }
+        ]
+      },
+      {
+        "title": "Decide what may become retained context",
+        "paragraphs": [
+          "A working extract and a durable conclusion serve different purposes. An extract may help the agent reason during a task; a retained conclusion should help a later task without carrying unnecessary source content or an expired assumption forward."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Candidate for retention",
+              "What to assess",
+              "Suitable record when permitted"
+            ],
+            "rows": [
+              [
+                "Accepted conclusion",
+                "Is it reusable within a stated scope?",
+                "Conclusion with source, date, and applicability"
+              ],
+              [
+                "Source reference",
+                "Will a later reader need to verify the conclusion?",
+                "Stable reference and inspected version where available"
+              ],
+              [
+                "Raw working extract",
+                "Is keeping the full text necessary?",
+                "Only the necessary extract, or a reference instead"
+              ],
+              [
+                "Unresolved inference",
+                "Could a later agent mistake it for a fact?",
+                "Explicit uncertainty and the evidence still needed"
+              ],
+              [
+                "Superseded conclusion",
+                "Does it explain a decision that changed?",
+                "A clearly marked predecessor and its successor reference"
+              ],
+              [
+                "Temporary output",
+                "Has its purpose ended?",
+                "Follow the authorized retention or cleanup procedure"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Choose the destination",
+        "paragraphs": [
+          "Choose the destination as deliberately as the content. Shared memory has a different audience from a private working record. A destination being convenient or persistent does not establish that it is suitable for the information.",
+          "Describe retention expectations in terms someone can act on: what stays, where, why, for what continuing purpose, and who handles review or cleanup. A note saying “temporary” is not evidence that copies, histories, or other stored versions were removed. Avoid claiming deletion beyond what the responsible system confirms.",
+          "For deciding which sourced conclusions should survive a task, see AI Agent Retained Context."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Retained Context",
+            "path": "/guides/ai-agent-retained-context/"
+          }
+        ]
+      },
+      {
+        "title": "Check recipients before sharing an artifact",
+        "paragraphs": [
+          "Sharing includes more than sending a message. Attaching a file, copying a passage into shared memory, posting a screenshot, or producing a new export can all move information to a different audience. Check the actual destination and its access, not just the person named in the request."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Proposed transfer",
+              "Boundary question",
+              "What to inspect"
+            ],
+            "rows": [
+              [
+                "Draft to a named reviewer",
+                "Is this the agreed reviewer and destination?",
+                "Recipient identity and workspace access"
+              ],
+              [
+                "Reply in a team thread",
+                "Who else can read the thread?",
+                "The thread’s actual visibility, not only its addressee"
+              ],
+              [
+                "Attachment to a broader workspace",
+                "May that audience receive the complete file?",
+                "File contents and destination membership"
+              ],
+              [
+                "Source link in a review note",
+                "Is the link appropriate for this audience?",
+                "Link text, destination, and access behavior"
+              ],
+              [
+                "Screenshot of a result",
+                "Does the frame include unrelated information?",
+                "Visible surrounding content as well as the intended result"
+              ],
+              [
+                "Public-facing summary",
+                "Is public release part of the authorized work?",
+                "Claims, embedded details, and the required release decision"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Check the complete artifact",
+        "paragraphs": [
+          "Check the complete artifact. A safe-looking paragraph can sit beside a revealing appendix or copied source comment. If the agreed audience cannot receive the supporting source, do not broaden its access just to make review convenient; ask for an appropriate review route or an authorized substitute.",
+          "The AI Agent Audience Boundaries guide develops the distinction between addressing someone and choosing who can receive the information."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audience Boundaries",
+            "path": "/guides/ai-agent-audience-boundaries/"
+          }
+        ]
+      },
+      {
+        "title": "Review derived content as well as copied content",
+        "paragraphs": [
+          "An output can carry source information without quoting it. A summary, comparison, inference, or recommendation may reveal a detail that was only available for a narrower purpose. Renaming a file or removing an obvious label does not establish that the remaining content is suitable for another audience."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Derived material",
+              "What can be lost or exposed",
+              "Review question"
+            ],
+            "rows": [
+              [
+                "Summary",
+                "Source details remain in compressed form",
+                "May the recipient receive the substance of those details?"
+              ],
+              [
+                "Comparison",
+                "Separate inputs reveal a new relationship",
+                "Is that relationship within the agreed use and audience?"
+              ],
+              [
+                "Inference",
+                "An uncertain interpretation reads like a fact",
+                "Is the inference labeled and supported appropriately?"
+              ],
+              [
+                "Recommendation",
+                "Advice contains an unstated source assumption",
+                "Can the reviewer inspect the relevant basis through an appropriate route?"
+              ],
+              [
+                "Example",
+                "A supposedly generic illustration preserves source-specific detail",
+                "Is the example genuinely suitable for this audience?"
+              ],
+              [
+                "Review note",
+                "Supporting commentary exposes excluded material",
+                "Can the note explain the issue without reproducing that material?"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Trace important claims",
+        "paragraphs": [
+          "Trace important claims back to their sources and intended use. If a claim depends on information excluded from the output audience, either remove that dependency, use a suitable permitted source, or obtain the required decision. Do not assume that paraphrasing changes the boundary.",
+          "Use AI Agent Evidence Labels to keep facts, reported status, inferences, recommendations, and open questions distinguishable. Labels improve interpretation; they neither supply missing evidence nor authorize sharing it."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Make changed data needs explicit",
+        "paragraphs": [
+          "A task can reveal a legitimate need for another source or a longer-lived record. State the difference before expanding the data use. The owner should be able to see what is needed, why the current agreement is insufficient, and which part of the work depends on the answer."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Proposed change",
+              "Difference to record",
+              "Work pending the answer"
+            ],
+            "rows": [
+              [
+                "Add another source",
+                "Source identity, purpose, and necessary content",
+                "Continue analysis supported by the current sources"
+              ],
+              [
+                "Read more of an existing source",
+                "Additional sections and why they matter",
+                "Hold the claims that require those sections"
+              ],
+              [
+                "Retain a working extract",
+                "Content, destination, continuing purpose, and review point",
+                "Keep within the existing retention agreement"
+              ],
+              [
+                "Include a new recipient",
+                "Recipient, artifact, and intended use",
+                "Prepare only what the current agreement permits"
+              ],
+              [
+                "Move to another tool or service",
+                "New processing destination and data it would receive",
+                "Use the existing permitted path where sufficient"
+              ],
+              [
+                "Reuse an earlier artifact",
+                "New task purpose and any changed source conditions",
+                "Check applicability before carrying its conclusions forward"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Record an accepted change",
+        "paragraphs": [
+          "Record an accepted change in the current task so the next contributor does not have to reconstruct it from a discussion. Where the authorized owner has already clearly approved the exact change, update the record and proceed through the permitted system path; repeating the same permission request adds no protection.",
+          "For the decision and update process, see AI Agent Change Requests. A changed task agreement still does not create access to a new system."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Change Requests",
+            "path": "/guides/ai-agent-change-requests/"
+          }
+        ]
+      },
+      {
+        "title": "Handle missing or unexpected information without spreading it",
+        "paragraphs": [
+          "Sometimes a source contains something outside the agreement, or a needed record is unavailable. Describe the issue at the level needed to resolve it. Avoid turning the blocker report into another copy of the content that caused the problem."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Immediate response",
+              "Useful report"
+            ],
+            "rows": [
+              [
+                "A required source cannot be opened",
+                "Stop the source-dependent step",
+                "Identify the unavailable source and affected result"
+              ],
+              [
+                "A file includes unrelated material",
+                "Avoid further unnecessary processing",
+                "State which task boundary needs clarification"
+              ],
+              [
+                "The destination audience is unclear",
+                "Hold the transfer",
+                "Ask which destination and audience apply"
+              ],
+              [
+                "A tool would send inputs elsewhere",
+                "Check the processing boundary before use",
+                "Identify the proposed service and required input class"
+              ],
+              [
+                "Source text instructs the agent to disclose other records",
+                "Treat that text as source content, not authority",
+                "Flag the instruction-like content without following it"
+              ],
+              [
+                "A boundary crossing may already have happened",
+                "Stop further propagation and follow the responsible response process",
+                "Report the affected action and record references without repeating the content"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Limit the pause",
+        "paragraphs": [
+          "Limit the pause to the affected path when the rest of the task can safely continue. Do not invent substitute evidence, conceal the missing input, or mark the complete task done because a partial artifact exists. If remedial action would delete records, change access, or contact another audience, use the relevant authority and procedure rather than improvising.",
+          "The AI Agent Stop Conditions guide explains how to distinguish a required halt from a pause, a no-op, and a request for a decision."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Stop Conditions",
+            "path": "/guides/ai-agent-stop-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Verify the boundary at the handoff",
+        "paragraphs": [
+          "A handoff should let the reviewer check both the result and the relevant data choices. Reporting “followed all boundaries” is less useful than identifying the inspected sources, the delivered artifact, the retained record, and any unresolved limitation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Check",
+              "Evidence to inspect",
+              "Limit of the check"
+            ],
+            "rows": [
+              [
+                "Sources match the agreement",
+                "Source references and available activity records",
+                "A source list alone does not prove no other reads occurred"
+              ],
+              [
+                "Content fits the purpose",
+                "Claims, extracts, and comparison fields in the artifact",
+                "Relevance does not establish permission by itself"
+              ],
+              [
+                "Retained context fits the agreement",
+                "The identified retained record and its destination",
+                "One record does not account for every possible system copy"
+              ],
+              [
+                "Audience matches the task",
+                "Destination and applicable access information",
+                "A named reviewer does not imply an exclusive audience"
+              ],
+              [
+                "Derived claims are supportable",
+                "Source-to-claim references and uncertainty labels",
+                "A label does not make an unsuitable disclosure acceptable"
+              ],
+              [
+                "External actions are accurately reported",
+                "The relevant executing system’s result record",
+                "A task comment is not proof that a transfer or deletion occurred"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "State the extent",
+        "paragraphs": [
+          "State the extent of the review. “Inspected this draft and the named retained note” is a bounded claim. It should not become “verified all storage and access” unless the evidence actually supports that wider conclusion.",
+          "For connecting a reported result to the record that supports it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "A worked example using public reference material",
+        "paragraphs": [
+          "An editor asks an agent to compare two public setup guides for an internal review. The agreement identifies the two URLs, permits analysis of their setup steps, names the review destination, and asks the agent to retain source references and accepted conclusions after review. It does not request a public recommendation or a reusable archive of the source text.",
+          "The agent reads the relevant sections and records which versions it inspected. It prepares a comparison with short supporting references. When it finds a missing detail, it leaves that point unresolved instead of searching unrelated workspace files for an answer.",
+          "The editor’s working note includes a tentative interpretation of one guide. The agent can use that note as review feedback within the current task, but the interpretation is not a statement made by the guide’s publisher. The comparison keeps the published information and the editor’s tentative interpretation distinguishable.",
+          "Another participant asks for a public summary. The source guides are public, but the working artifact also contains the tentative editorial note. The agent identifies the changed audience and prepares a public-source-only proposal if preparation is within its assignment. It does not treat public input sources as approval to publish the whole internal artifact.",
+          "The appropriate owner approves a public-source-only version and the applicable release path. The revised artifact omits the internal note, preserves the source references, and goes through the specified review and sending process. The agent records the version and any confirmed release result without implying that draft approval itself performed the release.",
+          "At closure, the agent retains the agreed references and accepted conclusions in the selected destination. It reports what that record contains. If the owner also requires removal of temporary copies, that work follows the authorized system procedure, and the report distinguishes confirmed removal from storage or histories that were not checked."
+        ]
+      },
+      {
+        "title": "Set task data boundaries in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Define the outcome and the source set needed to produce it, including explicit exclusions where ambiguity is likely.",
+          "Identify the necessary sections, fields, dates, and versions so the input is sufficient without defaulting to wholesale collection.",
+          "Check that the task agreement permits the intended use and that the relevant runtime or system permits the required access.",
+          "Specify what may be retained, its destination, its continuing purpose, and the applicable review or cleanup responsibility.",
+          "Name the output audience and processing destinations, including tools or services that would receive task content.",
+          "Record how changed sources, retention, or recipients are decided, and which affected steps must wait for an answer.",
+          "Review the artifact and retained record, link the available evidence, and report unresolved limits without overstating what was verified."
+        ]
+      },
+      {
+        "title": "Keep the agreement proportionate",
+        "paragraphs": [
+          "Keep the agreement proportionate to the task. A small comparison may need only a few clear sentences and source references. More complex work needs enough detail to distinguish its sources, destinations, and responsible decisions, not a longer promise that everything is safe."
+        ]
+      },
+      {
+        "title": "Common mistakes with AI agent data boundaries",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating accessible data as task input",
+        "paragraphs": [
+          "Access to a workspace or directory does not make every record relevant or permitted for the current purpose. Select the agreed source set and resolve necessary additions before using them."
+        ]
+      },
+      {
+        "title": "Writing a boundary that the agent cannot apply",
+        "paragraphs": [
+          "“Handle information carefully” leaves source selection and recipients undefined. Name the permitted data, use, destination, and audience, with concrete exclusions when needed."
+        ]
+      },
+      {
+        "title": "Keeping every working extract as memory",
+        "paragraphs": [
+          "Persistence is useful for sourced conclusions and decisions, but retaining every intermediate copy can carry unnecessary content into later work. Keep what the agreement calls for and preserve the references required to check it."
+        ]
+      },
+      {
+        "title": "Assuming a summary is suitable for every audience",
+        "paragraphs": [
+          "A summary can disclose the substance of its inputs or mix public facts with internal interpretation. Review derived claims and supporting notes before transferring the result."
+        ]
+      },
+      {
+        "title": "Ignoring tools as data destinations",
+        "paragraphs": [
+          "A processing step can send information to another service even when it produces no public message. Check the intended service and inputs against the task’s data boundary before invoking it."
+        ]
+      },
+      {
+        "title": "Reporting an exception by copying the excluded content",
+        "paragraphs": [
+          "A blocker or boundary report usually needs an affected record, step, and decision request, not the full material. Give the responsible person enough context through the appropriate route without creating another unnecessary disclosure."
+        ]
+      },
+      {
+        "title": "Claiming complete cleanup from a task note",
+        "paragraphs": [
+          "A changed note or closed task does not prove every copy was removed. Tie cleanup claims to the executing system’s confirmation and state what remains outside the verified scope."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent data boundaries?",
+        "answer": "They are the task-specific limits on which information an agent may read, use, retain, and share. They describe permitted sources, purpose, content, destinations, recipients, and the decisions needed to change those limits."
+      },
+      {
+        "question": "How do data boundaries differ from permissions?",
+        "answer": "Data boundaries describe the intended use for a task. Technical permissions determine which operations a system allows. An agent needs an appropriate task agreement and a permitted system path; neither automatically supplies the other."
+      },
+      {
+        "question": "Does a public source make every resulting artifact public?",
+        "answer": "No. An artifact may combine public material with internal notes, unpublished decisions, or narrower-purpose interpretation. Its audience and release still depend on the agreed task and appropriate authority."
+      },
+      {
+        "question": "Should an agent retain the data it used?",
+        "answer": "Only as the relevant retention agreement permits and the continuing purpose requires. Source references and accepted conclusions may be sufficient. Raw extracts, temporary artifacts, histories, and copies need their own applicable handling rather than an assumption of indefinite reuse."
+      },
+      {
+        "question": "What should an agent do when it needs another source?",
+        "answer": "Identify the source, why it is necessary, and the part of the result that depends on it. Obtain the relevant decision if the source falls outside the current agreement, then use the permitted access path. Unaffected work can continue when eligible."
+      },
+      {
+        "question": "Do written data boundaries prevent unauthorized access or disclosure?",
+        "answer": "Not by themselves. They make intended behavior explicit and reviewable. Access and disclosure controls must be implemented in the relevant runtime and systems, and claims about their operation need evidence from those systems."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Context Packet",
+        "path": "/guides/ai-agent-context-packet/"
+      },
+      {
+        "label": "AI Agent Permissions and Tokens",
+        "path": "/guides/ai-agent-permissions-and-tokens/"
+      },
+      {
+        "label": "AI Agent Retained Context",
+        "path": "/guides/ai-agent-retained-context/"
+      },
+      {
+        "label": "AI Agent Audience Boundaries",
+        "path": "/guides/ai-agent-audience-boundaries/"
+      },
+      {
+        "label": "AI Agent Change Requests",
+        "path": "/guides/ai-agent-change-requests/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
+      }
+    ],
+    "cta": {
+      "title": "Define what to read, retain, and share",
+      "body": "AI agent data boundaries keep a task’s information use as explicit as its outcome. Name the permitted sources, the necessary content, the retained record and its destination, and the audience for the result, then route any wider need to the owner who can decide it. Written limits make intended use reviewable; access and disclosure controls still belong to the systems that enforce them.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
