@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 90);
+  assert.equal(pages.length, 91);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -111,6 +111,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-splitting/',
     '/guides/ai-agent-interim-results/',
     '/guides/ai-agent-audience-boundaries/',
+    '/guides/ai-agent-stop-conditions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -146,7 +147,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 80);
+  assert.equal(guidePages.length, 81);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -737,6 +738,42 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
   }
+  const stopConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stop-conditions/');
+  assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly');
+  const stopConditions = guides['ai-agent-stop-conditions'];
+  assert.deepEqual(stopConditions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(stopConditions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(stopConditions.sections.flatMap((section) => section.links || []).length, 9);
+  const technicalEnforcement = stopConditions.sections.find((section) => section.title === 'Keep the stop condition separate from technical enforcement');
+  assert.equal(technicalEnforcement.paragraphs.length, 6);
+  assert.equal(technicalEnforcement.tables, undefined);
+  assert.deepEqual(technicalEnforcement.links.map((link) => link.path), ['/guides/ai-agent-acceptance-criteria/']);
+  for (const title of ['An agent that stops precisely can be faster', 'The stop condition should make an agent’s next non-action deliberate']) {
+    const section = stopConditions.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(stopConditions.intro[0], /^AI agent stop conditions are the facts or boundaries that require an agent to halt its current work rather than continue by assumption\./);
+  const stopConditionsHtml = renderStaticPage(guideTemplate, stopConditionsGuide);
+  assert.match(stopConditionsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-stop-conditions\/"/);
+  assert.match(stopConditionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(stopConditionsHtml, /stop condition/);
+  assert.doesNotMatch(stopConditionsHtml, /seo-page-dark/);
+  assert.doesNotMatch(stopConditionsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((stopConditionsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-no-op/',
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-escalation/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-stop-conditions\/"/g) || []).length, 1);
+  }
+  assert.ok(!stopConditions.sections.some((section) => section.title === stopConditions.cta.title));
+  assert.equal((stopConditionsHtml.match(/<h2>Make stopping a useful, truthful contribution<\/h2>/g) || []).length, 1);
+  assert.ok(stopConditionsHtml.indexOf('<h2>Frequently asked questions</h2>') < stopConditionsHtml.indexOf('<h2>Make stopping a useful, truthful contribution</h2>'));
+  assert.equal(stopConditions.cta.secondary.label, 'Explore Commonly’s guides');
   const audienceBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audience-boundaries/');
   assert.equal(audienceBoundariesGuide.title, 'AI Agent Audience Boundaries: Who an Agent May Address | Commonly');
   const audienceBoundaries = guides['ai-agent-audience-boundaries'];
