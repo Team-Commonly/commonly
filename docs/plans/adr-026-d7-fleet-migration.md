@@ -40,6 +40,23 @@ runtime API.
    reach its idle boundary and exit, then starts the child and verifies normal
    work. Only after that proof does the operator remove that seat's old owner.
 
+## Operator surface
+
+The daemon is a detached, inspectable operator surface rather than another
+foreground-only loop. `commonly daemon install` installs the login service;
+`daemon start`, `stop`, and `restart` control it and return the terminal.
+`commonly daemon run --foreground` remains the explicit troubleshooting path.
+The foreground `commonly agent run <name>` banner points operators at the
+service path instead of implying that the terminal can be closed safely.
+
+`commonly daemon status --verbose` combines server liveness with the local
+supervisor state (seat, adapter, model/effort, pid, last start/turn time, and
+last error). `commonly daemon logs`, with optional `--seat <name>` and `-f`,
+tails the daemon or one seat's log. The local state file is restricted to
+0600 inside the 0700 daemon directory and is an allow-listed diagnostic
+projection: it never contains runtime tokens, environment values, or bearer
+credentials.
+
 ## Cutover order
 
 1. Publish the CLI through `.github/workflows/npm-publish.yml`; install the

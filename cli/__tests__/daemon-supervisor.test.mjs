@@ -33,7 +33,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude' } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn() } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -59,11 +59,12 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = a
     loadToken: (name) => tokens[name] || null,
     saveToken,
     resolveAdapter: jest.fn(resolveAdapter),
+    persistState,
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
   return {
-    supervisor, client, children, timers, saveToken, tokens,
+    supervisor, client, children, timers, saveToken, tokens, persistState,
   };
 };
 
@@ -293,6 +294,24 @@ describe('tick', () => {
     await supervisor.tick();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
   });
+
+  test('publishes safe runtime metadata and process state to the local store', async () => {
+    const persistState = jest.fn();
+    const { supervisor } = makeHarness({
+      rows: () => [boundRow({ runtime: { adapter: 'claude', model: 'fable', effort: 'high' } })],
+      tokens: { 'wren-test': { agentName: 'wren-test' } },
+      persistState,
+    });
+    await supervisor.tick();
+    expect(supervisor.agentStates()).toEqual([
+      expect.objectContaining({
+        adapter: 'claude', model: 'fable', effort: 'high', state: 'running',
+      }),
+    ]);
+    expect(persistState).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ agentName: 'wren-test', adapter: 'claude', model: 'fable' }),
+    ]));
+  });
 });
 
 describe('supervision (D6)', () => {
@@ -330,6 +349,7 @@ describe('supervision (D6)', () => {
     await supervisor.tick();
     supervisor.stop();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(supervisor.agentStates()[0]).toEqual(expect.objectContaining({ state: 'stopped', pid: null }));
     children[0].child.emit('exit', 0);
     expect(timers).toHaveLength(0);
     expect(supervisor.agentStates()[0].state).toBe('stopped');

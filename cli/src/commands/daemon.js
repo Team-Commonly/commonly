@@ -9,9 +9,8 @@
 import { hostname, homedir } from 'os';
 import { spawn } from 'child_process';
 import {
-  existsSync, mkdirSync, openSync, rmSync, writeFileSync,
+  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch, writeFileSync,
 } from 'fs';
-import { join } from 'path';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { loadDaemonRecord, removeDaemonRecord, saveDaemonRecord } from '../lib/daemon-store.js';
@@ -21,11 +20,19 @@ import {
   DEFAULT_POLL_MS,
 } from '../lib/daemon-supervisor.js';
 import { loadAgentToken, saveAgentToken } from './agent.js';
+import { getLastTurn } from '../lib/session-store.js';
 import { getAdapter } from '../lib/adapters/index.js';
 import {
   installDaemonService,
   uninstallDaemonService,
+  startDaemonService,
+  stopDaemonService,
+  restartDaemonService,
+  daemonLogPath,
+  servicePaths,
 } from '../lib/daemon-service.js';
+import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
+import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
 
 const requireDaemonRecord = () => {
   const record = loadDaemonRecord();
@@ -132,7 +139,9 @@ The daemon token is scoped to this machine and stored in a 0600 file under
 Examples:
   $ commonly daemon register --name "Sam's MacBook"
   $ commonly daemon heartbeat
-  $ commonly daemon status
+  $ commonly daemon status --verbose
+  $ commonly daemon logs --seat my-agent -f
+  $ commonly daemon start|stop|restart
   $ commonly daemon unregister
 `);
 
@@ -212,6 +221,8 @@ Examples:
   const serviceDeps = () => ({
     writeFile: (file, content) => writeFileSync(file, content, 'utf8'),
     mkdirp: (dir) => { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); },
+    chmod: (path, mode) => chmodSync(path, mode),
+    ensureFile: (path) => { const fd = openSync(path, 'a', 0o600); closeSync(fd); },
     existsFile: (file) => existsSync(file),
     removeFile: (file) => rmSync(file),
     execCmd: (argv) => new Promise((resolvePromise, rejectPromise) => {
@@ -223,6 +234,16 @@ Examples:
     }),
     log: (line) => console.log(line),
   });
+
+  const runServiceAction = async (action, actionFn) => {
+    const deps = serviceDeps();
+    const target = servicePaths(process.platform, homedir());
+    if (!deps.existsFile(target.file)) {
+      throw new Error(`No installed daemon service found. Run: commonly daemon install`);
+    }
+    await actionFn({ platform: process.platform, home: homedir(), execCmd: deps.execCmd });
+    console.log(`Daemon ${action} requested (${target.kind}).`);
+  };
 
   daemon
     .command('install')
@@ -251,18 +272,56 @@ Examples:
       }
     });
 
+  daemon
+    .command('start')
+    .description('Start the installed daemon service and return to the terminal')
+    .action(async () => {
+      try {
+        await runServiceAction('start', startDaemonService);
+      } catch (error) {
+        console.error(`Daemon start failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command('stop')
+    .description('Stop the installed daemon service')
+    .action(async () => {
+      try {
+        await runServiceAction('stop', stopDaemonService);
+      } catch (error) {
+        console.error(`Daemon stop failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command('restart')
+    .description('Restart the installed daemon service and return to the terminal')
+    .action(async () => {
+      try {
+        await runServiceAction('restart', restartDaemonService);
+      } catch (error) {
+        console.error(`Daemon restart failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
   // ── run (ADR-026 Phase 2, slice 2) ────────────────────────────────────────
   daemon
     .command('run')
     .description('Run the resident supervisor: adopt requested agents, keep bound agents running, report per-agent state')
     .option('--poll <ms>', 'Work-list poll interval in ms', String(DEFAULT_POLL_MS))
     .option('--heartbeat <ms>', 'Heartbeat interval in ms', String(DEFAULT_HEARTBEAT_MS))
+    .option('--foreground', 'Keep the supervisor attached to this terminal (default for direct invocation)')
     .action(async (opts) => {
       try {
         const record = requireDaemonRecord();
         const client = createClient({ instance: record.instanceUrl, token: record.daemonToken });
-        const logsDir = join(homedir(), '.commonly', 'logs', 'daemon');
+        const logsDir = daemonLogsDir();
         if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
+        chmodSync(logsDir, 0o700);
         const stampLog = (line) => console.log(`${new Date().toISOString()} ${line}`);
 
         const supervisor = createDaemonSupervisor({
@@ -272,7 +331,9 @@ Examples:
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
           spawnChild: (agentName) => {
-            const out = openSync(join(logsDir, `${agentName}.log`), 'a');
+            const seatLog = daemonSeatLogPath(agentName);
+            const out = openSync(seatLog, 'a', 0o600);
+            chmodSync(seatLog, 0o600);
             return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
               stdio: ['ignore', out, out],
             });
@@ -281,6 +342,15 @@ Examples:
           saveToken: saveAgentToken,
           resolveAdapter: (runtime) => resolveAdapterForRuntime(runtime),
           log: stampLog,
+          persistState: (seats) => saveDaemonState({
+            machineName: record.machineName,
+            machineDbId: record.machineDbId,
+            updatedAt: new Date().toISOString(),
+            seats: seats.map((seat) => ({
+              ...seat,
+              lastTurnAt: getLastTurn(seat.agentName) || seat.lastTurnAt,
+            })),
+          }),
         });
 
         stampLog(`daemon supervising for ${record.machineName} — poll ${opts.poll}ms, heartbeat ${opts.heartbeat}ms (ctrl+c to stop)`);
@@ -306,7 +376,8 @@ Examples:
   daemon
     .command('status')
     .description('Show the server-derived liveness of this machine')
-    .action(async () => {
+    .option('--verbose', 'Include locally supervised seat state and process details')
+    .action(async (opts) => {
       try {
         const record = requireDaemonRecord();
         const machine = await getDaemonMachineStatus({
@@ -318,9 +389,52 @@ Examples:
         }
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
         console.log(`${machine.name}: ${machine.status} (last heartbeat: ${lastSeen})`);
+        if (opts.verbose) {
+          const local = loadDaemonState();
+          if (!local) {
+            console.log('Local supervisor state: unavailable (daemon has not written state yet).');
+          } else if (!local.seats.length) {
+            console.log('Local supervisor state: no supervised seats.');
+          } else {
+            console.log('Local supervised seats:');
+            for (const seat of local.seats) {
+              const model = seat.model || 'default model';
+              const effort = seat.effort ? `/${seat.effort}` : '';
+              const error = seat.lastError ? ` error=${seat.lastError}` : '';
+              console.log(`  ${seat.agentName}: ${seat.state} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} lastTurn=${seat.lastTurnAt || 'never'}${error}`);
+            }
+          }
+        }
       } catch (error) {
         console.error(`Daemon status failed: ${error.message}`);
         process.exitCode = 1;
       }
+    });
+
+  daemon
+    .command('logs')
+    .description('Show daemon or per-seat logs')
+    .option('--seat <name>', 'Show one supervised seat log instead of the daemon log')
+    .option('-f, --follow', 'Continue printing appended log output')
+    .option('--lines <n>', 'Number of trailing lines to show', '50')
+    .action(async (opts) => {
+      const path = opts.seat ? daemonSeatLogPath(opts.seat) : daemonLogPath();
+      const printTail = () => {
+        const output = readLogTail(path, opts.lines);
+        if (output === null) {
+          console.error(`No log found at ${path}`);
+          return false;
+        }
+        if (output) console.log(output);
+        return true;
+      };
+      if (!printTail() || !opts.follow) return;
+      const watcher = watch(path, () => printTail());
+      const close = () => {
+        watcher.close();
+        process.exit(0);
+      };
+      process.once('SIGINT', close);
+      process.once('SIGTERM', close);
     });
 };
