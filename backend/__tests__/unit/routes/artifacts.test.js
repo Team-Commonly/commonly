@@ -60,7 +60,9 @@ describe('GET /api/artifacts (dualAuth, two scope resolvers)', () => {
 
   it('an agent never widens through canViewPod: an out-of-scope podId is 403 even where membership would grant (sprint-review 66465)', async () => {
     mockCanView.mockResolvedValue(true);
-    await request(app).get('/api/artifacts?podId=pod-z').set('Authorization', 'Bearer cm_agent_abc').expect(403);
+    // A VALID ObjectId outside the agent's scope: with a malformed one the malformed-id term
+    // short-circuits and this test would pass with the agent term deleted (sprint-review 66648).
+    await request(app).get('/api/artifacts?podId=64b7f0c2e4b0a1a2b3c4d5e7').set('Authorization', 'Bearer cm_agent_abc').expect(403);
     expect(mockPodFindById).not.toHaveBeenCalled();
     expect(mockCanView).not.toHaveBeenCalled();
     expect(mockList).not.toHaveBeenCalled();
