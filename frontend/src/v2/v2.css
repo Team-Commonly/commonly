@@ -8819,7 +8819,7 @@ body.modern-ui.v2-canvas {
   padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface-hover);
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: inherit;
   font-size: var(--v2-fs-meta);
@@ -8891,6 +8891,11 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-accent);
 }
 
+.v2-root .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+}
+
 .v2-activity__compose-hint {
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-meta);
@@ -8911,6 +8916,65 @@ body.modern-ui.v2-canvas {
 .v2-root .v2-activity__compose button:hover:not(:disabled) {
   border-color: var(--v2-ink-hover);
   background: var(--v2-ink-hover);
+}
+
+/* The destination menu is a light, bounded list even though its options are
+   buttons nested under the composer. Keep this selector stronger than the
+   generic Send-button rule above so a large pod list cannot become a black,
+   unbounded wall of buttons. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer hover rule includes :not(:disabled) and a button
+   element, so it outranks the picker option's class-only hover selector.
+   Match that specificity here to keep the light Signal option treatment in
+   the real hovered and selected+hovered states without changing Send. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer button treatment above is for Send. The destination
+   picker is a neutral selector and needs a stronger selector so it cannot
+   inherit Send's ink fill. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button {
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+  border-color: var(--v2-accent);
 }
 
 .v2-activity__section-heading {
@@ -9177,10 +9241,26 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
+/* Activity's navigation and acknowledgement controls are secondary actions:
+   keep them visibly distinct from the ink send/approve actions while making
+   their hit targets as clear as the approved board. */
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered {
+  padding-inline: 12px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered:hover:not(:disabled) {
+  border: 1px solid var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 /* DecisionRequest alternatives are content, not row actions: a decision gets
-   its own full-width action line below the question. A neutral base prevents
-   an arbitrary non-recommended choice from inheriting the queue's primary
-   CTA treatment; the recommended choice is the only emphasized pill. */
+   its own full-width action line below the question. Preserve the asking
+   agent's option order; only the first authored option receives the cobalt
+   primary treatment. */
 .v2-activity__queue-row--decision .v2-activity__queue-actions {
   grid-column: 1 / -1;
   justify-content: flex-start;
@@ -9224,9 +9304,15 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
-  border-color: var(--v2-ink);
-  background: var(--v2-ink);
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
   color: var(--v2-on-ink);
 }
 
@@ -9252,6 +9338,12 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.v2-activity__option-recommended,
+.v2-decision-card__recommended {
+  font: 500 11px/14px var(--v2-font-mono);
+  opacity: 0.9;
 }
 
 .v2-activity__decision-other {
@@ -9449,6 +9541,10 @@ body.modern-ui.v2-canvas {
   .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
   .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
+  /* The picker option rule is more specific than the generic composer
+     button floor above; repeat the menu scope so every option keeps a 44px
+     touch target on phones. */
+  .v2-root .v2-activity__compose .v2-activity__compose-picker-menu .v2-activity__compose-picker-option { min-height: 44px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }

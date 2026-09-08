@@ -78,6 +78,7 @@
       "emptyTitle": "没有未处理事项。",
       "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
       "showMore": "显示更多 · 剩余 {{count}} 条",
+      "showMoreSettled": "展开更多已处理 · 剩余 {{count}} 条",
       "loadingMore": "加载中…",
       "retry": "重试",
       "kinds": {
@@ -119,6 +120,8 @@
     },
     "decision": {
       "ruleOption": "裁定：{{option}}",
+      "ruleOptionRecommended": "裁定：{{option}}（推荐）",
+      "recommended": "推荐",
       "working": "正在裁定…",
       "other": "其他…",
       "otherPlaceholder": "写下你的裁定…",

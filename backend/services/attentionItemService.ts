@@ -339,6 +339,7 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
 
 interface OpenQueueOptions {
   podId?: unknown;
+  messageIds?: unknown;
   limit?: number;
   offset?: number;
 }
@@ -355,6 +356,10 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   hasMore: boolean;
 }> => {
   const requestedPodId = typeof options.podId === 'string' ? options.podId.trim() : '';
+  const hasMessageFilter = Array.isArray(options.messageIds);
+  const messageIds = hasMessageFilter
+    ? [...new Set((options.messageIds as unknown[]).map((id) => String(id).trim()).filter(Boolean))]
+    : [];
   const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
   const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
@@ -366,7 +371,11 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
   // with zero rows merely because its rows fell beyond the global page.
-  const rows = await AttentionItem.find({ recipientUserId, status: 'open' }).sort({ createdAt: -1 }).lean();
+  const rows = await AttentionItem.find({
+    recipientUserId,
+    status: 'open',
+    ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
+  }).sort({ createdAt: -1 }).lean();
   const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));

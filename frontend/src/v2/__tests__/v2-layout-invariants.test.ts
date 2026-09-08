@@ -384,10 +384,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-activity__queue-more:disabled');
   });
 
-  test('DecisionRequest options are full-width content with one recommended primary choice', () => {
+  test('DecisionRequest options preserve authored order with one cobalt primary choice', () => {
     // The first build left options inside the narrow actions column. Generic
-    // queue-button CSS then made every non-recommended option blue while the
-    // recommended one looked secondary — exactly backwards for a fork card.
+    // queue-button CSS once made every non-recommended option blue while the
+    // first authored option looked secondary — exactly backwards for a fork card.
     const decisionActions = ruleBody(v2, '.v2-activity__queue-row--decision .v2-activity__queue-actions');
     expect(decisionActions).toContain('grid-column: 1 / -1');
     expect(decisionActions).toContain('justify-content: flex-start');
@@ -397,12 +397,39 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(neutralOption).toContain('background: var(--v2-surface)');
     expect(neutralOption).toContain('border-radius: var(--v2-radius-sm)');
 
-    const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
-    expect(recommendedOption).toContain('background: var(--v2-ink)');
-    expect(recommendedOption).toContain('color: var(--v2-on-ink)');
+    const primaryOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--primary');
+    expect(primaryOption).toContain('background: var(--v2-accent)');
+    expect(primaryOption).toContain('color: var(--v2-on-ink)');
+    expect(v2).toContain('v2-activity__queue-action--bordered');
+    const borderedAction = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
+    expect(borderedAction).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
+    const composeMenu = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu');
+    expect(composeMenu).toContain('max-height: 240px');
+    expect(composeMenu).toContain('overflow-y: auto');
+    const composeOption = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-option');
+    expect(composeOption).toContain('min-height: 30px');
+    expect(composeOption).toContain('background: transparent');
+    expect(composeOption).toContain('color: var(--v2-text-primary)');
+    const composeOptionHover = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled)');
+    expect(composeOptionHover).toContain('background: var(--v2-surface-hover)');
+    expect(composeOptionHover).toContain('color: var(--v2-text-primary)');
+    expect(composeOptionHover).toContain('border-color: transparent');
+    expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-root \.v2-activity__compose \.v2-activity__compose-picker-menu \.v2-activity__compose-picker-option \{ min-height: 44px; \}/);
     const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
     expect(otherOption).toContain('color: var(--v2-accent-text)');
     expect(v2).toContain('.v2-activity__option-description');
+    expect(activityPage).toContain('(option, index)');
+    expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
+    expect(thread).toContain("loadDecisionPages<T>(");
+    expect(thread).toContain("'/api/activity/decision-queue'");
+    expect(thread).toContain("'/api/activity/decision-history'");
+    expect(thread).toContain('DECISION_MESSAGE_ID_BATCH_SIZE = 200');
+    expect(thread).toContain('loadDecisionPagesForMessageIds<ThreadDecision>');
+    expect(thread).toContain('loadedMessageIdsRef.current = [...new Set(messages');
+    expect(thread).toContain('if (pendingData)');
+    expect(thread).toContain("'/api/activity/decision-history'");
+    expect(thread).toContain('settledDecisionByMessageId');
   });
 
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
@@ -1068,14 +1095,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
+    const bordered = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
+    expect(bordered).toContain('border: 1px solid var(--v2-border)');
+    expect(bordered).toContain('background: var(--v2-surface)');
   });
 
   test('DecisionRequest options remain 44px touch targets when they wrap at 390px', () => {
     // Options are agent-authored data, not compact task metadata. Keep the
-    // recommended state and the free-text escape hatch visible in the CSS
+    // primary state and the free-text escape hatch visible in the CSS
     // source because jsdom has no layout engine to catch a narrow regression.
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended'))
-      .toContain('background: var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--primary'))
+      .toContain('background: var(--v2-accent)');
     expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
@@ -1312,6 +1342,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const ruled = ruleBody(v2, '.v2-msg__ruled');
       expect(ruled).toContain('color: var(--v2-text-muted)');
       expect(ruled).toContain('var(--v2-font-mono)');
+    });
+
+    test('Activity hydrates settled decisions from the durable history projection', () => {
+      expect(activityPage).toContain("'/api/activity/decision-history'");
+      expect(activityPage).toContain('settledHistory');
+      expect(activityPage).toContain('setSettledQueueDecisions');
+      expect(activityPage).toContain('const loadMoreHistory = async () =>');
+      expect(activityPage).toContain('const loadedExtent = Math.max(historyItems.length, previousHistoryExtent)');
+      expect(activityPage).toContain('historyOffsetRef.current = loadedExtent');
+      expect(activityPage).toContain('historyCount - existingIds.size');
+      expect(activityPage).toContain('showMoreSettled');
+      expect(activityPage).toContain('offset: 0');
     });
 
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {

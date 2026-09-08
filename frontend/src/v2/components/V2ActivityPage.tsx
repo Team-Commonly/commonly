@@ -72,6 +72,17 @@ interface QueueResponse {
   hasMore?: boolean;
 }
 
+interface DecisionHistoryResponse {
+  items?: Array<NeedsYouItem & {
+    status?: 'pending' | 'ruled';
+    ruling?: { value?: string; by?: string } | null;
+    createdAt?: string | null;
+  }>;
+  count?: number;
+  remaining?: number;
+  hasMore?: boolean;
+}
+
 interface MovedLine {
   id: string;
   author: string;
@@ -155,7 +166,8 @@ const V2ActivityPage: React.FC = () => {
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
-  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
+  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by?: string }>>({});
+  const [settledQueueDecisions, setSettledQueueDecisions] = useState<Record<string, NeedsYouItem>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
   const queueRef = useRef<NeedsYouItem[]>([]);
   const [queueCount, setQueueCount] = useState<number | null>(null);
@@ -163,6 +175,9 @@ const V2ActivityPage: React.FC = () => {
   const [queueRemaining, setQueueRemaining] = useState(0);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
+  const [historyRemaining, setHistoryRemaining] = useState(0);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyMoreError, setHistoryMoreError] = useState(false);
   const [queueFailed, setQueueFailed] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const actionFocusGenerationRef = useRef(0);
@@ -172,13 +187,17 @@ const V2ActivityPage: React.FC = () => {
   const revalidationScopeRef = useRef<string | null>(null);
   const queueMoreButtonRef = useRef<HTMLButtonElement | null>(null);
   const queueMoreFailureOffsetRef = useRef<number | null>(null);
+  const historyMoreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyOffsetRef = useRef(0);
   const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
+  const composePickerRef = useRef<HTMLDivElement | null>(null);
   const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const composePickerOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
@@ -193,6 +212,12 @@ const V2ActivityPage: React.FC = () => {
     snapshotAccountRef.current = accountId;
     const snapshot = accountId ? readActivitySnapshot(accountId) : null;
     restoredSnapshotRef.current = snapshot;
+    setRuledDecisions({});
+    setSettledQueueDecisions({});
+    setHistoryRemaining(0);
+    setHistoryMoreError(false);
+    setHistoryLoadingMore(false);
+    historyOffsetRef.current = 0;
     if (snapshot) {
       setWindow(snapshot.window || 'today');
       setPodId(snapshot.podId || 'all');
@@ -247,6 +272,22 @@ const V2ActivityPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!composeMenuOpen) return undefined;
+    const closeOnOutsidePress = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && composePickerRef.current && !composePickerRef.current.contains(target)) {
+        setComposeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsidePress);
+    document.addEventListener('touchstart', closeOnOutsidePress);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsidePress);
+      document.removeEventListener('touchstart', closeOnOutsidePress);
+    };
+  }, [composeMenuOpen]);
+
+  useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
     if (!snapshotReady || !snapshot || !queueHydrated) return;
     const restore = () => {
@@ -271,6 +312,7 @@ const V2ActivityPage: React.FC = () => {
     queueScopeRef.current = podId;
     const sameScope = previousScope === podId;
     const previousQueue = sameScope ? queueRef.current : [];
+    const previousHistoryExtent = sameScope ? historyOffsetRef.current : 0;
     if (!sameScope) {
       // Retained rows are evidence for their own scope only. If the new
       // request fails, showing them under the newly selected pod is false.
@@ -278,6 +320,10 @@ const V2ActivityPage: React.FC = () => {
       setQueue([]);
       setQueueCount(null);
       setQueueRemaining(0);
+      setHistoryRemaining(0);
+      setHistoryMoreError(false);
+      setHistoryLoadingMore(false);
+      historyOffsetRef.current = 0;
       setQueueFailed(false);
       revalidationExtentRef.current = 0;
       revalidationScopeRef.current = null;
@@ -295,6 +341,7 @@ const V2ActivityPage: React.FC = () => {
     setError(null);
     setQueueMoreError(false);
     setQueueLoadingMore(false);
+    setHistoryLoadingMore(false);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     // Recap and attention are independent facts. A failed queue read must
@@ -308,10 +355,76 @@ const V2ActivityPage: React.FC = () => {
         '/api/activity/decision-queue',
         { headers, params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) } },
       ).catch(() => null),
+      axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
+        headers,
+        params: { limit: 50, offset: 0, ...(podId !== 'all' ? { podId } : {}) },
+      }).catch(() => null),
     ])
-      .then(async ([recapResponse, queueResponse]) => {
+      .then(async ([recapResponse, queueResponse, historyResponse]) => {
         if (!active) return;
         setRecap(recapResponse.data);
+        // Decision history is a durable pod projection. Hydrate it on every
+        // Activity read so a settled card survives a hard reload and the
+        // Activity → pod → Activity Back path, even when the open queue has
+        // already dropped the recipient-owned row.
+        const historyItems = Array.isArray(historyResponse?.data?.items)
+          ? historyResponse.data.items
+          : [];
+        const settledHistory = historyItems.filter((item) => (
+          item.kind === 'decision' && item.id && item.ruling?.value
+        ));
+        if (historyResponse) {
+          const historyCount = typeof historyResponse.data?.count === 'number'
+            ? historyResponse.data.count
+            : historyItems.length;
+          // A refresh revalidates the first page but must not collapse an
+          // explicitly loaded history extent back to its first-page boundary.
+          // Keep the prior extent as the cursor; older rows remain durable in
+          // settledQueueDecisions and can be fetched only when the reader asks
+          // for another page.
+          const loadedExtent = Math.max(historyItems.length, previousHistoryExtent);
+          historyOffsetRef.current = loadedExtent;
+          if (sameScope && previousHistoryExtent > 0) {
+            // A new ruling can arrive ahead of an already-loaded older page.
+            // Count the union of durable cards we already rendered and this
+            // refreshed first page; using only the previous offset would
+            // report the new row as an unseen older row.
+            const existingIds = new Set(Object.values(settledQueueDecisions)
+              .filter((item) => podId === 'all' || item.podId === podId)
+              .map((item) => String(item.id)));
+            settledHistory.forEach((item) => existingIds.add(String(item.id)));
+            setHistoryRemaining(Math.max(historyCount - existingIds.size, 0));
+          } else {
+            setHistoryRemaining(typeof historyResponse.data?.remaining === 'number'
+              ? historyResponse.data.remaining
+              : Math.max(historyCount - historyItems.length, 0));
+          }
+          setHistoryMoreError(false);
+        }
+        if (settledHistory.length > 0) {
+          setRuledDecisions((current) => {
+            const next = { ...current };
+            settledHistory.forEach((item) => {
+              next[String(item.id)] = {
+                value: String(item.ruling?.value),
+                ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+              };
+            });
+            return next;
+          });
+          setSettledQueueDecisions((current) => {
+            const next = { ...current };
+            settledHistory.forEach((item) => {
+              next[String(item.id)] = {
+                ...item,
+                detail: item.detail || '',
+                podName: item.podName || '',
+                timestamp: item.timestamp ?? item.createdAt ?? null,
+              };
+            });
+            return next;
+          });
+        }
         const rawItems = queueResponse?.data?.items;
         const availablePods = recapResponse.data.pods || [];
         const setComposeDefault = (candidate = '') => {
@@ -322,7 +435,7 @@ const V2ActivityPage: React.FC = () => {
         };
         if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
           || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
-          setQueueFailed(previousQueue.length === 0);
+          setQueueFailed(previousQueue.length === 0 && settledHistory.length === 0);
           setQueueMoreError(true);
           setComposeDefault();
           return;
@@ -451,6 +564,86 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
+  const loadMoreHistory = async () => {
+    if (historyLoadingMore || historyRemaining <= 0) return;
+    const requestedScope = podId;
+    const requestedGeneration = queueGenerationRef.current;
+    const offset = historyOffsetRef.current;
+    const trigger = historyMoreButtonRef.current;
+    const shouldRestoreFocus = () => {
+      const active = document.activeElement;
+      return active === document.body || active === trigger || active === historyMoreButtonRef.current;
+    };
+    setHistoryLoadingMore(true);
+    setHistoryMoreError(false);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<DecisionHistoryResponse>('/api/activity/decision-history', {
+        headers: { 'x-auth-token': token ?? '' },
+        params: { limit: 50, offset, ...(requestedScope !== 'all' ? { podId: requestedScope } : {}) },
+      });
+      if (queueScopeRef.current !== requestedScope || queueGenerationRef.current !== requestedGeneration) return;
+      const items = Array.isArray(response.data?.items) ? response.data.items : [];
+      const settled = items.filter((item) => item.kind === 'decision' && item.id && item.ruling?.value);
+      const existingSettledIds = new Set(Object.keys(settledQueueDecisions));
+      const existingQueueIds = new Set(queue.map((item) => `${item.kind}:${item.id}`));
+      const firstAddedId = settled.find((item) => (
+        !existingSettledIds.has(String(item.id)) && !existingQueueIds.has(`${item.kind}:${item.id}`)
+      ))?.id;
+      if (settled.length > 0) {
+        setRuledDecisions((current) => {
+          const next = { ...current };
+          settled.forEach((item) => {
+            next[String(item.id)] = {
+              value: String(item.ruling?.value),
+              ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+            };
+          });
+          return next;
+        });
+        setSettledQueueDecisions((current) => {
+          const next = { ...current };
+          settled.forEach((item) => {
+            next[String(item.id)] = {
+              ...item,
+              detail: item.detail || '',
+              podName: item.podName || '',
+              timestamp: item.timestamp ?? item.createdAt ?? null,
+            };
+          });
+          return next;
+        });
+      }
+      historyOffsetRef.current = offset + items.length;
+      const remaining = typeof response.data?.remaining === 'number'
+        ? response.data.remaining
+        : items.length > 0 && typeof response.data?.count === 'number'
+          ? Math.max(response.data.count - historyOffsetRef.current, 0)
+          : 0;
+      setHistoryRemaining(remaining);
+      setHistoryMoreError(false);
+      globalThis.window.requestAnimationFrame(() => {
+        if (!shouldRestoreFocus()) return;
+        if (historyMoreButtonRef.current) {
+          historyMoreButtonRef.current.focus();
+          return;
+        }
+        if (firstAddedId) {
+          document.querySelector<HTMLElement>(`[data-activity-item-id="${CSS.escape(String(firstAddedId))}"]`)?.focus();
+        }
+      });
+    } catch {
+      if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
+        setHistoryMoreError(true);
+        globalThis.window.requestAnimationFrame(() => {
+          if (shouldRestoreFocus()) historyMoreButtonRef.current?.focus();
+        });
+      }
+    } finally {
+      if (queueGenerationRef.current === requestedGeneration) setHistoryLoadingMore(false);
+    }
+  };
+
   const movedGroups = useMemo<MovedGroup[]>(() => {
     if (!recap) return [];
     const groups = new Map<string, MovedGroup>();
@@ -487,6 +680,25 @@ const V2ActivityPage: React.FC = () => {
     return recap?.pods || [];
   }, [recap]);
   const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
+  const selectComposePod = (nextPodId: string) => {
+    setComposePodId(nextPodId);
+    setComposeMenuOpen(false);
+    globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+  };
+  const focusComposePickerOption = (index: number) => {
+    if (scopedPods.length === 0) return;
+    const boundedIndex = (index + scopedPods.length) % scopedPods.length;
+    const option = scopedPods[boundedIndex];
+    if (!option) return;
+    setComposeMenuOpen(true);
+    globalThis.window.requestAnimationFrame(() => composePickerOptionRefs.current[option.id]?.focus());
+  };
+  const visibleQueue = useMemo(() => {
+    const settled = Object.values(settledQueueDecisions)
+      .filter((item) => podId === 'all' || item.podId === podId)
+      .filter((item) => !queue.some((open) => open.id === item.id));
+    return [...queue, ...settled];
+  }, [podId, queue, settledQueueDecisions]);
 
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
     if (!targetPodId) return;
@@ -578,23 +790,35 @@ const V2ActivityPage: React.FC = () => {
     setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post<{ ok?: boolean }>(
+      const response = await axios.post<{
+        ok?: boolean;
+        decision?: { ruling?: { value?: string; by?: string } | null };
+      }>(
         `/api/activity/decisions/${encodeURIComponent(item.id)}/choose`,
         { value },
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
+      const settled = response.data.decision?.ruling;
+      const ruling = { value: settled?.value || value.trim(), ...(settled?.by ? { by: settled.by } : {}) };
+      setRuledDecisions((current) => ({
+        ...current,
+        [item.id]: ruling,
+      }));
+      setSettledQueueDecisions((current) => ({ ...current, [item.id]: item }));
       notifyAttentionChanged();
       setOtherDecisionId(null);
       setOtherDecisionValue('');
       setReloadKey((value) => value + 1);
     } catch (error) {
       const standing = axios.isAxiosError(error) ? error.response?.data?.decision?.ruling : null;
-      if (standing?.value && standing?.by) {
+      if (standing?.value) {
+        const ruling = { value: standing.value, ...(standing.by ? { by: standing.by } : {}) };
         setRuledDecisions((current) => ({
           ...current,
-          [item.id]: { value: standing.value, by: standing.by },
+          [item.id]: ruling,
         }));
+        setSettledQueueDecisions((current) => ({ ...current, [item.id]: item }));
       } else {
         setActionErrorItemId(item.id);
         setActionError(t('activity.decision.actionFailed'));
@@ -693,6 +917,7 @@ const V2ActivityPage: React.FC = () => {
 
   const isDayZero = podId === 'all'
     && queueCount === 0
+    && visibleQueue.length === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
@@ -743,7 +968,7 @@ const V2ActivityPage: React.FC = () => {
               <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
               <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
-                <div className="v2-activity__compose-picker">
+                <div ref={composePickerRef} className="v2-activity__compose-picker">
                   <button
                     type="button"
                     ref={composePickerButtonRef}
@@ -751,22 +976,57 @@ const V2ActivityPage: React.FC = () => {
                     aria-haspopup="listbox"
                     aria-expanded={composeMenuOpen}
                     onClick={() => setComposeMenuOpen((open) => !open)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && composeMenuOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setComposeMenuOpen(false);
+                        return;
+                      }
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        focusComposePickerOption(0);
+                      } else if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        focusComposePickerOption(scopedPods.length - 1);
+                      }
+                    }}
                     disabled={composing || scopedPods.length === 0}
                   >
                     {composePodName}
                   </button>
                   {composeMenuOpen && <div className="v2-activity__compose-picker-menu" role="listbox" aria-label={t('activity.compose.podLabel')}>
-                    {scopedPods.map((pod) => (
+                    {scopedPods.map((pod, index) => (
                       <button
                         key={pod.id}
                         type="button"
                         role="option"
+                        ref={(element) => { composePickerOptionRefs.current[pod.id] = element; }}
                         aria-selected={pod.id === composePodId}
                         className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
-                        onClick={() => {
-                          setComposePodId(pod.id);
-                          setComposeMenuOpen(false);
-                          globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
+                        onClick={() => selectComposePod(pod.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            focusComposePickerOption(index + 1);
+                          } else if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            focusComposePickerOption(index - 1);
+                          } else if (event.key === 'Home') {
+                            event.preventDefault();
+                            focusComposePickerOption(0);
+                          } else if (event.key === 'End') {
+                            event.preventDefault();
+                            focusComposePickerOption(scopedPods.length - 1);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setComposeMenuOpen(false);
+                            composePickerButtonRef.current?.focus();
+                          } else if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            selectComposePod(pod.id);
+                          }
                         }}
                       >
                         {pod.name}
@@ -845,7 +1105,7 @@ const V2ActivityPage: React.FC = () => {
                   </div>
                 </article>
               </div>
-            ) : queue.length === 0 ? (
+            ) : visibleQueue.length === 0 ? (
               <div className="v2-activity__empty v2-activity__empty--plain">
                 <span>{queueCount === 0
                   ? t('activity.needsYou.emptyTitle')
@@ -853,7 +1113,7 @@ const V2ActivityPage: React.FC = () => {
               </div>
             ) : (
               <div className="v2-activity__queue">
-                {queue.map((item) => (
+                {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
@@ -878,17 +1138,17 @@ const V2ActivityPage: React.FC = () => {
                       )}
                       {item.kind === 'mention' && (
                         <>
-                          {!replyOpenIds.has(item.id) ? <button type="button" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
+                          {!replyOpenIds.has(item.id) ? <button type="button" className="v2-activity__queue-action--bordered" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
+                          <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
                             {acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
                           </button>
                         </>
                       )}
                       {item.kind === 'handoff' && (
-                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>
                       )}
@@ -900,24 +1160,27 @@ const V2ActivityPage: React.FC = () => {
                             </span>
                           ) : (
                             <>
-                              {[...(item.options || [])]
-                                .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
-                                .map((option) => (
-                                  <div className="v2-activity__option-choice" key={option.label}>
-                                    <button
-                                      type="button"
-                                      className={`v2-activity__option${option.recommended ? ' v2-activity__option--recommended' : ''}`}
-                                      onClick={() => ruleDecision(item, option.label)}
-                                      disabled={rulingId === item.id}
-                                      aria-label={t('activity.decision.ruleOption', { option: option.label })}
-                                    >
-                                      {rulingId === item.id ? t('activity.decision.working') : option.label}
-                                    </button>
-                                    {option.description && (
-                                      <span className="v2-activity__option-description">{option.description}</span>
-                                    )}
-                                  </div>
-                                ))}
+                              {(item.options || []).map((option, index) => (
+                                <div className="v2-activity__option-choice" key={option.label}>
+                                  <button
+                                    type="button"
+                                    className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
+                                    onClick={() => ruleDecision(item, option.label)}
+                                    disabled={rulingId === item.id}
+                                    aria-label={t(option.recommended
+                                      ? 'activity.decision.ruleOptionRecommended'
+                                      : 'activity.decision.ruleOption', { option: option.label })}
+                                  >
+                                    {rulingId === item.id ? t('activity.decision.working') : <>
+                                      {option.label}
+                                      {option.recommended && <span className="v2-activity__option-recommended"> · {t('activity.decision.recommended')}</span>}
+                                    </>}
+                                  </button>
+                                  {option.description && (
+                                    <span className="v2-activity__option-description">{option.description}</span>
+                                  )}
+                                </div>
+                              ))}
                               <button
                                 type="button"
                                 className="v2-activity__queue-action--secondary v2-activity__option"
@@ -948,7 +1211,7 @@ const V2ActivityPage: React.FC = () => {
                           )}
                         </>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                      <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
                         {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
                       </button>
                     </div>
@@ -959,7 +1222,7 @@ const V2ActivityPage: React.FC = () => {
                 ))}
               </div>
             )}
-            {queue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
+            {visibleQueue.length > 0 && (queueRemaining > 0 || queueMoreError) && (
               <button
                 type="button"
                 ref={queueMoreButtonRef}
@@ -974,7 +1237,22 @@ const V2ActivityPage: React.FC = () => {
                     : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
               </button>
             )}
-            {queue.length === 0 && queueMoreError && !queueFailed && (
+            {(historyRemaining > 0 || historyMoreError) && (
+              <button
+                type="button"
+                ref={historyMoreButtonRef}
+                className="v2-activity__queue-more"
+                onClick={loadMoreHistory}
+                disabled={historyLoadingMore}
+              >
+                {historyLoadingMore
+                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                  : historyMoreError
+                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                    : t('activity.needsYou.showMoreSettled', { count: historyRemaining, defaultValue: `Show more settled · ${historyRemaining} remaining` })}
+              </button>
+            )}
+            {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
               <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
             )}
           </section>

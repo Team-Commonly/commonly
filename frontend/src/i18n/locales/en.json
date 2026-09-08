@@ -78,6 +78,7 @@
       "emptyTitle": "Nothing open.",
       "emptyDescription": "New mentions and approval requests appear here when they need a response.",
       "showMore": "Show more · {{count}} remaining",
+      "showMoreSettled": "Show more settled · {{count}} remaining",
       "loadingMore": "Loading…",
       "retry": "Retry",
       "kinds": {
@@ -119,6 +120,8 @@
     },
     "decision": {
       "ruleOption": "Rule: {{option}}",
+      "ruleOptionRecommended": "Rule: {{option}} (Recommended)",
+      "recommended": "Recommended",
       "working": "Ruling…",
       "other": "Other…",
       "otherPlaceholder": "Write your ruling…",

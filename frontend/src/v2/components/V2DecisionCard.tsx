@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 
@@ -41,6 +41,23 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
   const [otherValue, setOtherValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const otherInputRef = useRef<HTMLInputElement | null>(null);
+  const otherSubmitRef = useRef<HTMLButtonElement | null>(null);
+  const otherSubmissionRef = useRef(false);
+
+  useEffect(() => {
+    if (!error || !otherOpen || !otherSubmissionRef.current) return undefined;
+    const frame = globalThis.window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      // A disabled submit button can blur to body while the request settles.
+      // Restore the custom-answer field in that case, but respect a reader
+      // who deliberately moved to another control during the failed request.
+      if (active === document.body || active === otherInputRef.current || active === otherSubmitRef.current) {
+        otherInputRef.current?.focus({ preventScroll: true });
+      }
+    });
+    return () => globalThis.window.cancelAnimationFrame(frame);
+  }, [error, otherOpen]);
 
   const choose = async (value: string) => {
     const trimmed = value.trim();
@@ -107,8 +124,14 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
                 className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
                 onClick={() => { void choose(option.label); }}
                 disabled={saving}
+                aria-label={option.recommended
+                  ? t('activity.decision.ruleOptionRecommended', { option: option.label })
+                  : undefined}
               >
-                {saving ? t('activity.decision.working') : option.label}
+                {saving ? t('activity.decision.working') : <>
+                  {option.label}
+                  {option.recommended && <span className="v2-decision-card__recommended"> · {t('activity.decision.recommended')}</span>}
+                </>}
               </button>
               {option.description && <span>{option.description}</span>}
             </div>
@@ -124,12 +147,18 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
           {otherOpen && (
             <div className="v2-decision-card__other-form">
               <input
+                ref={otherInputRef}
                 aria-label={t('activity.decision.otherPlaceholder')}
                 value={otherValue}
                 onChange={(event) => setOtherValue(event.target.value)}
                 disabled={saving}
               />
-              <button type="button" onClick={() => { void choose(otherValue); }} disabled={saving || !otherValue.trim()}>
+              <button
+                ref={otherSubmitRef}
+                type="button"
+                onClick={() => { otherSubmissionRef.current = true; void choose(otherValue); }}
+                disabled={saving || !otherValue.trim()}
+              >
                 {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
               </button>
             </div>
