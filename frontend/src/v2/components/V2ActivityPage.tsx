@@ -197,6 +197,10 @@ const V2ActivityPage: React.FC = () => {
   // not an ask — no actor, no ring, no count, no badge; a step leaves when the account does
   // something. hire ← an agent exists; speak ← an agent has answered; connect ← a connector row.
   const [connectorCount, setConnectorCount] = useState<number | null>(null);
+  // "Hired" and "has answered" are facts about the account's seats, not about the last 24h
+  // (sprint-review 66671: recap.agents only carries agents that acted inside the recap window).
+  // The registry's per-pod agent list is what Your Team reads; lastActiveAt is "ever".
+  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastActiveAt: string | null; internal?: boolean }> | null>(null);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -545,14 +549,26 @@ const V2ActivityPage: React.FC = () => {
       .catch(() => { if (active) setConnectorCount(0); });
     return () => { active = false; };
   }, [snapshotReady, reloadKey]);
+  useEffect(() => {
+    if (!recap || podId !== 'all') return undefined;
+    let active = true;
+    const token = localStorage.getItem('token');
+    const headers = { 'x-auth-token': token ?? '' };
+    Promise.all(recap.pods.slice(0, 20).map((pod) => axios
+      .get<{ agents?: Array<{ name: string; lastActiveAt: string | null; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
+      .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []))
+      .catch(() => [])))
+      .then((lists) => { if (active) setHiredAgents(lists.flat().filter((agent) => !agent.internal)); });
+    return () => { active = false; };
+  }, [recap, podId]);
   const startSteps = useMemo(() => {
-    if (!recap || podId !== 'all') return [] as Array<'hire' | 'speak' | 'connect'>;
+    if (!recap || podId !== 'all' || hiredAgents === null) return [] as Array<'hire' | 'speak' | 'connect'>;
     const open: Array<'hire' | 'speak' | 'connect'> = [];
-    if (recap.agents.length === 0) open.push('hire');
-    if (!recap.agents.some((agent) => agent.messageCount > 0 || !!agent.lastActiveAt)) open.push('speak');
+    if (hiredAgents.length === 0) open.push('hire');
+    if (!hiredAgents.some((agent) => !!agent.lastActiveAt)) open.push('speak');
     if (connectorCount !== null && connectorCount === 0) open.push('connect');
     return open;
-  }, [recap, podId, connectorCount]);
+  }, [recap, podId, hiredAgents, connectorCount]);
   const startStepTarget = (step: 'hire' | 'speak' | 'connect') => {
     if (step === 'hire') return '/v2/agents';
     if (step === 'speak') return recap?.pods[0] ? `/v2/pods/${recap.pods[0].id}` : '/v2';

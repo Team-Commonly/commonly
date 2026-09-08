@@ -237,13 +237,15 @@ describe('V2ActivityPage', () => {
 
   test('day zero: Get started is its own card above Needs you, the composer hides until an agent exists, and steps leave one by one (66658/66666)', async () => {
     const empty = { ...recap, needsYou: [], agents: [], board: [] };
-    const withAgent = (agent) => ({ ...empty, agents: [agent] });
-    const mockFor = (data, connectors) => (url: string) => {
+    // Facts come from the registry's per-pod agent list (what Your Team reads), never from the
+    // 24h recap window (sprint-review 66671): a hired seat that has not acted is absent from recap.
+    const mockFor = (seats, connectors) => (url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
       if (url === '/api/integrations/user/all') return Promise.resolve({ data: connectors });
-      return Promise.resolve({ data });
+      if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: seats } });
+      return Promise.resolve({ data: empty });
     };
-    mockGet.mockImplementation(mockFor(empty, []));
+    mockGet.mockImplementation(mockFor([], []));
     const first = renderPage();
     expect(await screen.findByRole('heading', { name: 'Get started' })).toBeInTheDocument();
     expect(await screen.findByText('3 steps · until your first ask arrives')).toBeInTheDocument();
@@ -262,7 +264,7 @@ describe('V2ActivityPage', () => {
     first.unmount();
 
     // An agent exists but has not answered, no connector: steps 2 and 3, composer back, step 2 is the ink act.
-    mockGet.mockImplementation(mockFor(withAgent({ id: 'a1', name: 'Scout', lastActiveAt: null, messageCount: 0, recap: '', updates: [] }), []));
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: null }, { name: 'hosted-smoke', lastActiveAt: '2026-09-08T10:00:00.000Z', internal: true }], []));
     const second = renderPage();
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
@@ -271,7 +273,7 @@ describe('V2ActivityPage', () => {
     second.unmount();
 
     // Everything done: no card at all — the 0-state board already gated.
-    mockGet.mockImplementation(mockFor(withAgent({ id: 'a1', name: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', messageCount: 3, recap: '', updates: [] }), [{ status: 'active' }]));
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z' }], [{ status: 'active' }]));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
