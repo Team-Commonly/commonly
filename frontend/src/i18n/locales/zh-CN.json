@@ -75,7 +75,7 @@
       "countDescription": "最早等待的在前",
       "scopedCountDescription": "最早等待的在前 · 此 Pod",
       "countUnavailable": "数量暂不可用",
-      "emptyTitle": "没有未处理事项。",
+      "emptyTitle": "没有需要你处理的事项。",
       "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
       "showMore": "显示更多 · 剩余 {{count}} 条",
       "showMoreSettled": "展开更多已处理 · 剩余 {{count}} 条",
@@ -88,7 +88,8 @@
         "handoff": "交接",
         "press": "待你合并"
       },
-      "countLabel": "{{count}} 项等你处理"
+      "countLabel": "{{count}} 项等你处理",
+      "emptyLast": "上一个请求已在 {{age}} 前回复。"
     },
     "dayZero": {
       "kind": "开始使用",

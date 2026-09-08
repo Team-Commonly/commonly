@@ -75,20 +75,21 @@
       "countDescription": "oldest waiting first",
       "scopedCountDescription": "oldest waiting first · this pod",
       "countUnavailable": "Count unavailable",
-      "emptyTitle": "Nothing open.",
+      "emptyTitle": "Nothing needs you.",
       "emptyDescription": "New mentions and approval requests appear here when they need a response.",
       "showMore": "Show more · {{count}} remaining",
       "showMoreSettled": "Show more settled · {{count}} remaining",
       "loadingMore": "Loading…",
       "retry": "Retry",
       "kinds": {
-        "mention": "Mention",
-        "approval": "Approval",
-        "decision": "Decision needed",
-        "handoff": "Handoff",
-        "press": "Ready for your press"
+        "mention": "mention",
+        "approval": "approval",
+        "decision": "decision",
+        "handoff": "handoff",
+        "press": "ready for your press"
       },
-      "countLabel": "{{count}} waiting on you"
+      "countLabel": "{{count}} waiting on you",
+      "emptyLast": "The last ask was answered {{age}} ago."
     },
     "dayZero": {
       "kind": "Get started",

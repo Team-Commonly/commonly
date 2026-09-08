@@ -224,7 +224,7 @@ describe('V2ActivityPage', () => {
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('keeps an empty Needs you state honest', async () => {
@@ -232,7 +232,7 @@ describe('V2ActivityPage', () => {
       ? { items: [], count: 0, countsByPod: {} } : recap }));
     renderPage();
 
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByText(/0 needs you/i)).not.toBeInTheDocument();
   });
 
@@ -246,7 +246,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByRole('button', { name: 'Meet your Guide' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hire your first agent' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a task' })).toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Meet your Guide' }));
     expect(onGuide).toHaveBeenCalledTimes(1);
@@ -281,7 +281,7 @@ describe('V2ActivityPage', () => {
       { notes: 'Approved via Activity' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('offers Reject as the approval secondary action', async () => {
@@ -597,7 +597,7 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
-    expect(screen.getByText(/Handoff · launch pod/)).toBeInTheDocument();
+    expect(screen.getByText(/handoff · launch pod/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
 
@@ -607,7 +607,7 @@ describe('V2ActivityPage', () => {
       {},
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('keeps a failed handoff acknowledgement and retry beside its row', async () => {
@@ -649,7 +649,7 @@ describe('V2ActivityPage', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: 'Mark handled' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
   });
 
   test('does not steal focus when the user moves during a failed action', async () => {
@@ -868,6 +868,8 @@ describe('V2ActivityPage', () => {
     expect(document.querySelector('[data-activity-item-id="mention-50"]')).not.toHaveFocus();
     expect(screen.queryByRole('button', { name: /Show more/ })).not.toBeInTheDocument();
     expect(document.querySelectorAll('.v2-activity__queue-row')).toHaveLength(56);
+    // Between pages no control renders either: the fetch stays under the fold (66405 miss 8).
+    expect(document.querySelector('.v2-activity__queue-more')).toBeNull();
     // The one count: the rendered rows equal the ledger's number.
     expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
@@ -929,7 +931,7 @@ describe('V2ActivityPage', () => {
     await screen.findByText('Review requested');
     fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
     expect(await screen.findByText('GTM 8')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
       params: expect.objectContaining({ podId: 'pod-2', limit: 50, offset: 0 }),
     }));
@@ -990,7 +992,7 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Count unavailable')).toBeInTheDocument();
     expect(screen.queryByText('the same 0 as the rail and the inspector')).not.toBeInTheDocument();
     expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nothing open.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
   });
 
   test('retains rows and offers Retry when a refresh fails', async () => {

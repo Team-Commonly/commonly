@@ -43,6 +43,9 @@ interface NeedsYouItem {
   attentionItemId?: string;
   actorName?: string;
   actorUserId?: string;
+  // A settled decision keeps its ruling (from durable history) so the 0-state
+  // can say when the last ask was answered.
+  ruling?: { value?: string; by?: string; at?: string | null } | null;
   kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail: string;
@@ -88,7 +91,7 @@ interface QueueResponse {
 interface DecisionHistoryResponse {
   items?: Array<NeedsYouItem & {
     status?: 'pending' | 'ruled';
-    ruling?: { value?: string; by?: string } | null;
+    ruling?: { value?: string; by?: string; at?: string | null } | null;
     createdAt?: string | null;
   }>;
   count?: number;
@@ -186,6 +189,11 @@ const V2ActivityPage: React.FC = () => {
   const [queueCount, setQueueCount] = useState<number | null>(null);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
+  // True while another page is expected to load itself. The way-back control
+  // renders only when pages remain and nothing is expected to fetch them —
+  // a stall, which the auto-load effect makes unreachable in practice
+  // (sprint-review 66408: deterministic under the fold, never Loading).
+  const [queueAutoPending, setQueueAutoPending] = useState(false);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -490,6 +498,7 @@ const V2ActivityPage: React.FC = () => {
         queueRef.current = queueItems;
         setQueue(queueItems);
         setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
+        setQueueAutoPending(Math.max(queueResponse!.data.count - queueItems.length, 0) > 0);
         // The initial destination is an account-level global fact computed by
         // the service before scope/page slicing. Preserve an intentional
         // target across refreshes and fall back to the first available pod.
@@ -556,9 +565,11 @@ const V2ActivityPage: React.FC = () => {
       });
       const loaded = offset + nextItems.length;
       queueMoreFailureOffsetRef.current = null;
-      setQueueRemaining(typeof response.data?.remaining === 'number'
+      const nextRemaining = typeof response.data?.remaining === 'number'
         ? response.data.remaining
-        : Math.max((response.data?.count || queueCount || 0) - loaded, 0));
+        : Math.max((response.data?.count || queueCount || 0) - loaded, 0);
+      setQueueRemaining(nextRemaining);
+      setQueueAutoPending(nextRemaining > 0);
       if (auto) return;
       globalThis.window.requestAnimationFrame(() => {
         if (queueMoreButtonRef.current) {
@@ -572,6 +583,7 @@ const V2ActivityPage: React.FC = () => {
       if (queueScopeRef.current === requestedScope && queueGenerationRef.current === requestedGeneration) {
         queueMoreFailureOffsetRef.current = offset;
         setQueueMoreError(true);
+        setQueueAutoPending(false);
       }
     } finally {
       if (queueGenerationRef.current === requestedGeneration) setQueueLoadingMore(false);
@@ -732,6 +744,17 @@ const V2ActivityPage: React.FC = () => {
       ? agentUserIds.has(item.actorUserId)
       : (!!item.actorName && agentNames.has(item.actorName.trim().toLowerCase()))
   );
+  // 0-state (66400 fix 5): "Nothing needs you." and, when the history knows it,
+  // when the last ask was answered — the newest ruling in this scope.
+  const lastAnsweredAt = useMemo(() => {
+    const times = Object.values(settledQueueDecisions)
+      .filter((item) => podId === 'all' || item.podId === podId)
+      .map((item) => item.ruling?.at)
+      .filter((at): at is string => typeof at === 'string' && at.length > 0)
+      .map((at) => new Date(at).getTime())
+      .filter((ms) => Number.isFinite(ms));
+    return times.length ? new Date(Math.max(...times)).toISOString() : null;
+  }, [podId, settledQueueDecisions]);
   const visibleQueue = useMemo(() => {
     const settled = Object.values(settledQueueDecisions)
       .filter((item) => podId === 'all' || item.podId === podId)
@@ -1154,6 +1177,7 @@ const V2ActivityPage: React.FC = () => {
                 <span>{queueCount === 0
                   ? t('activity.needsYou.emptyTitle')
                   : t('activity.needsYou.countLabel', { count: queueCount })}</span>
+                {queueCount === 0 && lastAnsweredAt && <span>{t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
               </div>
             ) : (
               <div className="v2-activity__queue">
@@ -1287,7 +1311,10 @@ const V2ActivityPage: React.FC = () => {
                 ))}
               </div>
             )}
-            {visibleQueue.length > 0 && (queueRemaining > 0 || queueLoadingMore || queueMoreError) && (
+            {/* 66311 keeps the fetch under the fold: normal paging shows nothing, not even
+                Loading; Retry on error; and a stalled auto-load (pages remain, none expected)
+                still surfaces the way back. */}
+            {visibleQueue.length > 0 && (queueMoreError || (queueHydrated && queueRemaining > 0 && !queueLoadingMore && !queueAutoPending)) && (
               <button
                 type="button"
                 ref={queueMoreButtonRef}
