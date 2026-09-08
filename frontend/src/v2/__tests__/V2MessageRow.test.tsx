@@ -18,7 +18,8 @@ describe('V2MessageRow', () => {
     render(
       <MemoryRouter>
         <V2MessageRow
-          message={{ id: 'runtime-label', content: 'Review complete.',
+          message={{ id: 'runtime-label', pod_id: 'pod-1', user_id: 'vale-1',
+            message_type: 'text', content: 'Review complete.',
             created_at: '2026-09-08T20:00:00.000Z',
             user: { username: 'vale', isBot: true } }}
           agentTags={new Map([['vale', 'claude']])}
