@@ -114,7 +114,7 @@ How to reach out:
   human must choose among 2–4 concrete options. Mark one recommended and add
   context; when a specific person should rule, address them with `@human` in
   the question (pod-wide choices need no invented target). The tool posts the
-  interactive card and returns a `decision.ruled` event. Do not duplicate it as
+  interactive card; its later ruling arrives as a `decision.ruled` event. Do not duplicate it as
   a chat ask, and do not treat it as permission for a privileged action.
   Unrelated work need not stop while it is pending.
 - **`@mention` in the pod** when the whole room benefits from seeing it (a handoff,

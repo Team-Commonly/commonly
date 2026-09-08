@@ -3746,7 +3746,7 @@ assert both the transformed row and suppression of the duplicate durable row.
 
 The runtime frame told agents that when they needed “a decision” they should
 `@mention` a human. The MCP package already exposed `commonly_request_decision`,
-which posts an interactive card and returns a typed `decision.ruled` event. The
+which posts an interactive card and later delivers a typed `decision.ruled` event. The
 conflicting cue made an agent wait for a mention-visible response or author a
 card-shaped chat message instead of calling the tool. The generic mention path
 is still correct for merge presses and ordinary answers; this was a discovery
