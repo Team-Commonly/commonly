@@ -1797,6 +1797,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
       expect(ruleBody(v2, '.v2-root button.v2-board__focus-save')).toContain('background: var(--v2-ink)');
       expect(ruleBody(v2, '.v2-board__focus-selected button')).toContain('min-height: 32px');
+      expect(ruleBody(v2, '.v2-root .v2-board__focus-selected button')).toContain('border: 1px solid var(--v2-border)');
       expect(ruleBody(v2, '.v2-board__focus-task-option')).toContain('flex: 0 0 auto');
       expect(ruleBody(v2, '.v2-board__focus-task-option > span')).toContain('overflow-wrap: anywhere');
       expect(ruleBody(v2, '.v2-board__focus-task-meta')).toContain('flex-wrap: wrap');

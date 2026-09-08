@@ -8212,7 +8212,7 @@ body.modern-ui.v2-canvas {
   flex: 1 1 calc(100% - 25px);
   min-width: 0;
 }
-.v2-board__focus-selected button {
+.v2-root .v2-board__focus-selected button {
   min-height: 32px;
   border: 1px solid var(--v2-border);
   border-radius: 7px;
@@ -8534,7 +8534,6 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-board__focus-review-latest,
   .v2-root .v2-board__focus-selected button {
     min-height: 44px;
-    border: 1px solid var(--v2-border);
   }
 
   .v2-board__focus-tasks li {
