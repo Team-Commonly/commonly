@@ -11771,6 +11771,7 @@ body.modern-ui.v2-canvas {
   padding: 0;
 }
 .v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
+.v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
 .v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
 .v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
 .v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
