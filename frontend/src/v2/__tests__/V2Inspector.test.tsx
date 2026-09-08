@@ -55,8 +55,36 @@ describe('V2Inspector', () => {
           { taskId: 'TASK-130', title: 'Ship the event', status: 'done' },
         ] });
       }
+      if (url.startsWith('/api/artifacts?podId=pod-1')) {
+        return Promise.resolve({ items: [
+          { id: 'f1', fileName: 'x1.png', name: 'walk-1440.png', kind: 'image', createdAt: new Date(Date.now() - 5 * 60000).toISOString() },
+          { id: 'f2', fileName: 'x2.md', name: 'plan.md', kind: 'doc', createdAt: new Date(Date.now() - 3 * 3600000).toISOString() },
+        ], total: 7 });
+      }
       return Promise.resolve({});
     });
+  });
+
+  test('renders the files pane from the same artifacts query with podId fixed, and links to all of them', async () => {
+    renderInspector();
+    expect(screen.getByRole('heading', { name: 'files in sharpen' })).toBeInTheDocument();
+    const row = await screen.findByRole('button', { name: 'walk-1440.png 5m' });
+    expect(row).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'plan.md 3h' })).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/artifacts?podId=pod-1&limit=5');
+    fireEvent.click(screen.getByRole('button', { name: 'All 7 files' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/artifacts?podId=pod-1');
+    // A file row opens the file: an image in the lightbox, not a name search.
+    fireEvent.click(row);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining('q=walk-1440.png'));
+  });
+
+  test('says no files yet when the pod has none', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/artifacts') ? { items: [], total: 0 } : {}));
+    renderInspector();
+    expect(await screen.findByText('no files yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /All \d+ files/ })).not.toBeInTheDocument();
   });
 
   test('renders the same generated agent face as chat', async () => {

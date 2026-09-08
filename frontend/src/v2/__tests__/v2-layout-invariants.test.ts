@@ -510,6 +510,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
   });
 
+  test('Artifacts (direction C, PR 5): display head, one segment grammar, bordered ext chip, mono numbers, phone block', () => {
+    const artifactsPage = fs.readFileSync(path.join(__dirname, '../components/V2ArtifactsPage.tsx'), 'utf8');
+    expect(v2App).toContain("'v2-feature--artifacts'");
+    expect(v2App).toContain('<V2ArtifactsPage />');
+    expect(ruleBody(v2, '.v2-artifacts__title')).toContain('32px/1.1 var(--v2-font-display)');
+    expect(ruleBody(v2, '.v2-artifacts__meta')).toContain('color: var(--v2-text-muted)');
+    expect(ruleBody(v2, '.v2-artifacts__seg')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).not.toContain('var(--v2-ink)');
+    const ext = ruleBody(v2, '.v2-artifacts__ext');
+    expect(ext).toContain('border: 1px solid var(--v2-border)');
+    expect(ext).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts__mono')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts__table-wrap')).toContain('overflow-x: auto');
+    expect(ruleBody(v2, '.v2-root button.v2-artifacts__more')).toContain('color: var(--v2-accent-text)');
+    // page = text/html only shows no size; the ext chip is the extension, never a colour square.
+    expect(artifactsPage).toContain("item.kind === 'page' ? '—' : formatSize(item.size)");
+    expect(artifactsPage).toContain('extOf(item.name)');
+    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__controls \{ flex-direction: column; align-items: stretch; \}/);
+    // ux-lead 66462: mono floor 11 on the chip; the table spans the content area (no centred cap);
+    // ≤760 hides pod / shared-by / size and folds the pod under the name; the head stays 32.
+    expect(ext).toContain('11px/14px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-workspace-inspector__ext')).toContain('11px/14px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-artifacts')).not.toContain('1040px');
+    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__pod-line \{ display: block; flex: 1 1 100%; \}/);
+    expect(v2).not.toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__title \{ font-size: 28px; \}/);
+    // An image row opens the chat lightbox; pages and docs open in a new tab (66462 overrule).
+    expect(artifactsPage).toContain("if (item.kind === 'image') { setLightbox(item); return; }");
+    expect(workspaceInspector).toContain("if (file.kind === 'image') { setLightbox(file); return; }");
+    // Inspector Files pane: same rows, ext chip in front, All N files as cobalt text.
+    expect(workspaceInspector).toContain("'inspector.workspace.filesIn'");
+    expect(workspaceInspector).toContain('/api/artifacts?podId=');
+    expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
+  });
+
   test('workspace inspector is the small three-card replacement, with a phone sheet rather than legacy tabs', () => {
     // TASK-129 replaces the 86KB tabbed inspector in the same cutover as the
     // artboard cards. Keeping the old component anywhere in the route would
@@ -1830,6 +1865,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain("pod: shortPodName(group.name)");
       // ≤760: toggles stack, actions drop to 44px full width.
       expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
+      // The reply editor's nested Send takes only height at ≤760 — never a descendant width rule (66493/66498).
+      expect(v2).toContain('.v2-root .v2-activity__reply > button { min-height: 44px; }');
+      expect(v2).not.toContain('.v2-root .v2-activity__queue-actions button { flex: 1 1 100%;');
       // …and the stack outranks the desktop action column by ORDER: the ≤760 rule for
       // `.v2-activity__queue-row .v2-activity__queue-actions` comes after the grid-column: 3 rule (66438 at 720).
       const desktopActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3;');

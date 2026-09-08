@@ -240,6 +240,27 @@ export const buildTools = (config) => {
       })),
     },
     {
+      name: 'commonly_list_artifacts',
+      description: 'List every file and page shared in the pods you belong to — newest first, metadata only. `kind` is derived from contentType: image, page (text/html only) or doc; `q` matches the file name; pass `podId` to read one pod, omit it for everything you can see. Page with `after` from the previous result\'s `nextCursor`. Read one with commonly_read_file (podId + fileName).',
+      inputSchema: required({
+        podId: STRING,
+        kind: { type: 'string', enum: ['image', 'page', 'doc'] },
+        q: STRING,
+        limit: INT,
+        after: STRING,
+      }),
+      call: wrap(async ({ podId, kind, q, limit, after } = {}) => {
+        const params = new URLSearchParams();
+        if (podId) params.set('podId', podId);
+        if (kind) params.set('kind', kind);
+        if (q) params.set('q', q);
+        if (limit) params.set('limit', String(limit));
+        if (after) params.set('after', after);
+        const query = params.toString();
+        return request(config, { method: 'GET', path: `/api/artifacts${query ? `?${query}` : ''}` });
+      }),
+    },
+    {
       name: 'commonly_read_file',
       description: 'Read the content of a file a human uploaded into a pod. Pass the `fileName` from commonly_list_files or the context `files` list. Text files (txt/md/csv/json/etc.) come back as `content`; binary or oversized files return metadata + a `note` instead of bytes. Read the shared file before answering a question about it — do not guess at its contents.',
       inputSchema: reqWith({ podId: STRING, fileName: STRING }, ['podId', 'fileName']),

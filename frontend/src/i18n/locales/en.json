@@ -20,7 +20,8 @@
       "settings": "Settings",
       "connectors": "Connectors",
       "needsYou": "Needs you",
-      "team": "Team"
+      "team": "Team",
+      "artifacts": "Artifacts"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
@@ -1073,7 +1074,10 @@
         "workingTask": "working · {{title}}",
         "working": "working",
         "idle": "idle"
-      }
+      },
+      "filesIn": "files in {{pod}}",
+      "noFiles": "no files yet",
+      "allFiles": "All {{count}} files"
     },
     "goal": {
       "title": "Goal",
@@ -1845,5 +1849,39 @@
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",
     "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "meta": "every file and page shared in your pods",
+    "kindLabel": "Kind",
+    "podLabel": "Pod",
+    "allPods": "All pods",
+    "morePods": "more ▾",
+    "searchPlaceholder": "Search files",
+    "kinds": {
+      "all": "All",
+      "images": "Images",
+      "docs": "Docs",
+      "pages": "Pages"
+    },
+    "kindNames": {
+      "image": "image",
+      "page": "page",
+      "doc": "doc"
+    },
+    "columns": {
+      "file": "File",
+      "kind": "Kind",
+      "pod": "Pod",
+      "sharedBy": "Shared by",
+      "when": "When",
+      "size": "Size"
+    },
+    "foot": "{{shown}} of {{total}} · newest first",
+    "more": "{{count}} more",
+    "loadingMore": "Loading…",
+    "empty": "Nothing shared yet. Attach a file in any pod and it lands here.",
+    "emptyFiltered": "Nothing matches. Clear a filter or the search.",
+    "loadFailed": "Could not load artifacts."
   }
 }
