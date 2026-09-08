@@ -26,6 +26,12 @@ interface AgentRecap {
   updates: ActivityUpdate[];
 }
 
+// Pods carry a long descriptive title; the inbox names them by the short
+// leading name the inspector uses ("sharpen"), lowercase in mono.
+const shortPodName = (name: string): string => (
+  (name || '').trim().split(/\s*[·—–:|]\s*/)[0].trim() || (name || '').trim()
+).toLowerCase();
+
 const actorMark = (name: string): string => {
   const parts = name.trim().split(/[\s·-]+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -715,7 +721,14 @@ const V2ActivityPage: React.FC = () => {
   };
   // One seat has one mark everywhere (66390): an agent actor takes the chat's
   // cobalt mark, a human the tint mark. The kind glyph stays for asks with no actor.
+  // Rows written before the actor id was stamped still carry the name, so the
+  // name is the second door.
   const agentUserIds = useMemo(() => new Set((recap?.agents || []).map((agent) => String(agent.id))), [recap]);
+  const agentNames = useMemo(() => new Set((recap?.agents || []).map((agent) => agent.name.trim().toLowerCase())), [recap]);
+  const isAgentActor = (item: NeedsYouItem): boolean => (
+    (!!item.actorUserId && agentUserIds.has(item.actorUserId))
+    || (!!item.actorName && agentNames.has(item.actorName.trim().toLowerCase()))
+  );
   const visibleQueue = useMemo(() => {
     const settled = Object.values(settledQueueDecisions)
       .filter((item) => podId === 'all' || item.podId === podId)
@@ -1143,11 +1156,11 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
-                    <span className={`v2-activity__queue-mark${item.actorName ? (item.actorUserId && agentUserIds.has(item.actorUserId) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} aria-hidden="true">
+                    <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} aria-hidden="true">
                       {item.actorName ? actorMark(item.actorName) : item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
-                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {item.podName.toLowerCase()}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
+                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
                       </div>
@@ -1176,7 +1189,7 @@ const V2ActivityPage: React.FC = () => {
                         </>
                       )}
                       {item.kind === 'handoff' && (
-                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+                        <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>
                       )}
@@ -1319,7 +1332,7 @@ const V2ActivityPage: React.FC = () => {
                 const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
                 const omittedCount = Math.max(group.lines.length - visible.length, 0);
                 return <article key={group.id} className="v2-activity__moved-group">
-                  <div className="v2-activity__moved-head"><span>{group.name.toLowerCase()}</span><span>{group.lines.length}</span></div>
+                  <div className="v2-activity__moved-head"><span>{shortPodName(group.name)}</span><span>{group.lines.length}</span></div>
                   <div className="v2-activity__moved-lines">
                     {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
                   </div>
@@ -1335,7 +1348,7 @@ const V2ActivityPage: React.FC = () => {
                     if (nextCount === group.lines.length) {
                       globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
                     }
-                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount), pod: group.name.toLowerCase() })}</button>}
+                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount), pod: shortPodName(group.name) })}</button>}
                   {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
                 </article>;
               })}

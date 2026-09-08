@@ -1787,16 +1787,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).toContain('background: var(--v2-surface-hover)');
       expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).not.toContain('var(--v2-ink)');
       // Card kicker: kind · pod (lowercase) · time, in mono.
-      expect(activityPage).toContain('item.podName.toLowerCase()');
+      expect(activityPage).toContain('shortPodName(item.podName)');
       expect(ruleBody(v2, '.v2-activity__queue-kind')).toContain('var(--v2-font-mono)');
       // One seat, one mark: agent cobalt, human tint.
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
       // Other… is cobalt text; the handoff act is ink (no bordered modifier).
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
-      expect(activityPage).toContain('className="v2-activity__queue-action--thread" onClick={() => markHandoffHandled(item)}');
+      expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');
+      // The rail badge is the exact count at any width: mono, bordered, never clipped.
+      const badge = ruleBody(v2, '.v2-rail__item-icon .MuiBadge-badge');
+      expect(badge).toContain('var(--v2-font-mono)');
+      expect(badge).toContain('color: var(--v2-accent-text)');
+      expect(badge).toContain('border: 1px solid var(--v2-border)');
       // Moved forward: no section count; N more in <pod>.
-      expect(activityPage).toContain("pod: group.name.toLowerCase()");
+      expect(activityPage).toContain("pod: shortPodName(group.name)");
       // ≤760: toggles stack, actions drop to 44px full width.
       expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
     });

@@ -8580,6 +8580,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-activity__window-button {
   min-height: 30px;
   padding: 0 10px;
+  white-space: nowrap;
   border-radius: calc(var(--v2-radius-sm) - 2px);
   color: var(--v2-text-secondary);
   font-size: 12px;
@@ -9093,6 +9094,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-activity__queue-actions button {
+  padding: 0 12px;
+  white-space: nowrap;
   border-color: var(--v2-ink);
   background: var(--v2-ink);
   color: var(--v2-on-ink);
@@ -11589,6 +11592,21 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-activity__scope-button { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font: 600 11px/16px var(--v2-font-mono); }
 .v2-root .v2-activity__scope-menu button.v2-activity__scope-button { width: 100%; max-width: none; }
 .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
+/* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
+.v2-rail__item-icon .MuiBadge-badge {
+  top: -8px;
+  right: -14px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+  transform: none;
+  white-space: nowrap;
+}
 .v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
 /* ≤760 (66390): the two toggles stack; card actions drop under the context line at 44px full width. */
 @media (max-width: 760px) {
