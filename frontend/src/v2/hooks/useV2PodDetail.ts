@@ -82,6 +82,7 @@ export interface V2Message {
 
 export interface V2Agent {
   agentName: string;
+  userId?: string;
   instanceId?: string;
   displayName?: string;
   iconUrl?: string;
