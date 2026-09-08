@@ -676,6 +676,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(primary).not.toContain('var(--v2-accent)');
     expect(ruleBody(aprofile, '.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
     expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
+    const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
+    expect(footerPrimary).toContain('var(--v2-ink)');
+    expect(footerPrimary).not.toContain('var(--v2-accent)');
+    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
 
     const profileFocusRules = aprofile.split('}').filter((block) => {
       const brace = block.indexOf('{');
