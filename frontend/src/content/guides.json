@@ -1035,7 +1035,8 @@
       { "label": "Human-AI collaboration", "path": "/guides/human-ai-collaboration/" }
     ,
       { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" },
-      { "label": "AI agent source of record", "path": "/guides/ai-agent-source-of-record/" }],
+      { "label": "AI agent source of record", "path": "/guides/ai-agent-source-of-record/" },
+      { "label": "AI agent retained context", "path": "/guides/ai-agent-retained-context/" }],
     "cta": {
       "title": "Make the next session start ahead",
       "body": "Good shared memory saves a team from re-explaining the project without giving agents a hidden, unreviewable authority source. Start with one pod, one concise project memory file, and one rule: every durable note must help the next person or agent make a better decision.",
@@ -22437,6 +22438,10 @@
       {
         "label": "AI agent task closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI agent retained context",
+        "path": "/guides/ai-agent-retained-context/"
       }
     ],
     "cta": {
@@ -23133,6 +23138,10 @@
       {
         "label": "AI agent context packet",
         "path": "/guides/ai-agent-context-packet/"
+      },
+      {
+        "label": "AI agent retained context",
+        "path": "/guides/ai-agent-retained-context/"
       }
     ],
     "cta": {
@@ -23825,6 +23834,10 @@
       {
         "label": "AI Agent Task Closure",
         "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI agent retained context",
+        "path": "/guides/ai-agent-retained-context/"
       }
     ],
     "cta": {
@@ -25248,6 +25261,720 @@
     "cta": {
       "title": "Make the boundary visible before the next action",
       "body": "AI agent approval boundaries turn an ambiguous “yes” into a useful work record. Tie the answer to a specific object, stage, owner, and limit; update the task with the resulting next state; then use the authorized system to perform and verify any later action. That preserves fast collaboration without confusing review, permission, enforcement, and execution.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-retained-context": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Retained Context: Keep Useful Context | Commonly",
+    "title": "AI Agent Retained Context: Keep Useful Context After a Task",
+    "description": "Learn how to retain AI agent context after a task: preserve source-linked conclusions, applicability, and successor records without treating memory as current authority.",
+    "summary": "AI agent retained context is the selected information kept after a task so a later person or agent can reuse a sourced conclusion, understand where it applies, and find the record that supersedes or verifies it. Good retained context is compact and traceable: it preserves the conclusion, evidence link, scope, uncertainty, and successor record. It is not a replacement for current task state, a new instruction, a permission grant, or proof that an external action occurred.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent retained context is the selected information kept after a task so a later person or agent can reuse a sourced conclusion, understand where it applies, and find the record that supersedes or verifies it. Good retained context is compact and traceable: it preserves the conclusion, evidence link, scope, uncertainty, and successor record. It is not a replacement for current task state, a new instruction, a permission grant, or proof that an external action occurred.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, supports persistent pod memory that survives sessions and heartbeat cycles, along with task records, threads, attachments, and agent-private memory. Pod memory can help a whole team retain selected shared notes and decisions; agent-private memory can hold an agent’s own context. Both are records of context. Neither should be treated as authority over the source system that owns a current permission, deployed state, or external result.",
+      "The goal is not to save every message. An unreadable archive makes future work slower and can carry forward a statement after the conditions that made it true have changed. Retained context should help a successor answer three questions quickly: what was concluded, what evidence supported it, and when should I stop relying on it and inspect a newer record?",
+      "This guide explains what to retain after AI agent work, how to label applicability and supersession, and how to preserve useful context without turning a summary into authority."
+    ],
+    "sections": [
+      {
+        "title": "Retained context is a reusable index, not a full history",
+        "paragraphs": [
+          "Keep the smallest context that makes a future contribution safer and easier to start. The retained item should point to the complete record when detailed review is needed rather than reproducing every task update, message, and artifact in a new location."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Keep after a task",
+              "Why retain it",
+              "What to link instead of copying"
+            ],
+            "rows": [
+              [
+                "Source-linked conclusion",
+                "A later task may need the settled fact or interpretation",
+                "Full source material, evidence packet, or review discussion"
+              ],
+              [
+                "Applicability boundary",
+                "A future agent needs to know when the conclusion still fits",
+                "Every unrelated project condition or historical exception"
+              ],
+              [
+                "Accepted convention",
+                "The team needs a durable, scoped way of working",
+                "A long transcript of how the convention was debated"
+              ],
+              [
+                "Open limitation",
+                "A successor must avoid overstating the result",
+                "Repeated status messages with no new evidence"
+              ],
+              [
+                "Successor or superseding record",
+                "The old item must not appear current forever",
+                "Multiple near-duplicate summaries of the same change"
+              ],
+              [
+                "Verification path",
+                "A later reviewer needs to inspect the governing fact",
+                "A claim that the summary itself proves external state"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Retained context is useful navigation",
+        "paragraphs": [
+          "Retained context is useful navigation. It should get a reader to the relevant task, artifact, decision, or target-system record faster; it should not require them to trust the retained note more than the record it cites.",
+          "For how persistent shared and agent-private memory are scoped, see AI Agent Memory."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Memory",
+            "path": "/guides/ai-agent-memory/"
+          }
+        ]
+      },
+      {
+        "title": "Retain a conclusion together with its evidence and limit",
+        "paragraphs": [
+          "“We decided X” is usually too weak for future work. A reliable item says what was concluded, why, the evidence it rests on, and what the conclusion does not settle. That lets a new participant reuse valid context without inheriting an unsupported claim."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Retained field",
+              "Include",
+              "Future reader can tell"
+            ],
+            "rows": [
+              [
+                "Conclusion",
+                "The specific fact, decision, or working convention",
+                "What was actually learned or accepted"
+              ],
+              [
+                "Evidence",
+                "Source links, artifact version, check, or decision record",
+                "Why the conclusion was reasonable at the time"
+              ],
+              [
+                "Evidence label",
+                "Fact, reported status, inference, recommendation, open question, or decision",
+                "How strongly the statement may be relied on"
+              ],
+              [
+                "Applicability",
+                "Task type, system, audience, stage, or condition",
+                "Where the conclusion is relevant"
+              ],
+              [
+                "Limit",
+                "Missing evidence, excluded scope, or later decision required",
+                "What not to infer from it"
+              ],
+              [
+                "Successor rule",
+                "The newer record or event that changes the conclusion",
+                "When to re-check rather than reuse it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example",
+        "paragraphs": [
+          "For example, a durable note might say: “For the named editorial task, the reviewer accepted draft v3 for editorial review; source links remain required before publication. See the review record and task.” That preserves the decision and its limit without claiming that the page was published.",
+          "For the per-fact hierarchy that identifies which record governs when sources differ, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Keep context after a task closes, but do not rewrite the result",
+        "paragraphs": [
+          "Task closure records a bounded result: what was delivered, how it was checked, what remains, and who owns any follow-on. Retained context should summarize the reusable part of that result and point back to the closure record. It should not turn an unresolved limitation into a settled history."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure outcome",
+              "Retain",
+              "Do not carry forward as fact"
+            ],
+            "rows": [
+              [
+                "Accepted artifact",
+                "Version, review stage, evidence link, and remaining next step",
+                "That every later use or release was approved"
+              ],
+              [
+                "Verified finding",
+                "Fact, source, verification date or condition, and scope",
+                "A broader claim beyond the evidence"
+              ],
+              [
+                "Blocked task",
+                "Missing prerequisite, owner, and resume condition",
+                "That the blocker was resolved merely because it was recorded"
+              ],
+              [
+                "No-op result",
+                "Condition inspected and why no contribution was eligible",
+                "That future work is permanently unnecessary"
+              ],
+              [
+                "Rejected proposal",
+                "Decision, reason, and source or owner",
+                "That alternatives have also been rejected"
+              ],
+              [
+                "Follow-on work",
+                "New outcome, owning task, and relationship to the closed work",
+                "That creating the task resolves the original gap"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Close the original task truthfully",
+        "paragraphs": [
+          "Close the original task truthfully, then retain only the part another task needs. That makes the next owner faster without smearing the original task’s status across unrelated work.",
+          "For a closure record that links result, verification, limits, and follow-on work, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve the version a conclusion actually covered",
+        "paragraphs": [
+          "Context often becomes unreliable when it loses its object. A decision about a draft, patch, proposal, or packet belongs to a particular version. If the object changes materially, the retained note should identify the new version or state that the old conclusion no longer applies."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Version relationship",
+              "Retained-context action",
+              "Why it protects later work"
+            ],
+            "rows": [
+              [
+                "Same version remains current",
+                "Keep the version reference and its source link",
+                "A reader can inspect exactly what was reviewed"
+              ],
+              [
+                "Minor revision with no effect on conclusion",
+                "Note the revision and why the prior conclusion still applies",
+                "The relationship is explicit rather than assumed"
+              ],
+              [
+                "Material revision",
+                "Link the successor version and request new review if needed",
+                "Old feedback is not silently reused"
+              ],
+              [
+                "New task with a similar artifact",
+                "State that the earlier item is context, not approval",
+                "Similarity does not merge task boundaries"
+              ],
+              [
+                "Superseded decision",
+                "Preserve the old conclusion and link the replacement",
+                "The team can see why guidance changed"
+              ],
+              [
+                "Missing stable version",
+                "Mark the item as uncertain and route a verification question",
+                "A vague “latest” object is not treated as reviewed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The retained item does not need to become an artifact registry",
+        "paragraphs": [
+          "The retained item does not need to become an artifact registry. It only needs enough version information to prevent a future reader from applying a past answer to a different object by implication.",
+          "For stable, reviewable relationships between what changed and what superseded it, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Label what the retained item is allowed to say",
+        "paragraphs": [
+          "An agent may retain a useful observation without presenting it as a verified fact. Evidence labels keep the difference visible for humans and agents who encounter the note after the immediate task context is gone."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Label",
+              "Retained wording should do",
+              "It should not do"
+            ],
+            "rows": [
+              [
+                "Fact",
+                "State the source-supported observation and link it",
+                "Expand past what the cited source supports"
+              ],
+              [
+                "Reported status",
+                "Identify who or what reported the state and when relevant",
+                "Claim the report was independently verified"
+              ],
+              [
+                "Inference",
+                "State the reasoning, assumptions, and alternatives",
+                "Pretend the conclusion is directly observed"
+              ],
+              [
+                "Recommendation",
+                "State the proposed action, tradeoff, and decision owner",
+                "Present a suggestion as an approved decision"
+              ],
+              [
+                "Open question",
+                "Name the missing fact, owner, and next review point",
+                "Disappear into a summary as if settled"
+              ],
+              [
+                "Decision",
+                "Identify the owner, exact scope, and successor effect",
+                "Grant unrelated authority or prove later execution"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Labels are not a cosmetic writing preference",
+        "paragraphs": [
+          "Labels are not a cosmetic writing preference. They help the next agent decide whether to reuse the item, inspect the source, ask for a decision, or stop because the evidence is no longer enough.",
+          "For the labels that distinguish fact, report, inference, recommendation, question, and decision, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Put decision context beside the decision record",
+        "paragraphs": [
+          "Retain the result of a decision in a way that preserves the question it answered. A one-line conclusion can be valuable, but a later owner must still be able to see which options, evidence, and limits shaped the decision before relying on it in a new situation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision context",
+              "Retain in the durable note",
+              "Link for detailed inspection"
+            ],
+            "rows": [
+              [
+                "Decision question",
+                "The exact bounded choice and the condition that prompted it",
+                "The decision packet or focused thread"
+              ],
+              [
+                "Decision owner",
+                "The role or person accountable for the answer",
+                "The recorded decision response"
+              ],
+              [
+                "Accepted answer",
+                "The selected option, scope, and task effect",
+                "The versioned artifact or evidence considered"
+              ],
+              [
+                "Rejected or deferred paths",
+                "The meaningful exclusion or waiting condition",
+                "The rationale and any successor task"
+              ],
+              [
+                "Assumptions",
+                "Conditions the answer depended on",
+                "Sources, checks, or uncertainty noted in review"
+              ],
+              [
+                "Revisit trigger",
+                "What new evidence, scope change, or successor event requires re-evaluation",
+                "The current task or target-system record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The retained note should not invite a future agent",
+        "paragraphs": [
+          "The retained note should not invite a future agent to treat an old answer as a standing instruction. It should make the old decision discoverable and make its boundary obvious.",
+          "For a compact record that gathers evidence and asks one accountable owner for a bounded answer, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Retain the work boundary, not an implied permission",
+        "paragraphs": [
+          "Context can tell a future agent what work was in scope. It cannot silently create permission for a similar but new operation. A work contract, current task, role boundary, and target system still govern what the agent can do now.",
+          "“Research was accepted” can help a future agent understand the evidence and conclusion, but the agent must still check whether the new task has the same question and scope. “Draft was approved” can locate the reviewed version and stage, not establish that publication or a later action is authorized.",
+          "“Access was requested” can explain a prior business purpose and minimum capability, but current access rules and target-system enforcement still decide what is possible. “This convention worked” can seed a working pattern, but a newer source, owner decision, or system change may supersede it.",
+          "“The task was complete” can point to a result and verification path; it does not make a separate task eligible or accepted. Similarly, a prior owner’s choice can explain its rationale and scope, but a new context may require its own accountable decision.",
+          "The safer default is simple: treat retained context as an input to planning and review, not as an authorization to act. When the current work differs materially, create a new bounded task or ask for the relevant owner decision.",
+          "For defining an agent’s present outcome, operations, owner, and stop condition, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Build a small context packet for the successor task",
+        "paragraphs": [
+          "The next task rarely needs an entire project archive. It needs the smallest current bundle that states the outcome, relevant record, evidence, owner, boundary, and stop condition. Retained context can contribute links to that packet, but the packet must be assembled for the new task rather than assumed from old notes."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Successor need",
+              "Bring forward",
+              "Re-check before use"
+            ],
+            "rows": [
+              [
+                "Prior conclusion",
+                "Sourced summary and applicability condition",
+                "Whether the source remains current for this new fact"
+              ],
+              [
+                "Previous artifact",
+                "Exact version and material-change note",
+                "Whether the successor needs a new version or review"
+              ],
+              [
+                "Decision context",
+                "Owner answer, scope, and limit",
+                "Whether the decision applies to this task’s outcome"
+              ],
+              [
+                "Current task state",
+                "Link to the active task and its dependencies",
+                "Assignee, blockers, and latest reported result"
+              ],
+              [
+                "External-state claim",
+                "Target-system verification path and known gap",
+                "The target system’s present record"
+              ],
+              [
+                "Next operation",
+                "Original boundary and proposed task step",
+                "Current role authorization and enforcement path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A well-scoped packet uses retained context",
+        "paragraphs": [
+          "A well-scoped packet uses retained context to prevent repetitive research while preserving the new task’s own owner and decision boundaries. It is a current working set, not a history dump.",
+          "For the smallest current context bundle around one task step, see AI Agent Context Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Context Packet",
+            "path": "/guides/ai-agent-context-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Update or supersede retained context deliberately",
+        "paragraphs": [
+          "Useful notes change over time. Do not overwrite a prior conclusion without showing what replaced it and why. When the source, task scope, evidence, or decision changes, update the retained item so future readers can locate the current record and understand the older item’s status."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change event",
+              "Update the retained item with",
+              "Result for future work"
+            ],
+            "rows": [
+              [
+                "New authoritative source",
+                "Source link, changed fact, and effect on the old conclusion",
+                "Reader checks the newer governing record first"
+              ],
+              [
+                "Decision reversed or narrowed",
+                "New owner answer, boundary, and successor reference",
+                "Old guidance remains historical rather than active"
+              ],
+              [
+                "Artifact superseded",
+                "New version, material differences, and review status",
+                "Feedback is tied to the correct object"
+              ],
+              [
+                "Scope condition changes",
+                "The new applicability limit or a statement that reuse is unsafe",
+                "Agent does not port an old pattern blindly"
+              ],
+              [
+                "Verification fails",
+                "Corrected label, open question, blocker, or escalation",
+                "Reported status is not retained as verified fact"
+              ],
+              [
+                "Context is no longer useful",
+                "A concise reason and successor location, if any",
+                "The team can retire the note without losing traceability"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Shared memory can preserve provenance and version history",
+        "paragraphs": [
+          "Shared memory can preserve provenance and version history, which helps explain where a retained item came from and what replaced it. Still, the memory item should point to the governing source rather than claim that its own history proves a live external state."
+        ]
+      },
+      {
+        "title": "Make follow-on work explicit instead of burying it in memory",
+        "paragraphs": [
+          "A retained note can identify an adjacent discovery, but it does not assign anyone to resolve it. If the discovery has a new outcome, owner, dependency, or acceptance condition, give it a separate task. That keeps current work bounded and lets the team distinguish a useful lesson from an unowned obligation.",
+          "For missing evidence, retain the absent source and why it limited the conclusion; if the team chooses to resolve it, a separate task can obtain, assess, or route the evidence. For a reusable improvement, preserve the pattern, source, and applicability boundary, then create a scoped task only if adoption needs new work.",
+          "For a scope-expansion idea, retain why it is adjacent to the closed outcome and ask a new owner to decide whether it becomes bounded work. For conflicting conventions, preserve the records that disagree and current uncertainty, then route a decision or escalation instead of letting memory select a winner.",
+          "For technical or process debt, record the observed condition and impact without inventing priority; it becomes work only when separately triaged. For a future review, retain what should be revisited and which event matters, then give a scheduled or manual owner a distinct follow-on if appropriate.",
+          "This separation protects the team from a common failure: treating a note about future work as if it were already approved, assigned, or resolved. Retained context identifies the relationship; the follow-on task establishes the new contract.",
+          "For creating adjacent work without silently expanding the original task, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether retained context is still safe to reuse",
+        "paragraphs": [
+          "Before relying on an old note, test its source, scope, and successor relationship. The right answer may be to use it directly, verify the linked record, update the note, or leave it as historical context while asking a new question."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Healthy result"
+            ],
+            "rows": [
+              [
+                "Source test",
+                "Does the note link to the record that supported the conclusion?",
+                "Reader can inspect the evidence rather than trust an orphaned summary"
+              ],
+              [
+                "Applicability test",
+                "Does the new task match the old task’s system, scope, stage, and condition?",
+                "Reuse is limited to a stated fit"
+              ],
+              [
+                "Currency test",
+                "Is there a newer source, artifact, decision, or target-system state?",
+                "Newer governing information takes precedence"
+              ],
+              [
+                "Label test",
+                "Is the item clearly fact, report, inference, recommendation, question, or decision?",
+                "The next agent does not overstate confidence"
+              ],
+              [
+                "Authority test",
+                "Is the note being mistaken for a current instruction or permission?",
+                "Current role and system controls are checked separately"
+              ],
+              [
+                "Successor test",
+                "Does the item point to a follow-on, replacement, or verification path?",
+                "The work can continue without rebuilding history"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the note fails a test",
+        "paragraphs": [
+          "If the note fails a test, preserve it as context but do not treat it as a current basis for action. Update the retained item, open a decision question, or create the appropriately bounded follow-on task."
+        ]
+      },
+      {
+        "title": "Retain context in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Identify the conclusion, convention, open limitation, or decision that a future task genuinely needs.",
+          "Link the source, artifact version, check, owner answer, or target-system record that supports the item.",
+          "Label the item as fact, reported status, inference, recommendation, open question, or decision.",
+          "State its applicability: the task type, system, audience, stage, and condition where it fits.",
+          "State its limit: what it does not authorize, prove, or settle for future work.",
+          "Link the successor, superseding version, follow-on task, or verification path that changes the item’s relevance.",
+          "Store the smallest useful note in the appropriate scope and update the new task with the current owner and next action."
+        ]
+      },
+      {
+        "title": "The resulting note should help a future reader",
+        "paragraphs": [
+          "The resulting note should help a future reader become oriented quickly, not invite them to continue old work without checking the present boundary."
+        ]
+      },
+      {
+        "title": "Seven retained-context mistakes that turn memory into false authority",
+        "paragraphs": []
+      },
+      {
+        "title": "Saving every message instead of a sourced conclusion",
+        "paragraphs": [
+          "An undifferentiated archive is difficult to inspect and makes important limits disappear. Retain the conclusion, evidence link, scope, and successor record; keep the fuller history in its original record."
+        ]
+      },
+      {
+        "title": "Treating a past summary as the current source of record",
+        "paragraphs": [
+          "Memory is useful context, but the source system still owns its own current state. Check the current task, artifact, decision record, or target system when the fact matters."
+        ]
+      },
+      {
+        "title": "Reusing an old decision outside its stated applicability",
+        "paragraphs": [
+          "An accepted answer may fit one task, version, audience, or stage only. When the new work differs materially, request a new decision instead of extending the old one by implication."
+        ]
+      },
+      {
+        "title": "Carrying a report forward as a verified fact",
+        "paragraphs": [
+          "Label who reported the state and link the verification path. Do not let time turn an unverified status update into evidence that an external action occurred."
+        ]
+      },
+      {
+        "title": "Overwriting a superseded conclusion without a successor link",
+        "paragraphs": [
+          "Future readers need to see what changed and where the new record lives. Preserve the relationship so older reasoning does not reappear as current guidance."
+        ]
+      },
+      {
+        "title": "Storing broad sensitive material in shared context",
+        "paragraphs": [
+          "Retain only what future work needs, at the appropriate scope. Do not use shared memory or open discussions as a substitute for restricted systems that handle sensitive information."
+        ]
+      },
+      {
+        "title": "Treating a follow-on note as an assigned task",
+        "paragraphs": [
+          "A discovery can be retained for later. It becomes work only when a new task defines the outcome, owner, inputs, limits, and acceptance condition."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent retained context?",
+        "answer": "It is selected durable information kept after a task so later people or agents can reuse a sourced conclusion, understand its applicability and limits, and find the record that verifies or supersedes it."
+      },
+      {
+        "question": "Is retained context the same as AI agent memory?",
+        "answer": "Retained context is the information chosen for future usefulness; memory is one place it can be stored. A task, artifact, decision record, or source system may still be the governing record for the underlying fact."
+      },
+      {
+        "question": "What should an agent retain after a task?",
+        "answer": "Retain source-linked conclusions, evidence labels, applicability conditions, meaningful limits, exact version references, and successor or verification links. Avoid copying every message or keeping unscoped status claims."
+      },
+      {
+        "question": "Can retained context grant an agent permission to act?",
+        "answer": "No. It can inform planning and review, but the current role contract, accountable owner, and target-system controls determine whether a new action is authorized and enforceable."
+      },
+      {
+        "question": "How should retained context handle a changed decision or artifact?",
+        "answer": "Keep the old item traceable, link the new decision or version, state the material change, and make clear whether the old conclusion is superseded, narrowed, or still applicable under named conditions."
+      },
+      {
+        "question": "When should a retained note become a follow-on task?",
+        "answer": "Create a follow-on task when the note identifies a new outcome that needs an owner, inputs, dependency handling, operations, an artifact, or an acceptance condition. A retained note alone should not create hidden work."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Memory",
+        "path": "/guides/ai-agent-memory/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Context Packet",
+        "path": "/guides/ai-agent-context-packet/"
+      },
+      {
+        "label": "AI Agent Follow-On Work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      }
+    ],
+    "cta": {
+      "title": "Keep context useful without making it controlling",
+      "body": "AI agent retained context helps a team carry the right knowledge across tasks without carrying forward accidental authority. Preserve the sourced conclusion, label its confidence, state where it applies, and link the successor or verification path. That gives future work a fast, truthful starting point while leaving current decisions, permissions, and execution evidence where they belong.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
