@@ -25,6 +25,29 @@ const read = (rel: string): string =>
 
 // Grab the body of the first `<selector> { ... }` block. Selectors here have no
 // nested braces, so a naive slice to the next `}` is sufficient.
+// The team's phone block: the `@media (max-width: 760px)` block that carries
+// `.v2-team__grid`, wherever it sits in the sheet — not the last one.
+const teamPhoneBlock = (css: string): string => {
+  const marker = '@media (max-width: 760px)';
+  let from = 0;
+  for (;;) {
+    const at = css.indexOf(marker, from);
+    if (at < 0) return '';
+    // Walk to the block's own closing brace so a base rule after the block
+    // can never be read as part of it.
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    const block = css.slice(at, end + 1);
+    if (block.includes('.v2-team__grid')) return block;
+    from = end + 1;
+  }
+};
+
 const ruleBody = (css: string, selector: string): string => {
   // Prefer a selector at the start of a CSS line. A descendant selector can
   // contain the same text (`.parent .target {`) and is not the rule being
@@ -123,9 +146,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
+    // Direction C: the name sits in its own column of the card head; the
+    // crush guard is min-width 0 on the name and the head, not a flex basis.
     const rule = ruleBody(v2, '.v2-team-card__name');
-    expect(rule).toContain('flex: 1 0 100%');
     expect(rule).toContain('min-width: 0');
+    expect(ruleBody(v2, '.v2-team-card__head')).toContain('min-width: 0');
   });
 
   test('Your Team card name WRAPS — a primary identifier never one-line-ellipsizes (craft audit rule 1)', () => {
@@ -659,7 +684,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // 390px phone (nav rail eats the rest) — the agent card clipped its
     // "Talk to" button off-screen (2026-07-03 mobile smoke). min(320px, 100%)
     // lets the column collapse to the container width.
-    expect(ruleBody(v2, '.v2-team__grid')).toContain('minmax(min(320px, 100%), 1fr)');
+    // Direction C: three equal columns that can shrink to zero, and ONE column
+    // at ≤760 — the same guarantee (a column never wider than its container)
+    // expressed on the new grid.
+    expect(ruleBody(v2, '.v2-team__grid')).toContain('repeat(3, minmax(0, 1fr))');
+    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
   });
 
   test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
@@ -681,8 +710,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // At <=560px the Profile+Talk-to actions row must wrap to its own line —
     // inline, it squeezes the flex body to zero and the agent NAME disappears
     // (2026-07-05 mobile smoke; same crush family as the #568 chip bug).
-    const idx = v2.indexOf('.v2-team-card__actions {\n    flex-basis: 100%');
-    expect(idx).toBeGreaterThan(-1);
+    // Direction C: the action row is its own flex row under the body and wraps;
+    // it never shares a line with the name.
+    expect(ruleBody(v2, '.v2-team-card__actions')).toContain('flex-wrap: wrap');
   });
 
   test('the a2a-DM system card overrides the two-column message grid', () => {
@@ -950,6 +980,37 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('#f2f4f7');
+  });
+
+  test('Your Team (direction C): three-column card grid, state-coloured marks, cobalt ring for needs-you, ink Hire, no green, old tiers gone', () => {
+    const grid = ruleBody(v2, '.v2-team__grid');
+    expect(grid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(grid).toContain('gap: 12px');
+    expect(ruleBody(v2, '.v2-team-card--needsYou')).toContain('border: 2px solid var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('#101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('#e4e7ec');
+    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: #101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
+    // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
+    // the mark is 600, and the title stacks over its meta on a phone.
+    expect(ruleBody(v2, '.v2-team-card__status--needsYou')).toContain('white-space: normal');
+    expect(ruleBody(v2, '.v2-team-card__command')).toContain('white-space: pre-wrap');
+    expect(ruleBody(v2, '.v2-team-card__command')).toContain('14px/20px');
+    expect(ruleBody(v2, '.v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark')).toContain('font: 600 12px/1');
+    // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
+    // the sheet passed with the rule deleted (sprint-review at 58fb4147).
+    const teamPhone = teamPhoneBlock(v2);
+    expect(ruleBody(teamPhone, '.v2-team__heading')).toContain('flex-direction: column');
+    expect(ruleBody(teamPhone, '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
+    expect(v2).not.toContain('.v2-team-feature ');
+    expect(v2).not.toContain('.v2-team-quiet');
+    expect(v2).not.toContain('v2-team-feature__dot');
+    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-team__grid \{[\s\S]*?repeat\(1, minmax\(0, 1fr\)\)/);
   });
 
   test('history: a mono edge line that loads on scroll and a Jump-to-latest pill', () => {
@@ -1603,11 +1664,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/\{[^\n}]*\{/); // two opens on one line = doubled anchor
   });
 
-  it('featured team card stacks below 640px — the name column never one-chars (spec §5, #568 class)', () => {
-    const mq = v2.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/);
-    expect(mq).not.toBeNull();
-    expect(mq![0]).toContain('.v2-team-feature');
-    expect(mq![0]).toContain('grid-template-columns: 44px minmax(0, 1fr)');
+  it('team card on a phone: one column, so the name column never one-chars (spec §5, #568 class, re-pinned on direction C)', () => {
+    // The featured row is gone; the same guarantee on the card grid is one
+    // column at ≤760 and a card head whose name column can shrink.
+    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-team-card__title')).toContain('min-width: 0');
   });
 
   it('platform tint tokens stay in v2.css and tokens.css, while Signal rows use the cobalt mark', () => {

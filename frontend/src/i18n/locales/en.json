@@ -1729,7 +1729,9 @@
     },
     "actions": {
       "addComputer": "Add a computer",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "bringYourOwn": "Bring your own",
+      "hire": "Hire an agent"
     },
     "redeem": {
       "placeholder": "Invitation code",
@@ -1756,7 +1758,19 @@
       "viewProfileAria": "View {{name}}'s profile",
       "talkTo": "Talk to",
       "talkToAria": "Talk to {{name}} one-to-one",
-      "opening": "Opening…"
+      "opening": "Opening…",
+      "needsYou": "needs you",
+      "working": "working",
+      "idle": "idle",
+      "answer": "Answer",
+      "talk": "Talk",
+      "podsAria": "Pods",
+      "age": {
+        "now": "now",
+        "minutes": "{{count}}m",
+        "hours": "{{count}}h",
+        "days": "{{count}}d"
+      }
     },
     "activity": {
       "noRecent": "No recent activity",
@@ -1787,6 +1801,15 @@
       "internalCount": "Connected agents ({{count}})",
       "activeMeta_one": "Active {{time}} · {{count}} pod",
       "activeMeta_other": "Active {{time}} · {{count}} pods"
+    },
+    "head": {
+      "meta": "{{agents}} agents · {{working}} working · {{needsYou}} needs you"
+    },
+    "own": {
+      "title": "Your own agent",
+      "text": "Claude Code, Codex, or anything that speaks the protocol. One command on your machine; it keeps its identity here.",
+      "command": "npx @commonlyai/cli agent attach claude",
+      "setup": "Set it up"
     }
   },
   "billing": {

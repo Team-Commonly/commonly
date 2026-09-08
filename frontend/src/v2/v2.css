@@ -1493,7 +1493,6 @@ body.modern-ui.v2-canvas {
   text-overflow: ellipsis;
 }
 
-
 .v2-chat__avatars {
   display: flex;
   align-items: center;
@@ -1628,7 +1627,6 @@ body.modern-ui.v2-canvas {
   text-overflow: ellipsis;
   max-width: 720px;
 }
-
 
 .v2-chat__state-strip {
   min-height: 42px;
@@ -4122,200 +4120,6 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------- Your Team category tab bar ---------- */
-/* Your Team tiers (Wren spec §1, Sam-ruled 2026-08-30). "Working now" is
-   the only tier with a liveness dot — everywhere else time text carries the
-   signal (audit rule 6). Borders, not shadows. */
-.v2-team__tier { margin-top: 22px; }
-.v2-team__tier-title {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--v2-text-secondary);
-  margin: 0 0 10px;
-}
-.v2-root button.v2-team__tier-toggle {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-}
-.v2-root button.v2-team__tier-toggle:hover { color: var(--v2-text-primary); }
-.v2-team__featured {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.v2-team-feature {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--v2-border);
-  border-radius: 12px;
-  background: var(--v2-surface);
-  cursor: pointer;
-  transition: border-color 0.12s ease;
-}
-.v2-team-feature:hover { border-color: var(--v2-border-strong); }
-.v2-team-feature__body { min-width: 0; }
-.v2-team-feature__name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.v2-team-feature__name {
-  font-size: var(--v2-fs-feature);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  color: var(--v2-text-primary);
-  overflow-wrap: anywhere;
-}
-.v2-team-feature__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-success);
-  flex-shrink: 0;
-}
-.v2-team-feature__doing {
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-  margin-top: 2px;
-}
-.v2-team-feature__doing em { font-style: normal; font-weight: 600; }
-/* Snippet variant: one line, ellipsized — a 200-char quote must not
-   change the card's height (grid column is already minmax(0,1fr)). */
-.v2-team-feature__doing--snippet {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.v2-team-feature__meta {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  margin-top: 2px;
-}
-.v2-team-feature__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.v2-root button.v2-team-feature__profile {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-}
-.v2-root button.v2-team-feature__profile:hover { color: var(--v2-accent-text); }
-/* Featured card below 640px: the three-column grid crushes the name to one
-   character per line (the #568 name-crush class, reborn on a new card at
-   390px — caught in the mandatory mobile pass). Stack: actions drop to
-   their own row under the body, name keeps the full text column. */
-@media (max-width: 640px) {
-  .v2-team-feature {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-  .v2-team-feature__actions {
-    grid-column: 2;
-    justify-content: flex-start;
-    margin-top: 4px;
-  }
-}
-
-/* Standard card: one left edge, no dot, no button pair. Talk-to is an
-   always-visible 28px icon (Sam's BEND-2 ruling — hover-reveal rejected). */
-.v2-root button.v2-team-card__talk-icon {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.v2-root button.v2-team-card__talk-icon:hover {
-  border-color: var(--v2-accent);
-  color: var(--v2-accent-text);
-  background: var(--v2-accent-soft);
-}
-.v2-root button.v2-team-card__talk-icon:disabled { opacity: 0.5; cursor: default; }
-.v2-team-quiet {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-.v2-team-quiet__row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 4px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-team-quiet__row:last-child { border-bottom: none; }
-.v2-team-quiet__name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--v2-text-primary);
-}
-.v2-team-quiet__seen {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  margin-left: auto;
-}
-.v2-team-quiet__profile { font-size: 12px; }
-
-.v2-team__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-
-.v2-root button.v2-team__tab,
-.v2-team__tab {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-
-.v2-root button.v2-team__tab:hover,
-.v2-team__tab:hover {
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-primary);
-}
-
-.v2-root button.v2-team__tab--active,
-.v2-team__tab--active {
-  background: var(--v2-accent);
-  color: #fff;
-  border-color: var(--v2-accent);
-}
-
-.v2-root button.v2-team__tab--active:hover,
-.v2-team__tab--active:hover {
-  background: var(--v2-accent);
-  color: #fff;
-}
 
 /* ---------- Invite modal + redeem page ---------- */
 .v2-modal__overlay {
@@ -5665,7 +5469,6 @@ body.modern-ui.v2-canvas {
     cursor: pointer;
   }
 
-
   /* Close (X) inside the drawer header. Title row becomes a flex row so the
      X sits at the far end. Drop the fixed 32px height so the 44px tap target
      fits. */
@@ -5702,324 +5505,6 @@ body.modern-ui.v2-canvas {
     grid-template-columns: 1fr;
     gap: 4px;
   }
-}
-
-/* ============================================================
-   "Your Team" page (v2/agents) — roster of installed agents
-   ============================================================ */
-
-.v2-team {
-  padding: 32px 40px 64px;
-  max-width: 1120px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.v2-team__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-
-.v2-team__title {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0 0 6px;
-  letter-spacing: -0.01em;
-}
-
-.v2-team__subtitle {
-  margin: 0;
-  color: #5f6470;
-  font-size: 14px;
-}
-
-.v2-root button.v2-team__hire-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--v2-accent);
-  color: #fff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s ease;
-}
-.v2-root button.v2-team__hire-cta:hover { background: var(--v2-accent-strong); }
-.v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-
-.v2-team__actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.v2-team__empty-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.v2-root button.v2-team__byo-cta {
-  background: transparent;
-  color: var(--v2-accent);
-  border: 1px solid var(--v2-border);
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.v2-root button.v2-team__byo-cta:hover { background: var(--v2-accent-soft); border-color: var(--v2-accent); }
-.v2-root button.v2-team__byo-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-
-.v2-team__error {
-  padding: 12px 14px;
-  background: #fdf2f2;
-  border: 1px solid #f4caca;
-  border-radius: 8px;
-  color: #8a2929;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
-
-/* Invite-code access is a quiet line under the roster title, not a notice
-   card competing with the team's primary work. The linked code path remains
-   available when a user has one. */
-.v2-team__entitlement-notice {
-  margin: -12px 0 20px;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.v2-team__redeem {
-  padding: 10px 14px;
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-  margin-bottom: 20px;
-}
-
-.v2-team__redeem--success {
-  background: #f0f9f1;
-  border-color: #c4e6c9;
-  color: #1e6b2a;
-}
-
-.v2-root button.v2-team__redeem-link {
-  color: var(--v2-accent);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: underline;
-  background: none;
-  padding: 0;
-}
-
-.v2-team__redeem-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.v2-team__redeem-form .v2-login__input {
-  max-width: 240px;
-}
-
-.v2-team__redeem-error {
-  color: var(--v2-danger);
-  font-size: 12px;
-}
-
-.v2-team__empty {
-  border: 1px dashed #d9dce3;
-  border-radius: 12px;
-  padding: 56px 32px;
-  text-align: center;
-  background: #fafbfc;
-}
-.v2-team__empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.v2-team__empty-text {
-  color: #5f6470;
-  margin-bottom: 24px;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-  font-size: 14px;
-}
-
-.v2-team__grid {
-  display: grid;
-  /* min(320px, 100%): a bare 320px floor overflows the ~326px content area
-     on a 390px phone (nav rail eats the rest) — the card clipped its
-     "Talk to" button off-screen (2026-07-03 mobile smoke). */
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-  gap: 16px;
-}
-
-.v2-team-card {
-  display: flex;
-  gap: 14px;
-  padding: 16px;
-  background: #fff;
-  border: 1px solid #e4e6eb;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-  /* Spec §1.3: one internal grid, vertically centered — the icon action and
-     the two-line body share a center axis instead of ragged tops. */
-  align-items: center;
-}
-.v2-team-card:hover {
-  border-color: #c7c9d4;
-  transform: translateY(-1px);
-}
-.v2-team-card:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
-}
-
-.v2-team-card__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.v2-team-card__name-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-bottom: 2px;
-}
-
-.v2-team-card__name {
-  /* Own the full first line so the category chip + runtime badge wrap to a meta
-     line below instead of flex-crushing the name to a single ellipsized char
-     (the "AI Citation Strategist" → "/" bug). Re-applied after a stale-base
-     revert of the original fix (d8140397). */
-  flex: 1 0 100%;
-  min-width: 0;
-  font-weight: 650;
-  font-size: 15px;
-  color: #1a1c22;
-  /* Craft audit 2026-08-22, rule 1: a primary identifier never ellipsizes at
-     one line — at 1440px HALF the fleet's names truncated. Wrap to two lines;
-     clamp only pathological lengths. */
-  white-space: normal;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  line-height: 1.3;
-}
-
-/* .v2-team-card__runtime removed 2026-08-22: runtime vocabulary on cards
-   violated ratified ADR-022 D1 (craft audit finding 2). */
-
-.v2-team-card__pod {
-  font-size: 13px;
-  color: #5f6470;
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.v2-team-card__pod em {
-  font-style: normal;
-  color: #1a1c22;
-  font-weight: 500;
-}
-
-.v2-team-card__activity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #6b6f7a;
-}
-
-.v2-team-card__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #c8cbd2;
-  display: inline-block;
-}
-.v2-team-card__dot[data-active="true"] {
-  background: #25c281;
-}
-
-/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
-   reset (0,0,2,1) — prefix with .v2-root button.X so source order wins. Same
-   pattern as .v2-chat__send / .v2-pods__item--active. */
-.v2-root button.v2-team-card__talk {
-  align-self: center;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-accent);
-  background: transparent;
-  border: 1px solid var(--v2-accent);
-  border-radius: var(--v2-radius-sm);
-  white-space: nowrap;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-team-card__actions {
-  align-self: center;
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.v2-root button.v2-team-card__profile {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: transparent;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-sm);
-  cursor: pointer;
-}
-.v2-root button.v2-team-card__profile:hover {
-  color: var(--v2-text-primary);
-  border-color: var(--v2-border);
-}
-.v2-root button.v2-team-card__talk:hover {
-  background: var(--v2-accent);
-  color: #fff;
-}
-.v2-root button.v2-team-card__talk:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-@media (max-width: 760px) {
-  .v2-team { padding: 20px 16px 48px; }
-  .v2-team__header { flex-direction: column; }
 }
 
 /* Plan/Execute pill in pod chat header (replaces banner state-strip) */
@@ -7144,16 +6629,6 @@ body.modern-ui.v2-canvas {
    squeeze the body column to zero width — the agent NAME disappeared at 390px
    (mobile smoke 2026-07-05, worsened by the added Profile button). Wrap the
    actions onto their own full-width row instead of competing with the name. */
-@media (max-width: 560px) {
-  .v2-team-card {
-    flex-wrap: wrap;
-  }
-  .v2-team-card__actions {
-    flex-basis: 100%;
-    justify-content: flex-end;
-    margin-top: 4px;
-  }
-}
 
 /* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
    the actions live in the .v2-msg__actions hover cluster now — one pill,
@@ -8890,7 +8365,6 @@ body.modern-ui.v2-canvas {
 /* This is deliberately outside the expand button: it must aim the composer
    without toggling the rail, and nested controls are invalid HTML. */
 
-
 .v2-thread-card__count {
   font-weight: 500;
   display: inline-flex;
@@ -8924,9 +8398,6 @@ body.modern-ui.v2-canvas {
 .v2-thread-card__time {
   color: #7b8494;
 }
-
-
-
 
 /* Expanded replies hang off a left rail at the thread block's own edge.
    The rail used to aim at the root avatar's centre (margin-left 14, rev 2);
@@ -9994,6 +9465,9 @@ body.modern-ui.v2-canvas {
  * zh-CN. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-team__title,
+.v2-root:lang(zh) .v2-team-card__name,
+.v2-root:lang(zh) .v2-team__empty-title,
 .v2-root:lang(zh) .v2-pods__title,
 .v2-root:lang(zh) .v2-chat__title,
 .v2-root:lang(zh) .v2-thread__title h1,
@@ -10018,7 +9492,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
-.v2-root:lang(zh) .v2-team__title,
 .v2-root:lang(zh) .v2-activity__title,
 .v2-root:lang(zh) .v2-activity__compose-label,
 .v2-root:lang(zh) .v2-activity__section h2,
@@ -10027,7 +9500,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-team-feature__name,
 .v2-root:lang(zh) .v2-connect__lane h2,
 .v2-root:lang(zh) .v2-connect__gateway h3 {
   letter-spacing: 0;
@@ -12181,4 +11653,118 @@ body.modern-ui.v2-canvas {
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+/* ---------------------------------------------------------------------------
+   Your Team — direction C, Signal (docs/design/signal-identity.md §4 "Cards in a
+   grid"). One card per agent; the mark's colour is the state; the one that
+   needs you carries the 2px cobalt ring. Ink acts (Hire, Answer); secondaries
+   are bordered; status is mono because it is data.
+   --------------------------------------------------------------------------- */
+.v2-team { display: flex; flex-direction: column; gap: 24px; }
+.v2-team__head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.v2-team__heading { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.v2-team__title { margin: 0; font: 700 32px/1.1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
+.v2-team__meta { font-size: 13px; color: var(--v2-text-muted); white-space: nowrap; }
+.v2-team__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
+/* Ink acts (signal-identity §2): Hire is the page's one filled control. */
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
+.v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-team__notice--ok { color: var(--v2-text-primary); }
+.v2-team__redeem { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.v2-team__redeem-input { height: 36px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; font: 400 14px/20px var(--v2-font); }
+.v2-team__redeem-error { color: var(--v2-text-primary); font-size: 13px; }
+.v2-root button.v2-team__link { padding: 0; border: 0; background: transparent; color: var(--v2-accent-text); font: 500 13px/20px var(--v2-font); cursor: pointer; }
+.v2-team__error { font-size: 13px; color: var(--v2-text-primary); border: 1px solid var(--v2-border); border-radius: 4px; padding: 10px 12px; }
+.v2-team__empty { border: 1px dashed var(--v2-border); border-radius: 4px; padding: 20px; }
+.v2-team__empty-title { font: 700 var(--v2-fs-feature)/1.2 var(--v2-font-display); letter-spacing: -0.02em; margin-bottom: 6px; }
+.v2-team__empty-text { font-size: 13px; color: var(--v2-text-secondary); }
+
+.v2-team__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.v2-team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  min-width: 0;
+}
+/* The one that needs you: a ring, never a tinted background (state grammar §3). */
+.v2-team-card--needsYou { border: 2px solid var(--v2-accent); padding: 15px; }
+.v2-team-card--own { border-style: dashed; }
+.v2-team-card__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.v2-root button.v2-team-card__mark {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  font: 600 12px/1 var(--v2-font);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+}
+.v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
+.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
+.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-team-card__title { min-width: 0; }
+/* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
+   two lines, then clamp; min-width 0 so the grid column can shrink under it. */
+.v2-team-card__name {
+  font: 700 18px/1.2 var(--v2-font-display);
+  letter-spacing: -0.02em;
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+.v2-team-card__status { margin-top: 2px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-team-card__status--needsYou,
+.v2-team-card__status--working { color: var(--v2-accent-text); }
+/* The ask is the line's content — it wraps, it never ellipsizes (66246 (3)). */
+.v2-team-card__status--needsYou { white-space: normal; overflow: visible; text-overflow: clip; }
+.v2-team-card__status--working .v2-team-card__dot { animation: v2-team-pulse 1.6s ease-in-out infinite; }
+@keyframes v2-team-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-team-card__status--working .v2-team-card__dot { animation: none; }
+}
+.v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+.v2-team-card__pods { display: flex; gap: 6px; flex-wrap: wrap; }
+.v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
+.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
+.v2-team__internal { display: flex; flex-direction: column; gap: 8px; }
+.v2-root button.v2-team__internal-toggle { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-team__internal-list { display: flex; gap: 6px; flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+  .v2-team__head { flex-direction: column; align-items: flex-start; }
+  /* The title never wraps beside its meta: stack them (66246 (1)). */
+  .v2-team__heading { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .v2-team__meta { white-space: normal; }
+  .v2-team__grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .v2-root button.v2-team-card__answer,
+  .v2-root button.v2-team-card__talk,
+  .v2-root button.v2-team__byo,
+  .v2-root button.v2-team__hire { min-height: 44px; }
 }
