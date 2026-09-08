@@ -63,7 +63,7 @@ The focus revision covers authored goal/scope/owner/order, not live Task fields.
 
 Read requires authenticated pod membership (or existing explicit admin access implemented consistently); publicRead alone is not focus access. Runtime/bot readers must retain existing installation/pod checks. Resolve authorization before returning focus, owner choices, task choices, conflict payloads or validation detail.
 
-Pilot writes: authenticated human pod creator or human global admin. Check User server-side; member, agent/runtime token, focus owner, claimed-task owner and client-supplied role do not confer edit authority. Reuse current auth/rate-limit conventions; do not widen unrelated endpoints. Return 401/403 for unauthorized writes with no mutation.
+Pilot writes: authenticated human pod creator or human global admin. Load the authenticated User server-side and require `isBot === false` before testing creator/admin authority (Sprint Review 65836); token type and a userId parameter are not evidence of a human. A bot creator/admin must still fail. Missing or ambiguous human classification fails closed. Member, agent/runtime token, focus owner, claimed-task owner and client-supplied role do not confer edit authority. Reuse current auth/rate-limit conventions; do not widen unrelated endpoints. Return 401/403 for unauthorized writes with no mutation.
 
 Use `PATCH /api/pods/:id/focus` with `{ expectedRevision, focus: { goal, scope, ownerUserId, nextTaskIds } }`. Require expectedRevision, including 0 on first create. Optional explicit clear is `{ expectedRevision, focus: null }`; preserve a revision tombstone on Pod so clear/recreate cannot accept an old revision. Do not unset the version or use the whole Pod's `__v` (unrelated membership/chat writes should not create focus conflicts).
 
@@ -107,7 +107,7 @@ Read-only viewers see all focus content and no edit action. Legacy empty state i
 
 | Proof | Required assertion | Owner / evidence status |
 | --- | --- | --- |
-| Service + authenticated API | Creator/admin success; member/agent/nonmember rejection; spoofed role/editor ignored; invalid owner/task/cross-pod ID/duplicate/size reject; no partial writes | Sprint Impl + Sprint Review / pending |
+| Service + authenticated API | Human creator/admin success; bot creator/admin, member/agent/nonmember rejection; spoofed role/editor ignored; invalid owner/task/cross-pod ID/duplicate/size reject; no partial writes | Sprint Impl + Sprint Review / pending |
 | Concurrency | Parallel N writes: one N+1 and one 409; first creation race; clear/recreate cannot accept old N; unchanged unrelated Pod fields | Sprint Impl + Sprint Review / pending |
 | Read parity | Populated and never-set/cleared pods: board focus DTO equals human/runtime/bot context focus; MCP keeps fields; task status update resolves without changing authored order | Sprint Impl + Sprint Review / pending |
 | Lifecycle | Missing task/departed owner safe placeholders; no cross-pod detail; legacy no backfill; context read failure distinct from null; pod switch discards stale results | Sprint Impl + Sprint Review / pending |
