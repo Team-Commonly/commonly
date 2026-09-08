@@ -130,7 +130,7 @@ const V2PodBoard: React.FC = () => {
   const api = useV2Api();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { socket, connected } = useSocket();
+  const { socket, connected, joinPod, leavePod } = useSocket();
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [podName, setPodName] = useState<string>('');
@@ -261,6 +261,12 @@ const V2PodBoard: React.FC = () => {
 
   useEffect(() => {
     if (!podId || !socket || !connected) return undefined;
+    joinPod(podId);
+    return () => { leavePod(podId); };
+  }, [podId, socket, connected, joinPod, leavePod]);
+
+  useEffect(() => {
+    if (!podId || !socket || !connected) return undefined;
     const onFocusUpdated = (payload: { podId?: string } | null) => {
       if (!payload || (payload.podId && payload.podId !== podId)) return;
       loadFocus();
@@ -268,6 +274,13 @@ const V2PodBoard: React.FC = () => {
     socket.on('pod_focus_updated', onFocusUpdated);
     return () => { socket.off('pod_focus_updated', onFocusUpdated); };
   }, [podId, socket, connected, loadFocus]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onConnect = () => { loadFocus(); };
+    socket.on('connect', onConnect);
+    return () => { socket.off('connect', onConnect); };
+  }, [socket, loadFocus]);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'visible') loadFocus(); };
