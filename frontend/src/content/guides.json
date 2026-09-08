@@ -8254,6 +8254,10 @@
       {
         "label": "AI Agent Audience Boundaries",
         "path": "/guides/ai-agent-audience-boundaries/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -11120,6 +11124,10 @@
       {
         "label": "AI agent interim results",
         "path": "/guides/ai-agent-interim-results/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
       }
     ],
     "cta": {
@@ -14011,6 +14019,10 @@
       {
         "label": "AI agent interim results",
         "path": "/guides/ai-agent-interim-results/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
       }],
     "cta": {
       "title": "Make the missing answer easy to supply",
@@ -17569,6 +17581,10 @@
       {
         "label": "AI agent interim results",
         "path": "/guides/ai-agent-interim-results/"
+      },
+      {
+        "label": "AI Agent Stop Conditions",
+        "path": "/guides/ai-agent-stop-conditions/"
       }
     ],
     "cta": {
@@ -28848,6 +28864,710 @@
     "cta": {
       "title": "Keep the right message with the right owner",
       "body": "AI agent audience boundaries help teams make useful communication without creating accidental commitments. State the recipient, purpose, content limit, owner, and authorized channel; prepare focused packets for review; and escalate when a broader audience or stronger claim is unclear. That lets an agent contribute clearly inside the task while leaving commitments, delivery, and proof where they belong.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-stop-conditions": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Stop Conditions: When Agents Should Halt | Commonly",
+    "title": "AI Agent Stop Conditions: When an Agent Should Halt Work",
+    "description": "Learn how to define AI agent stop conditions, distinguish halting from pausing, no-op, and escalation, and leave a useful record for the next owner.",
+    "summary": "AI agent stop conditions are the facts or boundaries that require an agent to halt its current work rather than continue by assumption. A stop condition can mean the task is complete for its stated scope, no contribution is eligible, a required input or decision is missing, a role boundary has been reached, or a different owner must decide the next action. The agent’s job is to leave the task in a truthful next state—not to keep working until it can claim completion.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "AI agent stop conditions are the facts or boundaries that require an agent to halt its current work rather than continue by assumption. A stop condition can mean the task is complete for its stated scope, no contribution is eligible, a required input or decision is missing, a role boundary has been reached, or a different owner must decide the next action. The agent’s job is to leave the task in a truthful next state—not to keep working until it can claim completion.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams tasks with status, assignee, and activity timeline, plus threads, attachments, and shared memory for the evidence behind a stop. A task can show whether work is claimed, blocked, or done and can link to the resulting artifact or decision. Those records coordinate a halt and handoff. They do not provide technical permission for a later operation or prove that an external system changed state.",
+      "Stopping is not an agent failure. It is the correct result when continuing would require invented evidence, broader scope, new access, a missing owner decision, or an external action outside the role. A reliable agent can distinguish that halt from a temporary pause, a no-op, an escalation, or a task closure.",
+      "This guide explains how to write AI agent stop conditions, how to choose the right stopped state, and what a useful stopping record must leave for the person or agent who takes the next step."
+    ],
+    "sections": [
+      {
+        "title": "A stop condition is part of the task contract",
+        "paragraphs": [
+          "The task should state not only what an agent is expected to produce, but also when it must stop. A useful stop condition is observable enough that the agent and reviewer can tell whether the boundary was reached without relying on an agent’s confidence or conversational tone."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Stop-condition type",
+              "Agent halts when",
+              "Useful record"
+            ],
+            "rows": [
+              [
+                "Outcome boundary",
+                "The stated artifact or result has reached its accepted task stage",
+                "Version, acceptance answer, next owner, and remaining limit"
+              ],
+              [
+                "Evidence boundary",
+                "Required source, check, or verification is missing or conflicts",
+                "Gap, relevant sources, effect, and decision or research owner"
+              ],
+              [
+                "Scope boundary",
+                "Requested work falls outside the outcome, non-goals, or permitted operations",
+                "Original boundary, proposed expansion, and owner question"
+              ],
+              [
+                "Authority boundary",
+                "The next step needs a decision, access, or commitment outside the role",
+                "Minimum request, options, and accountable owner"
+              ],
+              [
+                "Dependency boundary",
+                "A required artifact, result, or system state is not available",
+                "Dependency, owner, effect of waiting, and resume condition"
+              ],
+              [
+                "Safety boundary",
+                "Work would expose sensitive information, bypass a control, or create a hard-to-reverse action",
+                "Minimal factual record and designated escalation path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Put these conditions where the agent can use them",
+        "paragraphs": [
+          "Put these conditions where the agent can use them before it acts. A stop condition that appears only after an unexpected request is less reliable than a task contract that names the expected boundary upfront.",
+          "For contracts that define outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Distinguish halt, pause, no-op, escalation, and closure",
+        "paragraphs": [
+          "Several task states can look like “stop,” but they explain different situations. Choosing the right one tells the next owner whether to wait, decide, verify, resume, or leave the work alone."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "State",
+              "Use it when",
+              "Record should make clear"
+            ],
+            "rows": [
+              [
+                "Halt at a boundary",
+                "The current role must not take the next action",
+                "What boundary was reached and who or what owns the next answer"
+              ],
+              [
+                "Pause or waiting state",
+                "A known event, time, or dependency may make work eligible later",
+                "The observable resume condition and current task state"
+              ],
+              [
+                "No-op",
+                "The agent checked the condition and no eligible contribution exists now",
+                "What was inspected and why routine work stopped"
+              ],
+              [
+                "Escalation",
+                "A decision, authority, or conflict outside the role must be answered",
+                "Question, evidence, options, and decision owner"
+              ],
+              [
+                "Blocked",
+                "A missing required state prevents the task’s next contribution",
+                "Prerequisite, effect, owner, and resume condition"
+              ],
+              [
+                "Closure",
+                "The task has reached its stated result for the named scope",
+                "Result reference, verification path, limits, and follow-ons"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The same task may move through several states",
+        "paragraphs": [
+          "The same task may move through several of these states. An agent may stop at an authority boundary, post an escalation packet, and later resume after an owner’s answer. It should not label that path “done” before the task’s own closure condition is met.",
+          "For when doing nothing is a valid result rather than a hidden blocker, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Stop before a missing fact becomes an invented conclusion",
+        "paragraphs": [
+          "The agent should stop when the next output would require it to guess. This includes missing evidence, conflicting sources, unclear system state, ambiguous instructions, and a claim whose verification record is unavailable."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Agent can do before stopping",
+              "Agent should not do"
+            ],
+            "rows": [
+              [
+                "Source is missing",
+                "Name the missing source and prepare the question it would answer",
+                "Invent a fact or citation"
+              ],
+              [
+                "Sources conflict",
+                "Preserve both positions, relevance, and decision needed",
+                "Select a governing source by confidence alone"
+              ],
+              [
+                "External state is unverified",
+                "Report status with a verification gap and target record needed",
+                "Claim the action occurred from a task comment"
+              ],
+              [
+                "Instruction is ambiguous",
+                "State the possible interpretations and effect of each",
+                "Choose the broader or riskier operation"
+              ],
+              [
+                "Required input is incomplete",
+                "Prepare the available structure and input checklist",
+                "Fill unknown fields with assumptions presented as settled"
+              ],
+              [
+                "Check failed or is unavailable",
+                "Record observations, limitation, and next owner",
+                "Self-certify acceptance or bypass the check"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A useful halt preserves the work that was possible",
+        "paragraphs": [
+          "A useful halt preserves the work that was possible. It can return a source map, draft outline, check report, or decision packet while making clear why the primary task cannot proceed to a stronger conclusion.",
+          "For blockers that state the missing prerequisite, effect, owner, and resume condition, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Leave a stopping record the next owner can act on",
+        "paragraphs": [
+          "“Cannot continue” is not enough. The stopping record should make the boundary, evidence, current work state, and next owner clear so another participant can decide or resume without reconstructing the task from scratch."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Stopping-record field",
+              "Include",
+              "Next owner can tell"
+            ],
+            "rows": [
+              [
+                "Current task",
+                "Outcome, stage, status, and contribution already completed",
+                "What work the halt applies to"
+              ],
+              [
+                "Stop trigger",
+                "Missing fact, scope change, authority request, dependency, or safety concern",
+                "Why continuing would be inappropriate"
+              ],
+              [
+                "Evidence",
+                "Sources, artifact version, check result, or observed condition",
+                "What is known and what remains uncertain"
+              ],
+              [
+                "Boundary",
+                "What the agent did not do and why",
+                "Which operation or claim stays outside scope"
+              ],
+              [
+                "Owner",
+                "Person, role, or system that must answer or provide a state",
+                "Where the task should go next"
+              ],
+              [
+                "Resume or closure path",
+                "Observable condition and next eligible action",
+                "Whether the task can restart or should remain stopped"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The record should be concise but specific",
+        "paragraphs": [
+          "The record should be concise but specific. “Draft v2 attached; claims two and three lack source support; editor must select a source rule before a revision can proceed” is actionable. “Blocked—need help” is not.",
+          "For a focused packet that asks one owner for a bounded decision, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Return useful work even when the primary task stops",
+        "paragraphs": [
+          "Halting the main path does not erase the work that was valid inside the boundary. An agent can hand back a source-linked partial artifact, a check result, an evidence map, a recommendation labeled as such, or a decision-ready packet—provided it identifies the remaining gap."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Stopped task has",
+              "Interim result can include",
+              "It must not claim"
+            ],
+            "rows": [
+              [
+                "Incomplete research",
+                "Sources gathered, conflict map, evidence labels, and open question",
+                "That the final interpretation is settled"
+              ],
+              [
+                "Draft waiting for review",
+                "Exact version, criteria, check summary, and reviewer request",
+                "That the draft is accepted or published"
+              ],
+              [
+                "Dependency wait",
+                "Completed preparation, required state, owner, and effect",
+                "That the dependency is resolved"
+              ],
+              [
+                "Access boundary",
+                "Minimum capability need, purpose, alternatives, and stop point",
+                "That access was granted or used"
+              ],
+              [
+                "Verification gap",
+                "Reported status, target record needed, and limitation",
+                "That an external action occurred"
+              ],
+              [
+                "Scope conflict",
+                "Original outcome, proposed change, and owner question",
+                "That the expanded work is now in scope"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is how an agent makes a good stop productive",
+        "paragraphs": [
+          "This is how an agent makes a good stop productive: it returns everything the next owner needs to resolve the boundary, while leaving the final claim, decision, or operation for the record and role that actually own it.",
+          "For partial returns that remain truthful while a task is waiting or blocked, see AI Agent Interim Results."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Interim Results",
+            "path": "/guides/ai-agent-interim-results/"
+          }
+        ]
+      },
+      {
+        "title": "Escalate a decision boundary instead of retrying it",
+        "paragraphs": [
+          "When the stop condition is not merely a missing input but a decision, authority, priority, policy, or sensitive-action boundary, the agent should escalate. Retrying the task, asking the same ambiguous question repeatedly, or producing more drafts does not resolve a choice the role is not allowed to make."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Boundary reached",
+              "Escalation should ask",
+              "Useful options or evidence"
+            ],
+            "rows": [
+              [
+                "Scope expansion",
+                "Keep, narrow, split, defer, or reject the proposed change",
+                "Original contract, requested delta, impact, and non-goals"
+              ],
+              [
+                "New system capability",
+                "Whether minimum access should be authorized through the proper path",
+                "Purpose, minimum need, alternatives, and current limit"
+              ],
+              [
+                "Policy or priority conflict",
+                "Which rule or work item governs",
+                "Conflicting sources, affected tasks, and tradeoffs"
+              ],
+              [
+                "Public or customer commitment",
+                "Whether exact language or action is approved for the audience",
+                "Draft wording, factual basis, risks, and owner"
+              ],
+              [
+                "Hard-to-reverse operation",
+                "Whether the action should proceed and under what conditions",
+                "Recovery information, evidence, and smallest proposed action"
+              ],
+              [
+                "Missing decision owner",
+                "Who should be assigned to the question",
+                "Decision needed, effect of waiting, and available context"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Escalation is a success condition",
+        "paragraphs": [
+          "Escalation is a success condition for a bounded role. The agent’s responsibility is to make the decision easier, not to approximate the answer and continue as if authority were implied.",
+          "For when to hand work upward and what an escalation packet needs, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Use a pause only when a real resume condition exists",
+        "paragraphs": [
+          "Pausing is appropriate when a known condition can make the next contribution eligible later. It is not a euphemism for an unresolved owner, an unspecified dependency, or a task that has lost its purpose."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Pause reason",
+              "Valid resume condition",
+              "Not a resume condition"
+            ],
+            "rows": [
+              [
+                "Awaiting source",
+                "Named source arrives or owner selects the governing source",
+                "“More information may appear”"
+              ],
+              [
+                "Awaiting review",
+                "Named reviewer records accept-or-change answer on the version",
+                "“Someone has seen the thread”"
+              ],
+              [
+                "Awaiting dependency",
+                "Linked task or system result satisfies the required state",
+                "“Another task is in progress”"
+              ],
+              [
+                "Awaiting access",
+                "Authorized system grants the minimum capability or selects an alternative",
+                "“The agent wants to try a new tool”"
+              ],
+              [
+                "Awaiting event",
+                "Named event occurs and the relevant record can be inspected",
+                "“Time has passed”"
+              ],
+              [
+                "Awaiting correction",
+                "New version addresses the stated gap and returns for re-review",
+                "“The agent has worked on it again”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If no observable condition exists",
+        "paragraphs": [
+          "If no observable condition exists, the right result may be an escalation, a blocked task with an ownership gap, a no-op, or a task re-scope. Do not let a pause conceal that the team has not decided what could restart the work.",
+          "For defining the conditions that change task eligibility, see AI Agent Resume Conditions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Resume Conditions",
+            "path": "/guides/ai-agent-resume-conditions/"
+          }
+        ]
+      },
+      {
+        "title": "Close work when the task boundary is actually satisfied",
+        "paragraphs": [
+          "Closure is a particular stop condition: the task’s stated result exists, the acceptance path is satisfied for the named scope, and any continuing limitation or follow-on work is visible. It is not a reward for effort or a label for a task that merely paused."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure check",
+              "Record needed",
+              "Do not infer"
+            ],
+            "rows": [
+              [
+                "Result",
+                "Exact artifact, decision, check, or output reference",
+                "That a different or later artifact is included"
+              ],
+              [
+                "Acceptance",
+                "Reviewer or owner answer for the stated stage",
+                "That later stages or external operations are authorized"
+              ],
+              [
+                "Verification",
+                "Source or target-system record that supports the claimed result",
+                "That a task comment itself proves external execution"
+              ],
+              [
+                "Limits",
+                "Unverified facts, excluded scope, and remaining conditions",
+                "That “done” means every related issue is resolved"
+              ],
+              [
+                "Follow-ons",
+                "New task, owner, and relationship for adjacent work",
+                "That a note about future work is already assigned"
+              ],
+              [
+                "Retained context",
+                "Source-linked conclusion and applicability for later work",
+                "That past context controls the current task"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If any closure check is not met",
+        "paragraphs": [
+          "If any closure check is not met, stop honestly in the appropriate state and tell the next owner what is missing. The correct work record is more valuable than an optimistic completion label.",
+          "For a result record that includes verification, limits, and explicit follow-ons, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the stop condition separate from technical enforcement",
+        "paragraphs": [
+          "A task can require an agent to halt before a consequential action. That collaboration boundary is valuable, but it should be paired with technical controls in the system that performs the action. A task or thread should not be the only thing preventing an operation the agent must not take.",
+          "The task contract can state permitted work, stop conditions, and required owners; it cannot replace the system’s authentication and access enforcement. A review decision can accept, reject, narrow, or route a named artifact or option; it does not replace a target-system permission or execution record.",
+          "An escalation packet can explain why the role stopped and what answer is needed; it cannot become the accountable owner’s decision. Technical permission can allow or deny an operation in the connected system, but it does not replace the team’s reasoning about whether the operation should occur.",
+          "The target-system record confirms its own action or current state, while a verification path connects a claim to supporting evidence and limitation. Neither should be compressed into a blanket statement that every related operation succeeded.",
+          "Use both layers. The work boundary tells the agent when it should stop; the technical system independently ensures that a prohibited action is not permitted merely because an agent or participant chose to continue.",
+          "For writing acceptance tests that distinguish an agent’s artifact from a system-side result, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether an agent can stop well",
+        "paragraphs": [
+          "Stop conditions should be evaluated like any other part of the task contract. Test cases should reveal whether the agent produces a useful record, preserves valid partial work, and avoids creating a stronger claim or action than the evidence and role permit."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test case",
+              "Expected halt",
+              "Evidence of a good result"
+            ],
+            "rows": [
+              [
+                "Required source absent",
+                "Stop before conclusion and record the source gap",
+                "Bounded question, owner, and usable evidence map"
+              ],
+              [
+                "New scope requested",
+                "Stop before expansion and route the change",
+                "Original scope, proposed delta, and owner decision request"
+              ],
+              [
+                "Reviewer answer missing",
+                "Pause or block with the named return condition",
+                "Exact version and requested review answer"
+              ],
+              [
+                "No eligible contribution exists",
+                "Return a no-op rather than routine activity",
+                "Condition checked and trigger to reconsider"
+              ],
+              [
+                "External state unverified",
+                "Report the limitation and target record needed",
+                "No unsupported execution claim"
+              ],
+              [
+                "New capability required",
+                "Escalate minimum access need rather than attempting it",
+                "Purpose, alternatives, and authorized path request"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An agent that stops precisely can be faster",
+        "paragraphs": [
+          "An agent that stops precisely can be faster than one that keeps moving without a valid task state. The goal is a visible, recoverable boundary that lets the right owner continue when the necessary condition exists."
+        ]
+      },
+      {
+        "title": "Define an AI agent stop condition in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "State the task outcome, permitted operations, artifact, owner, and acceptance path.",
+          "Identify the facts, scope changes, authority requests, dependencies, and safety concerns that require the agent to halt.",
+          "Make each condition observable with a source, decision, system state, version, or named owner.",
+          "Specify whether the correct result is a no-op, pause, blocker, escalation, partial return, or closure.",
+          "Record the completed contribution, evidence, uncertainty, and operation the agent did not take.",
+          "Name the owner or target system that can answer the next question and the condition that permits a resume.",
+          "Update the task with the truthful state, result link, continuing limit, and any explicit follow-on task."
+        ]
+      },
+      {
+        "title": "The stop condition should make an agent’s next non-action deliberate",
+        "paragraphs": [
+          "The stop condition should make an agent’s next non-action as deliberate and inspectable as its next action. That is how a team keeps work bounded without losing useful progress."
+        ]
+      },
+      {
+        "title": "Seven stop-condition mistakes that make agents overreach",
+        "paragraphs": []
+      },
+      {
+        "title": "Saying “complete” when the task only reached a review stage",
+        "paragraphs": [
+          "Acceptance for an artifact’s current stage may be useful progress, but later review, authorization, target-system execution, or verification can still remain. Record the actual stage and limit."
+        ]
+      },
+      {
+        "title": "Calling every wait a pause without a resume condition",
+        "paragraphs": [
+          "A pause needs an observable fact, owner answer, or event that changes eligibility. If no such condition exists, the task may be blocked or need an escalation instead."
+        ]
+      },
+      {
+        "title": "Using a no-op to conceal a real blocker",
+        "paragraphs": [
+          "No-op means no eligible contribution exists after inspection. When a required source, decision, or dependency prevents work, name the blocker and its owner rather than staying silent."
+        ]
+      },
+      {
+        "title": "Continuing after a scope or authority boundary appears",
+        "paragraphs": [
+          "New work, access, public commitments, and consequential actions may need another owner’s decision. Preserve the discovery and stop instead of treating the request as implicit permission."
+        ]
+      },
+      {
+        "title": "Returning a vague halt with no useful evidence",
+        "paragraphs": [
+          "Give the next owner the artifact, source map, check result, options, or missing-input list that explains the stop. “Need help” alone recreates the same investigation."
+        ]
+      },
+      {
+        "title": "Treating a task record as technical enforcement",
+        "paragraphs": [
+          "The task can instruct and coordinate, but connected systems must enforce their own permissions. A visible stop condition should not be the only barrier to a prohibited external action."
+        ]
+      },
+      {
+        "title": "Forgetting to name what resumes or closes the work",
+        "paragraphs": [
+          "A later owner needs to know which source, decision, version, system record, or acceptance answer changes the task’s state. Without that path, the stop becomes an unowned dead end."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent stop condition?",
+        "answer": "It is an observable task boundary that tells an agent when to halt its current work, such as a missing source, changed scope, needed decision, access boundary, dependency, safety concern, or accepted task result."
+      },
+      {
+        "question": "Is stopping the same as being blocked?",
+        "answer": "Not always. A blocked task has a missing required state and a resume condition. An agent may also stop with a no-op, escalation, pause, interim result, or closure depending on why the current contribution should not continue."
+      },
+      {
+        "question": "When should an agent escalate instead of retrying?",
+        "answer": "Escalate when the next step requires a decision, authority, policy choice, priority tradeoff, access grant, sensitive-action approval, or ownership assignment outside the agent’s role. More attempts do not resolve that boundary."
+      },
+      {
+        "question": "Can an agent return work after it stops?",
+        "answer": "Yes. It can return an evidence map, draft, check result, recommendation, or decision packet if it labels what the contribution supports and the remaining condition that prevents final completion or execution."
+      },
+      {
+        "question": "What makes a resume condition valid?",
+        "answer": "It names an observable source, owner answer, dependency result, access decision, version, or event that makes a specific next action eligible. Time passing or someone viewing a thread is not enough by itself."
+      },
+      {
+        "question": "Does a stop condition prevent an external action technically?",
+        "answer": "No. It is a collaboration and role boundary. The target system must independently authenticate, authorize, and record the action; the stop condition tells the agent and reviewers when it should not try to take it."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Resume Conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI Agent Interim Results",
+        "path": "/guides/ai-agent-interim-results/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      }
+    ],
+    "cta": {
+      "title": "Make stopping a useful, truthful contribution",
+      "body": "AI agent stop conditions keep work safe and usable when the next step is not the agent’s to take. Define observable triggers, select the right state, return any valid partial work, name the next owner and resume path, and close only when the task’s own boundary is met. A precise halt prevents invented progress while giving the team everything it needs to continue responsibly.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
