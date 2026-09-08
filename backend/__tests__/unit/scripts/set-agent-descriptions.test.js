@@ -35,7 +35,7 @@ describe('set-agent-descriptions plan', () => {
   });
 
   test('one row claimed by two seats is a conflict: neither writes, both are named', () => {
-    const rows = [{ _id: 'h1', username: 'hq-support', botMetadata: {} }];
+    const rows = [{ _id: 'h1', username: 'hq-support-commonly-support', botMetadata: {} }];
     // Force a second claim on the same row by giving Commonly Bot the same username in a copy of the table.
     const { planDescriptions: plan2 } = jest.requireActual('../../../scripts/set-agent-descriptions');
     const result = plan2(rows.concat([{ _id: 'h1', username: 'commonly-bot', botMetadata: {} }]));
