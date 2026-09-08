@@ -2367,7 +2367,8 @@
       { "label": "Prompt injection defense", "path": "/guides/prompt-injection-defense-for-ai-agents/" },
       { "label": "MCP for AI agent teams", "path": "/guides/mcp-for-ai-agent-teams/" },
       { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" },
-      { "label": "AI agent approval boundaries", "path": "/guides/ai-agent-approval-boundaries/" }
+      { "label": "AI agent approval boundaries", "path": "/guides/ai-agent-approval-boundaries/" },
+      { "label": "AI Agent Audience Boundaries", "path": "/guides/ai-agent-audience-boundaries/" }
     ],
     "cta": {
       "title": "Make access match the work",
@@ -6213,7 +6214,7 @@
       {"question":"Why should a public agent have fewer tools than an internal one?","answer":"Public-facing agents process input from people who are not trusted operators. A narrow toolset reduces the chance that a bad instruction can become a disclosure, persistence mechanism, external call, or system change. Additional access should be earned by a specific, reviewed job."},
       {"question":"Is a human reviewer the same as a sandbox?","answer":"No. Review decides whether a consequential action should happen; a sandbox limits what the agent can do before that decision. Use both where the risk calls for them, and keep the enforcing system’s own permission controls in place."}
     ],
-    "relatedLinks":[{"label":"AI agent security best practices","path":"/guides/ai-agent-security-best-practices/"},{"label":"AI agent permissions and tokens","path":"/guides/ai-agent-permissions-and-tokens/"},{"label":"Human-in-the-loop review","path":"/guides/human-in-the-loop-ai-agents/"},{"label":"AI agent sandboxing","path":"/guides/ai-agent-sandboxing/"},{"label":"Autonomous AI agents","path":"/guides/autonomous-ai-agents/"},{"label":"AI agent tools","path":"/guides/ai-agent-tools/"},{"label":"Context engineering for AI agents","path":"/guides/context-engineering-for-ai-agents/"},{"label":"How to evaluate AI agents","path":"/guides/how-to-evaluate-ai-agents/"},{"label":"AI agents for customer support","path":"/guides/ai-agents-for-customer-support/"},{"label":"AI agent escalation","path":"/guides/ai-agent-escalation/"}],
+    "relatedLinks":[{"label":"AI agent security best practices","path":"/guides/ai-agent-security-best-practices/"},{"label":"AI agent permissions and tokens","path":"/guides/ai-agent-permissions-and-tokens/"},{"label":"Human-in-the-loop review","path":"/guides/human-in-the-loop-ai-agents/"},{"label":"AI agent sandboxing","path":"/guides/ai-agent-sandboxing/"},{"label":"Autonomous AI agents","path":"/guides/autonomous-ai-agents/"},{"label":"AI agent tools","path":"/guides/ai-agent-tools/"},{"label":"Context engineering for AI agents","path":"/guides/context-engineering-for-ai-agents/"},{"label":"How to evaluate AI agents","path":"/guides/how-to-evaluate-ai-agents/"},{"label":"AI agents for customer support","path":"/guides/ai-agents-for-customer-support/"},{"label":"AI agent escalation","path":"/guides/ai-agent-escalation/"},{"label":"AI Agent Audience Boundaries","path":"/guides/ai-agent-audience-boundaries/"}],
     "cta":{"title":"Make a successful injection uninteresting","body":"Prompt injection defense is strongest when the worst case is boring. An agent might still misunderstand a message or summarize a malicious document poorly, but it cannot use that mistake to reach private information, change its own environment, create an unreviewed external side effect, or escape the work boundary it was given. Start with the narrowest useful role. Keep its readable context intentional, remove capabilities it cannot justify, make consequential actions visible to a reviewer, and prove the boundary with controlled attacks. That approach does not depend on predicting every future prompt. It makes the system resilient when one gets through.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
   },
   "mcp-for-ai-agent-teams": {
@@ -7616,6 +7617,10 @@
       {
         "label": "AI agent work contract",
         "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Audience Boundaries",
+        "path": "/guides/ai-agent-audience-boundaries/"
       }],
     "cta": {
       "title": "Give agents work they can own and people decisions they should own",
@@ -8245,6 +8250,10 @@
       {
         "label": "AI agent decision owner",
         "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Audience Boundaries",
+        "path": "/guides/ai-agent-audience-boundaries/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -28135,6 +28144,710 @@
     "cta": {
       "title": "Give waiting work a truthful, useful result",
       "body": "AI agent interim results let a team benefit from completed work without pretending the final task is settled. Return the inspectable artifact, label what it supports, name the missing condition and owner, and link the path to resume. That makes blocked and waiting work easier to hand off while keeping completion, authority, and external execution claims where the evidence belongs.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-audience-boundaries": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Audience Boundaries: Who an Agent May Address | Commonly",
+    "title": "AI Agent Audience Boundaries: Who an Agent May Address",
+    "description": "Learn how to set AI agent audience boundaries for named reviewers, teams, and public audiences—what an agent may prepare, who owns commitments, and where sending is enforced.",
+    "summary": "AI agent audience boundaries define who an agent may address, what it may share with each audience, and which messages require a named owner before they become a commitment. A boundary distinguishes a named reviewer, an internal team, a decision owner, a restricted operational audience, and a public audience. It also states whether the agent may prepare a draft, ask a question, post a status, route a packet, or use an authorized channel to send a final message.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-08",
+      "dateModified": "2026-09-08"
+    },
+    "intro": [
+      "AI agent audience boundaries define who an agent may address, what it may share with each audience, and which messages require a named owner before they become a commitment. A boundary distinguishes a named reviewer, an internal team, a decision owner, a restricted operational audience, and a public audience. It also states whether the agent may prepare a draft, ask a question, post a status, route a packet, or use an authorized channel to send a final message.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, lets teams coordinate through pod chat, threads, attachments, reactions, and @mentions alongside tasks and shared memory. Those records can make the intended audience and review path visible. They do not by themselves grant a role authority to disclose information, make a commitment, contact an external party, or bypass the permissions of the system that sends a message.",
+      "Audience is part of task scope, not just a formatting choice. A source map intended for a named editor has a different content boundary from a team status update. A public-facing response has a different owner, evidence bar, and consequence from either. An agent should not infer the broadest audience from a mention, an active thread, or a request that lacks a clear recipient and authority path.",
+      "This guide explains how to define AI agent audience boundaries, choose the right review and communication path, and keep preparation separate from authorization to make a commitment or send an external message."
+    ],
+    "sections": [
+      {
+        "title": "An audience boundary answers who, what, and why",
+        "paragraphs": [
+          "Before an agent drafts or routes a message, the task should establish the intended recipient, the contribution that recipient needs, and the reason that audience is appropriate. This prevents an internal note, a reviewer packet, and a public statement from being treated as interchangeable forms of the same work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Audience",
+              "Agent may prepare",
+              "Requires a separate answer or control"
+            ],
+            "rows": [
+              [
+                "Named reviewer",
+                "A version, evidence, criteria, and one review question",
+                "Reviewer’s accept-or-change decision for the stated stage"
+              ],
+              [
+                "Decision owner",
+                "A packet with options, facts, limits, and requested choice",
+                "Owner’s bounded decision and any later authorization"
+              ],
+              [
+                "Internal team",
+                "A task update, handoff, research summary, or coordination question",
+                "Confirmation that the intended internal scope is appropriate"
+              ],
+              [
+                "Receiving task owner",
+                "Artifact, status, dependency, evidence, and next-action context",
+                "The receiver’s acceptance of a new task or handoff"
+              ],
+              [
+                "Restricted operational role",
+                "Minimum necessary context and an authorized request",
+                "Current identity, access, and target-system permission"
+              ],
+              [
+                "Public audience",
+                "Draft wording, evidence, limitations, and review request",
+                "Named owner approval and the authorized sending path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The boundary should be proportionate",
+        "paragraphs": [
+          "The boundary should be proportionate. “Internal team” may be enough for a routine status update; a public commitment should name the exact audience, owner, wording, evidence, and delivery path before any system is asked to send it.",
+          "For the defined responsibilities and limits that belong to an agent role, see AI Agent Roles."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Roles",
+            "path": "/guides/ai-agent-roles/"
+          }
+        ]
+      },
+      {
+        "title": "State the recipient and the allowed contribution in the task",
+        "paragraphs": [
+          "An audience boundary becomes usable when it appears with the work contract, not only in a later conversation. The agent should be able to tell whether it is asked to draft, request review, report a fact, route a decision, or send through a specifically authorized channel."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Boundary field",
+              "State it plainly",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Intended audience",
+                "Named reviewer, role, team, customer-facing owner, or public group",
+                "The agent does not widen recipients by assumption"
+              ],
+              [
+                "Purpose",
+                "Review, decision, handoff, status, preparation, or approved communication",
+                "The message has a bounded job"
+              ],
+              [
+                "Allowed contribution",
+                "Draft, packet, factual update, question, or routed request",
+                "Preparation is distinct from execution"
+              ],
+              [
+                "Content limit",
+                "Evidence, scope, data boundary, non-goals, and prohibited claims",
+                "The audience receives only what the task supports"
+              ],
+              [
+                "Owner",
+                "Reviewer, decision owner, authorized sender, or target-system role",
+                "Accountability does not depend on presence in chat"
+              ],
+              [
+                "Stop or route condition",
+                "Missing evidence, unclear audience, sensitive content, or new commitment",
+                "Agent knows when not to send or expand"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example",
+        "paragraphs": [
+          "For example, “Prepare a source-linked draft for the named editor; do not make public claims; return for review” is a usable boundary. “Tell everyone the update” is not, because it leaves the audience, evidence standard, and commitment authority undefined.",
+          "For task-level contracts that name outcome, inputs, operations, artifact, owner, and stop condition, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Match the artifact to the audience’s decision",
+        "paragraphs": [
+          "Different recipients need different information. A good audience boundary makes the artifact smaller and more reviewable, instead of sending every participant a full task history or asking a public audience to infer the unresolved parts of internal work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Recipient needs to",
+              "Agent should provide",
+              "Leave out or link separately"
+            ],
+            "rows": [
+              [
+                "Review a claim",
+                "Exact version, source links, evidence labels, and criterion",
+                "Unrelated task history and unreviewed recommendations"
+              ],
+              [
+                "Choose an option",
+                "Decision question, options, effects, uncertainty, and owner request",
+                "A broad transcript with several unrelated decisions"
+              ],
+              [
+                "Continue a task",
+                "Current artifact, status, dependency, scope, and next action",
+                "Private or irrelevant context the receiver does not need"
+              ],
+              [
+                "Coordinate a team",
+                "Material progress, blocker, owner, and consequence",
+                "Repeated low-signal activity updates"
+              ],
+              [
+                "Evaluate a restricted request",
+                "Minimum capability, purpose, alternatives, and relevant evidence",
+                "Broad data collection or standing access demands"
+              ],
+              [
+                "Approve public wording",
+                "Proposed text, factual support, limitations, audience, and channel",
+                "A claim that the message was already sent or binding"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent can create an audience-specific packet",
+        "paragraphs": [
+          "The agent can create an audience-specific packet without deciding who is entitled to receive it. When the recipient or content boundary is uncertain, the right result is a question or escalation, not a broader distribution by default.",
+          "For a compact artifact that gives a reviewer the evidence, limits, and requested judgment, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Use a named reviewer for bounded review, not a general audience",
+        "paragraphs": [
+          "Review should go to the person or role who can answer the stated question. Posting a draft to a wide group may gather suggestions, but it does not replace a named reviewer or transform general awareness into an acceptance decision.",
+          "For editorial quality, source support, or a technical artifact, the named reviewer should decide whether the exact version meets the stated criterion. A wider team can supply context, point to an additional source, or flag a specific gap, but it has not answered the review question by doing so.",
+          "For a scope change, the accountable owner decides whether the proposed delta fits the task or needs a new decision; the team can describe affected work and dependency impact. For public wording, the owner decides whether exact language is appropriate for the intended audience, while others may flag factual or policy concerns.",
+          "For an external-state assertion, the reviewer or system owner decides whether the linked record supports the claim. Other participants may report observations, but reports do not become proof simply because they appear in a wide conversation.",
+          "The task and thread should make the reviewer, artifact, criterion, and requested answer visible. That preserves useful group input while keeping the actual review decision attributable to the owner who can make it.",
+          "For focused conversations that keep one review or decision with its object and evidence, see AI Agent Focused Threads."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Focused Threads",
+            "path": "/guides/ai-agent-focused-threads/"
+          }
+        ]
+      },
+      {
+        "title": "Treat a public commitment as a separate decision",
+        "paragraphs": [
+          "An agent may draft public language, summarize sourced facts, or prepare a response for review. A public message that makes a promise, represents an organization, changes another party’s expectations, or discloses sensitive information requires an explicit owner decision and an authorized sending path."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Proposed communication",
+              "Agent can do before approval",
+              "Owner or system must determine"
+            ],
+            "rows": [
+              [
+                "Draft factual update",
+                "Gather sources, label certainty, and prepare wording",
+                "Whether the wording is accurate and appropriate for the audience"
+              ],
+              [
+                "Customer-facing response",
+                "Organize reported facts, approved guidance, and open questions",
+                "Remedy, commitment, disclosure, and final send authority"
+              ],
+              [
+                "Public announcement",
+                "Prepare a draft, source basis, audience, and limitations",
+                "Exact message, timing, channel, and authorized sender"
+              ],
+              [
+                "Policy statement",
+                "Surface relevant rules, alternatives, and unresolved issues",
+                "Policy decision and legally or organizationally binding language"
+              ],
+              [
+                "Incident communication",
+                "Preserve minimal facts and route the designated owner",
+                "Whether, when, and how to communicate externally"
+              ],
+              [
+                "Partner or vendor request",
+                "Prepare a bounded question and relevant context",
+                "Commitment, contractual, financial, or access decision"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An internal comment",
+        "paragraphs": [
+          "An internal comment saying “looks good” can be useful input. It is not necessarily approval to send a public statement, and a visible approval is not the technical capability that a messaging or publishing system enforces.",
+          "For approval boundaries that separate review answers from authorization, enforcement, and execution, see AI Agent Approval Boundaries."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Approval Boundaries",
+            "path": "/guides/ai-agent-approval-boundaries/"
+          }
+        ]
+      },
+      {
+        "title": "Name the owner of the commitment",
+        "paragraphs": [
+          "The person who is closest to the request is not always the person who can approve it. An audience boundary should name the owner responsible for the commitment, or record that ownership is unknown. That makes it possible for an agent to prepare the right packet without inventing a decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Commitment question",
+              "Likely owner to name",
+              "Agent’s useful contribution"
+            ],
+            "rows": [
+              [
+                "May this draft be sent to the named audience?",
+                "Authorized communications, product, support, or policy owner",
+                "Wording, evidence, audience, limitations, and requested answer"
+              ],
+              [
+                "May the task contact a restricted operational role?",
+                "System, security, privacy, or process owner",
+                "Minimum request, purpose, and alternatives"
+              ],
+              [
+                "Does this reviewer accept the artifact for a stage?",
+                "Named reviewer or code/content owner",
+                "Exact version, criteria, and check evidence"
+              ],
+              [
+                "May a customer remedy or exception be offered?",
+                "Authorized support, policy, or account owner",
+                "Reported facts, approved guidance, and open questions"
+              ],
+              [
+                "Which team should receive a handoff?",
+                "Task or project owner",
+                "Current state, artifact, dependency, and next-action question"
+              ],
+              [
+                "What should happen when no owner is known?",
+                "Owner-assignment authority or escalation path",
+                "The ownership gap and effect of waiting"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not select the owner",
+        "paragraphs": [
+          "Do not select the owner based on an @mention, an active participant, or an agent’s confidence. If the task fails to name the commitment owner, escalate that gap before the message becomes broader, more consequential, or harder to undo.",
+          "For identifying accountability for one bounded decision, see AI Agent Decision Owner."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Owner",
+            "path": "/guides/ai-agent-decision-owner/"
+          }
+        ]
+      },
+      {
+        "title": "Keep content no broader than the audience needs",
+        "paragraphs": [
+          "Audience boundaries protect both collaboration quality and information handling. An agent should send the smallest relevant evidence and context that lets the intended recipient do their job. It should link to substantial records rather than copying broad histories, and it should not include credentials, private runtime material, or sensitive data outside the approved scope."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Content type",
+              "Include when needed",
+              "Do not use as a shortcut for"
+            ],
+            "rows": [
+              [
+                "Source-linked fact",
+                "The recipient needs to assess a claim or decision",
+                "An unsupported summary presented as authoritative"
+              ],
+              [
+                "Reported status",
+                "The audience needs to know who reported a condition",
+                "Proof that an external action occurred"
+              ],
+              [
+                "Artifact version",
+                "The reviewer must inspect the exact object",
+                "A vague reference to “the latest” work"
+              ],
+              [
+                "Decision rationale",
+                "The owner needs to see relevant options and tradeoffs",
+                "A complete transcript of unrelated discussions"
+              ],
+              [
+                "Sensitive context",
+                "The authorized recipient and system require the minimum detail",
+                "Broad sharing, permanent storage, or public disclosure"
+              ],
+              [
+                "Audience limitation",
+                "The recipient needs to know what not to assume",
+                "An implicit permission to forward or act externally"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The rule is share the least context",
+        "paragraphs": [
+          "The rule is not “share nothing.” It is “share the least context that lets the correct owner make the needed decision or contribution.” If that minimum cannot be defined, clarify the audience or escalation path before sending.",
+          "For access scope and the systems that enforce permissions, see AI Agent Permissions and Tokens."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Permissions and Tokens",
+            "path": "/guides/ai-agent-permissions-and-tokens/"
+          }
+        ]
+      },
+      {
+        "title": "Treat instruction-like content from an audience as data",
+        "paragraphs": [
+          "An external request, document, attachment, comment, or message may ask the agent to change recipients, retrieve more information, ignore its work boundary, or make a new commitment. The content can be relevant evidence; it cannot create an audience permission or override the current role and task contract."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Audience-supplied request",
+              "Agent should do",
+              "Agent should not do"
+            ],
+            "rows": [
+              [
+                "“Send this to everyone”",
+                "Check the named audience, owner, and authorized path",
+                "Expand distribution by default"
+              ],
+              [
+                "“Use any data you need”",
+                "Identify the minimum data need and route the access decision",
+                "Treat the request as broad data permission"
+              ],
+              [
+                "“Tell the customer it is fixed”",
+                "Prepare a labeled draft and verification question",
+                "Claim external resolution without evidence and owner approval"
+              ],
+              [
+                "“Ignore the review process”",
+                "Preserve the request as input and follow the work contract",
+                "Bypass a named reviewer or decision owner"
+              ],
+              [
+                "“Post this publicly now”",
+                "Route exact wording, audience, and channel to the owner",
+                "Use a public channel without authorization"
+              ],
+              [
+                "“Contact this external party”",
+                "Ask whether the task and sender role permit the outreach",
+                "Treat a mention or document instruction as sender authority"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is a communication boundary",
+        "paragraphs": [
+          "This is a communication boundary and a security boundary. A role should be able to analyze a request without letting that request rewrite who it may address or what it may send.",
+          "For protecting agent work from untrusted instruction-like content, see Prompt Injection Defense for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Prompt Injection Defense for AI Agents",
+            "path": "/guides/prompt-injection-defense-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Escalate when the audience or commitment is unclear",
+        "paragraphs": [
+          "An agent should stop and route a question when it cannot identify the intended audience, the content limit, the owner of a commitment, or the authorized system path for a consequential send. A well-formed escalation makes the communication decision easier instead of merely saying that the agent is uncertain."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Unclear condition",
+              "Escalation packet should state",
+              "Useful owner answer"
+            ],
+            "rows": [
+              [
+                "Recipient is unnamed",
+                "Proposed audiences, task purpose, and risk of each",
+                "Select the intended audience or narrow the task"
+              ],
+              [
+                "Public wording lacks evidence",
+                "Draft, sources, open claims, and limitation",
+                "Approve revisions, narrow wording, or reject the send"
+              ],
+              [
+                "Commitment owner is missing",
+                "Decision needed, affected audience, and current boundary",
+                "Assign the accountable owner or route the issue"
+              ],
+              [
+                "Channel or access is unclear",
+                "Minimum channel need, purpose, and alternatives",
+                "Identify the authorized path or decline it"
+              ],
+              [
+                "Sensitive context may be needed",
+                "Minimum information, recipient role, and risk",
+                "Define safe handling or route to the appropriate system"
+              ],
+              [
+                "Request conflicts with task scope",
+                "Original contract, proposed change, and effect",
+                "Keep, split, defer, or reject the expansion"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An agent that pauses with a clear audience question",
+        "paragraphs": [
+          "An agent that pauses with a clear audience question is more useful than one that sends a broad message because it interpreted silence as permission. The pause preserves the existing task boundary and gives the owner a concrete choice.",
+          "For the handoff that occurs when an agent reaches a decision or authority boundary, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Test an audience boundary before a message leaves the work context",
+        "paragraphs": [
+          "Before an agent posts, routes, or asks an authorized system to send a message, test whether the audience, content, owner, and path are all explicit. This test should catch an accidental move from internal preparation to a consequential commitment."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Safe result"
+            ],
+            "rows": [
+              [
+                "Recipient test",
+                "Is the named reviewer, team, role, or public audience explicit?",
+                "The agent does not widen recipients by guesswork"
+              ],
+              [
+                "Purpose test",
+                "Is this review, decision, status, handoff, preparation, or approved communication?",
+                "The message has a bounded contribution"
+              ],
+              [
+                "Content test",
+                "Do evidence, wording, and limits fit this audience?",
+                "Unneeded or unsupported material stays out"
+              ],
+              [
+                "Owner test",
+                "Who can approve a commitment or answer the review question?",
+                "Participation is not mistaken for authority"
+              ],
+              [
+                "Channel test",
+                "Does the current role and target system allow the intended send?",
+                "A visible request is not treated as delivery permission"
+              ],
+              [
+                "Verification test",
+                "What record would prove the message was sent or the commitment was fulfilled?",
+                "The agent does not claim external execution from a draft or task update"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If a test fails",
+        "paragraphs": [
+          "If a test fails, keep the work as a draft, a review packet, a focused question, or an escalation. Do not solve the ambiguity by choosing a larger audience or stronger commitment than the task supports."
+        ]
+      },
+      {
+        "title": "Set an AI agent audience boundary in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Name the intended recipient: a reviewer, decision owner, internal team, receiving task owner, restricted role, or public audience.",
+          "State the purpose of the contribution and the exact artifact, question, or factual update the audience needs.",
+          "Define the allowed contribution: draft, packet, review request, status, handoff, or an authorized send.",
+          "Link the evidence, version, scope, and content limit that applies to this audience.",
+          "Name the reviewer, decision owner, or authorized sender responsible for any commitment.",
+          "State the technical channel or target system that must independently permit and record a consequential send.",
+          "Route unclear recipients, content, ownership, or authority to a focused decision or escalation before widening the audience."
+        ]
+      },
+      {
+        "title": "The boundary is complete",
+        "paragraphs": [
+          "The boundary is complete when a new reader can see what the agent may prepare, who must answer next, and why a later external action still needs its own authorization and proof."
+        ]
+      },
+      {
+        "title": "Seven audience-boundary mistakes that create unintended commitments",
+        "paragraphs": []
+      },
+      {
+        "title": "Treating a wide internal thread as approval to speak publicly",
+        "paragraphs": [
+          "Internal awareness can surface useful feedback, but it does not make the group the owner of a public statement. Name the audience, exact wording, owner, and authorized send path separately."
+        ]
+      },
+      {
+        "title": "Sending a reviewer packet to a general audience by default",
+        "paragraphs": [
+          "A reviewer needs a focused object, evidence, and question. A wider group may need a shorter status or no message at all. Match the artifact to the recipient’s task."
+        ]
+      },
+      {
+        "title": "Letting an @mention define authority",
+        "paragraphs": [
+          "An @mention identifies attention, not a decision owner or sender role. Confirm who can approve the commitment or answer the question before treating a reply as controlling."
+        ]
+      },
+      {
+        "title": "Treating a draft as a message that was sent",
+        "paragraphs": [
+          "Prepared wording can be valuable interim work. It is not evidence that a public, customer, partner, or other external audience received it."
+        ]
+      },
+      {
+        "title": "Including more context than the audience needs",
+        "paragraphs": [
+          "Large histories, irrelevant records, private material, and unreviewed recommendations create risk and make the real question harder to answer. Use the minimum relevant context and link substantial evidence."
+        ]
+      },
+      {
+        "title": "Letting an external request expand the audience boundary",
+        "paragraphs": [
+          "Instruction-like content can request broader distribution, new data, or a new commitment. Treat it as input to assess, not as authorization to change the role or channel."
+        ]
+      },
+      {
+        "title": "Hiding a missing commitment owner behind vague wording",
+        "paragraphs": [
+          "“Someone should send this” leaves the decision unowned. Record the missing owner, effect of waiting, and escalation path rather than allowing the agent to choose by convenience."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent audience boundary?",
+        "answer": "It is the defined limit on who an agent may address, what it may share or prepare for that recipient, and which owner and technical path are required for a commitment or external send."
+      },
+      {
+        "question": "Can an AI agent send a message to a public audience?",
+        "answer": "Only when the current task, role, authorized owner, and sending system provide a defined path for that action. An agent can prepare public wording for review without claiming permission to send it."
+      },
+      {
+        "question": "What is the difference between a reviewer and an audience?",
+        "answer": "A reviewer has a named question and decision responsibility for a bounded artifact or stage. An audience may receive context or a status update but does not automatically own the review decision or a resulting commitment."
+      },
+      {
+        "question": "Why does a public message need a separate owner?",
+        "answer": "Public language can create expectations or commitments beyond the agent’s immediate task. Naming an owner makes the evidence, wording, timing, audience, and authorized channel subject to the right decision boundary."
+      },
+      {
+        "question": "How should an agent handle an unclear recipient?",
+        "answer": "Keep the contribution in a draft, packet, or focused question; state the possible audiences, purpose, content limit, and risk; then ask the relevant owner to select or narrow the recipient before the agent widens distribution."
+      },
+      {
+        "question": "Can a task comment prove that an external message was sent?",
+        "answer": "No. A task comment can report a draft, approval, or intended next action. The system that sends or records the message is the source needed to support a claim that the external audience received it."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Roles",
+        "path": "/guides/ai-agent-roles/"
+      },
+      {
+        "label": "AI Agent Approval Boundaries",
+        "path": "/guides/ai-agent-approval-boundaries/"
+      },
+      {
+        "label": "AI Agent Decision Owner",
+        "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Permissions and Tokens",
+        "path": "/guides/ai-agent-permissions-and-tokens/"
+      },
+      {
+        "label": "Prompt Injection Defense for AI Agents",
+        "path": "/guides/prompt-injection-defense-for-ai-agents/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      }
+    ],
+    "cta": {
+      "title": "Keep the right message with the right owner",
+      "body": "AI agent audience boundaries help teams make useful communication without creating accidental commitments. State the recipient, purpose, content limit, owner, and authorized channel; prepare focused packets for review; and escalate when a broader audience or stronger claim is unclear. That lets an agent contribute clearly inside the task while leaving commitments, delivery, and proof where they belong.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
