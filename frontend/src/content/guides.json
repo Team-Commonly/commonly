@@ -6449,6 +6449,10 @@
       {
         "label": "AI agent decision packet",
         "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI agent context packet",
+        "path": "/guides/ai-agent-context-packet/"
       }
     ],
     "cta": {"title":"Design the context before expanding the agent","body":"An AI agent becomes dependable when each decision has the right state behind it: a clear role, current task ownership, focused discussion, relevant durable memory, named evidence, permitted tools, and an explicit handoff. That is context engineering in practice. Start by mapping one recurring decision. Identify the exact information it needs, where each item belongs, who can see it, how long it remains valid, and what the agent should do when it is missing. Then test the retrieval path with real edge cases. As the team expands the agent’s role, this discipline keeps the context useful, current, and safe instead of merely large.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
@@ -11798,6 +11802,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent context packet",
+        "path": "/guides/ai-agent-context-packet/"
       }
     ],
     "cta": {
@@ -21012,6 +21020,10 @@
       {
         "label": "AI agent decision owner",
         "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI agent context packet",
+        "path": "/guides/ai-agent-context-packet/"
       }
     ],
     "cta": {
@@ -23091,11 +23103,707 @@
       {
         "label": "AI Agent Source of Record",
         "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI agent context packet",
+        "path": "/guides/ai-agent-context-packet/"
       }
     ],
     "cta": {
       "title": "Leave a result the next owner can trust",
       "body": "AI agent task closure makes done a reviewable claim. Link the bounded artifact and evidence, record the applicable review or decision, state the verification boundary and remaining limits, and create follow-on work only as a separate owned choice. That lets agents stop cleanly while preserving the information people and later agents need to decide what actually comes next.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-context-packet": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Context Packet: Current Context for One Step | Commonly",
+    "title": "AI Agent Context Packet: Give One Task Step What It Needs",
+    "description": "Learn how to build an AI agent context packet: the smallest current, source-linked bundle of task scope, evidence, owners, decisions, limits, and next step needed for one contribution.",
+    "summary": "An AI agent context packet is the smallest current, source-linked bundle an agent or reviewer needs to complete one bounded task step. It usually holds the task outcome, exact artifact or question, approved inputs, applicable decision, owner and review point, source of record, relevant evidence, current limits, and next action. It excludes background that does not affect the step, stale summaries without sources, unrelated private context, and assumed permissions.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent context packet is the smallest current, source-linked bundle an agent or reviewer needs to complete one bounded task step. It usually holds the task outcome, exact artifact or question, approved inputs, applicable decision, owner and review point, source of record, relevant evidence, current limits, and next action. It excludes background that does not affect the step, stale summaries without sources, unrelated private context, and assumed permissions.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams records that can compose a context packet: tasks carry scope, owner, status, dependency, activity, and result; focused threads hold questions and decisions; attachments preserve substantial artifacts and evidence; and selected shared memory can retain sourced durable context. These records make relevant context available for collaboration. They do not turn every prior message into a governing instruction or replace the source system that owns an external fact.",
+      "The packet makes context portable without making it unlimited. A research agent can receive one source-bound brief and the question it must answer. A reviewer can receive the exact artifact version, checks, limits, and requested decision. A handoff can receive the prior result, current dependency state, and next bounded contribution. Each packet is designed for the next step, not as a complete archive of the project.",
+      "This guide explains how to build AI agent context packets, decide what belongs inside them, and keep current source, memory, and authority boundaries visible."
+    ],
+    "sections": [
+      {
+        "title": "A context packet serves one task step, not the whole history",
+        "paragraphs": [
+          "The packet should start from the specific contribution that happens next. Asking an agent to “read everything” shifts the boundary from a reviewable task to an unbounded reconstruction exercise. Start with the task step, then include only the context that changes how that step should be performed or reviewed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Next task step",
+              "Context packet needs",
+              "It can exclude"
+            ],
+            "rows": [
+              [
+                "Prepare an evidence packet",
+                "Question, supplied sources, source boundary, evidence labels, and decision owner",
+                "Unrelated project discussion and old drafts without relevance"
+              ],
+              [
+                "Review a draft",
+                "Exact version, acceptance criteria, checks, non-goals, and requested answer",
+                "Earlier wording iterations already superseded"
+              ],
+              [
+                "Classify a dependency",
+                "Required state, linked task, owner, effect, and source of verification",
+                "Adjacent future work that does not block the step"
+              ],
+              [
+                "Route a decision",
+                "Evidence, options, tradeoff, decision owner, and task effect",
+                "Speculative implementation beyond the decision"
+              ],
+              [
+                "Revise an artifact",
+                "Reviewer feedback, version reviewed, in-scope correction, and return point",
+                "New audience, source set, or operations not accepted"
+              ],
+              [
+                "Close a task",
+                "Outcome, result artifact, verification path, limits, and follow-on relationship",
+                "Full message history that does not support the closure"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet can link to deeper material",
+        "paragraphs": [
+          "The packet can link to deeper material rather than copying it. The next agent should know which source to open if needed, not receive an indiscriminate dump that hides the current question.",
+          "For the practice of making task-relevant information available without overloading the active step, see Context Engineering for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Context Engineering for AI Agents",
+            "path": "/guides/context-engineering-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Include the fields that make the next step reviewable",
+        "paragraphs": [
+          "The exact contents vary by task, but a small set of fields makes a packet useful across roles. Each field should point to the current record that supports it. If the packet includes a historical conclusion, mark its source and applicability instead of presenting it as a current instruction."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet field",
+              "Include",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "One bounded result or question for this step",
+                "The agent does not infer a larger project mandate"
+              ],
+              [
+                "Artifact or object",
+                "Exact draft, evidence set, task, dependency, or decision under review",
+                "The recipient knows what the packet applies to"
+              ],
+              [
+                "Inputs",
+                "Approved sources, artifacts, and source boundary",
+                "Evidence is not expanded by assumption"
+              ],
+              [
+                "Owners",
+                "Task owner, reviewer, decision owner, and dependency owner as relevant",
+                "Responsibility and authority remain visible"
+              ],
+              [
+                "Current state",
+                "Status, dependency, result, and stage of review",
+                "The step is based on current coordination facts"
+              ],
+              [
+                "Stop and limit",
+                "Non-goals, acceptance condition, blocker, or handoff boundary",
+                "The agent has a legitimate point to finish or wait"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The source link is part of the field",
+        "paragraphs": [
+          "The source link is part of the field. “Use the current policy” is not enough; the packet should point to the governing source or name the owner who must decide it.",
+          "For the hierarchy that names which record is authoritative for each fact, see AI Agent Source of Record.",
+          "For the task-level fields that define outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          },
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Keep scope, non-goals, and operations together",
+        "paragraphs": [
+          "Context often fails because it carries the requested outcome but not the boundary around it. The agent then has enough detail to be active but not enough to know what it must not change, research, claim, or execute. Keep the scope fields together so the next step remains bounded."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Scope field",
+              "Packet should state",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "The artifact or question this step owns",
+                "“Prepare a comparison brief for editorial review.”"
+              ],
+              [
+                "Inputs",
+                "Sources or artifacts the step may use",
+                "“Use the attached source set only.”"
+              ],
+              [
+                "Non-goals",
+                "Plausible adjacent work excluded from the step",
+                "“Do not choose the governing policy source.”"
+              ],
+              [
+                "Operations",
+                "Preparation, analysis, drafting, review, or other allowed contribution",
+                "“Do not change the target system.”"
+              ],
+              [
+                "Acceptance",
+                "What makes the result ready for the next owner",
+                "“Sources linked, conflict labeled, question stated.”"
+              ],
+              [
+                "Stop",
+                "When to hand off, block, no-op, or split the work",
+                "“Stop once the packet is ready for the named reviewer.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent can surface a useful excluded idea",
+        "paragraphs": [
+          "The agent can surface a useful excluded idea, but it should turn that idea into a visible decision or follow-on proposal. A context packet must not make a related idea look like an implicit instruction simply because it was present in the history.",
+          "For explicit exclusions that prevent silent expansion of the active task, see AI Agent Non-Goals."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Non-Goals",
+            "path": "/guides/ai-agent-non-goals/"
+          }
+        ]
+      },
+      {
+        "title": "Link evidence and decisions without flattening their labels",
+        "paragraphs": [
+          "A packet should retain the difference between a source-supported fact, a reported status, an inference, a recommendation, an open question, and a decision. If it compresses all of those into “context,” the next agent may repeat a recommendation as though it were a governing answer or use an old status update as proof of external state."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Context item",
+              "Label and source",
+              "How the next step should use it"
+            ],
+            "rows": [
+              [
+                "Governing source text",
+                "Fact: linked source contains the stated requirement",
+                "Use within its applicability boundary"
+              ],
+              [
+                "Task result",
+                "Reported status: task owner recorded this result",
+                "Check the artifact or evidence for consequential claims"
+              ],
+              [
+                "Analysis conclusion",
+                "Inference: stated sources and assumptions support it",
+                "Re-evaluate if assumptions or sources changed"
+              ],
+              [
+                "Proposed option",
+                "Recommendation: agent’s reasoning and tradeoff",
+                "Route to the designated decision owner"
+              ],
+              [
+                "Missing interpretation",
+                "Open question: owner or source still needed",
+                "Keep the question visible; do not fill it by assumption"
+              ],
+              [
+                "Owner answer",
+                "Decision: named owner selected an option for this task",
+                "Apply only to the stated artifact and scope"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet should be candid about uncertainty",
+        "paragraphs": [
+          "The packet should be candid about uncertainty. It is more useful to say “open question: which source governs?” than to carry a confident-looking summary that forces the next agent to rediscover the ambiguity.",
+          "For the vocabulary that keeps claim strength and authority visible, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Prefer current sources over accumulated summaries",
+        "paragraphs": [
+          "Context packets should point to the current task, artifact version, decision, and source of record rather than rely on an older chat summary or memory item. A summary can be a helpful index, but the next owner needs to know whether it is historical context, a still-applicable conclusion, or a superseded record."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Context source",
+              "Include when",
+              "Recheck before using"
+            ],
+            "rows": [
+              [
+                "Current task",
+                "It defines the active outcome, owner, status, and dependency",
+                "Whether the task was updated or narrowed"
+              ],
+              [
+                "Exact artifact version",
+                "A reviewer or agent must inspect a specific object",
+                "Whether a later version superseded it"
+              ],
+              [
+                "Decision record",
+                "It selects a source, scope, option, or next task state",
+                "Whether a newer decision replaced it"
+              ],
+              [
+                "Shared memory",
+                "It retains a sourced conclusion with clear applicability",
+                "Original source, date, and current relevance"
+              ],
+              [
+                "Prior status update",
+                "It explains a material transition or limitation",
+                "Current state and target-system confirmation if needed"
+              ],
+              [
+                "Thread summary",
+                "It points to the relevant question and decision trail",
+                "Original artifact, answer, and scope of the decision"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The recipient does not need every historical detail",
+        "paragraphs": [
+          "The recipient does not need every historical detail. It needs the current source and enough provenance to tell whether an older record remains a valid input or only explains how the team reached the present state.",
+          "For stable work objects that show what changed, what was reviewed, and what superseded prior versions, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "Make the packet small enough to use and complete enough to act",
+        "paragraphs": [
+          "Minimal context is not the same as missing context. The packet should contain the fields that change the action, review, or stop condition for the next step; it should leave out unrelated history, repeated summaries, speculative future work, and broad permissions. If the next agent must ask a question, that question should be named as an open issue rather than hidden by omission."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet quality",
+              "It has",
+              "It avoids"
+            ],
+            "rows": [
+              [
+                "Relevant",
+                "Only material facts, decisions, and boundaries for one step",
+                "Topic-level background that does not affect the action"
+              ],
+              [
+                "Current",
+                "Links to governing tasks, artifacts, and decisions",
+                "Stale summaries treated as current authority"
+              ],
+              [
+                "Source-linked",
+                "Evidence or a path to inspect it",
+                "Unattributed claims that cannot be checked"
+              ],
+              [
+                "Bounded",
+                "Outcome, non-goals, operations, and stop condition",
+                "A broad mandate to “handle the rest”"
+              ],
+              [
+                "Actionable",
+                "Owner, next contribution, review point, and blocker if needed",
+                "Ambiguous requests with no next state"
+              ],
+              [
+                "Safe to transfer",
+                "Only context appropriate to the role and task",
+                "Private or unrelated information carried by default"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If a packet would need the entire project history",
+        "paragraphs": [
+          "If a packet would need the entire project history to be safe, split the task or write a more focused question. The goal is a contribution that can be reviewed, not perfect omniscience.",
+          "For the intake process that turns an ambiguous request into a bounded first contribution, see AI Agent Task Intake."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Intake",
+            "path": "/guides/ai-agent-task-intake/"
+          }
+        ]
+      },
+      {
+        "title": "Update the packet when the task state changes",
+        "paragraphs": [
+          "Context packets are current snapshots, not permanent documents. When a source changes, an owner makes a decision, an artifact version is superseded, or a dependency resolves, update the packet’s relevant link and stated next step. Keep the old record as context when it explains the change, but do not leave it as the primary instruction."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change",
+              "Update in the packet",
+              "Preserve as context"
+            ],
+            "rows": [
+              [
+                "Source ruling",
+                "Governing source and its task boundary",
+                "Competing source and reason it did not govern"
+              ],
+              [
+                "Review response",
+                "Exact version, answer, and requested next step",
+                "Feedback on the prior version"
+              ],
+              [
+                "Artifact revision",
+                "Current version and material change summary",
+                "Earlier version and supersession reason"
+              ],
+              [
+                "Dependency result",
+                "Required state, verification source, and resumed step",
+                "Former blocker and why it changed"
+              ],
+              [
+                "Scope decision",
+                "Outcome, non-goals, inputs, and operations",
+                "Prior boundary and decision record"
+              ],
+              [
+                "Task closure",
+                "Result, limit, follow-on, and durable context link",
+                "Work history that justifies the conclusion"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The update should not rewrite history",
+        "paragraphs": [
+          "The update should not rewrite history. It should make the current governing record easy to find while leaving a traceable path to the evidence and decision that changed it.",
+          "For the final accounting that links a bounded result, evidence, limits, and next owner, see AI Agent Task Closure."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Closure",
+            "path": "/guides/ai-agent-task-closure/"
+          }
+        ]
+      },
+      {
+        "title": "Build context packets across role handoffs",
+        "paragraphs": [
+          "The same packet structure supports research, editorial review, task coordination, and other role handoffs. The role changes the artifact and decision, not the need for a bounded outcome, source, owner, evidence, and stop condition."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Handoff",
+              "Packet should contain",
+              "Receiving owner can do"
+            ],
+            "rows": [
+              [
+                "Research to decision owner",
+                "Evidence packet, labels, source conflict, options, and open question",
+                "Select, narrow, reject, or route the governing answer"
+              ],
+              [
+                "Editorial draft to reviewer",
+                "Exact version, brief, sources, non-goals, and acceptance criteria",
+                "Review the stated artifact without assuming publication authority"
+              ],
+              [
+                "Dependency owner to waiting task",
+                "Required result, source of verification, and resumed next step",
+                "Verify the condition and continue only the eligible contribution"
+              ],
+              [
+                "Review to revision owner",
+                "Feedback, version reviewed, in-scope changes, and return point",
+                "Revise without expanding the task"
+              ],
+              [
+                "Task closure to follow-on owner",
+                "Completed result, adjacent discovery, evidence, and new decision question",
+                "Decide whether separate work enters the plan"
+              ],
+              [
+                "Preparation to executing owner",
+                "Proposed artifact, permitted boundary, decision, and target-system fact needed",
+                "Determine what still requires authorization or confirmation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A packet should not become a substitute for a live decision",
+        "paragraphs": [
+          "A packet should not become a substitute for a live decision. If a handoff reaches an owner who must choose among options, preserve the question and evidence rather than presenting an agent’s recommendation as settled context.",
+          "For a bounded transfer that names the next contribution, evidence, and responsibility, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Build a context packet in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Name the one task step, artifact, or decision the recipient must handle next.",
+          "Link the current task outcome, owner, review point, and relevant status or dependency.",
+          "Add only the approved inputs, current source of record, exact artifact version, and evidence that affect that step.",
+          "State non-goals, permitted operations, acceptance conditions, and the stop or handoff boundary.",
+          "Label facts, reported status, inferences, recommendations, open questions, and decisions so their strength remains visible.",
+          "Identify anything missing: decision owner, required source, dependency state, review answer, or target-system fact.",
+          "Update the packet when its governing record changes, preserving the earlier source as context rather than leaving it as the current instruction."
+        ]
+      },
+      {
+        "title": "The packet should be short enough to work from",
+        "paragraphs": [
+          "The packet should be short enough to work from and rich enough that the next owner does not need to guess the task’s evidence, authority, or boundary."
+        ]
+      },
+      {
+        "title": "Test whether a context packet is fit for the next step",
+        "paragraphs": [
+          "Before sending the packet, ask whether a new agent or reviewer can perform the next bounded contribution without reading an entire history or inventing missing authority. If not, add the material source or narrow the task—not unrelated background."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Recipient should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Step test",
+                "What exact contribution or decision is next?",
+                "State one bounded outcome and artifact"
+              ],
+              [
+                "Source test",
+                "Which current records govern facts and versions?",
+                "Link the task, source of record, artifact, or decision"
+              ],
+              [
+                "Boundary test",
+                "What inputs, operations, and non-goals apply?",
+                "Add scope, source boundary, and stop condition"
+              ],
+              [
+                "Authority test",
+                "Who reviews, decides, or confirms the unresolved part?",
+                "Name the owner or route an escalation"
+              ],
+              [
+                "Evidence test",
+                "What supports each consequential claim and what remains open?",
+                "Add labels, links, limitations, and verification path"
+              ],
+              [
+                "Currency test",
+                "Which record is current and what superseded the old one?",
+                "Update the primary link and retain the change reason"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A packet that fails a test",
+        "paragraphs": [
+          "A packet that fails a test should not grow into an indiscriminate archive. It should become a clearer task, a focused decision request, or a smaller handoff that someone can actually act on."
+        ]
+      },
+      {
+        "title": "Seven context-packet mistakes that make agents less reliable",
+        "paragraphs": []
+      },
+      {
+        "title": "Sending the whole history instead of the current task step",
+        "paragraphs": [
+          "More messages do not necessarily produce better context. Start from the next contribution and include only the task, evidence, decision, and boundary that change how it should be handled."
+        ]
+      },
+      {
+        "title": "Carrying a summary without the source that governs it",
+        "paragraphs": [
+          "Summaries can orient a recipient, but a current task, source of record, artifact, or decision should be linked when the claim matters. Otherwise stale context can become accidental authority."
+        ]
+      },
+      {
+        "title": "Omitting non-goals and permitted operations",
+        "paragraphs": [
+          "An agent with an outcome but no boundary may expand inputs, claims, or actions in an effort to be useful. Include what the step must not do as well as what it should produce."
+        ]
+      },
+      {
+        "title": "Treating a recommendation as settled context",
+        "paragraphs": [
+          "Recommendations belong in the packet with their evidence and tradeoff, but the decision owner’s answer remains open until recorded. Do not turn agent reasoning into a policy or priority choice."
+        ]
+      },
+      {
+        "title": "Including private or unrelated information by default",
+        "paragraphs": [
+          "Transfer only context appropriate to the task and recipient. A packet should contain the evidence and boundaries needed for the step, not a broad collection of prior conversations or sensitive background."
+        ]
+      },
+      {
+        "title": "Leaving a superseded artifact as the packet’s primary link",
+        "paragraphs": [
+          "When a revision, source ruling, or decision changes the task, update the packet to the current record and preserve the old one as a traceable predecessor."
+        ]
+      },
+      {
+        "title": "Treating the packet as a permission grant",
+        "paragraphs": [
+          "Context supports coordination and review. It does not grant access, authorize an external operation, or prove a target-system action occurred."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent context packet?",
+        "answer": "It is the smallest current, source-linked bundle of task scope, artifact, inputs, owners, evidence, decisions, limits, and next action needed for one bounded contribution or review step."
+      },
+      {
+        "question": "How is a context packet different from agent memory?",
+        "answer": "A context packet is a current, task-specific snapshot for the next step. Memory can retain sourced durable conclusions across work. The packet should link any relevant memory item back to its source and applicability rather than treating all retained context as current instruction."
+      },
+      {
+        "question": "What should a context packet exclude?",
+        "answer": "Exclude unrelated history, private or unnecessary information, stale summaries without sources, speculative future work, and permissions or decisions the recipient cannot infer from the task. Link deeper material only when the next step needs it."
+      },
+      {
+        "question": "Does every agent task need a context packet?",
+        "answer": "Simple tasks may only need a short task description and one source link. Use a more explicit packet when a task crosses roles, contains evidence or decision boundaries, resumes after a pause, or risks scope or authority confusion."
+      },
+      {
+        "question": "Who updates the context packet?",
+        "answer": "The owner of the current contribution should update the packet when a governing task, artifact, decision, source, or dependency changes. Each target system remains responsible for its own facts and current state."
+      },
+      {
+        "question": "Can a context packet authorize an agent to act?",
+        "answer": "No. It provides the information needed to understand a bounded task step. Role permissions, review requirements, decision owners, and target-system controls determine what operations are actually allowed."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "Context Engineering for AI Agents",
+        "path": "/guides/context-engineering-for-ai-agents/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Non-Goals",
+        "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Task Intake",
+        "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI Agent Task Closure",
+        "path": "/guides/ai-agent-task-closure/"
+      }
+    ],
+    "cta": {
+      "title": "Give the next step only the context it can use",
+      "body": "AI agent context packets make collaboration portable without making it unbounded. Assemble the current task, source, artifact, evidence, owner, decision, non-goal, and stop condition for one step; label what is fact, report, inference, recommendation, question, or decision; and update the packet when its governing record changes. That lets agents and reviewers move work forward without confusing accumulated history with current authority.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"

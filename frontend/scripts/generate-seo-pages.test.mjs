@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 82);
+  assert.equal(pages.length, 83);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -103,6 +103,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-decision-owner/',
     '/guides/ai-agent-artifact-versions/',
     '/guides/ai-agent-task-closure/',
+    '/guides/ai-agent-context-packet/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -138,7 +139,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 72);
+  assert.equal(guidePages.length, 73);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -728,6 +729,31 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const contextPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-context-packet/');
+  assert.equal(contextPacketGuide.title, 'AI Agent Context Packet: Current Context for One Step | Commonly');
+  const contextPacket = guides['ai-agent-context-packet'];
+  assert.deepEqual(contextPacket.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(contextPacket.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(contextPacket.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(contextPacket.sections.find((section) => section.title === 'The source link is part of the field').links.map((link) => link.path), ['/guides/ai-agent-source-of-record/', '/guides/ai-agent-work-contract/']);
+  assert.equal(contextPacket.sections.find((section) => section.title === 'The packet should be short enough to work from').links, undefined);
+  assert.match(contextPacket.intro[0], /^An AI agent context packet is the smallest current, source-linked bundle an agent or reviewer needs to complete one bounded task step\./);
+  const contextPacketHtml = renderStaticPage(guideTemplate, contextPacketGuide);
+  assert.match(contextPacketHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-context-packet\/"/);
+  assert.match(contextPacketHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(contextPacketHtml, /source-linked bundle/);
+  assert.doesNotMatch(contextPacketHtml, /seo-page-dark/);
+  assert.doesNotMatch(contextPacketHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((contextPacketHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/context-engineering-for-ai-agents/',
+    '/guides/ai-agent-source-of-record/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-task-closure/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-context-packet\/"/g) || []).length, 1);
   }
   const taskClosureGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-closure/');
   assert.equal(taskClosureGuide.title, 'AI Agent Task Closure: Record What Done Means | Commonly');
