@@ -11756,6 +11756,9 @@ body.modern-ui.v2-canvas {
   line-height: 20px;
   white-space: normal;
 }
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button:hover:not(:disabled) {
+  color: var(--v2-on-ink);
+}
 .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-recommended {
   display: block;
   color: var(--v2-text-muted);
