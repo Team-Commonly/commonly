@@ -70,12 +70,12 @@ export const registerLogin = (program) => {
   program
     .command('login')
     .description('Authenticate to a Commonly instance')
-    .option('--instance <url-or-key>', 'Instance URL or saved profile key (default: https://api.commonly.me)')
-    .option('--key <name>', 'Config key to save as (default: "default" or "local")')
+    .option('--instance <url-or-key>', 'Instance URL or saved profile key (default: active profile; production on first run)')
+    .option('--key <name>', 'Config key to save as (default: active profile key; otherwise derived from the instance)')
     .option('--password', 'Use the legacy email/password prompt instead of device authorization')
     .addHelpText('after', `
 Examples:
-  $ commonly login                                                   # production (default key)
+  $ commonly login                                                   # active profile (production on first run)
   $ commonly login --instance https://api.commonly.me --key dev  # named profile
   $ commonly login --instance http://localhost:5000                  # saved as "local"
 
