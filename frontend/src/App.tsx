@@ -23,6 +23,7 @@ import V2LandingPage from './v2/landing/V2LandingPage';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
 import './App.css';
+import V2CliAuthorize from './v2/components/V2CliAuthorize';
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -277,6 +278,10 @@ function App(): React.ReactElement {
                     <Route path="/register" element={<Register />} />
                     <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
+                    {/* Device-code sign-in (#1405): the backend's /api/auth/device/start
+                        answers with `verifyUrl: <origin>/cli/authorize`. Deleting this
+                        route 404'd every `commonly login` (#1534, 2026-09-04 → 09-08). */}
+                    <Route path="/cli/authorize" element={<V2CliAuthorize />} />
                     <Route path="/discord/callback" element={<DiscordCallback />} />
                     <Route path="/discord/success" element={<DiscordCallback type="success" />} />
                     <Route path="/discord/error" element={<DiscordCallback type="error" />} />

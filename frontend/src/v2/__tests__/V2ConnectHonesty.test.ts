@@ -78,4 +78,16 @@ describe('the connect flow states what it does not do', () => {
     expect(src).toMatch(/commonly agent run/);
     expect(src).toMatch(/agentByo\.listen\.title/);
   });
+
+  test('the device-login verify page the backend points at exists as a frontend route', () => {
+    // #1534 deleted /cli/authorize as "retired UI" while backend/routes/auth.ts
+    // still answered device/start with `verifyUrl: <origin>/cli/authorize`, so
+    // every `commonly login` 404'd for four days. The backend path is the source;
+    // the route must match it.
+    const backendAuth = fs.readFileSync(path.join(__dirname, '../../../../backend/routes/auth.ts'), 'utf8');
+    const verify = backendAuth.match(/verifyUrl: `\$\{origin\}(\/[^`]+)`/);
+    expect(verify).not.toBeNull();
+    const app = read('../../App.tsx');
+    expect(app).toContain(`<Route path="${verify![1]}" element={<V2CliAuthorize />} />`);
+  });
 });
