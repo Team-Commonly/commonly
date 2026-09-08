@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 80);
+  assert.equal(pages.length, 82);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -101,6 +101,8 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-dependency-management/',
     '/guides/ai-agent-task-intake/',
     '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-task-closure/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -136,7 +138,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 70);
+  assert.equal(guidePages.length, 72);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -726,6 +728,56 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const taskClosureGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-closure/');
+  assert.equal(taskClosureGuide.title, 'AI Agent Task Closure: Record What Done Means | Commonly');
+  const taskClosure = guides['ai-agent-task-closure'];
+  assert.deepEqual(taskClosure.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(taskClosure.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(taskClosure.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(taskClosure.sections.find((section) => section.title === 'Closing a path does not erase the reason it existed').links.map((link) => link.path), ['/guides/ai-agent-no-op/', '/guides/ai-agent-blockers/']);
+  assert.equal(taskClosure.sections.find((section) => section.title === 'Closure is a short final accounting').links, undefined);
+  assert.match(taskClosure.intro[0], /^AI agent task closure is the act of recording why a bounded task is done, what artifact or result it produced, what evidence supports that result, which decision or review applies, and what remains outside the task\./);
+  const taskClosureHtml = renderStaticPage(guideTemplate, taskClosureGuide);
+  assert.match(taskClosureHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-closure\/"/);
+  assert.match(taskClosureHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(taskClosureHtml, /verification boundary/);
+  assert.doesNotMatch(taskClosureHtml, /seo-page-dark/);
+  assert.doesNotMatch(taskClosureHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((taskClosureHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-no-op/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-closure\/"/g) || []).length, 1);
+  }
+  const artifactVersionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-artifact-versions/');
+  assert.equal(artifactVersionsGuide.title, 'AI Agent Artifact Versions: Make Work Reviewable | Commonly');
+  const artifactVersions = guides['ai-agent-artifact-versions'];
+  assert.deepEqual(artifactVersions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(artifactVersions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(artifactVersions.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(artifactVersions.sections.find((section) => section.title === 'Version identity can be a document revision').links.map((link) => link.path), ['/guides/ai-agent-review-packet/', '/guides/ai-agent-source-of-record/']);
+  assert.equal(artifactVersions.sections.find((section) => section.title === 'The goal is not a ceremonial version number').links, undefined);
+  assert.match(artifactVersions.intro[0], /^AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product\./);
+  const artifactVersionsHtml = renderStaticPage(guideTemplate, artifactVersionsGuide);
+  assert.match(artifactVersionsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-artifact-versions\/"/);
+  assert.match(artifactVersionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(artifactVersionsHtml, /superseded/);
+  assert.doesNotMatch(artifactVersionsHtml, /seo-page-dark/);
+  assert.doesNotMatch(artifactVersionsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((artifactVersionsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-verification-path/',
+    '/guides/ai-agent-audit-trail/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-artifact-versions\/"/g) || []).length, 1);
   }
   const decisionOwnerGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-owner/');
   assert.equal(decisionOwnerGuide.title, 'AI Agent Decision Owner: Who Can Give the Answer? | Commonly');

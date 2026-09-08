@@ -609,6 +609,10 @@
       {
         "label": "AI agent task intake",
         "path": "/guides/ai-agent-task-intake/"
+      },
+      {
+        "label": "AI agent task closure",
+        "path": "/guides/ai-agent-task-closure/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -10361,6 +10365,10 @@
       {
         "label": "AI agent source of record",
         "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }],
     "cta": {
       "title": "Make the answer easy to inspect",
@@ -11076,6 +11084,10 @@
       {
         "label": "AI agent non-goals",
         "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI agent task closure",
+        "path": "/guides/ai-agent-task-closure/"
       }
     ],
     "cta": {
@@ -13227,6 +13239,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -16094,6 +16110,10 @@
       {
         "label": "AI agent non-goals",
         "path": "/guides/ai-agent-non-goals/"
+      },
+      {
+        "label": "AI agent task closure",
+        "path": "/guides/ai-agent-task-closure/"
       }
     ],
     "cta": {
@@ -16791,6 +16811,10 @@
       {
         "label": "AI agent evidence labels",
         "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -18189,6 +18213,10 @@
       {
         "label": "AI agent decision owner",
         "path": "/guides/ai-agent-decision-owner/"
+      },
+      {
+        "label": "AI agent artifact versions",
+        "path": "/guides/ai-agent-artifact-versions/"
       }
     ],
     "cta": {
@@ -21680,6 +21708,1394 @@
     "cta": {
       "title": "Give every choice an accountable answerer",
       "body": "AI agent decision ownership makes a task’s authority boundary visible. Define the smallest question, prepare the relevant evidence and options, name the person, role, or system accountable for that choice, and record what the answer changes—and does not change. That lets agents do useful preparatory work without turning a recommendation, task claim, or visible conversation into unearned authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-artifact-versions": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Artifact Versions: Make Work Reviewable | Commonly",
+    "title": "AI Agent Artifact Versions: Make Reviewable Work Identifiable",
+    "description": "Learn how to manage AI agent artifact versions so reviewers can identify what they inspected, what changed, what was superseded, and which evidence or decision applies.",
+    "summary": "AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product. A version tells a reviewer what they inspected, what evidence and limits applied, what feedback or decision refers to it, and whether a later artifact superseded it. “I updated the draft” is not enough; a reviewer needs the exact version, the material change, and the current state of the artifact.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product. A version tells a reviewer what they inspected, what evidence and limits applied, what feedback or decision refers to it, and whether a later artifact superseded it. “I updated the draft” is not enough; a reviewer needs the exact version, the material change, and the current state of the artifact.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams coordination records that can link to versions: tasks hold scope, owner, status, activity, and results; focused threads hold review questions and answers; attachments preserve substantial artifacts; and selected shared memory can retain sourced durable context. These records help a team locate and discuss an artifact. They do not replace the repository, document system, deployment platform, or another target system that owns the authoritative version or external state.",
+      "Clear versioning keeps agent work reviewable. A reviewer can accept version A for one stage, request bounded changes, then inspect version B without assuming the earlier answer applies. A later task can carry forward useful evidence while pointing to the current source rather than treating a stale draft or summary as authoritative.",
+      "This guide explains how to identify AI agent artifact versions, attach review decisions to the right version, and make changes and supersession visible across tasks and handoffs."
+    ],
+    "sections": [
+      {
+        "title": "A version identifies the reviewed artifact, not just its topic",
+        "paragraphs": [
+          "Two artifacts can share a title and still differ in sources, claims, scope, checks, or requested decision. The version should identify the object precisely enough that another person can retrieve the same artifact and understand what the review or decision applied to."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Ambiguous reference",
+              "Versioned reference",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "“The draft”",
+                "“The linked draft version reviewed on the named task.”",
+                "The reviewer knows which text the answer applies to"
+              ],
+              [
+                "“The research”",
+                "“The evidence packet with the listed source set and labeled limits.”",
+                "Facts and inferences can be inspected"
+              ],
+              [
+                "“The plan”",
+                "“The plan artifact tied to the current milestone and dependency state.”",
+                "Later changes do not rewrite the prior decision"
+              ],
+              [
+                "“The fix”",
+                "“The exact proposed change and its attached checks.”",
+                "Review is not confused with deployment or merge"
+              ],
+              [
+                "“The decision”",
+                "“The packet containing the options and evidence considered.”",
+                "The owner’s answer has a clear basis"
+              ],
+              [
+                "“The result”",
+                "“The task result linked to its artifact and verification path.”",
+                "A report can be traced to the supporting record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Version identity can be a document revision",
+        "paragraphs": [
+          "Version identity can be a document revision, pull request, attachment, dated artifact, or another system-native identifier. The key is not a particular tool. It is that the record lets a reviewer find the exact content without guessing from a moving title or chat summary.",
+          "For the artifact, evidence, limits, and requested judgment assembled before review, see AI Agent Review Packet.",
+          "For the hierarchy that identifies which system or record is authoritative for a fact or artifact type, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          },
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Record the material context that travels with a version",
+        "paragraphs": [
+          "A version should be more than a timestamp. It needs enough context to establish what changed, why it exists, which inputs and scope apply, and what a reviewer is being asked to assess. This makes the artifact understandable when the original agent session is no longer available."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Version field",
+              "Include",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Identity",
+                "Link, system identifier, attachment, or unambiguous version name",
+                "“Evidence packet v2, attached to the task.”"
+              ],
+              [
+                "Task boundary",
+                "Outcome, permitted inputs, non-goals, and intended stage",
+                "“Comparison brief only; no policy ruling or external action.”"
+              ],
+              [
+                "Change summary",
+                "Material additions, removals, corrections, or scope changes",
+                "“Added source B and narrowed the conclusion.”"
+              ],
+              [
+                "Evidence state",
+                "Sources, checks, labels, uncertainty, and open questions",
+                "“Conflict remains between source A and B.”"
+              ],
+              [
+                "Review request",
+                "Reviewer, criterion, and answer needed",
+                "“Editor checks definition against the stated brief.”"
+              ],
+              [
+                "Current state",
+                "Draft, under review, accepted for a stage, superseded, or rejected",
+                "“v1 is superseded by v2 for the current review.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The fields do not need a long narrative",
+        "paragraphs": [
+          "The fields do not need a long narrative. They give the next reader enough information to decide whether they are looking at a current candidate, a historical artifact, or a source of evidence for a later decision.",
+          "For the labels that distinguish fact, reported status, inference, recommendation, open question, and decision, see AI Agent Evidence Labels."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Evidence Labels",
+            "path": "/guides/ai-agent-evidence-labels/"
+          }
+        ]
+      },
+      {
+        "title": "Bind review decisions to the exact version",
+        "paragraphs": [
+          "Review feedback and acceptance should state the artifact version they apply to. This prevents a common failure: an agent revises a draft after a reviewer responds, then later treats the old answer as approval of the new content. The reviewer may accept a stage, request changes, narrow scope, reject a path, route a question, or defer—but that answer has an object."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review answer",
+              "Version record should show",
+              "Later reader can tell"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "Exact version, review stage, reviewer, and continuing limits",
+                "What is ready for the named next step"
+              ],
+              [
+                "Request changes",
+                "Version reviewed, cited gap, and bounded revision needed",
+                "Which changes must be addressed before return"
+              ],
+              [
+                "Narrow",
+                "Version’s excluded claim, input, audience, or operation",
+                "What portion remains acceptable"
+              ],
+              [
+                "Reject",
+                "Version, evidence or boundary reason, and closed path",
+                "Why the approach should not proceed"
+              ],
+              [
+                "Route",
+                "Version, question, receiving owner, and supplied evidence",
+                "What another owner must decide"
+              ],
+              [
+                "Defer",
+                "Version, decision date or condition, and current status",
+                "Whether a later review can reuse it or needs an update"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An accepted version is not automatically the final artifact",
+        "paragraphs": [
+          "An accepted version is not automatically the final artifact. It may be ready for a next review, an editorial step, or a maintainer decision. The target system that would later execute a change remains responsible for confirming its own state.",
+          "For the explicit review answers and their task effects, see AI Agent Review Decisions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Decisions",
+            "path": "/guides/ai-agent-review-decisions/"
+          }
+        ]
+      },
+      {
+        "title": "Show what changed without overstating what changed",
+        "paragraphs": [
+          "The change summary should describe material differences that affect review, evidence, scope, or task state. It should not claim a broader improvement than the version record can support. A brief, concrete summary helps reviewers decide whether they can recheck only the changed section or need a new review of the artifact."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Change type",
+              "State",
+              "Do not imply"
+            ],
+            "rows": [
+              [
+                "Source correction",
+                "Which source or quotation was replaced and why",
+                "That every conclusion is now automatically verified"
+              ],
+              [
+                "Scope narrowing",
+                "Which claim, audience, input, or operation was removed",
+                "That excluded work is no longer relevant anywhere"
+              ],
+              [
+                "Requested revision",
+                "Which reviewer condition was addressed",
+                "That the reviewer accepted the new version already"
+              ],
+              [
+                "New evidence",
+                "Source, provenance, and claim it supports or complicates",
+                "That the new source resolves a policy choice"
+              ],
+              [
+                "Structural revision",
+                "Which task artifact fields or sections changed",
+                "That the underlying system state changed"
+              ],
+              [
+                "Superseding draft",
+                "Which prior version it replaces for the current stage",
+                "That historical records should be erased"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the change is too large to summarize",
+        "paragraphs": [
+          "If the change is too large to summarize, split the artifact or route it for a fresh review. A vague “major rewrite” does not give a reviewer enough basis to decide whether earlier feedback still applies.",
+          "For a direct route from a claim to the records that support or limit it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Mark superseded versions and preserve the reason",
+        "paragraphs": [
+          "Supersession is a relationship, not deletion. The current version should point to the earlier artifact it replaces and state why: a corrected source, a changed task boundary, a requested revision, a new decision, or a different owner’s answer. Historical versions remain useful for audit, reasoning, and explaining why a conclusion changed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Supersession reason",
+              "Current record should state",
+              "Historical version remains useful for"
+            ],
+            "rows": [
+              [
+                "Source update",
+                "Old and new source basis plus effect on the claim",
+                "Understanding why the analysis changed"
+              ],
+              [
+                "Review revision",
+                "Reviewer request and the change made",
+                "Checking that feedback was addressed"
+              ],
+              [
+                "Scope decision",
+                "Prior boundary, approved delta, and continuing non-goals",
+                "Showing what the owner actually changed"
+              ],
+              [
+                "Dependency change",
+                "Required state that changed and new task effect",
+                "Explaining why work resumed or shifted"
+              ],
+              [
+                "Incorrect artifact",
+                "Specific error and corrected version",
+                "Avoiding repetition of the invalid path"
+              ],
+              [
+                "New owner decision",
+                "Answer that makes the earlier option obsolete",
+                "Preserving the alternatives and tradeoff considered"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Do not use latest as a substitute for a relationship",
+        "paragraphs": [
+          "Do not use “latest” as a substitute for a relationship. Latest can change silently. “Superseded by the linked v2 because the source ruling changed” gives a future reviewer an inspectable path from the old record to the new one.",
+          "For the history of task records, threads, artifacts, and accepted decisions, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the task result aligned with the current artifact",
+        "paragraphs": [
+          "The task should link the version that supports its current reported result. If a task says an artifact is ready for review, the result should name the exact candidate and its evidence boundary. If a version is superseded or rejected, update the task so the next owner does not follow a stale reference."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task state",
+              "Version relationship",
+              "Task should record"
+            ],
+            "rows": [
+              [
+                "Active drafting",
+                "Current working artifact and its known limits",
+                "What is being prepared and what remains open"
+              ],
+              [
+                "Ready for review",
+                "Exact candidate version and requested decision",
+                "Reviewer, acceptance condition, and evidence links"
+              ],
+              [
+                "Changes requested",
+                "Reviewed version plus revision target",
+                "Which feedback applies to the next version"
+              ],
+              [
+                "Blocked",
+                "Artifact that revealed the missing prerequisite",
+                "Blocker, required state, and resume condition"
+              ],
+              [
+                "Done for stage",
+                "Accepted version and next task or handoff",
+                "Result reference, decision boundary, and follow-on if any"
+              ],
+              [
+                "Superseded",
+                "Current version and reason the former one no longer governs",
+                "What should be used for future review"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task is a coordination record",
+        "paragraphs": [
+          "The task is a coordination record, not the authoritative version store for every artifact type. Where a repository, document service, or other target system owns the version, link that source rather than copying a summary into the result field.",
+          "For task fields that coordinate scope, owner, status, dependencies, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve version boundaries in decisions and handoffs",
+        "paragraphs": [
+          "Decision packets and handoffs should carry the exact artifact version under discussion. Without it, a receiving owner can accept a recommendation, review a changed artifact, or take a next step based on a version they did not actually inspect. The record should also state whether later updates require a fresh decision."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work transition",
+              "Include version information",
+              "Next owner should know"
+            ],
+            "rows": [
+              [
+                "Decision packet",
+                "Artifact version, source set, options, and evidence date",
+                "What the owner’s answer applies to"
+              ],
+              [
+                "Review handoff",
+                "Exact version, checks, limits, and requested stage",
+                "Whether review is new or a return after changes"
+              ],
+              [
+                "Blocker escalation",
+                "Artifact that exposed the gap and source of the missing condition",
+                "What work can resume if the answer arrives"
+              ],
+              [
+                "Follow-on proposal",
+                "Current artifact and the separate evidence prompting later work",
+                "That the active task’s result remains bounded"
+              ],
+              [
+                "Durable context",
+                "Versioned source, decision scope, and successor record",
+                "Whether a historical conclusion remains applicable"
+              ],
+              [
+                "Target-system proposal",
+                "Proposed artifact plus the system record still needed",
+                "That a draft or decision is not execution evidence"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff can be brief when the links are clear",
+        "paragraphs": [
+          "The handoff can be brief when the links are clear. It should never require the receiver to infer which version the prior owner meant by “the final draft” or “the approved plan.”",
+          "For a bounded transfer that names the next contribution, evidence, and owner, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Use versioning across different agent roles",
+        "paragraphs": [
+          "Each role creates different artifacts, but the same questions apply: what was reviewed, what changed, which version is current for the stage, and which source owns any external fact. Match the record to the contribution instead of imposing one tool-specific format."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Artifact version to identify",
+              "Important boundary"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Evidence packet, source set, and analysis version",
+                "An updated packet does not itself decide policy"
+              ],
+              [
+                "Editorial",
+                "Exact draft and source-backed claim set",
+                "Review-stage acceptance is not publication"
+              ],
+              [
+                "Project management",
+                "Plan, dependency map, and decision basis",
+                "A versioned plan does not assign priority by itself"
+              ],
+              [
+                "Software development",
+                "Exact change, checks, and maintainer-reviewed object",
+                "A proposed change is not merge or deployment evidence"
+              ],
+              [
+                "Support triage",
+                "Classified report and routing note",
+                "The version does not prove a customer outcome"
+              ],
+              [
+                "Governance or security",
+                "Requirement analysis and decision packet",
+                "Visible approval is not technical enforcement"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The role should preserve only material version context",
+        "paragraphs": [
+          "The role should preserve only material version context. A stable source link and a clear change summary are often more useful than a verbose chronology of minor wording changes.",
+          "For reviewable conditions that tell a reviewer what the artifact must demonstrate at its current stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Version an artifact in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Give the artifact an unambiguous link, identifier, attachment, or system-native version reference.",
+          "Record the task boundary, evidence set, current limits, and intended review stage for that version.",
+          "State the material change from the prior version or state that it is the first candidate.",
+          "Link the reviewer, decision owner, acceptance condition, or verification path relevant to the artifact.",
+          "Record the review answer against the exact version, not a moving title or later draft.",
+          "When a later artifact replaces it, mark the supersession relationship and preserve the reason.",
+          "Update the task result, handoff, and durable context to point to the version that currently governs the next step."
+        ]
+      },
+      {
+        "title": "The goal is not a ceremonial version number",
+        "paragraphs": [
+          "The goal is not a ceremonial version number for every sentence. It is an artifact identity clear enough that review, decision, and later verification apply to the object they actually concern."
+        ]
+      },
+      {
+        "title": "Test whether a version is reviewable",
+        "paragraphs": [
+          "Before asking for a review or decision, ask whether a new reader can retrieve the artifact and determine what its record means. If they cannot, the work may be useful but it is not yet a stable review object."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Identity test",
+                "Which exact artifact is under review?",
+                "Add a link, identifier, attachment, or version reference"
+              ],
+              [
+                "Boundary test",
+                "What outcome, inputs, and non-goals apply to it?",
+                "Add the task and source boundary"
+              ],
+              [
+                "Change test",
+                "What materially differs from the prior version?",
+                "Write a concise change summary or split the artifact"
+              ],
+              [
+                "Evidence test",
+                "Which facts, checks, and limitations support the version?",
+                "Link the source set and label uncertainty"
+              ],
+              [
+                "Decision test",
+                "Which reviewer or owner answer applies to this object?",
+                "State the requested review stage or decision question"
+              ],
+              [
+                "Currency test",
+                "Is this current, historical, rejected, or superseded?",
+                "Link the successor record and reason for change"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A version that fails a test",
+        "paragraphs": [
+          "A version that fails a test can still be a working draft. Keep it in preparation until the artifact and its review context are stable enough for another owner to assess without reconstructing the session."
+        ]
+      },
+      {
+        "title": "Seven artifact-version mistakes that make review unreliable",
+        "paragraphs": []
+      },
+      {
+        "title": "Calling a moving document “the final version”",
+        "paragraphs": [
+          "Final means little without a stage, link, and current state. Identify the exact artifact and whether it is ready for review, accepted for a stage, or superseded."
+        ]
+      },
+      {
+        "title": "Applying an old review answer to a new artifact",
+        "paragraphs": [
+          "If material claims, sources, scope, or checks changed, the earlier answer may not apply. Link the reviewed version and request a new or limited recheck as appropriate."
+        ]
+      },
+      {
+        "title": "Recording a change without naming what changed",
+        "paragraphs": [
+          "“Updated” does not tell a reviewer whether sources, conclusions, operations, or only formatting changed. State the material difference and its effect on review."
+        ]
+      },
+      {
+        "title": "Deleting the earlier version when it is superseded",
+        "paragraphs": [
+          "Historical artifacts can explain the decision, correction, or scope change that produced the current version. Preserve the relationship and reason even when the older version no longer governs."
+        ]
+      },
+      {
+        "title": "Treating an accepted draft as proof of external execution",
+        "paragraphs": [
+          "Acceptance may advance a task stage. A repository, deployment, identity, delivery, or other target system remains the source that confirms its own external state."
+        ]
+      },
+      {
+        "title": "Letting a handoff omit the artifact identity",
+        "paragraphs": [
+          "The receiving owner cannot safely review or act on “the latest draft.” Carry the exact version, evidence boundary, and requested decision with the handoff."
+        ]
+      },
+      {
+        "title": "Treating a task result as the only version record",
+        "paragraphs": [
+          "The task coordinates work but may not own the authoritative artifact. Link the repository, document, attachment, or other source that holds the version being referenced."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent artifact versions?",
+        "answer": "They are stable, identifiable states of drafts, evidence packets, plans, review packets, decisions, task results, and other work products. They let reviewers see what they inspected, what changed, what was superseded, and which decision or evidence applies."
+      },
+      {
+        "question": "Why do agent artifacts need versions?",
+        "answer": "Agents and people may revise quickly across tasks and handoffs. A version prevents review feedback, acceptance, evidence, and task results from being applied to a moving artifact or mistaken for a later one."
+      },
+      {
+        "question": "Does every small edit need a new version?",
+        "answer": "Use a stable reference whenever a change affects review, evidence, scope, a decision, or a task result. Minor local edits can remain part of preparation until the artifact becomes a reviewable object; the important part is that the version under review is identifiable."
+      },
+      {
+        "question": "What does superseded mean for an agent artifact?",
+        "answer": "It means a later version now governs the current task stage, with a stated reason such as a source correction, requested revision, scope decision, dependency change, or new owner answer. The earlier artifact remains context rather than current authority."
+      },
+      {
+        "question": "Can a reviewer accept an artifact version and still request another review later?",
+        "answer": "Yes. Acceptance should name its stage and boundary. An artifact can be accepted for one review step while later publication, implementation, decision, or target-system verification still requires another owner or record."
+      },
+      {
+        "question": "Do artifact versions prove external actions occurred?",
+        "answer": "No. They identify a work product and its review context. The relevant target system remains responsible for proving its own merge, deployment, permission, delivery, or other external state."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Evidence Labels",
+        "path": "/guides/ai-agent-evidence-labels/"
+      },
+      {
+        "label": "AI Agent Review Decisions",
+        "path": "/guides/ai-agent-review-decisions/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent Audit Trail",
+        "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI agent task closure",
+        "path": "/guides/ai-agent-task-closure/"
+      }
+    ],
+    "cta": {
+      "title": "Make the artifact behind every decision findable",
+      "body": "AI agent artifact versions give collaboration a stable object. Identify the draft or packet, record its boundary and material changes, connect the review answer to that exact version, and mark what later supersedes it. That lets people and agents work quickly without letting a moving artifact turn old feedback, a task update, or a recommendation into a claim about something nobody actually reviewed or executed.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-task-closure": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Task Closure: Record What Done Means | Commonly",
+    "title": "AI Agent Task Closure: Record What Done Means",
+    "description": "Learn how to close AI agent tasks with a bounded result, artifact reference, verification path, decision boundary, remaining limits, follow-on work, and retained context.",
+    "summary": "AI agent task closure is the act of recording why a bounded task is done, what artifact or result it produced, what evidence supports that result, which decision or review applies, and what remains outside the task. A useful closure is not “completed.” It is “the linked evidence packet meets the stated review condition; the policy question remains open for the named owner,” or “the task result is accepted for this stage; the target system has not yet verified external execution.”",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent task closure is the act of recording why a bounded task is done, what artifact or result it produced, what evidence supports that result, which decision or review applies, and what remains outside the task. A useful closure is not “completed.” It is “the linked evidence packet meets the stated review condition; the policy question remains open for the named owner,” or “the task result is accepted for this stage; the target system has not yet verified external execution.”",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams coordination records for closure: tasks carry a status, owner, dependency, activity, and result; focused threads hold review and decision answers; attachments preserve substantial artifacts; and selected shared memory can retain sourced durable context. These records show a task’s collaboration outcome. They do not replace the repository, deployment platform, identity system, delivery service, or other target system as the authority for its own external state.",
+      "Task closure is how an agent stops without hiding unfinished work. It distinguishes a completed bounded contribution from a blocker, no-op, deferred decision, external action awaiting confirmation, or adjacent follow-on. The result gives the next owner a clear source to inspect instead of asking them to reconstruct what “done” meant from a long conversation.",
+      "This guide explains how to close AI agent tasks, state the evidence and limits of a result, and preserve the next decision or task without reopening a finished boundary by implication."
+    ],
+    "sections": [
+      {
+        "title": "Done means the task reached its stated boundary",
+        "paragraphs": [
+          "A task is done when it completed the outcome and review stage it actually owns—not when every issue connected to the topic is permanently resolved. Closure should compare the result to the original work contract, acceptance conditions, and stop rule so a reviewer can see why the agent stopped."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task outcome",
+              "Done means",
+              "It does not mean"
+            ],
+            "rows": [
+              [
+                "Evidence packet",
+                "Sources, labels, conflict, open question, and requested decision meet the stated condition",
+                "The owner selected an option or an external action happened"
+              ],
+              [
+                "Draft revision",
+                "The exact sections meet the approved brief and review requirements",
+                "The draft is published or all future edits are complete"
+              ],
+              [
+                "Dependency summary",
+                "Required states, owners, and effects are accurately recorded",
+                "Every dependency is resolved"
+              ],
+              [
+                "Review packet",
+                "Artifact, checks, limits, and question are ready for the reviewer",
+                "The reviewer accepted the artifact yet"
+              ],
+              [
+                "Triage result",
+                "Input is classified and routed with stated limits",
+                "A customer outcome or system fix occurred"
+              ],
+              [
+                "Bounded plan",
+                "Assumptions, milestones, dependencies, and decision question are clear",
+                "The plan is funded, prioritized, or executed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The closure should name the stage",
+        "paragraphs": [
+          "The closure should name the stage: “done for research review,” “done for maintainer review,” or “done as a no-op after checking the named condition.” Stage language keeps a task result from sounding like a general claim of success.",
+          "For task status, ownership, dependencies, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Close against the acceptance condition and stop rule",
+        "paragraphs": [
+          "Before marking work done, check the condition that made the artifact ready and the stop rule that bounded the task. Acceptance conditions explain what was required; non-goals and stop rules explain why excluded work did not need to be completed. If either is unmet, the correct state may be active revision, blocker, escalation, narrowed task, or no-op instead of closure."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure check",
+              "Verify",
+              "If it fails"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "The promised first artifact or result exists and is identifiable",
+                "Narrow the claim, continue work, or clarify the task"
+              ],
+              [
+                "Acceptance condition",
+                "The artifact meets the observable review criteria",
+                "Request changes, return to work, or record the gap"
+              ],
+              [
+                "Evidence",
+                "Sources, checks, and limitations support the stated result",
+                "Label the limit, add a blocker, or route a decision"
+              ],
+              [
+                "Scope",
+                "Work stayed inside inputs, operations, and non-goals",
+                "Split adjacent work or record a visible scope change"
+              ],
+              [
+                "Review boundary",
+                "Required reviewer or decision answer is present for this stage",
+                "Keep the task awaiting review or hand off the packet"
+              ],
+              [
+                "Stop rule",
+                "The agent reached a valid handoff, no-op, blocker, or result",
+                "Record the correct non-done state"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Closure is not a reward for effort",
+        "paragraphs": [
+          "Closure is not a reward for effort. It is a claim about a specific result. A task can have a valuable artifact and still remain open if the artifact has not reached the review condition the task promised.",
+          "For criteria that make an agent artifact ready for the next review stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Link the exact artifact and result",
+        "paragraphs": [
+          "The closure record should point to the specific artifact, version, source set, check, or task result that supports the conclusion. A future reader should not have to infer whether “the final draft” means the version the reviewer actually inspected or a later revision that changed the claims."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure item",
+              "Link or state",
+              "Why"
+            ],
+            "rows": [
+              [
+                "Artifact",
+                "Exact draft, evidence packet, plan, change, or attachment",
+                "The result has a retrievable object"
+              ],
+              [
+                "Version",
+                "Current reviewable version and any supersession relationship",
+                "Earlier feedback is not applied to a moving artifact"
+              ],
+              [
+                "Evidence",
+                "Sources, checks, observations, and labels that support the result",
+                "The reader can inspect the basis of the claim"
+              ],
+              [
+                "Review or decision",
+                "Owner, answer, artifact considered, and stage",
+                "The task effect is clear"
+              ],
+              [
+                "Verification path",
+                "Record or target system that confirms consequential facts",
+                "A reported result is not mistaken for proof"
+              ],
+              [
+                "Limit",
+                "Open question, excluded operation, missing check, or future owner",
+                "The closure does not overstate what it established"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task can summarize the result",
+        "paragraphs": [
+          "The task can summarize the result, but it should link the system or artifact that owns the detailed fact. A repository, document system, or target system may remain the authoritative record for the version or external state.",
+          "For stable artifacts that show what a reviewer inspected, what changed, and what superseded them, see AI Agent Artifact Versions."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Artifact Versions",
+            "path": "/guides/ai-agent-artifact-versions/"
+          }
+        ]
+      },
+      {
+        "title": "State what the closure verifies and what it does not",
+        "paragraphs": [
+          "Every closure has a boundary. An agent can complete a research packet without deciding policy, finish a review packet without merging a change, or classify a report without resolving an external issue. Naming those limits makes the result more useful because a reviewer knows exactly what further work, authority, or system check remains."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure claim",
+              "It verifies",
+              "It does not verify"
+            ],
+            "rows": [
+              [
+                "“Research task done”",
+                "The bounded evidence packet meets its stated review condition",
+                "That a policy owner accepted the recommendation"
+              ],
+              [
+                "“Draft task done”",
+                "The named version is ready for the next editorial review",
+                "That the page is live or all claims are permanently approved"
+              ],
+              [
+                "“Review packet done”",
+                "Checks, artifact, limits, and decision question are assembled",
+                "That the reviewer selected an answer"
+              ],
+              [
+                "“Dependency task done”",
+                "The linked task recorded its required result",
+                "That every dependent task is now eligible without verification"
+              ],
+              [
+                "“Decision task done”",
+                "Options and evidence are ready for the owner",
+                "That the owner made a decision"
+              ],
+              [
+                "“External-action preparation done”",
+                "The proposal and evidence are ready for authorized action",
+                "That the external action occurred"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The limit belongs in the result",
+        "paragraphs": [
+          "The limit belongs in the result, not only in a separate caveat. This stops a short status label from being repeated later as though it proved a stronger fact than the task was designed to establish.",
+          "For the route from a claim to the record that supports or limits it, see AI Agent Verification Path."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Verification Path",
+            "path": "/guides/ai-agent-verification-path/"
+          }
+        ]
+      },
+      {
+        "title": "Close blocked, no-op, and declined paths accurately",
+        "paragraphs": [
+          "Not every finished task closes with a produced artifact. A task may legitimately close because it reached a no-op, an owner declined the proposed path, a separate task now owns the work, or the original request was narrowed. A blocker is different: it keeps the current task open or waiting because the promised result cannot yet be produced."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Closure or state",
+              "Record"
+            ],
+            "rows": [
+              [
+                "No eligible contribution exists",
+                "Close as a no-op if the task’s purpose was the check itself",
+                "Inspected condition, evidence, and reason no action was needed"
+              ],
+              [
+                "Owner rejects proposed work",
+                "Close the rejected path",
+                "Decision owner, reason, evidence, and what remains open"
+              ],
+              [
+                "Work moved to a distinct task",
+                "Close the current bounded task and link the follow-on",
+                "Current result, new task’s outcome, and relationship"
+              ],
+              [
+                "Scope is narrowed",
+                "Close the excluded path or continue the allowed portion",
+                "Decision, non-goal, and revised task effect"
+              ],
+              [
+                "Prerequisite is missing",
+                "Keep blocked or waiting, not done",
+                "Missing state, owner, effect, and resume condition"
+              ],
+              [
+                "External confirmation is missing",
+                "Close preparation only if that was the outcome",
+                "Verification boundary and target-system record still needed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Closing a path does not erase the reason it existed",
+        "paragraphs": [
+          "Closing a path does not erase the reason it existed. Preserve the evidence and decision so a future owner can see why an idea was declined, deferred, no-op, or made separate instead of reopening it through an ambiguous status.",
+          "For the valid quiet result when no bounded contribution is eligible, see AI Agent No-Op.",
+          "For the precise record of a missing prerequisite that keeps a promised task result open, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          },
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Create follow-on work without reopening the closed task",
+        "paragraphs": [
+          "A completed task can reveal useful adjacent work: another source conflict, a separate improvement, an unresolved policy question, or a recurring issue that needs a different owner. Closure should preserve that discovery without altering the result of the completed task or implying that the prior owner now owns the next project."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Closure finding",
+              "Follow-on record should state",
+              "Current task remains"
+            ],
+            "rows": [
+              [
+                "New evidence changes a separate question",
+                "Evidence, bounded outcome, decision owner, and first artifact",
+                "Done for its original evidence packet"
+              ],
+              [
+                "Review finds an out-of-scope improvement",
+                "Artifact boundary, proposed contribution, and owner decision needed",
+                "Done or awaiting only the in-scope revision"
+              ],
+              [
+                "Dependency creates later work",
+                "Required state, relationship, and next task owner",
+                "Done if the current dependency summary is complete"
+              ],
+              [
+                "Rejected path suggests a different approach",
+                "Reason rejected, new hypothesis, and evidence needed",
+                "Closed; not silently reopened"
+              ],
+              [
+                "Repeated no-op condition may need monitoring",
+                "Scope, cadence, owner, and stop rule for a separate task",
+                "Done for the one-time check"
+              ],
+              [
+                "Accepted artifact needs later execution",
+                "Authorized owner, target system, and verification path",
+                "Done for the preparation or review stage"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The new task must have its own contract",
+        "paragraphs": [
+          "The new task must have its own contract, evidence, owner, and acceptance condition. A link from the closure is a relationship, not a transfer of every unresolved responsibility to the person who completed the original task.",
+          "For turning an adjacent discovery into separately owned bounded work, see AI Agent Follow-On Work."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Follow-On Work",
+            "path": "/guides/ai-agent-follow-on-work/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve decisions and context that the next task needs",
+        "paragraphs": [
+          "Closure is a natural moment to retain sourced durable context: a decision, governing source, evidence limitation, artifact version, or relationship that a later task should not rediscover. Store only the material conclusion with its provenance and applicability boundary; do not turn a task summary into an unsourced rule for unrelated work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Context to retain",
+              "Preserve",
+              "Recheck later"
+            ],
+            "rows": [
+              [
+                "Decision",
+                "Owner, answer, scope, evidence, and successor if any",
+                "Whether a newer decision superseded it"
+              ],
+              [
+                "Governing source",
+                "Exact source, applicability, and source ruling",
+                "Whether the source remains current for the new task"
+              ],
+              [
+                "Artifact version",
+                "Identifier, review stage, change summary, and status",
+                "Whether it is still the current version"
+              ],
+              [
+                "Evidence limitation",
+                "Missing source, unrun check, or excluded claim",
+                "Whether the condition later changed"
+              ],
+              [
+                "Dependency relationship",
+                "Required state, owner, source, and effect",
+                "Whether the dependency result now meets the condition"
+              ],
+              [
+                "Follow-on discovery",
+                "Origin, evidence, proposed outcome, and owner decision",
+                "Whether it became a separately owned task"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The retained context should link back to the task",
+        "paragraphs": [
+          "The retained context should link back to the task and artifact that justify it. Durable memory is useful for orientation, but the task’s result and the source of record remain the place to inspect the original evidence.",
+          "For choosing the authoritative record for a fact instead of relying on a summary, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Hand off the closed result clearly",
+        "paragraphs": [
+          "Some closures end with another person or role taking a bounded next step: a reviewer inspects the artifact, a decision owner chooses among options, a maintainer acts on an accepted change, or a project owner decides whether to start a follow-on. The closing handoff should state what is being received and what has already been completed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Handoff after closure",
+              "Sender provides",
+              "Receiver can determine"
+            ],
+            "rows": [
+              [
+                "Artifact ready for review",
+                "Exact version, evidence, acceptance condition, and limits",
+                "Whether to accept, request changes, narrow, reject, route, or defer"
+              ],
+              [
+                "Decision awaiting owner",
+                "Options, sources, recommendation label, and question",
+                "Which answer changes the next task state"
+              ],
+              [
+                "Follow-on proposal",
+                "Original result, adjacent discovery, new outcome, and owner",
+                "Whether the new task belongs in the plan"
+              ],
+              [
+                "Preparation ready for execution",
+                "Proposed artifact, decision boundary, and target-system fact needed",
+                "What still requires authorization and confirmation"
+              ],
+              [
+                "Blocked result",
+                "Missing prerequisite, effect, owner, and resume condition",
+                "Whether the task can resume or needs a different route"
+              ],
+              [
+                "Durable conclusion",
+                "Source, applicability, and successor record",
+                "Whether the context applies to the new work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff should not say done",
+        "paragraphs": [
+          "The handoff should not say “done” as though the receiver must take every next action. It should make the transition explicit: the previous task is complete for its scope, and the receiver has a defined question, artifact, or decision to assess.",
+          "For transferring a bounded contribution with evidence, ownership, and the next verification step, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Close a task in seven steps",
+        "paragraphs": [],
+        "orderedItems": [
+          "Compare the current result to the task’s outcome, acceptance condition, non-goals, and stop rule.",
+          "Link the exact artifact, version, source set, check, or task result that supports the closure.",
+          "Record the reviewer or decision owner’s answer when the stage requires one.",
+          "State the verification path for any consequential claim and distinguish reported status from target-system fact.",
+          "Name what the closure does not establish: open question, excluded work, missing check, external confirmation, or future owner.",
+          "Close as done, no-op, rejected, narrowed, or separately owned follow-on only when that state accurately matches the task; keep blocked work blocked.",
+          "Preserve the material evidence and decision context, then hand off the exact next question or artifact without reopening the completed boundary."
+        ]
+      },
+      {
+        "title": "Closure is a short final accounting",
+        "paragraphs": [
+          "Closure is a short final accounting, not a long retrospective. The goal is that the next owner can understand the result and its limits without reading the entire work history or trusting a confident summary."
+        ]
+      },
+      {
+        "title": "Test whether a task is ready to close",
+        "paragraphs": [
+          "Before marking the task done, ask whether a new reviewer could inspect the result and distinguish completed work from work that merely changed state. If they cannot, improve the closure record or use a different task status."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Outcome test",
+                "What bounded contribution is complete?",
+                "State the artifact or result against the task contract"
+              ],
+              [
+                "Artifact test",
+                "Which exact version or record supports the closure?",
+                "Link the current artifact and any successor relationship"
+              ],
+              [
+                "Evidence test",
+                "What sources, checks, or decisions support the claim?",
+                "Add the verification path and evidence boundary"
+              ],
+              [
+                "Limit test",
+                "What remains open, excluded, or unverified?",
+                "Name the boundary directly in the result"
+              ],
+              [
+                "State test",
+                "Is this done, no-op, rejected, narrowed, follow-on, or still blocked?",
+                "Use the status that matches the actual task effect"
+              ],
+              [
+                "Continuity test",
+                "What should the next owner inspect, decide, or do?",
+                "Add a focused handoff, decision question, or follow-on link"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A task that fails a test may be close to closure",
+        "paragraphs": [
+          "A task that fails a test may be close to closure but still needs a clearer result reference, a reviewer answer, a limitation, or a decision about its next state. Do not use done as a way to hide that gap."
+        ]
+      },
+      {
+        "title": "Seven task-closure mistakes that make “done” unclear",
+        "paragraphs": []
+      },
+      {
+        "title": "Marking a task done because activity stopped",
+        "paragraphs": [
+          "An agent may stop because it is blocked, waiting, out of scope, or has no eligible contribution. Close the task only when its stated boundary was reached, or record the more accurate state."
+        ]
+      },
+      {
+        "title": "Closing without an identifiable artifact or result",
+        "paragraphs": [
+          "“Completed” is not reviewable by itself. Link the draft, evidence packet, task result, source, decision, or other record that shows what the task produced."
+        ]
+      },
+      {
+        "title": "Treating a review-stage acceptance as external execution",
+        "paragraphs": [
+          "An artifact can be accepted for a bounded stage while merge, deployment, delivery, access change, publication, or another external effect remains unverified by its target system."
+        ]
+      },
+      {
+        "title": "Letting a follow-on idea keep the old task open forever",
+        "paragraphs": [
+          "Close the original contribution when it meets its outcome. Create a separate task with its own owner, evidence, acceptance condition, and stop rule for genuinely new work."
+        ]
+      },
+      {
+        "title": "Erasing the reason a path was rejected or narrowed",
+        "paragraphs": [
+          "Retain the decision, evidence, and boundary that closed the path. A future owner needs to know why it did not proceed before proposing it again."
+        ]
+      },
+      {
+        "title": "Hiding an unresolved prerequisite in a done result",
+        "paragraphs": [
+          "If a missing source, decision, dependency, or target-system fact prevents the promised outcome, keep the task blocked or narrow the closure to the work actually completed."
+        ]
+      },
+      {
+        "title": "Storing a summary without the source that governs it",
+        "paragraphs": [
+          "Durable context is useful only when it links the artifact, decision, task, or target-system record that supports it. Recheck current authority before applying it to new work."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent task closure?",
+        "answer": "It is the act of recording why a bounded task is done, what result or artifact it produced, what evidence and decision apply, what remains outside the task, and what next owner or follow-on work may be needed."
+      },
+      {
+        "question": "What should an agent include when closing a task?",
+        "answer": "Include the completed outcome, exact artifact or result reference, version if material, evidence and verification path, reviewer or decision answer if required, stated limits, final task state, and any focused handoff or separately owned follow-on task."
+      },
+      {
+        "question": "Can a task close if an external action has not happened?",
+        "answer": "Yes, when the task’s outcome was preparation, research, a draft, a review packet, or another bounded contribution. The closure must say that external execution remains outside the task or awaits target-system confirmation."
+      },
+      {
+        "question": "Is a blocked task closed?",
+        "answer": "Usually no. A blocker means a missing prerequisite prevents the task’s promised next step. The task may close only if its purpose was to identify the blocker or if an owner narrows, rejects, or moves the work to a distinct task."
+      },
+      {
+        "question": "What is the difference between task closure and a no-op?",
+        "answer": "Closure records any accurate final state for a bounded task. A no-op is one valid result: the agent checked the named condition and found no eligible contribution. It should still state the evidence and why no action was needed."
+      },
+      {
+        "question": "Should task closure create a follow-on task automatically?",
+        "answer": "No. Closure can preserve an adjacent discovery and propose a separately bounded task, but the appropriate owner decides whether that new work is accepted, deferred, narrowed, or declined. Task creation does not settle priority or authority."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Artifact Versions",
+        "path": "/guides/ai-agent-artifact-versions/"
+      },
+      {
+        "label": "AI Agent Verification Path",
+        "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Follow-On Work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }
+    ],
+    "cta": {
+      "title": "Leave a result the next owner can trust",
+      "body": "AI agent task closure makes done a reviewable claim. Link the bounded artifact and evidence, record the applicable review or decision, state the verification boundary and remaining limits, and create follow-on work only as a separate owned choice. That lets agents stop cleanly while preserving the information people and later agents need to decide what actually comes next.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
