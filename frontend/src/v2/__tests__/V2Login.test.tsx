@@ -579,6 +579,14 @@ describe('V2 routing', () => {
     expect(screen.getAllByRole('table')).toHaveLength(9);
   });
 
+  test('AI agent task-closure guide preserves its completion boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-closure/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Closure: Record What Done Means' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Close blocked, no-op, and declined paths accurately' })).toBeInTheDocument();
+    expect(screen.getByText(/Closure is not a reward for effort. It is a claim about a specific result/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -586,7 +594,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(71);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(72);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
