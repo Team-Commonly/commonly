@@ -407,6 +407,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(decisionCard).toContain('aria-describedby={describedBy}');
     expect(decisionCard).toContain('v2-decision-card__option-recommended');
     expect(decisionCard).toContain('v2-decision-card__option-description');
+    expect(v2).toMatch(/\.v2-decision-card__options \{[\s\S]*?display: grid;[\s\S]*?gap: 12px;/);
+    expect(v2).toMatch(/\.v2-decision-card__option \{[\s\S]*?display: grid;[\s\S]*?gap: 4px;/);
 
     const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
     expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
