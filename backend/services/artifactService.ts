@@ -16,6 +16,11 @@ export type ArtifactKind = 'image' | 'page' | 'doc';
 export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['image', 'page', 'doc'];
 
 export const DEFAULT_LIMIT = 50;
+// Metadata only. `data` (the file bytes, on the Mongo driver) is deliberately
+// absent: items are built field by field so bytes never reach the response,
+// but a 50-row page would still pull fifty whole files out of Mongo if the
+// projection carried them. Pinned in artifactService.test.js.
+export const ARTIFACT_SELECT = 'fileName originalName contentType size uploadedBy podId createdAt';
 export const MAX_LIMIT = 100;
 
 // 66376: page = text/html only. Markdown stays a doc — the board files
@@ -132,7 +137,7 @@ export async function listArtifacts(input: ListArtifactsInput): Promise<ListArti
   const rows = await File.find(pageFilter)
     .sort({ createdAt: -1, _id: -1 })
     .limit(limit + 1)
-    .select('fileName originalName contentType size uploadedBy podId createdAt')
+    .select(ARTIFACT_SELECT)
     .populate('uploadedBy', 'username botMetadata.displayName')
     .lean();
 
@@ -165,5 +170,5 @@ export async function listArtifacts(input: ListArtifactsInput): Promise<ListArti
 }
 
 module.exports = {
-  ARTIFACT_KINDS, DEFAULT_LIMIT, MAX_LIMIT, kindOf, encodeCursor, decodeCursor, clampLimit, nameFilter, listArtifacts,
+  ARTIFACT_KINDS, ARTIFACT_SELECT, DEFAULT_LIMIT, MAX_LIMIT, kindOf, encodeCursor, decodeCursor, clampLimit, nameFilter, listArtifacts,
 };

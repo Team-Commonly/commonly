@@ -22,6 +22,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const Pod = require('../models/Pod');
+const DMService = require('../services/dmService');
 
 type Res = Response;
 type AuthReq = Request & {
@@ -73,9 +74,19 @@ router.get('/', artifactsRateLimit, dualAuth, async (req: AuthReq, res: Res) => 
       return res.status(400).json({ msg: `kind must be one of ${ARTIFACT_KINDS.join(', ')}` });
     }
     const podId = typeof req.query.podId === 'string' && req.query.podId ? req.query.podId : null;
-    if (podId && !scope.includes(podId)) return res.status(403).json({ msg: 'not a member of this pod' });
+    let scopePodIds = scope;
+    if (podId && !scope.includes(podId)) {
+      // A named-pod read keeps the rule the old Files pane used: canViewPod
+      // (members + admins + the agent-dm fan-out). Membership alone would make
+      // the cutover strictly more restrictive on a content read (PR #375 keeps
+      // admins off the *listing* surface; a named pod is not the listing).
+      const pod = req.agentUser ? null : await Pod.findById(podId).select('type members').lean();
+      const canView = pod ? await DMService.canViewPod(req.userId || req.user?.id, pod) : false;
+      if (!canView) return res.status(403).json({ msg: 'not a member of this pod' });
+      scopePodIds = [podId];
+    }
     const result = await listArtifacts({
-      scopePodIds: scope,
+      scopePodIds,
       podId,
       kind,
       q: typeof req.query.q === 'string' ? req.query.q : null,

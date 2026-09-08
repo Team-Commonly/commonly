@@ -4,7 +4,7 @@ const Pod = require('../../../models/Pod');
 const File = require('../../../models/File');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const {
-  kindOf, encodeCursor, decodeCursor, clampLimit, nameFilter, listArtifacts,
+  kindOf, encodeCursor, decodeCursor, clampLimit, nameFilter, listArtifacts, ARTIFACT_SELECT,
 } = require('../../../services/artifactService');
 
 describe('artifactService', () => {
@@ -21,6 +21,18 @@ describe('artifactService', () => {
     expect(kindOf('text/markdown')).toBe('doc');
     expect(kindOf('application/pdf')).toBe('doc');
     expect(kindOf(undefined)).toBe('doc');
+  });
+
+  test('the projection is metadata only — the file bytes never leave Mongo for a listing', async () => {
+    expect(ARTIFACT_SELECT.split(/\s+/)).not.toContain('data');
+    const select = jest.spyOn(File, 'find');
+    await listArtifacts({ scopePodIds: [new mongoose.Types.ObjectId()] });
+    const chain = select.mock.results[0]?.value;
+    expect(chain).toBeDefined();
+    select.mockRestore();
+    // The chain is real (a Mongoose Query); assert the projection it carries.
+    expect(chain.projection ? chain.projection() : chain._fields).toEqual(expect.objectContaining({ fileName: 1, originalName: 1 }));
+    expect(chain.projection ? chain.projection() : chain._fields).not.toHaveProperty('data');
   });
 
   test('cursor round-trips and rejects garbage', () => {

@@ -12,7 +12,10 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   return next();
 });
 const mockPodFind = jest.fn();
-jest.mock('../../../models/Pod', () => ({ find: (...args) => mockPodFind(...args) }));
+const mockPodFindById = jest.fn();
+jest.mock('../../../models/Pod', () => ({ find: (...args) => mockPodFind(...args), findById: (...args) => mockPodFindById(...args) }));
+const mockCanView = jest.fn(async () => false);
+jest.mock('../../../services/dmService', () => ({ canViewPod: (...args) => mockCanView(...args) }));
 const mockList = jest.fn(async (input) => ({ items: [], nextCursor: null, total: 0, limit: 50, input }));
 jest.mock('../../../services/artifactService', () => ({
   ARTIFACT_KINDS: ['image', 'page', 'doc'],
@@ -29,6 +32,17 @@ describe('GET /api/artifacts (dualAuth, two scope resolvers)', () => {
     mockList.mockClear();
     mockPodFind.mockReset();
     mockPodFind.mockReturnValue({ select: () => ({ lean: async () => [{ _id: 'pod-x' }, { _id: 'pod-y' }] }) });
+    mockPodFindById.mockReset();
+    mockPodFindById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-z', type: 'agent-dm', members: [] }) }) });
+    mockCanView.mockReset();
+    mockCanView.mockResolvedValue(false);
+  });
+
+  it('a named pod outside membership still reads when canViewPod says yes (admin / agent-dm fan-out), scoped to that pod', async () => {
+    mockCanView.mockResolvedValue(true);
+    await request(app).get('/api/artifacts?podId=pod-z').set('Authorization', 'Bearer human-u1').expect(200);
+    expect(mockCanView).toHaveBeenCalledWith('u1', expect.objectContaining({ _id: 'pod-z' }));
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ scopePodIds: ['pod-z'], podId: 'pod-z' }));
   });
 
   it('resolves a human scope from pod membership, never from admin bypass', async () => {
