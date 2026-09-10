@@ -1,10 +1,14 @@
 // ADR-023 W2 hosted runtime — kernel-side half: config, Map-vs-lean reads,
 // the two D3.1 caps, and the worker client (auth header, timeout, non-2xx).
 const mockInstallationCount = jest.fn();
+const mockInstallationFind = jest.fn();
 const mockEventCount = jest.fn();
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { countDocuments: (...args) => mockInstallationCount(...args) },
+  AgentInstallation: {
+    countDocuments: (...args) => mockInstallationCount(...args),
+    find: (...args) => mockInstallationFind(...args),
+  },
 }));
 jest.mock('../../../models/AgentEvent', () => ({
   countDocuments: (...args) => mockEventCount(...args),
@@ -19,6 +23,7 @@ describe('hostedRuntimeService', () => {
   beforeEach(() => {
     ENV_KEYS.forEach((k) => { saved[k] = process.env[k]; delete process.env[k]; });
     mockInstallationCount.mockReset();
+    mockInstallationFind.mockReset();
     mockEventCount.mockReset();
     global.fetch = jest.fn();
   });
@@ -65,6 +70,25 @@ describe('hostedRuntimeService', () => {
         status: 'active',
         'config.runtime.runtimeType': 'hosted',
       });
+    });
+
+    it('lists only owner-safe identity fields for active hosted installs', async () => {
+      const lean = jest.fn().mockResolvedValue([
+        { agentName: 'scout', instanceId: 'default', podId: 'pod-1', config: { secret: 'nope' } },
+        { agentName: '', instanceId: 'bad', podId: 'pod-2' },
+      ]);
+      const select = jest.fn().mockReturnValue({ lean });
+      mockInstallationFind.mockReturnValue({ select });
+
+      await expect(hosted.listHostedInstallationsForUser('user-1')).resolves.toEqual([
+        { agentName: 'scout', instanceId: 'default', podId: 'pod-1' },
+      ]);
+      expect(mockInstallationFind).toHaveBeenCalledWith({
+        installedBy: 'user-1',
+        status: 'active',
+        'config.runtime.runtimeType': 'hosted',
+      });
+      expect(select).toHaveBeenCalledWith('agentName instanceId podId');
     });
 
     it('meters acked events by ACK time (deliveredAt) since the UTC day start and reports the reset', async () => {
