@@ -49,6 +49,7 @@ export const createDaemonSupervisor = ({
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
   resolveAdapter, // async (runtime) => adapter name for THIS machine
+  persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
@@ -57,25 +58,48 @@ export const createDaemonSupervisor = ({
   const seats = new Map();
   let stopped = false;
 
+  const persist = () => {
+    try {
+      persistState(agentStates());
+    } catch (error) {
+      // A diagnostic state file must never take the daemon down. The log is
+      // still useful, and the next state transition retries the write.
+      log(`could not persist local daemon state: ${error.message}`);
+    }
+  };
+
   const agentStates = () => Array.from(seats.values()).map((s) => ({
     agentName: s.agentName,
     instanceId: s.instanceId,
     state: s.state,
     restarts: s.restarts,
+    adapter: s.adapter || null,
+    model: s.model || null,
+    effort: s.effort || null,
+    pid: Number.isInteger(s.pid) ? s.pid : null,
+    lastTurnAt: s.lastTurnAt || null,
+    lastError: s.lastError || null,
   }));
 
   const startChild = (seat) => {
     if (stopped || !seat.desired || seat.child) return;
     seat.child = spawnChild(seat.agentName);
     seat.state = 'running';
+    seat.pid = Number.isInteger(seat.child?.pid) ? seat.child.pid : null;
+    seat.lastTurnAt = new Date().toISOString();
+    seat.lastError = null;
+    persist();
     log(`[${seat.agentName}] supervising (restarts so far: ${seat.restarts})`);
     seat.child.on('exit', (code) => {
       seat.child = null;
+      seat.pid = null;
       if (stopped || !seat.desired) {
         seat.state = 'stopped';
+        persist();
         return;
       }
       seat.state = code === 0 ? 'stopped' : 'crashed';
+      seat.lastError = code === 0 ? null : `child exited with code ${code}`;
       seat.restarts += 1;
       const delay = backoffMs(seat.restarts - 1);
       log(`[${seat.agentName}] exited (code ${code}) — respawn in ${Math.round(delay / 1000)}s`);
@@ -83,6 +107,7 @@ export const createDaemonSupervisor = ({
         seat.backoffTimer = null;
         startChild(seat);
       }, delay);
+      persist();
     });
   };
 
@@ -97,6 +122,8 @@ export const createDaemonSupervisor = ({
       seat.child.kill('SIGTERM');
     } else {
       seat.state = 'stopped';
+      seat.pid = null;
+      persist();
     }
   };
 
@@ -280,10 +307,20 @@ export const createDaemonSupervisor = ({
           restarts: 0,
           backoffTimer: null,
           desired: true,
+          adapter: null,
+          model: null,
+          effort: null,
+          pid: null,
+          lastTurnAt: null,
+          lastError: null,
         };
         seats.set(key, seat);
       }
       seat.desired = true;
+      const localToken = loadToken(row.agentName);
+      seat.adapter = row.runtime?.adapter || localToken?.adapter || seat.adapter || null;
+      seat.model = row.runtime?.model || localToken?.environment?.model || seat.model || null;
+      seat.effort = row.runtime?.effort || localToken?.environment?.effort || seat.effort || null;
       // eslint-disable-next-line no-await-in-loop
       const ready = await ensureToken(row);
       if (ready === 'changed' && seat.child) {
@@ -293,11 +330,13 @@ export const createDaemonSupervisor = ({
       } else if (ready && !seat.child && !seat.backoffTimer) {
         startChild(seat);
       }
+      persist();
     }
 
     for (const [key, seat] of seats) {
       if (!desiredKeys.has(key) && seat.desired) stopSeat(seat);
     }
+    persist();
   };
 
   const heartbeat = async () => {
@@ -311,7 +350,12 @@ export const createDaemonSupervisor = ({
 
   const stop = () => {
     stopped = true;
-    for (const seat of seats.values()) stopSeat(seat);
+    for (const seat of seats.values()) {
+      stopSeat(seat);
+      seat.state = 'stopped';
+      seat.pid = null;
+    }
+    persist();
   };
 
   return {

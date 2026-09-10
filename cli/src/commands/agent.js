@@ -2474,6 +2474,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
+      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
