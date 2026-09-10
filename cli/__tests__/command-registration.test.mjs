@@ -56,7 +56,7 @@ describe('command registration', () => {
     const config = findCommand(registerAll(), ['agent', 'config']);
     expect(config).toBeDefined();
     expect(config.options.map((option) => option.long)).toEqual(expect.arrayContaining([
-      '--model', '--effort', '--env', '--instance',
+      '--adapter', '--model', '--effort', '--env', '--instance',
     ]));
   });
 

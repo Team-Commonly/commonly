@@ -11,7 +11,10 @@ runtime API.
 
 1. **Runtime fidelity.** The daemon work list carries the complete supported
    ADR-008 `config.environment` projection (workspace, sandbox, skills, MCP,
-   model, and effort). Opaque keys and literal `mcp[].env` values are dropped
+   model, and effort). The separate `config.runtime.adapter` selector is a
+   machine-local edit: the CLI validates its name and `detect()` result before
+   PATCH, and the daemon accepts only an exact locally detected adapter (never
+   a fallback) before restarting the child. Opaque keys and literal `mcp[].env` values are dropped
    at the server boundary; only exact adapter-resolved Commonly placeholder
    values remain (embedded placeholder strings are dropped with a value-free
    warning), while provider secrets stay out-of-band per ADR-008. Older
@@ -20,12 +23,16 @@ runtime API.
    on fresh and
    resumed runs and passes reasoning effort as `model_reasoning_effort` through
    `-c`, which is the supported Codex CLI surface.
+   Claude detection and child launches also append the operator's
+   `~/.local/bin` to the child `PATH`; launchd daemon environments commonly omit
+   that directory even though the Claude executable is installed there.
 2. **Existing-agent editing.** The existing registry PATCH route remains the
    source of truth: `PATCH /api/registry/pods/:podId/agents/:name` with
-   `config.runtime` and/or a validated ADR-008 `config.environment`. The
-   existing Agents Hub already uses this route; `commonly agent config` is the
-   CLI path for the same operation. The daemon observes the edit on its next
-   poll and restarts the affected child without minting a new identity.
+   `config.runtime` (including `adapter`, `model`, and `effort`) and/or a
+   validated ADR-008 `config.environment`. The existing Agents Hub already
+   uses this route; `commonly agent config` is the CLI path for the same
+   operation. The daemon observes the edit on its next poll and restarts the
+   affected child without minting a new identity.
 3. **One runner.** `me.commonly.daemon` is the supported machine service and
    owns one child per bound identity. During migration, the legacy seat plist
    and `revive-fleet` are still owners; neither is removed while a seat is
@@ -60,6 +67,9 @@ require moving the already-proven seats back.
 ## Acceptance evidence
 
 - Codex fresh and resume each receive the selected model and effort.
+- A Claude adapter configured through the daemon resolves and launches when its
+  binary is installed under `~/.local/bin`, including a launchd-style restricted
+  parent `PATH`.
 - An existing-agent model/config edit is visible through the UI and CLI and is
   applied by the daemon without replacing identity or memory.
 - Exactly one runner owns the migrated seat after handoff; old ownership is

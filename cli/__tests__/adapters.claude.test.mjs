@@ -10,6 +10,8 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import os from 'os';
+import path from 'path';
 
 // Mock child_process.spawnSync used by detect(). We leave `spawn` real so
 // nothing else in the module breaks — the adapter uses `_spawnImpl` instead.
@@ -55,6 +57,10 @@ describe('claude adapter — detect()', () => {
     const res = await claude.detect();
     expect(res).toEqual({ path: '/usr/local/bin/claude', version: '2.5.1' });
     expect(spawnSyncMock).toHaveBeenCalledWith('claude', ['--version'], expect.any(Object));
+    const detectOptions = spawnSyncMock.mock.calls.find(([cmd]) => cmd === 'claude')[2];
+    expect(detectOptions.env.PATH.split(path.delimiter)).toContain(
+      path.join(os.homedir(), '.local', 'bin'),
+    );
   });
 
   test('falls back to `claude` as path when `which` is unavailable (e.g. Windows)', async () => {
@@ -118,6 +124,19 @@ describe('claude adapter — spawn()', () => {
     );
     // Explicit: must NOT use --session-id on resume path — the whole point.
     expect(calls[0].args).not.toContain('--session-id');
+  });
+
+  test('adds ~/.local/bin to the child PATH for launchd environments', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('hello', {
+      sessionId: 'sid-123',
+      env: { PATH: '/opt/homebrew/bin:/usr/bin' },
+      _spawnImpl: impl,
+    });
+
+    expect(calls[0].opts.env.PATH.split(path.delimiter)).toContain(
+      path.join(os.homedir(), '.local', 'bin'),
+    );
   });
 
   test('self-heals when --resume hits "already in use": retries with fresh UUID + --session-id', async () => {
