@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 
@@ -41,6 +41,23 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
   const [otherValue, setOtherValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const otherInputRef = useRef<HTMLInputElement | null>(null);
+  const otherSubmitRef = useRef<HTMLButtonElement | null>(null);
+  const otherSubmissionRef = useRef(false);
+
+  useEffect(() => {
+    if (!error || !otherOpen || !otherSubmissionRef.current) return undefined;
+    const frame = globalThis.window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      // A disabled submit button can blur to body while the request settles.
+      // Restore the custom-answer field in that case, but respect a reader
+      // who deliberately moved to another control during the failed request.
+      if (active === document.body || active === otherInputRef.current || active === otherSubmitRef.current) {
+        otherInputRef.current?.focus({ preventScroll: true });
+      }
+    });
+    return () => globalThis.window.cancelAnimationFrame(frame);
+  }, [error, otherOpen]);
 
   const choose = async (value: string) => {
     const trimmed = value.trim();
@@ -100,40 +117,59 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         </p>
       ) : (
         <div className="v2-decision-card__options">
-          {options.map((option, index) => (
-            <div className="v2-decision-card__option" key={option.label}>
-              <button
-                type="button"
-                className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
-                onClick={() => { void choose(option.label); }}
-                disabled={saving}
-              >
-                {saving ? t('activity.decision.working') : option.label}
-              </button>
-              {option.description && <span>{option.description}</span>}
-            </div>
-          ))}
-          <button
-            type="button"
-            className="v2-decision-card__other"
-            onClick={() => setOtherOpen((open) => !open)}
-            disabled={saving}
-          >
-            {t('activity.decision.other')}
-          </button>
-          {otherOpen && (
-            <div className="v2-decision-card__other-form">
-              <input
-                aria-label={t('activity.decision.otherPlaceholder')}
-                value={otherValue}
-                onChange={(event) => setOtherValue(event.target.value)}
-                disabled={saving}
-              />
-              <button type="button" onClick={() => { void choose(otherValue); }} disabled={saving || !otherValue.trim()}>
-                {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
-              </button>
-            </div>
-          )}
+          {options.map((option, index) => {
+            const optionId = `${decision.id}-${index}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+            const recommendedId = `${optionId}-recommended`;
+            const descriptionId = `${optionId}-description`;
+            const describedBy = option.description ? descriptionId : undefined;
+            return (
+              <div className="v2-decision-card__option" key={option.label}>
+                <button
+                  type="button"
+                  className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
+                  onClick={() => { void choose(option.label); }}
+                  disabled={saving}
+                  aria-label={option.recommended
+                    ? t('activity.decision.ruleOptionRecommended', { option: option.label })
+                    : undefined}
+                  aria-describedby={describedBy}
+                >
+                  {saving ? t('activity.decision.working') : option.label}
+                </button>
+                {option.recommended && <span id={recommendedId} className="v2-decision-card__option-recommended">{t('activity.decision.recommended')}</span>}
+                {option.description && <span id={descriptionId} className="v2-decision-card__option-description">{option.description}</span>}
+              </div>
+            );
+          })}
+          <div className="v2-decision-card__footer">
+            <button
+              type="button"
+              className="v2-decision-card__other"
+              onClick={() => setOtherOpen((open) => !open)}
+              disabled={saving}
+            >
+              {t('activity.decision.other')}
+            </button>
+            {otherOpen && (
+              <div className="v2-decision-card__other-form">
+                <input
+                  ref={otherInputRef}
+                  aria-label={t('activity.decision.otherPlaceholder')}
+                  value={otherValue}
+                  onChange={(event) => setOtherValue(event.target.value)}
+                  disabled={saving}
+                />
+                <button
+                  ref={otherSubmitRef}
+                  type="button"
+                  onClick={() => { otherSubmissionRef.current = true; void choose(otherValue); }}
+                  disabled={saving || !otherValue.trim()}
+                >
+                  {saving ? t('activity.decision.working') : t('activity.decision.sendOther')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {error && <p className="v2-decision-card__error" role="alert">{error}</p>}

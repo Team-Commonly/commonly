@@ -20,7 +20,8 @@
       "settings": "Settings",
       "connectors": "Connectors",
       "needsYou": "Needs you",
-      "team": "Team"
+      "team": "Team",
+      "artifacts": "Artifacts"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
@@ -30,7 +31,7 @@
   },
   "activity": {
     "title": "Activity",
-    "subtitle": "What needs your attention and what your agents moved forward.",
+    "subtitle": "what needs you, then what moved",
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
     "windows": {
@@ -39,8 +40,11 @@
     },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
+    "morePods": "more ▾",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "open": "Open",
+    "openPod": "Open pod",
     "openBoard": "Open board",
     "compose": {
       "eyebrow": "Start a conversation",
@@ -52,13 +56,15 @@
       "working": "Sending…",
       "actionFailed": "Your message could not be sent. Try again.",
       "label": "Tell your agents",
-      "hint": "Posts as you · ⌘↵ to send"
+      "hint": "⌘↵ to send"
     },
     "reply": {
+      "open": "Reply",
       "placeholder": "Reply in thread…",
       "send": "Send",
       "working": "Sending…",
-      "sent": "Reply posted"
+      "sent": "Reply posted",
+      "actionFailed": "Your reply could not be sent. Try again."
     },
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
@@ -67,37 +73,24 @@
       "eyebrow": "Decision queue",
       "title": "Needs you",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
-      "emptyTitle": "Nothing is waiting on you",
-      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "countDescription": "oldest waiting first",
+      "scopedCountDescription": "oldest waiting first · this pod",
+      "countUnavailable": "Count unavailable",
+      "emptyTitle": "Nothing needs you.",
+      "emptyDescription": "New mentions and approval requests appear here when they need a response.",
+      "showMore": "Show more · {{count}} remaining",
+      "showMoreSettled": "Show more settled · {{count}} remaining",
+      "loadingMore": "Loading…",
+      "retry": "Retry",
       "kinds": {
-        "mention": "Mention",
-        "approval": "Approval",
-        "decision": "Decision needed",
-        "press": "Ready for your press"
+        "mention": "mention",
+        "approval": "approval",
+        "decision": "decision",
+        "handoff": "handoff",
+        "press": "ready for your press"
       },
-      "countLabel": "{{count}} waiting on you"
-    },
-    "dayZero": {
-      "kind": "Get started",
-      "guide": {
-        "title": "Meet your Guide",
-        "description": "Get a short, guided path into your first agent conversation.",
-        "leaves": "Leaves when your Guide replies.",
-        "cta": "Meet your Guide"
-      },
-      "agent": {
-        "title": "Hire your first agent",
-        "description": "Add a teammate that can take work forward with you.",
-        "leaves": "Leaves when an agent joins your workspace.",
-        "cta": "Hire your first agent",
-        "secondary": "Connect my own"
-      },
-      "task": {
-        "title": "Give it something real to do",
-        "description": "Put the first concrete task where your team can pick it up.",
-        "leaves": "Leaves when a task is claimed.",
-        "cta": "Create a task"
-      }
+      "countLabel": "{{count}} waiting on you",
+      "emptyLast": "The last ask was answered {{age}} ago."
     },
     "approval": {
       "approve": "Approve",
@@ -107,6 +100,8 @@
     },
     "decision": {
       "ruleOption": "Rule: {{option}}",
+      "ruleOptionRecommended": "Rule: {{option}} (Recommended)",
+      "recommended": "Recommended",
       "working": "Ruling…",
       "other": "Other…",
       "otherPlaceholder": "Write your ruling…",
@@ -117,8 +112,14 @@
     },
     "mention": {
       "acknowledge": "Acknowledge",
+      "markHandled": "Mark handled",
       "working": "Saving…",
       "actionFailed": "That mention could not be acknowledged. Try again."
+    },
+    "handoff": {
+      "markHandled": "Mark handled",
+      "working": "Saving…",
+      "actionFailed": "That handoff could not be marked handled. Try again."
     },
     "agents": {
       "eyebrow": "Agent recap",
@@ -140,7 +141,36 @@
         "done": "Done"
       }
     },
-    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
+    "movedForward": {
+      "title": "Moved forward",
+      "description": "grouped by pod · newest first",
+      "empty": "Nothing yet today.",
+      "more": "{{count}} more in {{pod}}",
+      "omitted": "{{count}} more updates in {{pod}} not shown",
+      "showLess": "Show less",
+      "unknownPod": "Unknown pod"
+    },
+    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes.",
+    "getStarted": {
+      "title": "Get started",
+      "kicker_one": "1 step · until your first ask arrives",
+      "kicker_other": "{{count}} steps · until your first ask arrives",
+      "hire": {
+        "title": "Hire your first agent",
+        "description": "Pick a persona. It gets a seat in this workspace and answers within seconds.",
+        "cta": "Hire an agent"
+      },
+      "speak": {
+        "title": "Say something to it",
+        "description": "@mention it in any pod. The first reply is the moment this becomes yours.",
+        "cta": "Open My Workspace"
+      },
+      "connect": {
+        "title": "Connect a channel",
+        "description": "Slack or Telegram — the agent answers where your team already talks.",
+        "cta": "Add a connector"
+      }
+    }
   },
   "auth": {
     "fields": {
@@ -420,7 +450,8 @@
       "noMessagesTitle": "No messages yet",
       "agentDmText": "This is a private 1:1 conversation. Say hello to get started.",
       "quietTitle": "This pod is quiet",
-      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply."
+      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply.",
+      "noMessages": "no messages yet"
     },
     "newPod": {
       "label": "New Pod starter actions",
@@ -486,7 +517,15 @@
       "sendAria": "Send message",
       "postsAs": "posts as {{name}}",
       "mentionAgent": "mention an agent",
-      "toSend": "to send"
+      "toSend": "to send",
+      "more": "Add",
+      "attachImage": "Attach image",
+      "pasteImage": "Paste image from clipboard",
+      "sendTooltip": "Send as {{name}} · Enter",
+      "clipboardEmpty": "No image on the clipboard.",
+      "aimThread": "↳ replying in thread",
+      "aimReply": "↳ replying to {{author}}",
+      "replyPlaceholder": "Reply to {{author}}"
     },
     "errors": {
       "uploadFailed": "Failed to upload file. Please try again."
@@ -497,7 +536,15 @@
       "startThread": "Thread",
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
-      "replyingInThread": "Replying in thread ·"
+      "replyingInThread": "Replying in thread ·",
+      "last": "last",
+      "collapse": "Collapse",
+      "replyOne": "reply",
+      "replyOther": "replies",
+      "moreReplies": "{{count}} more replies",
+      "follow": "Follow",
+      "following": "Following",
+      "muted": "Muted"
     },
     "leadBadge": "Lead",
     "catchup": {
@@ -511,6 +558,40 @@
       "refresh": "Refresh",
       "working": "Summarizing…",
       "dismiss": "Dismiss"
+    },
+    "lightbox": {
+      "close": "Close",
+      "previous": "Previous image",
+      "next": "Next image"
+    },
+    "attachment": {
+      "open": "Open {{name}}",
+      "showMore": "Show {{count}} more lines",
+      "showLess": "Show less",
+      "image": "image"
+    },
+    "history": {
+      "loadingEarlier": "loading earlier…",
+      "loadEarlier": "load earlier",
+      "beginning": "beginning of the pod",
+      "jumpToLatest": "Jump to latest",
+      "searchingOlder": "Searching older messages ({{attempt}}/{{max}})…",
+      "searchOlderFailed": "Couldn't load older history. Automatic search stopped.",
+      "searchOlderBound": "Target not found after {{attempt}} older pages. You can keep browsing the conversation.",
+      "retrySearch": "Retry"
+    },
+    "strip": {
+      "label": "Message actions",
+      "react": "Add reaction",
+      "more": "More",
+      "copyLink": "Copy link",
+      "copyText": "Copy text"
+    },
+    "quote": {
+      "earlier": "earlier message"
+    },
+    "reactions": {
+      "more": "{{count}} more reactions"
     }
   },
   "landing": {
@@ -983,8 +1064,6 @@
       "nothingOpen": "Nothing open.",
       "nothingWorking_one": "Nothing. {{agents}} is working.",
       "nothingWorking_other": "Nothing. {{agents}} are working.",
-      "boardToday": "board · today",
-      "boardCounts": "{{open}} open · {{inProgress}} in progress · {{done}} done",
       "wip": "wip",
       "members": "members",
       "manage": "manage",
@@ -993,7 +1072,10 @@
         "workingTask": "working · {{title}}",
         "working": "working",
         "idle": "idle"
-      }
+      },
+      "filesIn": "files in {{pod}}",
+      "noFiles": "no files yet",
+      "allFiles": "All {{count}} files"
     },
     "goal": {
       "title": "Goal",
@@ -1098,6 +1180,39 @@
     "newTask": "New task",
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
+    "focus": {
+      "eyebrow": "Pod direction",
+      "title": "Focus",
+      "set": "Set focus",
+      "edit": "Edit focus",
+      "loading": "Loading focus…",
+      "loadError": "Focus could not be loaded.",
+      "retry": "Retry",
+      "empty": "No focus set for this pod yet.",
+      "owner": "Owner",
+      "updatedBy": "Updated by",
+      "unavailable": "unavailable",
+      "revision": "Revision {{revision}}",
+      "taskUnavailable": "Task is unavailable",
+      "editorTitle": "Edit pod focus",
+      "goal": "Goal",
+      "scope": "Scope",
+      "chooseOwner": "Choose a pod owner",
+      "tasks": "Next tasks (up to 10, in order)",
+      "up": "Up",
+      "down": "Down",
+      "remove": "Remove",
+      "moved": "{{taskId}} moved to position {{position}} of {{count}}.",
+      "clear": "Clear focus",
+      "save": "Save focus",
+      "saving": "Saving…",
+      "conflict": "Focus changed while you were editing. Your draft is kept. Review the latest focus before saving again.",
+      "latestTitle": "Latest focus",
+      "reviewLatest": "Review latest",
+      "latestReviewed": "Latest reviewed",
+      "discard": "Discard your unsaved focus changes?",
+      "saveError": "Focus could not be saved. Try again."
+    },
     "loadErrorTitle": "Couldn't load the board",
     "loadErrorText": "Check your connection and try again.",
     "createError": "Couldn't create the task. Try again.",
@@ -1615,7 +1730,9 @@
     },
     "actions": {
       "addComputer": "Add a computer",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "bringYourOwn": "Bring your own",
+      "hire": "Hire an agent"
     },
     "redeem": {
       "placeholder": "Invitation code",
@@ -1642,7 +1759,19 @@
       "viewProfileAria": "View {{name}}'s profile",
       "talkTo": "Talk to",
       "talkToAria": "Talk to {{name}} one-to-one",
-      "opening": "Opening…"
+      "opening": "Opening…",
+      "needsYou": "needs you",
+      "working": "working",
+      "idle": "idle",
+      "answer": "Answer",
+      "talk": "Talk",
+      "podsAria": "Pods",
+      "age": {
+        "now": "now",
+        "minutes": "{{count}}m",
+        "hours": "{{count}}h",
+        "days": "{{count}}d"
+      }
     },
     "activity": {
       "noRecent": "No recent activity",
@@ -1673,6 +1802,15 @@
       "internalCount": "Connected agents ({{count}})",
       "activeMeta_one": "Active {{time}} · {{count}} pod",
       "activeMeta_other": "Active {{time}} · {{count}} pods"
+    },
+    "head": {
+      "meta": "{{agents}} agents · {{working}} working · {{needsYou}} needs you"
+    },
+    "own": {
+      "title": "Your own agent",
+      "text": "Claude Code, Codex, or anything that speaks the protocol. One command on your machine; it keeps its identity here.",
+      "command": "npx @commonlyai/cli agent attach claude",
+      "setup": "Set it up"
     }
   },
   "billing": {
@@ -1709,5 +1847,39 @@
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",
     "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "meta": "every file and page shared in your pods",
+    "kindLabel": "Kind",
+    "podLabel": "Pod",
+    "allPods": "All pods",
+    "morePods": "more ▾",
+    "searchPlaceholder": "Search files",
+    "kinds": {
+      "all": "All",
+      "images": "Images",
+      "docs": "Docs",
+      "pages": "Pages"
+    },
+    "kindNames": {
+      "image": "image",
+      "page": "page",
+      "doc": "doc"
+    },
+    "columns": {
+      "file": "File",
+      "kind": "Kind",
+      "pod": "Pod",
+      "sharedBy": "Shared by",
+      "when": "When",
+      "size": "Size"
+    },
+    "foot": "{{shown}} of {{total}} · newest first",
+    "more": "{{count}} more",
+    "loadingMore": "Loading…",
+    "empty": "Nothing shared yet. Attach a file in any pod and it lands here.",
+    "emptyFiltered": "Nothing matches. Clear a filter or the search.",
+    "loadFailed": "Could not load artifacts."
   }
 }

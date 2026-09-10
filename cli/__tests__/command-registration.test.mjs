@@ -52,6 +52,14 @@ describe('command registration', () => {
       .toEqual(expect.arrayContaining(['--name', '--instance']));
   });
 
+  test('agent config exposes existing-agent runtime edit controls', () => {
+    const config = findCommand(registerAll(), ['agent', 'config']);
+    expect(config).toBeDefined();
+    expect(config.options.map((option) => option.long)).toEqual(expect.arrayContaining([
+      '--adapter', '--model', '--effort', '--env', '--instance',
+    ]));
+  });
+
   test('agent run exposes the cascade knobs, each naming its env var', () => {
     const run = findCommand(registerAll(), ['agent', 'run']);
     expect(run).toBeDefined();

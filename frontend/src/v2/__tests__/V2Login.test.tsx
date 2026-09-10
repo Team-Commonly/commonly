@@ -532,6 +532,165 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/review stage/).length).toBeGreaterThan(0);
   });
 
+  test('AI agent non-goals guide preserves its task boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-non-goals/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Non-Goals: Write Boundaries Agents Can Recognize' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Treating a task boundary as technical enforcement' })).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent evidence-labels guide preserves its handoff context after the app takes over', async () => {
+    renderAt('/guides/ai-agent-evidence-labels/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Evidence Labels: Separate Facts, Reports, Inferences, and Decisions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Carry labels through handoffs and durable context' })).toBeInTheDocument();
+    expect(screen.getByText(/For an open question, preserve the missing answer/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent dependency-management guide preserves its required-state boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-dependency-management/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Dependency Management: Make Required States Visible' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'The distinction makes the board easier to read' })).toBeInTheDocument();
+    expect(screen.getByText(/If the required result is partial, the dependent task should record the remaining boundary/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent task-intake guide preserves its handoff context after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-intake/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Intake: Turn a Request Into Bounded, Eligible Work' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Preserve intake context in the task and handoff' })).toBeInTheDocument();
+    expect(screen.getByText(/Retaining this context does not require copying every conversation message/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent decision-owner guide preserves its authority boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-decision-owner/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Decision Owner: Identify Who Can Give the Answer' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Handle a missing or ambiguous owner without guessing' })).toBeInTheDocument();
+    expect(screen.getByText(/The answer does not make every related task eligible, grant new access/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent artifact-versions guide preserves its version boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-artifact-versions/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Artifact Versions: Make Reviewable Work Identifiable' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Mark superseded versions and preserve the reason' })).toBeInTheDocument();
+    expect(screen.getByText(/Supersession is a relationship, not deletion/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent task-closure guide preserves its completion boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-closure/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Closure: Record What Done Means' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Close blocked, no-op, and declined paths accurately' })).toBeInTheDocument();
+    expect(screen.getByText(/Closure is not a reward for effort. It is a claim about a specific result/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent context-packet guide preserves its authority boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-context-packet/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Context Packet: Give One Task Step What It Needs' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Treating the packet as a permission grant' })).toBeInTheDocument();
+    expect(screen.getByText(/Context supports coordination and review. It does not grant access/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent focused-threads guide preserves its decision boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-focused-threads/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Focused Threads: Keep One Review or Decision Together' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Use focused threads across human and agent roles' })).toBeInTheDocument();
+    expect(screen.getByText(/Replies, reactions, or an agent recommendation can be useful input/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent approval-boundaries guide preserves its authority boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-approval-boundaries/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Approval Boundaries: What Review Can and Cannot Authorize' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Give each approval a decision owner' })).toBeInTheDocument();
+    expect(screen.getByText(/The target system still needs to authenticate the actor and enforce any permission/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent retained-context guide preserves its authority boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-retained-context/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Retained Context: Keep Useful Context After a Task' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Retain the work boundary, not an implied permission' })).toBeInTheDocument();
+    expect(screen.getByText(/The safer default is simple: treat retained context as an input to planning and review/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent revision-loop guide preserves its review boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-revision-loop/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Revision Loop: Request Changes, Revise, and Re-Review' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Keep the revision discussion focused on the review question' })).toBeInTheDocument();
+    expect(screen.getByText(/When feedback conflicts, evidence is missing, or the operation needs new authority, another revision cannot resolve it/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent task-splitting guide preserves parent acceptance after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-splitting/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Splitting: Divide Work Without Losing the Outcome' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Do not split work that still needs one shared decision' })).toBeInTheDocument();
+    expect(screen.getByText(/Children can finish their own results while the parent still needs synthesis/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent interim-results guide preserves its completion boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-interim-results/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Interim Results: Return Useful Work Before Completion' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Preserve an interim result for the next owner without turning it into authority' })).toBeInTheDocument();
+    expect(screen.getByText(/The saved note is an input to a future task, review, or handoff/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent audience-boundaries guide preserves its bounded review after the app takes over', async () => {
+    renderAt('/guides/ai-agent-audience-boundaries/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Audience Boundaries: Who an Agent May Address' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Use a named reviewer for bounded review, not a general audience' })).toBeInTheDocument();
+    expect(screen.getByText(/An @mention identifies attention, not a decision owner or sender role/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent stop-conditions guide preserves its technical-enforcement section after the app takes over', async () => {
+    renderAt('/guides/ai-agent-stop-conditions/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Stop Conditions: When an Agent Should Halt Work' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Keep the stop condition separate from technical enforcement' })).toBeInTheDocument();
+    expect(screen.getByText(/A task or thread should not be the only thing preventing an operation the agent must not take/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent change-requests guide preserves its worked example after the app takes over', async () => {
+    renderAt('/guides/ai-agent-change-requests/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Change Requests: Update Scope Without Silent Drift' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Work through a change request from proposal to revision' })).toBeInTheDocument();
+    expect(screen.getByText(/The announcement remains a separate proposed task with its own owner decision/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent data-boundaries guide preserves its retention follow-on after the app takes over', async () => {
+    renderAt('/guides/ai-agent-data-boundaries/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Data Boundaries: Define What to Read, Retain, and Share' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Choose the destination' })).toBeInTheDocument();
+    expect(screen.getByText(/Avoid claiming deletion beyond what the responsible system confirms/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent disagreement-resolution guide preserves its worked example after the app takes over', async () => {
+    renderAt('/guides/ai-agent-disagreement-resolution/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Disagreement Resolution: Evidence, Owners, and Next Steps' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'A worked example of conflicting review feedback' })).toBeInTheDocument();
+    expect(screen.getByText(/Acceptance applies to this internal review stage and does not authorize a public release/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
+  test('AI agent task-prioritization guide preserves its three-task example after the app takes over', async () => {
+    renderAt('/guides/ai-agent-task-prioritization/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent Task Prioritization: Choose the Next Useful Contribution' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'A worked example with three eligible tasks' })).toBeInTheDocument();
+    expect(screen.getByText(/C remains valid work, not a blocker or a task to discard/)).toBeInTheDocument();
+    expect(screen.getAllByRole('table')).toHaveLength(9);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -539,7 +698,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(65);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(85);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

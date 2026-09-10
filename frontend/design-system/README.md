@@ -80,6 +80,12 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Color
 
+The pre-Signal values below are historical. For current screens, use
+[Identity: Signal](#identity-signal-chosen-2026-09-03), the approved artboard,
+and [the recovery boundary](../../docs/design/signal-recovery-2026-09-07.md).
+In particular, the open-decision primary option is cobalt; ordinary Activity
+Reply/Open/Mark handled controls are bordered secondary controls.
+
 - **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (Sam, 2026-09-03, TASK-122).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. `#f8f8fb` remains the page canvas behind the shell.
@@ -169,7 +175,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Imagery vibe
 
 - **No stock photography or illustration in chrome.** When images appear, they are user-generated (uploaded files in messages, avatars, screenshots in posts).
-- Avatars are **circular** (`50%`), 2px white border, ranging from 24px (sm) to 34px (lg). Background is a **seeded two-stop gradient** of a saturated tint from the role-tint palette (each tint carries a hand-picked darker partner — computed lighten/darken drifts across hues), angle seeded independently of the tint so palette collisions do not render identically. Initials are 650-weight uppercase white with `0.04em` tracking compensated by an equal text-indent. Parenthetical qualifiers in a display name — "Fable (lead)" — are stripped before initials are taken, so a bracket can never render as an initial and "Critic (Codex)" / "Codex (impl)" stay distinct (CR / CO). **The species split (Sam, 2026-08-20): humans render DiceBear *Big Smile* faces, agents render *Bottts* robots** — deterministic SVG seeded on stable identity (`agentName:instanceId` / userId), tinted from this same palette, generated locally with no image API. Face = person, robot = agent, readable with zero badges. An uploaded photo always wins; gradient+initials is the fallback tier when kind is unknown or generation fails, and remains the spec for any surface that cannot know who it is drawing. Big Smile is **CC BY 4.0 — the visible DiceBear credit on the login screen is a license requirement**; bottts is free for commercial use; any style swap re-checks license and credit together. The hand-made mascot remains reserved for the brand itself, not the avatar system.
+- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic **DiceBear Big Smile** faces, with separate background families. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
 
 ### Layout rules
 
@@ -218,7 +224,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 Sam chose this on the Shell Parity canvas from three directions (Studio, Workshop, Signal). It is one system at two volumes, never a hybrid:
 
-- **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Filled buttons are **ink** `#101828`.
+- **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Ordinary filled actions such as Send are **ink** `#101828`. The primary option of an open decision card is the explicit **cobalt** exception; alternative options and Activity Reply/Open/Mark handled controls are bordered. Other… is cobalt text. Preserve the agent’s option order in the thread and Activity. Keep the first option cobalt and show plain “Recommended” text on whichever option carries `recommended`, including its accessible name; an unflagged option has no such label. Do not sort or require recommended-first authoring. See [Signal §1/§3](../../docs/design/signal-identity.md) and the [2026-09-07 recovery](../../docs/design/signal-recovery-2026-09-07.md).
 - **Three faces, one job each.** Bricolage Grotesque for display (700/800), IBM Plex Sans for body and controls (14/20), IBM Plex Mono for meta (timestamps, ids, status, lowercase labels). Self-hosted via `@fontsource`.
 - **Hard edges, no shadows.** Radius 4 for controls and rows, 6 for cards, panels and the content card. `--v2-shadow-pending` is `none`; a pending card is a 2px cobalt ring instead. Avatars and marks are 4px squares, not circles.
 - **Grey ramp (complete):** ground `#eef0f4` · border `#d0d5dd` · divider `#e4e7ec` · tint `#f2f4f7` · panel `#f9fafb` · muted `#667085` · secondary `#475467` · placeholder `#98a2b3` · ink `#101828`.

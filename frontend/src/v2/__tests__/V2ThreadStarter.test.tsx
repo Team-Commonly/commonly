@@ -100,9 +100,10 @@ describe('V2Thread teaching empty states', () => {
   test('regular empty pods teach visible membership and @-mentions', () => {
     renderChat(makeDetail());
 
-    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
-    expect(screen.getByText(/use @ to mention an agent or teammate/i)).toBeInTheDocument();
-    expect(screen.getByText(/everyone in the member list can see and reply/i)).toBeInTheDocument();
+    expect(screen.getByText('no messages yet')).toBeInTheDocument();
+    // Direction C: the empty pod is one mono line; the composer (focused) carries the teaching.
+    expect(screen.queryByText(/use @ to mention an agent or teammate/i)).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-thread__empty-line')).toHaveTextContent('no messages yet');
   });
 
   test('multi-member regular pods use the same teaching state', () => {
@@ -113,7 +114,7 @@ describe('V2Thread teaching empty states', () => {
       ],
     }));
 
-    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    expect(screen.getByText('no messages yet')).toBeInTheDocument();
   });
 
   test('keeps the agent-to-agent empty state unchanged', () => {
@@ -319,7 +320,7 @@ describe('V2Thread just-created Pod starter panel', () => {
   test('stays absent without the flag or after messages arrive', async () => {
     const noFlag = renderChat(makeDetail());
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
-    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    expect(screen.getByText('no messages yet')).toBeInTheDocument();
     noFlag.unmount();
 
     sessionStorage.setItem('v2.justCreated.p1', '1');
@@ -343,7 +344,7 @@ describe('V2Thread just-created Pod starter panel', () => {
     renderChat(makeDetail());
 
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
-    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    expect(screen.getByText('no messages yet')).toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
   });
 

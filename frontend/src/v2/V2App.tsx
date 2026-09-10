@@ -23,6 +23,7 @@ import V2ConnectPage from './components/V2ConnectPage';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
 import V2ActivityPage from './components/V2ActivityPage';
+import V2ArtifactsPage from './components/V2ArtifactsPage';
 import ChatRoom from '../components/ChatRoom';
 import ApiDevPage from '../components/ApiDevPage';
 import PodContextDevPage from '../components/PodContextDevPage';
@@ -137,12 +138,14 @@ const feature = (
   children: React.ReactNode,
   showPodsSidebar = false,
   showHeader = true,
+  className = '',
 ) => (
   <V2FeaturePage
     title={title}
     description={description}
     showPodsSidebar={showPodsSidebar}
     showHeader={showHeader}
+    className={className}
   >
     {children}
   </V2FeaturePage>
@@ -290,8 +293,12 @@ const V2App: React.FC = () => {
                   )}
                 />
                 <Route
+                  path="artifacts"
+                  element={feature('Artifacts', undefined, <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                />
+                <Route
                   path="activity"
-                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false)}
+                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"

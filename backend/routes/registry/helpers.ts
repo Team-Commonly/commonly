@@ -433,6 +433,16 @@ const buildAgentInstallationPayload = (installation: any, {
       ? { snippet: toSnippet(lastMessage.content), at: lastMessage.createdAt || null }
       : null,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
+    // The portable principal's id, so a client can key per-agent attention
+    // (AttentionItem.actorUserId) on it instead of matching names — three
+    // writers store three different name shapes (ux-lead, Sharpen 66164).
+    userId: user?._id ? String(user._id) : null,
+    // Direction C Your Team card, line 3: one sentence from the curated
+    // `botMetadata.description`. Null when unset — the card renders no line,
+    // never a quote (ux-lead 66163).
+    description: typeof user?.botMetadata?.description === 'string' && user.botMetadata.description.trim()
+      ? user.botMetadata.description.trim()
+      : null,
     runtime: runtimeConfig,
     // Resolved at the boundary so the frontend doesn't need to know
     // about presets — `category` is the human-readable role family

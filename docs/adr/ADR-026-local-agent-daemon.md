@@ -121,6 +121,13 @@ worst current deployment and the best test bed. Migration = attach existing
 token files to the daemon's adoption list; no seat identity changes (rule 8:
 identity survives).
 
+The implementation and cutover contract are tracked in
+[`docs/plans/adr-026-d7-fleet-migration.md`](../plans/adr-026-d7-fleet-migration.md).
+That plan is deliberately a migration of ownership, not a new launcher: the
+daemon becomes the only starter after an idle-boundary handoff, while existing
+launchd seat plists and `revive-fleet` remain in place until the replacement has
+run normal work successfully.
+
 ## Consequences
 
 - New-agent flow on a daemon machine: click in the UI → agent live in

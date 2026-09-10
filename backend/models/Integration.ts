@@ -144,6 +144,14 @@ export interface IIntegration extends Document {
       podMessageId?: string | null;
       podId?: string;
     }[];
+    /** Durable card receipts; unlike relayMap these are never evicted by count. */
+    cards?: {
+      podMessageId: string;
+      tgMessageId?: string;
+      externalMessageId?: string;
+      sentAt: Date;
+      closedAt?: Date;
+    }[];
   };
   ingestTokens: IIngestToken[];
   lastSync?: Date | null;
@@ -288,6 +296,14 @@ const IntegrationSchema = new Schema<IIntegration>(
           podId: String,
         },
       ],
+      cards: [{
+        _id: false,
+        podMessageId: { type: String, required: true },
+        tgMessageId: String,
+        externalMessageId: String,
+        sentAt: { type: Date, required: true },
+        closedAt: Date,
+      }],
       agentAccessEnabled: { type: Boolean, default: false },
       globalAgentAccess: { type: Boolean, default: false },
     },

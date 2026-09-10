@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import axios from '../../utils/axiosConfig';
+import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import V2SettingsPage from '../components/V2SettingsPage';
 
@@ -47,9 +48,10 @@ const auth = {
   register: jest.fn(), login: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
 };
 
+// The page links to the admin routes, so it renders under a router.
 const renderSettings = () => render(
   <AuthContext.Provider value={auth}>
-    <div className="v2-root"><V2SettingsPage /></div>
+    <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
   </AuthContext.Provider>,
 );
 
@@ -128,5 +130,23 @@ describe('V2SettingsPage', () => {
     expect(auth.updateProfile).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('status')).toHaveTextContent('Account saved.');
     expect(screen.queryByText(/re-verification; ask us for now/i)).not.toBeInTheDocument();
+  });
+
+  test('an admin gets an Administration section with the users and usage-analytics links; a member does not', () => {
+    // The routes survived the Settings consolidation (#1544); the way in did
+    // not, so both admin pages were reachable only by URL.
+    const { unmount } = renderSettings();
+    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
+    expect(screen.queryByText('Usage analytics')).toBeNull();
+    unmount();
+    const adminAuth = { ...auth, currentUser: { ...auth.currentUser, role: 'admin' }, user: { ...auth.user, role: 'admin' } };
+    render(
+      <AuthContext.Provider value={adminAuth}>
+        <MemoryRouter><V2SettingsPage /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(screen.getByRole('link', { name: 'Administration' })).toHaveAttribute('href', '#v2-settings-admin');
+    expect(screen.getByRole('link', { name: /^Users/ })).toHaveAttribute('href', '/v2/admin/users');
+    expect(screen.getByRole('link', { name: /^Usage analytics/ })).toHaveAttribute('href', '/v2/admin/analytics');
   });
 });

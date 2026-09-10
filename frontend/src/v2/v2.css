@@ -245,11 +245,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-lang-switch__caret {
-  font-size: 9px;
-  color: var(--v2-text-muted);
-}
-
 .v2-lang-switch__menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -604,12 +599,11 @@ body.modern-ui.v2-canvas {
   background: var(--v2-border);
 }
 
-.v2-rail__utility .v2-lang-switch__trigger {
+.v2-root .v2-rail__utility button.v2-lang-switch__trigger {
   min-height: 24px;
   padding: 2px 6px;
   gap: 3px;
-  font-size: 11px;
-  font-weight: 700;
+  font: 700 11px/16px var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   border-radius: var(--v2-radius-sm);
 }
@@ -1499,7 +1493,6 @@ body.modern-ui.v2-canvas {
   text-overflow: ellipsis;
 }
 
-
 .v2-chat__avatars {
   display: flex;
   align-items: center;
@@ -1634,7 +1627,6 @@ body.modern-ui.v2-canvas {
   text-overflow: ellipsis;
   max-width: 720px;
 }
-
 
 .v2-chat__state-strip {
   min-height: 42px;
@@ -1781,6 +1773,28 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+/* Only the managed history operation disables native anchoring. Leaving the
+   default on at rest keeps late image loads above a reader's viewport stable;
+   V2Thread measures and compensates the history row itself. */
+.v2-chat__messages[data-history-anchor="active"] {
+  overflow-anchor: none;
+}
+
+/* The transcript is the chat viewport's positioning context. History
+   recovery belongs to this viewport rather than the top of the scrollable
+   message list, otherwise a failure after a deep landing is stranded above
+   the reader's current scroll position. */
+.v2-thread__transcript {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.v2-thread__transcript > .v2-chat__messages {
+  min-height: 0;
 }
 
 /* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
@@ -3239,7 +3253,7 @@ body.modern-ui.v2-canvas {
   border-radius: 6px;
   background: transparent;
   border: none;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--v2-text-secondary);
@@ -3272,7 +3286,8 @@ body.modern-ui.v2-canvas {
   border-radius: 999px;
   background: var(--v2-border-soft);
   color: var(--v2-text-tertiary);
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -3293,7 +3308,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__now-eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--v2-text-tertiary);
   font-family: var(--v2-font-mono);
@@ -3436,7 +3451,8 @@ body.modern-ui.v2-canvas {
    --c-fg-tertiary uppercase pattern in the design-system preview cards
    (see frontend/design-system/preview/components-inspector.html .eyebrow). */
 .v2-inspector__section-title {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   letter-spacing: 0.08em;
@@ -3606,6 +3622,7 @@ body.modern-ui.v2-canvas {
 
 .v2-inspector__artifact-sub {
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3673,7 +3690,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__member-role {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--v2-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -3707,6 +3724,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -3736,7 +3754,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__section-subtitle {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3775,7 +3793,7 @@ body.modern-ui.v2-canvas {
 .v2-inspector__task-assignee {
   font-size: 11px;
   color: var(--v2-text-tertiary);
-  font-family: 'SF Mono', Menlo, monospace;
+  font-family: var(--v2-font-mono);
 }
 
 /* ---------- Inspector: Detail sub-page ---------- */
@@ -3870,7 +3888,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__detail-kicker {
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   color: var(--v2-text-tertiary);
   text-transform: uppercase;
@@ -3897,6 +3916,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
   color: var(--v2-text-secondary);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -4100,200 +4120,6 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------- Your Team category tab bar ---------- */
-/* Your Team tiers (Wren spec §1, Sam-ruled 2026-08-30). "Working now" is
-   the only tier with a liveness dot — everywhere else time text carries the
-   signal (audit rule 6). Borders, not shadows. */
-.v2-team__tier { margin-top: 22px; }
-.v2-team__tier-title {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--v2-text-secondary);
-  margin: 0 0 10px;
-}
-.v2-root button.v2-team__tier-toggle {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-}
-.v2-root button.v2-team__tier-toggle:hover { color: var(--v2-text-primary); }
-.v2-team__featured {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.v2-team-feature {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--v2-border);
-  border-radius: 12px;
-  background: var(--v2-surface);
-  cursor: pointer;
-  transition: border-color 0.12s ease;
-}
-.v2-team-feature:hover { border-color: var(--v2-border-strong); }
-.v2-team-feature__body { min-width: 0; }
-.v2-team-feature__name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.v2-team-feature__name {
-  font-size: var(--v2-fs-feature);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  color: var(--v2-text-primary);
-  overflow-wrap: anywhere;
-}
-.v2-team-feature__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-success);
-  flex-shrink: 0;
-}
-.v2-team-feature__doing {
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-  margin-top: 2px;
-}
-.v2-team-feature__doing em { font-style: normal; font-weight: 600; }
-/* Snippet variant: one line, ellipsized — a 200-char quote must not
-   change the card's height (grid column is already minmax(0,1fr)). */
-.v2-team-feature__doing--snippet {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.v2-team-feature__meta {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  margin-top: 2px;
-}
-.v2-team-feature__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.v2-root button.v2-team-feature__profile {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-}
-.v2-root button.v2-team-feature__profile:hover { color: var(--v2-accent-text); }
-/* Featured card below 640px: the three-column grid crushes the name to one
-   character per line (the #568 name-crush class, reborn on a new card at
-   390px — caught in the mandatory mobile pass). Stack: actions drop to
-   their own row under the body, name keeps the full text column. */
-@media (max-width: 640px) {
-  .v2-team-feature {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-  .v2-team-feature__actions {
-    grid-column: 2;
-    justify-content: flex-start;
-    margin-top: 4px;
-  }
-}
-
-/* Standard card: one left edge, no dot, no button pair. Talk-to is an
-   always-visible 28px icon (Sam's BEND-2 ruling — hover-reveal rejected). */
-.v2-root button.v2-team-card__talk-icon {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.v2-root button.v2-team-card__talk-icon:hover {
-  border-color: var(--v2-accent);
-  color: var(--v2-accent-text);
-  background: var(--v2-accent-soft);
-}
-.v2-root button.v2-team-card__talk-icon:disabled { opacity: 0.5; cursor: default; }
-.v2-team-quiet {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-.v2-team-quiet__row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 4px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-team-quiet__row:last-child { border-bottom: none; }
-.v2-team-quiet__name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--v2-text-primary);
-}
-.v2-team-quiet__seen {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  margin-left: auto;
-}
-.v2-team-quiet__profile { font-size: 12px; }
-
-.v2-team__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-
-.v2-root button.v2-team__tab,
-.v2-team__tab {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-
-.v2-root button.v2-team__tab:hover,
-.v2-team__tab:hover {
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-primary);
-}
-
-.v2-root button.v2-team__tab--active,
-.v2-team__tab--active {
-  background: var(--v2-accent);
-  color: #fff;
-  border-color: var(--v2-accent);
-}
-
-.v2-root button.v2-team__tab--active:hover,
-.v2-team__tab--active:hover {
-  background: var(--v2-accent);
-  color: #fff;
-}
 
 /* ---------- Invite modal + redeem page ---------- */
 .v2-modal__overlay {
@@ -5538,7 +5364,7 @@ body.modern-ui.v2-canvas {
     min-width: 0;
   }
 
-  .v2-shell {
+  .v2-shell:not(.v2-shell--feature-wide) {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
@@ -5643,7 +5469,6 @@ body.modern-ui.v2-canvas {
     cursor: pointer;
   }
 
-
   /* Close (X) inside the drawer header. Title row becomes a flex row so the
      X sits at the far end. Drop the fixed 32px height so the 44px tap target
      fits. */
@@ -5680,324 +5505,6 @@ body.modern-ui.v2-canvas {
     grid-template-columns: 1fr;
     gap: 4px;
   }
-}
-
-/* ============================================================
-   "Your Team" page (v2/agents) — roster of installed agents
-   ============================================================ */
-
-.v2-team {
-  padding: 32px 40px 64px;
-  max-width: 1120px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.v2-team__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-
-.v2-team__title {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0 0 6px;
-  letter-spacing: -0.01em;
-}
-
-.v2-team__subtitle {
-  margin: 0;
-  color: #5f6470;
-  font-size: 14px;
-}
-
-.v2-root button.v2-team__hire-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--v2-accent);
-  color: #fff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s ease;
-}
-.v2-root button.v2-team__hire-cta:hover { background: var(--v2-accent-strong); }
-.v2-root button.v2-team__hire-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-
-.v2-team__actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.v2-team__empty-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.v2-root button.v2-team__byo-cta {
-  background: transparent;
-  color: var(--v2-accent);
-  border: 1px solid var(--v2-border);
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.v2-root button.v2-team__byo-cta:hover { background: var(--v2-accent-soft); border-color: var(--v2-accent); }
-.v2-root button.v2-team__byo-cta:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
-
-.v2-team__error {
-  padding: 12px 14px;
-  background: #fdf2f2;
-  border: 1px solid #f4caca;
-  border-radius: 8px;
-  color: #8a2929;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
-
-/* Invite-code access is a quiet line under the roster title, not a notice
-   card competing with the team's primary work. The linked code path remains
-   available when a user has one. */
-.v2-team__entitlement-notice {
-  margin: -12px 0 20px;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.v2-team__redeem {
-  padding: 10px 14px;
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-  margin-bottom: 20px;
-}
-
-.v2-team__redeem--success {
-  background: #f0f9f1;
-  border-color: #c4e6c9;
-  color: #1e6b2a;
-}
-
-.v2-root button.v2-team__redeem-link {
-  color: var(--v2-accent);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: underline;
-  background: none;
-  padding: 0;
-}
-
-.v2-team__redeem-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.v2-team__redeem-form .v2-login__input {
-  max-width: 240px;
-}
-
-.v2-team__redeem-error {
-  color: var(--v2-danger);
-  font-size: 12px;
-}
-
-.v2-team__empty {
-  border: 1px dashed #d9dce3;
-  border-radius: 12px;
-  padding: 56px 32px;
-  text-align: center;
-  background: #fafbfc;
-}
-.v2-team__empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.v2-team__empty-text {
-  color: #5f6470;
-  margin-bottom: 24px;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-  font-size: 14px;
-}
-
-.v2-team__grid {
-  display: grid;
-  /* min(320px, 100%): a bare 320px floor overflows the ~326px content area
-     on a 390px phone (nav rail eats the rest) — the card clipped its
-     "Talk to" button off-screen (2026-07-03 mobile smoke). */
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-  gap: 16px;
-}
-
-.v2-team-card {
-  display: flex;
-  gap: 14px;
-  padding: 16px;
-  background: #fff;
-  border: 1px solid #e4e6eb;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.12s ease, transform 0.12s ease;
-  /* Spec §1.3: one internal grid, vertically centered — the icon action and
-     the two-line body share a center axis instead of ragged tops. */
-  align-items: center;
-}
-.v2-team-card:hover {
-  border-color: #c7c9d4;
-  transform: translateY(-1px);
-}
-.v2-team-card:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
-}
-
-.v2-team-card__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.v2-team-card__name-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-bottom: 2px;
-}
-
-.v2-team-card__name {
-  /* Own the full first line so the category chip + runtime badge wrap to a meta
-     line below instead of flex-crushing the name to a single ellipsized char
-     (the "AI Citation Strategist" → "/" bug). Re-applied after a stale-base
-     revert of the original fix (d8140397). */
-  flex: 1 0 100%;
-  min-width: 0;
-  font-weight: 650;
-  font-size: 15px;
-  color: #1a1c22;
-  /* Craft audit 2026-08-22, rule 1: a primary identifier never ellipsizes at
-     one line — at 1440px HALF the fleet's names truncated. Wrap to two lines;
-     clamp only pathological lengths. */
-  white-space: normal;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  line-height: 1.3;
-}
-
-/* .v2-team-card__runtime removed 2026-08-22: runtime vocabulary on cards
-   violated ratified ADR-022 D1 (craft audit finding 2). */
-
-.v2-team-card__pod {
-  font-size: 13px;
-  color: #5f6470;
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.v2-team-card__pod em {
-  font-style: normal;
-  color: #1a1c22;
-  font-weight: 500;
-}
-
-.v2-team-card__activity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #6b6f7a;
-}
-
-.v2-team-card__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #c8cbd2;
-  display: inline-block;
-}
-.v2-team-card__dot[data-active="true"] {
-  background: #25c281;
-}
-
-/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
-   reset (0,0,2,1) — prefix with .v2-root button.X so source order wins. Same
-   pattern as .v2-chat__send / .v2-pods__item--active. */
-.v2-root button.v2-team-card__talk {
-  align-self: center;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-accent);
-  background: transparent;
-  border: 1px solid var(--v2-accent);
-  border-radius: var(--v2-radius-sm);
-  white-space: nowrap;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-team-card__actions {
-  align-self: center;
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.v2-root button.v2-team-card__profile {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: transparent;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-sm);
-  cursor: pointer;
-}
-.v2-root button.v2-team-card__profile:hover {
-  color: var(--v2-text-primary);
-  border-color: var(--v2-border);
-}
-.v2-root button.v2-team-card__talk:hover {
-  background: var(--v2-accent);
-  color: #fff;
-}
-.v2-root button.v2-team-card__talk:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-@media (max-width: 760px) {
-  .v2-team { padding: 20px 16px 48px; }
-  .v2-team__header { flex-direction: column; }
 }
 
 /* Plan/Execute pill in pod chat header (replaces banner state-strip) */
@@ -7122,16 +6629,6 @@ body.modern-ui.v2-canvas {
    squeeze the body column to zero width — the agent NAME disappeared at 390px
    (mobile smoke 2026-07-05, worsened by the added Profile button). Wrap the
    actions onto their own full-width row instead of competing with the name. */
-@media (max-width: 560px) {
-  .v2-team-card {
-    flex-wrap: wrap;
-  }
-  .v2-team-card__actions {
-    flex-basis: 100%;
-    justify-content: flex-end;
-    margin-top: 4px;
-  }
-}
 
 /* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
    the actions live in the .v2-msg__actions hover cluster now — one pill,
@@ -7546,6 +7043,23 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
+/* Administration (admin-only): two bordered link rows, ink label + muted detail. */
+.v2-settings__admin-links { display: flex; flex-direction: column; gap: 8px; }
+.v2-settings__admin-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  color: var(--v2-text-primary);
+  text-decoration: none;
+}
+.v2-settings__admin-link:hover { background: var(--v2-surface-hover); }
+.v2-settings__admin-link-label { font: 600 13px/18px var(--v2-font); }
+.v2-settings__admin-link-detail { font-size: 12px; color: var(--v2-text-muted); text-align: right; }
+
 .v2-settings__account-type {
   margin-left: auto;
   text-transform: lowercase;
@@ -7932,6 +7446,329 @@ body.modern-ui.v2-canvas {
   background: var(--v2-accent-strong);
 }
 
+.v2-board__focus {
+  margin: 16px 20px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-bg);
+  flex: 0 0 auto;
+}
+
+.v2-board__focus-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v2-board__focus-eyebrow {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v2-board__focus-title {
+  margin: 2px 0 0;
+  color: var(--v2-text-primary);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.v2-root button.v2-board__focus-edit,
+.v2-root button.v2-board__focus-clear {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 11px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-edit:hover,
+.v2-root button.v2-board__focus-clear:hover {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-board__focus-muted,
+.v2-board__focus-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 13px;
+}
+
+.v2-board__focus-error { color: var(--v2-danger, #b42318); }
+
+.v2-root button.v2-board__focus-retry,
+.v2-root button.v2-board__focus-review-latest {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 4px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-retry:hover,
+.v2-root button.v2-board__focus-review-latest:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-board__focus-review-latest:disabled {
+  color: var(--v2-text-muted);
+  cursor: default;
+}
+
+.v2-board__focus-goal {
+  margin: 10px 0 4px;
+  color: var(--v2-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.v2-board__focus-scope {
+  margin: 0;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+
+.v2-board__focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-meta strong { color: var(--v2-text-secondary); }
+
+.v2-board__focus-tasks {
+  margin: 12px 0 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+}
+
+.v2-board__focus-tasks li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-board__focus-task-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+
+.v2-root button.v2-board__focus-task-link {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  color: var(--v2-accent-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.v2-board__focus-task-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.v2-root button.v2-board__focus-task-link:hover { text-decoration: underline; }
+
+.v2-board__focus-task-id {
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.v2-board__focus-task-status {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-task-meta {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.v2-board__focus-task--unavailable { color: var(--v2-text-muted); font-style: italic; }
+
+.v2-board__focus-editor { width: min(640px, calc(100vw - 28px)); }
+
+.v2-board__focus-editor .v2-modal__close {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.v2-board__field textarea,
+.v2-board__field select {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.v2-board__field textarea:focus,
+.v2-board__field select:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+
+.v2-board__focus-task-picker {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+}
+
+.v2-board__focus-task-option {
+  display: flex;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--v2-text-secondary);
+  font-size: 12.5px;
+}
+.v2-board__focus-task-option input { flex: 0 0 auto; margin-top: 4px; }
+.v2-board__focus-task-option > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.v2-board__focus-selected {
+  margin: -3px 0 12px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+}
+
+.v2-board__focus-selected li { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.v2-board__focus-selected li:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.v2-board__focus-selected li > span.v2-board__focus-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  text-align: right;
+}
+.v2-board__focus-selected li > span.v2-board__focus-task-label {
+  flex: 1 1 calc(100% - 25px);
+  min-width: 0;
+}
+.v2-root .v2-board__focus-selected button {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+}
+.v2-board__focus-selected button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+.v2-board__focus-selected button:disabled { color: var(--v2-text-muted); cursor: default; }
+.v2-board__focus-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+.v2-root button.v2-board__focus-save {
+  min-height: 32px;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  color: #fff;
+  background: var(--v2-ink);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-save:not(:disabled):hover { background: var(--v2-ink-hover); }
+.v2-root button.v2-board__focus-save:disabled { opacity: 0.55; cursor: default; }
+
+.v2-board__focus-conflict {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.v2-board__focus-conflict h3 {
+  margin: 0 0 6px;
+  color: var(--v2-text-primary);
+  font-size: 12px;
+}
+
+.v2-board__focus-conflict p { margin: 4px 0; }
+.v2-board__focus-conflict ol { margin: 6px 0 0; padding-left: 20px; }
+.v2-board__focus-conflict .v2-board__focus-review-latest { margin-top: 8px; }
+
 .v2-board__columns {
   display: flex;
   gap: 14px;
@@ -8178,6 +8015,71 @@ body.modern-ui.v2-canvas {
     padding: 12px 14px 20px;
   }
 
+  .v2-board__focus {
+    margin: 12px 14px 0;
+    padding: 14px;
+  }
+
+  .v2-root button.v2-board__focus-edit,
+  .v2-root button.v2-board__focus-clear,
+  .v2-root button.v2-board__focus-retry,
+  .v2-root button.v2-board__focus-review-latest,
+  .v2-root .v2-board__focus-selected button {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-tasks li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-areas:
+      "position id"
+      "title title"
+      "meta meta";
+    align-items: center;
+    gap: 4px 8px;
+    min-height: 0;
+  }
+
+  .v2-board__focus-tasks {
+    padding-left: 0;
+  }
+
+  .v2-board__focus-tasks li .v2-board__focus-task-position { grid-area: position; }
+  .v2-board__focus-tasks li .v2-board__focus-task-id { grid-area: id; }
+  .v2-board__focus-tasks li .v2-board__focus-task-title {
+    grid-area: title;
+    width: 100%;
+  }
+  .v2-board__focus-tasks li .v2-board__focus-task-meta {
+    grid-area: meta;
+    margin-left: 0;
+  }
+
+  .v2-root button.v2-board__focus-task-link {
+    width: 100%;
+  }
+
+  .v2-root button.v2-board__focus-task-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .v2-board__focus-editor .v2-modal__close,
+  .v2-board__focus-editor .v2-board__field input,
+  .v2-board__focus-editor .v2-board__field textarea,
+  .v2-board__focus-editor .v2-board__field select,
+  .v2-root .v2-board__focus-editor button.v2-board__focus-save,
+  .v2-board__focus-task-option {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-task-option {
+    height: auto;
+    align-items: flex-start;
+    padding: 8px 0;
+  }
+
   .v2-board__col {
     min-width: 250px;
     max-width: none;
@@ -8386,7 +8288,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-agent {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--v2-text-secondary);
 }
@@ -8397,7 +8299,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__approval-waiting {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--v2-text-muted);
   font-style: italic;
 }
@@ -8462,21 +8364,6 @@ body.modern-ui.v2-canvas {
 
 /* This is deliberately outside the expand button: it must aim the composer
    without toggling the rail, and nested controls are invalid HTML. */
-.v2-root button.v2-thread-card__reply {
-  min-height: 44px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #7b8494;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.v2-root button.v2-thread-card__reply:hover {
-  background: var(--v2-surface-hover);
-}
 
 .v2-thread-card__count {
   font-weight: 500;
@@ -8510,26 +8397,6 @@ body.modern-ui.v2-canvas {
 
 .v2-thread-card__time {
   color: #7b8494;
-}
-
-.v2-thread-card__chevron {
-  transform: rotate(180deg);
-  transition: transform 300ms ease;
-  line-height: 1;
-}
-
-.v2-root button.v2-thread-card__follow {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  color: #7b8494; /* tertiary — the null "Follow" and the false "Muted" */
-  padding: 4px 6px;
-}
-
-.v2-root button.v2-thread-card__follow--on {
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
 }
 
 /* Expanded replies hang off a left rail at the thread block's own edge.
@@ -8624,12 +8491,17 @@ body.modern-ui.v2-canvas {
     flex-wrap: wrap;
   }
 
+  /* Reply in thread / Follow / Collapse left the chip for the band's foot
+     (ux-lead 64476 (3)); the 44px touch floor follows them. */
+  .v2-root .v2-thread-replies__foot button {
+    min-height: 44px;
+  }
+
   /* The block's 50px attachment indent is expensive at 390 — tighten it,
      but keep the rail on the block edge (aligned with the card), and the
      inner padding tightens with it. */
-  .v2-thread-block {
+  .v2-thread-block__inner {
     margin-left: 24px;
-    width: calc(100% - 24px); /* same indent+width=100% invariant as desktop */
   }
 
   .v2-thread-replies {
@@ -8702,12 +8574,13 @@ body.modern-ui.v2-canvas {
   padding: 3px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface-hover);
+  background: var(--v2-surface);
 }
 
 .v2-root button.v2-activity__window-button {
   min-height: 30px;
   padding: 0 10px;
+  white-space: nowrap;
   border-radius: calc(var(--v2-radius-sm) - 2px);
   color: var(--v2-text-secondary);
   font-size: 12px;
@@ -8715,9 +8588,10 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-activity__window-button--active {
-  background: var(--v2-surface);
+  background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  font-weight: 600;
+  box-shadow: none;
 }
 
 .v2-activity__scope select {
@@ -8794,6 +8668,7 @@ body.modern-ui.v2-canvas {
   margin: 0;
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-label);
+  font-family: var(--v2-font-mono);
   line-height: var(--v2-lh-label);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -8809,17 +8684,60 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
-.v2-activity__compose-pod select {
+.v2-activity__compose-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.v2-root .v2-activity__compose-picker-button {
   height: 26px;
+  min-height: 26px;
   max-width: 220px;
+  overflow: hidden;
   padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface-hover);
+  background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: inherit;
   font-size: var(--v2-fs-meta);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-activity__compose-picker-menu {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  max-width: min(280px, 70vw);
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-md);
+}
+
+.v2-root .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose-picker-option:hover,
+.v2-root .v2-activity__compose-picker-option.is-active {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
 }
 
 .v2-root .v2-activity__compose textarea {
@@ -8837,18 +8755,23 @@ body.modern-ui.v2-canvas {
 }
 
 /* Halo focus (TASK-122): the card carries the halo (focus-within above), so
-   the textarea itself shows nothing; <select> is outside the global
-   focus-visible list and carries its own ring. */
+   the textarea itself shows nothing; the destination picker carries its own
+   ring. */
 .v2-root .v2-activity__compose textarea:focus-visible {
   outline: none;
   box-shadow: none;
   border-color: transparent;
 }
 
-.v2-activity__compose-pod select:focus-visible {
+.v2-activity__compose-picker-button:focus-visible {
   outline: none;
   box-shadow: var(--v2-focus-ring);
   border-color: var(--v2-accent);
+}
+
+.v2-root .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
 }
 
 .v2-activity__compose-hint {
@@ -8873,6 +8796,65 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink-hover);
 }
 
+/* The destination menu is a light, bounded list even though its options are
+   buttons nested under the composer. Keep this selector stronger than the
+   generic Send-button rule above so a large pod list cannot become a black,
+   unbounded wall of buttons. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--v2-fs-meta);
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer hover rule includes :not(:disabled) and a button
+   element, so it outranks the picker option's class-only hover selector.
+   Match that specificity here to keep the light Signal option treatment in
+   the real hovered and selected+hovered states without changing Send. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+/* The generic composer button treatment above is for Send. The destination
+   picker is a neutral selector and needs a stronger selector so it cannot
+   inherit Send's ink fill. */
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button {
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__compose .v2-activity__compose-picker-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+  border-color: var(--v2-accent);
+}
+
 .v2-activity__section-heading {
   display: flex;
   align-items: baseline;
@@ -8888,23 +8870,15 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  font-size: var(--v2-fs-label);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
 }
 
 .v2-activity__eyebrow {
   margin-bottom: 5px;
   color: var(--v2-text-muted);
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -8932,6 +8906,27 @@ body.modern-ui.v2-canvas {
   gap: 2px;
 }
 
+.v2-activity__queue-more {
+  justify-self: start;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 600 12px/16px var(--v2-font);
+}
+
+.v2-activity__queue-more:hover:not(:disabled) {
+  background: var(--v2-accent-soft);
+}
+
+.v2-activity__queue-more:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .v2-activity__board-row {
   display: grid;
   align-items: center;
@@ -8948,18 +8943,18 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
+  align-items: start;
+  gap: 12px;
   min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid transparent;
+  padding: 11px 13px;
+  border: 2px solid var(--v2-accent);
   border-radius: var(--v2-radius);
-  background: transparent;
+  background: var(--v2-surface);
   transition: background 80ms ease;
 }
 
 .v2-activity__queue-row:hover {
-  background: var(--v2-surface-hover);
+  background: var(--v2-surface);
 }
 
 /* Decision elevation: a pending decision or approval sits one step above the
@@ -8968,9 +8963,9 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row--decision,
 .v2-activity__queue-row--approval {
   background: var(--v2-surface);
-  border-color: var(--v2-border-strong);
-  border-radius: var(--v2-radius-lg);
-  box-shadow: var(--v2-shadow-pending);
+  border-color: var(--v2-accent);
+  border-radius: var(--v2-radius);
+  box-shadow: none;
 }
 
 .v2-activity__queue-row--decision:hover,
@@ -8981,7 +8976,8 @@ body.modern-ui.v2-canvas {
 /* A ruled decision has settled: it drops back to the flat row. */
 .v2-activity__queue-row--settled {
   background: transparent;
-  border-color: transparent;
+  border: 1px solid var(--v2-border);
+  padding: 12px 14px;
   box-shadow: none;
 }
 
@@ -9015,6 +9011,19 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
+/* One seat, one mark everywhere: the chat's cobalt agent mark and tint human mark. */
+.v2-activity__queue-row .v2-activity__queue-mark--agent {
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+  font: 600 12px/16px var(--v2-font);
+}
+
+.v2-activity__queue-row .v2-activity__queue-mark--human {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+}
+
 .v2-activity__queue-copy,
 .v2-activity__board-main > div,
 .v2-activity__agent-card,
@@ -9040,6 +9049,11 @@ body.modern-ui.v2-canvas {
 .v2-activity__board-row p,
 .v2-activity__update-content {
   overflow-wrap: anywhere;
+}
+
+.v2-activity__queue-kind {
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-secondary);
 }
 
 .v2-activity__queue-copy strong {
@@ -9078,6 +9092,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-activity__queue-actions button {
+  padding: 0 12px;
+  white-space: nowrap;
   border-color: var(--v2-ink);
   background: var(--v2-ink);
   color: var(--v2-on-ink);
@@ -9114,10 +9130,26 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
+/* Activity's navigation and acknowledgement controls are secondary actions:
+   keep them visibly distinct from the ink send/approve actions while making
+   their hit targets as clear as the approved board. */
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered {
+  padding-inline: 12px;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered:hover:not(:disabled) {
+  border: 1px solid var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 /* DecisionRequest alternatives are content, not row actions: a decision gets
-   its own full-width action line below the question. A neutral base prevents
-   an arbitrary non-recommended choice from inheriting the queue's primary
-   CTA treatment; the recommended choice is the only emphasized pill. */
+   its own full-width action line below the question. Preserve the asking
+   agent's option order; only the first authored option receives the cobalt
+   primary treatment. */
 .v2-activity__queue-row--decision .v2-activity__queue-actions {
   grid-column: 1 / -1;
   justify-content: flex-start;
@@ -9156,21 +9188,27 @@ body.modern-ui.v2-canvas {
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option {
   border: 1px solid var(--v2-border);
-  border-radius: 999px;
+  border-radius: var(--v2-radius-sm);
   background: var(--v2-surface);
   color: var(--v2-text-primary);
 }
 
-.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
-  border-color: var(--v2-ink);
-  background: var(--v2-ink);
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option--primary:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
   color: var(--v2-on-ink);
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
-  border-style: dashed;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
 }
 
 .v2-activity__option-choice {
@@ -9189,6 +9227,12 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.v2-activity__option-recommended,
+.v2-decision-card__option-recommended {
+  font: 500 11px/14px var(--v2-font-mono);
+  opacity: 0.9;
 }
 
 .v2-activity__decision-other {
@@ -9221,6 +9265,11 @@ body.modern-ui.v2-canvas {
   margin-top: 10px;
   color: var(--v2-danger);
   font-size: 13px;
+}
+
+.v2-root .v2-activity__row-action-error {
+  grid-column: 1 / -1;
+  color: var(--v2-ink);
 }
 
 .v2-activity__queue-row button:disabled,
@@ -9261,6 +9310,7 @@ body.modern-ui.v2-canvas {
   align-items: center;
   border-radius: 999px;
   font-size: 11px;
+  font-family: var(--v2-font-mono);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -9377,8 +9427,13 @@ body.modern-ui.v2-canvas {
   .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
   .v2-activity__compose-pod { width: 100%; }
   .v2-activity__compose-pod > span { white-space: nowrap; }
-  .v2-activity__compose-pod select { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
+  /* The picker option rule is more specific than the generic composer
+     button floor above; repeat the menu scope so every option keeps a 44px
+     touch target on phones. */
+  .v2-root .v2-activity__compose .v2-activity__compose-picker-menu .v2-activity__compose-picker-option { min-height: 44px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
@@ -9407,7 +9462,6 @@ body.modern-ui.v2-canvas {
 
 @media (prefers-reduced-motion: reduce) {
   .v2-root button.v2-thread-card__main,
-  .v2-thread-card__chevron,
   .v2-thread-replies {
     transition: none;
   }
@@ -9424,6 +9478,10 @@ body.modern-ui.v2-canvas {
  * zh-CN. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-artifacts__title,
+.v2-root:lang(zh) .v2-team__title,
+.v2-root:lang(zh) .v2-team-card__name,
+.v2-root:lang(zh) .v2-team__empty-title,
 .v2-root:lang(zh) .v2-pods__title,
 .v2-root:lang(zh) .v2-chat__title,
 .v2-root:lang(zh) .v2-thread__title h1,
@@ -9448,7 +9506,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
-.v2-root:lang(zh) .v2-team__title,
 .v2-root:lang(zh) .v2-activity__title,
 .v2-root:lang(zh) .v2-activity__compose-label,
 .v2-root:lang(zh) .v2-activity__section h2,
@@ -9457,7 +9514,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-team-feature__name,
 .v2-root:lang(zh) .v2-connect__lane h2,
 .v2-root:lang(zh) .v2-connect__gateway h3 {
   letter-spacing: 0;
@@ -9748,6 +9804,7 @@ body.modern-ui.v2-canvas {
 }
 @media (max-width: 640px) {
   .v2-activity__reply { flex-basis: 100%; }
+  .v2-root .v2-activity__reply button { min-height: 44px; }
 }
 
 /* ---------- Workspace sidebar (TASK-129 PR 1) ----------
@@ -9897,7 +9954,7 @@ body.modern-ui.v2-canvas {
   border: 0;
   border-radius: 4px;
   box-shadow: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .v2-workspace-inspector__agent-copy {
@@ -10072,24 +10129,33 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-decision-card__options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
+  display: grid;
+  gap: 12px;
 }
 
-.v2-decision-card__option { display: inline-flex; align-items: center; gap: 5px; }
+.v2-decision-card__option {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
 
 .v2-root button.v2-decision-card__choice,
 .v2-root button.v2-decision-card__other,
 .v2-root button.v2-decision-card__other-form button {
-  min-height: 30px;
-  padding: 5px 10px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
   background: var(--v2-surface);
   color: var(--v2-text-primary);
-  font: 500 12px/18px var(--v2-font);
+  font: 600 13px/20px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__choice {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
 }
 
 .v2-root button.v2-decision-card__choice--primary {
@@ -10102,15 +10168,27 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-decision-card__other:hover:not(:disabled) { background: var(--v2-surface-hover); }
 .v2-root button.v2-decision-card__choice--primary:hover:not(:disabled) { background: var(--v2-accent-strong); }
 
-.v2-decision-card__option > span {
+.v2-decision-card__option-description {
+  color: var(--v2-text-secondary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-decision-card__option-recommended {
   color: var(--v2-text-muted);
-  font: 400 11px/16px var(--v2-font);
+  font: 500 11px/14px var(--v2-font-mono);
 }
 
 .v2-root button.v2-decision-card__other {
   border: 0;
   background: transparent;
   color: var(--v2-accent-text);
+}
+
+.v2-decision-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .v2-decision-card__other-form {
@@ -10238,101 +10316,6 @@ body.modern-ui.v2-canvas {
 
 .v2-message-row--decision { padding: 8px 0; }
 
-.v2-composer {
-  flex: 0 0 auto;
-  margin: 10px 14px 14px;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
-  background: var(--v2-surface);
-}
-
-.v2-composer__target {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--v2-border-soft);
-  color: var(--v2-text-secondary);
-  font: 400 12px/16px var(--v2-font);
-}
-
-.v2-root button.v2-composer__target button {
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-muted);
-  font-size: 18px;
-  line-height: 1;
-}
-
-.v2-composer__field { position: relative; }
-
-.v2-root .v2-composer__field > textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 68px;
-  padding: 10px 12px 6px;
-  resize: vertical;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 400 14px/20px var(--v2-font);
-}
-
-.v2-composer__file { display: none; }
-
-.v2-composer__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 6px 8px 6px 10px;
-  border-top: 1px solid var(--v2-border-soft);
-}
-
-.v2-root button.v2-composer__attach {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-secondary);
-}
-
-.v2-root button.v2-composer__attach:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
-
-.v2-composer__posts-as {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-root button.v2-composer__send {
-  min-height: 28px;
-  padding: 4px 12px;
-  border: 1px solid var(--v2-ink);
-  border-radius: 4px;
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  font: 600 12px/18px var(--v2-font);
-}
-
-.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
-.v2-root button.v2-composer__send:disabled { cursor: not-allowed; opacity: 0.45; }
-
 .v2-composer__error {
   margin: 0;
   padding: 0 10px 8px;
@@ -10371,34 +10354,18 @@ body.modern-ui.v2-canvas {
   .v2-decision-card__options { align-items: stretch; flex-direction: column; }
   .v2-decision-card__option { width: 100%; }
   .v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }
-  .v2-root button.v2-decision-card__other { align-self: center; min-height: 30px; }
-
-  .v2-composer { margin: 8px 16px 62px; border: 0; background: transparent; }
-  .v2-composer__field { display: flex; align-items: stretch; gap: 12px; }
-  .v2-root .v2-composer__field > textarea {
-    min-height: 44px;
-    height: 44px;
-    flex: 1;
-    padding: 11px 12px;
-    resize: none;
-    border: 1px solid var(--v2-border);
-    border-radius: 4px;
-    background: var(--v2-surface);
-    line-height: 20px;
-  }
-  .v2-composer__actions { min-height: 0; padding: 0; border: 0; }
-  .v2-root button.v2-composer__attach,
-  .v2-composer__posts-as { display: none; }
-  .v2-root button.v2-composer__send {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-    border-radius: 4px;
-    font-size: 11px;
-  }
+  .v2-root button.v2-decision-card__other { align-self: flex-start; min-height: 44px; }
 
   /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
      while the transcript, composer, and tab bar share the white canvas. */
+  /* The 1023px rule is more specific and otherwise leaves three tracks
+     active at phone width. The rail is hidden below, so every shell must
+     explicitly collapse to one main track. */
+  .v2-shell:not(.v2-shell--feature-wide),
+  .v2-shell--feature-wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .v2-shell,
   .v2-shell--no-inspector,
   .v2-shell--feature {
@@ -10467,7 +10434,7 @@ body.modern-ui.v2-canvas {
     border-radius: 999px;
     background: var(--v2-accent);
     color: #fff;
-    font: 700 10px/1 var(--v2-font-mono);
+    font: 700 11px/1 var(--v2-font-mono);
   }
 }
 
@@ -10892,4 +10859,1063 @@ body.modern-ui.v2-canvas {
   }
 
   .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__label { font-weight: 700; }
+}
+
+/* ---------- Workspace at scale · direction C · PR 2a (composer, attachments, history) ----------
+   One-line composer with a plus menu, Send only with text, no identity line;
+   images as 156×104 thumbnails with a lightbox, files as chips with a text type
+   badge, code past six lines collapsed; older messages load on scroll with a
+   mono edge line and a Jump-to-latest pill. */
+
+.v2-composer {
+  flex: 0 0 auto;
+  margin: 0 16px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-composer--typing,
+.v2-composer:focus-within { border-color: var(--v2-border-strong); }
+
+.v2-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 8px 7px 10px;
+}
+
+.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; padding-bottom: 2px; }
+
+.v2-root button.v2-composer__plus {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-composer__plus::before { content: '+'; font: 500 16px/1 var(--v2-font); }
+.v2-root button.v2-composer__plus:hover:not(:disabled),
+.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-composer__menu {
+  position: absolute;
+  left: 0;
+  bottom: 32px;
+  z-index: 4;
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-root .v2-composer__menu > button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root .v2-composer__menu > button:hover,
+.v2-root .v2-composer__menu > button:focus-visible { background: var(--v2-surface-hover); outline: none; }
+
+.v2-thread__empty-line {
+  display: block;
+  padding: 12px 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-composer__tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 4px 2px 6px;
+  margin-bottom: 4px;
+  border-radius: 3px;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-root button.v2-composer__tag-cancel {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.v2-composer__field { position: relative; min-width: 0; flex: 1; }
+
+.v2-composer__file { display: none; }
+
+.v2-root .v2-composer__field > textarea::placeholder { color: var(--v2-text-placeholder); }
+
+/* The row carries the focus state on its border; the field itself draws none. */
+.v2-root .v2-composer__field > textarea:focus,
+.v2-root .v2-composer__field > textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.v2-root .v2-composer__field > textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  max-height: 112px;
+  padding: 6px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-composer__uploading {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-composer__send {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  margin-bottom: 0;
+  border: 1px solid var(--v2-ink);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: 500 14px/1 var(--v2-font-mono);
+}
+
+.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
+.v2-root button.v2-composer__send:disabled { cursor: progress; opacity: 0.6; }
+
+.v2-composer__error,
+.v2-composer__warnings { padding: 0 10px 8px; }
+
+/* Attachments */
+.v2-msg__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__thumb {
+  display: block;
+  width: 156px;
+  height: 104px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface-tint);
+  position: relative;
+}
+
+.v2-root button.v2-msg__thumb:hover { border-color: var(--v2-border-strong); }
+
+.v2-msg__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.v2-msg__thumb-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-msg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__chip,
+.v2-msg__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 12.5px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-msg__chip:hover { background: var(--v2-surface-hover); }
+
+.v2-msg__chip-ext {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  text-transform: uppercase;
+}
+
+.v2-msg__chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-msg__chip-size {
+  flex: 0 0 auto;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* Long code collapses after six lines; expands in place. */
+.v2-msg__collapse { position: relative; }
+.v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
+
+.v2-root button.v2-msg__more {
+  display: inline-block;
+  margin: 2px 0 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 12.5px/18px var(--v2-font);
+}
+
+.v2-root button.v2-msg__more:hover { text-decoration: underline; }
+
+/* Lightbox */
+.v2-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 24, 40, 0.9);
+  cursor: zoom-out;
+}
+
+.v2-lightbox__image {
+  max-width: min(92vw, 1400px);
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.v2-lightbox__name {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-lightbox__close,
+.v2-root button.v2-lightbox__nav {
+  position: absolute;
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 500 16px/1 var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-lightbox__close { top: 12px; right: 12px; }
+.v2-root button.v2-lightbox__nav--prev { left: 12px; top: 50%; transform: translateY(-50%); }
+.v2-root button.v2-lightbox__nav--next { right: 12px; top: 50%; transform: translateY(-50%); }
+
+/* History edge + jump pill */
+.v2-thread__edge {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 10px;
+}
+
+.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line { cursor: pointer; }
+.v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
+
+.v2-thread__history-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0 10px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+}
+
+.v2-thread__history-status--error { color: var(--v2-text-secondary); }
+
+.v2-thread__history-status--viewport {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  right: 24px;
+  z-index: 4;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  pointer-events: none;
+}
+
+.v2-thread__history-status--viewport .v2-thread__history-retry {
+  pointer-events: auto;
+}
+
+.v2-root button.v2-thread__history-retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The wrap is the scroller's last child and STICKS to its bottom edge: a
+   0-height wrap with an absolute pill resolved `bottom: 12px` against a box
+   at the end of the transcript, ~1100px below the viewport when the pill
+   mounts a viewport up (ux-lead gate on #1579). Sticky needs real height. */
+.v2-thread__jump-wrap {
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  height: 28px;
+  pointer-events: none;
+}
+
+.v2-root button.v2-thread__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  pointer-events: auto;
+  border: 1px solid #dde0e6;
+  border-radius: 14px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 13px/26px var(--v2-font);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-thread__jump:hover { background: var(--v2-surface-hover); }
+.v2-thread__jump-count { color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
+
+@media (max-width: 760px) {
+  /* Sits above the 56px tab bar; the row itself keeps its desktop shape. */
+  .v2-composer { margin: 0 12px 64px; }
+  .v2-composer__menu { min-width: 200px; }
+  .v2-root button.v2-msg__thumb { width: calc(50% - 3px); height: 84px; }
+  .v2-composer__tag { max-width: 120px; }
+}
+
+/* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
+   Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
+   its source; the thread summary is one chip; the expanded thread is one #f9fafb
+   band with a 2px rule and a Collapse foot; the action strip is a 28px white box
+   top-right on hover (inline under the body on long-press at 390); the Jump pill
+   is white with a cobalt count; transcript avatars are two-tone. */
+
+/* Hover band and the expanded band share the panel colour, not the tint. */
+.v2-thread .v2-msg:hover,
+.v2-thread .v2-msg:focus-within { background: #f9fafb; }
+.v2-thread .v2-msg { border-radius: 4px; }
+.v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
+
+/* Runtime tag after the time on agent rows. */
+.v2-msg__tag {
+  display: inline-block;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 8px;
+  border-radius: 3px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  vertical-align: middle;
+}
+
+/* Grouped rows: the time shows in the gutter on hover. */
+.v2-msg__gutter-time {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 28px;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+  visibility: hidden;
+}
+.v2-thread .v2-msg--grouped:hover .v2-msg__gutter-time { visibility: visible; }
+
+/* Two-tone avatars inside the transcript: agents cobalt, humans tint. */
+
+/* Quote: 2px rule, two lines, jumps to the source. */
+.v2-thread .v2-msg__quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 2px 0 6px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font: 400 13px/17px var(--v2-font);
+  cursor: pointer;
+  max-width: 560px;
+}
+.v2-thread .v2-msg__quote:hover { border-left-color: var(--v2-border-strong); }
+.v2-thread .v2-msg__quote:focus-visible { outline: none; box-shadow: inset 2px 0 0 var(--v2-accent); }
+.v2-thread .v2-msg__quote-author { color: var(--v2-text-primary); font-weight: 600; }
+.v2-thread .v2-msg__quote-text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Reactions: 20px chips, mine in the accent wash. */
+.v2-thread .v2-msg__reactions { gap: 6px; margin-top: 6px; }
+.v2-root .v2-thread button.v2-msg__reaction,
+.v2-thread .v2-msg__reaction {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/18px var(--v2-font-mono);
+}
+.v2-thread .v2-msg__reaction-emoji { font-size: 12px; line-height: 18px; }
+.v2-thread .v2-msg__reaction-count { font: 500 11px/18px var(--v2-font-mono); }
+.v2-root .v2-thread button.v2-msg__reaction--mine {
+  border-color: #d4dbf7;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+}
+.v2-root .v2-thread button.v2-msg__reaction--more { color: var(--v2-accent-text); }
+
+/* Action strip: 28px white box, r4, four 24px icons, top-right on hover. */
+.v2-thread .v2-msg__strip {
+  top: -14px;
+  right: 0;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.v2-root .v2-thread button.v2-msg__action { width: 24px; height: 24px; border-radius: 3px; color: #4f5c6e; }
+.v2-msg__more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 7;
+  display: flex;
+  min-width: 140px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+.v2-root .v2-msg__more-menu > button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+.v2-root .v2-msg__more-menu > button:hover { background: var(--v2-surface-hover); }
+
+/* Thread summary chip: faces · N replies · last age. */
+.v2-thread .v2-thread-card { margin: 4px 0 0; gap: 10px; }
+.v2-root .v2-thread button.v2-msg__thread-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+  font: 600 13px/18px var(--v2-font);
+}
+.v2-root .v2-thread button.v2-msg__thread-chip:hover { background: var(--v2-surface-hover); border-color: var(--v2-border); }
+.v2-thread .v2-thread-card__faces .v2-avatar { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--v2-surface); font: 650 11px/1 var(--v2-font-mono); }
+.v2-thread .v2-thread-card__faces > * + * { margin-left: -4px; }
+.v2-thread .v2-thread-card__count { color: var(--v2-accent-text); font-weight: 600; }
+.v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+
+/* Expanded thread: the ROOT and its replies share one band (ux-lead 64476
+   (2)); the chip / rule / replies sit at the text column (28px avatar + 8px
+   gap = 36px). */
+.v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
+.v2-thread .v2-thread-block__inner { margin-left: 36px; }
+.v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open > .v2-msg:hover,
+.v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
+.v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
+.v2-thread .v2-thread-replies { margin: 6px 0 0; padding-left: 14px; border-left: 2px solid var(--v2-border); }
+.v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
+.v2-thread .v2-thread-replies .v2-msg:hover { background: transparent; }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; font-size: 12px; }
+.v2-thread-replies__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+.v2-root button.v2-thread-replies__collapse,
+.v2-root button.v2-thread-replies__more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 13px/18px var(--v2-font);
+  cursor: pointer;
+}
+.v2-root button.v2-thread-replies__more { display: block; margin: 2px 0 4px; }
+.v2-root button.v2-thread-replies__follow {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-thread-replies__follow--on { color: var(--v2-accent-text); }
+
+/* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
+.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
+
+/* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
+   #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
+.v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
+.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
+.v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
+.v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
+
+/* Jump pill: white, #dde0e6 border, r14, ink 13/600, cobalt count (walk-3 miss 58). */
+/* Composer aim chip (walk-3 miss 59). */
+.v2-composer__aim { background: var(--v2-accent-soft, #e8ecfb); color: var(--v2-accent-text); }
+
+/* The reveal is gated on capability in the row — `matchMedia('(hover: none)')`,
+   with no width term and no `(pointer: coarse)` — so its placement matches that
+   query EXACTLY (sprint-review 64468 + 64485). A comma'd `(pointer: coarse)`
+   would style stylus/hybrid machines where `isHoverless()` is false and the
+   reveal never fires: a dead rule. This block sits AFTER the `.v2-thread
+   .v2-msg__strip` rules it overrides (11229) for the same reason the double
+   pod-header meta needed source order, not specificity. */
+@media (hover: none) {
+  /* Long-press reveals the strip inline under the body. */
+  .v2-thread .v2-msg { -webkit-touch-callout: none; }
+  /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
+     to auto-place, a static strip takes the body's cell and the body drops
+     into the avatar column (one word per line — 390 walk). Pin it. */
+  .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
+  .v2-thread .v2-msg--reveal .v2-msg__strip {
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    display: inline-flex;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Sizing is a width question, not a capability one. */
+  .v2-root .v2-thread button.v2-msg__action { width: 24px; height: 24px; }
+  .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
+  .v2-thread .v2-msg__gutter-time { display: none; }
+}
+
+/* Direction C Activity board: a 52px bar over a readable 760px column.
+   The composer remains under the explicit destination ruling. */
+.v2-activity { position: relative; width: 100%; max-width: none; padding: 0 0 28px; }
+.v2-activity__header { min-height: 64px; align-items: baseline; padding: 20px 16px 4px; gap: 16px; border-bottom: 0; overflow: visible; }
+.v2-activity__bar-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.v2-activity__title { font: 700 32px/36px var(--v2-font-display); letter-spacing: -0.03em; white-space: nowrap; }
+.v2-activity__subtitle { margin: 0; color: var(--v2-text-muted); font-size: 13px; line-height: 18px; white-space: nowrap; }
+.v2-activity__controls { position: absolute; top: 22px; right: 16px; gap: 8px; z-index: 2; }
+.v2-activity__scope { display: flex; flex-wrap: nowrap; gap: 2px; position: relative; padding: 3px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-activity__scope-menu { position: absolute; top: calc(100% + 4px); right: 0; display: grid; gap: 2px; width: min(300px, 85vw); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-root button.v2-activity__scope-button { min-height: 30px; max-width: 150px; padding: 0 9px; border: 0; border-radius: calc(var(--v2-radius-sm) - 2px); background: transparent; color: var(--v2-text-secondary); font: 600 11px/16px var(--v2-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-root button.v2-activity__scope-button--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); font-weight: 600; }
+.v2-root button.v2-activity__scope-button--menu { max-width: none; white-space: normal; text-align: left; }
+.v2-root button.v2-activity__window-button { font: 600 11px/16px var(--v2-font-mono); }
+.v2-activity__sections { width: min(100%, 760px); margin: 28px auto 0; gap: 34px; }
+.v2-activity__section-heading { margin-bottom: 10px; }
+.v2-activity__section-heading > p { font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__queue { gap: 10px; }
+.v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 11px; border: 2px solid var(--v2-accent); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.v2-activity__queue-row:hover { background: var(--v2-surface); }
+.v2-activity__queue-row--decision { border-color: var(--v2-accent); box-shadow: none; }
+.v2-activity__queue-row--approval { border-color: var(--v2-accent); box-shadow: none; }
+.v2-activity__queue-row--settled,
+.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }
+.v2-activity__queue-kind { font: 500 11px/16px var(--v2-font-mono); text-transform: lowercase; }
+.v2-activity__queue-topline strong { font-size: 14px; line-height: 20px; }
+.v2-activity__queue-copy p { font-size: 14px; line-height: 20px; }
+.v2-activity__queue-more { min-height: 36px; border: 1px solid var(--v2-accent); color: var(--v2-accent); font: 600 12px/16px var(--v2-font); }
+.v2-activity__empty--plain { min-height: 0; padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); align-items: flex-start; text-align: left; }
+.v2-activity__moved-list { display: grid; gap: 10px; }
+.v2-activity__moved-group { border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; background: var(--v2-surface); }
+.v2-activity__moved-head { display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--v2-border-soft); color: var(--v2-text-secondary); font: 400 11px/16px var(--v2-font-mono); }
+.v2-activity__moved-lines { display: grid; }
+.v2-activity__moved-line { display: grid; grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px; font-size: 13px; line-height: 18px; }
+.v2-activity__moved-line + .v2-activity__moved-line { border-top: 1px solid var(--v2-border-soft); }
+.v2-activity__moved-line strong { font-weight: 600; color: var(--v2-text-primary); }
+.v2-activity__moved-line span { min-width: 0; overflow-wrap: anywhere; }
+.v2-activity__moved-line time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); white-space: nowrap; }
+.v2-activity__moved-cap-note { display: block; padding: 6px 12px 8px; color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+.v2-root button.v2-activity__moved-more { width: 100%; padding: 8px 12px; border: 0; border-top: 1px solid var(--v2-border-soft); background: transparent; color: var(--v2-accent-text); text-align: left; font: 600 12px/16px var(--v2-font); }
+@media (max-width: 640px) {
+  .v2-activity__header { min-height: 56px; align-items: baseline; flex-direction: row; flex-wrap: wrap; padding: 16px 12px 4px; gap: 8px; }
+  .v2-activity__sections { margin-top: 20px; padding: 0 12px; }
+  .v2-activity__moved-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .v2-activity__moved-line span { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Direction C owns the full pane edge. The generic feature wrapper is padded
+   for legacy pages, which would inset the Activity bar and make its 52px
+   contract impossible to reach. */
+.v2-feature--activity > .v2-feature__body { padding: 0 0 28px; }
+.v2-feature--activity .v2-feature__legacy { max-width: none; }
+
+.v2-activity__compose { width: min(calc(100% - 24px), 760px); margin: 20px auto 0; }
+.v2-root button.v2-activity__queue-more {
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent);
+  font: 600 12px/16px var(--v2-font);
+}
+.v2-root button.v2-activity__queue-more:hover:not(:disabled) { background: var(--v2-accent-soft); color: var(--v2-accent); }
+.v2-root .v2-activity__scope-menu button.v2-activity__scope-button { width: 100%; max-width: none; }
+.v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
+/* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
+.v2-rail__item-icon .MuiBadge-badge {
+  top: -8px;
+  right: -14px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+  transform: none;
+  white-space: nowrap;
+}
+.v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
+/* ≤760 (66390): the two toggles stack. The card-action stack lives in the trailing ≤760
+   block at the end of the Activity rules, after every row/action rule it must outrank. */
+@media (max-width: 760px) {
+  .v2-activity__controls { flex-direction: column; align-items: stretch; }
+}
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
+.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3; grid-row: 1; max-width: 320px; justify-content: flex-end; flex-wrap: wrap; margin-top: 0; }
+.v2-activity__queue-row .v2-activity__option-choice { flex: 0 1 auto; max-width: 150px; }
+.v2-activity__queue-row .v2-activity__option { white-space: normal; }
+/* Opening a reply or a free-text ruling gives that editor a full content row. */
+.v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
+.v2-activity__empty--plain span { color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
+.v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
+
+/* Keep filters on a separate row when the pane cannot fit them beside the
+   title. Both rows stay in normal reading order, without a clipped title. */
+@media (max-width: 1100px) {
+  .v2-activity__controls { position: relative; top: auto; right: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
+  .v2-activity__bar-title { min-width: 0; }
+  .v2-activity__subtitle { overflow: hidden; text-overflow: ellipsis; }
+  .v2-activity__window { width: auto; flex: 0 0 auto; }
+  .v2-activity__scope { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
+
+  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; }
+  .v2-activity__queue-row .v2-activity__option-choice { max-width: 100%; }
+}
+
+/* Decision alternatives are one inline line below the question (ux-lead
+   66400 fix 4): 32px options in authored order, primary cobalt, the rest
+   bordered, `Other…` as cobalt text beside them, Open at the end. These rules
+   intentionally come after the generic queue-row overrides above so the
+   options are neither squeezed into the 320px action column nor capped at
+   150px each. */
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__queue-actions {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  max-width: none;
+  width: 100%;
+  justify-content: flex-start;
+  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision {
+  align-items: start;
+  row-gap: 12px;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 280px;
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button {
+  justify-content: center;
+  min-height: 32px;
+  padding-block: 0;
+  padding-inline: 12px;
+  text-align: left;
+  line-height: 20px;
+  white-space: normal;
+}
+/* The footer's children (Other…, the free-text editor, Open) flow on the same line. */
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer { display: contents; }
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-other { flex: 1 1 100%; }
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button.v2-activity__option:not(.v2-activity__option--primary):hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-recommended {
+  display: block;
+  color: var(--v2-text-muted);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-description {
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.v2-activity__decision-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+/* ≤760 (ux-lead 66428; sprint-review 66435 — the ruling's number is 760, not 640, so the
+   641–760 band stacks too): decision options stack like every other action — 44px, full
+   width. This block sits AFTER the inline option rules above so it wins at equal specificity. */
+@media (max-width: 760px) {
+  /* Every card action drops under the context line at 44px full width (66390 / 66438 at 720):
+     same selectors as the desktop rules above so this block wins by order, not by luck. */
+  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; flex-wrap: wrap; }
+  .v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }
+  /* The reply editor's nested Send only grows in HEIGHT (sprint-review 66493/66498): a descendant
+     rule here gave it flex-basis 100% and it ate the textarea (489px Send beside a 139px input). */
+  .v2-root .v2-activity__reply > button { min-height: 44px; }
+  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
+  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
+  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }
+}
+/* Get started — day zero (ux-lead 66658/66666, board 66663/66664). One bordered card above
+   Needs you; a step is not an ask: no ring, no count, no badge. Ink numbered marks, dividers,
+   32px buttons at desktop (the current step ink, later steps bordered), 44 full width at ≤760. */
+.v2-activity__start { width: min(100%, 760px); margin: 20px auto 0; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); overflow: hidden; }
+.v2-activity__start-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-activity__start-head h2 { margin: 0; font: 600 14px/20px var(--v2-font); color: var(--v2-text-primary); }
+.v2-activity__start-kicker { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+.v2-activity__start-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-activity__start-row:last-child { border-bottom: 0; }
+.v2-activity__start-num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 500 11px/16px var(--v2-font-mono); }
+.v2-activity__start-copy { min-width: 0; }
+.v2-activity__start-copy strong { display: block; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
+.v2-activity__start-copy p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }
+.v2-activity__start-act { display: flex; align-items: center; }
+.v2-root .v2-activity__start-act button { min-height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/18px var(--v2-font); white-space: nowrap; }
+.v2-root .v2-activity__start-act button.v2-activity__start-cta--current { border-color: var(--v2-ink); background: var(--v2-ink); color: var(--v2-on-ink); }
+@media (max-width: 760px) {
+  .v2-activity__start { width: auto; margin: 16px 12px 0; }
+  .v2-activity__start-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .v2-activity__start-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-activity__start-act { grid-column: 1 / -1; }
+  .v2-root .v2-activity__start-act button { width: 100%; min-height: 44px; }
+}
+/* ---------------------------------------------------------------------------
+   Your Team — direction C, Signal (docs/design/signal-identity.md §4 "Cards in a
+   grid"). One card per agent; the mark's colour is the state; the one that
+   needs you carries the 2px cobalt ring. Ink acts (Hire, Answer); secondaries
+   are bordered; status is mono because it is data.
+   --------------------------------------------------------------------------- */
+.v2-team { display: flex; flex-direction: column; gap: 24px; }
+.v2-team__head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.v2-team__heading { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.v2-team__title { margin: 0; font: 700 32px/1.1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
+.v2-team__meta { font-size: 13px; color: var(--v2-text-muted); white-space: nowrap; }
+.v2-team__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
+/* Ink acts (signal-identity §2): Hire is the page's one filled control. */
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
+.v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-team__notice--ok { color: var(--v2-text-primary); }
+.v2-team__redeem { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.v2-team__redeem-input { height: 36px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; font: 400 14px/20px var(--v2-font); }
+.v2-team__redeem-error { color: var(--v2-text-primary); font-size: 13px; }
+.v2-root button.v2-team__link { padding: 0; border: 0; background: transparent; color: var(--v2-accent-text); font: 500 13px/20px var(--v2-font); cursor: pointer; }
+.v2-team__error { font-size: 13px; color: var(--v2-text-primary); border: 1px solid var(--v2-border); border-radius: 4px; padding: 10px 12px; }
+.v2-team__empty { border: 1px dashed var(--v2-border); border-radius: 4px; padding: 20px; }
+.v2-team__empty-title { font: 700 var(--v2-fs-feature)/1.2 var(--v2-font-display); letter-spacing: -0.02em; margin-bottom: 6px; }
+.v2-team__empty-text { font-size: 13px; color: var(--v2-text-secondary); }
+
+.v2-team__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.v2-team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  min-width: 0;
+}
+/* The one that needs you: a ring, never a tinted background (state grammar §3). */
+.v2-team-card--needsYou { border: 2px solid var(--v2-accent); padding: 15px; }
+.v2-team-card--own { border-style: dashed; }
+.v2-team-card__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.v2-root button.v2-team-card__mark {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  font: 600 12px/1 var(--v2-font);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+}
+.v2-root button.v2-team-card__mark img { width: 100%; height: 100%; object-fit: cover; }
+.v2-root button.v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
+.v2-root button.v2-team-card__mark--needsYou { background: var(--v2-accent); color: #fff; }
+.v2-root button.v2-team-card__mark--working { background: #101828; color: #fff; }
+.v2-root button.v2-team-card__mark--idle { background: #e4e7ec; color: #4f5c6e; }
+.v2-team-card__title { min-width: 0; }
+/* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
+   two lines, then clamp; min-width 0 so the grid column can shrink under it. */
+.v2-team-card__name {
+  font: 700 18px/1.2 var(--v2-font-display);
+  letter-spacing: -0.02em;
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+.v2-team-card__status { margin-top: 2px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-team-card__status--needsYou,
+.v2-team-card__status--working { color: var(--v2-accent-text); }
+/* The ask is the line's content — it wraps, it never ellipsizes (66246 (3)). */
+.v2-team-card__status--needsYou { white-space: normal; overflow: visible; text-overflow: clip; }
+.v2-team-card__status--working .v2-team-card__dot { animation: v2-team-pulse 1.6s ease-in-out infinite; }
+@keyframes v2-team-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-team-card__status--working .v2-team-card__dot { animation: none; }
+}
+.v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+.v2-team-card__pods { display: flex; gap: 6px; flex-wrap: wrap; }
+.v2-team-card__pod { font: 500 11px/16px var(--v2-font-mono); padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; color: var(--v2-text-secondary); }
+.v2-team-card__command { display: block; padding: 8px 10px; border-radius: 4px; background: #101828; color: #fff; font: 500 14px/20px var(--v2-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
+.v2-team__internal { display: flex; flex-direction: column; gap: 8px; }
+.v2-root button.v2-team__internal-toggle { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-team__internal-list { display: flex; gap: 6px; flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+  .v2-team__head { flex-direction: column; align-items: flex-start; }
+  /* The title never wraps beside its meta: stack them (66246 (1)). */
+  .v2-team__heading { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .v2-team__meta { white-space: normal; }
+  .v2-team__grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .v2-root button.v2-team-card__answer,
+  .v2-root button.v2-team-card__talk,
+  .v2-root button.v2-team__byo,
+  .v2-root button.v2-team__hire { min-height: 44px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html; Sharpen 66366/66376).
+   Every file and page shared in your pods. Display head + muted meta; two
+   segment groups on one grammar (bordered white group, active = tint + ink
+   600); a bordered search; a plain table whose numbers are mono; the ext chip
+   is the file's own extension, bordered mono, never a colour square.
+   --------------------------------------------------------------------------- */
+.v2-feature--artifacts > .v2-feature__body { padding: 0 0 28px; }
+.v2-feature--artifacts .v2-feature__legacy { max-width: none; }
+.v2-artifacts { display: flex; flex-direction: column; gap: 20px; width: 100%; padding: 20px 16px 0; }
+.v2-artifacts__head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.v2-artifacts__heading { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.v2-artifacts__title { margin: 0; font: 700 32px/1.1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
+.v2-artifacts__meta { font-size: 13px; color: var(--v2-text-muted); white-space: nowrap; }
+.v2-artifacts__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.v2-artifacts__seg { position: relative; display: flex; flex-wrap: nowrap; gap: 2px; padding: 3px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-root button.v2-artifacts__seg-button { min-height: 30px; max-width: 150px; padding: 0 9px; border: 0; border-radius: calc(var(--v2-radius-sm) - 2px); background: transparent; color: var(--v2-text-secondary); font: 600 11px/16px var(--v2-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-root button.v2-artifacts__seg-button--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); font-weight: 600; }
+.v2-root button.v2-artifacts__seg-button--menu { width: 100%; max-width: none; white-space: normal; text-align: left; }
+.v2-artifacts__seg-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 3; display: grid; gap: 2px; width: min(300px, 85vw); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-artifacts__search { display: flex; align-items: center; gap: 8px; min-width: 220px; height: 36px; margin-left: auto; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
+.v2-artifacts__search input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
+.v2-artifacts__search input::placeholder { color: var(--v2-text-muted); }
+.v2-artifacts__search:focus-within { border-color: var(--v2-accent); }
+.v2-artifacts__search-key { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+.v2-artifacts__table-wrap { overflow-x: auto; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); }
+.v2-artifacts__table { width: 100%; border-collapse: collapse; font: 400 13px/18px var(--v2-font); color: var(--v2-text-primary); }
+.v2-artifacts__table th { padding: 8px 12px; border-bottom: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); text-align: left; text-transform: lowercase; white-space: nowrap; }
+.v2-artifacts__table td { padding: 9px 12px; border-bottom: 1px solid var(--v2-border-soft); vertical-align: middle; }
+.v2-artifacts__table tr:last-child td { border-bottom: 0; }
+.v2-artifacts__row:hover td { background: var(--v2-surface-hover); }
+.v2-artifacts__file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.v2-artifacts__ext { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 20px; padding: 0 5px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); letter-spacing: 0.02em; }
+.v2-artifacts__pod-line { display: none; color: var(--v2-text-secondary); font: 500 11px/16px var(--v2-font-mono); }
+.v2-root button.v2-artifacts__name { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--v2-text-primary); font: 600 13px/18px var(--v2-font); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-root button.v2-artifacts__name:hover { color: var(--v2-accent-text); }
+.v2-artifacts__mono { color: var(--v2-text-secondary); font: 500 11px/16px var(--v2-font-mono); white-space: nowrap; }
+.v2-artifacts__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.v2-root button.v2-artifacts__more { padding: 6px 4px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); }
+.v2-artifacts__empty { padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
+.v2-artifacts__error { padding: 12px 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
+.v2-artifacts__loading { display: grid; place-items: center; padding: 24px; }
+/* Inspector Files pane: the same rows as needs-you, an ext chip in front, All N files as cobalt text. */
+.v2-root button.v2-workspace-inspector__file { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 7px 4px; border: 0; background: transparent; color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); text-align: left; }
+.v2-root button.v2-workspace-inspector__file > span:nth-child(2) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-root button.v2-workspace-inspector__file:hover { background: var(--v2-surface-hover); }
+.v2-workspace-inspector__ext { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 18px; padding: 0 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); }
+.v2-root button.v2-workspace-inspector__all-files { padding: 6px 4px 2px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); text-align: left; }
+/* ≤760 (ux-lead 66462): no sideways scroll — keep file / kind / when, fold the pod under
+   the name as a mono line, hide pod / shared-by / size; the head stays display 32. */
+@media (max-width: 760px) {
+  .v2-artifacts { padding: 16px 12px 0; gap: 16px; }
+  .v2-artifacts__controls { flex-direction: column; align-items: stretch; }
+  .v2-artifacts__search { margin-left: 0; }
+  .v2-artifacts__table { table-layout: fixed; }
+  .v2-artifacts__table th:nth-child(3), .v2-artifacts__table td:nth-child(3),
+  .v2-artifacts__table th:nth-child(4), .v2-artifacts__table td:nth-child(4),
+  .v2-artifacts__table th:nth-child(6), .v2-artifacts__table td:nth-child(6) { display: none; }
+  .v2-artifacts__table th:nth-child(2), .v2-artifacts__table td:nth-child(2) { width: 64px; }
+  .v2-artifacts__table th:nth-child(5), .v2-artifacts__table td:nth-child(5) { width: 52px; }
+  .v2-artifacts__file { flex-wrap: wrap; row-gap: 2px; }
+  .v2-artifacts__pod-line { display: block; flex: 1 1 100%; }
+  .v2-root button.v2-artifacts__name { white-space: normal; overflow-wrap: anywhere; }
 }

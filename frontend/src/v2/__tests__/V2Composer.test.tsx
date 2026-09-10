@@ -70,6 +70,10 @@ const makeDetail = (overrides = {}) => ({
   ...overrides,
 });
 
+// The placeholder changes once the composer is aimed (direction C), so tests
+// reach the field by its class rather than its placeholder.
+const composerInput = () => document.querySelector('.v2-composer textarea');
+
 const renderChat = (detail) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
@@ -101,7 +105,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail();
     renderChat(detail);
 
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'hello team' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -114,9 +118,11 @@ describe('V2Composer send button', () => {
     });
   });
 
-  test('send button is disabled while the draft is empty', () => {
+  test('there is no Send until the draft has text', () => {
     renderChat(makeDetail());
-    expect(screen.getByRole('button', { name: /send message/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /send message/i })).not.toBeInTheDocument();
+    fireEvent.change(composerInput(), { target: { value: 'hello' } });
+    expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument();
   });
 
   test('shows send failures by the composer and keeps the reply draft intact', async () => {
@@ -135,7 +141,7 @@ describe('V2Composer send button', () => {
     const { rerender } = renderChat(detail);
 
     fireEvent.click(screen.getByRole('button', { name: /reply to teammate/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'I am checking it now.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -158,8 +164,8 @@ describe('V2Composer send button', () => {
     const sendError = screen.getByText('Replies are temporarily unavailable. Please try again shortly.');
     expect(sendError.closest('.v2-composer')).not.toBeNull();
     expect(sendError.closest('.v2-chat__messages')).toBeNull();
-    expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
-    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__target')).not.toBeNull();
+    expect(composerInput()).toHaveValue('I am checking it now.');
+    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__tag')).not.toBeNull();
   });
 
   // W-T 4/4, constraint 4 (docs/design/threading-surface-ruling.md; ux-lead
@@ -192,7 +198,19 @@ describe('V2Composer send button', () => {
     },
   ]);
 
-  const replyFromExpandedThread = () => screen.getByRole('button', { name: /reply from expanded thread/i });
+  // Threads rest as a chip (ux-lead 64476); Reply in thread lives in the
+  // open band's foot, so every path through it opens the thread first.
+  // The reply row (m2) lives inside the thread, which rests as a chip: open
+  // it before reaching for a button on that row.
+  const openThread = () => {
+    const chip = screen.queryByRole('button', { name: /expand thread/i });
+    if (chip) fireEvent.click(chip);
+  };
+  const replyFromExpandedThread = () => {
+    const chip = screen.queryByRole('button', { name: /expand thread/i });
+    if (chip) fireEvent.click(chip);
+    return screen.getByRole('button', { name: /reply from expanded thread/i });
+  };
 
   test('"Reply in thread" from the expanded rail sends threadRootId and no reply edge', async () => {
     const detail = makeDetail({ messages: threadMessages() });
@@ -200,7 +218,7 @@ describe('V2Composer send button', () => {
 
     fireEvent.click(replyFromExpandedThread());
     expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Joining the thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -215,9 +233,9 @@ describe('V2Composer send button', () => {
 
     // Reply-to-person first, then "Reply in thread": the thread wins, the
     // reply edge is gone.
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.click(replyFromExpandedThread());
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'thread wins' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -228,13 +246,28 @@ describe('V2Composer send button', () => {
     // The other order: thread first, then reply-to-person. The reply edge
     // wins, the thread root is gone.
     fireEvent.click(replyFromExpandedThread());
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    fireEvent.change(composerInput(), {
       target: { value: 'reply wins' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
       expect(detail.sendMessage).toHaveBeenLastCalledWith('reply wins', 'text', 'm2', undefined);
+    });
+  });
+
+  test('Escape in the field un-aims (reply or thread) and keeps the draft; the send goes out plain', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    expect(document.activeElement).toBe(composerInput());
+    fireEvent.change(composerInput(), { target: { value: 'kept draft' } });
+    fireEvent.keyDown(composerInput(), { key: 'Escape' });
+    expect(document.querySelector('.v2-composer__aim')).toBeNull();
+    expect(composerInput()).toHaveValue('kept draft');
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenLastCalledWith('kept draft', 'text', undefined, undefined);
     });
   });
 
@@ -281,6 +314,21 @@ describe('V2Composer send button', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
   };
 
+  test('an image upload goes out as the upload manifest, not a bare URL, when the server returns a file key', async () => {
+    const axios = require('axios');
+    axios.post.mockImplementation((url) => (String(url).includes('/api/uploads')
+      ? Promise.resolve({ data: { kind: 'image', url: '/api/uploads/k1.png', fileName: 'k1.png', originalName: 'walk.png', size: 1234 } })
+      : Promise.resolve({ data: {} })));
+    const detail = makeDetail();
+    const { container } = renderChat(detail);
+    const input = container.querySelector('input[type=file]');
+    fireEvent.change(input, { target: { files: [new File(['x'], 'walk.png', { type: 'image/png' })] } });
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('[[upload:k1.png|walk.png|1234|image]]', 'image', undefined, undefined);
+    });
+    axios.post.mockImplementation(() => Promise.resolve({ data: {} }));
+  });
+
   test('an image upload carries the REPLY edge when aimed at a person', async () => {
     // @ux-lead 57473. #1150 wired the thread root on this line and left the
     // reply edge hardcoded undefined, so the chip read "Replying to {name}"
@@ -289,7 +337,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     const { container } = renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     upload(container);
 
     await waitFor(() => {
@@ -314,7 +362,7 @@ describe('V2Composer send button', () => {
     await waitFor(() => {
       expect(screen.queryByText(/replying in thread/i)).not.toBeInTheDocument();
     });
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'unaimed' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -329,7 +377,7 @@ describe('V2Composer send button', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /thread from teammate/i }));
     expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Starting a thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -343,8 +391,8 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
+    fireEvent.change(composerInput(), {
       target: { value: 'Still in the first thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -354,12 +402,14 @@ describe('V2Composer send button', () => {
     });
   });
 
-  test('the headline card aims the same root without requiring an expand', async () => {
+  test('the chip opens the thread and the foot aims the same root', async () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /^reply in thread$/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    expect(screen.queryByRole('button', { name: /^reply in thread$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /expand thread/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reply from expanded thread/i }));
+    fireEvent.change(composerInput(), {
       target: { value: 'Joining through the card.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -373,8 +423,8 @@ describe('V2Composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    openThread(); fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    fireEvent.change(composerInput(), {
       target: { value: 'Replying to a person.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -382,5 +432,258 @@ describe('V2Composer send button', () => {
     await waitFor(() => {
       expect(detail.sendMessage).toHaveBeenCalledWith('Replying to a person.', 'text', 'm2', undefined);
     });
+  });
+
+  const transcriptMessage = (id: string, userId = 'u2', content = id) => ({
+    id,
+    pod_id: 'p1',
+    user_id: userId,
+    content,
+    message_type: 'text',
+    created_at: `2026-08-22T13:00:${id.length.toString().padStart(2, '0')}Z`,
+    user: { username: userId === 'u1' ? 'solo-user' : 'teammate' },
+  });
+
+  const scrollUp = (view: { container: HTMLElement }) => {
+    const scroller = view.container.querySelector('.v2-chat__messages') as HTMLElement;
+    Object.defineProperties(scroller, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    fireEvent.scroll(scroller);
+    return scroller;
+  };
+
+  beforeEach(() => {
+    (Element.prototype.scrollIntoView as jest.Mock).mockClear();
+  });
+
+  test('background arrivals stay put even when another tab uses the same user', async () => {
+    const detail = makeDetail({ messages: [transcriptMessage('start')] });
+    const view = renderChat(detail);
+    const scroller = scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // Same-author rows from another tab are still background arrivals. This
+    // is the mutation that the old currentUser comparison would let through.
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+            transcriptMessage('same-user', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // The normal bottom-following behavior remains unchanged.
+    scroller.scrollTop = 600;
+    fireEvent.scroll(scroller);
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('other'),
+            transcriptMessage('same-user', 'u1'),
+            transcriptMessage('bottom-arrival'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('a text send follows its own row when the socket wins before POST', async () => {
+    let resolveSend: (message: any) => void = () => undefined;
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => new Promise((resolve) => { resolveSend = resolve; })),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'sent from this tab' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+
+    // Simulate the socket row being deduped into detail before the POST
+    // promise resolves. The id ref is not known yet, so this must stay put.
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('own-race', 'u1', 'sent from this tab'),
+            transcriptMessage('background-after-own'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    resolveSend(transcriptMessage('own-race', 'u1', 'sent from this tab'));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('a POST-first own send follows before its socket row arrives', async () => {
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('post-first', 'u1'))),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'post first' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    // The confirmation itself must not manufacture a new-arrival count.
+    expect(view.container.querySelector('.v2-thread__jump-count')).toBeNull();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('post-first', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('failed sends do not grant follow privileges to a later arrival', async () => {
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(null)),
+    });
+    const view = renderChat(detail);
+    const scroller = scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    fireEvent.change(composerInput(), { target: { value: 'will fail' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('later-same-user', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    // Keep the scroller referenced so this test also exercises the real
+    // scroll-listener path rather than only the initial ref state.
+    expect(scroller).toBeTruthy();
+  });
+
+  test('an image send records the same own-message id as text sends', async () => {
+    mockUpload();
+    const detail = makeDetail({
+      messages: [transcriptMessage('start')],
+      sendMessage: jest.fn(() => Promise.resolve(transcriptMessage('own-image', 'u1'))),
+    });
+    const view = renderChat(detail);
+    scrollUp(view);
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    upload(view.container);
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...detail, messages: [
+            transcriptMessage('start'),
+            transcriptMessage('own-image', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  test('switching pods clears the prior composer message id', async () => {
+    let resolveSend: (message: any) => void = () => undefined;
+    const oldDetail = makeDetail({
+      messages: [transcriptMessage('old-start')],
+      sendMessage: jest.fn(() => new Promise((resolve) => { resolveSend = resolve; })),
+    });
+    const view = renderChat(oldDetail);
+    scrollUp(view);
+    fireEvent.change(composerInput(), { target: { value: 'old own' } });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => expect(oldDetail.sendMessage).toHaveBeenCalledTimes(1));
+    const scrollIntoView = Element.prototype.scrollIntoView as jest.Mock;
+    scrollIntoView.mockClear();
+
+    const newDetail = {
+      ...oldDetail,
+      pod: { _id: 'p2', name: 'Other Workspace', type: 'chat' },
+      messages: [transcriptMessage('new-start')],
+      sendMessage: jest.fn(() => Promise.resolve(null)),
+    };
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={newDetail} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    // Pod-change cleanup bumps the effect version, but without a recorded
+    // sent id it must not be mistaken for a successful local send.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    const scroller = scrollUp(view);
+    scrollIntoView.mockClear();
+    scroller.scrollTop = 0;
+    fireEvent.scroll(scroller);
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2Thread detail={{ ...newDetail, messages: [
+            transcriptMessage('new-start'),
+            transcriptMessage('new-background', 'u1'),
+          ] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /Jump to latest/ })).toBeInTheDocument());
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // The old pod's late POST response is also unrelated to this pod.
+    resolveSend(transcriptMessage('old-own', 'u1'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ const AgentIdentityService = require('../../../services/agentIdentityService');
 const socketConfig = require('../../../config/socket');
 const DMService = require('../../../services/dmService');
 const PGMessage = require('../../../models/pg/Message');
+const Message = require('../../../models/Message');
 const File = require('../../../models/File');
 
 jest.mock('../../../models/Message');
@@ -146,6 +147,11 @@ describe('agent broadcast carries thread_root_id', () => {
     const msg = emitted.find((e) => e.event === 'newMessage');
     expect(msg).toBeTruthy();
     expect(msg.payload.thread_root_id).toBe('57475');
+    // Live viewers must get the same agent identity as the joined history row.
+    expect(msg.payload.userId).toEqual(expect.objectContaining({
+      _id: 'agent-user-1',
+      isBot: true,
+    }));
   });
 
   it('a non-reply row emits an explicit null root, never an absent field', async () => {
@@ -165,5 +171,38 @@ describe('agent broadcast carries thread_root_id', () => {
     expect(msg).toBeTruthy();
     expect(msg.payload).toHaveProperty('thread_root_id');
     expect(msg.payload.thread_root_id).toBeNull();
+  });
+});
+
+describe('agent broadcast carries author identity', () => {
+  it('preserves the bot marker through Mongo population and the socket whitelist', async () => {
+    delete process.env.PG_HOST;
+    const populate = jest.fn(async function populateAuthor(_path, fields) {
+      this.userId = {
+        _id: 'agent-user-1',
+        username: 'sprint-review',
+        ...(fields.split(' ').includes('isBot') ? { isBot: true } : {}),
+      };
+    });
+    Message.mockImplementation((data) => ({
+      ...data,
+      _id: 'mongo-message-1',
+      createdAt: new Date(),
+      save: jest.fn().mockResolvedValue(undefined),
+      populate,
+    }));
+
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'A live agent message',
+    });
+
+    const msg = emitted.find((e) => e.event === 'newMessage');
+    expect(msg.payload.userId).toEqual(expect.objectContaining({
+      _id: 'agent-user-1',
+      isBot: true,
+    }));
   });
 });

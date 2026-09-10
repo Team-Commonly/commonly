@@ -34,6 +34,7 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+const MAX_MESSAGE_IDS_PER_REQUEST = 200;
 
 // Activity queries and actions fan out to multiple projections. Sixty per
 // minute leaves room for normal use without an unbounded hot loop.
@@ -106,10 +107,86 @@ router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
 router.get('/decision-queue', auth, async (req: Req, res: Res) => {
   try {
     const userId = getAuthenticatedUserId(req);
-    res.json(await ActivityService.getDecisionQueue(userId));
+    const podId = req.query?.podId;
+    const rawMessageIds = req.query?.messageIds;
+    const rawLimit = req.query?.limit;
+    const rawOffset = req.query?.offset;
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    if (rawMessageIds !== undefined && typeof rawMessageIds !== 'string') {
+      return res.status(400).json({ error: 'messageIds must be a comma-separated string' });
+    }
+    const messageIds = rawMessageIds === undefined
+      ? undefined
+      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))];
+    if (messageIds && messageIds.length > MAX_MESSAGE_IDS_PER_REQUEST) {
+      return res.status(400).json({ error: `messageIds must contain at most ${MAX_MESSAGE_IDS_PER_REQUEST} ids` });
+    }
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? undefined : Number(rawOffset);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
+      return res.status(400).json({ error: 'limit must be an integer between 1 and 50' });
+    }
+    if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
+      return res.status(400).json({ error: 'offset must be a non-negative integer' });
+    }
+    const options = {
+      ...(podId ? { podId } : {}),
+      ...(messageIds ? { messageIds } : rawMessageIds !== undefined ? { messageIds: [] } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+    return res.json(await ActivityService.getDecisionQueue(userId, options));
   } catch (error) {
     console.error('Error fetching decision queue:', error);
-    res.status(500).json({ error: 'Failed to fetch decision queue' });
+    return res.status(500).json({ error: 'Failed to fetch decision queue' });
+  }
+});
+
+// Settled decision cards are durable pod history, not recipient-owned open
+// attention. Keep this read separate so the Activity queue remains an honest
+// count of unresolved work while a room can restore its settled card after a
+// hard reload or leave/return navigation.
+router.get('/decision-history', auth, async (req: Req, res: Res) => {
+  try {
+    const podId = req.query?.podId;
+    const rawMessageIds = req.query?.messageIds;
+    const rawLimit = req.query?.limit;
+    const rawOffset = req.query?.offset;
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    if (rawMessageIds !== undefined && typeof rawMessageIds !== 'string') {
+      return res.status(400).json({ error: 'messageIds must be a comma-separated string' });
+    }
+    const messageIds = rawMessageIds === undefined
+      ? undefined
+      : [...new Set(rawMessageIds.split(',').map((id) => id.trim()).filter(Boolean))];
+    if (messageIds && messageIds.length > MAX_MESSAGE_IDS_PER_REQUEST) {
+      return res.status(400).json({ error: `messageIds must contain at most ${MAX_MESSAGE_IDS_PER_REQUEST} ids` });
+    }
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? undefined : Number(rawOffset);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
+      return res.status(400).json({ error: 'limit must be an integer between 1 and 50' });
+    }
+    if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
+      return res.status(400).json({ error: 'offset must be a non-negative integer' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const options = {
+      ...(podId ? { podId } : {}),
+      ...(messageIds ? { messageIds } : rawMessageIds !== undefined ? { messageIds: [] } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+    return res.json(await ActivityService.getDecisionHistory(userId, options));
+  } catch (error) {
+    const e = error as { message?: string };
+    if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+    console.error('Error fetching decision history:', error);
+    return res.status(500).json({ error: 'Failed to fetch decision history' });
   }
 });
 
@@ -125,6 +202,9 @@ router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) =>
       decisionId,
       callerUserId: String(userId || ''),
       value,
+      // Origin is server-owned. A browser can choose from the workspace only;
+      // never accept provider/integration identifiers from the request body.
+      origin: { via: 'workspace' },
     });
     return res.status(result.status).json(result.body);
   } catch (error: any) {
@@ -185,11 +265,11 @@ router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
     const { activityId } = req.params || {};
     const userId = getAuthenticatedUserId(req);
     const result = await ActivityService.acknowledgeMention(userId, String(activityId)) as { success?: boolean; error?: string };
-    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge mention' });
+    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge attention' });
     return res.json(result);
   } catch (error) {
-    console.error('Error acknowledging activity mention:', error);
-    return res.status(500).json({ error: 'Failed to acknowledge mention' });
+    console.error('Error acknowledging activity attention:', error);
+    return res.status(500).json({ error: 'Failed to acknowledge attention' });
   }
 });
 

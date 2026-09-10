@@ -67,6 +67,14 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import './ChatRoom.css';
 
+// An image message carries either a bare upload reference (legacy) or the
+// same `[[upload:<key>|<name>|<size>|image]]` manifest a file does (direction
+// C, one attachment model). Both resolve to the instance's upload URL.
+export const uploadImageSrc = (content: string): string => {
+  const manifest = String(content || '').match(/^\s*\[\[upload:([^|\]]+)\|/);
+  return normalizeUploadUrl(manifest ? `/api/uploads/${manifest[1].trim()}` : content);
+};
+
 /**
  * Replace :shortcode: occurrences with the matching unicode emoji, but
  * leave code blocks (fenced ``` and inline `...`) untouched so colons
@@ -4740,10 +4748,10 @@ const ChatRoom = () => {
                                                     {messageType === 'image' && (
                                                         <div className={`message-image-container ${isCurrentUser ? 'sent' : 'received'}`}>
                                                             <img
-                                                                src={normalizeUploadUrl(messageContent)}
+                                                                src={uploadImageSrc(messageContent)}
                                                                 alt="Shared"
                                                                 className="message-image"
-                                                                onClick={() => window.open(normalizeUploadUrl(messageContent), '_blank')}
+                                                                onClick={() => window.open(uploadImageSrc(messageContent), '_blank')}
                                                             />
                                                         </div>
                                                     )}

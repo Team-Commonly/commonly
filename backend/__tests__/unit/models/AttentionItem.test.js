@@ -49,6 +49,22 @@ describe('AttentionItem', () => {
 
     await expect(row.validate()).resolves.toBeUndefined();
   });
+
+  it('accepts a new handoff kind without widening resolvedBy', async () => {
+    const row = new AttentionItem({
+      recipientUserId: recipient,
+      podId: pod,
+      kind: 'handoff',
+      source: { type: 'task', id: 'task-2:update-1' },
+      title: 'Ready for your press',
+      resolvedBy: 'acknowledged',
+    });
+
+    await expect(row.validate()).resolves.toBeUndefined();
+    await expect(new AttentionItem({
+      ...row.toObject(), resolvedBy: 'handoff',
+    }).validate()).rejects.toMatchObject({ errors: { resolvedBy: expect.any(Object) } });
+  });
 });
   beforeAll(async () => { await setupMongoDb(); });
   afterAll(async () => { await closeMongoDb(); });

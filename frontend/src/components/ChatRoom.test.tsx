@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
-import ChatRoom from './ChatRoom';
+import ChatRoom, { uploadImageSrc } from './ChatRoom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -218,4 +218,21 @@ test('renders system messages as lightweight notices', async () => {
 
   expect(container.textContent).toContain('[Encountered an issue - details sent to debug DM]');
   expect(container.querySelector('.system-message')).toBeTruthy();
+});
+
+// Pod Tools renders an image message by its src; since PR #1579 an image goes
+// out as the same `[[upload:…|image]]` manifest a file does, so the src must
+// be rebuilt from the manifest's key. Reverting to the bare content left the
+// whole suite green (sprint-review gate) — this pins it.
+describe('uploadImageSrc', () => {
+  test('a manifest resolves to the upload path of its key, never the directive text', () => {
+    const src = uploadImageSrc('[[upload:1788712076709-554286743.png|walk.png|351394|image]]');
+    expect(src).toContain('/api/uploads/1788712076709-554286743.png');
+    expect(src).not.toContain('[[');
+  });
+
+  test('a legacy bare reference is left to the URL normaliser unchanged', () => {
+    expect(uploadImageSrc('/api/uploads/old.png')).toContain('/api/uploads/old.png');
+    expect(uploadImageSrc('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA');
+  });
 });

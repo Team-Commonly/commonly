@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 75);
+  assert.equal(pages.length, 95);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -96,6 +96,26 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-verification-path/',
     '/guides/ai-agent-resume-conditions/',
     '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-non-goals/',
+    '/guides/ai-agent-evidence-labels/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-task-closure/',
+    '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-focused-threads/',
+    '/guides/ai-agent-approval-boundaries/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-revision-loop/',
+    '/guides/ai-agent-task-splitting/',
+    '/guides/ai-agent-interim-results/',
+    '/guides/ai-agent-audience-boundaries/',
+    '/guides/ai-agent-stop-conditions/',
+    '/guides/ai-agent-change-requests/',
+    '/guides/ai-agent-data-boundaries/',
+    '/guides/ai-agent-disagreement-resolution/',
+    '/guides/ai-agent-task-prioritization/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -131,7 +151,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 65);
+  assert.equal(guidePages.length, 85);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -723,6 +743,696 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-status-updates/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-resume-conditions\//);
+  }
+  const prioritizationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-prioritization/');
+  assert.equal(prioritizationGuide.title, 'AI Agent Task Prioritization: Choose What’s Next | Commonly');
+  const prioritization = guides['ai-agent-task-prioritization'];
+  assert.deepEqual(prioritization.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(prioritization.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(prioritization.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(prioritization.faq.length, 6);
+  assert.equal(prioritization.intro.length, 4);
+  for (const section of prioritization.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const prioritizationExampleIndex = prioritization.sections.findIndex((section) => section.title === 'A worked example with three eligible tasks');
+  const prioritizationExample = prioritization.sections[prioritizationExampleIndex];
+  assert.equal(prioritizationExample.paragraphs.length, 6);
+  assert.equal(prioritizationExample.tables, undefined);
+  assert.equal(prioritizationExample.links, undefined);
+  assert.equal(prioritizationExample.orderedItems, undefined);
+  assert.equal(prioritization.sections.slice(0, prioritizationExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(prioritization.sections[prioritizationExampleIndex - 1].title, 'Update the current plan');
+  assert.equal(prioritization.sections[prioritizationExampleIndex + 1].title, 'Prioritize agent tasks in seven steps');
+  assert.match(prioritization.sections.find((section) => section.title === 'Use a range').paragraphs[1], /^If uncertainty could reverse the priority choice, a short discovery step may be useful when it is within the assignment\./);
+  for (const [title, tail] of [
+    ['Build the shortlist', /Dependency management explains what must wait; prioritization compares what can happen now\.$/],
+    ['Identify which choices', /A task claimant owns a contribution, not necessarily the team’s priorities\.$/],
+    ['Describe the expected effect', /without pretending to quantify every benefit\.$/],
+    ['Choose enough of an order', /because another task is more interesting but unavailable\.$/],
+    ['Record unfinished work', /A priority change is a sequencing choice unless the actual stop condition or authority says otherwise\.$/],
+    ['State the missing decision', /“Not selected next” is not, by itself, a blocker\.$/],
+    ['Update the current plan', /need not change what any of those tasks is authorized to do\.$/],
+  ]) {
+    assert.match(prioritization.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  const recordProportionate = prioritization.sections.find((section) => section.title === 'Keep the record proportionate');
+  assert.equal(recordProportionate.paragraphs.length, 1);
+  assert.equal(recordProportionate.links, undefined);
+  assert.match(recordProportionate.paragraphs[0], /“Return the source correction first to release the waiting review, then finish the brief before its agreed handoff; reassess if the correction requires broader work\.”/);
+  assert.match(prioritization.intro[0], /^AI agent task prioritization is the process of choosing which eligible contribution an agent should make next when several tasks compete for its attention\./);
+  const prioritizationHtml = renderStaticPage(guideTemplate, prioritizationGuide);
+  assert.match(prioritizationHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-prioritization\/"/);
+  assert.match(prioritizationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(prioritizationHtml, /task prioritization/);
+  assert.doesNotMatch(prioritizationHtml, /seo-page-dark/);
+  assert.doesNotMatch(prioritizationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((prioritizationHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-task-intake/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-prioritization\/"/g) || []).length, 1);
+  }
+  assert.ok(!prioritization.sections.some((section) => section.title === prioritization.cta.title));
+  assert.equal((prioritizationHtml.match(/<h2>Choose the next useful contribution<\/h2>/g) || []).length, 1);
+  assert.ok(prioritizationHtml.indexOf('<h2>Frequently asked questions</h2>') < prioritizationHtml.indexOf('<h2>Choose the next useful contribution</h2>'));
+  assert.equal(prioritization.cta.secondary.label, 'Explore Commonly’s guides');
+  const disagreementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-disagreement-resolution/');
+  assert.equal(disagreementGuide.title, 'AI Agent Disagreement Resolution Guide | Commonly');
+  const disagreement = guides['ai-agent-disagreement-resolution'];
+  assert.deepEqual(disagreement.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(disagreement.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(disagreement.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(disagreement.faq.length, 6);
+  assert.equal(disagreement.intro.length, 4);
+  for (const section of disagreement.sections.filter((section) => section.links)) {
+    assert.equal(section.paragraphs.length, 2);
+  }
+  const disagreementExampleIndex = disagreement.sections.findIndex((section) => section.title === 'A worked example of conflicting review feedback');
+  const disagreementExample = disagreement.sections[disagreementExampleIndex];
+  assert.equal(disagreementExample.paragraphs.length, 6);
+  assert.equal(disagreementExample.tables, undefined);
+  assert.equal(disagreementExample.links, undefined);
+  assert.equal(disagreementExample.orderedItems, undefined);
+  assert.equal(disagreement.sections.slice(0, disagreementExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(disagreement.sections[disagreementExampleIndex - 1].title, 'Preserve a material unresolved concern');
+  assert.equal(disagreement.sections[disagreementExampleIndex + 1].title, 'Resolve agent disagreements in seven steps');
+  for (const [title, tail] of [
+    ['Inspect the strongest relevant evidence', /^If the evidence remains incomplete, narrow the statement or keep the uncertainty visible\./],
+    ['Name the decision', /^If two apparently authorized owners give incompatible directions/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  for (const [title, tail] of [
+    ['Record the reason', /the original outcome may still need another approach or an owner’s explicit decision to stop pursuing it\.$/],
+    ['Keep motives and status out', /A thread can organize a decision without becoming the authority that makes it valid\.$/],
+    ['Revise the affected part', /supplies a required reviewer acceptance\.$/],
+    ['Pause only the affected path', /not the full discussion with an unexplained request to “sort it out\.”$/],
+    ['Preserve a material unresolved concern', /proof that a deployment, transfer, or other external operation occurred\.$/],
+  ]) {
+    assert.match(disagreement.sections.find((section) => section.title === title).paragraphs[1], tail);
+  }
+  const shortestProcess = disagreement.sections.find((section) => section.title === 'Use the shortest process');
+  assert.equal(shortestProcess.paragraphs.length, 1);
+  assert.equal(shortestProcess.links, undefined);
+  assert.match(disagreement.intro[0], /^AI agent disagreement resolution is the process of turning conflicting claims, review comments, or recommendations about an agent’s work into an evidence-backed correction, a bounded owner decision, or an explicit unresolved condition\./);
+  const disagreementHtml = renderStaticPage(guideTemplate, disagreementGuide);
+  assert.match(disagreementHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-disagreement-resolution\/"/);
+  assert.match(disagreementHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(disagreementHtml, /disagreement resolution/);
+  assert.doesNotMatch(disagreementHtml, /seo-page-dark/);
+  assert.doesNotMatch(disagreementHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((disagreementHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-focused-threads/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-disagreement-resolution\/"/g) || []).length, 1);
+  }
+  assert.ok(!disagreement.sections.some((section) => section.title === disagreement.cta.title));
+  assert.equal((disagreementHtml.match(/<h2>Settle disagreements with evidence and owners<\/h2>/g) || []).length, 1);
+  assert.ok(disagreementHtml.indexOf('<h2>Frequently asked questions</h2>') < disagreementHtml.indexOf('<h2>Settle disagreements with evidence and owners</h2>'));
+  assert.equal(disagreement.cta.secondary.label, 'Explore Commonly’s guides');
+  const dataBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-data-boundaries/');
+  assert.equal(dataBoundariesGuide.title, 'AI Agent Data Boundaries: Read, Retain, Share | Commonly');
+  const dataBoundaries = guides['ai-agent-data-boundaries'];
+  assert.deepEqual(dataBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dataBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dataBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(dataBoundaries.faq.length, 6);
+  assert.equal(dataBoundaries.intro.length, 4);
+  const dataWorkedExampleIndex = dataBoundaries.sections.findIndex((section) => section.title === 'A worked example using public reference material');
+  const dataWorkedExample = dataBoundaries.sections[dataWorkedExampleIndex];
+  assert.equal(dataWorkedExample.paragraphs.length, 6);
+  assert.equal(dataWorkedExample.tables, undefined);
+  assert.equal(dataWorkedExample.links, undefined);
+  assert.equal(dataWorkedExample.orderedItems, undefined);
+  assert.equal(dataBoundaries.sections.slice(0, dataWorkedExampleIndex).filter((section) => section.tables).length, 9);
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex - 1].title, 'State the extent');
+  assert.equal(dataBoundaries.sections[dataWorkedExampleIndex + 1].title, 'Set task data boundaries in seven steps');
+  const chooseDestination = dataBoundaries.sections.find((section) => section.title === 'Choose the destination');
+  assert.equal(chooseDestination.paragraphs.length, 3);
+  assert.match(chooseDestination.paragraphs[1], /^Describe retention expectations in terms someone can act on/);
+  assert.deepEqual(chooseDestination.links.map((link) => link.path), ['/guides/ai-agent-retained-context/']);
+  for (const [title, tail] of [
+    ['Select before collecting', /A context packet should preserve the route back to evidence without becoming a copy of every available record\.$/],
+    ['Technical availability', /both layers need to support the planned action\.$/],
+    ['Trace important claims', /they neither supply missing evidence nor authorize sharing it\.$/],
+    ['Record an accepted change', /A changed task agreement still does not create access to a new system\.$/],
+  ]) {
+    const section = dataBoundaries.sections.find((section) => section.title === title);
+    assert.match(section.paragraphs[section.paragraphs.length - 1], tail);
+  }
+  const proportionate = dataBoundaries.sections.find((section) => section.title === 'Keep the agreement proportionate');
+  assert.equal(proportionate.paragraphs.length, 1);
+  assert.equal(proportionate.links, undefined);
+  assert.match(dataBoundaries.intro[0], /^AI agent data boundaries are the task-specific limits on which information an agent may read, use, retain, and share\./);
+  const dataBoundariesHtml = renderStaticPage(guideTemplate, dataBoundariesGuide);
+  assert.match(dataBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-data-boundaries\/"/);
+  assert.match(dataBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dataBoundariesHtml, /data boundar/);
+  assert.doesNotMatch(dataBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(dataBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dataBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-retained-context/',
+    '/guides/ai-agent-audience-boundaries/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-data-boundaries\/"/g) || []).length, 1);
+  }
+  assert.ok(!dataBoundaries.sections.some((section) => section.title === dataBoundaries.cta.title));
+  assert.equal((dataBoundariesHtml.match(/<h2>Define what to read, retain, and share<\/h2>/g) || []).length, 1);
+  assert.ok(dataBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < dataBoundariesHtml.indexOf('<h2>Define what to read, retain, and share</h2>'));
+  assert.equal(dataBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
+  const changeRequestsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-change-requests/');
+  assert.equal(changeRequestsGuide.title, 'AI Agent Change Requests: Update Scope Clearly | Commonly');
+  const changeRequests = guides['ai-agent-change-requests'];
+  assert.deepEqual(changeRequests.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(changeRequests.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(changeRequests.sections.flatMap((section) => section.links || []).length, 9);
+  assert.equal(changeRequests.faq.length, 6);
+  const workedExampleIndex = changeRequests.sections.findIndex((section) => section.title === 'Work through a change request from proposal to revision');
+  const workedExample = changeRequests.sections[workedExampleIndex];
+  assert.equal(workedExample.paragraphs.length, 6);
+  assert.equal(workedExample.tables, undefined);
+  assert.equal(workedExample.links, undefined);
+  assert.equal(workedExample.orderedItems, undefined);
+  assert.equal(changeRequests.sections.slice(0, workedExampleIndex).filter((section) => section.tables).length, 8);
+  assert.equal(changeRequests.sections[workedExampleIndex + 1].title, 'Check whether the change is ready to apply');
+  const stepsFollowOn = changeRequests.sections.find((section) => section.title === 'This process can fit in a short task update');
+  assert.equal(stepsFollowOn.paragraphs.length, 1);
+  assert.equal(stepsFollowOn.links, undefined);
+  assert.match(changeRequests.intro[0], /^An AI agent change request is a recorded proposal to alter a task’s outcome, requirements, inputs, permitted operations, audience, or acceptance criteria\./);
+  const changeRequestsHtml = renderStaticPage(guideTemplate, changeRequestsGuide);
+  assert.match(changeRequestsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-change-requests\/"/);
+  assert.match(changeRequestsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(changeRequestsHtml, /change request/);
+  assert.match(changeRequestsHtml, /A second confirmation is unnecessary when the owner’s instruction already specifies the change/);
+  assert.doesNotMatch(changeRequestsHtml, /seo-page-dark/);
+  assert.doesNotMatch(changeRequestsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((changeRequestsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-scope-creep/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-revision-loop/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-change-requests\/"/g) || []).length, 1);
+  }
+  assert.ok(!changeRequests.sections.some((section) => section.title === changeRequests.cta.title));
+  assert.equal((changeRequestsHtml.match(/<h2>Update scope without silent drift<\/h2>/g) || []).length, 1);
+  assert.ok(changeRequestsHtml.indexOf('<h2>Frequently asked questions</h2>') < changeRequestsHtml.indexOf('<h2>Update scope without silent drift</h2>'));
+  assert.equal(changeRequests.cta.secondary.label, 'Explore Commonly’s guides');
+  const stopConditionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-stop-conditions/');
+  assert.equal(stopConditionsGuide.title, 'AI Agent Stop Conditions: When Agents Should Halt | Commonly');
+  const stopConditions = guides['ai-agent-stop-conditions'];
+  assert.deepEqual(stopConditions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(stopConditions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(stopConditions.sections.flatMap((section) => section.links || []).length, 9);
+  const technicalEnforcement = stopConditions.sections.find((section) => section.title === 'Keep the stop condition separate from technical enforcement');
+  assert.equal(technicalEnforcement.paragraphs.length, 6);
+  assert.equal(technicalEnforcement.tables, undefined);
+  assert.deepEqual(technicalEnforcement.links.map((link) => link.path), ['/guides/ai-agent-acceptance-criteria/']);
+  for (const title of ['An agent that stops precisely can be faster', 'The stop condition should make an agent’s next non-action deliberate']) {
+    const section = stopConditions.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(stopConditions.intro[0], /^AI agent stop conditions are the facts or boundaries that require an agent to halt its current work rather than continue by assumption\./);
+  const stopConditionsHtml = renderStaticPage(guideTemplate, stopConditionsGuide);
+  assert.match(stopConditionsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-stop-conditions\/"/);
+  assert.match(stopConditionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(stopConditionsHtml, /stop condition/);
+  assert.doesNotMatch(stopConditionsHtml, /seo-page-dark/);
+  assert.doesNotMatch(stopConditionsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((stopConditionsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-no-op/',
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-escalation/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-stop-conditions\/"/g) || []).length, 1);
+  }
+  assert.ok(!stopConditions.sections.some((section) => section.title === stopConditions.cta.title));
+  assert.equal((stopConditionsHtml.match(/<h2>Make stopping a useful, truthful contribution<\/h2>/g) || []).length, 1);
+  assert.ok(stopConditionsHtml.indexOf('<h2>Frequently asked questions</h2>') < stopConditionsHtml.indexOf('<h2>Make stopping a useful, truthful contribution</h2>'));
+  assert.equal(stopConditions.cta.secondary.label, 'Explore Commonly’s guides');
+  const audienceBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audience-boundaries/');
+  assert.equal(audienceBoundariesGuide.title, 'AI Agent Audience Boundaries: Who an Agent May Address | Commonly');
+  const audienceBoundaries = guides['ai-agent-audience-boundaries'];
+  assert.deepEqual(audienceBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(audienceBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(audienceBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  const boundedReview = audienceBoundaries.sections.find((section) => section.title === 'Use a named reviewer for bounded review, not a general audience');
+  assert.equal(boundedReview.paragraphs.length, 6);
+  assert.equal(boundedReview.tables, undefined);
+  assert.deepEqual(boundedReview.links.map((link) => link.path), ['/guides/ai-agent-focused-threads/']);
+  for (const title of ['If a test fails', 'The boundary is complete']) {
+    const section = audienceBoundaries.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(audienceBoundaries.intro[0], /^AI agent audience boundaries define who an agent may address, what it may share with each audience, and which messages require a named owner before they become a commitment\./);
+  const audienceBoundariesHtml = renderStaticPage(guideTemplate, audienceBoundariesGuide);
+  assert.match(audienceBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-audience-boundaries\/"/);
+  assert.match(audienceBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(audienceBoundariesHtml, /audience boundary/);
+  assert.doesNotMatch(audienceBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(audienceBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((audienceBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-roles/',
+    '/guides/ai-agent-escalation/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-audience-boundaries\/"/g) || []).length, 1);
+  }
+  assert.ok(!audienceBoundaries.sections.some((section) => section.title === audienceBoundaries.cta.title));
+  assert.equal((audienceBoundariesHtml.match(/<h2>Keep the right message with the right owner<\/h2>/g) || []).length, 1);
+  assert.ok(audienceBoundariesHtml.indexOf('<h2>Frequently asked questions</h2>') < audienceBoundariesHtml.indexOf('<h2>Keep the right message with the right owner</h2>'));
+  assert.equal(audienceBoundaries.cta.secondary.label, 'Explore Commonly’s guides');
+  const interimResultsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-interim-results/');
+  assert.equal(interimResultsGuide.title, 'AI Agent Interim Results: Useful Work Before Completion | Commonly');
+  const interimResults = guides['ai-agent-interim-results'];
+  assert.deepEqual(interimResults.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(interimResults.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(interimResults.sections.flatMap((section) => section.links || []).length, 9);
+  const preservedInterim = interimResults.sections.find((section) => section.title === 'Preserve an interim result for the next owner without turning it into authority');
+  assert.equal(preservedInterim.paragraphs.length, 6);
+  assert.equal(preservedInterim.tables, undefined);
+  assert.deepEqual(preservedInterim.links.map((link) => link.path), ['/guides/ai-agent-retained-context/']);
+  assert.ok(interimResults.sections.some((section) => section.title === 'For example, an interim result names its gap'));
+  for (const title of ['If the result fails a test', 'The result is complete']) {
+    const section = interimResults.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(interimResults.intro[0], /^An AI agent interim result is a bounded artifact, finding, check, or status record returned before the primary task is complete\./);
+  const interimResultsHtml = renderStaticPage(guideTemplate, interimResultsGuide);
+  assert.match(interimResultsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-interim-results\/"/);
+  assert.match(interimResultsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(interimResultsHtml, /remaining gap/);
+  assert.doesNotMatch(interimResultsHtml, /seo-page-dark/);
+  assert.doesNotMatch(interimResultsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((interimResultsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-no-op/',
+    '/guides/ai-agent-status-updates/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-interim-results\/"/g) || []).length, 1);
+  }
+  const taskSplittingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-splitting/');
+  assert.equal(taskSplittingGuide.title, 'AI Agent Task Splitting: Divide Work Clearly | Commonly');
+  const taskSplitting = guides['ai-agent-task-splitting'];
+  assert.deepEqual(taskSplitting.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(taskSplitting.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(taskSplitting.sections.flatMap((section) => section.links || []).length, 9);
+  const sharedDecision = taskSplitting.sections.find((section) => section.title === 'Do not split work that still needs one shared decision');
+  assert.equal(sharedDecision.paragraphs.length, 6);
+  assert.equal(sharedDecision.tables, undefined);
+  assert.deepEqual(sharedDecision.links.map((link) => link.path), ['/guides/ai-agent-work-contract/']);
+  assert.match(taskSplitting.sections.find((section) => section.title === 'An @mention').paragraphs[0], /^An @mention, a reaction, or a helpful reply can show participation\./);
+  for (const title of ['If the split fails a test', 'The split is successful']) {
+    const section = taskSplitting.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(taskSplitting.intro[0], /^AI agent task splitting is the practice of turning one broad request into several bounded tasks when the work needs distinct artifacts, owners, dependencies, acceptance criteria, or review points\./);
+  const taskSplittingHtml = renderStaticPage(guideTemplate, taskSplittingGuide);
+  assert.match(taskSplittingHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-splitting\/"/);
+  assert.match(taskSplittingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(taskSplittingHtml, /merge point/);
+  assert.doesNotMatch(taskSplittingHtml, /seo-page-dark/);
+  assert.doesNotMatch(taskSplittingHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((taskSplittingHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-dependency-management/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-task-closure/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-splitting\/"/g) || []).length, 1);
+  }
+  const revisionLoopGuide = guidePages.find((page) => page.path === '/guides/ai-agent-revision-loop/');
+  assert.equal(revisionLoopGuide.title, 'AI Agent Revision Loop: Request, Revise, Re-Review | Commonly');
+  const revisionLoop = guides['ai-agent-revision-loop'];
+  assert.deepEqual(revisionLoop.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(revisionLoop.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(revisionLoop.sections.flatMap((section) => section.links || []).length, 9);
+  const revisionDiscussion = revisionLoop.sections.find((section) => section.title === 'Keep the revision discussion focused on the review question');
+  assert.equal(revisionDiscussion.paragraphs.length, 6);
+  assert.equal(revisionDiscussion.tables, undefined);
+  assert.deepEqual(revisionDiscussion.links.map((link) => link.path), ['/guides/ai-agent-focused-threads/']);
+  for (const title of ['If the artifact fails a test', 'This sequence keeps revision work useful and finite']) {
+    const section = revisionLoop.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(revisionLoop.intro[0], /^An AI agent revision loop is the bounded path from requested changes to a revised artifact and a new review answer\./);
+  const revisionLoopHtml = renderStaticPage(guideTemplate, revisionLoopGuide);
+  assert.match(revisionLoopHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-revision-loop\/"/);
+  assert.match(revisionLoopHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(revisionLoopHtml, /return point/);
+  assert.doesNotMatch(revisionLoopHtml, /seo-page-dark/);
+  assert.doesNotMatch(revisionLoopHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((revisionLoopHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-focused-threads/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-revision-loop\/"/g) || []).length, 1);
+  }
+  const retainedContextGuide = guidePages.find((page) => page.path === '/guides/ai-agent-retained-context/');
+  assert.equal(retainedContextGuide.title, 'AI Agent Retained Context: Keep Useful Context | Commonly');
+  const retainedContext = guides['ai-agent-retained-context'];
+  assert.deepEqual(retainedContext.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(retainedContext.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(retainedContext.sections.flatMap((section) => section.links || []).length, 9);
+  for (const [title, path] of [
+    ['Retain the work boundary, not an implied permission', '/guides/ai-agent-work-contract/'],
+    ['Make follow-on work explicit instead of burying it in memory', '/guides/ai-agent-follow-on-work/'],
+  ]) {
+    const section = retainedContext.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 6);
+    assert.equal(section.tables, undefined);
+    assert.deepEqual(section.links.map((link) => link.path), [path]);
+  }
+  for (const title of ['Shared memory can preserve provenance and version history', 'If the note fails a test', 'The resulting note should help a future reader']) {
+    const section = retainedContext.sections.find((section) => section.title === title);
+    assert.equal(section.paragraphs.length, 1);
+    assert.equal(section.links, undefined);
+  }
+  assert.match(retainedContext.intro[0], /^AI agent retained context is the selected information kept after a task so a later person or agent can reuse a sourced conclusion, understand where it applies, and find the record that supersedes or verifies it\./);
+  const retainedContextHtml = renderStaticPage(guideTemplate, retainedContextGuide);
+  assert.match(retainedContextHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-retained-context\/"/);
+  assert.match(retainedContextHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(retainedContextHtml, /successor record/);
+  assert.doesNotMatch(retainedContextHtml, /seo-page-dark/);
+  assert.doesNotMatch(retainedContextHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((retainedContextHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-task-closure/',
+    '/guides/ai-agent-context-packet/',
+    '/guides/ai-agent-artifact-versions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-retained-context\/"/g) || []).length, 1);
+  }
+  const approvalBoundariesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-approval-boundaries/');
+  assert.equal(approvalBoundariesGuide.title, 'AI Agent Approval Boundaries: What Review Can Authorize | Commonly');
+  const approvalBoundaries = guides['ai-agent-approval-boundaries'];
+  assert.deepEqual(approvalBoundaries.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(approvalBoundaries.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(approvalBoundaries.sections.flatMap((section) => section.links || []).length, 9);
+  const approvalOwner = approvalBoundaries.sections.find((section) => section.title === 'Give each approval a decision owner');
+  assert.equal(approvalOwner.paragraphs.length, 8);
+  assert.equal(approvalOwner.tables, undefined);
+  assert.deepEqual(approvalOwner.links.map((link) => link.path), ['/guides/ai-agent-decision-owner/']);
+  const sharedApprovalBoundary = approvalBoundaries.sections.find((section) => section.title === 'Use the same boundary across human and agent work');
+  assert.equal(sharedApprovalBoundary.paragraphs.length, 3);
+  assert.equal(sharedApprovalBoundary.tables, undefined);
+  assert.equal(sharedApprovalBoundary.links, undefined);
+  const boundedAnswer = approvalBoundaries.sections.find((section) => section.title === 'Start by naming the actual question');
+  assert.equal(boundedAnswer.paragraphs.length, 2);
+  assert.equal(boundedAnswer.links, undefined);
+  assert.equal(approvalBoundaries.sections.find((section) => section.title === 'If one of these steps is missing').links, undefined);
+  assert.match(approvalBoundaries.intro[0], /^AI agent approval boundaries define what a visible approval changes—and what it does not\./);
+  assert.match(approvalBoundaries.intro[1], /@mentions/);
+  const approvalBoundariesHtml = renderStaticPage(guideTemplate, approvalBoundariesGuide);
+  assert.match(approvalBoundariesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-approval-boundaries\/"/);
+  assert.match(approvalBoundariesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(approvalBoundariesHtml, /continuing limit/);
+  assert.doesNotMatch(approvalBoundariesHtml, /seo-page-dark/);
+  assert.doesNotMatch(approvalBoundariesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((approvalBoundariesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-governance/',
+    '/guides/ai-agent-review-decisions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-approval-boundaries\/"/g) || []).length, 1);
+  }
+  const focusedThreadsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-focused-threads/');
+  assert.equal(focusedThreadsGuide.title, 'AI Agent Focused Threads: One Review or Decision | Commonly');
+  const focusedThreads = guides['ai-agent-focused-threads'];
+  assert.deepEqual(focusedThreads.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(focusedThreads.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(focusedThreads.sections.flatMap((section) => section.links || []).length, 9);
+  const focusedThreadRoles = focusedThreads.sections.find((section) => section.title === 'Use focused threads across human and agent roles');
+  assert.equal(focusedThreadRoles.paragraphs.length, 5);
+  assert.equal(focusedThreadRoles.tables, undefined);
+  assert.deepEqual(focusedThreadRoles.links.map((link) => link.path), ['/guides/ai-agent-status-updates/']);
+  assert.equal(focusedThreads.sections.find((section) => section.title === 'The thread earns its focus').links, undefined);
+  assert.match(focusedThreads.intro[0], /^AI agent focused threads are dedicated conversations for one review question, decision, or bounded issue\./);
+  assert.match(focusedThreads.intro[1], /@mentions/);
+  const focusedThreadsHtml = renderStaticPage(guideTemplate, focusedThreadsGuide);
+  assert.match(focusedThreadsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-focused-threads\/"/);
+  assert.match(focusedThreadsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(focusedThreadsHtml, /answerable question/);
+  assert.doesNotMatch(focusedThreadsHtml, /seo-page-dark/);
+  assert.doesNotMatch(focusedThreadsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((focusedThreadsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-decision-owner/',
+    '/guides/ai-agent-review-decisions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-focused-threads\/"/g) || []).length, 1);
+  }
+  const contextPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-context-packet/');
+  assert.equal(contextPacketGuide.title, 'AI Agent Context Packet: Current Context for One Step | Commonly');
+  const contextPacket = guides['ai-agent-context-packet'];
+  assert.deepEqual(contextPacket.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(contextPacket.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(contextPacket.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(contextPacket.sections.find((section) => section.title === 'The source link is part of the field').links.map((link) => link.path), ['/guides/ai-agent-source-of-record/', '/guides/ai-agent-work-contract/']);
+  assert.equal(contextPacket.sections.find((section) => section.title === 'The packet should be short enough to work from').links, undefined);
+  assert.match(contextPacket.intro[0], /^An AI agent context packet is the smallest current, source-linked bundle an agent or reviewer needs to complete one bounded task step\./);
+  const contextPacketHtml = renderStaticPage(guideTemplate, contextPacketGuide);
+  assert.match(contextPacketHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-context-packet\/"/);
+  assert.match(contextPacketHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(contextPacketHtml, /source-linked bundle/);
+  assert.doesNotMatch(contextPacketHtml, /seo-page-dark/);
+  assert.doesNotMatch(contextPacketHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((contextPacketHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/context-engineering-for-ai-agents/',
+    '/guides/ai-agent-source-of-record/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-task-closure/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-context-packet\/"/g) || []).length, 1);
+  }
+  const taskClosureGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-closure/');
+  assert.equal(taskClosureGuide.title, 'AI Agent Task Closure: Record What Done Means | Commonly');
+  const taskClosure = guides['ai-agent-task-closure'];
+  assert.deepEqual(taskClosure.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(taskClosure.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(taskClosure.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(taskClosure.sections.find((section) => section.title === 'Closing a path does not erase the reason it existed').links.map((link) => link.path), ['/guides/ai-agent-no-op/', '/guides/ai-agent-blockers/']);
+  assert.equal(taskClosure.sections.find((section) => section.title === 'Closure is a short final accounting').links, undefined);
+  assert.match(taskClosure.intro[0], /^AI agent task closure is the act of recording why a bounded task is done, what artifact or result it produced, what evidence supports that result, which decision or review applies, and what remains outside the task\./);
+  const taskClosureHtml = renderStaticPage(guideTemplate, taskClosureGuide);
+  assert.match(taskClosureHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-closure\/"/);
+  assert.match(taskClosureHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(taskClosureHtml, /verification boundary/);
+  assert.doesNotMatch(taskClosureHtml, /seo-page-dark/);
+  assert.doesNotMatch(taskClosureHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((taskClosureHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-artifact-versions/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-no-op/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-closure\/"/g) || []).length, 1);
+  }
+  const artifactVersionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-artifact-versions/');
+  assert.equal(artifactVersionsGuide.title, 'AI Agent Artifact Versions: Make Work Reviewable | Commonly');
+  const artifactVersions = guides['ai-agent-artifact-versions'];
+  assert.deepEqual(artifactVersions.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(artifactVersions.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(artifactVersions.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(artifactVersions.sections.find((section) => section.title === 'Version identity can be a document revision').links.map((link) => link.path), ['/guides/ai-agent-review-packet/', '/guides/ai-agent-source-of-record/']);
+  assert.equal(artifactVersions.sections.find((section) => section.title === 'The goal is not a ceremonial version number').links, undefined);
+  assert.match(artifactVersions.intro[0], /^AI agent artifact versions are stable, identifiable states of a draft, evidence packet, plan, review packet, decision packet, task result, or other work product\./);
+  const artifactVersionsHtml = renderStaticPage(guideTemplate, artifactVersionsGuide);
+  assert.match(artifactVersionsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-artifact-versions\/"/);
+  assert.match(artifactVersionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(artifactVersionsHtml, /superseded/);
+  assert.doesNotMatch(artifactVersionsHtml, /seo-page-dark/);
+  assert.doesNotMatch(artifactVersionsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((artifactVersionsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-verification-path/',
+    '/guides/ai-agent-audit-trail/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-artifact-versions\/"/g) || []).length, 1);
+  }
+  const decisionOwnerGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-owner/');
+  assert.equal(decisionOwnerGuide.title, 'AI Agent Decision Owner: Who Can Give the Answer? | Commonly');
+  const decisionOwner = guides['ai-agent-decision-owner'];
+  assert.deepEqual(decisionOwner.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(decisionOwner.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(decisionOwner.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(decisionOwner.sections.find((section) => section.title === 'The question should make ownership legible').links.map((link) => link.path), ['/guides/ai-agent-decision-packet/', '/guides/ai-agent-source-of-record/']);
+  assert.equal(decisionOwner.sections.find((section) => section.title === 'The process makes ownership a property of a defined choice').links, undefined);
+  assert.match(decisionOwner.intro[0], /^An AI agent decision owner is the person, role, or designated authority accountable for answering a specific bounded question\./);
+  const decisionOwnerHtml = renderStaticPage(guideTemplate, decisionOwnerGuide);
+  assert.match(decisionOwnerHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-decision-owner\/"/);
+  assert.match(decisionOwnerHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(decisionOwnerHtml, /accountable owner/);
+  assert.doesNotMatch(decisionOwnerHtml, /seo-page-dark/);
+  assert.doesNotMatch(decisionOwnerHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((decisionOwnerHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-decision-packet/',
+    '/guides/ai-agent-review-decisions/',
+    '/guides/ai-agent-task-intake/',
+    '/guides/ai-agent-escalation/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-decision-owner\/"/g) || []).length, 1);
+  }
+  const intakeGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-intake/');
+  assert.equal(intakeGuide.title, 'AI Agent Task Intake: Make Work Eligible | Commonly');
+  const intake = guides['ai-agent-task-intake'];
+  assert.deepEqual(intake.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(intake.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(intake.sections.flatMap((section) => section.links || []).length, 9);
+  const intakeHandoff = intake.sections.find((section) => section.title === 'Preserve intake context in the task and handoff');
+  assert.equal(intakeHandoff.paragraphs.length, 5);
+  assert.equal(intakeHandoff.tables, undefined);
+  assert.deepEqual(intakeHandoff.links.map((link) => link.path), ['/guides/ai-agent-follow-on-work/']);
+  assert.equal(intake.sections.find((section) => section.title === 'Intake succeeds when the next contribution is clear').links, undefined);
+  assert.match(intake.intro[0], /^AI agent task intake is the process of turning a request, observation, or decision into a bounded task/);
+  const intakeHtml = renderStaticPage(guideTemplate, intakeGuide);
+  assert.match(intakeHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-task-intake\/"/);
+  assert.match(intakeHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(intakeHtml, /first artifact/);
+  assert.doesNotMatch(intakeHtml, /seo-page-dark/);
+  assert.doesNotMatch(intakeHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((intakeHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-non-goals/',
+    '/guides/ai-agent-blockers/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-task-intake\/"/g) || []).length, 1);
+  }
+  const dependencyGuide = guidePages.find((page) => page.path === '/guides/ai-agent-dependency-management/');
+  assert.equal(dependencyGuide.title, 'AI Agent Dependency Management: Required States | Commonly');
+  const dependency = guides['ai-agent-dependency-management'];
+  assert.deepEqual(dependency.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(dependency.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(dependency.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(dependency.sections.find((section) => section.title === 'The distinction makes the board easier to read').links.map((link) => link.path), ['/guides/ai-agent-blockers/', '/guides/ai-agent-follow-on-work/']);
+  assert.equal(dependency.sections.find((section) => section.title === 'This keeps dependencies from becoming a background excuse').links, undefined);
+  assert.match(dependency.intro[0], /^AI agent dependency management is the practice of making one task’s required relationship/);
+  const dependencyHtml = renderStaticPage(guideTemplate, dependencyGuide);
+  assert.match(dependencyHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-dependency-management\/"/);
+  assert.match(dependencyHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(dependencyHtml, /prerequisite owner/);
+  assert.doesNotMatch(dependencyHtml, /seo-page-dark/);
+  assert.doesNotMatch(dependencyHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((dependencyHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-resume-conditions/',
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-work-contract/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-dependency-management\/"/g) || []).length, 1);
+  }
+  const evidenceLabelsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-evidence-labels/');
+  assert.equal(evidenceLabelsGuide.title, 'AI Agent Evidence Labels: Facts, Inferences, Decisions | Commonly');
+  const evidenceLabels = guides['ai-agent-evidence-labels'];
+  assert.deepEqual(evidenceLabels.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(evidenceLabels.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(evidenceLabels.sections.flatMap((section) => section.links || []).length, 9);
+  const evidenceHandoff = evidenceLabels.sections.find((section) => section.title === 'Carry labels through handoffs and durable context');
+  assert.equal(evidenceHandoff.paragraphs.length, 6);
+  assert.deepEqual(evidenceHandoff.links.map((link) => link.path), ['/guides/ai-agent-handoffs/']);
+  assert.equal(evidenceHandoff.tables, undefined);
+  assert.equal(evidenceLabels.sections.find((section) => section.title === 'The labels are a reading aid').links, undefined);
+  assert.match(evidenceLabels.intro[0], /^AI agent evidence labels identify what kind of statement a record makes and how a reviewer should treat it\./);
+  const evidenceLabelsHtml = renderStaticPage(guideTemplate, evidenceLabelsGuide);
+  assert.match(evidenceLabelsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-evidence-labels\/"/);
+  assert.match(evidenceLabelsHtml, /AI agent evidence labels identify what kind of statement/);
+  assert.match(evidenceLabelsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(evidenceLabelsHtml, /seo-page-dark/);
+  assert.match(evidenceLabelsHtml, /reported status/);
+  assert.doesNotMatch(evidenceLabelsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((evidenceLabelsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-verification-path/',
+    '/guides/ai-agent-source-of-record/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-decision-packet/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-evidence-labels\/"/g) || []).length, 1);
+  }
+  const nonGoalsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-non-goals/');
+  assert.equal(nonGoalsGuide.title, 'AI Agent Non-Goals: Write Clear Task Boundaries | Commonly');
+  const nonGoals = guides['ai-agent-non-goals'];
+  assert.deepEqual(nonGoals.sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(nonGoals.sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(nonGoals.sections.flatMap((section) => section.links || []).length, 9);
+  assert.deepEqual(nonGoals.sections.find((section) => section.title === 'The wording should be testable').links.map((link) => link.path), ['/guides/ai-agent-work-contract/', '/guides/ai-agent-task-management/']);
+  assert.equal(nonGoals.sections.find((section) => section.title === 'The purpose is not to make a task defensive').links, undefined);
+  assert.match(nonGoals.intro[0], /^AI agent non-goals are explicit statements of work a task, role, or review stage will not do\./);
+  const nonGoalsHtml = renderStaticPage(guideTemplate, nonGoalsGuide);
+  assert.match(nonGoalsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-non-goals\/"/);
+  assert.match(nonGoalsHtml, /AI agent non-goals are explicit statements of work/);
+  assert.match(nonGoalsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(nonGoalsHtml, /seo-page-dark/);
+  assert.match(nonGoalsHtml, /excluded work/);
+  assert.doesNotMatch(nonGoalsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((nonGoalsHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-work-contract/',
+    '/guides/ai-agent-scope-creep/',
+    '/guides/ai-agent-follow-on-work/',
+    '/guides/ai-agent-no-op/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.equal((html.match(/href="\/guides\/ai-agent-non-goals\/"/g) || []).length, 1);
   }
   const reviewDecisionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-review-decisions/');
   assert.equal(reviewDecisionsGuide.title, 'AI Agent Review Decisions: Five Clear Answers | Commonly');

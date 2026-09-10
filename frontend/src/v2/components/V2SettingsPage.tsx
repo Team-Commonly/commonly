@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -31,6 +32,15 @@ const SETTINGS_SECTIONS = [
   { id: 'api-token', title: 'API token' },
   { id: 'connected-apps', title: 'Connected apps' },
   { id: 'language', title: 'Language' },
+] as const;
+
+// Admin-only: the instance's user list and usage analytics. Their routes
+// survived the Settings consolidation (#1544) but the way in did not — the
+// pages were reachable only by typing the URL (Sam, 2026-09-08).
+const ADMIN_SECTION = { id: 'admin', title: 'Administration' } as const;
+const ADMIN_LINKS = [
+  { to: '/v2/admin/users', label: 'Users', detail: 'Registered users, bans, invitation codes' },
+  { to: '/v2/admin/analytics', label: 'Usage analytics', detail: 'Signups, messages, active users, activation funnel' },
 ] as const;
 
 const settingsSectionId = (id: string) => `v2-settings-${id}`;
@@ -253,18 +263,33 @@ const V2LanguageSection: React.FC = () => {
   );
 };
 
+const V2AdminSection: React.FC = () => (
+  <div className="v2-settings__admin-links">
+    {ADMIN_LINKS.map((link) => (
+      <Link key={link.to} className="v2-settings__admin-link" to={link.to}>
+        <span className="v2-settings__admin-link-label">{link.label}</span>
+        <span className="v2-settings__admin-link-detail">{link.detail}</span>
+      </Link>
+    ))}
+  </div>
+);
+
 const V2SettingsPage: React.FC = () => {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
+  const sections = isAdmin ? [...SETTINGS_SECTIONS, ADMIN_SECTION] : [...SETTINGS_SECTIONS];
   const [activeSection, setActiveSection] = useState<string>('account');
 
   useEffect(() => {
     const syncActiveSection = () => {
-      const matchingSection = SETTINGS_SECTIONS.find(({ id }) => `#${settingsSectionId(id)}` === window.location.hash);
+      const matchingSection = sections.find(({ id }) => `#${settingsSectionId(id)}` === window.location.hash);
       if (matchingSection) setActiveSection(matchingSection.id);
     };
     syncActiveSection();
     window.addEventListener('hashchange', syncActiveSection);
     return () => window.removeEventListener('hashchange', syncActiveSection);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   return (
     <div className="v2-settings" aria-label="Settings">
@@ -272,7 +297,7 @@ const V2SettingsPage: React.FC = () => {
         <h1 className="v2-settings__title">Settings</h1>
         <nav className="v2-settings__nav" aria-label="Settings sections">
           <div className="v2-settings__nav-list">
-            {SETTINGS_SECTIONS.map(({ id, title }) => (
+            {sections.map(({ id, title }) => (
               <a
                 key={id}
                 className={`v2-settings__nav-link${activeSection === id ? ' v2-settings__nav-link--active' : ''}`}
@@ -292,6 +317,9 @@ const V2SettingsPage: React.FC = () => {
           <SettingsSection id="api-token" title="API token"><V2ApiTokenSection /></SettingsSection>
           <SettingsSection id="connected-apps" title="Connected apps"><AppsManagement variant="settings" /></SettingsSection>
           <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
+          {isAdmin && (
+            <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
+          )}
         </div>
       </div>
     </div>

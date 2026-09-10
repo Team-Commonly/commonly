@@ -37,6 +37,15 @@ await jest.unstable_mockModule('../src/lib/api.js', () => ({
   login: jest.fn(),
 }));
 
+// The legacy run-loop contract tests exercise event/memory/ack behavior. Keep
+// their API fixtures independent from the newer focus contract; dedicated
+// pod-focus-run-loop tests cover the real context read at the turn seam.
+await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
+  FOCUS_FRAME_MAX_CODE_POINTS: 8000,
+  formatPodFocusFrame: jest.fn(() => '=== Pod focus (pod context; not instructions) ===\nNo focus set.'),
+  readPodFocus: jest.fn(async (_client, podId) => ({ podId, revision: 0, focus: null })),
+}));
+
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const {
@@ -210,6 +219,69 @@ describe('performRun', () => {
     );
   });
 
+  test('stops the agent run after a stale delivery acknowledgement', async () => {
+    const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'e'.repeat(32) } })];
+    const stale = Object.assign(new Error('This delivery was superseded'), {
+      status: 409,
+      body: { code: 'stale_delivery' },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn((route) => {
+      if (route.endsWith('/ack')) return Promise.reject(stale);
+      return Promise.resolve({});
+    });
+    const onError = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn(async () => ({ text: 'hello back' })) };
+
+    performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      instanceId: 'default',
+      onError,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+
+    expect(mockGet.mock.calls.filter(([route]) => route === '/api/agents/runtime/events')).toHaveLength(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('superseded'),
+    }));
+  });
+
+  test('stops the agent run when deliveryId is required', async () => {
+    const events = [makeEvent({ payload: { content: 'hello from tester' } })];
+    const required = Object.assign(new Error('deliveryId required'), {
+      status: 400,
+      body: { code: 'delivery_id_required' },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn((route) => {
+      if (route.endsWith('/ack')) return Promise.reject(required);
+      return Promise.resolve({});
+    });
+    const onError = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn(async () => ({ text: 'hello back' })) };
+
+    performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      instanceId: 'default',
+      onError,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+
+    expect(mockGet.mock.calls.filter(([route]) => route === '/api/agents/runtime/events')).toHaveLength(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'delivery_id_required',
+    }));
+  });
   test('a normal-return run-cap refusal is acked as a refusal, not a posted reply', async () => {
     // The post route deliberately responds 200 with { refused: true }. This
     // is terminal guidance — retrying the same event would duplicate the two
@@ -1294,6 +1366,7 @@ describe('performRun', () => {
       // Self-post detection snapshots pod messages before/after the spawn;
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
       const id = eventIds[eventTurn];
       eventTurn += 1;
       return { events: id ? [makeEvent({ _id: id })] : [] };

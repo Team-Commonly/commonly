@@ -13,7 +13,7 @@ const Message = require('../models/Message');
 const PGMessage = require('../models/pg/Message');
 
 type SourceType = 'message' | 'approval' | 'decision_request' | 'task';
-type Kind = 'mention' | 'approval' | 'decision';
+type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
 };
@@ -55,6 +55,7 @@ const recordForRecipients = async (
         detail: payload.detail,
         podName: payload.podName,
         actorName: payload.actorName,
+        actorUserId: payload.actorUserId,
         messageId: payload.messageId,
         threadRootId: payload.threadRootId,
         options: payload.options,
@@ -101,7 +102,7 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
     const authorName = message?.username || message?.userId?.username || await resolveAuthorName(authorId);
     await recordForRecipients(recipients, {
       podId, kind: 'mention' as Kind, sourceType: 'message' as SourceType, sourceId: sourceKey('message', messageId),
-      title: `${authorName} mentioned you`, actorName: authorName, detail: compact(content), podName: pod?.name || 'Pod',
+      title: `${authorName} mentioned you`, actorName: authorName, actorUserId: authorId || undefined, detail: compact(content), podName: pod?.name || 'Pod',
       messageId: String(messageId), threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),
       sourceCreatedAt: message?.createdAt || message?.created_at || undefined,
     });
@@ -246,7 +247,11 @@ export const recordApproval = async (approval: any): Promise<void> => {
     const agentName = approval?.agentMetadata?.agentName;
     await recordForRecipients(recipients, {
       podId, kind: 'approval' as Kind, sourceType: 'approval' as SourceType, sourceId: sourceKey('approval', id),
-      title: agentName ? `${agentName} requests approval` : 'Approval requested', actorName: agentName || undefined, detail: compact(approval?.content, 180), podName: pod?.name || 'Pod',
+      title: agentName ? `${agentName} requests approval` : 'Approval requested', actorName: agentName || undefined,
+      // The approval writer has no agent user id of its own today; take the
+      // requester when the source carries one, else leave it unset.
+      actorUserId: approval?.approval?.requestedBy || approval?.agentUserId || approval?.actorId || undefined,
+      detail: compact(approval?.content, 180), podName: pod?.name || 'Pod',
     });
   } catch (error) {
     console.warn('[attention] approval materialization failed:', (error as Error).message);
@@ -267,6 +272,7 @@ export const recordDecision = async (decision: any): Promise<void> => {
     await recordForRecipients(recipients, {
       podId, kind: 'decision' as Kind, sourceType: 'decision_request' as SourceType, sourceId: sourceKey('decision_request', id),
       title: String(decision.title || 'Decision requested'), detail: compact(decision.question || decision.context, 1000),
+      actorUserId: decision.agentUserId || undefined,
       podName: pod?.name || 'Pod', messageId: decision.messageId ? String(decision.messageId) : undefined,
       threadRootId: String(decision.threadRootId || decision.messageId || ''), options,
     });
@@ -291,7 +297,7 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
     const taskKey = String(task._id || task.taskId);
     const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
     await recordForRecipients(recipients, {
-      podId: task.podId, kind: 'decision' as Kind, sourceType: 'task' as SourceType,
+      podId: task.podId, kind: 'handoff' as Kind, sourceType: 'task' as SourceType,
       sourceId: `${taskKey}:${sequence}`,
       title: String(task.title || 'Task needs attention'), detail: compact(last?.text || task.notes, 220),
       podName: pod?.name || 'Pod',
@@ -337,50 +343,123 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
   }
 };
 
-export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: any[]; count: number; countsByPod: Record<string, number>; composePodId: string | null }> => {
+interface OpenQueueOptions {
+  podId?: unknown;
+  messageIds?: unknown;
+  limit?: number;
+  offset?: number;
+}
+
+export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueOptions = {}): Promise<{
+  items: any[];
+  count: number;
+  countsByPod: Record<string, number>;
+  countsByKind: Record<string, number>;
+  composePodId: string | null;
+  offset: number;
+  limit: number;
+  remaining: number;
+  hasMore: boolean;
+}> => {
+  const requestedPodId = typeof options.podId === 'string' ? options.podId.trim() : '';
+  const hasMessageFilter = Array.isArray(options.messageIds);
+  const messageIds = hasMessageFilter
+    ? [...new Set((options.messageIds as unknown[]).map((id) => String(id).trim()).filter(Boolean))]
+    : [];
+  const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
+  const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
-  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { items: [], count: 0, countsByPod: {}, composePodId: null };
-  // Counts include every accessible open item; only the rendered cards are capped.
-  const rows = await AttentionItem.find({ recipientUserId, status: 'open' }).sort({ createdAt: -1 }).lean();
+  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
+    return { items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+  }
+  // Counts include every accessible open item. The selected pod scope is
+  // applied before pagination so a scoped list cannot show a positive count
+  // with zero rows merely because its rows fell beyond the global page.
+  const rows = await AttentionItem.find({
+    recipientUserId,
+    status: 'open',
+    ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
+  }).sort({ createdAt: -1 }).lean();
   const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
-  const priority: Record<string, number> = { approval: 0, decision: 1, mention: 2 };
+  const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
+  const renderKind = (row: any): Kind => (
+    row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
+  );
   const valid = rows.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
     (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
     || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   ));
-  const picked: any[] = [];
-  let mentionCount = 0;
-  for (const row of valid) {
-    if (picked.length >= 12) break;
-    if (row.kind === 'mention' && mentionCount >= 8) continue;
-    if (row.kind === 'mention') mentionCount += 1;
-    picked.push({
-      id: String(row.source.id), attentionItemId: String(row._id), kind: row.kind, title: row.title, actorName: row.actorName || undefined, detail: row.detail || '',
-      podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
-      messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
-    });
-  }
   const countsByPod = valid.reduce((counts: Record<string, number>, row: any) => {
     const podId = String(row.podId);
     counts[podId] = (counts[podId] || 0) + 1;
     return counts;
   }, {});
-  return { items: picked, count: valid.length, countsByPod, composePodId: picked.find((row) => row.kind === 'mention')?.podId || null };
+  // The composer target is an account-level fact, not a property of the
+  // rendered page. A priority-heavy first page can contain no mentions even
+  // while an accessible mention exists later in the global ordering.
+  const composeMention = valid.find((row: any) => row.kind === 'mention');
+  const composePodId = composeMention?.podId ? String(composeMention.podId) : null;
+  const scoped = requestedPodId
+    ? valid.filter((row: any) => String(row.podId) === requestedPodId)
+    : valid;
+  // Per-kind totals describe the requested view, but are calculated before
+  // pagination. Legacy task rows are projected through renderKind so their
+  // handoff bucket agrees with the card and acknowledgement semantics.
+  const countsByKind = scoped.reduce((counts: Record<string, number>, row: any) => {
+    const kind = renderKind(row);
+    counts[kind] = (counts[kind] || 0) + 1;
+    return counts;
+  }, {});
+  const page = scoped.slice(offset, offset + limit);
+  const picked: any[] = [];
+  for (const row of page) {
+    picked.push({
+      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
+      podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
+      messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
+    });
+  }
+  const remaining = Math.max(scoped.length - offset - picked.length, 0);
+  return {
+    items: picked,
+    count: scoped.length,
+    countsByPod,
+    countsByKind,
+    composePodId,
+    offset,
+    limit,
+    remaining,
+    hasMore: remaining > 0,
+  };
 };
 
-export const acknowledgeMention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
+export const acknowledgeAttention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
   if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
   const result = await AttentionItem.updateOne(
-    { _id: attentionItemId, recipientUserId, kind: 'mention', status: 'open' },
+    {
+      _id: attentionItemId,
+      recipientUserId,
+      status: 'open',
+      $or: [
+        { kind: 'mention' },
+        { kind: 'handoff' },
+        { kind: 'decision', 'source.type': 'task' },
+      ],
+    },
     { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'acknowledged' } },
   );
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+// Kept as the public name for the existing Activity route. The selector is
+// now deliberately recipient-owned and covers mentions plus handoffs while
+// excluding true decisions and approvals.
+export const acknowledgeMention = acknowledgeAttention;
+
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };

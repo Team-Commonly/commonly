@@ -82,6 +82,7 @@ export interface V2Message {
 
 export interface V2Agent {
   agentName: string;
+  userId?: string;
   instanceId?: string;
   displayName?: string;
   iconUrl?: string;
@@ -124,19 +125,27 @@ interface MessagesResponse {
   data?: V2Message[];
 }
 
+export type LoadOlderResult = 'noop' | 'prepended' | 'unchanged' | 'empty' | 'failed' | 'stale';
+
 export interface UseV2PodDetailResult {
   pod: V2Pod | null;
   members: V2PodMember[];
   messages: V2Message[];
   agents: V2Agent[];
   loading: boolean;
+  /** True after the current pod's initial pod/message read has settled. */
+  initialLoadComplete?: boolean;
   error: string | null;
   /** Send failures belong beside the composer; load failures use `error`. */
   sendError: string | null;
   /** A full page came back, so older history probably exists. */
   hasMore: boolean;
   loadingOlder: boolean;
-  loadOlder: () => Promise<void>;
+  loadOlder: () => Promise<LoadOlderResult>;
+  /** Bounded state for an automatic quote/activity lookup in older history. */
+  historySearch?: HistorySearchState;
+  searchOlderForMessage?: (messageId: string | number, retry?: boolean) => Promise<void>;
+  retryHistorySearch?: () => Promise<void>;
   refresh: () => Promise<void>;
   // `threadRootId` posts INTO a thread without addressing anyone: the backend
   // takes it as membership and leaves reply_to null, so joining a thread does
@@ -155,11 +164,20 @@ export interface UseV2PodDetailResult {
   ) => Promise<V2Message | null>;
 }
 
+export interface HistorySearchState {
+  targetId: string | null;
+  status: 'idle' | 'searching' | 'failed' | 'not-found';
+  attempt: number;
+  maxAttempts: number;
+  error: string | null;
+}
+
 const REQUEST_TIMEOUT_MS = 8000;
 const SEND_TIMEOUT_MS = 20000;
 // One page of history. The backend clamps `limit` to [1,200]; 50 matches the
 // showcase reader so both surfaces page at the same rate.
 const PAGE_SIZE = 50;
+export const MAX_HISTORY_SEARCH_PAGES = 5;
 
 // Merge two message lists by id, newest-last. Used when prepending a page of
 // history: a plain concat would duplicate anything the socket delivered while
@@ -227,28 +245,61 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [messages, setMessages] = useState<V2Message[]>([]);
   const [agents, setAgents] = useState<V2Agent[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading: false` is also the first-render default. Keep that transient
+  // state distinct from a settled empty page so landing cannot declare a
+  // target absent before the initial messages request has even started.
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historySearch, setHistorySearch] = useState<HistorySearchState>({
+    targetId: null,
+    status: 'idle',
+    attempt: 0,
+    maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+    error: null,
+  });
   // A request for the room we just left can resolve after the next room has
   // started loading. Keep both the pre-paint reset and every async write bound
   // to the currently selected pod, so no previous room's messages can flash
   // under a new DM header.
   const activePodIdRef = useRef<string | null>(podId);
   const refreshSequenceRef = useRef(0);
+  const messagesRef = useRef<V2Message[]>([]);
+  const hasMoreRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const historySearchRef = useRef<HistorySearchState>(historySearch);
+  const historySearchSequenceRef = useRef(0);
+
+  const updateHistorySearch = useCallback((next: HistorySearchState) => {
+    historySearchRef.current = next;
+    setHistorySearch(next);
+  }, []);
 
   useLayoutEffect(() => {
     activePodIdRef.current = podId;
     refreshSequenceRef.current += 1;
+    historySearchSequenceRef.current += 1;
+    messagesRef.current = [];
+    hasMoreRef.current = false;
+    loadingOlderRef.current = false;
     setPod(null);
     setMessages([]);
     setAgents([]);
     setError(null);
     setSendError(null);
+    setInitialLoadComplete(false);
     setHasMore(false);
     setLoadingOlder(false);
-  }, [podId]);
+    updateHistorySearch({
+      targetId: null,
+      status: 'idle',
+      attempt: 0,
+      maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+      error: null,
+    });
+  }, [podId, updateHistorySearch]);
 
   const fetchPod = useCallback(async (id: string) => {
     const result = await api.get<V2Pod>(`/api/pods/${id}`, { timeout: REQUEST_TIMEOUT_MS });
@@ -263,13 +314,18 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       );
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
-      setMessages(chronologicalMessages(list.map(normalizeMessage)));
+      const normalized = chronologicalMessages(list.map(normalizeMessage));
+      messagesRef.current = normalized;
+      setMessages(normalized);
       // This endpoint returns a bare array with no envelope, so end-of-history
       // is inferred: a short page means there is nothing older behind it.
-      setHasMore(list.length >= PAGE_SIZE);
+      hasMoreRef.current = list.length >= PAGE_SIZE;
+      setHasMore(hasMoreRef.current);
     } catch (err) {
       const e = err as { response?: { status?: number } };
       if (e.response?.status === 404 && activePodIdRef.current === id) {
+        messagesRef.current = [];
+        hasMoreRef.current = false;
         setMessages([]);
         setHasMore(false);
       } else throw err;
@@ -285,34 +341,156 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
    * than concatenated, because the socket may have delivered messages while
    * the request was in flight.
    */
-  const loadOlder = useCallback(async () => {
-    if (!podId || loadingOlder) return;
-    const oldest = messages[0];
-    if (!oldest) return;
-    const cursor = oldest.created_at || oldest.createdAt;
-    if (!cursor) return;
+  const fetchOlderPage = useCallback(async (id: string, cursor: string): Promise<V2Message[]> => {
+    const data = await api.get<V2Message[]>(
+      `/api/messages/${id}?limit=${PAGE_SIZE}&before=${encodeURIComponent(cursor)}`,
+      { timeout: REQUEST_TIMEOUT_MS },
+    );
+    return (Array.isArray(data) ? data : []).map(normalizeMessage);
+  }, [api]);
 
+  const loadOlder = useCallback(async (): Promise<LoadOlderResult> => {
+    if (!podId || loadingOlderRef.current) return 'noop';
+    const oldest = messagesRef.current[0];
+    if (!oldest) return 'noop';
+    const cursor = oldest.created_at || oldest.createdAt;
+    if (!cursor) return 'noop';
+
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
-      const data = await api.get<V2Message[]>(
-        `/api/messages/${podId}?limit=${PAGE_SIZE}&before=${encodeURIComponent(cursor)}`,
-        { timeout: REQUEST_TIMEOUT_MS },
-      );
-      const older = (Array.isArray(data) ? data : []).map(normalizeMessage);
+      const older = await fetchOlderPage(podId, cursor);
+      if (activePodIdRef.current !== podId) return 'stale';
       if (older.length === 0) {
+        hasMoreRef.current = false;
         setHasMore(false);
-        return;
+        return 'empty';
       }
       if (activePodIdRef.current === podId) {
-        setMessages((prev) => mergeMessagesById(older, prev));
-        setHasMore(older.length >= PAGE_SIZE);
+        const beforeFirstId = messagesRef.current[0]?.id;
+        const merged = mergeMessagesById(older, messagesRef.current);
+        messagesRef.current = merged;
+        hasMoreRef.current = older.length >= PAGE_SIZE;
+        setMessages(merged);
+        setHasMore(hasMoreRef.current);
+        return merged[0]?.id !== beforeFirstId ? 'prepended' : 'unchanged';
       }
+      return 'stale';
     } catch {
       // Leave hasMore alone so the same button can be retried.
+      return 'failed';
     } finally {
-      setLoadingOlder(false);
+      if (activePodIdRef.current === podId) {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      }
     }
-  }, [api, podId, messages, loadingOlder]);
+  }, [fetchOlderPage, podId]);
+
+  /**
+   * Find a quoted/activity source without turning a missing row into an
+   * unbounded request loop. Automatic lookup gets at most five pages. A
+   * failed lookup is terminal until the reader deliberately presses Retry.
+   */
+  const searchOlderForMessage = useCallback(async (messageId: string | number, retry = false): Promise<void> => {
+    if (!podId) return;
+    const targetId = String(messageId);
+    const existing = historySearchRef.current;
+    if (messagesRef.current.some((message) => String(message.id) === targetId)) return;
+    if (loadingOlderRef.current) return;
+    if (existing.targetId === targetId && existing.status === 'searching') return;
+    if (!retry && existing.targetId === targetId
+      && (existing.status === 'failed' || existing.status === 'not-found')) return;
+
+    const searchSequence = ++historySearchSequenceRef.current;
+    let currentMessages = messagesRef.current;
+    let canLoadMore = hasMoreRef.current;
+    updateHistorySearch({
+      targetId,
+      status: 'searching',
+      attempt: 0,
+      maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+      error: null,
+    });
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    const setTerminal = (status: HistorySearchState['status'], error: string | null = null) => {
+      if (searchSequence !== historySearchSequenceRef.current) return;
+      updateHistorySearch({
+        targetId,
+        status,
+        attempt: historySearchRef.current.attempt,
+        maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+        error,
+      });
+    };
+
+    try {
+      for (let attempt = 1; attempt <= MAX_HISTORY_SEARCH_PAGES; attempt += 1) {
+        if (searchSequence !== historySearchSequenceRef.current
+          || activePodIdRef.current !== podId) return;
+        if (currentMessages.some((message) => String(message.id) === targetId)) {
+          setTerminal('idle');
+          return;
+        }
+        const oldest = currentMessages[0];
+        const cursor = oldest?.created_at || oldest?.createdAt;
+        if (!canLoadMore || !cursor) {
+          setTerminal('not-found');
+          return;
+        }
+        updateHistorySearch({
+          targetId,
+          status: 'searching',
+          attempt,
+          maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+          error: null,
+        });
+        const older = await fetchOlderPage(podId, cursor);
+        if (searchSequence !== historySearchSequenceRef.current
+          || activePodIdRef.current !== podId) return;
+        if (older.length === 0) {
+          canLoadMore = false;
+          hasMoreRef.current = false;
+          setHasMore(false);
+          setTerminal('not-found');
+          return;
+        }
+        // Refresh from the ref before merging: a socket message may have
+        // arrived while this page was in flight, and must never be lost when
+        // the older page is prepended.
+        currentMessages = mergeMessagesById(older, messagesRef.current);
+        messagesRef.current = currentMessages;
+        canLoadMore = older.length >= PAGE_SIZE;
+        hasMoreRef.current = canLoadMore;
+        setMessages(currentMessages);
+        setHasMore(canLoadMore);
+        if (currentMessages.some((message) => String(message.id) === targetId)) {
+          setTerminal('idle');
+          return;
+        }
+        if (!canLoadMore) {
+          setTerminal('not-found');
+          return;
+        }
+      }
+      setTerminal('not-found');
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unable to load older history';
+      setTerminal('failed', reason);
+    } finally {
+      if (searchSequence === historySearchSequenceRef.current) {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      }
+    }
+  }, [fetchOlderPage, podId, updateHistorySearch]);
+
+  const retryHistorySearch = useCallback(async () => {
+    const targetId = historySearchRef.current.targetId;
+    if (targetId) await searchOlderForMessage(targetId, true);
+  }, [searchOlderForMessage]);
 
   const fetchAgents = useCallback(async (id: string) => {
     try {
@@ -334,11 +512,26 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
 
   const refresh = useCallback(async () => {
     const refreshSequence = ++refreshSequenceRef.current;
+    historySearchSequenceRef.current += 1;
+    historySearchRef.current = {
+      targetId: null,
+      status: 'idle',
+      attempt: 0,
+      maxAttempts: MAX_HISTORY_SEARCH_PAGES,
+      error: null,
+    };
+    setHistorySearch(historySearchRef.current);
+    messagesRef.current = [];
+    hasMoreRef.current = false;
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+    setInitialLoadComplete(false);
     if (!podId) {
       setPod(null);
       setMessages([]);
       setAgents([]);
       setSendError(null);
+      setInitialLoadComplete(true);
       return;
     }
     setLoading(true);
@@ -377,6 +570,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     } finally {
       if (refreshSequence === refreshSequenceRef.current && activePodIdRef.current === podId) {
         setLoading(false);
+        setInitialLoadComplete(true);
       }
     }
   }, [podId, fetchPod, fetchMessages, fetchAgents]);
@@ -393,7 +587,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       if (normalized.pod_id && normalized.pod_id !== podId) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id && m.id === normalized.id)) return prev;
-        return chronologicalMessages([...prev, normalized]);
+        const next = chronologicalMessages([...prev, normalized]);
+        messagesRef.current = next;
+        return next;
       });
     };
     // Sprint B5: socket-driven reaction updates. Backend emits
@@ -459,6 +655,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         },
         { timeout: SEND_TIMEOUT_MS },
       );
+      // A send started in a pod we have already left must not append its late
+      // response into the newly selected pod's transcript.
+      if (activePodIdRef.current !== podId) return null;
       const normalized = normalizeMessage(created);
       // Dedupe by id — the Socket.io `newMessage` broadcast and this
       // optimistic add both come from the same DB row and race after
@@ -469,8 +668,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       // an older backend's broadcast omits replyTo, which dropped the reply
       // quote until reload (#646).
       setMessages((prev) => {
+        if (activePodIdRef.current !== podId) return prev;
         if (prev.some((m) => m.id && m.id === normalized.id)) {
-          return prev.map((m) => (
+          const next = prev.map((m) => (
             m.id === normalized.id
               ? {
                 ...m,
@@ -483,11 +683,17 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
               }
               : m
           ));
+          messagesRef.current = next;
+          return next;
         }
-        return chronologicalMessages([...prev, normalized]);
+        const next = chronologicalMessages([...prev, normalized]);
+        messagesRef.current = next;
+        return next;
       });
+      if (activePodIdRef.current !== podId) return null;
       return normalized;
     } catch (err) {
+      if (activePodIdRef.current !== podId) return null;
       const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
       setSendError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
       return null;
@@ -499,7 +705,22 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   );
 
   return {
-    pod, members, messages, agents, loading, error, sendError, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
+    pod,
+    members,
+    messages,
+    agents,
+    loading,
+    initialLoadComplete,
+    error,
+    sendError,
+    hasMore,
+    loadingOlder,
+    loadOlder,
+    historySearch,
+    searchOlderForMessage,
+    retryHistorySearch,
+    refresh,
+    sendMessage,
   };
 };
 

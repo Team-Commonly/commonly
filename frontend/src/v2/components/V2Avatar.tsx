@@ -28,6 +28,12 @@ interface V2AvatarProps {
    * `name` when absent.
    */
   seed?: string | null;
+  /**
+   * `flat` keeps the transcript's compact square frame. Photos and Big Smile
+   * characters retain their identity in this frame; initials are only the
+   * fallback when the kind is unknown or character generation fails.
+   */
+  tone?: 'flat';
 }
 
 const sizeClass = (size: V2AvatarSize): string => {
@@ -41,7 +47,7 @@ const sizeClass = (size: V2AvatarSize): string => {
 };
 
 const V2Avatar: React.FC<V2AvatarProps> = ({
-  name, src, size = 'md', className, online, title, kind, seed: seedProp,
+  name, src, size = 'md', className, online, title, kind, seed: seedProp, tone,
 }) => {
   const seed = String(name || '');
   const bg = gradientFor(seed);
@@ -59,7 +65,12 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   // right tier.
   const cleanSrc = getAvatarSrc(rawSrc) || null;
   const [imgFailed, setImgFailed] = React.useState(false);
-  const classes = [sizeClass(size), className].filter(Boolean).join(' ');
+  const flat = tone === 'flat';
+  const classes = [
+    sizeClass(size),
+    flat ? `v2-avatar--flat v2-avatar--flat-${kind === 'agent' ? 'agent' : 'human'}` : null,
+    className,
+  ].filter(Boolean).join(' ');
 
   // Character tier (photo still wins, below). Memoized because the SVG build
   // runs per identity per render otherwise, and chat re-renders per message.
@@ -116,7 +127,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   return (
     <span
       className={classes}
-      style={{ background: bg }}
+      style={flat ? undefined : { background: bg }}
       title={display}
     >
       {initials}

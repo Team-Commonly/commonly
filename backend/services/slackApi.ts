@@ -40,11 +40,12 @@ class SlackApi {
     });
   }
 
-  async postMessage(channel: string, text: string, blocks?: unknown): Promise<PostMessageResponse> {
+  async postMessage(channel: string, text: string, blocks?: unknown, threadTs?: string): Promise<PostMessageResponse> {
     const res = await this.client.post<PostMessageResponse>('/chat.postMessage', {
       channel,
       text,
       blocks,
+      ...(threadTs ? { thread_ts: threadTs } : {}),
     });
     return res.data;
   }

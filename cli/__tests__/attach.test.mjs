@@ -28,6 +28,7 @@ await jest.unstable_mockModule('os', () => {
 const {
   performAttach,
   setWakeOnMessage,
+  updateAgentConfiguration,
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
@@ -61,6 +62,119 @@ describe('setWakeOnMessage', () => {
     const client = { patch: jest.fn() };
     await expect(setWakeOnMessage({ client, record: { agentName: 'x' }, enabled: true }))
       .rejects.toThrow(/podId/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateAgentConfiguration', () => {
+  const record = {
+    agentName: 'juno', podId: 'pod-9', instanceId: 'writer', runtimeToken: 'cm_agent_j',
+  };
+
+  test('reuses the registry PATCH route for runtime controls and full env specs', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const environment = {
+      version: 1,
+      workspace: { path: './workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+      effort: 'xhigh',
+      model: 'gpt-5.4',
+    };
+    await expect(updateAgentConfiguration({
+      client,
+      record,
+      model: 'gpt-5.4',
+      effort: 'xhigh',
+      envPath: '/tmp/runtime.json',
+      parseEnv: jest.fn(async () => environment),
+    })).resolves.toEqual({
+      agentName: 'juno', podId: 'pod-9', instanceId: 'writer', changed: ['runtime', 'environment'],
+      environment,
+    });
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      {
+        instanceId: 'writer',
+        config: {
+          runtime: { model: 'gpt-5.4', effort: 'xhigh' },
+          environment,
+        },
+      },
+    );
+  });
+
+  test('rejects an empty edit and an incomplete token record before making a request', async () => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record })).rejects.toThrow(/at least one/);
+    await expect(updateAgentConfiguration({ client, record, effort: 'turbo' }))
+      .rejects.toThrow(/effort must be one of/);
+    await expect(updateAgentConfiguration({ client, record: { agentName: 'juno' }, model: 'opus' }))
+      .rejects.toThrow(/podId/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
+  test('updates an existing declared environment when only model/effort flags change', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const localRecord = {
+      ...record,
+      environment: {
+        workspace: { path: './workspace' },
+        sandbox: { mode: 'workspace', trust: 'internal' },
+        model: 'old-model',
+        effort: 'medium',
+      },
+    };
+    await updateAgentConfiguration({ client, record: localRecord, model: 'new-model', effort: 'high' });
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({
+      ...localRecord.environment, model: 'new-model', effort: 'high',
+    });
+  });
+
+  test('materializes runtime edits into the declared environment when none exists', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const result = await updateAgentConfiguration({ client, record, model: 'new-model', effort: 'high' });
+    expect(result.environment).toEqual({ model: 'new-model', effort: 'high' });
+    expect(client.patch.mock.calls[0][1].config).toEqual({
+      runtime: { model: 'new-model', effort: 'high' },
+      environment: { model: 'new-model', effort: 'high' },
+    });
+  });
+
+  test('validates and persists a detected adapter without leaking it into ADR-008 environment', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const adapter = { detect: jest.fn(async () => ({ path: '/usr/local/bin/claude' })) };
+    const result = await updateAgentConfiguration({
+      client,
+      record,
+      adapter: 'claude',
+      adapterRegistry: {
+        getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
+        listAdapterNames: jest.fn(() => ['claude', 'codex']),
+      },
+    });
+
+    expect(result).toEqual({
+      agentName: 'juno', podId: 'pod-9', instanceId: 'writer', changed: ['runtime'], adapter: 'claude',
+    });
+    expect(adapter.detect).toHaveBeenCalledTimes(1);
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      { instanceId: 'writer', config: { runtime: { adapter: 'claude' } } },
+    );
+  });
+
+  test('rejects an unknown or unavailable adapter before PATCH', async () => {
+    const client = { patch: jest.fn() };
+    const adapter = { detect: jest.fn(async () => null) };
+    const adapterRegistry = {
+      getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
+      listAdapterNames: jest.fn(() => ['claude', 'codex']),
+    };
+    await expect(updateAgentConfiguration({ client, record, adapter: 'unknown', adapterRegistry }))
+      .rejects.toThrow(/Unknown adapter/);
+    await expect(updateAgentConfiguration({ client, record, adapter: 'claude', adapterRegistry }))
+      .rejects.toThrow(/not found on PATH/);
     expect(client.patch).not.toHaveBeenCalled();
   });
 });

@@ -34,4 +34,13 @@ describe('V2Avatar', () => {
       'data:image/png;base64,avatar',
     );
   });
+
+  test.each(['human', 'agent'] as const)('keeps a stable Big Smile face in flat %s chat avatars', (kind) => {
+    const { rerender } = render(<V2Avatar name="Ada" seed="identity-1" kind={kind} tone="flat" />);
+    const source = screen.getByRole('img', { name: 'Ada' }).getAttribute('src');
+    expect(source).toMatch(/^data:image\/svg\+xml/);
+
+    rerender(<V2Avatar name="Ada renamed" seed="identity-1" kind={kind} tone="flat" />);
+    expect(screen.getByRole('img', { name: 'Ada renamed' })).toHaveAttribute('src', source);
+  });
 });

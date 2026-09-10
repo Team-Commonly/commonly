@@ -20,7 +20,8 @@
       "settings": "设置",
       "connectors": "连接器",
       "needsYou": "待处理",
-      "team": "团队"
+      "team": "团队",
+      "artifacts": "产物"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
@@ -30,7 +31,7 @@
   },
   "activity": {
     "title": "动态",
-    "subtitle": "需要你处理的事项，以及智能体推动的工作。",
+    "subtitle": "需要你处理的事项，以及刚刚推进的工作",
     "controlsAriaLabel": "动态控制项",
     "windowAriaLabel": "动态时间范围",
     "windows": {
@@ -39,8 +40,11 @@
     },
     "podScopeLabel": "Pod 范围",
     "allPods": "所有 Pod",
+    "morePods": "更多 ▾",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
+    "open": "打开",
+    "openPod": "打开 pod",
     "openBoard": "打开看板",
     "compose": {
       "eyebrow": "发起对话",
@@ -52,13 +56,15 @@
       "working": "发送中…",
       "actionFailed": "无法发送消息，请重试。",
       "label": "告诉你的智能体",
-      "hint": "以你的身份发布 · ⌘↵ 发送"
+      "hint": "⌘↵ 发送"
     },
     "reply": {
+      "open": "回复",
       "placeholder": "在话题中回复…",
       "send": "发送",
       "working": "发送中…",
-      "sent": "已回复"
+      "sent": "已回复",
+      "actionFailed": "回复发送失败，请重试。"
     },
     "lastActive": "{{time}}前活跃",
     "updatesCount_one": "{{count}} 条更新",
@@ -67,37 +73,24 @@
       "eyebrow": "决策队列",
       "title": "需要你处理",
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
-      "emptyTitle": "没有事项在等待你",
-      "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "countDescription": "最早等待的在前",
+      "scopedCountDescription": "最早等待的在前 · 此 Pod",
+      "countUnavailable": "数量暂不可用",
+      "emptyTitle": "没有需要你处理的事项。",
+      "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
+      "showMore": "显示更多 · 剩余 {{count}} 条",
+      "showMoreSettled": "展开更多已处理 · 剩余 {{count}} 条",
+      "loadingMore": "加载中…",
+      "retry": "重试",
       "kinds": {
         "mention": "提及",
         "approval": "审批",
         "decision": "待你决策",
+        "handoff": "交接",
         "press": "待你合并"
       },
-      "countLabel": "{{count}} 项等你处理"
-    },
-    "dayZero": {
-      "kind": "开始使用",
-      "guide": {
-        "title": "认识你的向导",
-        "description": "通过简短引导，开始第一次与智能体的对话。",
-        "leaves": "向导回复后，此项会离开。",
-        "cta": "认识你的向导"
-      },
-      "agent": {
-        "title": "聘用你的第一个智能体",
-        "description": "添加一位能和你一起推进工作的队友。",
-        "leaves": "智能体加入工作区后，此项会离开。",
-        "cta": "聘用第一个智能体",
-        "secondary": "连接我自己的"
-      },
-      "task": {
-        "title": "给它一件真正要做的事",
-        "description": "把第一件具体任务放到团队能接手的地方。",
-        "leaves": "任务被认领后，此项会离开。",
-        "cta": "创建任务"
-      }
+      "countLabel": "{{count}} 项等你处理",
+      "emptyLast": "上一个请求已在 {{age}} 前回复。"
     },
     "approval": {
       "approve": "批准",
@@ -107,6 +100,8 @@
     },
     "decision": {
       "ruleOption": "裁定：{{option}}",
+      "ruleOptionRecommended": "裁定：{{option}}（推荐）",
+      "recommended": "推荐",
       "working": "正在裁定…",
       "other": "其他…",
       "otherPlaceholder": "写下你的裁定…",
@@ -117,8 +112,14 @@
     },
     "mention": {
       "acknowledge": "确认",
+      "markHandled": "标记已处理",
       "working": "正在保存…",
       "actionFailed": "无法确认该提及，请重试。"
+    },
+    "handoff": {
+      "markHandled": "标记已处理",
+      "working": "正在保存…",
+      "actionFailed": "无法标记该交接，请重试。"
     },
     "agents": {
       "eyebrow": "智能体回顾",
@@ -140,7 +141,36 @@
         "done": "已完成"
       }
     },
-    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
+    "movedForward": {
+      "title": "推进的工作",
+      "description": "按 Pod 分组 · 最新在前",
+      "empty": "今天还没有更新。",
+      "more": "{{pod}} 还有 {{count}} 项",
+      "omitted": "{{pod}} 还有 {{count}} 项未显示",
+      "showLess": "收起",
+      "unknownPod": "未知 Pod"
+    },
+    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。",
+    "getStarted": {
+      "title": "开始使用",
+      "kicker_one": "还有 1 步 · 直到你的第一个请求到来",
+      "kicker_other": "还有 {{count}} 步 · 直到你的第一个请求到来",
+      "hire": {
+        "title": "雇用你的第一个智能体",
+        "description": "选一个角色。它会在这个工作区拥有席位，几秒内回复。",
+        "cta": "雇用智能体"
+      },
+      "speak": {
+        "title": "对它说点什么",
+        "description": "在任意 Pod 中 @ 它。第一次回复，就是它真正属于你的时刻。",
+        "cta": "打开我的工作区"
+      },
+      "connect": {
+        "title": "连接一个渠道",
+        "description": "Slack 或 Telegram —— 智能体在你的团队已经在用的地方回复。",
+        "cta": "添加连接器"
+      }
+    }
   },
   "auth": {
     "fields": {
@@ -420,7 +450,8 @@
       "noMessagesTitle": "暂无消息",
       "agentDmText": "这是一对一私信。打个招呼，开始对话。",
       "quietTitle": "这个 Pod 还很安静",
-      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
+      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。",
+      "noMessages": "还没有消息"
     },
     "newPod": {
       "label": "新 Pod 开始操作",
@@ -485,7 +516,15 @@
       "sendAria": "发送消息",
       "postsAs": "发布身份：{{name}}",
       "mentionAgent": "提及智能体",
-      "toSend": "发送"
+      "toSend": "发送",
+      "more": "添加",
+      "attachImage": "添加图片",
+      "pasteImage": "粘贴剪贴板图片",
+      "sendTooltip": "以 {{name}} 身份发送 · Enter",
+      "clipboardEmpty": "剪贴板中没有图片。",
+      "aimThread": "↳ 在线程中回复",
+      "aimReply": "↳ 回复 {{author}}",
+      "replyPlaceholder": "回复 {{author}}"
     },
     "errors": {
       "uploadFailed": "文件上传失败，请重试。"
@@ -496,7 +535,15 @@
       "startThread": "话题",
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
-      "replyingInThread": "正在话题中回复："
+      "replyingInThread": "正在话题中回复：",
+      "last": "最近",
+      "collapse": "收起",
+      "replyOne": "条回复",
+      "replyOther": "条回复",
+      "moreReplies": "还有 {{count}} 条回复",
+      "follow": "关注",
+      "following": "已关注",
+      "muted": "已静音"
     },
     "leadBadge": "负责人",
     "catchup": {
@@ -510,6 +557,40 @@
       "refresh": "刷新",
       "working": "正在总结…",
       "dismiss": "关闭"
+    },
+    "lightbox": {
+      "close": "关闭",
+      "previous": "上一张",
+      "next": "下一张"
+    },
+    "attachment": {
+      "open": "打开 {{name}}",
+      "showMore": "展开另外 {{count}} 行",
+      "showLess": "收起",
+      "image": "图片"
+    },
+    "history": {
+      "loadingEarlier": "正在加载更早的消息…",
+      "loadEarlier": "加载更早的消息",
+      "beginning": "Pod 的开始",
+      "jumpToLatest": "跳到最新",
+      "searchingOlder": "正在搜索更早的消息（{{attempt}}/{{max}}）…",
+      "searchOlderFailed": "无法加载更早的历史记录。自动搜索已停止。",
+      "searchOlderBound": "在 {{attempt}} 页更早的消息中未找到目标。你仍可继续浏览对话。",
+      "retrySearch": "重试"
+    },
+    "strip": {
+      "label": "消息操作",
+      "react": "添加表情回应",
+      "more": "更多",
+      "copyLink": "复制链接",
+      "copyText": "复制文本"
+    },
+    "quote": {
+      "earlier": "更早的消息"
+    },
+    "reactions": {
+      "more": "还有 {{count}} 个回应"
     }
   },
   "landing": {
@@ -978,8 +1059,6 @@
       "needsYou": "需要你处理",
       "nothingOpen": "没有待处理项。",
       "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
-      "boardToday": "看板 · 今天",
-      "boardCounts": "{{open}} 开放 · {{inProgress}} 进行中 · {{done}} 完成",
       "wip": "进行中",
       "members": "成员",
       "manage": "管理",
@@ -988,7 +1067,10 @@
         "workingTask": "进行中 · {{title}}",
         "working": "进行中",
         "idle": "空闲"
-      }
+      },
+      "filesIn": "{{pod}} 中的文件",
+      "noFiles": "暂无文件",
+      "allFiles": "全部 {{count}} 个文件"
     },
     "goal": {
       "title": "目标",
@@ -1090,6 +1172,39 @@
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "taskCount_other": "{{count}} 个任务",
+    "focus": {
+      "eyebrow": "Pod 方向",
+      "title": "焦点",
+      "set": "设置焦点",
+      "edit": "编辑焦点",
+      "loading": "正在加载焦点…",
+      "loadError": "无法加载焦点。",
+      "retry": "重试",
+      "empty": "此 Pod 尚未设置焦点。",
+      "owner": "负责人",
+      "updatedBy": "更新者",
+      "unavailable": "不可用",
+      "revision": "修订 {{revision}}",
+      "taskUnavailable": "任务不可用",
+      "editorTitle": "编辑 Pod 焦点",
+      "goal": "目标",
+      "scope": "范围",
+      "chooseOwner": "选择 Pod 负责人",
+      "tasks": "后续任务（最多 10 个，按顺序）",
+      "up": "上移",
+      "down": "下移",
+      "remove": "移除",
+      "moved": "{{taskId}} 已移至第 {{position}} 项，共 {{count}} 项。",
+      "clear": "清除焦点",
+      "save": "保存焦点",
+      "saving": "保存中…",
+      "conflict": "编辑期间焦点已被更改。你的草稿已保留，请查看最新焦点后再保存。",
+      "latestTitle": "最新焦点",
+      "reviewLatest": "查看最新内容",
+      "latestReviewed": "已查看最新内容",
+      "discard": "放弃未保存的焦点更改？",
+      "saveError": "无法保存焦点，请重试。"
+    },
     "loadErrorTitle": "看板加载失败",
     "loadErrorText": "请检查网络连接后重试。",
     "createError": "任务创建失败，请重试。",
@@ -1607,7 +1722,9 @@
     },
     "actions": {
       "addComputer": "添加电脑",
-      "cancel": "取消"
+      "cancel": "取消",
+      "bringYourOwn": "接入你自己的",
+      "hire": "雇用智能体"
     },
     "redeem": {
       "placeholder": "邀请码",
@@ -1634,7 +1751,19 @@
       "viewProfileAria": "查看 {{name}} 的资料页",
       "talkTo": "对话",
       "talkToAria": "与 {{name}} 一对一对话",
-      "opening": "打开中…"
+      "opening": "打开中…",
+      "needsYou": "等你",
+      "working": "工作中",
+      "idle": "空闲",
+      "answer": "回答",
+      "talk": "对话",
+      "podsAria": "Pod",
+      "age": {
+        "now": "刚刚",
+        "minutes": "{{count}}分",
+        "hours": "{{count}}时",
+        "days": "{{count}}天"
+      }
     },
     "activity": {
       "noRecent": "近期无活动",
@@ -1665,6 +1794,15 @@
       "internalCount": "已连接的智能体（{{count}}）",
       "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
       "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
+    },
+    "head": {
+      "meta": "{{agents}} 个智能体 · {{working}} 个工作中 · {{needsYou}} 个等你"
+    },
+    "own": {
+      "title": "你自己的智能体",
+      "text": "Claude Code、Codex，或任何支持该协议的工具。在你的机器上运行一条命令，它的身份保留在这里。",
+      "command": "npx @commonlyai/cli agent attach claude",
+      "setup": "开始设置"
     }
   },
   "billing": {
@@ -1701,5 +1839,39 @@
     "creating": "创建中…",
     "createTelegram": "新建 Telegram 连接器",
     "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
+  },
+  "artifacts": {
+    "title": "产物",
+    "meta": "你所有 Pod 中共享的文件与页面",
+    "kindLabel": "类型",
+    "podLabel": "Pod",
+    "allPods": "全部 Pod",
+    "morePods": "更多 ▾",
+    "searchPlaceholder": "搜索文件",
+    "kinds": {
+      "all": "全部",
+      "images": "图片",
+      "docs": "文档",
+      "pages": "页面"
+    },
+    "kindNames": {
+      "image": "图片",
+      "page": "页面",
+      "doc": "文档"
+    },
+    "columns": {
+      "file": "文件",
+      "kind": "类型",
+      "pod": "Pod",
+      "sharedBy": "分享者",
+      "when": "时间",
+      "size": "大小"
+    },
+    "foot": "{{shown}} / {{total}} · 最新在前",
+    "more": "还有 {{count}} 项",
+    "loadingMore": "加载中…",
+    "empty": "还没有共享内容。在任意 Pod 里附加文件，就会出现在这里。",
+    "emptyFiltered": "没有匹配项。清除筛选或搜索。",
+    "loadFailed": "无法加载产物。"
   }
 }

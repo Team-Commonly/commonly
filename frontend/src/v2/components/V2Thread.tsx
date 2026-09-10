@@ -2,15 +2,17 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
-import V2ThreadMessages from './V2ThreadMessages';
+import V2ThreadMessages, { V2ThreadHistoryStatus } from './V2ThreadMessages';
+import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
+  HistorySearchState,
   UseV2PodDetailResult,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
@@ -23,7 +25,7 @@ import type { V2InviteTab } from './V2InviteModal';
 
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
-import { buildThreadView } from '../utils/threadView';
+import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import {
   buildAgentUsername,
@@ -88,7 +90,66 @@ interface ThreadDecision extends V2DecisionCardData {
   kind: 'decision';
   podId: string;
   messageId: string;
+  status?: 'pending' | 'ruled';
+  ruling?: V2DecisionRuling | null;
 }
+
+interface DecisionPage<T> {
+  items?: T[];
+  hasMore?: boolean;
+}
+
+const DECISION_PAGE_SIZE = 50;
+const DECISION_MESSAGE_ID_BATCH_SIZE = 200;
+
+const loadDecisionPages = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+  extraParams: Record<string, string> = {},
+): Promise<{ items: T[] }> => {
+  const items: T[] = [];
+  let offset = 0;
+  // A malformed response must not create an unbounded request loop. The
+  // server caps each page at 50; 100 pages is ample for a room while still
+  // bounding a broken hasMore implementation.
+  for (let page = 0; page < 100; page += 1) {
+    const data = await api.get<DecisionPage<T>>(endpoint, {
+      params: {
+        podId, limit: DECISION_PAGE_SIZE, offset, ...extraParams,
+      },
+    });
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    items.push(...pageItems);
+    if (!data?.hasMore || pageItems.length === 0) break;
+    offset += pageItems.length;
+  }
+  return { items };
+};
+
+const loadDecisionPagesForMessageIds = async <T,>(
+  api: ReturnType<typeof useV2Api>,
+  endpoint: string,
+  podId: string,
+  messageIds: string[],
+): Promise<{ items: T[] }> => {
+  const uniqueMessageIds = [...new Set(messageIds.filter(Boolean))];
+  const batches: string[][] = [];
+  for (let index = 0; index < uniqueMessageIds.length; index += DECISION_MESSAGE_ID_BATCH_SIZE) {
+    batches.push(uniqueMessageIds.slice(index, index + DECISION_MESSAGE_ID_BATCH_SIZE));
+  }
+  // An empty transcript still sends one explicit empty filter. This keeps the
+  // read authoritative (and preserves the existing empty-state behavior),
+  // while every non-empty filter stays under the server's documented cap.
+  if (batches.length === 0) batches.push([]);
+  const pages = await Promise.all(batches.map((batch) => loadDecisionPages<T>(
+    api,
+    endpoint,
+    podId,
+    { messageIds: batch.join(',') },
+  )));
+  return { items: pages.flatMap((page) => page.items) };
+};
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
   const { t, i18n } = useTranslation();
@@ -155,9 +216,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
+    initialLoadComplete: detailInitialLoadComplete,
+    historySearch: detailHistorySearch,
+    searchOlderForMessage: detailSearchOlderForMessage,
+    retryHistorySearch: detailRetryHistorySearch,
   } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
+  const location = useLocation();
   const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
@@ -178,6 +244,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  // Keep the id of the last message sent from this composer. Comparing ids,
+  // rather than authors, keeps another tab's message from stealing a reader's
+  // viewport. The version state re-runs the scroll effect when the POST wins
+  // after its socket copy (and therefore the newest id) already arrived.
+  const sentMessageIdRef = useRef<string | null>(null);
+  const [sendFollowVersion, setSendFollowVersion] = useState(0);
+  const activePodIdRef = useRef<string | null>(pod?._id || null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -207,15 +280,26 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // this component must never compute it.
   const threadState = useV2ThreadState(detail?.pod?._id);
 
+  // A late response from a pod we left must not make the first message in the
+  // next pod look like it came from this composer.
+  useLayoutEffect(() => {
+    activePodIdRef.current = pod?._id || null;
+    sentMessageIdRef.current = null;
+    setSendFollowVersion((version) => version + 1);
+  }, [pod?._id]);
+
   // Setting one composer target clears the other. Two chips would be two
   // meanings for one send, and the resolver rejects a message carrying both.
+  // Aiming puts the cursor in the field so Esc (un-aim) and typing both land.
   const aimAtThread = useCallback((rootId: string, preview: string) => {
     setReplyTarget(null);
     setThreadTarget({ id: rootId, preview });
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessage = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     setThreadTarget(null);
     setReplyTarget(m);
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessageThread = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     // The action is available on every visible message, including replies.
@@ -229,10 +313,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Memoized: it was called in the render body, so every keystroke in the
   // composer re-folded the whole message list. @sprint-review on #1150.
   // Recomputes only when the messages or the thread state actually change.
-  const threadView = useMemo(
-    () => buildThreadView(messages, threadState.byRoot),
-    [messages, threadState.byRoot],
-  );
+  const flatReplyIdsRef = useRef<{ podId: string | null; ids: Set<string> }>({ podId: null, ids: new Set() });
+  const threadView = useMemo(() => {
+    const podId = pod?._id || null;
+    if (flatReplyIdsRef.current.podId !== podId) {
+      flatReplyIdsRef.current = { podId, ids: new Set() };
+    }
+    // A reply visible flat before its root arrived must stay flat. Otherwise
+    // prepending an older page relocates it into a resting thread chip.
+    flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
+    return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids);
+  }, [messages, pod?._id, threadState.byRoot]);
 
   // #891 surface 1: agent reachability at the moment of composing a mention.
   // Best-effort — a failed read renders nothing rather than something wrong,
@@ -240,6 +331,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
+  const loadedMessageIdsRef = useRef<string[]>([]);
+  loadedMessageIdsRef.current = [...new Set(messages
+    .map((message) => String(message.id || ''))
+    .filter(Boolean))];
 
   // A DecisionRequest posts an ordinary message for its timeline position and
   // materializes its typed choices in the attention queue. Join those two
@@ -248,31 +343,55 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const podId = pod?._id;
     if (!podId) {
       setDecisions([]);
+      setSettledDecisionByMessageId(new Map());
       return undefined;
     }
     let active = true;
     const load = async () => {
       try {
-        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue');
+        const [pendingData, historyData] = await Promise.all([
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-queue', podId, loadedMessageIdsRef.current).catch(() => null),
+          loadDecisionPagesForMessageIds<ThreadDecision>(api, '/api/activity/decision-history', podId, loadedMessageIdsRef.current).catch(() => null),
+        ]);
         if (!active) return;
-        setDecisions((data?.items || []).filter((item) => (
-          item.kind === 'decision'
-          && item.podId === podId
-          && typeof item.messageId === 'string'
-          && item.messageId.length > 0
-          && Array.isArray(item.options)
-          && item.options.length > 0
-        )));
+        // A failed queue read is not authoritative. Preserve pending cards
+        // already rendered in this mount rather than making an open decision
+        // disappear during a transient 429/network failure.
+        if (pendingData) {
+          setDecisions(pendingData.items.filter((item) => (
+            item.kind === 'decision'
+            && item.podId === podId
+            && typeof item.messageId === 'string'
+            && item.messageId.length > 0
+            && Array.isArray(item.options)
+            && item.options.length > 0
+          )));
+        }
+        // A successful empty history page is authoritative and clears rows
+        // that are no longer ruled. A failed history read is not authoritative
+        // and must preserve settled cards already rendered in this mount.
+        if (historyData) {
+          const settled = (historyData.items || []).filter((item) => (
+            item.kind === 'decision'
+            && item.podId === podId
+            && typeof item.messageId === 'string'
+            && item.ruling?.value
+          ));
+          setSettledDecisionByMessageId(new Map(
+            settled.map((item) => [String(item.messageId), item.ruling as V2DecisionRuling]),
+          ));
+        }
       } catch {
         // A queue read is additive decoration: preserve a working thread when
         // attention is temporarily unavailable rather than inventing cards.
+        // Keep any durable settled map already rendered during this mount.
         if (active) setDecisions([]);
       }
     };
     void load();
     const timer = window.setInterval(load, 15_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [api, pod?._id]);
+  }, [api, pod?._id, detailInitialLoadComplete]);
 
   const decisionByMessageId = useMemo(() => new Map(
     decisions.map((decision) => [String(decision.messageId), decision]),
@@ -502,27 +621,383 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // which reads as "load older is broken". Key on the newest message's id so
   // prepends are ignored.
   const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
-  useEffect(() => {
+  // Direction C history: the reader's position is respected. Background
+  // arrivals pull the view down only when it was already at the bottom;
+  // otherwise they count up in the Jump-to-latest pill. Explicit local sends
+  // follow in the separate confirmation effect below.
+  const atBottomRef = useRef(true);
+  const [jumpCount, setJumpCount] = useState(0);
+  // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const edgeRef = useRef<HTMLDivElement | null>(null);
+  const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    atBottomRef.current = true;
+    setJumpCount(0);
+    setScrolledUp(false);
+  }, []);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const near = distance < 80;
+      atBottomRef.current = near;
+      setScrolledUp(distance > el.clientHeight);
+      if (near) setJumpCount(0);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [pod?._id]);
+  useEffect(() => {
+    if (!newestMessageId) return;
+    if (atBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setJumpCount(0);
+    } else {
+      setJumpCount((count) => count + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newestMessageId]);
 
-  // Prepending changes scrollHeight, so without this the viewport jumps. Hold
-  // the reader's position by restoring the distance from the BOTTOM, which is
-  // invariant under a prepend.
-  const scrollAnchorRef = useRef<number | null>(null);
+  // A successful POST is an explicit local follow instruction, independent
+  // of which socket row won the race or whether another row arrived after it.
+  // Keeping this separate from arrival counting prevents the confirmation
+  // render from incrementing the Jump pill when no new message arrived.
+  useEffect(() => {
+    if (!sendFollowVersion || !sentMessageIdRef.current) return;
+    atBottomRef.current = true;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setJumpCount(0);
+  }, [sendFollowVersion]);
+
+  const rememberSentMessage = useCallback((sendPodId: string, created: import('../hooks/useV2PodDetail').V2Message) => {
+    const id = String(created?.id || (created as { _id?: string })?._id || '');
+    if (!id || activePodIdRef.current !== sendPodId) return;
+    sentMessageIdRef.current = id;
+    // The confirmation version is independent of the socket row's ordering.
+    setSendFollowVersion((version) => version + 1);
+  }, []);
+
+  // Prepending moves every already-rendered row below the inserted page. Keep
+  // one such row as the anchor and measure its content offset, rather than the
+  // container's total height: a peer append at the bottom must not be part of
+  // the compensation.
+  const findAnchorRow = useCallback((container: HTMLElement, preferredId: string | null) => {
+    const preferred = preferredId ? document.getElementById(`message-${preferredId}`) : null;
+    if (preferred && container.contains(preferred)) return preferred;
+    return container.querySelector<HTMLElement>('[id^="message-"]');
+  }, []);
+  const measureAnchorOffset = useCallback((container: HTMLElement, row: HTMLElement | null) => {
+    if (!row || !container.contains(row)) return null;
+    const containerRect = container.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    // Rect + scrollTop is the row's position in the scroll content. It stays
+    // stable when a reader scrolls while the request is in flight.
+    return rowRect.top - containerRect.top + container.scrollTop;
+  }, []);
+  const scrollAnchorRef = useRef<{
+    podId: string | null;
+    oldestId: string | null;
+    rowId: string;
+    rowOffset: number;
+  } | null>(null);
+  const currentPodId = pod?._id ? String(pod._id) : null;
+  const oldestMessageId = messages[0]?.id ? String(messages[0].id) : null;
   const handleLoadOlder = useCallback(async () => {
+    // The edge button is replaced by a loading status after the first click,
+    // but keep the first request's anchor when two events batch before React
+    // commits. The hook's own loading ref suppresses the duplicate fetch.
+    const existingAnchor = scrollAnchorRef.current;
+    const ownsAnchor = existingAnchor == null;
     const el = messagesContainerRef.current;
-    scrollAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
-    await loadOlder();
-  }, [loadOlder]);
+    const row = el ? findAnchorRow(el, oldestMessageId) : null;
+    const rowOffset = el ? measureAnchorOffset(el, row) : null;
+    const anchor = existingAnchor || (el && row && rowOffset !== null
+      ? {
+        podId: currentPodId,
+        oldestId: oldestMessageId,
+        rowId: row.id,
+        rowOffset,
+      }
+      : null);
+    if (ownsAnchor) {
+      scrollAnchorRef.current = anchor;
+      if (anchor && el) el.dataset.historyAnchor = 'active';
+    }
+    const result = await loadOlder();
+    if (!ownsAnchor) return;
+    if (result !== 'prepended' && result !== 'unchanged') {
+      // Empty/error/no-op responses do not produce a prepend. Clear the arm
+      // now so an unrelated future append cannot apply a stale compensation.
+      if (scrollAnchorRef.current === anchor) {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
+    } else if (scrollAnchorRef.current === anchor) {
+      // A successful prepend is consumed by the committed-row layout effect;
+      // do not clear it here before a deferred React commit can be observed.
+      if (result === 'unchanged') {
+        scrollAnchorRef.current = null;
+        if (el) delete el.dataset.historyAnchor;
+      }
+    }
+  }, [currentPodId, findAnchorRow, loadOlder, measureAnchorOffset, oldestMessageId]);
+
+  // Older detail fixtures (and a few read-only embed callers) predate the
+  // bounded source-search fields. Keep those callers on the legacy one-page
+  // behavior while the real hook supplies the capped search implementation.
+  const idleHistorySearch: HistorySearchState = {
+    targetId: null,
+    status: 'idle',
+    attempt: 0,
+    maxAttempts: 5,
+    error: null,
+  };
+  const historySearch = detailHistorySearch || idleHistorySearch;
+  // Older fixtures and read-only embeds predate the readiness field; their
+  // supplied messages are already settled. The real hook keeps this false
+  // through its first pod/message read, even though `loading` starts false.
+  const initialLoadComplete = detailInitialLoadComplete ?? true;
+  const legacySearchOlder = useCallback(async () => { await handleLoadOlder(); }, [handleLoadOlder]);
+  const searchOlderForMessage = detailSearchOlderForMessage || legacySearchOlder;
 
   useLayoutEffect(() => {
     const el = messagesContainerRef.current;
     const anchor = scrollAnchorRef.current;
     if (!el || anchor == null) return;
-    el.scrollTop = el.scrollHeight - anchor;
+    if (anchor.podId !== currentPodId) {
+      scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
+      return;
+    }
+    const firstId = messages[0]?.id ? String(messages[0].id) : null;
+    const row = document.getElementById(anchor.rowId);
+    const rowOffset = measureAnchorOffset(el, row);
+    if (rowOffset === null) {
+      scrollAnchorRef.current = null;
+      delete el.dataset.historyAnchor;
+      return;
+    }
+    if (firstId === anchor.oldestId) {
+      // A socket append changed the list without prepending anything. Move
+      // the baseline forward so the eventual older page is measured against
+      // the same rendered row, while leaving the reader's scrollTop alone.
+      anchor.rowOffset = rowOffset;
+      return;
+    }
+    // Apply only the movement of the existing row across the commit that
+    // changed the oldest id. Reading the current scrollTop preserves any user
+    // scrolling that happened while the request was in flight, and a bottom
+    // append does not move this row.
+    el.scrollTop += rowOffset - anchor.rowOffset;
     scrollAnchorRef.current = null;
-  }, [messages]);
+    delete el.dataset.historyAnchor;
+  }, [currentPodId, measureAnchorOffset, messages]);
+
+  // Pasting an image into the field attaches it. The handler is defined
+  // later (it needs the upload plumbing), so the effect reads it through a ref
+  // and stays above the early return with the other hooks.
+  const attachFileRef = useRef<((file: File | null) => Promise<void>) | null>(null);
+  useEffect(() => {
+    const el = composerInputRef.current;
+    if (!el) return undefined;
+    const onPaste = (event: ClipboardEvent) => {
+      const file = Array.from(event.clipboardData?.files || []).find((candidate) => candidate.type.startsWith('image/'));
+      if (!file) return;
+      event.preventDefault();
+      void attachFileRef.current?.(file);
+    };
+    el.addEventListener('paste', onPaste);
+    return () => el.removeEventListener('paste', onPaste);
+  }, [pod?._id]);
+
+  useEffect(() => {
+    if (!loading && pod && messages.length === 0) composerInputRef.current?.focus();
+  }, [loading, pod?._id, messages.length]);
+  // Landing on a message from Activity / a quote: `#message-<id>` scrolls to the
+  // row and marks it landed. If the row is not in the loaded window yet, the
+  // previous pages load until it is (the `after` cursor is kernel row k4).
+  // Key landing guards by the resolved message id, not the URL spelling. A
+  // decision-card producer may use either canonical `#message-<id>` or the
+  // legacy `?message=<id>` form; both must share one retry/reveal lifecycle.
+  const landedTargetRef = useRef<string | null>(null);
+  // Hydrating a settled ruling can replace a focused decision-card DOM node.
+  // Remember the exact node so we can restore landing only when that
+  // replacement caused the blur; deliberate focus movement must win.
+  const landedElementRef = useRef<HTMLElement | null>(null);
+  const landedElementShapeRef = useRef<string | null>(null);
+  const landedDecisionFingerprintRef = useRef<string | null>(null);
+  // A URL target remains in the address bar after landing. Keep automatic
+  // prepends paused until the reader deliberately uses the edge control, so
+  // the focused row cannot be pushed out while a landing is settling.
+  const releasedLandingTargetRef = useRef<string | null>(null);
+  const releasedHistorySearchTargetRef = useRef<string | null>(null);
+  // A target that is loaded but not rendered (collapsed thread, `N more
+  // replies` fold) is REVEALED, not fetched: the transcript opens the thread
+  // and bumps `revealTick` so this effect runs again against the new DOM.
+  const [revealRequest, setRevealRequest] = useState<string | null>(null);
+  const [revealTick, setRevealTick] = useState(0);
+  const revealTriedRef = useRef<string | null>(null);
+  const onQuoteNavigate = useCallback((_messageId: string | number) => {
+    // A repeated quote can have the same hash after the user collapsed the
+    // thread. Clear the landing guards and bump the effect so this gesture
+    // reopens the fold instead of being treated as an already-landed hash.
+    landedTargetRef.current = null;
+    landedElementRef.current = null;
+    landedElementShapeRef.current = null;
+    landedDecisionFingerprintRef.current = null;
+    revealTriedRef.current = null;
+    releasedLandingTargetRef.current = null;
+    releasedHistorySearchTargetRef.current = null;
+    setRevealTick((tick) => tick + 1);
+  }, []);
+  const onRevealed = useCallback((messageId: string, found: boolean) => {
+    setRevealRequest(null);
+    if (found) setRevealTick((tick) => tick + 1);
+    else revealTriedRef.current = `miss:${messageId}`;
+  }, []);
+  const landingTarget = React.useMemo(() => {
+    const hashMatch = (location.hash || '').match(/^#message-(.+)$/);
+    // The canonical hash is authoritative when both forms are present.
+    if (hashMatch) return hashMatch[1];
+    return new URLSearchParams(location.search || '').get('message');
+  }, [location.hash, location.search]);
+  const retryHistorySearch = useCallback(async () => {
+    // Retry is a new automatic target search, so a previous deliberate edge
+    // release must not let the sentinel bypass the fresh bounded search.
+    releasedLandingTargetRef.current = null;
+    releasedHistorySearchTargetRef.current = null;
+    await (detailRetryHistorySearch || legacySearchOlder)();
+  }, [detailRetryHistorySearch, legacySearchOlder]);
+  const handleExplicitLoadOlder = useCallback(async () => {
+    // The edge button is deliberate. It is the reader's explicit signal that
+    // ordinary browsing should resume after a targeted landing/search.
+    if (landingTarget) releasedLandingTargetRef.current = landingTarget;
+    if (historySearch.targetId) releasedHistorySearchTargetRef.current = historySearch.targetId;
+    await handleLoadOlder();
+  }, [landingTarget, historySearch.targetId, handleLoadOlder]);
+  useEffect(() => {
+    const target = landingTarget;
+    if (!target) {
+      landedTargetRef.current = null;
+      landedElementRef.current = null;
+      landedElementShapeRef.current = null;
+      landedDecisionFingerprintRef.current = null;
+      releasedLandingTargetRef.current = null;
+      return;
+    }
+    if (releasedLandingTargetRef.current && releasedLandingTargetRef.current !== target) {
+      releasedLandingTargetRef.current = null;
+    }
+    if (!initialLoadComplete) return;
+    if (landedTargetRef.current === target) return;
+    if (landOnMessage(target)) {
+      landedTargetRef.current = target;
+      const settledRuling = settledDecisionByMessageId.get(target);
+      const durableLoaded = !!settledRuling?.messageId
+        && messages.some((message) => String(message.id) === String(settledRuling.messageId));
+      landedDecisionFingerprintRef.current = settledRuling
+        ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
+        : 'none';
+      landedElementRef.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      landedElementShapeRef.current = landedElementRef.current?.className
+        .replace(/\bv2-msg--landed\b/g, '')
+        .trim() || null;
+      return;
+    }
+    const folded = threadView.some((item) => item.kind === 'card'
+      && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
+    if (folded && revealTriedRef.current !== target) {
+      revealTriedRef.current = target;
+      setRevealRequest(target);
+      return;
+    }
+    // The hook owns the bounded search state. Once a target has failed or the
+    // five-page bound has been reached, this effect must stay quiet until the
+    // reader explicitly presses Retry.
+    if (!loadingOlder && !loading
+      && !(historySearch.targetId === target
+        && (historySearch.status === 'searching'
+          || historySearch.status === 'failed'
+          || historySearch.status === 'not-found'))) {
+      void searchOlderForMessage(target);
+    }
+  }, [landingTarget, initialLoadComplete, messages, threadView, revealTick, loadingOlder, loading, historySearch.targetId, historySearch.status, searchOlderForMessage]);
+
+  // A settled decision can replace the row that was landed from Activity after
+  // the initial transcript render. Keep this recovery separate from the
+  // reveal-vs-fetch producer above: map updates must not re-enter that effect,
+  // or a folded target is mistaken for a history miss and fetches older pages.
+  useEffect(() => {
+    const target = landingTarget;
+    if (!target || !initialLoadComplete || landedTargetRef.current !== target) return;
+    const settledRuling = settledDecisionByMessageId.get(target);
+    const durableLoaded = !!settledRuling?.messageId
+      && messages.some((message) => String(message.id) === String(settledRuling.messageId));
+    const decisionFingerprint = settledRuling
+      ? `${target}:${settledRuling.messageId || ''}:${settledRuling.value}:${settledRuling.at || ''}:${durableLoaded ? 'loaded' : 'fallback'}`
+      : 'none';
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    const landingNodeReplaced = activeElement === document.body
+      && !!landedElementRef.current
+      && !document.body.contains(landedElementRef.current);
+    const currentShape = landedElementRef.current?.className
+      .replace(/\bv2-msg--landed\b/g, '')
+      .trim();
+    const landingShapeChanged = !!landedElementShapeRef.current
+      && currentShape !== landedElementShapeRef.current;
+    if (landedDecisionFingerprintRef.current === decisionFingerprint
+      && !landingNodeReplaced && !landingShapeChanged) return;
+    if (!landingNodeReplaced && !landingShapeChanged) {
+      // A stable node means the reader either moved focus or the polling map
+      // changed without changing the projected row; do not steal focus.
+      landedDecisionFingerprintRef.current = decisionFingerprint;
+      landedElementShapeRef.current = currentShape || null;
+      return;
+    }
+    landedTargetRef.current = null;
+    landedElementRef.current = null;
+    landedElementShapeRef.current = null;
+    if (landOnMessage(target)) {
+      landedTargetRef.current = target;
+      landedDecisionFingerprintRef.current = decisionFingerprint;
+      landedElementRef.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      landedElementShapeRef.current = landedElementRef.current?.className
+        .replace(/\bv2-msg--landed\b/g, '')
+        .trim() || null;
+    }
+  }, [landingTarget, initialLoadComplete, messages, decisionByMessageId, settledDecisionByMessageId]);
+
+  // Reaching the top loads the previous page; the edge line is the sentinel.
+  useEffect(() => {
+    const edge = edgeRef.current;
+    const root = messagesContainerRef.current;
+    if (!edge || !root || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (!hasMore || loadingOlder || loading) return;
+      // The sentinel is automatic. During a target landing (including a
+      // stopped search) it must not prepend a page behind the focused row or
+      // silently bypass the bound. The edge button remains deliberate and
+      // continues to call handleLoadOlder normally.
+      const landingBlocked = landingTarget
+        && (landedTargetRef.current !== landingTarget
+          || releasedLandingTargetRef.current !== landingTarget);
+      const searchBlocked = historySearch.targetId
+        && historySearch.status !== 'idle'
+        && releasedHistorySearchTargetRef.current !== historySearch.targetId;
+      if (landingBlocked || searchBlocked) return;
+      void handleLoadOlder();
+    }, { root, rootMargin: '120px 0px 0px 0px' });
+    observer.observe(edge);
+    return () => observer.disconnect();
+  }, [hasMore, loadingOlder, loading, landingTarget, historySearch.targetId, historySearch.status, handleLoadOlder, pod?._id]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -589,6 +1064,30 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const key = agentKeyByAuthorString.get(author.toLowerCase());
     if (key) onOpenMember(key);
   }, [agentKeyByAuthorString, onOpenMember]);
+
+  // Runtime short name per agent author key (direction C, walk-3 miss 51):
+  // the mono tag after the time. Unknown runtime = no tag.
+  const agentTags = React.useMemo(() => {
+    const shortName = (runtimeType?: string): string | null => {
+      switch ((runtimeType || '').toLowerCase()) {
+        case 'codex': return 'codex';
+        case 'claude-code': return 'claude';
+        case 'openclaw': case 'moltbot': return 'openclaw';
+        case 'internal': return 'hosted';
+        case 'webhook': return 'webhook';
+        default: return null;
+      }
+    };
+    const map = new Map<string, string>();
+    (agents || []).forEach((agent) => {
+      const tag = shortName(agent.runtime?.runtimeType || agent.runtime?.wrappedCli);
+      if (!tag) return;
+      const label = agent.profile?.displayName || agent.displayName || agent.agentName;
+      const username = buildAgentUsername(agent.agentName, agent.instanceId || 'default');
+      [label, username, agent.agentName].filter(Boolean).forEach((key) => map.set(String(key).toLowerCase(), tag));
+    });
+    return map;
+  }, [agents]);
 
   const agentAuthorKeys = React.useMemo(
     () => new Set(agentKeyByAuthorString.keys()),
@@ -749,6 +1248,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const handleSend = async (override?: string) => {
     const text = (override ?? draft).trim();
     if (!text || sending) return;
+    const sendPodId = pod?._id;
+    if (!sendPodId) return;
     setSending(true);
     setComposerError(null);
     try {
@@ -780,6 +1281,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         threadTarget?.id || undefined,
       );
       if (created) {
+        rememberSentMessage(sendPodId, created);
         // A direct-room post is not evidence that the agent is alive or
         // working. Track the reply separately so the user gets a truthful
         // "waiting" state until the agent speaks or the wait expires.
@@ -861,6 +1363,25 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // draft so the user can add accompanying text and send when ready). Both
   // paths POST to /api/uploads with the active podId so the file shows up in
   // the inspector's Artifacts section.
+  // Paste an image straight into the thread: from the plus menu (clipboard
+  // read) or by pasting into the field.
+  const attachFromClipboard = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => candidate.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          const ext = type.split('/')[1] || 'png';
+          await handleAttachFile(new File([blob], `pasted-${Date.now()}.${ext}`, { type }));
+          return;
+        }
+      }
+      setComposerError(t('podChat.composer.clipboardEmpty'));
+    } catch {
+      fileInputRef.current?.click();
+    }
+  };
   const handleAttachFile = async (file: File | null) => {
     if (!file || uploading) return;
     setUploading(true);
@@ -894,13 +1415,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         // The rule the ruling states is "a send consumes the target on EVERY
         // path" — written that way precisely because per-path wiring is what
         // keeps going wrong here.
+        // One attachment model (direction C): the image goes out as the same
+        // `[[upload:…|image]]` manifest a file does, so the row renders a
+        // thumbnail and an agent reads it through the attachment tool. The
+        // bare URL remains only for a server that returned no file key.
+        const imageContent = uploaded.fileName
+          ? `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|image]]`
+          : uploaded.url;
         const created = await sendMessage(
-          uploaded.url,
+          imageContent,
           'image',
           replyTarget?.id || undefined,
           threadTarget?.id || undefined,
         );
         if (created) {
+          rememberSentMessage(pod._id, created);
           setReplyTarget(null);
           setThreadTarget(null);
         }
@@ -918,6 +1447,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+  attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
   // Header meta (direction C): members · agents · board N open · bound
@@ -978,26 +1508,35 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         <V2CatchUpStrip podId={pod._id} />
 
-        <V2ThreadMessages
-          messages={messages}
-          threadView={threadView}
-          threadState={threadState}
-          decisionByMessageId={decisionByMessageId}
-          settledDecisionByMessageId={settledDecisionByMessageId}
-          agentDisplayNames={agentDisplayNames}
-          agentAuthorKeys={agentAuthorKeys}
-          onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-          onOpenFile={onOpenFile}
-          onReply={isReadOnly ? undefined : aimAtMessage}
-          onThread={isReadOnly ? undefined : aimAtMessageThread}
-          onDecisionRuled={handleDecisionRuled}
-          onAimAtThread={aimAtThread}
-          hasMore={hasMore}
-          loadingOlder={loadingOlder}
-          onLoadOlder={() => { void handleLoadOlder(); }}
-          loading={loading}
-          error={error}
-          starterPanel={starterPanelVisible ? (
+        <div className="v2-thread__transcript">
+          <V2ThreadMessages
+            messages={messages}
+            threadView={threadView}
+            threadState={threadState}
+            revealMessageId={revealRequest}
+            onRevealed={onRevealed}
+            decisionByMessageId={decisionByMessageId}
+            settledDecisionByMessageId={settledDecisionByMessageId}
+            agentDisplayNames={agentDisplayNames}
+            agentTags={agentTags}
+            agentAuthorKeys={agentAuthorKeys}
+            onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+            onOpenFile={onOpenFile}
+            onReply={isReadOnly ? undefined : aimAtMessage}
+            onThread={isReadOnly ? undefined : aimAtMessageThread}
+            onQuoteNavigate={onQuoteNavigate}
+            onDecisionRuled={handleDecisionRuled}
+            onAimAtThread={aimAtThread}
+            hasMore={hasMore}
+            loadingOlder={loadingOlder}
+            onLoadOlder={() => { void handleExplicitLoadOlder(); }}
+            edgeRef={edgeRef}
+            jumpCount={jumpCount}
+            showJump={scrolledUp}
+            onJump={jumpToLatest}
+            loading={loading}
+            error={error}
+            starterPanel={starterPanelVisible ? (
             <V2ThreadStarter
               inviteUrl={starterInviteUrl}
               inviteLoading={starterInviteLoading}
@@ -1009,8 +1548,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               onOpenInvite={() => onOpenInvite?.(AGENT_INVITE_TAB)}
               onFocusComposer={() => composerInputRef.current?.focus()}
             />
-          ) : undefined}
-          emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
+            ) : undefined}
+            emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>
@@ -1038,19 +1577,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       <div className="v2-empty__text">{t('podChat.empty.agentDmText')}</div>
                     </>
                   ) : (
-                    <>
-                      <div className="v2-empty__title">{t('podChat.empty.quietTitle')}</div>
-                      <div className="v2-empty__text">
-                        {t('podChat.empty.quietText')}
-                      </div>
-                    </>
+                    // Direction C: an empty pod is one mono line and a focused composer.
+                    <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
                   )}
                 </div>
-          ) : undefined}
-          agentDeliveryHint={agentDeliveryHint}
-          messagesContainerRef={messagesContainerRef}
-          messagesEndRef={messagesEndRef}
-        />
+            ) : undefined}
+            agentDeliveryHint={agentDeliveryHint}
+            messagesContainerRef={messagesContainerRef}
+            messagesEndRef={messagesEndRef}
+          />
+          <V2ThreadHistoryStatus
+            historySearch={historySearch}
+            onRetryHistorySearch={() => { void retryHistorySearch(); }}
+            viewport
+          />
+        </div>
 
             <TypingIndicator agents={typingAgents} />
 
@@ -1156,14 +1697,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       return;
                     }
                   }
+                  // Esc with no mention menu open un-aims the composer (the aim
+                  // chip's keyboard cancel); the draft itself is kept.
+                  if (event.key === 'Escape' && (replyTarget || threadTarget)) {
+                    event.preventDefault();
+                    setReplyTarget(null);
+                    setThreadTarget(null);
+                    return;
+                  }
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     void handleSend();
+                  }
+                  if (event.key === 'Escape' && (replyTarget || threadTarget)) {
+                    event.preventDefault();
+                    setReplyTarget(null);
+                    setThreadTarget(null);
                   }
                 }}
                 onMentionSelect={selectMention}
                 onSend={() => { void handleSend(); }}
                 onAttach={(file) => { void handleAttachFile(file); }}
+                onPasteFromClipboard={() => { void attachFromClipboard(); }}
                 onCancelReply={() => setReplyTarget(null)}
                 onCancelThread={() => setThreadTarget(null)}
               />

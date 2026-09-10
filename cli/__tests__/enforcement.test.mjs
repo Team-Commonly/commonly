@@ -42,8 +42,9 @@ describe('decision-fork prompt rule', () => {
   ])('frames prose fork: %s', (proseAsk) => {
     const prompt = frameDecisionForkRule(proseAsk);
     expect(prompt).toContain(DECISION_FORK_FRAME);
-    expect(prompt).toContain('commonly_request_decision');
-    expect(prompt).toContain('do not post a prose @ask');
+    expect(prompt).toContain('MCP: commonly_request_decision');
+    expect(prompt).toContain('include @human when a specific person should rule');
+    expect(prompt).toContain('do not duplicate the card with a prose @ask');
     expect(prompt).toContain(proseAsk);
   });
 });

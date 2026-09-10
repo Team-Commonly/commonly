@@ -111,6 +111,62 @@ describe('attentionItemService', () => {
     expect(rows[0]).toMatchObject({ status: 'resolved', source: { type: 'message', id: '42' } });
   });
 
+  // actorUserId (ux-lead 66164): actorName holds three shapes across the three
+  // writers (author username, runtime agentName, nothing on decisions), so the
+  // Your Team ring keys on the principal's id instead. Each writer is pinned.
+  it('a mention carries its author id as actorUserId', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'owner', username: 'owner', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordMentionedUsers({ id: 42, podId: 'pod-1', userId: 'wren-user', username: 'Wren', content: '@sam pick one' });
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'sam' }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ actorName: 'Wren', actorUserId: 'wren-user' }) }),
+      expect.any(Object),
+    );
+  });
+
+  it('a decision carries the agent user id as actorUserId (it has no actorName at all)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordDecision({ _id: 'd-1', podId: 'pod-1', agentUserId: 'kai-user', title: 'Which cursor?', options: [{ label: 'A' }, { label: 'B' }] });
+
+    const [, update] = mockUpdateOne.mock.calls.at(-1);
+    expect(update.$setOnInsert).toEqual(expect.objectContaining({ kind: 'decision', actorUserId: 'kai-user' }));
+    expect(update.$setOnInsert.actorName).toBeUndefined();
+  });
+
+  it('an approval carries the requester id as actorUserId when the source has one', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
+
+    await AttentionItemService.recordApproval({ _id: 'a-1', podId: 'pod-1', agentMetadata: { agentName: 'openclaw' }, approval: { requestedBy: 'aria-user' }, content: 'needs repo scope' });
+
+    const [, update] = mockUpdateOne.mock.calls.at(-1);
+    expect(update.$setOnInsert).toEqual(expect.objectContaining({ kind: 'approval', actorName: 'openclaw', actorUserId: 'aria-user' }));
+  });
+
+  it('the queue item carries actorUserId as a string, and omits it when the row has none', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
+      { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'decision', source: { type: 'decision_request', id: 'd-1' }, title: 'Which?', actorUserId: { toString: () => 'kai-user' }, createdAt: new Date() },
+      { _id: 'attention-2', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
+    ] }) });
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] }]));
+
+    const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
+    expect(queue.items.find((item) => item.id === 'd-1').actorUserId).toBe('kai-user');
+    // undefined, never a stringified 'undefined' — JSON drops it on the wire.
+    expect(queue.items.find((item) => item.id === '41').actorUserId).toBeUndefined();
+  });
+
   it('returns only rows whose recipient is still a member and resolves by recipient-owned id', async () => {
     mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
       { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
@@ -125,9 +181,49 @@ describe('attentionItemService', () => {
     expect(queue.items).toEqual([expect.objectContaining({ id: '41', attentionItemId: 'attention-1', podName: 'Current' })]);
     await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
     expect(mockUpdateOne).toHaveBeenLastCalledWith(
-      expect.objectContaining({ recipientUserId: '507f191e810c19729de860ea', kind: 'mention' }),
+      expect.objectContaining({ recipientUserId: '507f191e810c19729de860ea', status: 'open', $or: expect.any(Array) }),
       expect.any(Object),
     );
+  });
+
+  it('keeps the composer target from the newest global mention beyond the page', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    const rows = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        _id: `decision-${index}`, recipientUserId: recipient, podId: 'pod-1', kind: 'decision',
+        source: { type: 'decision', id: `decision-${index}` }, title: `Decision ${index}`,
+        createdAt: new Date(`2026-09-01T00:${String(index).padStart(2, '0')}:00.000Z`),
+      })),
+      {
+        _id: 'mention-1', recipientUserId: recipient, podId: 'pod-2', kind: 'mention',
+        source: { type: 'message', id: 'message-1' }, title: 'Mention',
+        createdAt: new Date('2026-09-02T00:00:00.000Z'),
+      },
+    ];
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
+    mockPodFind.mockReturnValue(chain([
+      { _id: 'pod-1', name: 'Decisions', createdBy: recipient, members: [] },
+      { _id: 'pod-2', name: 'Mentions', createdBy: recipient, members: [] },
+    ]));
+
+    const queue = await AttentionItemService.getOpenQueue(recipient, { limit: 12 });
+    expect(queue.items.every((item) => item.kind === 'decision')).toBe(true);
+    expect(queue.composePodId).toBe('pod-2');
+    expect((await AttentionItemService.getOpenQueue(recipient, { podId: 'pod-1' })).composePodId).toBe('pod-2');
+  });
+
+  it('bounds an open queue read to the loaded source message ids when requested', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+    mockPodFind.mockReturnValue(chain([]));
+
+    await AttentionItemService.getOpenQueue(recipient, { messageIds: ['42', '42', '  '] });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      recipientUserId: recipient,
+      status: 'open',
+      messageId: { $in: ['42'] },
+    });
   });
 
   it('does not let projection-resolution storage turn a completed source into a failure', async () => {
@@ -172,7 +268,7 @@ describe('attentionItemService', () => {
     await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
 
     expect(mockUpdateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'mention', status: 'open' }),
+      expect.objectContaining({ status: 'open', $or: expect.any(Array) }),
       { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }) },
     );
   });
@@ -230,9 +326,28 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).toHaveBeenCalledTimes(2);
     expect(mockUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ 'source.type': 'task', 'source.id': 'task-1:update-1' }),
-      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'decision', title: 'Choose a deploy shape' }) }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'handoff', title: 'Choose a deploy shape' }) }),
       { upsert: true },
     );
+  });
+
+  it('acknowledges only recipient-owned mentions and handoffs, never decisions or approvals', async () => {
+    await AttentionItemService.acknowledgeMention('sam', '507f191e810c19729de860eb');
+
+    const selector = mockUpdateOne.mock.calls.at(-1)[0];
+    expect(selector).toEqual({
+      _id: '507f191e810c19729de860eb',
+      recipientUserId: 'sam',
+      status: 'open',
+      $or: [
+        { kind: 'mention' },
+        { kind: 'handoff' },
+        { kind: 'decision', 'source.type': 'task' },
+      ],
+    });
+    expect(mockUpdateOne.mock.calls.at(-1)[1]).toEqual({
+      $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }),
+    });
   });
 
   it('resolves every outstanding fact for a task once the task no longer needs a human', async () => {

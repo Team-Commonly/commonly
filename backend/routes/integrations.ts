@@ -51,6 +51,9 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // An administrator's pause is projected from the parent installation. An
   // owner's normal config write must never lift that stop.
   'adminPause',
+  // A receipt proves this channel was shown the card. Owners may configure
+  // gates, but cannot invent, retarget, or close receipts from a browser.
+  'cards',
 ];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
@@ -587,6 +590,9 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
     if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));
     const incoming = relay ? relay.next : null;
+    if (incoming && Object.keys(incoming).some((key) => key.includes('.') || key.startsWith('$'))) {
+      return res.status(400).json({ message: 'config keys must be field names, not update paths' });
+    }
     const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
     if (incoming && incoming.liveRelay === true) {
       // Relay authors inbound as linkedUserId and streams outbound to chatId;
@@ -600,7 +606,13 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     if (missingRequired.length && status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(integration.type || '', nextConfig);
     const update: Record<string, unknown> = {};
-    if (config) update.config = nextConfig;
+    // Do not replace a snapshot of config: cards/relayMap may have been
+    // appended (or closed) since the read above. Only write the requested
+    // top-level fields; a gates map still replaces that one field as before.
+    if (incoming) {
+      Object.keys(incoming).forEach((key) => { update[`config.${key}`] = nextConfig[key]; });
+      if (incoming.liveRelay === true) update['config.linkedUserId'] = req.user?.id;
+    }
     if (podId !== undefined) update.podId = podId;
     if (typeof status === 'string') update.status = status;
     if (typeof isActive === 'boolean') update.isActive = isActive;

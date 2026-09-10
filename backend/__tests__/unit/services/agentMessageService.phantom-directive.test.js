@@ -155,6 +155,21 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
     expect(persistedDoc.content).toContain('[[upload:smoke-postmortem-2026-05-20-v2.md]]');
   });
 
+  it('does NOT fire when the directive sits inside backticks or a fence — quoting the grammar is not a claim', async () => {
+    mockFindAgainst({});
+
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw',
+      instanceId: 'aria',
+      podId: '6a0da39bae757028b39f87a6',
+      content: 'The manifest looks like `[[upload:abc.png|abc.png|12|image]]` and in a fence:\n```\n[[upload:def.md|def.md|3|document]]\n```',
+    });
+
+    expect(persistedDoc).toBeTruthy();
+    expect(persistedDoc.content).not.toContain('no matching attachment');
+    expect(persistedDoc.content).toContain('`[[upload:abc.png|abc.png|12|image]]`');
+  });
+
   it('does NOT append a footer when a File row matches the directive', async () => {
     // Real upload exists → no phantom.
     mockFindAgainst({

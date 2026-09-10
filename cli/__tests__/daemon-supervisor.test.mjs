@@ -33,7 +33,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude' } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -58,7 +58,7 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
     }),
     loadToken: (name) => tokens[name] || null,
     saveToken,
-    resolveAdapter: jest.fn(async () => 'claude'),
+    resolveAdapter: jest.fn(resolveAdapter),
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
@@ -116,6 +116,42 @@ describe('tick', () => {
     expect(saveToken.mock.calls[0][1]).not.toHaveProperty('environment');
   });
 
+  test('preserves full declared environment and runtime effort when minting', async () => {
+    const environment = {
+      version: 1,
+      workspace: { path: '/tmp/commonly-test-workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      skills: { claude: ['common'] },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+      effort: 'high',
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus', effort: 'high' }, environment })],
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { ...environment, model: 'opus' },
+      workspacePath: '/tmp/commonly-test-workspace',
+    }));
+  });
+
+  test('runtime-only model updates preserve a local full environment', async () => {
+    const environment = {
+      workspace: { path: './workspace' },
+      sandbox: { mode: 'workspace', trust: 'internal' },
+      mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+    };
+    const tokens = { 'wren-test': { agentName: 'wren-test', environment } };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'sonnet' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { ...environment, model: 'sonnet' },
+    }));
+  });
+
   test('a model changed server-side updates the record and restarts the seat', async () => {
     let model = 'opus';
     const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
@@ -137,6 +173,68 @@ describe('tick', () => {
     expect(children).toHaveLength(1);
     children[0].child.emit('exit', 0);
     // desired stays true → exit handler schedules the respawn.
+  });
+
+  test('a declared adapter change updates the token record and restarts the seat', async () => {
+    let adapter = 'claude';
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter } };
+    const { supervisor, client, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter } })],
+      tokens,
+      resolveAdapter: async (runtime) => runtime?.adapter || 'claude',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    adapter = 'codex';
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({ adapter: 'codex' }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+  });
+
+  test('server runtime row wins when local adapter and model disagree', async () => {
+    let runtime = { runtimeType: 'wrapper', adapter: 'codex', model: 'local-model' };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        adapter: 'codex',
+        environment: { model: 'local-model' },
+      },
+    };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime })],
+      tokens,
+      resolveAdapter: async (rowRuntime) => rowRuntime?.adapter || 'claude',
+    });
+
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    // Adoption/reload is server-authoritative: the next process must consume
+    // the row, never silently preserve stale local adapter/model values.
+    runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'server-model' };
+    await supervisor.tick();
+
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      adapter: 'claude',
+      environment: { model: 'server-model' },
+    }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  test('a declared adapter that resolves to a fallback is rejected without spawning', async () => {
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } })],
+      tokens,
+      resolveAdapter: async () => 'codex',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(0);
+    expect(saveToken).not.toHaveBeenCalled();
   });
 
   test('a row without a model never strips a hand-set environment', async () => {

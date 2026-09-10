@@ -3,7 +3,7 @@ import { useV2Api } from './useV2Api';
 
 export interface V2AttentionItem {
   id: string;
-  kind: 'mention' | 'approval' | 'decision';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff';
   title: string;
   detail?: string;
   actorName?: string;
@@ -33,7 +33,7 @@ export const useV2PodAttention = (enabled = true) => {
     if (!enabled) return;
     const request = ++generation.current;
     try {
-      const data = await apiRef.current.get<{ items: V2AttentionItem[]; count: number; countsByPod: Record<string, number> }>('/api/activity/decision-queue');
+      const data = await apiRef.current.get<{ items: V2AttentionItem[]; count: number; countsByPod: Record<string, number>; countsByKind?: Record<string, number> }>('/api/activity/decision-queue');
       if (request !== generation.current) return;
       if (!Array.isArray(data?.items) || typeof data.count !== 'number' || !data.countsByPod) throw new Error('Invalid attention queue');
       setItems(data.items);

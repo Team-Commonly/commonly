@@ -64,6 +64,13 @@ interface ChooseDecisionOptions {
   decisionId: string;
   callerUserId: string;
   value: string;
+  /** Internal provenance; HTTP callers are forced to workspace below. */
+  origin?: DecisionOrigin;
+}
+
+export interface DecisionOrigin {
+  via: 'telegram' | 'slack' | 'workspace';
+  integrationId?: unknown;
 }
 
 const cleanText = (value: unknown, field: string, max: number): string => {
@@ -440,6 +447,20 @@ export const chooseDecision = async (
       409,
       'ruling_finalize_conflict',
     );
+  }
+  // The row is settled. Fan-out is one best-effort projection immediately
+  // after that confirmation, before attention/event delivery can fail. A
+  // channel-originated ruling excludes its own integration because the
+  // bridge sends the shorter "✓ Ruled" confirmation after this verb returns.
+  const origin: DecisionOrigin = input.origin || { via: 'workspace' };
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { fanoutDecisionClosure } = require('./decisionCardReconcileService');
+    await fanoutDecisionClosure(ruled, origin);
+  } catch (error) {
+    // This is deliberately a projection failure. The ruling and typed return
+    // remain durable, and the five-minute sweep repairs receipts.
+    console.warn('[decision-request] card closure fan-out failed:', (error as Error).message);
   }
   // eslint-disable-next-line global-require
   const { resolve } = require('./attentionItemService');

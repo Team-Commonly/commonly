@@ -1,3 +1,7 @@
+import { isDeepStrictEqual } from 'node:util';
+import { homedir } from 'node:os';
+import { isAbsolute, resolve as pathResolve } from 'node:path';
+
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
  * `commonly daemon run`.
@@ -21,6 +25,15 @@ export const DEFAULT_POLL_MS = 30_000;
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 60_000;
+
+const workspacePathFor = (environment) => {
+  const declared = environment?.workspace?.path;
+  if (typeof declared !== 'string' || !declared.trim()) return null;
+  const expanded = declared === '~'
+    ? homedir()
+    : (declared.startsWith('~/') ? `${homedir()}/${declared.slice(2)}` : declared);
+  return isAbsolute(expanded) ? expanded : pathResolve(expanded);
+};
 
 export const backoffMs = (restarts) => Math.min(
   BACKOFF_MAX_MS,
@@ -87,11 +100,24 @@ export const createDaemonSupervisor = ({
     }
   };
 
-  // The server-declared runtime config carries the owner's model choice; the
-  // adapter reads it from the token record's environment (claude: --model).
-  const environmentFor = (row) => (
-    row.runtime?.model ? { model: String(row.runtime.model) } : null
-  );
+  // Preserve the complete ADR-008 environment when the daemon receives it.
+  // Older installs only expose runtime.model/effort; those fields are a
+  // compatibility overlay and must merge into an existing local environment
+  // rather than erasing its workspace, skills, or MCP declarations.
+  const environmentFor = (row) => {
+    const declared = row.environment && typeof row.environment === 'object'
+      && !Array.isArray(row.environment) ? { ...row.environment } : null;
+    const runtime = row.runtime && typeof row.runtime === 'object' ? row.runtime : {};
+    if (declared) {
+      if (runtime.model && declared.model === undefined) declared.model = String(runtime.model);
+      if (runtime.effort && declared.effort === undefined) declared.effort = String(runtime.effort);
+      return { value: declared, declared: true };
+    }
+    const fallback = {};
+    if (runtime.model) fallback.model = String(runtime.model);
+    if (runtime.effort) fallback.effort = String(runtime.effort);
+    return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
+  };
 
   // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
   // The mint refuses to clobber an existing token (409 token_exists); the
@@ -107,12 +133,63 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
-      if (wanted && existing.environment?.model !== wanted.model) {
-        saveToken(row.agentName, { ...existing, environment: { ...(existing.environment || {}), ...wanted } });
-        log(`[${row.agentName}] model changed to ${wanted.model} — restarting the seat to load it`);
+      const declaredAdapter = row.runtime && typeof row.runtime === 'object'
+        && typeof row.runtime.adapter === 'string'
+        ? row.runtime.adapter.trim().toLowerCase()
+        : null;
+      let adapterChanged = false;
+      let nextAdapter = existing.adapter;
+      if (declaredAdapter) {
+        const detectedAdapter = await resolveAdapter(row.runtime || null);
+        // resolveAdapterForRuntime historically probes fallbacks when a
+        // declared adapter is absent. A configuration edit must never accept
+        // that fallback: it would report claude while running codex (or vice
+        // versa). Keep the existing child/token untouched until the exact
+        // requested adapter is detected locally.
+        if (detectedAdapter !== declaredAdapter) {
+          log(`[${row.agentName}] requested adapter '${declaredAdapter}' is not available on this machine — keeping the current seat`);
+          return false;
+        }
+        nextAdapter = declaredAdapter;
+        adapterChanged = existing.adapter !== nextAdapter;
+      }
+      if (wanted) {
+        const nextEnvironment = wanted.declared
+          ? wanted.value
+          : { ...(existing.environment || {}), ...wanted.value };
+        const workspacePath = workspacePathFor(nextEnvironment);
+        const nextRecord = {
+          ...existing,
+          ...(adapterChanged ? { adapter: nextAdapter } : {}),
+          environment: nextEnvironment,
+          ...(workspacePath ? { workspacePath } : {}),
+        };
+        if (adapterChanged
+          || !isDeepStrictEqual(existing.environment || null, nextEnvironment)
+          || (workspacePath && existing.workspacePath !== workspacePath)) {
+          saveToken(row.agentName, nextRecord);
+          log('runtime config changed — restarting the seat to load it');
+          return 'changed';
+        }
+      }
+      if (adapterChanged) {
+        saveToken(row.agentName, { ...existing, adapter: nextAdapter });
+        log('runtime adapter changed — restarting the seat to load it');
         return 'changed';
       }
       return 'ready';
+    }
+    const requestedAdapter = row.runtime && typeof row.runtime === 'object'
+      && typeof row.runtime.adapter === 'string'
+      ? row.runtime.adapter.trim().toLowerCase()
+      : null;
+    let adapter = null;
+    if (requestedAdapter) {
+      adapter = await resolveAdapter(row.runtime || null);
+      if (adapter !== requestedAdapter) {
+        log(`[${row.agentName}] requested adapter '${requestedAdapter}' is not available on this machine — skipping token mint`);
+        return false;
+      }
     }
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
@@ -136,7 +213,7 @@ export const createDaemonSupervisor = ({
       log(`[${row.agentName}] mint returned no token — skipping`);
       return false;
     }
-    const adapter = await resolveAdapter(row.runtime || null);
+    if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
       log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
       return false;
@@ -149,9 +226,13 @@ export const createDaemonSupervisor = ({
       instanceUrl: record.instanceUrl,
       podId: row.podIds?.[0] || null,
       adapter,
-      ...(environment ? { environment } : {}),
+      ...(environment ? { environment: environment.value } : {}),
+      ...(environment?.value ? (() => {
+        const workspacePath = workspacePathFor(environment.value);
+        return workspacePath ? { workspacePath } : {};
+      })() : {}),
     });
-    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment ? `, model: ${environment.model}` : ''})`);
+    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment?.value?.model ? `, model: ${environment.value.model}` : ''})`);
     return 'ready';
   };
 

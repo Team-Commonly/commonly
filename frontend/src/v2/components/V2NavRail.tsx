@@ -33,6 +33,8 @@ const NAV_ITEMS: NavItem[] = [
   // branch cut and keeps its slot; Community's surface remains reachable via
   // /browse.
   { key: 'activity', label: 'Activity', path: '/v2/activity', icon: <Icon d="M22 12h-4l-3 9-6-18-3 9H2" /> },
+  // Direction C PR 5: every file and page shared in your pods.
+  { key: 'artifacts', label: 'Artifacts', path: '/v2/artifacts', icon: <Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 13h6M9 17h6" /> },
   { key: 'connectors', label: 'Connectors', path: '/v2/connectors', icon: <Icon d="M9 2v6M15 2v6M6 8h12v3a6 6 0 01-6 6 6 6 0 01-6-6V8zM12 17v5" /> },
   // 'Apps' (marketplace) removed from the rail while the marketplace is behind
   // its "coming soon" wall — a nav item that only leads to a coming-soon page

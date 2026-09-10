@@ -214,6 +214,8 @@ app.use('/api/messages', messageRoutes);
 // ADR-020 D3: approval-card decisions (human-only; see routes/approvals.ts)
 app.use('/api/approvals', require('./routes/approvals'));
 app.use('/api/uploads', uploadsRoutes);
+// Direction C PR 5: every file and page shared in your pods (dualAuth; see routes/artifacts.ts)
+app.use('/api/artifacts', require('./routes/artifacts'));
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
@@ -70,10 +71,16 @@ const messageMarkdownComponents = {
   // Inline code vs fenced code share `<code>`; only fenced code is wrapped in
   // `<pre>`. Both fall through to v2.css selectors `.v2-msg__content code`
   // and `.v2-msg__content pre`. Mentions inside code are NOT transformed.
+  // Fenced code past six lines collapses (direction C).
+  pre: (props: React.HTMLAttributes<HTMLPreElement>) => <CollapsiblePre {...props} />,
 };
 
 interface V2MessageRowProps {
   message: V2Message;
+  // A settled decision replaces its source request/reply with the durable
+  // ruling row. Keep the source id as a secondary landing anchor so Activity
+  // links to the request still land on that one visible answer.
+  sourceMessageId?: string | number;
   // DecisionRequest data is deliberately joined by the thread container,
   // not parsed from the agent's prose. The message is the durable timeline
   // anchor; the queue owns the choices and resolution state.
@@ -89,6 +96,9 @@ interface V2MessageRowProps {
   // raw User row username "openclaw-nova". Frontend-only display layer; the
   // underlying User row is unchanged.
   agentDisplayNames?: Map<string, string>;
+  // Lowercased author key → runtime short name (`codex`, `claude`, …), the
+  // mono tag after the time on agent rows (direction C). Absent = no tag.
+  agentTags?: Map<string, string>;
   // Lowercased set of strings we treat as agent author bylines (both raw
   // usernames and displayNames). The backend may serve either shape on
   // `message.user.username`, so we gate click behavior on a known set.
@@ -117,6 +127,10 @@ interface V2MessageRowProps {
   // parent resolves an already-threaded message to its existing root before
   // aiming the composer, so this control never asks the server for nesting.
   onThread?: (message: V2Message) => void;
+  // Notifies the transcript when a quote points at a row hidden behind a
+  // thread fold. Repeating that quote after collapsing must be a fresh
+  // navigation gesture even though the hash string is unchanged.
+  onQuoteNavigate?: (messageId: string | number) => void;
   // Consecutive-author grouping (craft audit finding 7): when the previous
   // message is the same author within the grouping window, the header row
   // (avatar / name / time) is suppressed and the row tightens. The avatar
@@ -129,6 +143,9 @@ interface ParsedFile {
   name: string;
   ext: string;
   size?: string;
+  // Upload kind from the directive (image / document / data / office / archive);
+  // images render as thumbnails, everything else as a chip.
+  kind?: string;
   // Set when the pill came from an [[upload:...]] directive backed by a real
   // ObjectStore record. Click → mint signed URL → open. Plain [[file:...]]
   // pills (used by demo fixtures) leave this undefined and render as static.
@@ -140,26 +157,6 @@ interface ParsedReaction {
   count: number;
 }
 
-const FILE_EXT_COLORS: Record<string, string> = {
-  md: '#60a5fa',
-  txt: '#94a3b8',
-  pdf: '#ef4444',
-  docx: '#3b82f6',
-  doc: '#3b82f6',
-  xlsx: '#10b981',
-  xls: '#10b981',
-  csv: '#10b981',
-  pptx: '#f97316',
-  ppt: '#f97316',
-  odt: '#3b82f6',
-  ods: '#10b981',
-  odp: '#f97316',
-  json: '#f59e0b',
-  zip: '#a78bfa',
-  png: '#f472b6',
-  jpg: '#f472b6',
-  jpeg: '#f472b6',
-};
 
 // Match a markdown-ish file token: [[file:Name.ext]] or [[file:Name.ext|2.4 KB]].
 // This is a v2-only convention so we can preview file pills until the backend
@@ -185,18 +182,31 @@ const formatBytes = (raw: string | number): string => {
 // Real reactions backend ships post-YC.
 const REACTION_TOKEN_RE = /\[\[reactions:([^\]]+)\]\]/g;
 const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
-const IMAGE_URL_RE = /^https?:\/\/.+\.(png|jpe?g|gif|webp)(\?.*)?$/i;
+// Absolute image URLs and the instance-relative upload reference the legacy
+// image send posted as bare content (`/api/uploads/<key>.png`).
+const IMAGE_URL_RE = /^(?:https?:\/\/.+|\/api\/uploads\/[^\s]+)\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+
+// Code spans and fences are quoted grammar, not attachments: mask them while
+// the directives are pulled out, then put them back verbatim.
+const CODE_RE = /```[\s\S]*?```|`[^`\n]*`/g;
+const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
+  const spans: string[] = [];
+  const masked = content.replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
+  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
+};
 
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
+  const { masked, restore } = maskCode(content);
   // Real uploads first — they carry a fileName and resolve to a signed URL on
   // click. Then static file tokens (demo fixtures, no backend reference).
-  let working = content.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize) => {
+  let working = masked.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize, rawKind) => {
     const fileName = String(rawFileName).trim();
     const name = String(rawOriginal).trim();
     const dot = name.lastIndexOf('.');
     const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : 'file';
-    files.push({ fileName, name, ext, size: formatBytes(String(rawSize).trim()) || undefined });
+    const kind = rawKind ? String(rawKind).trim() : undefined;
+    files.push({ fileName, name, ext, kind, size: formatBytes(String(rawSize).trim()) || undefined });
     return '';
   });
   working = working.replace(FILE_TOKEN_RE, (_match, rawName, rawSize) => {
@@ -206,7 +216,7 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
     files.push({ name, ext, size: rawSize ? String(rawSize).trim() : undefined });
     return '';
   });
-  return { stripped: working.trim(), files };
+  return { stripped: restore(working).trim(), files };
 };
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
@@ -229,73 +239,78 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
   return { stripped, reactions };
 };
 
-const FilePill: React.FC<{
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
+
+// A browser cannot send the bearer header on `<img src>`, so each thumbnail
+// asks for the short-TTL signed URL (ADR-002 1b, cached per file) and falls
+// back to the plain reference while the public-read GET still exists.
+const SignedImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [resolved, setResolved] = useState<string>(src);
+  useEffect(() => {
+    let active = true;
+    if (!/\/api\/uploads\//.test(src)) return undefined;
+    void getSignedAttachmentUrl(src).then((signed) => { if (active && signed) setResolved(signed); });
+    return () => { active = false; };
+  }, [src]);
+  return <img src={resolved} alt={alt} loading="lazy" />;
+};
+const isImageFile = (file: ParsedFile): boolean => file.kind === 'image' || IMAGE_EXTS.has(file.ext);
+
+// Direction C file chip: type badge as text on tint (never a colour), name, size.
+// Click opens through the inspector when a handler is in scope, else mints the
+// signed URL and opens in a tab.
+const FileChip: React.FC<{
   file: ParsedFile;
   onOpenFile?: (fileName: string) => void;
 }> = ({ file, onOpenFile }) => {
-  const color = FILE_EXT_COLORS[file.ext] || '#94a3b8';
+  const { t } = useTranslation();
   const inner = (
     <>
-      <span className="v2-msg__file-icon" style={{ background: color }}>
-        {file.ext.slice(0, 4).toUpperCase()}
-      </span>
-      <span className="v2-msg__file-meta">
-        <span className="v2-msg__file-name">{file.name}</span>
-        {file.size && <span className="v2-msg__file-size">{file.size}</span>}
-      </span>
+      <span className="v2-msg__chip-ext">{file.ext.slice(0, 4)}</span>
+      <span className="v2-msg__chip-name">{file.name}</span>
+      {file.size && <span className="v2-msg__chip-size">{file.size}</span>}
     </>
   );
-  // Static demo file with no backend reference — but we can still try to
-  // resolve it via the inspector's pod-files index by `originalName`. The
-  // inspector's `openByFileName` callback (threaded down from V2Layout) is
-  // tolerant of either the ObjectStore key or a originalName lookup, so a
-  // chat author can post a `[[file:foo.md]]` static token and clicking it
-  // opens the corresponding pod-file artifact preview if a file with that
-  // originalName exists. Falls back to a non-clickable pill if there's no
-  // handler in scope.
-  if (!file.fileName) {
+  const handleClick = async (event: React.MouseEvent) => {
+    event.preventDefault();
     if (onOpenFile) {
-      const handleStaticClick = (e: React.MouseEvent) => {
-        e.preventDefault();
-        onOpenFile(file.name); // resolved by originalName
-      };
-      return (
-        <button
-          type="button"
-          className="v2-msg__file v2-msg__file--clickable"
-          onClick={handleStaticClick}
-          aria-label={`Open ${file.name}`}
-        >
-          {inner}
-        </button>
-      );
-    }
-    return <span className="v2-msg__file">{inner}</span>;
-  }
-  // Real upload — prefer the inspector route when a handler is in scope so
-  // the preview lands inline (markdown rendered, csv tabular, etc.) instead
-  // of dumping raw bytes into a new tab. Fall back to the legacy signed-URL
-  // open-in-tab when no handler is provided (older surfaces).
-  const handleClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (onOpenFile && file.fileName) {
-      onOpenFile(file.fileName);
+      onOpenFile(file.fileName || file.name);
       return;
     }
+    if (!file.fileName) return;
     const signed = await getSignedAttachmentUrl(`/api/uploads/${file.fileName}`);
-    if (signed) {
-      window.open(signed, '_blank', 'noopener,noreferrer');
-    }
+    if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
   };
+  if (!file.fileName && !onOpenFile) return <span className="v2-msg__chip">{inner}</span>;
   return (
-    <button
-      type="button"
-      className="v2-msg__file v2-msg__file--clickable"
-      onClick={handleClick}
-      aria-label={`Open ${file.name}`}
-    >
+    <button type="button" className="v2-msg__chip" onClick={handleClick} aria-label={t('podChat.attachment.open', { name: file.name })}>
       {inner}
     </button>
+  );
+};
+
+// Code past six lines collapses in place; Show more expands it, Show less folds it.
+const COLLAPSE_AFTER_LINES = 6;
+export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({ children, ...props }) => {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const text = React.Children.toArray(children).map((child) => {
+    if (typeof child === 'string') return child;
+    if (React.isValidElement(child)) {
+      const inner = (child.props as { children?: React.ReactNode }).children;
+      return React.Children.toArray(inner).filter((c) => typeof c === 'string').join('');
+    }
+    return '';
+  }).join('');
+  const lines = text.replace(/\n$/, '').split('\n').length;
+  if (lines <= COLLAPSE_AFTER_LINES) return <pre {...props}>{children}</pre>;
+  return (
+    <div className={`v2-msg__collapse${open ? ' v2-msg__collapse--open' : ' v2-msg__collapse--closed'}`}>
+      <pre {...props}>{children}</pre>
+      <button type="button" className="v2-msg__more" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {open ? t('podChat.attachment.showLess') : t('podChat.attachment.showMore', { count: lines - COLLAPSE_AFTER_LINES })}
+      </button>
+    </div>
   );
 };
 
@@ -314,7 +329,31 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
+const MAX_REACTION_CHIPS = 6;
+const LONG_PRESS_MS = 500;
+
+// Jump to a message already in the transcript and mark it landed for a beat.
+export const landOnMessage = (id: string | number | null | undefined): boolean => {
+  if (id === null || id === undefined) return false;
+  let el = typeof document !== 'undefined' ? document.getElementById(`message-${id}`) : null;
+  if (!el && typeof document !== 'undefined') {
+    const target = String(id);
+    el = Array.from(document.querySelectorAll<HTMLElement>('[data-source-message-id]'))
+      .find((candidate) => candidate.dataset.sourceMessageId === target) || null;
+  }
+  if (!el) return false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // The landed row is the keyboard target as well as the visual target. Keep
+  // focus from changing the scroll position a second time after smooth scroll.
+  if (typeof (el as HTMLElement).focus === 'function') {
+    (el as HTMLElement).focus({ preventScroll: true });
+  }
+  el.classList.add('v2-msg--landed');
+  window.setTimeout(() => el.classList.remove('v2-msg--landed'), 2000);
+  return true;
+};
+
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -329,33 +368,52 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   // it again. Desktop hover behavior is untouched — the class is inert
   // wherever hover exists.
   const [actionsRevealed, setActionsRevealed] = useState(false);
+  const [reactionsExpanded, setReactionsExpanded] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const isHoverless = () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: none)').matches;
+  // Direction C at 390: a long-press (~500ms) reveals the strip inline under
+  // the body; a tap elsewhere dismisses it. Desktop hover is untouched.
+  // The pointer-up that ends a long-press still delivers a click on most
+  // touch stacks; without this latch that click would hide the strip the
+  // same instant the press revealed it (walk-2b, 390).
+  const pressRevealedRef = useRef(false);
+  const onPressStart = () => {
+    if (!isHoverless()) return;
+    pressRevealedRef.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      setActionsRevealed(true);
+      pressRevealedRef.current = true;
+      pressTimer.current = null;
+    }, LONG_PRESS_MS);
+  };
+  const onPressEnd = () => {
+    if (pressTimer.current !== null) { window.clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
   const onBubbleTap = () => {
-    if (typeof window !== 'undefined'
-      && window.matchMedia
-      && window.matchMedia('(hover: none)').matches) {
-      setActionsRevealed((v) => {
-        if (v) setPickerOpen(false);
-        return !v;
-      });
-    }
+    if (!isHoverless()) return;
+    if (pressRevealedRef.current) { pressRevealedRef.current = false; return; }
+    if (actionsRevealed) { setActionsRevealed(false); setPickerOpen(false); }
   };
   // Surface why a reaction failed instead of swallowing it. Before this, a
   // rejected reaction (bad emoji 400, non-member 403, rate-limit 429) did
   // nothing visible — which made the ❤️-validation bug read as "reactions
   // don't work / can't add more than one" (2026-07-24).
   const [reactionError, setReactionError] = useState<string | null>(null);
+  // Thumbnail → lightbox, per row; the index is into this row's own images.
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
   // Click is gated by agentAuthorKeys — backend may serve either raw username
   // or displayName on `message.user.username`, and the v2 set covers both.
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
+  const runtimeTag = agentTags?.get(rawUsername.toLowerCase()) || agentTags?.get(author.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
 
   if (decision) {
     return (
-      <div className="v2-message-row v2-message-row--decision">
+      <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className="v2-message-row v2-message-row--decision">
         <V2DecisionCard
           decision={{ ...decision, actorName: decision.actorName || author }}
           onRuled={onDecisionRuled}
@@ -417,6 +475,15 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
   // Resolve them against the configured API origin at render time so the
   // browser never requests image bytes from the frontend host.
   const imageUrl = rawImageUrl ? normalizeUploadUrl(rawImageUrl) : undefined;
+  // Direction C: every image attached to the message is a 156×104 thumbnail in
+  // one gallery row; other uploads are chips. Uploaded images resolve to the
+  // same `/api/uploads/<key>` reference the legacy image path already uses.
+  const imageFiles = files.filter(isImageFile);
+  const otherFiles = files.filter((file) => !isImageFile(file));
+  const galleryImages: V2LightboxImage[] = [
+    ...(imageUrl ? [{ src: imageUrl, name: t('podChat.attachment.image') }] : []),
+    ...imageFiles.filter((file) => file.fileName).map((file) => ({ src: normalizeUploadUrl(`/api/uploads/${file.fileName}`), name: file.name })),
+  ];
 
   // GitHub PR URL detection — if the message body contains a `pull/<n>` URL,
   // we render an inline preview card below the text. Card fetch is lazy +
@@ -486,9 +553,16 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
 
   return (
     <div
+      id={`message-${message.id}`}
+      data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined}
+      tabIndex={-1}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
-      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
+      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
       onClick={onBubbleTap}
+      onPointerDown={onPressStart}
+      onPointerUp={onPressEnd}
+      onPointerLeave={onPressEnd}
+      onPointerCancel={onPressEnd}
     >
       {grouped ? (
         <div className="v2-msg__avatar-ghost" aria-hidden="true" />
@@ -503,6 +577,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             name={author}
             src={message.user?.profile_picture || undefined}
             size={insideThreadRoot ? 'sm' : 'md'}
+            tone="flat"
             kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
             seed={message.user_id || undefined}
           />
@@ -512,6 +587,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
           name={author}
           src={message.user?.profile_picture || undefined}
           size={insideThreadRoot ? 'sm' : 'md'}
+          tone="flat"
           kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
           seed={message.user_id || undefined}
         />
@@ -538,10 +614,12 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             <span className="v2-msg__author">{author}</span>
           )}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
+          {runtimeTag && <span className="v2-msg__tag">{runtimeTag}</span>}
           {time && <span className="v2-msg__time">{time}</span>}
           {isDecisionRuling && <span className="v2-msg__ruled">· {t('activity.decision.ruledShort')}</span>}
         </div>
         )}
+        {grouped && time && <span className="v2-msg__gutter-time" aria-hidden="true">{time}</span>}
         {(() => {
           // Quoted context for replies. POST responses carry a normalized
           // `replyTo` object; list rows may carry raw reply_* columns instead.
@@ -574,27 +652,59 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             && quoteTargetId !== null
             && String(quoteTargetId) === String(insideThreadRoot);
           if (quotesTheRailRoot) return null;
+          // Land on the source when it is loaded; otherwise set the hash so the
+          // thread pages back until it is (V2Thread's landing effect).
+          const jump = () => {
+            if (landOnMessage(quoteTargetId as string | number | null | undefined)) return;
+            if (quoteTargetId !== undefined && quoteTargetId !== null && typeof window !== 'undefined') {
+              window.location.hash = `#message-${quoteTargetId}`;
+              onQuoteNavigate?.(quoteTargetId as string | number);
+            }
+          };
           return (
-            <div className="v2-msg__quote">
-              <span className="v2-msg__quote-author">{quoteAuthor || 'earlier message'}</span>
-              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 140)}</span>
+            <div
+              className="v2-msg__quote"
+              role={quoteTargetId ? 'link' : undefined}
+              tabIndex={quoteTargetId ? 0 : undefined}
+              onClick={(event) => { event.stopPropagation(); jump(); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); jump(); } }}
+            >
+              <span className="v2-msg__quote-author">{quoteAuthor || t('podChat.quote.earlier')}</span>
+              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 240)}</span>
             </div>
           );
         })()}
-        {imageUrl ? (
-          <a href={imageUrl} target="_blank" rel="noreferrer" className="v2-msg__image-link">
-            <img src={imageUrl} alt="Uploaded attachment" className="v2-msg__image" />
-          </a>
-        ) : (
-          stripped && (
-            <div className="v2-msg__content">
-              <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>
-            </div>
-          )
+        {!imageUrl && stripped && (
+          <div className="v2-msg__content">
+            <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>
+          </div>
         )}
-        {files.map((file, idx) => (
-          <FilePill key={`${file.name}-${idx}`} file={file} onOpenFile={onOpenFile} />
-        ))}
+        {galleryImages.length > 0 && (
+          <div className="v2-msg__thumbs">
+            {galleryImages.map((image, idx) => (
+              <button
+                key={`${image.src}-${idx}`}
+                type="button"
+                className="v2-msg__thumb"
+                onClick={(event) => { event.stopPropagation(); setLightboxIndex(idx); }}
+                aria-label={t('podChat.attachment.open', { name: image.name })}
+              >
+                <SignedImage src={image.src} alt={image.name} />
+                <span className="v2-msg__thumb-name" aria-hidden="true">{image.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {lightboxIndex !== null && galleryImages.length > 0 && (
+          <V2Lightbox images={galleryImages} index={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+        )}
+        {otherFiles.length > 0 && (
+          <div className="v2-msg__chips">
+            {otherFiles.map((file, idx) => (
+              <FileChip key={`${file.name}-${idx}`} file={file} onOpenFile={onOpenFile} />
+            ))}
+          </div>
+        )}
         {prRefs.map((pr) => (
           <V2GithubPrCard
             key={`${pr.owner}/${pr.repo}#${pr.number}`}
@@ -632,9 +742,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
           };
 
+          const visible = reactionsExpanded ? renderList : renderList.slice(0, MAX_REACTION_CHIPS);
+          const hidden = renderList.length - visible.length;
           return (
             <div className="v2-msg__reactions" aria-label="Reactions">
-              {renderList.map((r, idx) => (
+              {visible.map((r, idx) => (
                 <button
                   key={`${r.emoji}-${idx}`}
                   type="button"
@@ -647,6 +759,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
                   <span className="v2-msg__reaction-count">{r.count}</span>
                 </button>
               ))}
+              {hidden > 0 && (
+                <button type="button" className="v2-msg__reaction v2-msg__reaction--more" onClick={() => setReactionsExpanded(true)} aria-label={t('podChat.reactions.more', { count: hidden })}>
+                  +{hidden}
+                </button>
+              )}
               {reactionError && (
                 <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>
               )}

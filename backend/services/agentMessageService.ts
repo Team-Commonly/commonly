@@ -224,7 +224,7 @@ interface MessageNormalized {
   id: unknown;
   content: string;
   messageType: string;
-  userId: { _id: unknown; username: string; profilePicture?: string };
+  userId: { _id: unknown; username: string; profilePicture?: string; isBot?: boolean };
   username: string;
   isBot?: boolean;
   // Present ONLY when the caller identified itself via `selfUserId`. An
@@ -1061,7 +1061,12 @@ class AgentMessageService {
       // outcome as before for any message that never matched, and strictly
       // better than a service that can be stalled by a long one.
       const scanned = sanitizedContent.slice(0, ATTACH_CLAIM_SCAN_LIMIT);
-      const hasUploadDirective = /\[\[upload:/i.test(sanitizedContent);
+      // A directive quoted in backticks or a fence is a mention of the grammar,
+      // not an attachment — same escape the NO_REPLY sentinel has. Scan the
+      // body with code spans removed so documenting `[[upload:…]]` never
+      // trips the "check the agent's workspace" note.
+      const outsideCode = sanitizedContent.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+      const hasUploadDirective = /\[\[upload:/i.test(outsideCode);
       const claimsAttachment = /(?:\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|i\s+already)\s+|(?:^|[.!?]\s+|[\r\n]+)(?:done\s*[—-]?\s*)?(?:just\s+)?)(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|runbook|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(scanned);
       if (claimsAttachment && !hasUploadDirective) {
         // Suppress the warning when THIS agent genuinely attached a file to
@@ -1124,7 +1129,7 @@ class AgentMessageService {
           const directivePattern = /\[\[upload:([^|\]]+)/gi;
           const referencedNames: string[] = [];
           let match;
-          while ((match = directivePattern.exec(sanitizedContent)) !== null) {
+          while ((match = directivePattern.exec(outsideCode)) !== null) {
             // Coerce + sanitize each captured name before it reaches the
             // Mongoose query — CodeQL doesn't trust regex output as a
             // SqlSanitizer for the NoSQL-injection query, so we apply the
@@ -1678,6 +1683,7 @@ class AgentMessageService {
             _id: agentUser._id,
             username: senderDisplayName || 'Unknown',
             profilePicture: agentUser.profilePicture,
+            isBot: true,
           },
           username: senderDisplayName || 'Unknown',
           profile_picture: agentUser.profilePicture,
@@ -1712,7 +1718,7 @@ class AgentMessageService {
       });
 
       await mongoMessage.save();
-      await mongoMessage.populate('userId', 'username profilePicture');
+      await mongoMessage.populate('userId', 'username profilePicture isBot');
       message = mongoMessage as MessageNormalized;
     }
 
@@ -1775,6 +1781,7 @@ class AgentMessageService {
           _id: agentUser._id,
           username: senderDisplayName,
           profilePicture: agentUser.profilePicture,
+          isBot: true,
         },
         username: (message as MessageNormalized).username || senderDisplayName,
         profile_picture: (message as MessageNormalized).profile_picture || agentUser.profilePicture,
