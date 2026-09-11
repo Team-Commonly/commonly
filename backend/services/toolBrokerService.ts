@@ -356,7 +356,9 @@ const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Pr
   const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
   if (!target?.kind || !target.id) throw new RoomGrantError('invalid_target', 'grant target is invalid', 403);
   if (target.kind === 'seat') {
-    return ((grant as Record<string, unknown>).audience as unknown[] || []).map(String);
+    // A seat grant can authorize exactly its target seat. Do not treat a
+    // malformed audience list as a live-membership source for another agent.
+    return [String(target.id)];
   }
   const pod = await Pod.findById(target.id).select('members').lean();
   if (!pod) throw new RoomGrantError('target_not_found', 'target pod not found', 404);
