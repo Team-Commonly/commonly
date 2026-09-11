@@ -94,6 +94,9 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     const connection = await findConnection(connectionId);
     if (!connection) return res.status(404).json({ error: 'connection_not_found' });
     if (connectionOwnerId(connection) !== userId) return res.status(403).json({ error: 'access_denied' });
+    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt) {
+      return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
+    }
 
     const target = body.target;
     if (!target || (target.kind !== 'pod' && target.kind !== 'seat')) {

@@ -114,6 +114,7 @@ const listIssues: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       perPage,
     });
     return { issues: (issues || []).map((issue: Record<string, unknown>) => issueView(issue)) };
@@ -150,6 +151,7 @@ const createIssue: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       title,
       body: rawArgs.body as string | undefined,
       labels: rawArgs.labels as string[] | undefined,
@@ -175,6 +177,7 @@ const getIssue: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       issueNumber: positiveInteger(rawArgs.issueNumber, 'issueNumber'),
     });
     return issueView(issue as Record<string, unknown>);
@@ -198,6 +201,7 @@ const getPullRequest: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     return pullView(pull as Record<string, unknown>);
@@ -221,6 +225,7 @@ const listPullRequestFiles: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     return {
@@ -256,6 +261,7 @@ const commentIssue: ToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       issueNumber,
       body,
     });
@@ -269,73 +275,27 @@ const closeIssue: ToolDefinition = {
   description: 'Close an issue in the connected GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
-  irreversible: (args) => typeof args.comment === 'string' && args.comment.trim().length > 0,
+  // Closing an issue is reversible (it can be reopened). Agent text is a
+  // separate comment tool so the approval tier is not argument-dependent.
   inputSchema: {
     type: 'object',
     properties: {
       issueNumber: { type: 'integer', minimum: 1 },
-      comment: { type: 'string' },
     },
     required: ['issueNumber'],
     additionalProperties: false,
   },
   async call(rawArgs, connection) {
-    assertNoUnknown(rawArgs, ['issueNumber', 'comment']);
+    assertNoUnknown(rawArgs, ['issueNumber']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
-    if (rawArgs.comment !== undefined && typeof rawArgs.comment !== 'string') {
-      throw new RoomGrantError('invalid_tool_args', 'comment must be a string', 400);
-    }
     const issue = await GitHubAppService.closeIssue({
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      forceApp: true,
       issueNumber,
-      comment: rawArgs.comment as string | undefined,
     });
     return issueView(issue as Record<string, unknown>);
-  },
-};
-
-const mergePullRequest: ToolDefinition = {
-  name: 'github.merge_pull_request',
-  description: 'Merge a pull request in the Commonly repository.',
-  requiredWriteMode: 'write-with-confirm',
-  connectionType: 'github-app',
-  irreversible: true,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      pullNumber: { type: 'integer', minimum: 1 },
-      commitTitle: { type: 'string' },
-      commitMessage: { type: 'string' },
-      mergeMethod: { type: 'string', enum: ['merge', 'squash', 'rebase'] },
-    },
-    required: ['pullNumber'],
-    additionalProperties: false,
-  },
-  async call(rawArgs, connection) {
-    assertNoUnknown(rawArgs, ['pullNumber', 'commitTitle', 'commitMessage', 'mergeMethod']);
-    if (rawArgs.commitTitle !== undefined && typeof rawArgs.commitTitle !== 'string') {
-      throw new RoomGrantError('invalid_tool_args', 'commitTitle must be a string', 400);
-    }
-    if (rawArgs.commitMessage !== undefined && typeof rawArgs.commitMessage !== 'string') {
-      throw new RoomGrantError('invalid_tool_args', 'commitMessage must be a string', 400);
-    }
-    if (rawArgs.mergeMethod !== undefined
-      && !['merge', 'squash', 'rebase'].includes(String(rawArgs.mergeMethod))) {
-      throw new RoomGrantError('invalid_tool_args', 'mergeMethod is invalid', 400);
-    }
-    const result = await GitHubAppService.mergePullRequest({
-      owner: connection.owner,
-      repo: connection.repo,
-      installationId: connection.installationId,
-      pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
-      commitTitle: rawArgs.commitTitle as string | undefined,
-      commitMessage: rawArgs.commitMessage as string | undefined,
-      mergeMethod: rawArgs.mergeMethod as 'merge' | 'squash' | 'rebase' | undefined,
-    });
-    const merge = result && typeof result === 'object' ? result as Record<string, unknown> : {};
-    return { merged: merge.merged, sha: merge.sha, message: merge.message };
   },
 };
 
@@ -347,7 +307,6 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [createIssue.name]: createIssue,
   [commentIssue.name]: commentIssue,
   [closeIssue.name]: closeIssue,
-  [mergePullRequest.name]: mergePullRequest,
 };
 
 export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS);

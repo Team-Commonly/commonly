@@ -52,7 +52,7 @@ jest.mock('../../../services/roomGrantService', () => {
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { callTool } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
-const { assertGrantUsable } = require('../../../services/roomGrantService');
+const { assertGrantUsable, getGrantLineage } = require('../../../services/roomGrantService');
 
 const seatGrant = (overrides = {}) => ({
   grantId: 'grant-1',
@@ -209,6 +209,18 @@ describe('tool broker guard rails', () => {
     await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {} })).resolves.toBeTruthy();
     await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {} })).resolves.toBeTruthy();
     await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {} })).rejects.toMatchObject({ code: 'budget_exhausted' });
+  });
+
+  it('draws down a parent budget before the child budget', async () => {
+    const parent = seatGrant({ grantId: 'root-grant', budget: { calls: 10 } });
+    const child = seatGrant({ grantId: 'child-grant', parentGrantId: 'root-grant', budget: { calls: 3 }, tools: ['github.list_issues'] });
+    mockRoomGrant.findOne.mockResolvedValue(child);
+    getGrantLineage.mockResolvedValue([child, parent]);
+    await callTool({ grantId: 'child-grant', agentUserId: 'agent-a', tool: 'github.list_issues', args: {} });
+    expect(mockReserveBudgetLineage).toHaveBeenCalledWith([
+      { grantId: 'root-grant', calls: 10, windowMs: undefined },
+      { grantId: 'child-grant', calls: 3, windowMs: undefined },
+    ]);
   });
 
   it('parks irreversible writes for approval without spending budget', async () => {

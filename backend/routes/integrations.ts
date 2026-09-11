@@ -45,6 +45,9 @@ import {
 // caller name someone else as the author or bind a chat without a code.
 const SERVER_OWNED_CONFIG_KEYS = [
   'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
+  // GitHub App connection identity is administrator-owned. A member may not
+  // retarget an existing row that a grant already references.
+  'installationId', 'owner', 'repo',
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
@@ -205,13 +208,12 @@ router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (r
     }
     const existing = await Integration.findOne({ type: 'github-app', installationId });
     if (existing) {
-      existing.scope = 'user';
-      existing.status = 'connected';
-      existing.podId = undefined;
-      existing.config = { ...(existing.config || {}), installationId, owner, repo };
-      existing.createdBy = req.user?.id as unknown as typeof existing.createdBy;
-      existing.isActive = true;
-      await existing.save();
+      const current = existing.config || {};
+      if (String(current.owner || '') !== owner || String(current.repo || '') !== repo) {
+        return res.status(409).json({ message: 'installationId is already bound to a different repository' });
+      }
+      // Connection rows are immutable in this cut. In particular, do not
+      // reassign createdBy or revive/retarget grants on a repeated POST.
       return res.json({ integration: existing });
     }
     const integration = new Integration({
@@ -332,6 +334,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
+    if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
     const manifest = (manifests as Record<string, unknown>)[type];
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
     if ('linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {

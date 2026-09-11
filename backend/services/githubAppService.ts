@@ -26,6 +26,7 @@ interface ListIssuesOptions {
   repo?: string;
   perPage?: number;
   installationId?: string;
+  forceApp?: boolean;
 }
 
 interface CreateIssueOptions {
@@ -35,6 +36,7 @@ interface CreateIssueOptions {
   body?: string;
   labels?: string[];
   installationId?: string;
+  forceApp?: boolean;
 }
 
 interface IssueCommentOptions {
@@ -43,6 +45,7 @@ interface IssueCommentOptions {
   issueNumber: number;
   body: string;
   installationId?: string;
+  forceApp?: boolean;
 }
 
 interface CloseIssueOptions {
@@ -51,6 +54,7 @@ interface CloseIssueOptions {
   issueNumber: number;
   comment?: string;
   installationId?: string;
+  forceApp?: boolean;
 }
 
 interface IssueNumberOptions {
@@ -58,6 +62,7 @@ interface IssueNumberOptions {
   repo?: string;
   issueNumber: number;
   installationId?: string;
+  forceApp?: boolean;
 }
 
 interface PullRequestOptions {
@@ -65,12 +70,7 @@ interface PullRequestOptions {
   repo?: string;
   pullNumber: number;
   installationId?: string;
-}
-
-interface MergePullRequestOptions extends PullRequestOptions {
-  commitTitle?: string;
-  commitMessage?: string;
-  mergeMethod?: 'merge' | 'squash' | 'rebase';
+  forceApp?: boolean;
 }
 
 type PullReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
@@ -171,8 +171,8 @@ class GitHubAppService {
   /**
    * Shared headers for GitHub REST API calls (uses PAT or App token).
    */
-  static async _apiHeaders(token?: string, installationId?: string): Promise<Record<string, string>> {
-    const pat = token || process.env.GITHUB_PAT;
+  static async _apiHeaders(token?: string, installationId?: string, forceApp = false): Promise<Record<string, string>> {
+    const pat = forceApp ? undefined : (token || process.env.GITHUB_PAT);
     let credential = pat;
     const appConfigured = !!(
       process.env.GITHUB_APP_ID
@@ -196,8 +196,8 @@ class GitHubAppService {
   /**
    * List open issues for a repo (excludes pull requests).
    */
-  static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20, installationId }: ListIssuesOptions = {}): Promise<GitHubIssue[]> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20, installationId, forceApp }: ListIssuesOptions = {}): Promise<GitHubIssue[]> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`,
       { headers },
@@ -208,8 +208,8 @@ class GitHubAppService {
   /**
    * Create a new GitHub issue.
    */
-  static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels, installationId }: CreateIssueOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels, installationId, forceApp }: CreateIssueOptions): Promise<GitHubIssue> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const payload: Record<string, unknown> = { title };
     if (body) payload.body = body;
     if (labels?.length) payload.labels = labels;
@@ -224,8 +224,8 @@ class GitHubAppService {
   /**
    * Add a comment to an existing issue.
    */
-  static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId }: IssueCommentOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId, forceApp }: IssueCommentOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
       { body },
@@ -237,11 +237,11 @@ class GitHubAppService {
   /**
    * Close an issue (optionally with a final comment).
    */
-  static async closeIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, comment, installationId }: CloseIssueOptions): Promise<unknown> {
+  static async closeIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, comment, installationId, forceApp }: CloseIssueOptions): Promise<unknown> {
     if (comment) {
-      await this.addIssueComment({ owner, repo, issueNumber, body: comment, installationId });
+      await this.addIssueComment({ owner, repo, issueNumber, body: comment, installationId, forceApp });
     }
-    const headers = await this._apiHeaders(undefined, installationId);
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { state: 'closed' },
@@ -251,8 +251,8 @@ class GitHubAppService {
   }
 
   /** Fetch one issue without exposing the server credential to the caller. */
-  static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, installationId }: IssueNumberOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, installationId, forceApp }: IssueNumberOptions): Promise<GitHubIssue> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { headers },
@@ -261,8 +261,8 @@ class GitHubAppService {
   }
 
   /** Fetch one pull request. */
-  static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId }: PullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
       { headers },
@@ -271,32 +271,10 @@ class GitHubAppService {
   }
 
   /** List files changed by one pull request. */
-  static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId }: PullRequestOptions): Promise<unknown[]> {
-    const headers = await this._apiHeaders(undefined, installationId);
+  static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown[]> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
-      { headers },
-    );
-    return res.data;
-  }
-
-  /** Merge a pull request; callers must satisfy the broker approval gate. */
-  static async mergePullRequest({
-    owner = 'Team-Commonly',
-    repo = 'commonly',
-    pullNumber,
-    commitTitle,
-    commitMessage,
-    mergeMethod = 'squash',
-    installationId,
-  }: MergePullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(undefined, installationId);
-    const payload: Record<string, unknown> = { merge_method: mergeMethod };
-    if (commitTitle) payload.commit_title = commitTitle;
-    if (commitMessage) payload.commit_message = commitMessage;
-    const res = await axios.put(
-      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
-      payload,
       { headers },
     );
     return res.data;
