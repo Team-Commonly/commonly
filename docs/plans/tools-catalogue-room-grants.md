@@ -13,13 +13,13 @@ Sam's review note on order is taken: **one first-party tool works end to end in 
 | 0 | ADR-001 amendment — `McpServer`, manifest rules, `RoomGrant` | Wren, PR #1658 | open; Vera gates §3 | the vocabulary every row below uses |
 | 1 | The grant record — model, mint, attenuate, revoke-with-cascade | Kai | 2–3 d | a grant can be narrowed and killed, and the server is the one deciding |
 | 2 | The broker — a Commonly-hosted MCP server per grant, the trail row, and the first-party GitHub tool Installable | Kai | 4–6 d | an agent calls a real tool through a grant it never holds, and the room can read who did what |
-| 3 | Approval for irreversible scopes — `write-with-confirm` through the existing `DecisionRequest` | Kai | 1–2 d | a person confirms before the broker executes; nothing new is invented for it |
-| 4 | The page — the Tools list, the grant aside, the trail; option A | Kai builds, UX Lead gates | 3–4 d | the page draws what 1–3 enforce, and only that |
+| 3 | Approval for irreversible scopes — `write-with-confirm` through the existing `propose-action` consent path (`ApprovalAction`) | Kai | 1–2 d | a person with authority consents before the broker executes; nothing new is invented for it |
+| 4 | The page — the Tools list with per-member rows first, then the grant aside and the trail; option A | Kai builds, UX Lead gates | 3–4 d | the page draws what the server enforces at the time it draws it, and only that |
 | 5 | The manifest parser — `.claude-plugin` / `.cursor-plugin` → Installable, with the validation in ADR-001 §1–§2 | Kai | 2–3 d | a third-party server becomes a catalogue row |
 | 6 | Per-person Connections — GitHub OAuth (and Gmail after it) as the credential a member grants | unsized | — | the "granted by {member}" row when the member is not the admin |
 | 7 | HTTP hook endpoint + CLI hooks-config writer | Kai | 5–7 d ingress/claim only | ADR-028 claims enforced at `PreToolUse`; separate lane, unchanged from 67387 |
 
-Pieces 1 → 2 → 3 are strictly ordered. 4 starts when 2's trail row exists (the page can be built against seeded rows before 3 lands, and 3 adds one field). 5 has no dependency on 1–4 and goes after them only because there is one builder; a second builder takes it in parallel. 6 and 7 are after the slice and not in this sprint.
+Pieces 1 → 2 → 3 are strictly ordered. **4 is not gated on the broker** (Sam 67413): per-member installs ship before it, so the Tools list ships first with per-member rows — "installed by you · your agents may use it" — from the catalogue's existing `InstallableInstallation` rows, and room-grant rows, the aside's grant, and the trail appear as 1–3 land. The page work can start the day this plan merges. 5 has no dependency on 1–4 and goes after them only because there is one builder; a second builder takes it in parallel. 6 and 7 are after the slice and not in this sprint.
 
 ## 2. The first-party tool is GitHub, and why not Gmail
 
@@ -79,7 +79,7 @@ ToolCall {
   at: Date;
   outcome: 'ok' | 'refused' | 'pending_approval' | 'failed';
   reason?: string;            // refusal code, or the provider's error class
-  decisionId?: string;        // piece 3
+  approvalId?: string;        // piece 3 — the ApprovalAction row
   durationMs?: number;
 }
 ```
@@ -99,11 +99,13 @@ Args are digested and not stored, deliberately: a Gmail search string or an issu
 
 ## 5. Approval for irreversible scopes (piece 3)
 
-Reuse `DecisionRequest` (ADR-028), as Sam ruled. The broker, on an irreversible tool under a `write-with-confirm` grant, creates a `DecisionRequest` with a new `decisionClass: 'tool-call'`, `podId` the room, `agentUserId` the caller, `title` `"{agent} wants to {tool} — {one-line summary}"`, two options (`Run it` recommended: false, `Refuse`), and `context` carrying the tool and the args summary the tool implementation renders (never raw args). The trail row is written with `outcome: 'pending_approval'` and the `decisionId`. The MCP call returns `{ status: 'pending_approval', decisionId }` to the agent immediately — an MCP call does not block on a human.
+Sam ruled "reuse the existing decision request rather than inventing a new approval object" (67407). The existing object is **`ApprovalAction`, reached through `propose-action`** (`backend/routes/agentsRuntime.ts`, `approvalActionService`) — not `DecisionRequest`. Vera's 67410 is the reason and it is the tool's own contract on main: `commonly_request_decision` is "advisory coordination only, never approval or authority to act … use propose-action for side effects that need consent." Gating an irreversible write on an advisory card would let a ruling the tool promises is non-binding authorise the action. `propose-action` is the consent path that already executes with a human's authority, has a two-state resolve (`approved` / `declined`) with an atomic transition, an `expiresAt`, and a card the shell already renders.
 
-When the decision is ruled, the existing ruling path emits the event it already emits; a listener in `toolBrokerService` executes the parked call on `Run it` (re-checking revoke, expiry and audience at execution time, not at request time), writes a second trail row with the real outcome and the same `decisionId`, and posts one system line in the room: `"{human} approved {agent}'s {tool} · done"` or `"… refused"`. The agent learns the outcome the way any room member does. Nothing new is invented: the card, the ruling, the relay to Telegram/Slack (#1569) all exist.
+So: the broker, on an irreversible tool under a `write-with-confirm` grant, calls `proposeAction` with a new `actionType: 'tool_call'` (the enum today is `create_pod` and `connect_local_agent`), `params: { grantId, callId, tool, argsDigest }`, `summary` rendered by the tool implementation (never raw args), and **`ownerUserId` = the granter** — the Connection's owner — so the existing "only the owner can decide this" check is exactly the right check without a new one. The trail row is written with `outcome: 'pending_approval'` and the `approvalId`. The MCP call returns `{ status: 'pending_approval', approvalId }` to the agent immediately; an MCP call does not block on a human.
 
-**Named tests:** `parks an irreversible call and returns pending_approval`; `executes on Run it and writes the second trail row`; `does not execute on Refuse`; `does not execute if the grant was revoked between park and rule`.
+On `approved`, `resolveApproval`'s existing dispatch gains one branch: `tool_call` hands back to `toolBrokerService`, which re-checks revoke, expiry and audience **at execution time**, executes, writes a second trail row with the real outcome and the same `approvalId`, and posts one system line in the room: `"{human} approved {agent}'s {tool} · done"`. On `declined` or expiry the second trail row says so and nothing runs. The agent learns the outcome the way any room member does. Nothing new is invented: the row, the card, the resolve, and the relay of cards to Telegram/Slack (#1569) all exist.
+
+**Named tests:** `parks an irreversible call as an ApprovalAction owned by the granter and returns pending_approval`; `executes on approved and writes the second trail row`; `does not execute on declined`; `does not execute if the grant was revoked between propose and approve`; `an approval past expiresAt never executes`.
 
 ## 6. The page (piece 4) — option A, so the spec can be built from here
 
@@ -114,6 +116,7 @@ The channels list stays exactly as it is on main. Under it, in the same containe
 | granted, used in the last 10 min | cobalt, pulsing | **GitHub** {what it does} · granted to **{room}** by **{member}** | `{agents} may use it · {what asks first}` | `granted {rel}` | Manage (bordered) |
 | granted, quiet | cobalt, solid | same | same | same | Manage |
 | granted, expired or revoked | hollow `#98a2b3` | same | `expired {rel}` / `revoked by {member} {rel}` | `granted {rel}` | Grant again (ink) |
+| installed per member (before the broker, and after it for a member's own install) | cobalt, solid | **GitHub** {what it does} · installed by **you** | `your agents may use it · nothing is shared with the room` | `installed {rel}` | Manage (bordered) |
 | not yet granted | dashed `#98a2b3`, name muted | {what the tool does} | `read, or read and write` | `not granted` | Add (ink) |
 
 Heading **Tools**, count in mono (`2 granted · 3 more`), a search field and a category segment on the same line. `{agents}` is the effective audience rendered as display labels via `resolveAgentDisplayLabel`; `{what asks first}` is the list of irreversible tools under a `write-with-confirm` grant, or `nothing asks first` under `read`. `granted {rel}` reads the grant's `createdAt`; "used in the last 10 min" reads the newest trail row's `at`.
@@ -140,7 +143,7 @@ The contract is ADR-001 §1–§2 as amended and Kai's 67390/67395/67399; nothin
 | "granted to {room} by {member}" | `InstallableInstallation.grantedScopes: string[]` — capability scopes at install, no audience, no expiry, no owner | `RoomGrant` (piece 1); `grantedScopes` stays for what it is and is not reused for this |
 | "{agents} may use it" | pod membership | effective audience `audience ∩ pod.members` (piece 1) |
 | the trail, and the three counts | nothing records tool calls; `ChannelVerdict` records relay verdicts, which is the right *pattern* and the wrong table | `ToolCall` (piece 2) |
-| "what asks a person first" | `DecisionRequest` with three classes, none for a tool | `decisionClass: 'tool-call'` (piece 3) |
+| "what asks a person first" | `ApprovalAction` with two action types, neither for a tool; `DecisionRequest` is advisory by contract | `actionType: 'tool_call'` on `ApprovalAction` (piece 3) |
 | a member's own Gmail or GitHub as the credential | `Integration` rows for Telegram/Slack/Discord; `githubAppService` for the App | the App is the slice's Connection; per-person OAuth is piece 6 |
 | a third-party tool row | no parser | piece 5 |
 | the agent reaching the tool at all | ADR-008 `mcp[]` + the `MCP_PLACEHOLDERS` guard | exists; the broker URL is a placeholder-only entry, no adapter change |
