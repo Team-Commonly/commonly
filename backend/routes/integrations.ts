@@ -319,11 +319,22 @@ router.delete('/:id/ingest-tokens/:tokenId', auth, async (req: AuthReq, res: Res
   }
 });
 
-router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
+// Same read bucket as /user/all: token-hash/IP keyed, ahead of auth, so the
+// membership lookup below cannot be driven unmetered (CodeQL
+// js/missing-rate-limiting on the gated route).
+router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
+    // Pod-scoped content: canViewPod decides (members, admins, the agent-dm
+    // fan-out), the same gate every other pod-scoped read uses. Until #1673
+    // any signed-in user could list any pod's rows.
+    const pod = await Pod.findById(podId);
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const DMService = require('../services/dmService');
+    if (!await DMService.canViewPod(req.user?.id, pod)) return res.status(403).json({ message: 'Access denied' });
     const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username email').populate('platformIntegration');
-    res.json(integrations);
+    return res.json(integrations);
   } catch (error) {
     console.error('Error fetching integrations:', error);
     res.status(500).json({ message: 'Server error' });

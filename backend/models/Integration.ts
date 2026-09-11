@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import { toPublicIntegrationConfig } from './integrationPublicConfig';
 
 export type IntegrationType =
   | 'discord'
@@ -341,40 +342,27 @@ IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
 // solely by its workspace and channel, then still checks isActive.
 IntegrationSchema.index({ type: 1, 'config.teamId': 1, 'config.chatId': 1, isActive: 1 });
 
+// Only Discord keeps platform state in a collection of its own; every other
+// connector carries it in `config`. A ref naming a model nothing registers is
+// not a no-op: Mongoose throws MissingSchemaError at populate time, and one
+// Telegram row took the admin list down with it (#1672). Null skips the join.
 IntegrationSchema.virtual('platformIntegration', {
   ref() {
-    switch ((this as IIntegration).type) {
-      case 'discord': return 'DiscordIntegration';
-      case 'telegram': return 'TelegramIntegration';
-      case 'slack': return 'SlackIntegration';
-      case 'messenger': return 'MessengerIntegration';
-      default: return null;
-    }
+    return (this as IIntegration).type === 'discord' ? 'DiscordIntegration' : null;
   },
   localField: '_id',
   foreignField: 'integrationId',
   justOne: true,
 });
 
-// A ConnectorSecret reference is itself not a bearer credential, but returning
-// it still widens the set of clients that can reason about server-side secret
-// storage. Keep it server-only in every normal JSON response, including the
-// pending OAuth bind that needs to show its workspace/user details.
+// Bearer credentials and the references that point at one are server-only in
+// every normal JSON response, including the pending OAuth bind that needs to
+// show its workspace/user details. The key list lives in
+// integrationPublicConfig so the lean catalog read strips the same fields.
 IntegrationSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
-    if (!returned.config) return returned;
-    delete returned.config.botTokenRef;
-    delete returned.config.oauthStateNonce;
-    const pending = returned.config.pendingBind;
-    if (pending && typeof pending === 'object') {
-      delete (pending as Record<string, unknown>).botTokenRef;
-    }
-    const adminPause = returned.config.adminPause;
-    if (adminPause && typeof adminPause === 'object') {
-      const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
-      returned.config.adminPause = { reason, at };
-    }
+    toPublicIntegrationConfig(returned.config);
     return returned;
   },
 });
