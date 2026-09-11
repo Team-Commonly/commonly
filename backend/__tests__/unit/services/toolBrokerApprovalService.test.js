@@ -57,7 +57,7 @@ beforeEach(() => {
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
 });
 
-test("a parked call leaves the seat's botMetadata unchanged", async () => {
+test('routes a parked call with the seat installation identity', async () => {
   await expect(broker.callTool({
     grantId: 'grant-1', agentUserId: 'agent-1', agentName: 'openclaw', instanceId: 'aria',
     tool: 'github.create_issue', args: { title: 'hello' },
