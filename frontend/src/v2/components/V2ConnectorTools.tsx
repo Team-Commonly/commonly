@@ -1,14 +1,14 @@
 // Tools — the second list on the Connectors page (tools plan §6, option A,
 // Sam 67407). Same container grammar as the channels: dot, 20px glyph,
 // display name, two-line middle, mono when, one action. It renders only what
-// the server counts: a row per RoomGrant the person can see, the aside from
-// the projected grant read, the trail from ToolCall rows the broker wrote.
+// the server counts: a row per RoomGrant the person can see, a not-yet row per
+// tool Installable the catalogue returns (#1670), the aside from the projected
+// grant read, the trail from ToolCall rows the broker wrote. The Add form posts
+// the mint exactly as the server takes it — never a brokerId (Vera 67728).
 //
-// SEAM: the not-yet-granted row, the Add form and Change access need a tool
-// catalogue the server does not expose yet (no tool Installable in
-// /api/installables, no route for the broker's tool list or its brokerId —
-// raised with Wren, Connectors v2 67719). Until it lands, `catalog` is empty
-// and those controls do not render; nothing here pretends to grant.
+// Direction A (Sam 2026-09-11): categories are glyphs — a trail outcome and a
+// grant's mode carry a mark with the word in `title`; the deciding act (Add,
+// Grant, Manage on a row with one act) keeps its word.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,11 +34,13 @@ export interface ToolGrant {
   grantedBy: string | null;
 }
 
+export type ToolOutcome = 'ok' | 'refused' | 'pending_approval' | 'failed';
+
 export interface ToolCallLine {
   callId: string;
   agentUserId: string;
   tool: string;
-  outcome: 'ok' | 'refused' | 'pending_approval' | 'failed';
+  outcome: ToolOutcome;
   reason: string | null;
   approvalId: string | null;
   argsDigest: string;
@@ -52,23 +54,39 @@ export interface ToolTrail {
   counts: { total: number; ok: number; refused: number; pending_approval: number; failed: number };
 }
 
-/** A tool the catalogue returns (SEAM: none on main yet). */
+/** A tool Installable as GET /api/installables lists it (list: 'tools', #1670). */
 export interface ToolCatalogEntry {
-  tool: string;
+  installableId: string;
+  list?: 'channels' | 'tools';
   label: string;
   description: string;
-  tools: string[];
+  available: boolean;
+  unavailableReason?: string;
+  broker?: { id: string };
+  tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
+  connections: Array<{ connectionId: string; owner: string; repo: string }>;
 }
 
 interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
 
 interface Props {
   pods: V2Pod[];
-  catalog?: ToolCatalogEntry[];
+}
+
+interface DraftGrant {
+  installableId: string;
+  podId: string;
+  connectionId: string;
+  writeMode: GrantWriteMode;
+  audience: string[];
+  expiryDays: 7 | 30 | 90;
+  /** Change access: the grant this one replaces (revoked after the mint). */
+  replaces: string | null;
 }
 
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
+const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 
 export const relativeTime = (date?: string | null): string => {
   if (!date) return '—';
@@ -88,19 +106,34 @@ export const relativeTime = (date?: string | null): string => {
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
 const isDead = (grant: ToolGrant): boolean => Boolean(grant.revokedAt) || isExpired(grant);
 
-// Grants on main are GitHub App connections (piece 2); the label follows the
-// connection, the catalogue's description follows when the catalogue exists.
-const TOOL_LABEL = 'GitHub';
+const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
+);
+/** Outcome marks: a category, so a glyph; the word stays in the log line and the title. */
+const OutcomeGlyph: React.FC<{ outcome: ToolOutcome }> = ({ outcome }) => {
+  if (outcome === 'ok') return <G><path d="M20 6 9 17l-5-5" /></G>;
+  if (outcome === 'refused') return <G><path d="M18 6 6 18M6 6l12 12" /></G>;
+  if (outcome === 'pending_approval') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M12 8v5M12 16h.01" /></G>;
+  return <G><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></G>;
+};
+/** Mode marks: eye for read, pen for write, shield for write that asks first. */
+const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
+  if (mode === 'read') return <G><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></G>;
+  if (mode === 'write') return <G><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></G>;
+  return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
+};
 
-const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
+const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const { t } = useTranslation();
   const api = useV2Api();
   const [grants, setGrants] = useState<ToolGrant[] | null>(null);
+  const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
   const [trail, setTrail] = useState<ToolTrail | null>(null);
   const [trailError, setTrailError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftGrant | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,13 +143,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
   const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
 
   const load = useCallback(async () => {
+    const catalogRes = await api.get<{ installables?: ToolCatalogEntry[] }>('/api/installables').catch(() => null);
+    setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
     if (podIds.length === 0) { setGrants([]); return; }
     const results = await Promise.all(podIds.map(async (podId) => {
       const [grantsRes, seatsRes] = await Promise.all([
         api.get<{ grants: ToolGrant[] }>(`/api/pods/${podId}/grants`).catch(() => null),
         api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null),
       ]);
-      return { podId, grants: grantsRes?.grants ?? [], seats: seatsRes?.agents ?? [] };
+      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal) };
     }));
     const seen = new Set<string>();
     const merged: ToolGrant[] = [];
@@ -153,6 +188,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
     return () => { cancelled = true; };
   }, [api, selectedId]);
 
+  // Grants on main are GitHub App connections; the catalogue entry carries the label and what it does.
+  const entryFor = (grant?: ToolGrant | null): ToolCatalogEntry | null => catalog.find((entry) => entry.installableId === 'github') || (grant ? null : null);
+  const toolLabel = (grant?: ToolGrant | null): string => entryFor(grant)?.label || 'GitHub';
+
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
   const memberName = (userId: string | null): string | null => {
     if (!userId) return null;
@@ -179,31 +218,91 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
     if (labels.length === 0) return t('tools.nobody', { defaultValue: 'no agent' });
     return labels.join(', ');
   };
+  const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
+    .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
   const asksFirst = (grant: ToolGrant): string => {
     if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
     if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'every write asks first' });
-    // Under `write` the floor is the tool's own irreversible flag (piece 2b);
-    // the list of those tools comes with the catalogue (SEAM).
-    return t('tools.asksIrreversible', { defaultValue: 'irreversible writes ask first' });
+    // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
+    const list = irreversibleTools(entryFor(grant), grant.tools);
+    return list.length
+      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: list.join(', ') })
+      : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
   };
+  const modeLabel = (mode: GrantWriteMode): string => ({
+    read: t('tools.modeRead', { defaultValue: 'read' }),
+    'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
+    write: t('tools.modeWrite', { defaultValue: 'read and write' }),
+  })[mode];
 
   const usedRecently = (grant: ToolGrant): boolean => {
     const at = lastUse[grant.grantId];
     return Boolean(at) && Date.now() - new Date(at as string).getTime() < USED_RECENTLY_MS;
   };
 
+  const q = query.trim().toLowerCase();
   const rows = useMemo(() => (grants || []).filter((grant) => {
     if (segment === 'not-yet') return false;
-    if (!query.trim()) return true;
-    const q = query.trim().toLowerCase();
-    return TOOL_LABEL.toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
-  }), [grants, query, segment]);
+    if (!q) return true;
+    return toolLabel(grant).toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [grants, q, segment, catalog]);
+  // A tool is "not yet" while no live grant on it exists anywhere the person can see.
   const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
-    !query.trim() || entry.label.toLowerCase().includes(query.trim().toLowerCase())
-  ))), [catalog, query, segment]);
+    !(grants || []).some((grant) => !isDead(grant))
+    && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
+  ))), [catalog, grants, q, segment]);
   const grantedCount = (grants || []).filter((grant) => !isDead(grant)).length;
+  const moreCount = catalog.length - (grantedCount > 0 ? 1 : 0);
 
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
+
+  const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
+    const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    setDraft({
+      installableId: entry.installableId,
+      podId,
+      connectionId: entry.connections[0]?.connectionId || '',
+      writeMode: from?.writeMode || 'read',
+      audience: from ? from.effectiveAudience : (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)),
+      expiryDays: 7,
+      replaces: from && !isDead(from) ? from.grantId : null,
+    });
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    setError(null);
+  };
+  const draftEntry = draft ? catalog.find((entry) => entry.installableId === draft.installableId) || null : null;
+  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
+    .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
+
+  const submitDraft = async () => {
+    if (!draft || !draftEntry) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
+      // The mint's body, as routes/grants.ts takes it: the server names the broker.
+      await api.post('/api/grants', {
+        connectionId: draft.connectionId,
+        installationId: draft.connectionId,
+        target: { kind: 'pod', id: draft.podId },
+        tools: draftTools(draftEntry, draft.writeMode),
+        writeMode: draft.writeMode,
+        audience: draft.audience,
+        expiresAt,
+      });
+      // Change access: a change is a new grant and a revoke of the old one, because `tools` is never widened in place.
+      if (draft.replaces) await api.post(`/api/grants/${draft.replaces}/revoke`);
+      setDraft(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const revoke = async (grant: ToolGrant) => {
     setBusy(true);
@@ -224,6 +323,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
     const isSelected = selectedId === grant.grantId;
+    const entry = entryFor(grant);
+    const label = toolLabel(grant);
     const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt) });
     const line2 = dead
       ? (grant.revokedAt
@@ -236,67 +337,158 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
           type="button"
           className="v2-connector-row__selection"
           aria-pressed={isSelected}
-          aria-label={t('tools.viewGrant', { defaultValue: 'View {{tool}} in {{pod}}', tool: TOOL_LABEL, pod: podId ? podName(podId) : seatLabel(null, grant.target.id) })}
-          onClick={() => { setSelectedId(isSelected ? null : grant.grantId); setConfirmRevoke(null); }}
+          aria-label={t('tools.viewGrant', { defaultValue: 'View {{tool}} in {{pod}}', tool: label, pod: podId ? podName(podId) : seatLabel(null, grant.target.id) })}
+          onClick={() => { setSelectedId(isSelected ? null : grant.grantId); setDraft(null); setConfirmRevoke(null); }}
         >
           <span className="v2-connector-row__name">
             <span className={`v2-connector-row__dot ${dead ? 'v2-connector-row__dot--empty' : `v2-connector-row__dot--live${usedRecently(grant) ? ' v2-connector-row__dot--pulse' : ''}`}`} aria-hidden="true" />
-            <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="github" /></span>
-            <span>{TOOL_LABEL}</span>
+            <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry?.installableId || 'github'} /></span>
+            <span>{label}</span>
           </span>
           <span className="v2-connector-row__details">
             <strong>
-              {grant.target.kind === 'pod'
-                ? <>{t('tools.grantedTo', { defaultValue: 'granted to' })} <b>{podName(grant.target.id)}</b></>
-                : <>{t('tools.grantedToSeat', { defaultValue: 'granted to' })} <b>{seatLabel(podId, grant.target.id)}</b></>}
+              {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
+              {t('tools.grantedTo', { defaultValue: 'granted to' })} <b>{grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</b>
               {granter && <> {t('tools.by', { defaultValue: 'by' })} <b>{granter}</b></>}
             </strong>
-            <span className="v2-connector-row__detail">{line2}</span>
+            <span className="v2-connector-row__detail">
+              {!dead && <span className="v2-tools__mode" title={modeLabel(grant.writeMode)} role="img" aria-label={modeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
+              {line2}
+            </span>
           </span>
           <span className="v2-connector-row__when">{when}</span>
         </button>
-        <button
-          type="button"
-          className="v2-connector-row__action v2-connector-row__action--secondary"
-          onClick={() => { setSelectedId(grant.grantId); setConfirmRevoke(null); }}
-        >
-          {t('tools.manage', { defaultValue: 'Manage' })}
-        </button>
+        {dead && entry ? (
+          <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry, grant)}>
+            {t('tools.grantAgain', { defaultValue: 'Grant again' })}
+          </button>
+        ) : (
+          <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => { setSelectedId(grant.grantId); setDraft(null); setConfirmRevoke(null); }}>
+            {t('tools.manage', { defaultValue: 'Manage' })}
+          </button>
+        )}
       </article>
     );
   };
 
-  const renderNotYet = (entry: ToolCatalogEntry) => (
-    <article key={entry.tool} className="v2-connector-row v2-connector-row--not-yet">
-      <span className="v2-connector-row__name">
-        <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
-        <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry.tool} /></span>
-        <span>{entry.label}</span>
-      </span>
-      <span className="v2-connector-row__details">
-        <strong>{entry.description}</strong>
-        <span className="v2-connector-row__detail">{t('tools.readOrWrite', { defaultValue: 'read, or read and write' })}</span>
-      </span>
-      <span className="v2-connector-row__when">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
-      {/* SEAM: Add opens the grant form once the catalogue carries the tool list and the broker id. */}
-    </article>
-  );
+  const renderNotYet = (entry: ToolCatalogEntry) => {
+    const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
+    return (
+      <article key={entry.installableId} className="v2-connector-row v2-connector-row--not-yet">
+        <span className="v2-connector-row__name">
+          <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
+          <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry.installableId} /></span>
+          <span>{entry.label}</span>
+        </span>
+        <span className="v2-connector-row__details">
+          <strong>{entry.description}</strong>
+          <span className="v2-connector-row__detail">
+            {!entry.available
+              ? t('tools.notEnabled', { defaultValue: 'not enabled on this instance · ask your operator' })
+              : entry.connections.length === 0
+                ? t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' })
+                : t('tools.readOrWrite', { defaultValue: 'read, or read and write' })}
+          </span>
+        </span>
+        <span className="v2-connector-row__when">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
+        {canAdd && (
+          <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry)}>
+            {t('tools.add', { defaultValue: 'Add' })}
+          </button>
+        )}
+      </article>
+    );
+  };
+
+  const renderDraft = () => {
+    if (!draft || !draftEntry) return null;
+    const podSeats = seats[draft.podId] || [];
+    const tools = draftTools(draftEntry, draft.writeMode);
+    const irreversible = irreversibleTools(draftEntry, tools);
+    const asks = draft.writeMode === 'read'
+      ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
+      : draft.writeMode === 'write-with-confirm'
+        ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
+        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: irreversible.join(', ') }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
+          <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
+          <p>{draftEntry.description}</p>
+          <div className="v2-tools__form">
+            {!draft.replaces && podIds.length > 1 && (
+              <label className="v2-tools__field">
+                <span>{t('tools.toRoom', { defaultValue: 'room' })}</span>
+                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
+                  {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
+                </select>
+              </label>
+            )}
+            {draftEntry.connections.length > 1 && (
+              <label className="v2-tools__field">
+                <span>{t('tools.connection', { defaultValue: 'connection' })}</span>
+                <select className="v2-connectors__select" value={draft.connectionId} onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })}>
+                  {draftEntry.connections.map((connection) => <option key={connection.connectionId} value={connection.connectionId}>{connection.owner}/{connection.repo}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="v2-tools__field">
+              <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
+              <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
+                {(['read', 'write-with-confirm', 'write'] as GrantWriteMode[]).map((mode) => (
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                    {modeLabel(mode)}
+                  </button>
+                ))}
+              </div>
+              <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
+              <span className="v2-tools__hint">{asks}</span>
+            </div>
+            <fieldset className="v2-tools__field v2-tools__agents">
+              <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
+              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this room yet' })}</span>}
+              {podSeats.map((seat) => seat.userId && (
+                <label key={seat.userId} className="v2-connector-aside__relay">
+                  <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
+                  {seat.displayName || seat.name}
+                </label>
+              ))}
+            </fieldset>
+            <label className="v2-tools__field">
+              <span>{t('tools.ends', { defaultValue: 'ends' })}</span>
+              <select className="v2-connectors__select" value={draft.expiryDays} onChange={(event) => setDraft({ ...draft, expiryDays: Number(event.target.value) as 7 | 30 | 90 })}>
+                <option value={7}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 7 })}</option>
+                <option value={30}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 30 })}</option>
+                <option value={90}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 90 })}</option>
+              </select>
+            </label>
+          </div>
+          <div className="v2-connector-aside__actions">
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || tools.length === 0} onClick={() => { void submitDraft(); }}>
+              {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
+            </button>
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
+    );
+  };
 
   const renderAside = (grant: ToolGrant) => {
     const dead = isDead(grant);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
-    const byMode: Record<GrantWriteMode, string> = {
-      read: t('tools.modeRead', { defaultValue: 'read' }),
-      'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
-      write: t('tools.modeWrite', { defaultValue: 'read and write' }),
-    };
+    const entry = entryFor(grant);
     const counts = trail?.counts;
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.grantDetails', { defaultValue: 'Grant details' })}>
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{t('tools.grant', { defaultValue: 'grant' })}</p>
-          <h2>{TOOL_LABEL} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
+          <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
           <p>
             {granter
               ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: relativeTime(grant.createdAt) })
@@ -306,12 +498,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
               ? t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt) })
               : (isExpired(grant)
                 ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt) })
-                : t('tools.ends', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt) }))}
+                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt) }))}
           </p>
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
             <dd>{audienceLabels(grant)}</dd>
-            <dt>{byMode[grant.writeMode]}</dt>
+            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{modeLabel(grant.writeMode)}</dt>
             <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
             <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
             <dd>{asksFirst(grant)}</dd>
@@ -324,7 +516,6 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
               </>
             )}
           </dl>
-          {/* SEAM: Change access opens the Add form pre-filled from effectiveAudience once the catalogue lands. */}
           {!dead && (confirmRevoke === grant.grantId ? (
             <div className="v2-connector-aside__actions">
               <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void revoke(grant); }}>
@@ -336,6 +527,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
             </div>
           ) : (
             <div className="v2-connector-aside__actions">
+              {entry && (
+                <button type="button" className="v2-connector-aside__secondary" onClick={() => openDraft(entry, grant)}>
+                  {t('tools.changeAccess', { defaultValue: 'Change access' })}
+                </button>
+              )}
               <button type="button" className="v2-connector-aside__secondary" onClick={() => setConfirmRevoke(grant.grantId)}>
                 {t('tools.revoke', { defaultValue: 'Revoke' })}
               </button>
@@ -356,7 +552,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
             <ol className="v2-tools__trail">
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
-                  <span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {line.outcome}</span>
+                  <span><span className="v2-tools__outcome" title={line.outcome} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {line.outcome}</span>
                   <span className="v2-tools__trail-when">{relativeTime(line.at)}</span>
                 </li>
               ))}
@@ -379,7 +575,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
           <h2 className="v2-tools__title">{t('tools.title', { defaultValue: 'Tools' })}</h2>
           <span className="v2-tools__count-line">
             {t('tools.grantedCount', { defaultValue: '{{count}} granted', count: grantedCount })}
-            {catalog.length > 0 && ` · ${t('tools.moreCount', { defaultValue: '{{count}} more', count: catalog.length })}`}
+            {moreCount > 0 && ` · ${t('tools.moreCount', { defaultValue: '{{count}} more', count: moreCount })}`}
           </span>
           <input
             type="search"
@@ -411,7 +607,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, catalog = [] }) => {
           )}
         </div>
       </section>
-      {selected ? renderAside(selected) : null}
+      {draft ? renderDraft() : (selected ? renderAside(selected) : null)}
     </div>
   );
 };

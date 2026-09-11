@@ -9792,6 +9792,13 @@ body.modern-ui.v2-canvas {
 .v2-tools__trail-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 .v2-tools__trail-line > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .v2-tools__trail-when { flex: none; }
+.v2-tools__mode, .v2-tools__outcome { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
+.v2-tools__form { display: grid; gap: 14px; margin-top: 14px; }
+.v2-tools__field { display: grid; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
+.v2-tools__field > span:first-child, .v2-tools__field > legend { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; padding: 0; }
+.v2-tools__agents { display: grid; gap: 6px; }
+.v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
+.v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
 @media (max-width: 760px) {
   .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
