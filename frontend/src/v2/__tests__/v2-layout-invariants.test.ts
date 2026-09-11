@@ -398,6 +398,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button,[\s\S]*?\{\n\s*display: flex;[\s\S]*?gap: 6px;/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
+    // Every non-option card act is 32 tall at desktop, level with the options (ux-lead 67327):
+    // Approve / Deny / Mark handled / Reply / Open read 30 from the shared row-button rule.
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('min-height: 32px');
   });
 
   test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
