@@ -147,7 +147,15 @@ The Add form: a `writeMode` segment (`read` / `read and write, ask first` / `rea
 
 **390:** as the channels list — two lines per row, aside stacked under, `scrollWidth` 390 is the gate.
 
-**Sequencing:** the page reads only what is on main — `RoomGrant`, the `ToolCall` trail (`pending_approval` rows since #1664) and the connector row grid — so it can start alongside piece 3. It needs two read routes first, neither of which is piece 3: `GET /api/pods/:podId/grants` (`canViewPod`, effective audience) and `GET /api/grants/:grantId/calls` (the trail and the three counts). Only the gate waits on piece 3, because the `pending_approval` screenshot needs a real card.
+**Sequencing:** the page reads only what is on main — `RoomGrant`, the `ToolCall` trail (`pending_approval` rows since #1664) and the connector row grid — so it can start alongside piece 3. It needs two read routes first, neither of which is piece 3, and one tightening of an existing one (Vera 67560):
+
+- `GET /api/pods/:podId/grants` — every grant whose target is the pod or a seat in it, gated by `canViewPod`, each row in the field list below.
+- `GET /api/grants/:grantId/calls` — the trail from `ToolCall.listForGrant` plus the three counts by outcome. Gated by `canViewPod` on the grant's target pod; a seat grant's trail goes only to the granter and that seat. Every line carries `argsDigest` and never args.
+- `GET /api/grants/:grantId` returns the whole row today, `connectionId` and `brokerId` included. Once the page reads it, it returns an explicit field list and nothing else: `grantId`, `installationId`, `target`, `tools`, `writeMode`, `budget`, `audience`, `effectiveAudience`, `expiresAt`, `revokedAt`, `parentGrantId`, `rootGrantId`, `createdAt`, and `grantedBy` resolved from the Connection's owner. `connectionId` and `brokerId` are the broker's business, not the page's.
+
+Named tests: `the pod grants list refuses a non-member`; `the trail refuses a non-member and never returns args`; `a seat grant's trail is visible only to its granter and the seat`; `GET /api/grants/:id returns the field list and never connectionId or brokerId`.
+
+Only the gate waits on piece 3, because the `pending_approval` screenshot needs a real card.
 
 **Gate:** UX Lead, screenshots at 1440 and 390 from the deployed page with one granted GitHub row (live, from a real grant on dev), one not-yet row, and a trail with at least one `ok`, one `refused`, and one `pending_approval` line. The `pending_approval` line has to come from a real parked call with a real card in the room, not a seed.
 
