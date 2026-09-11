@@ -56,7 +56,7 @@ describe('plugin manifest parser', () => {
         name: 'calendar',
         type: 'mcp-server',
         transport: 'stdio',
-        source: { spec: 'acme/calendar-tools', subpath: 'servers/calendar', pin: sha },
+        source: { spec: 'https://github.com/acme/calendar-tools', subpath: 'servers/calendar', pin: sha },
         command: ['node', 'server.js'],
         enabledTools: ['events.read'],
       }],
@@ -71,8 +71,10 @@ describe('plugin manifest parser', () => {
       version: '1.0.0',
       source: 'acme/dual-root',
       mcpServers: {
-        one: { transport: 'stdio', command: ['node', 'one.js'] },
+        one: { transport: 'stdio', command: ['node', 'one.js'], enabledTools: ['one.read'] },
+        empty: { transport: 'stdio', command: ['node', 'empty.js'], enabledTools: [] },
       },
+      skills: [{ name: 'claude-skill', prompt: 'Claude instructions' }],
     });
     writeManifest(root, '.cursor-plugin', {
       name: 'cursor-name-must-not-win',
@@ -80,9 +82,14 @@ describe('plugin manifest parser', () => {
       version: '9.9.9',
       source: 'acme/cursor-root',
       mcpServers: {
-        one: { enabledTools: ['one.read'] },
+        one: { enabledTools: ['one.write'], command: ['sh', 'evil.sh'] },
+        empty: { enabledTools: ['evil.write'] },
         two: { transport: 'http', url: 'https://example.com/mcp', source: 'acme/two' },
       },
+      skills: [
+        { name: 'claude-skill', prompt: 'Cursor instructions must not replace Claude' },
+        { name: 'cursor-skill', prompt: 'Cursor instructions' },
+      ],
     });
 
     const result = parsePluginManifest(root);
@@ -90,7 +97,10 @@ describe('plugin manifest parser', () => {
     expect(result.version).toBe('1.0.0');
     expect(result.components).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'one', command: ['node', 'one.js'], enabledTools: ['one.read'] }),
+      expect.objectContaining({ name: 'empty', enabledTools: [] }),
       expect.objectContaining({ name: 'two', transport: 'http' }),
+      expect.objectContaining({ name: 'claude-skill', skillPrompt: 'Claude instructions' }),
+      expect.objectContaining({ name: 'cursor-skill', skillPrompt: 'Cursor instructions' }),
     ]));
   });
 
@@ -130,7 +140,8 @@ describe('plugin manifest parser', () => {
     const local = parsePluginManifest(makeRoot(validManifest({
       source: { spec: './servers//calendar' },
     })));
-    expect(local.components[0].source?.spec).toBe('servers/calendar');
+    expect(local.components[0].source?.spec).toBe('./servers/calendar');
+    expect(local.components[0].source?.spec).not.toBe(github.components[0].source?.spec);
   });
 
   it('accepts a string source with sibling subpath and pin fields', () => {
@@ -167,6 +178,33 @@ describe('plugin manifest parser', () => {
     ]));
   });
 
+  it('preserves argv order and duplicate values for command and args', () => {
+    const result = parsePluginManifest(makeRoot(validManifest({
+      mcpServers: {
+        array: {
+          transport: 'stdio',
+          command: ['srv', '--port', '8080', '--admin-port', '8080'],
+          source: 'acme/argv',
+        },
+        split: {
+          command: 'npx',
+          args: ['-y', 'pkg', '--port', '8080', '--admin-port', '8080'],
+          source: 'acme/args',
+        },
+      },
+    })));
+    expect(result.components).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'array',
+        command: ['srv', '--port', '8080', '--admin-port', '8080'],
+      }),
+      expect.objectContaining({
+        name: 'split',
+        command: ['npx', '-y', 'pkg', '--port', '8080', '--admin-port', '8080'],
+      }),
+    ]));
+  });
+
   it('refuses a writeOnly literal default with the variable name', () => {
     const root = makeRoot(validManifest({
       mcpServers: {
@@ -193,6 +231,25 @@ describe('plugin manifest parser', () => {
     expect(() => parsePluginManifest(root)).toThrow('literal value');
   });
 
+  it.each(['enum', 'const', 'examples'])('refuses writeOnly variable %s', (field) => {
+    const root = makeRoot(validManifest({
+      mcpServers: {
+        calendar: {
+          transport: 'stdio',
+          command: ['node', 'server.js'],
+          variables: {
+            token: {
+              type: 'string',
+              writeOnly: true,
+              [field]: field === 'enum' ? ['sk-live-LEAK'] : ['example'],
+            },
+          },
+        },
+      },
+    }));
+    expect(() => parsePluginManifest(root)).toThrow(/writeOnly variables cannot contain literal/);
+  });
+
   it('refuses a writeOnly literal env value but permits a secret reference', () => {
     const literalRoot = makeRoot(validManifest({
       mcpServers: {
@@ -217,6 +274,43 @@ describe('plugin manifest parser', () => {
       },
     }));
     expect(() => parsePluginManifest(referenceRoot)).not.toThrow();
+  });
+
+  it.each([
+    'http://example.com/mcp',
+    'https://169.254.169.254/latest/meta-data',
+    'https://169.254.169.254./latest/meta-data',
+    'https://2852039166/latest/meta-data',
+    'https://0251.0376.0251.0376/latest/meta-data',
+    'https://[::ffff:a9fe:a9fe]/latest/meta-data',
+    'https://user:secret@mcp.example.com/mcp',
+    'https://localhost./mcp',
+    'https://dev.localhost/mcp',
+    'https://metadata.google.internal./mcp',
+    '${COMMONLY_API_URL}@evil.com/mcp',
+  ])('rejects unsafe MCP HTTP URL %s', (url) => {
+    const root = makeRoot(validManifest({
+      mcpServers: {
+        remote: { transport: 'http', url, source: 'acme/remote' },
+      },
+    }));
+    expect(() => parsePluginManifest(root)).toThrow(PluginManifestValidationError);
+  });
+
+  it('accepts a complete Commonly API origin placeholder for an MCP HTTP URL', () => {
+    const root = makeRoot(validManifest({
+      mcpServers: {
+        remote: { transport: 'http', url: '${COMMONLY_API_URL}/mcp', source: 'acme/remote' },
+      },
+    }));
+    expect(parsePluginManifest(root).components[0].url).toBe('${COMMONLY_API_URL}/mcp');
+  });
+
+  it('refuses percent-encoded MCP source subpaths', () => {
+    const root = makeRoot(validManifest({
+      source: { spec: 'acme/plugin', subpath: 'servers/%252e%252e/outside' },
+    }));
+    expect(() => parsePluginManifest(root)).toThrow(PluginManifestValidationError);
   });
 
   it('maps local skill entries and marks a skills-only plugin as kind skill', () => {

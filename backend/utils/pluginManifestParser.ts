@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { isIP } from 'net';
 import path from 'path';
 
 import type {
@@ -58,6 +59,7 @@ const VARIABLE_TYPES = new Set(['string', 'number', 'boolean']);
 const MAX_STRING_LENGTH = 2_000;
 // Keep the parser aligned with the marketplace persistence boundary.
 const MAX_COMPONENTS = 50;
+const COMMONLY_API_URL_PLACEHOLDER = '${COMMONLY_API_URL}';
 
 const isRecord = (value: unknown): value is AnyRecord => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -144,6 +146,10 @@ const normalizeRelativeSubpath = (
     return undefined;
   }
   const raw = value.trim();
+  if (raw.includes('%')) {
+    addError(details, field, 'Must not contain percent-encoded path segments');
+    return undefined;
+  }
   let decoded: string;
   try {
     decoded = decodeURIComponent(raw);
@@ -245,8 +251,11 @@ const normalizeSource = (
     // scheme-free value is a local path and must remain relative to the root.
     addError(details, `${field}.spec`, 'Local source must be a relative path inside the checkout');
     return undefined;
-  } else if (!isOwnerRepoShorthand(normalizedSpec)) {
-    canonicalSpec = path.posix.normalize(normalizedSpec).replace(/^\.\//, '');
+  } else if (isOwnerRepoShorthand(normalizedSpec)) {
+    canonicalSpec = `https://github.com/${normalizedSpec}`;
+  } else {
+    const normalizedPath = path.posix.normalize(normalizedSpec).replace(/^\.\//, '');
+    canonicalSpec = `./${normalizedPath}`;
   }
 
   const normalizedSubpath = normalizeRelativeSubpath(subpath, `${field}.subpath`, details);
@@ -288,6 +297,34 @@ const normalizeStringList = (
       seen.add(normalized);
       result.push(normalized);
     }
+  });
+  if (value.length > maxItems) addError(details, field, `Must not contain more than ${maxItems} entries`);
+  return result;
+};
+
+const normalizeArgvList = (
+  value: unknown,
+  field: string,
+  details: PluginManifestValidationDetail[],
+  maxItems = 100,
+): string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    addError(details, field, 'Must be an array of strings');
+    return undefined;
+  }
+  const result: string[] = [];
+  value.forEach((entry, index) => {
+    if (typeof entry !== 'string' || !entry.trim()) {
+      addError(details, `${field}[${index}]`, 'Must be a non-empty string');
+      return;
+    }
+    const normalized = entry.trim();
+    if (normalized.length > MAX_STRING_LENGTH) {
+      addError(details, `${field}[${index}]`, `Must not exceed ${MAX_STRING_LENGTH} characters`);
+      return;
+    }
+    result.push(normalized);
   });
   if (value.length > maxItems) addError(details, field, `Must not contain more than ${maxItems} entries`);
   return result;
@@ -355,7 +392,7 @@ const normalizeVariables = (
       addError(details, variableField, 'writeOnly variables cannot contain a literal default');
     }
     if (writeOnly === true) {
-      ['value', 'literal', 'secret', 'example'].forEach((literalKey) => {
+      ['value', 'literal', 'secret', 'example', 'examples', 'enum', 'const'].forEach((literalKey) => {
         if (own(definition, literalKey)) {
           addError(details, variableField, `writeOnly variables cannot contain literal ${literalKey}`);
         }
@@ -418,6 +455,60 @@ const rejectLiteralSecretValues = (
   });
 };
 
+const normalizeHttpUrl = (
+  value: unknown,
+  field: string,
+  details: PluginManifestValidationDetail[],
+): string | undefined => {
+  if (typeof value !== 'string' || !value.trim()) {
+    addError(details, field, 'http server url is required');
+    return undefined;
+  }
+  const url = value.trim();
+  if (url.includes('${')) {
+    // The runtime may substitute its own origin, but only when the complete
+    // origin is the placeholder. `${COMMONLY_API_URL}@evil.com` must never
+    // become an authority-bearing URL after substitution.
+    if (url.startsWith(COMMONLY_API_URL_PLACEHOLDER)
+      && (url.length === COMMONLY_API_URL_PLACEHOLDER.length
+        || url[COMMONLY_API_URL_PLACEHOLDER.length] === '/')) {
+      return url;
+    }
+    addError(details, field, 'URL placeholders must stand for the complete origin');
+    return undefined;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    addError(details, field, 'Must be a valid https URL');
+    return undefined;
+  }
+  if (parsed.protocol !== 'https:') {
+    addError(details, field, 'MCP server URL must use https');
+    return undefined;
+  }
+  if (parsed.username || parsed.password) {
+    addError(details, field, 'MCP server URL must not contain credentials');
+    return undefined;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const hostnameWithoutTrailingDot = hostname.replace(/\.+$/, '');
+  const ipCandidate = hostnameWithoutTrailingDot.replace(/^\[|\]$/g, '');
+  if (
+    hostname.startsWith('[')
+    || isIP(ipCandidate) !== 0
+    || hostnameWithoutTrailingDot === 'localhost'
+    || hostnameWithoutTrailingDot.endsWith('.localhost')
+    || hostnameWithoutTrailingDot.endsWith('.local')
+    || hostnameWithoutTrailingDot.endsWith('.internal')
+  ) {
+    addError(details, field, 'MCP server URL host must be a public DNS name');
+    return undefined;
+  }
+  return url;
+};
+
 const mergeMissing = (primary: unknown, secondary: unknown): unknown => {
   if (primary === undefined) return secondary;
   if (isRecord(primary) && isRecord(secondary)) {
@@ -428,19 +519,30 @@ const mergeMissing = (primary: unknown, secondary: unknown): unknown => {
     return result;
   }
   if (Array.isArray(primary) && Array.isArray(secondary)) {
-    // Claude is authoritative for duplicate entries. Cursor may fill in a
-    // server/skill omitted by Claude, but cannot replace one it defines.
-    const byName = new Map<string, AnyRecord>();
-    const unnamed: unknown[] = [];
-    [...primary, ...secondary].forEach((entry) => {
-      if (isRecord(entry) && typeof entry.name === 'string') {
-        const existing = byName.get(entry.name);
-        byName.set(entry.name, existing ? mergeMissing(existing, entry) as AnyRecord : entry);
-      } else {
-        unnamed.push(entry);
-      }
-    });
-    return [...byName.values(), ...unnamed];
+    // Arrays of named records are the one mergeable list shape: Claude keeps
+    // authority for duplicate names while Cursor can add a named entry that
+    // Claude omitted. Primitive arrays (enabledTools, argv, etc.) are kept
+    // wholesale so a secondary provider cannot widen or alter them.
+    const isNamedRecord = (entry: unknown): entry is AnyRecord => (
+      isRecord(entry) && typeof entry.name === 'string' && Boolean(entry.name.trim())
+    );
+    const canMergeByName = (entries: unknown[]) => entries.every(isNamedRecord);
+    if (canMergeByName(primary) && canMergeByName(secondary)) {
+      const result = primary.map((entry) => ({ ...entry }));
+      const indexes = new Map(result.map((entry, index) => [entry.name, index]));
+      secondary.forEach((entry) => {
+        const existingIndex = indexes.get(entry.name);
+        if (existingIndex === undefined) {
+          indexes.set(entry.name, result.length);
+          result.push({ ...entry });
+        } else {
+          result[existingIndex] = mergeMissing(result[existingIndex], entry) as AnyRecord;
+        }
+      });
+      return result;
+    }
+    // A defined Claude array is authoritative for every other array shape.
+    return primary;
   }
   return primary;
 };
@@ -557,7 +659,7 @@ const normalizeCommand = (
   details: PluginManifestValidationDetail[],
 ): string[] | undefined => {
   if (Array.isArray(value)) {
-    const command = normalizeStringList(value, field, details, 100);
+    const command = normalizeArgvList(value, field, details, 100);
     if (command && command.length === 0) addError(details, field, 'Must contain at least one argv entry');
     if (args !== undefined) {
       addError(details, `${field}.args`, 'args is not valid when command is already an argv array');
@@ -570,7 +672,7 @@ const normalizeCommand = (
   if (typeof value === 'string' && value.trim()) {
     const normalizedCommand = requiredString(value, field, details, 2_000);
     if (args === undefined) return [normalizedCommand];
-    const normalizedArgs = normalizeStringList(args, `${field}.args`, details, 99);
+    const normalizedArgs = normalizeArgvList(args, `${field}.args`, details, 99);
     return normalizedArgs ? [normalizedCommand, ...normalizedArgs] : [normalizedCommand];
   }
   addError(details, field, 'stdio server command must be an argv array');
@@ -631,16 +733,7 @@ const normalizeMcpServer = (
     if (server.command !== undefined || server.args !== undefined) {
       addError(details, `${field}.command`, 'http servers must not define command');
     }
-    if (typeof server.url !== 'string' || !server.url.trim()) {
-      addError(details, `${field}.url`, 'http server url is required');
-    } else {
-      try {
-        const parsedUrl = new URL(server.url.trim());
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('protocol');
-      } catch {
-        addError(details, `${field}.url`, 'Must be a valid http or https URL');
-      }
-    }
+    normalizeHttpUrl(server.url, `${field}.url`, details);
   }
 
   return {
@@ -684,10 +777,10 @@ const normalizeMcpServers = (
 export const validateMcpComponent = (
   component: unknown,
   fieldPrefix = 'component',
-): PluginManifestValidationDetail[] => {
+): { component?: IComponent; errors: PluginManifestValidationDetail[] } => {
   const details: PluginManifestValidationDetail[] = [];
-  normalizeMcpServer('', component, {}, 0, details, fieldPrefix);
-  return details;
+  const normalized = normalizeMcpServer('', component, {}, 0, details, fieldPrefix);
+  return { component: normalized, errors: details };
 };
 
 const readPluginManifests = (

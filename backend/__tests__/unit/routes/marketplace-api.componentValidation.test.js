@@ -125,6 +125,61 @@ describe('marketplace publish validates inside the components array', () => {
     expect(Installable.create).not.toHaveBeenCalled();
   });
 
+  it('persists the parser-normalized MCP component on publish', async () => {
+    const res = await publish([{
+      name: 'Calendar',
+      type: 'mcp-server',
+      transport: 'stdio',
+      source: { spec: 'acme/calendar', subpath: './servers/calendar' },
+      command: ['node', '--port', '8080', '--port', '8080'],
+    }]);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(Installable.create).toHaveBeenCalledWith(expect.objectContaining({
+      components: [expect.objectContaining({
+        source: { spec: 'https://github.com/acme/calendar', subpath: 'servers/calendar' },
+        command: ['node', '--port', '8080', '--port', '8080'],
+      })],
+    }));
+  });
+
+  it('persists the parser-normalized MCP component on update', async () => {
+    const existing = {
+      installableId: '@nova/my-agent',
+      publisher: { userId: 'user-1' },
+      status: 'active',
+      versions: [],
+      components: [],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    Installable.findOne.mockResolvedValue(existing);
+    const res = await publish([{
+      name: 'Calendar',
+      type: 'mcp-server',
+      transport: 'stdio',
+      source: { spec: 'acme/calendar' },
+      command: ['node', 'server.js'],
+    }]);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(existing.components[0].source.spec).toBe('https://github.com/acme/calendar');
+  });
+
+  it.each([
+    'transport',
+    'source',
+    'command',
+    'url',
+    'variables',
+    'enabledTools',
+  ])('rejects MCP field %s on a non-MCP component', async (field) => {
+    const res = await publish([widget({ [field]: field === 'transport' ? 'stdio' : {} })]);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(errorOf(res)).toMatch(new RegExp(`components\\[0\\]\\.${field} is only valid for mcp-server`, 'i'));
+    expect(Installable.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a components value that is not an array', async () => {
     // A string has `.length`, so the old `components.length > 50` gate passed
     // any string of 50 characters or fewer straight through.
@@ -194,7 +249,19 @@ describe('marketplace publish validates inside the components array', () => {
     ['variables'],
     ['metadata'],
   ])('caps the Mixed field %s', async (field) => {
-    const res = await publish([widget({ [field]: { blob: 'x'.repeat(20 * 1024) } })]);
+    const component = field === 'variables'
+      ? {
+        name: 'Calendar',
+        type: 'mcp-server',
+        transport: 'stdio',
+        source: { spec: 'acme/calendar' },
+        command: ['node', 'server.js'],
+        variables: Object.fromEntries(
+          Array.from({ length: 1000 }, (_, index) => [`variable${index}`, { type: 'string' }]),
+        ),
+      }
+      : widget({ [field]: { blob: 'x'.repeat(20 * 1024) } });
+    const res = await publish([component]);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(errorOf(res)).toMatch(new RegExp(`components\\[0\\]\\.${field} must be \\d+ bytes or fewer`, 'i'));
@@ -281,6 +348,24 @@ describe('marketplace fork validates the components it copies', () => {
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(Installable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists parser-normalized MCP components on fork', async () => {
+    const sourceComponents = [{
+      name: 'Calendar',
+      type: 'mcp-server',
+      transport: 'stdio',
+      source: { spec: 'acme/calendar' },
+      command: ['node', 'server.js'],
+    }];
+    const res = await fork(sourceComponents);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(Installable.create).toHaveBeenCalledWith(expect.objectContaining({
+      components: [expect.objectContaining({
+        source: { spec: 'https://github.com/acme/calendar' },
+      })],
+    }));
   });
 
   it('refuses to launder an unvalidated widgetUrl out of a builtin source', async () => {
