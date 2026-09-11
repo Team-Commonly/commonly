@@ -12,7 +12,7 @@ const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
 
-type SourceType = 'message' | 'approval' | 'decision_request' | 'task';
+type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
@@ -258,6 +258,30 @@ export const recordApproval = async (approval: any): Promise<void> => {
   }
 };
 
+// An agent's action proposal (approvalActionService, the runtime `propose-action`
+// path) is an ask like any other: it rings, counts and badges in the inbox
+// (ux-lead ruling on #1650). It is its own source type because it resolves
+// through /api/approvals/:id/resolve, not the Activity approve/reject verbs —
+// the page branches on `sourceType`, never on a guess about the id.
+export const recordActionApproval = async (row: any, displayName?: string | null): Promise<void> => {
+  try {
+    const podId = row?.podId;
+    const id = row?._id || row?.id;
+    if (!podId || !id) return;
+    const recipients = await currentHumanMembers(podId);
+    const pod = await Pod.findById(podId).select('name').lean();
+    const label = String(displayName || row?.agentName || '').trim();
+    await recordForRecipients(recipients, {
+      podId, kind: 'approval' as Kind, sourceType: 'approval_action' as SourceType, sourceId: sourceKey('approval_action', id),
+      title: label ? `${label} requests approval` : 'Approval requested', actorName: label || undefined,
+      actorUserId: row?.agentUserId ? String(row.agentUserId) : undefined,
+      detail: compact(row?.summary, 180), podName: pod?.name || 'Pod',
+    });
+  } catch (error) {
+    console.warn('[attention] action-approval materialization failed:', (error as Error).message);
+  }
+};
+
 export const recordDecision = async (decision: any): Promise<void> => {
   try {
     const podId = decision?.podId;
@@ -418,7 +442,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
-      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
+      id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), sourceType: row.source.type, title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
@@ -460,6 +484,6 @@ export const acknowledgeAttention = async (recipientUserId: unknown, attentionIt
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };

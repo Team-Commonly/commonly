@@ -53,6 +53,11 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+const mockResolveAttention = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../services/attentionItemService', () => ({
+  recordActionApproval: jest.fn().mockResolvedValue(undefined),
+  resolve: (...args) => mockResolveAttention(...args),
+}));
 
 const { resolveApproval } = require('../../../services/approvalActionService');
 
@@ -143,6 +148,14 @@ describe('resolveApproval lifecycle', () => {
     const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
     expect(res.status).toBe(409);
     expect(mockPodCreate).not.toHaveBeenCalled();
+  });
+
+  test('deciding clears the inbox row for that proposal, approve and decline alike (#1650)', async () => {
+    const row = flaggedRow();
+    mockApprovalFindById.mockResolvedValue(row);
+    mockApprovalFindOneAndUpdate.mockResolvedValue({ ...row, status: 'declined' });
+    await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'declined' });
+    expect(mockResolveAttention).toHaveBeenCalledWith('approval_action', 'appr-1');
   });
 
   test('decline resolves without executing anything', async () => {

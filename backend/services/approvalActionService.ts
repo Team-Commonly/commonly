@@ -347,6 +347,12 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   const messageId = String(posted.message._id || posted.message.id || '');
   row.messageId = messageId;
   await row.save();
+  // The card in the room is not enough: the inbox is where "what needs you"
+  // lives, and its count is the ledger (#1650). Advisory — a projection
+  // failure never turns a posted proposal into an error for the agent.
+  // eslint-disable-next-line global-require
+  const { recordActionApproval } = require('./attentionItemService');
+  await recordActionApproval(row, displayName);
   return { ok: true, approvalId: String(row._id), messageId };
 };
 
@@ -455,6 +461,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       body: { error: 'Already decided', approval: current ? buildCardPayload(current) : null },
     };
   }
+  // The ask is answered either way; the inbox row leaves with it.
+  // eslint-disable-next-line global-require
+  const { resolve: resolveAttention } = require('./attentionItemService');
+  await resolveAttention('approval_action', transitioned._id);
 
   if (decision === 'approved') {
     try {

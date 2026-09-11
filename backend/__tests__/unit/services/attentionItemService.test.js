@@ -167,6 +167,18 @@ describe('attentionItemService', () => {
     expect(queue.items.find((item) => item.id === '41').actorUserId).toBeUndefined();
   });
 
+  it('projects the source type so the page can route an action proposal to /api/approvals (#1650)', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
+      { _id: 'attention-9', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'approval', source: { type: 'approval_action', id: 'appr-1' }, title: 'Scout requests approval', createdAt: new Date() },
+      { _id: 'attention-8', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'approval', source: { type: 'approval', id: 'act-1' }, title: 'Access', createdAt: new Date() },
+    ] }) });
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] }]));
+
+    const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
+    expect(queue.items.find((item) => item.id === 'appr-1')).toMatchObject({ kind: 'approval', sourceType: 'approval_action' });
+    expect(queue.items.find((item) => item.id === 'act-1')).toMatchObject({ kind: 'approval', sourceType: 'approval' });
+  });
+
   it('returns only rows whose recipient is still a member and resolves by recipient-owned id', async () => {
     mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
       { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
@@ -309,6 +321,25 @@ describe('attentionItemService', () => {
     expect(result).toMatchObject({ eligible: 0, resolved: 0 });
     expect(mockUpdateOne).not.toHaveBeenCalled();
     expect(mockMongoMessageExists).not.toHaveBeenCalled();
+  });
+
+  it('materializes an agent action proposal as an approval ask for each human member, keyed as approval_action (#1650)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'owner', username: 'owner', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+
+    await AttentionItemService.recordActionApproval({
+      _id: 'appr-1', podId: 'pod-1', agentName: 'scout', actionType: 'create_pod', summary: 'May I open a room for design work?',
+    }, 'Scout');
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ 'source.type': 'approval_action', 'source.id': 'appr-1' }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'approval', title: 'Scout requests approval', detail: 'May I open a room for design work?' }) }),
+      { upsert: true },
+    );
   });
 
   it('materializes a blocked board row once for each current human recipient', async () => {
