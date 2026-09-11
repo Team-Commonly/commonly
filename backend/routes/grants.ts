@@ -100,9 +100,26 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_target', message: 'target.kind must be pod or seat' });
     }
     const members = await ensureTargetAccess(target, userId);
-    const audience = body.audience === undefined ? members : body.audience;
+    // Pod grants default to the current member snapshot. A seat has no pod
+    // census, so its own seat id is the minimum audience and can be extended
+    // explicitly by the granter.
+    const audience = target.kind === 'seat'
+      ? (body.audience === undefined ? [target.id] : body.audience)
+      : (body.audience === undefined ? members : body.audience);
     const audienceValues = Array.isArray(audience) ? audience.map(String) : audience;
-    if (Array.isArray(audienceValues) && audienceValues.some((id: string) => !members.includes(id))) {
+    if (
+      target.kind === 'seat'
+      && (!Array.isArray(audienceValues)
+        || audienceValues.length !== 1
+        || audienceValues[0] !== String(target.id))
+    ) {
+      return res.status(400).json({ error: 'invalid_audience', message: 'seat audience must be the target seat' });
+    }
+    if (
+      target.kind === 'pod'
+      && Array.isArray(audienceValues)
+      && audienceValues.some((id: string) => !members.includes(id))
+    ) {
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
@@ -139,7 +156,9 @@ router.post(
     await assertGrantUsable({
       grant: parent,
       agentUserId: agentId,
-      ...(members ? { currentMemberIds: members } : {}),
+      // Seat targets have no pod census; the explicit audience is the live
+      // membership context for the seat-grant check.
+      currentMemberIds: members ?? parent.audience,
     });
     const body = (req.body || {}) as Record<string, unknown>;
     const child = await attenuateGrant({

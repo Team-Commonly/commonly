@@ -132,8 +132,30 @@ const assertBudgetAttenuated = (
   if (!budgetFieldIsNarrower(child?.calls, parent?.calls, 'calls')) {
     throw new RoomGrantError('grant_not_attenuated', 'child budget.calls cannot exceed its parent');
   }
-  if (!budgetFieldIsNarrower(child?.windowMs, parent?.windowMs, 'windowMs')) {
-    throw new RoomGrantError('grant_not_attenuated', 'child budget.windowMs cannot exceed its parent');
+
+  // A calls-only parent is a lifetime cap. Adding a window would reset that
+  // cap repeatedly and therefore widen it, even if the child keeps the same
+  // calls value (for example, 10-ever -> 10-per-millisecond).
+  if (
+    parent?.calls !== undefined
+    && parent.windowMs === undefined
+    && child?.windowMs !== undefined
+  ) {
+    throw new RoomGrantError('grant_not_attenuated', 'child budget.windowMs cannot be added to a lifetime cap');
+  }
+
+  // A window is not independently narrower when it changes: the capability
+  // is a call rate. A shorter window at the same call count is wider, while a
+  // longer window is narrower. Compare the two rates after the per-field
+  // unbounded checks above, rather than comparing windowMs in isolation.
+  if (
+    child?.calls !== undefined
+    && child.windowMs !== undefined
+    && parent?.calls !== undefined
+    && parent.windowMs !== undefined
+    && child.calls / child.windowMs > parent.calls / parent.windowMs
+  ) {
+    throw new RoomGrantError('grant_not_attenuated', 'child budget call rate cannot exceed its parent');
   }
 };
 
@@ -164,6 +186,45 @@ const grantIsExpired = (grant: IRoomGrant | Record<string, unknown>, now = new D
   return !expiresAt || asDate(expiresAt, 'expiresAt').getTime() <= now.getTime();
 };
 
+const loadGrantLineage = async (
+  grant: IRoomGrant | Record<string, unknown>,
+): Promise<Array<IRoomGrant | Record<string, unknown>>> => {
+  const lineage: Array<IRoomGrant | Record<string, unknown>> = [grant];
+  const seen = new Set<string>();
+  let current: IRoomGrant | Record<string, unknown> = grant;
+  let parentGrantId = readGrantValue<unknown>(current, 'parentGrantId');
+  while (parentGrantId) {
+    const parentId = String(parentGrantId);
+    if (seen.has(parentId)) {
+      throw new RoomGrantError('grant_invalid_lineage', 'grant lineage contains a cycle', 403);
+    }
+    seen.add(parentId);
+    const parent = await RoomGrant.findOne({ grantId: parentId });
+    if (!parent) throw new RoomGrantError('grant_not_found', 'grant parent not found', 404);
+    lineage.push(parent);
+    current = parent;
+    parentGrantId = readGrantValue<unknown>(current, 'parentGrantId');
+  }
+  return lineage;
+};
+
+const assertGrantLineageActive = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  now = new Date(),
+): Promise<Array<IRoomGrant | Record<string, unknown>>> => {
+  const lineage = await loadGrantLineage(grant);
+  for (const item of lineage) {
+    if (grantIsRevoked(item)) throw new RoomGrantError('grant_revoked', 'grant lineage is revoked', 403);
+    if (grantIsExpired(item, now)) throw new RoomGrantError('grant_expired', 'grant lineage is expired', 403);
+  }
+  return lineage;
+};
+
+const markMintedGrantRejected = async (grantId: string, error: RoomGrantError): Promise<never> => {
+  await RoomGrant.updateOne({ grantId }, { $set: { revokedAt: new Date() } });
+  throw error;
+};
+
 export const effectiveAudience = (
   grant: Pick<IRoomGrant, 'audience'> | { audience?: string[] },
   currentMemberIds: string[],
@@ -176,13 +237,23 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
   if (input.expiresAt === undefined || input.expiresAt === null || input.expiresAt === '') {
     throw new RoomGrantError('missing_expiry', 'expiresAt is required');
   }
+  const grantId = input.grantId ? asId(input.grantId, 'grantId') : `grant_${randomUUID()}`;
+  const parentGrantId = input.parentGrantId ? asId(input.parentGrantId, 'parentGrantId') : undefined;
+  let rootGrantId = grantId;
+  if (parentGrantId) {
+    const parent = await RoomGrant.findOne({ grantId: parentGrantId });
+    if (!parent) throw new RoomGrantError('grant_not_found', 'parent grant not found', 404);
+    const lineage = await assertGrantLineageActive(parent);
+    const root = lineage[lineage.length - 1];
+    rootGrantId = String(readGrantValue<string>(root, 'rootGrantId') || readGrantValue<string>(root, 'grantId'));
+  }
   const expiresAt = asDate(input.expiresAt, 'expiresAt');
   if (expiresAt.getTime() <= Date.now()) {
     throw new RoomGrantError('invalid_expiry', 'expiresAt must be in the future');
   }
   const budget = normalizeBudget(input.budget);
   const grant = await RoomGrant.create({
-    grantId: input.grantId ? asId(input.grantId, 'grantId') : `grant_${randomUUID()}`,
+    grantId,
     connectionId: asId(input.connectionId, 'connectionId'),
     installationId: asId(input.installationId, 'installationId'),
     target: {
@@ -194,9 +265,51 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     budget,
     audience: uniqueStrings(input.audience, 'audience'),
     expiresAt,
-    parentGrantId: input.parentGrantId ? asId(input.parentGrantId, 'parentGrantId') : undefined,
+    parentGrantId,
+    rootGrantId,
     brokerId: asId(input.brokerId, 'brokerId'),
   });
+
+  // Re-read the root after insertion. A revoke can race the pre-insert check;
+  // in that case the cascade cannot see this child yet, so mark it revoked
+  // here and refuse to hand out a live descendant.
+  if (parentGrantId) {
+    const root = await RoomGrant.findOne({ grantId: rootGrantId }).select('revokedAt expiresAt').lean();
+    if (!root) {
+      return markMintedGrantRejected(
+        grantId,
+        new RoomGrantError('grant_not_found', 'grant root not found', 404),
+      );
+    }
+    if (grantIsRevoked(root)) {
+      return markMintedGrantRejected(
+        grantId,
+        new RoomGrantError('grant_revoked', 'grant root is revoked', 403),
+      );
+    }
+    if (grantIsExpired(root)) {
+      return markMintedGrantRejected(
+        grantId,
+        new RoomGrantError('grant_expired', 'grant root is expired', 403),
+      );
+    }
+
+    // The root check closes the common race, while this second lineage read
+    // also covers a revoked intermediate parent in a deeper delegation tree.
+    const persistedParent = await RoomGrant.findOne({ grantId: parentGrantId });
+    if (!persistedParent) {
+      return markMintedGrantRejected(
+        grantId,
+        new RoomGrantError('grant_not_found', 'grant parent not found', 404),
+      );
+    }
+    try {
+      await assertGrantLineageActive(persistedParent);
+    } catch (error) {
+      if (error instanceof RoomGrantError) return markMintedGrantRejected(grantId, error);
+      throw error;
+    }
+  }
   return grant;
 };
 
@@ -209,8 +322,7 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   // from the request body, which is the critical attenuation boundary.
   const parent = await RoomGrant.findOne({ grantId: parentGrantId });
   if (!parent) throw new RoomGrantError('grant_not_found', 'parent grant not found', 404);
-  if (grantIsRevoked(parent)) throw new RoomGrantError('grant_revoked', 'parent grant is revoked', 403);
-  if (grantIsExpired(parent)) throw new RoomGrantError('grant_expired', 'parent grant is expired', 403);
+  await assertGrantLineageActive(parent);
   const parentExpiry = asDate(parent.expiresAt, 'expiresAt');
 
   const tools = input.tools === undefined ? [...parent.tools] : uniqueStrings(input.tools, 'tools');
@@ -286,12 +398,17 @@ export const assertGrantUsable = async (
   if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   if (grantIsRevoked(grant)) throw new RoomGrantError('grant_revoked', 'grant is revoked', 403);
   if (grantIsExpired(grant)) throw new RoomGrantError('grant_expired', 'grant is expired', 403);
+  await assertGrantLineageActive(grant);
 
-  if (options.currentMemberIds && options.agentUserId) {
-    const audience = effectiveAudience(grant as Pick<IRoomGrant, 'audience'>, options.currentMemberIds);
-    if (!audience.includes(String(options.agentUserId))) {
-      throw new RoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
-    }
+  if (!options.agentUserId) {
+    throw new RoomGrantError('agent_identity_required', 'agent identity is required for grant use', 403);
+  }
+  if (!options.currentMemberIds) {
+    throw new RoomGrantError('audience_context_required', 'current member list is required for audience checks', 403);
+  }
+  const audience = effectiveAudience(grant as Pick<IRoomGrant, 'audience'>, options.currentMemberIds);
+  if (!audience.includes(String(options.agentUserId))) {
+    throw new RoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
   }
 
   if (options.tool !== undefined) {

@@ -34,6 +34,8 @@ export interface IRoomGrant extends Document {
   expiresAt: Date;
   revokedAt?: Date | null;
   parentGrantId?: string | null;
+  /** Denormalized root used to close revoke/mint races and check lineage. */
+  rootGrantId?: string | null;
   /** Required proxy identifier; an agent must never receive connection material. */
   brokerId: string;
   createdAt: Date;
@@ -82,6 +84,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
     parentGrantId: { type: String, default: null, trim: true },
+    rootGrantId: { type: String, default: null, trim: true },
     brokerId: { type: String, required: true, trim: true },
   },
   { timestamps: true, collection: 'room_grants' },
@@ -89,6 +92,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
 
 RoomGrantSchema.index({ target: 1, revokedAt: 1, expiresAt: 1 });
 RoomGrantSchema.index({ parentGrantId: 1 });
+RoomGrantSchema.index({ rootGrantId: 1 });
 RoomGrantSchema.index({ connectionId: 1, installationId: 1 });
 
 /**
@@ -100,6 +104,7 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
   grantId: string,
 ): Promise<number> {
   const ids: string[] = [grantId];
+  const seen = new Set(ids);
   let frontier: string[] = [grantId];
 
   while (frontier.length > 0) {
@@ -108,9 +113,10 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
       .lean();
     const childIds = (children as Array<{ grantId?: string }>).map((child) => child.grantId)
       .filter((id): id is string => Boolean(id))
-      .filter((id) => !ids.includes(id));
+      .filter((id) => !seen.has(id));
     if (childIds.length === 0) break;
     ids.push(...childIds);
+    childIds.forEach((id) => seen.add(id));
     frontier = childIds;
   }
 
