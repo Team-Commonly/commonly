@@ -8156,6 +8156,21 @@ body.modern-ui.v2-canvas {
   overflow-wrap: anywhere;
 }
 
+/* Owner-only canonical tool arguments. Keep the exact JSON readable without
+   letting a long comment body widen the message column on mobile. */
+.v2-approval__tool-call {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-bg);
+  color: var(--v2-text-primary);
+  font: 12px/1.45 var(--v2-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
 /* The agent's reason for asking, demoted below the action it belongs to. */
 .v2-approval__pitch {
   font-size: 13px;
