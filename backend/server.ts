@@ -238,6 +238,7 @@ app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
 app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
 app.use('/api/grants', require('./routes/grants')); // ADR-001 room-grant record: server-enforced attenuation + cascade revocation
+app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broker: stateless MCP transport + attributed trail
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
