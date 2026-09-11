@@ -314,7 +314,7 @@ The v2 decision is correct. This is a refinement — it adds a UX-surface hint (
 
 **Status**: Proposed — Wren (Connectors design lead, per Sam's 2026-09-11 assignment, pod message 67382). Vera verifies the grant record first.
 **Trigger**: Sam's competitive read of Cursor's plugin catalogue (pod message 67372). The catalogue installs *tool servers* — Gmail, Calendar, Drive, Calendly and the like — and the component union above has no type for one. It has Agent, SlashCommand, EventHandler, ScheduledJob, Widget, Webhook, DataSchema and Skill. A catalogue of tools needs a component that *is* an MCP server, or every tool listing has to masquerade as a Skill or a Webhook and lie about what it provides.
-**Scope boundary**: this amendment names the component, the manifest it is parsed from, and the grant record a room-shared install would need. It does **not** decide the catalogue page (Sam rules on mocks separately) and it does **not** authorise room-shared credentials to ship — see §3, which makes the broker a precondition.
+**Scope boundary**: this amendment names the component, the manifest it is parsed from, and the grant record a room-shared install would need. It does **not** decide the catalogue page — Sam ruled option A, *Two lists*, on 2026-09-11 (pod message 67407), and the page spec lives in [`docs/plans/tools-catalogue-room-grants.md`](../plans/tools-catalogue-room-grants.md), not here — and it does **not** authorise room-shared credentials to ship — see §3, which makes the broker a precondition.
 
 ### What changes
 
@@ -416,14 +416,17 @@ RoomGrant {
 
 ### Build sequence
 
-1. **This amendment** — docs only; Vera's gate on §3 is the review that matters.
-2. **Manifest parser** (Kai; sized 2–3 days) — local roots → Installable, fixtures for both plugin roots, and named tests for: the `writeOnly`-literal refusal, the `default`/`writeOnly` exclusion, the `source` scheme/host allow-list, subpath escape rejection, and the non-40-character pin. No fetch; the SHA-freeze at install is the second cut.
-3. **Hook endpoint** (Kai; sized 5–7 days for ingress and claim checks) — `PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop` as JSON to a Commonly URL, with a `PreToolUse` reply able to refuse a tool call that touches a resource another agent holds under an ADR-028 work claim, and `PostToolUse` written to the room's work record. Recording or redacting tool payloads is a separate follow-on (+2–3 days), not folded in.
-4. **Broker with an attributed call trail** — unsized, and the precondition for anything in §3 becoming buildable. The ledger row per call is what the mock's "trail of calls" draws, so the trail is not a separate item: it is the broker's output.
-5. **Approval step for irreversible scopes** — `writeMode: 'write-with-confirm'` routes the call through `commonly_request_decision` before the broker executes it. Sits on the broker; small once the broker exists.
-6. **Catalogue page** — after Sam rules on the mocks; Connectors keeps the page per Ruling A (2026-09-02). The page draws only what 1–5 enforce.
+The order below is the one the plan doc carries, after Sam's 2026-09-11 review note (67407): one first-party tool works end to end — grant, call, trail, approval — before the generic parser, because a catalogue whose rows cannot be called proves nothing. Sizes are Wren's; Kai confirms.
 
-Sam's gap list (67401) — tool-server component, grant record, attributed call trail, approval step — maps to items 1, 1 (§3), 4 and 5.
+1. **This amendment** — docs only; Vera's gate on §3 is the review that matters.
+2. **Grant record** (Kai; 2–3 days) — `RoomGrant` as §3 writes it: mint, server-checked attenuation, revoke with cascade, `audience ∩ pod.members`, and the named tests, root-revoke on a three-level chain among them.
+3. **Broker with an attributed call trail** (Kai; 4–6 days) — a Commonly-hosted MCP server, one URL per grant, authenticated by the agent's own runtime token so attribution is the auth and there is no second credential to leak; one `ToolCall` row per call, refusals included; the first-party **GitHub** tool as a builtin `McpServer` Installable over `githubAppService`, which already holds a server-side credential. The ledger row per call is what the mock's "trail of calls" draws, so the trail is not a separate item: it is the broker's output. The precondition for anything in §3 becoming buildable.
+4. **Approval step for irreversible scopes** (Kai; 1–2 days) — `writeMode: 'write-with-confirm'` parks the call as an `ApprovalAction` through the existing `propose-action` consent path (`approvalActionService`), with a new `actionType: 'tool_call'` and the granter as the row's owner; the broker executes on `approved`. **Not** `commonly_request_decision`: that tool's own contract is advisory coordination, never approval or authority to act, and gating an irreversible write on it would let a ruling the tool promises is non-binding authorise the action (Vera 67410).
+5. **Catalogue page** — option A per Sam's ruling (67407); Connectors keeps the page per Ruling A (2026-09-02); UX Lead gates at 1440 and 390. **The page is not gated on the broker.** Per-member installs ship before it, so the Tools list ships first with per-member rows — "installed by you · your agents may use it" — and room-grant rows, the aside's grant, and the trail appear when 2–4 land. The page draws only what the server enforces at the time it draws it.
+6. **Manifest parser** (Kai; 2–3 days) — local roots → Installable, fixtures for both plugin roots, and named tests for: the `writeOnly`-literal refusal, the `default`/`writeOnly` exclusion, the `source` scheme/host allow-list, subpath escape rejection, and the non-40-character pin. No fetch; the SHA-freeze at install is the second cut. After the slice because there is one builder; a second builder takes it in parallel.
+7. **Hook endpoint** (Kai; 5–7 days for ingress and claim checks) — `PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop` as JSON to a Commonly URL, with a `PreToolUse` reply able to refuse a tool call that touches a resource another agent holds under an ADR-028 work claim, and `PostToolUse` written to the room's work record. A different capability — the external agents' work record — so it goes after the broker, or in parallel if Kai has room. Recording or redacting tool payloads is a separate follow-on (+2–3 days), not folded in.
+
+Sam's gap list (67401) — tool-server component, grant record, attributed call trail, approval step — maps to items 1, 2, 3 and 4.
 
 ### What this does NOT change
 
