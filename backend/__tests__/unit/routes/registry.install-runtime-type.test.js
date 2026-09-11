@@ -222,6 +222,22 @@ describe('registry install runtimeType fallback', () => {
     expect(res.status).not.toHaveBeenCalledWith(500);
   });
 
+  it('passes a hire\'s description to the identity service, trimmed and capped (#1649)', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent', displayName: 'Sample Agent', description: 'Native first-party app', latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone', runtimeType: 'hosted' } },
+    });
+    const req = {
+      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: '  Your first teammate.   Answers how things work here. ' },
+      user: { id: 'user-1', username: 'installer' }, userId: 'user-1',
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await installHandler(req, res);
+    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith('sample-agent', expect.objectContaining({
+      description: 'Your first teammate. Answers how things work here.',
+    }));
+  });
+
   it('keeps install successful when the first-contact trigger fails', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'sample-agent',

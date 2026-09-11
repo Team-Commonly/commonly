@@ -44,11 +44,19 @@ export interface PersonaCard {
    *  - 'soon':      hosted seat opens with the where-step; button disabled.
    */
   availability: 'workspace' | 'connect' | 'soon';
+  /**
+   * The Your Team card sentence — what this seat is for, in the brief the fleet's
+   * twelve seats follow (#1636): one sentence, under 100 characters, role first, no
+   * quotes. Sent as `description` at hire so the seat never lands with a placeholder
+   * (#1649). The card renders this line or nothing; never a fallback string.
+   */
+  card: string;
 }
 
 export const PERSONA_CARDS: PersonaCard[] = [
   {
     key: 'scout',
+    card: 'Your first teammate. Answers how things work here, sets up agents, keeps what you decide.',
     avatarSeed: 'scout:default',
     name: 'Scout',
     role: 'Your first teammate',
@@ -66,6 +74,7 @@ export const PERSONA_CARDS: PersonaCard[] = [
   },
   {
     key: 'code-reviewer',
+    card: 'Reviews pull requests. Findings first, each anchored to the lines that earned it.',
     avatarSeed: 'code-reviewer:default',
     name: 'Code Reviewer',
     role: 'Pull-request review',
@@ -83,6 +92,7 @@ export const PERSONA_CARDS: PersonaCard[] = [
   },
   {
     key: 'recorder',
+    card: "The room's memory. Keeps decisions, corrections and who asked for what.",
     avatarSeed: 'recorder:default',
     name: 'Recorder',
     role: 'The room’s memory',
@@ -100,6 +110,7 @@ export const PERSONA_CARDS: PersonaCard[] = [
   },
   {
     key: 'planner',
+    card: 'Sequences the board. What runs in parallel, what blocks what, who is waiting on whom.',
     avatarSeed: 'planner:default',
     name: 'Planner',
     role: 'Board sequencing',

@@ -400,7 +400,9 @@ class AgentIdentityService {
       const rawDisplayName = options.displayName || typeConfig?.officialDisplayName || resolvedType;
       const botMetadata = {
         displayName: await resolveCollisionFreeDisplayName(rawDisplayName, instanceId),
-        description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+        // No invented sentence (#1649): a seat without a description shows no line on
+        // Your Team, never "<name> agent". The hire flow supplies the persona's sentence.
+        description: options.description || typeConfig?.officialDescription || '',
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || null,
         officialAgent: isOfficial,
@@ -431,7 +433,7 @@ class AgentIdentityService {
       const upgradeRawDisplayName = options.displayName || typeConfig?.officialDisplayName || agentUser.username;
       agentUser.botMetadata = {
         displayName: await resolveCollisionFreeDisplayName(upgradeRawDisplayName, instanceId, agentUser._id),
-        description: options.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+        description: options.description || typeConfig?.officialDescription || '',
         icon: typeConfig?.icon || '🤖',
         runtimeId: options.runtimeId || agentUser.botMetadata?.runtimeId || undefined,
         officialAgent: isOfficial,
@@ -467,7 +469,7 @@ class AgentIdentityService {
         agentUser.botMetadata = {
           ...existingMeta,
           displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),
-          description: options.description || existingMeta.description || typeConfig?.officialDescription || `${resolvedType} agent`,
+          description: options.description || existingMeta.description || typeConfig?.officialDescription || '',
           icon: existingMeta.icon || typeConfig?.icon || '🤖',
           runtimeId: options.runtimeId || existingMeta.runtimeId || undefined,
           officialAgent: instanceId === 'default' && !!typeConfig,

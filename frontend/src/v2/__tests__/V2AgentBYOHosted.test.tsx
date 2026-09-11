@@ -84,6 +84,30 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByText(/sam-agent is live in Workspace/i)).toBeInTheDocument();
   });
 
+  test('a persona hire sends the persona\'s card sentence as the seat description (#1649)', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    axios.post.mockResolvedValue({ data: { ok: true } });
+    // The page reads its deep-link prefill from window.location, not the router.
+    window.history.pushState({}, '', '/v2/agents/byo?persona=scout&pod=p1');
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/byo?persona=scout&pod=p1']}>
+          <V2AgentBYO />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    await screen.findByTestId('byo-hosted-result');
+    const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
+    expect(installCall[1]).toMatchObject({
+      displayName: 'Scout',
+      description: 'Your first teammate. Answers how things work here, sets up agents, keeps what you decide.',
+      config: { persona: 'scout', runtime: { runtimeType: 'hosted' } },
+    });
+    window.history.pushState({}, '', '/');
+  });
+
   test('flips from starting to listening once the runtime reports a poll', async () => {
     jest.useFakeTimers();
     mockGet({ configured: true, status: { runtime: { lastPollAt: null } } });

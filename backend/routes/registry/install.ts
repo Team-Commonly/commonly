@@ -108,8 +108,12 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
 installRouter.post('/install', installRateLimit, auth, async (req: any, res: any) => {
   try {
     const {
-      agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId,
+      agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
     } = req.body;
+    // #1649: a hire may carry the seat's card sentence; it is the only thing that
+    // can make botMetadata.description true, since the identity service no longer
+    // invents one. One line, capped, never a quote.
+    const explicitDescription = typeof description === 'string' ? description.trim().replace(/\s+/g, ' ').slice(0, 160) : '';
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -600,6 +604,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
         ...(explicitDisplayName ? { displayName: explicitDisplayName } : {}),
+        ...(explicitDescription ? { description: explicitDescription } : {}),
         ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);

@@ -77,6 +77,17 @@ const reset = () => {
 describe('inline displayName collision resolver (sticky dedup)', () => {
   beforeEach(reset);
 
+  test('a hire that carries a description stores it; one that does not gets no line, never "<name> agent" (#1649)', async () => {
+    await AgentIdentityService.getOrCreateAgentUser('scout-1', {
+      instanceId: 'scout', displayName: 'Scout', description: 'Your first teammate. Answers how things work here.',
+    });
+    expect(mockSaved[0].botMetadata.description).toBe('Your first teammate. Answers how things work here.');
+    reset();
+    await AgentIdentityService.getOrCreateAgentUser('scout-2', { instanceId: 'scout', displayName: 'Scout' });
+    expect(mockSaved[0].botMetadata.description).toBe('');
+    expect(mockSaved[0].botMetadata.description).not.toMatch(/ agent$/);
+  });
+
   test('new install with no peers — bare displayName is kept', async () => {
     await AgentIdentityService.getOrCreateAgentUser('openclaw', {
       instanceId: 'pixel',
