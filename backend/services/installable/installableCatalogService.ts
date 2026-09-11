@@ -5,6 +5,8 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { toPublicIntegrationConfig } = require('../../models/integrationPublicConfig');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { TOOL_INSTALLABLES, mcpComponentOf, projectTools } = require('./toolInstallables');
@@ -27,9 +29,9 @@ const providerReadiness = (installableId: string): ProviderReadiness | null => {
   return typeof manifest?.readiness === 'function' ? manifest.readiness() : null;
 };
 
-// Mongoose's Integration toJSON transform is the normal guard. Keep this
-// explicit mapper for lean catalog reads too, so the API can never serialize a
-// ConnectorSecret reference or a browser-bound OAuth nonce by accident.
+// Mongoose's Integration toJSON transform is the normal guard. Lean catalog
+// reads bypass it, so they run the same strip explicitly: one key list, so a
+// credential can never be serialized here that toJSON would have dropped.
 const publicIntegration = (integration: unknown): unknown => {
   if (!integration || typeof integration !== 'object') return integration;
   const raw = typeof (integration as { toJSON?: () => unknown }).toJSON === 'function'
@@ -37,16 +39,7 @@ const publicIntegration = (integration: unknown): unknown => {
     : JSON.parse(JSON.stringify(integration));
   if (!raw || typeof raw !== 'object') return raw;
   const result = raw as { config?: Record<string, unknown> };
-  if (!result.config) return result;
-  delete result.config.botTokenRef;
-  delete result.config.oauthStateNonce;
-  const pending = result.config.pendingBind;
-  if (pending && typeof pending === 'object') delete (pending as Record<string, unknown>).botTokenRef;
-  const adminPause = result.config.adminPause;
-  if (adminPause && typeof adminPause === 'object') {
-    const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
-    result.config.adminPause = { reason, at };
-  }
+  toPublicIntegrationConfig(result.config);
   return result;
 };
 
