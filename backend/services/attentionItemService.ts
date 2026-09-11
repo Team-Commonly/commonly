@@ -268,7 +268,13 @@ export const recordActionApproval = async (row: any, displayName?: string | null
     const podId = row?.podId;
     const id = row?._id || row?.id;
     if (!podId || !id) return;
-    const recipients = await currentHumanMembers(podId);
+    // Only the owner can decide an action proposal (resolveApproval 403s
+    // anyone else), so only the owner is asked — a member whose Approve would
+    // fail must not carry it on their badge (sprint-review on #1652).
+    const owner = row?.ownerUserId ? String(row.ownerUserId) : '';
+    const members = await currentHumanMembers(podId);
+    const recipients = members.filter((member: any) => String(member?._id ?? member) === owner);
+    if (!recipients.length) return;
     const pod = await Pod.findById(podId).select('name').lean();
     const label = String(displayName || row?.agentName || '').trim();
     await recordForRecipients(recipients, {

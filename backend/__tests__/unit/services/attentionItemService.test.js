@@ -323,7 +323,7 @@ describe('attentionItemService', () => {
     expect(mockMongoMessageExists).not.toHaveBeenCalled();
   });
 
-  it('materializes an agent action proposal as an approval ask for each human member, keyed as approval_action (#1650)', async () => {
+  it('materializes an agent action proposal as an approval ask for its owner only, keyed as approval_action (#1650)', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
@@ -331,10 +331,16 @@ describe('attentionItemService', () => {
     ]));
 
     await AttentionItemService.recordActionApproval({
-      _id: 'appr-1', podId: 'pod-1', agentName: 'scout', actionType: 'create_pod', summary: 'May I open a room for design work?',
+      _id: 'appr-1', podId: 'pod-1', ownerUserId: 'sam', agentName: 'scout', actionType: 'create_pod', summary: 'May I open a room for design work?',
     }, 'Scout');
 
-    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    // Only the owner can decide it, so only the owner is asked — not both humans.
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'sam' }),
+      expect.anything(),
+      { upsert: true },
+    );
     expect(mockUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ 'source.type': 'approval_action', 'source.id': 'appr-1' }),
       expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'approval', title: 'Scout requests approval', detail: 'May I open a room for design work?' }) }),
