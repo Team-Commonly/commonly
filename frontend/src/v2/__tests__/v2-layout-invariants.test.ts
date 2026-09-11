@@ -1863,6 +1863,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // One seat, one mark: agent cobalt, human tint.
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
       expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
+      // Direction A (Sam 2026-09-11): the mark holds a 16px glyph; a secondary act is a 32px square
+      // (44 under 760), never a word — and never a menu.
+      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-mark svg')).toContain('width: 16px');
+      const iconAct = lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon');
+      expect(iconAct).toContain('width: 32px');
+      expect(iconAct).toContain('padding: 0');
+      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button\.v2-activity__queue-action--icon \{ width: 44px; min-width: 44px; flex: none; \}/);
+      // The decision footer's full-width act rule sits later at higher specificity; the icon act wins it back.
+      expect(v2).toMatch(/\.v2-activity__decision-footer > button \{ flex: 1 1 100%;[\s\S]*?\.v2-root \.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__decision-footer > button\.v2-activity__queue-action--icon \{ flex: none; width: 44px; min-width: 44px; \}/);
       // Other… is cobalt text; the handoff act is ink (no bordered modifier).
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
       expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');
