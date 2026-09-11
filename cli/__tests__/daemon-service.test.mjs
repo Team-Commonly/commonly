@@ -8,7 +8,10 @@ import {
   daemonLogPath,
   installDaemonService,
   launchdPlist,
+  restartDaemonService,
   servicePaths,
+  startDaemonService,
+  stopDaemonService,
   systemdUnit,
   uninstallDaemonService,
 } from '../src/lib/daemon-service.js';
@@ -77,6 +80,16 @@ describe('install', () => {
       platform: 'darwin', home, nodePath, cliPath, ...deps,
     })).rejects.toThrow(/exited 1/);
   });
+
+  test('hardens the daemon log directory on install', async () => {
+    const deps = makeDeps();
+    deps.chmod = jest.fn();
+    deps.ensureFile = jest.fn();
+    await installDaemonService({ platform: 'darwin', home, nodePath, cliPath, ...deps });
+    expect(deps.chmod).toHaveBeenCalledWith(`${home}/.commonly/logs/daemon`, 0o700);
+    expect(deps.ensureFile).toHaveBeenCalledWith(daemonLogPath(home));
+    expect(deps.chmod).toHaveBeenCalledWith(daemonLogPath(home), 0o600);
+  });
 });
 
 describe('uninstall', () => {
@@ -99,5 +112,35 @@ describe('paths', () => {
   test('per-platform service file locations', () => {
     expect(servicePaths('darwin', home).file).toBe(`${home}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
     expect(servicePaths('linux', home).file).toBe(`${home}/.config/systemd/user/${SYSTEMD_UNIT}`);
+  });
+});
+
+describe('service controls', () => {
+  test('launchd start/stop controls the installed file, not a KeepAlive label', async () => {
+    const execCmd = jest.fn(async () => {});
+    const target = servicePaths('darwin', home);
+    await startDaemonService({ platform: 'darwin', home, execCmd });
+    await stopDaemonService({ platform: 'darwin', home, execCmd });
+    expect(execCmd.mock.calls).toEqual([
+      [['launchctl', 'load', '-w', target.file]],
+      [['launchctl', 'unload', '-w', target.file]],
+    ]);
+  });
+
+  test('launchd start falls back to starting an already-loaded plist', async () => {
+    const execCmd = jest.fn()
+      .mockRejectedValueOnce(new Error('already loaded'))
+      .mockResolvedValueOnce();
+    await startDaemonService({ platform: 'darwin', home, execCmd });
+    expect(execCmd.mock.calls).toEqual([
+      [['launchctl', 'load', '-w', servicePaths('darwin', home).file]],
+      [['launchctl', 'start', LAUNCHD_LABEL]],
+    ]);
+  });
+
+  test('systemd restart delegates to the user unit', async () => {
+    const execCmd = jest.fn(async () => {});
+    await restartDaemonService({ platform: 'linux', home, execCmd });
+    expect(execCmd).toHaveBeenCalledWith(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
   });
 });

@@ -59,7 +59,7 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { isAbsolute, join } from 'path';
+import { delimiter, isAbsolute, join } from 'path';
 
 import { mountSkills } from '../environment.js';
 import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
@@ -337,17 +337,39 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
 
 // ── argv preparation — environment-aware ────────────────────────────────────
 
+// Claude's npm installer commonly puts the binary in ~/.local/bin, while
+// launchd/supervisor environments intentionally use a small PATH. Keep the
+// command name for the legacy spawn contract, but add this directory to the
+// child environment and to every detection lookup so a daemon does not report
+// a false "adapter unavailable" (or hit spawn ENOENT) merely because it was
+// started outside an interactive shell.
+const withClaudePath = (input) => {
+  const output = { ...(input || process.env) };
+  const localBin = join(homedir(), '.local', 'bin');
+  const entries = String(output.PATH || '')
+    .split(delimiter)
+    .filter(Boolean);
+  if (!entries.includes(localBin)) entries.push(localBin);
+  output.PATH = entries.join(delimiter);
+  return output;
+};
+
 // Resolve the absolute path of `claude` so bwrap's execvp doesn't depend on
 // PATH being correctly populated inside the sandbox namespace. Surfaced live
 // during the 2026-04-17 demo validation: bwrap silently inherits parent
 // PATH but cannot reach the user's `~/.local/bin` without an absolute path
 // argv[0], even when that directory is bound read-only into the sandbox.
-const resolveClaudePath = () => {
+const resolveClaudePath = (env = process.env) => {
   // Defensive: spawnSync can return undefined under aggressive mocks (the
   // adapters.claude.environment.test.mjs suite stubs child_process so no real
   // process runs). Treat any failure mode as "use the bare command name."
   let which;
-  try { which = spawnSync('which', ['claude'], { encoding: 'utf8' }); } catch { /* ignore */ }
+  try {
+    which = spawnSync('which', ['claude'], {
+      encoding: 'utf8',
+      env: withClaudePath(env),
+    });
+  } catch { /* ignore */ }
   if (which && which.status === 0) {
     const p = (which.stdout || '').trim();
     if (p) {
@@ -363,7 +385,8 @@ const resolveClaudePath = () => {
 
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
-  if (!env) return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
+  const claudeEnv = withClaudePath(ctx.claudeEnv);
+  if (!env) return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 
   let allowedPatterns = [];
   if (Array.isArray(env.mcp) && env.mcp.length > 0) {
@@ -407,7 +430,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns),
     ];
-    const claudeBin = resolveClaudePath();
+    const claudeBin = resolveClaudePath(claudeEnv);
     const mcpExecutables = (env.mcp || [])
       .map((server) => server?.command?.[0])
       .filter((command) => isAbsolute(command));
@@ -422,7 +445,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     return {
       cmd: wrapped[0],
       args: wrapped.slice(1),
-      env: ctx.claudeEnv,
+      env: claudeEnv,
     };
   }
 
@@ -430,15 +453,15 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
   }
   if (sandboxMode === 'bwrap') {
-    const claudeBin = resolveClaudePath();
+    const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
       readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
     });
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: ctx.claudeEnv };
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
 
-  return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
+  return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 };
 
 export default {
@@ -453,14 +476,21 @@ export default {
 
   async detect() {
     try {
-      const res = spawnSync('claude', ['--version'], { encoding: 'utf8' });
+      const claudeEnv = withClaudePath(process.env);
+      const res = spawnSync('claude', ['--version'], {
+        encoding: 'utf8',
+        env: claudeEnv,
+      });
       if (res.error || res.status !== 0) return null;
       // `claude --version` prints e.g. "2.5.1 (Claude Code)" — first token is enough
       const version = (res.stdout || '').trim().split(/\s+/)[0] || 'unknown';
       // Best-effort resolve of the binary path for clearer UX ("claude detected
       // at /usr/local/bin/claude"). Falls back to the bare command name on
       // platforms without `which` (e.g. Windows).
-      const where = spawnSync('which', ['claude'], { encoding: 'utf8' });
+      const where = spawnSync('which', ['claude'], {
+        encoding: 'utf8',
+        env: claudeEnv,
+      });
       const path = where.status === 0 ? (where.stdout || '').trim() || 'claude' : 'claude';
       return { path, version };
     } catch {

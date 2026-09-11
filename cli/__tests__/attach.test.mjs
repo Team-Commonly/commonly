@@ -140,6 +140,43 @@ describe('updateAgentConfiguration', () => {
       environment: { model: 'new-model', effort: 'high' },
     });
   });
+
+  test('validates and persists a detected adapter without leaking it into ADR-008 environment', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const adapter = { detect: jest.fn(async () => ({ path: '/usr/local/bin/claude' })) };
+    const result = await updateAgentConfiguration({
+      client,
+      record,
+      adapter: 'claude',
+      adapterRegistry: {
+        getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
+        listAdapterNames: jest.fn(() => ['claude', 'codex']),
+      },
+    });
+
+    expect(result).toEqual({
+      agentName: 'juno', podId: 'pod-9', instanceId: 'writer', changed: ['runtime'], adapter: 'claude',
+    });
+    expect(adapter.detect).toHaveBeenCalledTimes(1);
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      { instanceId: 'writer', config: { runtime: { adapter: 'claude' } } },
+    );
+  });
+
+  test('rejects an unknown or unavailable adapter before PATCH', async () => {
+    const client = { patch: jest.fn() };
+    const adapter = { detect: jest.fn(async () => null) };
+    const adapterRegistry = {
+      getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
+      listAdapterNames: jest.fn(() => ['claude', 'codex']),
+    };
+    await expect(updateAgentConfiguration({ client, record, adapter: 'unknown', adapterRegistry }))
+      .rejects.toThrow(/Unknown adapter/);
+    await expect(updateAgentConfiguration({ client, record, adapter: 'claude', adapterRegistry }))
+      .rejects.toThrow(/not found on PATH/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
 });
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {

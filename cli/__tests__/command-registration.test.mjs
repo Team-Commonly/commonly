@@ -46,17 +46,21 @@ describe('command registration', () => {
     const daemon = findCommand(registerAll(), ['daemon']);
     expect(daemon).toBeDefined();
     expect(daemon.commands.map((command) => command.name())).toEqual(expect.arrayContaining([
-      'register', 'heartbeat', 'status',
+      'register', 'heartbeat', 'status', 'start', 'stop', 'restart', 'logs',
     ]));
     expect(findCommand(registerAll(), ['daemon', 'register']).options.map((option) => option.long))
       .toEqual(expect.arrayContaining(['--name', '--instance']));
+    expect(findCommand(registerAll(), ['daemon', 'status']).options.map((option) => option.long))
+      .toContain('--verbose');
+    expect(findCommand(registerAll(), ['daemon', 'run']).options.map((option) => option.long))
+      .toContain('--foreground');
   });
 
   test('agent config exposes existing-agent runtime edit controls', () => {
     const config = findCommand(registerAll(), ['agent', 'config']);
     expect(config).toBeDefined();
     expect(config.options.map((option) => option.long)).toEqual(expect.arrayContaining([
-      '--model', '--effort', '--env', '--instance',
+      '--adapter', '--model', '--effort', '--env', '--instance',
     ]));
   });
 

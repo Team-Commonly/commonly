@@ -8,7 +8,7 @@
 import { createInterface } from 'readline';
 import { hostname } from 'os';
 import { createClient, login as apiLogin } from '../lib/api.js';
-import { saveInstance } from '../lib/config.js';
+import { DEFAULT_URL, resolveInstance, saveInstance } from '../lib/config.js';
 import {
   DeviceLoginCancelledError,
   DeviceLoginDeniedError,
@@ -42,16 +42,40 @@ const promptSecret = (question) => new Promise((resolve) => {
   stdin.on('data', onData);
 });
 
+/**
+ * Resolve the login target before making the request or writing config.
+ *
+ * `--instance` accepts either a URL or a saved profile key. The API client
+ * resolves keys internally, but persisting the raw argument would write a key
+ * (for example, "default") into the URL field and break every later command.
+ */
+export const resolveLoginTarget = ({ instanceArg, keyArg }) => {
+  // A missing --instance means "the active profile", just like the other
+  // config helpers. Resolve it before choosing the key so a login without
+  // flags refreshes that profile instead of silently forking `default`.
+  const resolved = resolveInstance(instanceArg);
+  const isUrl = /^https?:\/\//i.test(instanceArg || '');
+  const instanceUrl = (resolved?.url || (isUrl ? instanceArg : DEFAULT_URL)).replace(/\/$/, '');
+  const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
+  const isKey = instanceArg && !isUrl;
+  // A URL may resolve back to an existing named profile too. Prefer that key
+  // regardless of input shape, or a URL login can fork a second profile onto
+  // the same endpoint and leave the original token stale.
+  const configKey = keyArg || resolved?.key || (isKey ? instanceArg : (isLocal ? 'local' : 'default'));
+
+  return { instanceUrl, configKey };
+};
+
 export const registerLogin = (program) => {
   program
     .command('login')
     .description('Authenticate to a Commonly instance')
-    .option('--instance <url>', 'Instance URL (default: https://api.commonly.me)')
-    .option('--key <name>', 'Config key to save as (default: "default" or "local")')
+    .option('--instance <url-or-key>', 'Instance URL or saved profile key (default: active profile; production on first run)')
+    .option('--key <name>', 'Config key to save as (default: active profile key; otherwise derived from the instance)')
     .option('--password', 'Use the legacy email/password prompt instead of device authorization')
     .addHelpText('after', `
 Examples:
-  $ commonly login                                                   # production (default key)
+  $ commonly login                                                   # active profile (production on first run)
   $ commonly login --instance https://api.commonly.me --key dev  # named profile
   $ commonly login --instance http://localhost:5000                  # saved as "local"
 
@@ -59,12 +83,10 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
 --instance <url-or-key> to target the right profile.
 `)
     .action(async (opts) => {
-      const instanceUrl = opts.instance
-        ? opts.instance.replace(/\/$/, '')
-        : 'https://api.commonly.me';
-
-      const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
-      const configKey = opts.key || (isLocal ? 'local' : 'default');
+      const { instanceUrl, configKey } = resolveLoginTarget({
+        instanceArg: opts.instance,
+        keyArg: opts.key,
+      });
 
       try {
         if (!opts.password) {

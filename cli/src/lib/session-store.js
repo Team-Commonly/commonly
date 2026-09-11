@@ -87,6 +87,18 @@ export const getSession = (agentName, podId) => {
   return readAgent(agentName)[podId]?.sessionId || null;
 };
 
+// Read-only diagnostic projection used by the daemon operator surface. A
+// wrapper may serve several pods, so return the newest completed turn.
+export const getLastTurn = (agentName) => {
+  if (!agentName) return null;
+  const state = readAgent(agentName);
+  return Object.values(state)
+    .map((entry) => entry?.lastTurn)
+    .filter((value) => typeof value === 'string')
+    .sort()
+    .at(-1) || null;
+};
+
 export const setSession = (agentName, podId, sessionId) => {
   if (!agentName || !podId) return;
   const state = readAgent(agentName);

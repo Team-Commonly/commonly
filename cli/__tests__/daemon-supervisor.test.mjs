@@ -33,7 +33,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn() } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -58,12 +58,13 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [] } = {}) => {
     }),
     loadToken: (name) => tokens[name] || null,
     saveToken,
-    resolveAdapter: jest.fn(async () => 'claude'),
+    resolveAdapter: jest.fn(resolveAdapter),
+    persistState,
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
   return {
-    supervisor, client, children, timers, saveToken, tokens,
+    supervisor, client, children, timers, saveToken, tokens, persistState,
   };
 };
 
@@ -175,6 +176,68 @@ describe('tick', () => {
     // desired stays true → exit handler schedules the respawn.
   });
 
+  test('a declared adapter change updates the token record and restarts the seat', async () => {
+    let adapter = 'claude';
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter } };
+    const { supervisor, client, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter } })],
+      tokens,
+      resolveAdapter: async (runtime) => runtime?.adapter || 'claude',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    adapter = 'codex';
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({ adapter: 'codex' }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+  });
+
+  test('server runtime row wins when local adapter and model disagree', async () => {
+    let runtime = { runtimeType: 'wrapper', adapter: 'codex', model: 'local-model' };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        adapter: 'codex',
+        environment: { model: 'local-model' },
+      },
+    };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime })],
+      tokens,
+      resolveAdapter: async (rowRuntime) => rowRuntime?.adapter || 'claude',
+    });
+
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    // Adoption/reload is server-authoritative: the next process must consume
+    // the row, never silently preserve stale local adapter/model values.
+    runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'server-model' };
+    await supervisor.tick();
+
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      adapter: 'claude',
+      environment: { model: 'server-model' },
+    }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  test('a declared adapter that resolves to a fallback is rejected without spawning', async () => {
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } })],
+      tokens,
+      resolveAdapter: async () => 'codex',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(0);
+    expect(saveToken).not.toHaveBeenCalled();
+  });
+
   test('a row without a model never strips a hand-set environment', async () => {
     const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
     const { supervisor, saveToken } = makeHarness({
@@ -231,6 +294,24 @@ describe('tick', () => {
     await supervisor.tick();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
   });
+
+  test('publishes safe runtime metadata and process state to the local store', async () => {
+    const persistState = jest.fn();
+    const { supervisor } = makeHarness({
+      rows: () => [boundRow({ runtime: { adapter: 'claude', model: 'fable', effort: 'high' } })],
+      tokens: { 'wren-test': { agentName: 'wren-test' } },
+      persistState,
+    });
+    await supervisor.tick();
+    expect(supervisor.agentStates()).toEqual([
+      expect.objectContaining({
+        adapter: 'claude', model: 'fable', effort: 'high', state: 'running',
+      }),
+    ]);
+    expect(persistState).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ agentName: 'wren-test', adapter: 'claude', model: 'fable' }),
+    ]));
+  });
 });
 
 describe('supervision (D6)', () => {
@@ -268,6 +349,7 @@ describe('supervision (D6)', () => {
     await supervisor.tick();
     supervisor.stop();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(supervisor.agentStates()[0]).toEqual(expect.objectContaining({ state: 'stopped', pid: null }));
     children[0].child.emit('exit', 0);
     expect(timers).toHaveLength(0);
     expect(supervisor.agentStates()[0].state).toBe('stopped');

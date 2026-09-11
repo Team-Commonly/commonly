@@ -49,6 +49,7 @@ export const createDaemonSupervisor = ({
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
   resolveAdapter, // async (runtime) => adapter name for THIS machine
+  persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
@@ -57,25 +58,48 @@ export const createDaemonSupervisor = ({
   const seats = new Map();
   let stopped = false;
 
+  const persist = () => {
+    try {
+      persistState(agentStates());
+    } catch (error) {
+      // A diagnostic state file must never take the daemon down. The log is
+      // still useful, and the next state transition retries the write.
+      log(`could not persist local daemon state: ${error.message}`);
+    }
+  };
+
   const agentStates = () => Array.from(seats.values()).map((s) => ({
     agentName: s.agentName,
     instanceId: s.instanceId,
     state: s.state,
     restarts: s.restarts,
+    adapter: s.adapter || null,
+    model: s.model || null,
+    effort: s.effort || null,
+    pid: Number.isInteger(s.pid) ? s.pid : null,
+    lastTurnAt: s.lastTurnAt || null,
+    lastError: s.lastError || null,
   }));
 
   const startChild = (seat) => {
     if (stopped || !seat.desired || seat.child) return;
     seat.child = spawnChild(seat.agentName);
     seat.state = 'running';
+    seat.pid = Number.isInteger(seat.child?.pid) ? seat.child.pid : null;
+    seat.lastTurnAt = new Date().toISOString();
+    seat.lastError = null;
+    persist();
     log(`[${seat.agentName}] supervising (restarts so far: ${seat.restarts})`);
     seat.child.on('exit', (code) => {
       seat.child = null;
+      seat.pid = null;
       if (stopped || !seat.desired) {
         seat.state = 'stopped';
+        persist();
         return;
       }
       seat.state = code === 0 ? 'stopped' : 'crashed';
+      seat.lastError = code === 0 ? null : `child exited with code ${code}`;
       seat.restarts += 1;
       const delay = backoffMs(seat.restarts - 1);
       log(`[${seat.agentName}] exited (code ${code}) — respawn in ${Math.round(delay / 1000)}s`);
@@ -83,6 +107,7 @@ export const createDaemonSupervisor = ({
         seat.backoffTimer = null;
         startChild(seat);
       }, delay);
+      persist();
     });
   };
 
@@ -97,6 +122,8 @@ export const createDaemonSupervisor = ({
       seat.child.kill('SIGTERM');
     } else {
       seat.state = 'stopped';
+      seat.pid = null;
+      persist();
     }
   };
 
@@ -133,6 +160,26 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
+      const declaredAdapter = row.runtime && typeof row.runtime === 'object'
+        && typeof row.runtime.adapter === 'string'
+        ? row.runtime.adapter.trim().toLowerCase()
+        : null;
+      let adapterChanged = false;
+      let nextAdapter = existing.adapter;
+      if (declaredAdapter) {
+        const detectedAdapter = await resolveAdapter(row.runtime || null);
+        // resolveAdapterForRuntime historically probes fallbacks when a
+        // declared adapter is absent. A configuration edit must never accept
+        // that fallback: it would report claude while running codex (or vice
+        // versa). Keep the existing child/token untouched until the exact
+        // requested adapter is detected locally.
+        if (detectedAdapter !== declaredAdapter) {
+          log(`[${row.agentName}] requested adapter '${declaredAdapter}' is not available on this machine — keeping the current seat`);
+          return false;
+        }
+        nextAdapter = declaredAdapter;
+        adapterChanged = existing.adapter !== nextAdapter;
+      }
       if (wanted) {
         const nextEnvironment = wanted.declared
           ? wanted.value
@@ -140,17 +187,36 @@ export const createDaemonSupervisor = ({
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
+          ...(adapterChanged ? { adapter: nextAdapter } : {}),
           environment: nextEnvironment,
           ...(workspacePath ? { workspacePath } : {}),
         };
-        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment)
+        if (adapterChanged
+          || !isDeepStrictEqual(existing.environment || null, nextEnvironment)
           || (workspacePath && existing.workspacePath !== workspacePath)) {
           saveToken(row.agentName, nextRecord);
           log('runtime config changed — restarting the seat to load it');
           return 'changed';
         }
       }
+      if (adapterChanged) {
+        saveToken(row.agentName, { ...existing, adapter: nextAdapter });
+        log('runtime adapter changed — restarting the seat to load it');
+        return 'changed';
+      }
       return 'ready';
+    }
+    const requestedAdapter = row.runtime && typeof row.runtime === 'object'
+      && typeof row.runtime.adapter === 'string'
+      ? row.runtime.adapter.trim().toLowerCase()
+      : null;
+    let adapter = null;
+    if (requestedAdapter) {
+      adapter = await resolveAdapter(row.runtime || null);
+      if (adapter !== requestedAdapter) {
+        log(`[${row.agentName}] requested adapter '${requestedAdapter}' is not available on this machine — skipping token mint`);
+        return false;
+      }
     }
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
@@ -174,7 +240,7 @@ export const createDaemonSupervisor = ({
       log(`[${row.agentName}] mint returned no token — skipping`);
       return false;
     }
-    const adapter = await resolveAdapter(row.runtime || null);
+    if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
       log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
       return false;
@@ -241,10 +307,20 @@ export const createDaemonSupervisor = ({
           restarts: 0,
           backoffTimer: null,
           desired: true,
+          adapter: null,
+          model: null,
+          effort: null,
+          pid: null,
+          lastTurnAt: null,
+          lastError: null,
         };
         seats.set(key, seat);
       }
       seat.desired = true;
+      const localToken = loadToken(row.agentName);
+      seat.adapter = row.runtime?.adapter || localToken?.adapter || seat.adapter || null;
+      seat.model = row.runtime?.model || localToken?.environment?.model || seat.model || null;
+      seat.effort = row.runtime?.effort || localToken?.environment?.effort || seat.effort || null;
       // eslint-disable-next-line no-await-in-loop
       const ready = await ensureToken(row);
       if (ready === 'changed' && seat.child) {
@@ -254,11 +330,13 @@ export const createDaemonSupervisor = ({
       } else if (ready && !seat.child && !seat.backoffTimer) {
         startChild(seat);
       }
+      persist();
     }
 
     for (const [key, seat] of seats) {
       if (!desiredKeys.has(key) && seat.desired) stopSeat(seat);
     }
+    persist();
   };
 
   const heartbeat = async () => {
@@ -272,7 +350,12 @@ export const createDaemonSupervisor = ({
 
   const stop = () => {
     stopped = true;
-    for (const seat of seats.values()) stopSeat(seat);
+    for (const seat of seats.values()) {
+      stopSeat(seat);
+      seat.state = 'stopped';
+      seat.pid = null;
+    }
+    persist();
   };
 
   return {
