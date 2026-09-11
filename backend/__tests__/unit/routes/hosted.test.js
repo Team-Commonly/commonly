@@ -13,6 +13,7 @@ const mockHosted = {
   isHostedInstallation: jest.fn(),
   hostedCaps: jest.fn(() => ({ agentsPerUser: 1, turnsPerDay: 200 })),
   countHostedAgentsForUser: jest.fn(),
+  listHostedInstallationsForUser: jest.fn(),
   meterAllowsTurn: jest.fn(),
   provisionAgent: jest.fn(),
   deprovisionAgent: jest.fn(),
@@ -65,6 +66,7 @@ describe('/api/hosted', () => {
     mockHosted.isConfigured.mockReturnValue(true);
     mockHosted.isHostedInstallation.mockReturnValue(true);
     mockHosted.countHostedAgentsForUser.mockResolvedValue(1);
+    mockHosted.listHostedInstallationsForUser.mockResolvedValue([]);
     mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout', agentRuntimeTokens: [] });
     mockCredentialUpdateMany.mockResolvedValue({ modifiedCount: 0 });
     mockIssueToken.mockResolvedValue({ token: 'cm_agent_secret', existing: false });
@@ -167,10 +169,28 @@ describe('/api/hosted', () => {
   it('403s when the owner is over the (possibly lowered) per-user cap', async () => {
     mockFindOne.mockResolvedValue(makeInstallation());
     mockHosted.countHostedAgentsForUser.mockResolvedValue(2);
+    mockHosted.listHostedInstallationsForUser.mockResolvedValue([
+      { agentName: 'scout', instanceId: 'default', podId: 'pod-1' },
+    ]);
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 2, cap: 1 });
+    expect(res.body).toMatchObject({
+      code: 'hosted_cap_reached',
+      used: 2,
+      cap: 1,
+      holders: [{ agentName: 'scout', instanceId: 'default', podId: 'pod-1' }],
+    });
+    expect(mockHosted.listHostedInstallationsForUser).toHaveBeenCalledWith('owner-1');
     expect(mockIssueToken).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cap response when holder diagnostics fail', async () => {
+    mockFindOne.mockResolvedValue(makeInstallation());
+    mockHosted.countHostedAgentsForUser.mockResolvedValue(2);
+    mockHosted.listHostedInstallationsForUser.mockRejectedValue(new Error('diagnostic timeout'));
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 2, cap: 1, holders: [] });
   });
 
   it('mints server-side with owner lineage, provisions, records, and never returns the token', async () => {

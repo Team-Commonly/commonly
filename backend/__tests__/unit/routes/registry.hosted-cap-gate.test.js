@@ -3,6 +3,7 @@
 // synth path (no registry row) with runtimeType 'hosted' and the per-user cap.
 // Mirrors the harness in registry.cloud-entitlement-gate.test.js.
 const mockCountHosted = jest.fn();
+const mockListHosted = jest.fn();
 
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
@@ -36,6 +37,7 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   HOSTED_RUNTIME_TYPE: 'hosted',
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 200 }),
   countHostedAgentsForUser: (...args) => mockCountHosted(...args),
+  listHostedInstallationsForUser: (...args) => mockListHosted(...args),
 }));
 
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
@@ -77,6 +79,7 @@ describe('registry install — hosted runtime cap gate', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListHosted.mockResolvedValue([]);
     Pod.findById.mockReturnValue(buildLeanChain({
       _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat',
     }));
@@ -129,11 +132,20 @@ describe('registry install — hosted runtime cap gate', () => {
 
   it('403s hosted_cap_reached at the cap, before any row is written', async () => {
     mockCountHosted.mockResolvedValue(1);
+    mockListHosted.mockResolvedValue([
+      { agentName: 'existing-agent', instanceId: 'default', podId: 'pod-2' },
+    ]);
     const res = makeRes();
     await installHandler(makeReq('hosted'), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'hosted_cap_reached', used: 1, cap: 1 }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'hosted_cap_reached',
+      used: 1,
+      cap: 1,
+      holders: [{ agentName: 'existing-agent', instanceId: 'default', podId: 'pod-2' }],
+    }));
+    expect(mockListHosted).toHaveBeenCalledWith('user-1');
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 
