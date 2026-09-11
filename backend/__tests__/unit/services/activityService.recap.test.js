@@ -1,5 +1,10 @@
 jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
+const mockHasMessageByUserInPods = jest.fn();
+jest.mock('../../../models/pg/Message', () => ({
+  hasMessageByUserInPods: (...args) => mockHasMessageByUserInPods(...args),
+}));
 
 const mockGetOpenQueue = jest.fn();
 const mockHasEverHadAttention = jest.fn();
@@ -14,6 +19,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 const Activity = require('../../../models/Activity');
 const ActivityService = require('../../../services/activityService');
 
@@ -28,6 +34,9 @@ const taskQuery = (tasks) => ({
     sort: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(tasks) }) }),
   }),
 });
+const installationQuery = (installations) => ({
+  select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(installations) }),
+});
 
 describe('ActivityService recap and legacy approval authorization', () => {
   let feedSpy;
@@ -38,6 +47,8 @@ describe('ActivityService recap and legacy approval authorization', () => {
     Pod.find.mockReturnValue(podQuery([pod]));
     Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
     Task.find.mockReturnValue(taskQuery([]));
+    AgentInstallation.find.mockReturnValue(installationQuery([]));
+    mockHasMessageByUserInPods.mockResolvedValue(false);
     mockGetOpenQueue.mockResolvedValue({ items: [], count: 0, composePodId: null });
     mockHasEverHadAttention.mockResolvedValue(false);
     mockAcknowledgeAttention.mockResolvedValue({ success: true });
@@ -90,6 +101,54 @@ describe('ActivityService recap and legacy approval authorization', () => {
     try {
       const result = await ActivityService.getRecap(ownerId, { window: 'today' });
       expect(result.hasEverHadAttention).toBeNull();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('closes the speak step from the account holder message, not the agent last-message field', async () => {
+    AgentInstallation.find.mockReturnValue(installationQuery([
+      { podId: 'pod-1', agentName: 'scout', config: {} },
+    ]));
+    mockHasMessageByUserInPods.mockResolvedValue(true);
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.hasSpokenToAgent).toBe(true);
+    expect(mockHasMessageByUserInPods).toHaveBeenCalledWith(ownerId, ['pod-1']);
+  });
+
+  test('does not count an internal seat as an agent pod for the speak step', async () => {
+    AgentInstallation.find.mockReturnValue(installationQuery([
+      { podId: 'pod-1', agentName: 'hosted-smoke', config: {} },
+    ]));
+    mockHasMessageByUserInPods.mockResolvedValue(true);
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.hasSpokenToAgent).toBe(false);
+    expect(mockHasMessageByUserInPods).not.toHaveBeenCalled();
+  });
+
+  test('does not count a human message in a pod with no agent seat', async () => {
+    mockHasMessageByUserInPods.mockResolvedValue(true);
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.hasSpokenToAgent).toBe(false);
+    expect(mockHasMessageByUserInPods).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when the human-message fact is unavailable', async () => {
+    AgentInstallation.find.mockReturnValue(installationQuery([
+      { podId: 'pod-1', agentName: 'scout', config: {} },
+    ]));
+    mockHasMessageByUserInPods.mockRejectedValue(new Error('message store unavailable'));
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+      expect(result.hasSpokenToAgent).toBeNull();
     } finally {
       warnSpy.mockRestore();
     }

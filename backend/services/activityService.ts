@@ -12,6 +12,10 @@ const Post = require('../models/Post');
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
+// Keep day-zero seat classification identical to the registry roster. The
+// roster helper is the single source of truth for internal smoke/demo seats.
+const { AgentInstallation } = require('../models/AgentRegistry');
+const { isInternalSeat, normalizeConfigMap } = require('../routes/registry/helpers');
 
 let PGMessage: unknown = null;
 try {
@@ -113,6 +117,55 @@ interface ComputeFlagsOptions {
 const SYSTEM_BOT_NAMES = new Set(['commonly-bot', 'commonly-ai-agent']);
 
 class ActivityService {
+  /**
+   * A day-zero "speak" step closes only after the account holder has posted
+   * in a pod that currently has a non-internal agent seat. Agent intros,
+   * heartbeats, teammate posts, and messages in ordinary human-only pods do
+   * not satisfy that contract. A null result is reserved for an unavailable
+   * read so the frontend can fail closed rather than inventing completion.
+   */
+  static async hasHumanMessageWithAgent(userId: unknown, podIds: unknown[]): Promise<boolean> {
+    if (!userId || !podIds.length) return false;
+    const installQuery = AgentInstallation.find({
+      podId: { $in: podIds },
+      status: 'active',
+    });
+    const selected = typeof installQuery.select === 'function'
+      ? installQuery.select('podId agentName config')
+      : installQuery;
+    const installations = typeof selected.lean === 'function' ? await selected.lean() : await selected;
+    const agentPodIds = Array.from(new Set(
+      (installations as Array<{ podId?: unknown; agentName?: string; config?: unknown }>)
+        .filter((installation) => !isInternalSeat(
+          installation.agentName,
+          normalizeConfigMap(installation.config),
+        ))
+        .map((installation) => String(installation.podId || ''))
+        .filter(Boolean),
+    ));
+    if (!agentPodIds.length) return false;
+
+    // PostgreSQL is the normal chat store. If it is unavailable, inspect the
+    // Mongo fallback only for a positive hit; an empty fallback cannot prove
+    // that the PG store was empty, so preserve the unknown state by throwing.
+    if (PGMessage && typeof (PGMessage as any).hasMessageByUserInPods === 'function') {
+      try {
+        return await (PGMessage as any).hasMessageByUserInPods(userId, agentPodIds);
+      } catch (pgError) {
+        if (Message && typeof (Message as any).exists === 'function') {
+          const fallback = await (Message as any).exists({
+            podId: { $in: agentPodIds },
+            userId,
+            messageType: { $ne: 'system' },
+          });
+          if (fallback) return true;
+        }
+        throw pgError;
+      }
+    }
+    throw new Error('Message store unavailable');
+  }
+
   /**
    * Read-side projection for the v2 Activity surface. The source events stay
    * in their owning stores: messages remain in Postgres and board transitions
@@ -233,6 +286,7 @@ class ActivityService {
     // every item is handled. AttentionItem rows are durable, so this remains
     // true across queue resolution and does not depend on the recap window.
     let hasEverHadAttention: boolean | null = requestedPodId ? false : null;
+    let hasSpokenToAgent: boolean | null = null;
     if (!requestedPodId) {
       try {
         hasEverHadAttention = await AttentionItemService.hasEverHadAttention(userId);
@@ -240,6 +294,16 @@ class ActivityService {
         // Keep the recap readable if the advisory onboarding check is
         // unavailable; the queue itself remains authoritative below.
         console.warn('[activity] day-zero attention check failed:', (error as Error).message);
+      }
+      try {
+        hasSpokenToAgent = await ActivityService.hasHumanMessageWithAgent(
+          userId,
+          scopedPods.map((pod) => pod._id),
+        );
+      } catch (error) {
+        // Keep onboarding fail-closed when the message/roster read is
+        // unavailable. `null` is distinct from a measured `false`.
+        console.warn('[activity] day-zero human-message check failed:', (error as Error).message);
       }
     }
     const needsYou = attention.items
@@ -291,6 +355,7 @@ class ActivityService {
       scope: requestedPodId || 'all',
       pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
       hasEverHadAttention,
+      hasSpokenToAgent,
       needsYou,
       agents: agentRecaps,
       board,

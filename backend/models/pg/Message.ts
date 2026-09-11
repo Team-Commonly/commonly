@@ -618,6 +618,30 @@ class Message {
       return [];
     }
   }
+
+  /**
+   * Whether a user has posted any non-system message in one of the supplied
+   * pods. This is intentionally an existence query: callers use it for
+   * onboarding facts, not for rendering history or counting activity.
+   */
+  static async hasMessageByUserInPods(userId: unknown, podIds: unknown[]): Promise<boolean> {
+    if (!userId || !podIds || !podIds.length) return false;
+    const uid = (userId as { toString(): string }).toString();
+    const podIdStrs = podIds
+      .map((id) => (id as { toString(): string } | undefined)?.toString())
+      .filter(Boolean);
+    if (!podIdStrs.length) return false;
+    const result = await (pool as PgPool).query(
+      `SELECT 1
+         FROM messages
+        WHERE user_id = $1
+          AND pod_id = ANY($2)
+          AND message_type != 'system'
+        LIMIT 1`,
+      [uid, podIdStrs],
+    );
+    return result.rows.length > 0;
+  }
 }
 
 export default Message;

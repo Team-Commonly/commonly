@@ -45,6 +45,7 @@ const decisionQueue = {
 
 const recap = {
   pods: [{ id: 'pod-1', name: 'Launch pod' }],
+  hasSpokenToAgent: false,
   needsYou: [{
     id: 'mention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
     podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
@@ -239,11 +240,11 @@ describe('V2ActivityPage', () => {
     const empty = { ...recap, hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
     // Facts come from the registry's per-pod agent list (what Your Team reads), never from the
     // 24h recap window (sprint-review 66671): a hired seat that has not acted is absent from recap.
-    const mockFor = (seats, connectors) => (url: string) => {
+    const mockFor = (seats, connectors, hasSpokenToAgent = false) => (url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
       if (url === '/api/integrations/user/all') return Promise.resolve({ data: connectors });
       if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: seats } });
-      return Promise.resolve({ data: empty });
+      return Promise.resolve({ data: { ...empty, hasSpokenToAgent } });
     };
     mockGet.mockImplementation(mockFor([], []));
     const first = renderPage();
@@ -263,8 +264,9 @@ describe('V2ActivityPage', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/agents');
     first.unmount();
 
-    // An agent exists but has not answered, no connector: steps 2 and 3, composer back, step 2 is the ink act.
-    // A provisioned seat has lastActiveAt (runtime-token use) but lastMessage null: it has never spoken.
+    // An agent exists but has not received a human ask, no connector: steps 2
+    // and 3, composer back, step 2 is the ink act. A provisioned seat's
+    // runtime activity or own intro must not close the human-message step.
     mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null }, { name: 'hosted-smoke', lastMessage: { content: 'x' }, internal: true }], []));
     const second = renderPage();
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
@@ -273,8 +275,9 @@ describe('V2ActivityPage', () => {
     expect(screen.getByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
     second.unmount();
 
-    // Everything done: no card at all — the 0-state board already gated.
-    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi there', createdAt: '2026-09-08T10:00:03.000Z' } }], [{ status: 'active' }]));
+    // A human message in that agent pod is the fact that closes step 2,
+    // regardless of whether the agent has answered yet.
+    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null }], [{ status: 'active' }], true));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();

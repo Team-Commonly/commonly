@@ -76,6 +76,9 @@ interface ActivityRecap {
   // Account-level durable fact: once any attention item has existed, the
   // first-ask onboarding card should not return after the queue is resolved.
   hasEverHadAttention?: boolean | null;
+  // Account holder's own message in a pod with a non-internal agent seat.
+  // Null means the read was unavailable; the day-zero card fails closed.
+  hasSpokenToAgent?: boolean | null;
   needsYou: NeedsYouItem[];
   agents: AgentRecap[];
   board: BoardItem[];
@@ -201,15 +204,15 @@ const V2ActivityPage: React.FC = () => {
   const [queueAutoPending, setQueueAutoPending] = useState(false);
   // Day zero (ux-lead 66658/66666): Get started is its own card above Needs you and a step is
   // not an ask — no actor, no ring, no count, no badge; a step leaves when the account does
-  // something. hire ← an agent exists; speak ← an agent has answered; connect ← a connector row.
+  // something. hire ← an agent exists; speak ← the account holder has posted in an agent pod;
+  // connect ← a connector row.
   const [connectorCount, setConnectorCount] = useState<number | null>(null);
-  // "Hired" and "has answered" are facts about the account's seats, not about the last 24h
+  // "Hired" is a fact about the account's seats, not about the last 24h
   // (sprint-review 66671: recap.agents only carries agents that acted inside the recap window).
-  // The registry's per-pod agent list is what Your Team reads. `lastMessage` is proof of speech
-  // (null when the seat has never spoken in that pod); `lastActiveAt` is only proof of life —
-  // provisioning uses a runtime token and sets it (sprint-review 66678) — so it must not close
-  // the step whose job is to notice a seat that never answered.
-  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastMessage?: unknown; internal?: boolean }> | null>(null);
+  // The registry's per-pod agent list is what Your Team reads. Speech itself
+  // comes from recap.hasSpokenToAgent: a registry last-message field is agent
+  // speech, not the account holder's first human ask.
+  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; internal?: boolean }> | null>(null);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -564,7 +567,7 @@ const V2ActivityPage: React.FC = () => {
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     Promise.all(recap.pods.slice(0, 20).map((pod) => axios
-      .get<{ agents?: Array<{ name: string; lastMessage?: unknown; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
+      .get<{ agents?: Array<{ name: string; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
       .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []))
       .catch(() => [])))
       .then((lists) => { if (active) setHiredAgents(lists.flat().filter((agent) => !agent.internal)); });
@@ -574,7 +577,7 @@ const V2ActivityPage: React.FC = () => {
     if (!recap || podId !== 'all' || hiredAgents === null) return [] as Array<'hire' | 'speak' | 'connect'>;
     const open: Array<'hire' | 'speak' | 'connect'> = [];
     if (hiredAgents.length === 0) open.push('hire');
-    if (!hiredAgents.some((agent) => agent.lastMessage != null)) open.push('speak');
+    if (recap.hasSpokenToAgent === false) open.push('speak');
     if (connectorCount !== null && connectorCount === 0) open.push('connect');
     return open;
   }, [recap, podId, hiredAgents, connectorCount]);
