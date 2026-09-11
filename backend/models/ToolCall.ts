@@ -5,8 +5,14 @@ interface PgResult {
   rowCount?: number;
 }
 
+interface PgClient {
+  query: (sql: string, params?: unknown[]) => Promise<PgResult>;
+  release: () => void;
+}
+
 interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<PgResult>;
+  connect: () => Promise<PgClient>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -97,17 +103,15 @@ export const digestArgs = (args: unknown): string => createHash('sha256')
  * This is deliberately one conditional write rather than a read followed by
  * an increment, so concurrent calls cannot both consume the final slot.
  */
-export const reserveBudget = async (
+const reserveOne = async (
+  client: PgClient,
   grantId: string,
   calls: number,
   windowMs?: number,
 ): Promise<boolean> => {
-  if (!Number.isInteger(calls) || calls < 0) return false;
-  if (calls === 0) return false;
-  const db = await ensureTables();
-
+  if (!Number.isInteger(calls) || calls <= 0) return false;
   if (windowMs === undefined) {
-    const result = await db.query(
+    const result = await client.query(
       `INSERT INTO tool_call_budgets (grant_id, calls_used, window_started_at)
        VALUES ($1, 1, CURRENT_TIMESTAMP)
        ON CONFLICT (grant_id) DO UPDATE
@@ -118,9 +122,8 @@ export const reserveBudget = async (
     );
     return result.rows.length > 0;
   }
-
   if (!Number.isInteger(windowMs) || windowMs < 1) return false;
-  const result = await db.query(
+  const result = await client.query(
     `INSERT INTO tool_call_budgets (grant_id, calls_used, window_started_at)
      VALUES ($1, 1, CURRENT_TIMESTAMP)
      ON CONFLICT (grant_id) DO UPDATE
@@ -142,6 +145,39 @@ export const reserveBudget = async (
   );
   return result.rows.length > 0;
 };
+
+/** Reserve one slot on every grant in a lineage in one transaction. A child
+ * therefore consumes both its own cap and each ancestor cap; if any row is
+ * exhausted, the transaction rolls back all earlier reservations. */
+export const reserveBudgetLineage = async (
+  entries: Array<{ grantId: string; calls: number; windowMs?: number }>,
+): Promise<boolean> => {
+  if (entries.length === 0) return true;
+  const db = await ensureTables();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    for (const entry of entries) {
+      if (!await reserveOne(client, entry.grantId, entry.calls, entry.windowMs)) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+    }
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const reserveBudget = async (
+  grantId: string,
+  calls: number,
+  windowMs?: number,
+): Promise<boolean> => reserveBudgetLineage([{ grantId, calls, windowMs }]);
 
 class ToolCall {
   static async create(record: ToolCallRecord): Promise<void> {

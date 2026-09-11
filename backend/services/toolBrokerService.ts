@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto';
 import Pod from '../models/Pod';
+import Integration from '../models/Integration';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
-import ToolCall, { digestArgs, reserveBudget } from '../models/ToolCall';
+import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
 import {
   assertGrantUsable,
+  getGrantLineage,
   RoomGrantError,
 } from './roomGrantService';
 
@@ -14,8 +16,17 @@ export interface ToolDefinition {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
+  connectionType: 'github-app';
+  irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
   inputSchema: Record<string, unknown>;
-  call: (args: Record<string, unknown>) => Promise<unknown>;
+  call: (args: Record<string, unknown>, connection: ToolConnection) => Promise<unknown>;
+}
+
+export interface ToolConnection {
+  type: 'github-app';
+  installationId: string;
+  owner: string;
+  repo: string;
 }
 
 export interface BrokerCallInput {
@@ -29,9 +40,6 @@ export interface BrokerCallResult {
   callId: string;
   result: unknown;
 }
-
-const PINNED_OWNER = 'Team-Commonly';
-const PINNED_REPO = 'commonly';
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
   number: issue.number,
@@ -92,18 +100,20 @@ const listIssues: ToolDefinition = {
   name: 'github.list_issues',
   description: 'List open issues in the Commonly repository.',
   requiredWriteMode: 'read',
+  connectionType: 'github-app',
   inputSchema: {
     type: 'object',
     properties: { perPage: { type: 'integer', minimum: 1, maximum: 100 } },
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['perPage']);
     const perPage = positiveInteger(rawArgs.perPage, 'perPage', 20);
     if (perPage > 100) throw new RoomGrantError('invalid_tool_args', 'perPage must be at most 100', 400);
     const issues = await GitHubAppService.listOpenIssues({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       perPage,
     });
     return { issues: (issues || []).map((issue: Record<string, unknown>) => issueView(issue)) };
@@ -114,6 +124,8 @@ const createIssue: ToolDefinition = {
   name: 'github.create_issue',
   description: 'Create an issue in the Commonly repository.',
   requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -124,7 +136,7 @@ const createIssue: ToolDefinition = {
     required: ['title'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['title', 'body', 'labels']);
     const title = nonEmptyString(rawArgs.title, 'title');
     if (rawArgs.body !== undefined && typeof rawArgs.body !== 'string') {
@@ -135,8 +147,9 @@ const createIssue: ToolDefinition = {
       throw new RoomGrantError('invalid_tool_args', 'labels must be an array of strings', 400);
     }
     const issue = await GitHubAppService.createIssue({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       title,
       body: rawArgs.body as string | undefined,
       labels: rawArgs.labels as string[] | undefined,
@@ -149,17 +162,19 @@ const getIssue: ToolDefinition = {
   name: 'github.get_issue',
   description: 'Fetch one issue from the Commonly repository.',
   requiredWriteMode: 'read',
+  connectionType: 'github-app',
   inputSchema: {
     type: 'object',
     properties: { issueNumber: { type: 'integer', minimum: 1 } },
     required: ['issueNumber'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber']);
     const issue = await GitHubAppService.getIssue({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       issueNumber: positiveInteger(rawArgs.issueNumber, 'issueNumber'),
     });
     return issueView(issue as Record<string, unknown>);
@@ -170,17 +185,19 @@ const getPullRequest: ToolDefinition = {
   name: 'github.get_pull_request',
   description: 'Fetch one pull request from the Commonly repository.',
   requiredWriteMode: 'read',
+  connectionType: 'github-app',
   inputSchema: {
     type: 'object',
     properties: { pullNumber: { type: 'integer', minimum: 1 } },
     required: ['pullNumber'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber']);
     const pull = await GitHubAppService.getPullRequest({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     return pullView(pull as Record<string, unknown>);
@@ -191,17 +208,19 @@ const listPullRequestFiles: ToolDefinition = {
   name: 'github.list_pull_request_files',
   description: 'List files changed by a pull request in the Commonly repository.',
   requiredWriteMode: 'read',
+  connectionType: 'github-app',
   inputSchema: {
     type: 'object',
     properties: { pullNumber: { type: 'integer', minimum: 1 } },
     required: ['pullNumber'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber']);
     const files = await GitHubAppService.listPullRequestFiles({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     return {
@@ -220,20 +239,23 @@ const listPullRequestFiles: ToolDefinition = {
 const commentIssue: ToolDefinition = {
   name: 'github.comment_on_issue',
   description: 'Add a comment to an issue in the Commonly repository.',
-  requiredWriteMode: 'write',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
   inputSchema: {
     type: 'object',
     properties: { issueNumber: { type: 'integer', minimum: 1 }, body: { type: 'string', minLength: 1 } },
     required: ['issueNumber', 'body'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber', 'body']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
     const body = nonEmptyString(rawArgs.body, 'body');
     const result = await GitHubAppService.addIssueComment({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       issueNumber,
       body,
     });
@@ -242,10 +264,44 @@ const commentIssue: ToolDefinition = {
   },
 };
 
+const closeIssue: ToolDefinition = {
+  name: 'github.close_issue',
+  description: 'Close an issue in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: (args) => typeof args.comment === 'string' && args.comment.trim().length > 0,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      issueNumber: { type: 'integer', minimum: 1 },
+      comment: { type: 'string' },
+    },
+    required: ['issueNumber'],
+    additionalProperties: false,
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['issueNumber', 'comment']);
+    const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
+    if (rawArgs.comment !== undefined && typeof rawArgs.comment !== 'string') {
+      throw new RoomGrantError('invalid_tool_args', 'comment must be a string', 400);
+    }
+    const issue = await GitHubAppService.closeIssue({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      issueNumber,
+      comment: rawArgs.comment as string | undefined,
+    });
+    return issueView(issue as Record<string, unknown>);
+  },
+};
+
 const mergePullRequest: ToolDefinition = {
   name: 'github.merge_pull_request',
   description: 'Merge a pull request in the Commonly repository.',
   requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -257,7 +313,7 @@ const mergePullRequest: ToolDefinition = {
     required: ['pullNumber'],
     additionalProperties: false,
   },
-  async call(rawArgs) {
+  async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'commitTitle', 'commitMessage', 'mergeMethod']);
     if (rawArgs.commitTitle !== undefined && typeof rawArgs.commitTitle !== 'string') {
       throw new RoomGrantError('invalid_tool_args', 'commitTitle must be a string', 400);
@@ -270,8 +326,9 @@ const mergePullRequest: ToolDefinition = {
       throw new RoomGrantError('invalid_tool_args', 'mergeMethod is invalid', 400);
     }
     const result = await GitHubAppService.mergePullRequest({
-      owner: PINNED_OWNER,
-      repo: PINNED_REPO,
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
       commitTitle: rawArgs.commitTitle as string | undefined,
       commitMessage: rawArgs.commitMessage as string | undefined,
@@ -289,6 +346,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [listPullRequestFiles.name]: listPullRequestFiles,
   [createIssue.name]: createIssue,
   [commentIssue.name]: commentIssue,
+  [closeIssue.name]: closeIssue,
   [mergePullRequest.name]: mergePullRequest,
 };
 
@@ -303,6 +361,44 @@ const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Pr
   const pod = await Pod.findById(target.id).select('members').lean();
   if (!pod) throw new RoomGrantError('target_not_found', 'target pod not found', 404);
   return (pod.members || []).map((member) => String(member));
+};
+
+const resolveConnection = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  definition: ToolDefinition,
+): Promise<ToolConnection> => {
+  const connectionId = String((grant as Record<string, unknown>).connectionId || '').trim();
+  if (!connectionId) throw new RoomGrantError('connection_mismatch', 'grant connection is missing', 403);
+  let connection = await Integration.findOne({ type: definition.connectionType, installationId: connectionId });
+  // Grants commonly retain the Mongo connection _id. Avoid putting an
+  // untrusted string into a BSON _id selector when it is not an ObjectId.
+  if (!connection && /^[a-f\d]{24}$/i.test(connectionId)) {
+    connection = await Integration.findById(connectionId);
+  }
+  const row = connection as unknown as {
+    type?: string;
+    status?: string;
+    revokedAt?: Date | null;
+    config?: { installationId?: string; owner?: string; repo?: string };
+  } | null;
+  const config = row?.config;
+  if (
+    !row
+    || row.type !== definition.connectionType
+    || row.status !== 'connected'
+    || row.revokedAt
+    || !config?.installationId
+    || !config.owner
+    || !config.repo
+  ) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection is not a connected GitHub App installation', 403);
+  }
+  return {
+    type: 'github-app',
+    installationId: String(config.installationId),
+    owner: String(config.owner),
+    repo: String(config.repo),
+  };
 };
 
 const safeReason = (error: unknown): string => {
@@ -362,17 +458,37 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       requiredWriteMode: definition.requiredWriteMode,
     });
 
+    const connection = await resolveConnection(grant, definition);
+
     // Validate the shape before reserving a budget slot; malformed requests
     // are refusals, not spendable calls.
     const parsedArgs = objectArgs(input.args);
 
-    const budget = (grant as Record<string, unknown>).budget as { calls?: number; windowMs?: number } | undefined;
-    if (budget?.calls !== undefined) {
-      const reserved = await reserveBudget(input.grantId, budget.calls, budget.windowMs);
+    const irreversible = typeof definition.irreversible === 'function'
+      ? definition.irreversible(parsedArgs)
+      : definition.irreversible === true;
+    // ApprovalAction is added by the next broker cut. Park irreversible
+    // writes now, before spending budget or touching the provider.
+    if (irreversible && (grant as Record<string, unknown>).writeMode === 'write-with-confirm') {
+      throw new RoomGrantError('approval_required', 'irreversible tool call requires approval', 403);
+    }
+
+    const lineage = await getGrantLineage(grant);
+    const budgetEntries = lineage.reverse().flatMap((item) => {
+      const budget = (item as Record<string, unknown>).budget as { calls?: number; windowMs?: number } | undefined;
+      if (budget?.calls === undefined) return [];
+      return [{
+        grantId: String((item as Record<string, unknown>).grantId),
+        calls: budget.calls,
+        windowMs: budget.windowMs,
+      }];
+    });
+    if (budgetEntries.length > 0) {
+      const reserved = await reserveBudgetLineage(budgetEntries);
       if (!reserved) throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
 
-    const result = await definition.call(parsedArgs);
+    const result = await definition.call(parsedArgs, connection);
     const callId = await recordCall(input, grant, 'ok', startedAt);
     return { callId, result };
   } catch (error) {
@@ -380,7 +496,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     // Audit refusals and failures with the token-derived identity. If the
     // audit store itself is unavailable, surface that failure rather than
     // claiming a call happened without a durable trail.
-    const outcome = error instanceof RoomGrantError ? 'refused' : 'failed';
+    const outcome = error instanceof RoomGrantError
+      ? (error.code === 'approval_required' ? 'pending_approval' : 'refused')
+      : 'failed';
     const callId = await recordCall(input, grant, outcome, startedAt, reason);
     if (error instanceof RoomGrantError) {
       Object.assign(error, { details: { ...(error.details || {}), callId } });

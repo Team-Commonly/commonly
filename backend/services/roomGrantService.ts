@@ -208,6 +208,11 @@ const loadGrantLineage = async (
   return lineage;
 };
 
+/** Return the grant and its parents, ordered child-first for callers that
+ * need to inspect lineage. Usability still performs the active/revoked checks
+ * separately so this helper does not weaken the broker guard. */
+export const getGrantLineage = loadGrantLineage;
+
 const assertGrantLineageActive = async (
   grant: IRoomGrant | Record<string, unknown>,
   now = new Date(),
@@ -434,6 +439,7 @@ export default {
   attenuateGrant,
   revokeGrant,
   assertGrantUsable,
+  getGrantLineage,
   effectiveAudience,
   getEffectiveAudience,
   RoomGrantError,
