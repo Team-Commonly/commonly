@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import { toPublicIntegrationConfig } from './integrationPublicConfig';
 
 export type IntegrationType =
   | 'discord'
@@ -354,25 +355,14 @@ IntegrationSchema.virtual('platformIntegration', {
   justOne: true,
 });
 
-// A ConnectorSecret reference is itself not a bearer credential, but returning
-// it still widens the set of clients that can reason about server-side secret
-// storage. Keep it server-only in every normal JSON response, including the
-// pending OAuth bind that needs to show its workspace/user details.
+// Bearer credentials and the references that point at one are server-only in
+// every normal JSON response, including the pending OAuth bind that needs to
+// show its workspace/user details. The key list lives in
+// integrationPublicConfig so the lean catalog read strips the same fields.
 IntegrationSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
-    if (!returned.config) return returned;
-    delete returned.config.botTokenRef;
-    delete returned.config.oauthStateNonce;
-    const pending = returned.config.pendingBind;
-    if (pending && typeof pending === 'object') {
-      delete (pending as Record<string, unknown>).botTokenRef;
-    }
-    const adminPause = returned.config.adminPause;
-    if (adminPause && typeof adminPause === 'object') {
-      const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
-      returned.config.adminPause = { reason, at };
-    }
+    toPublicIntegrationConfig(returned.config);
     return returned;
   },
 });

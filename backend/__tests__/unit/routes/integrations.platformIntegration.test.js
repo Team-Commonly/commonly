@@ -137,7 +137,7 @@ describe('platformIntegration virtual (#1672)', () => {
     expect(res.body[0].type).toBe('telegram');
   });
 
-  it('the pod list is gated by canViewPod', async () => {
+  it('the pod integrations list refuses a non-member', async () => {
     await seedTelegramAndDiscord();
 
     const stranger = await request(app).get(`/api/integrations/${POD}`).set('x-test-user', STRANGER);
@@ -146,5 +146,44 @@ describe('platformIntegration virtual (#1672)', () => {
     expect(stranger.status).toBe(403);
     expect(stranger.body).toEqual({ message: 'Access denied' });
     expect(missing.status).toBe(404);
+  });
+
+  // Vera's 67858 probe: with the 500 gone, the pod list and the admin list
+  // returned every credential the config carries. A member still sees the
+  // Telegram connectCode, which is the one value the Connectors page pastes.
+  it('no integration response carries a credential', async () => {
+    const SECRETS = {
+      botToken: 'tg-bot-token',
+      secretToken: 'tg-secret-token',
+      signingSecret: 'slack-signing-secret',
+      accessToken: 'x-access-token',
+      refreshToken: 'x-refresh-token',
+      webhookUrl: 'https://hooks.slack.com/services/T1/B1/hook-secret',
+      botTokenRef: 'cs_ref_1',
+      oauthStateNonce: 'nonce-1',
+    };
+    await Integration.create([
+      row({ type: 'telegram', config: { chatId: '-100', connectCode: 'CODE-1', botToken: SECRETS.botToken, secretToken: SECRETS.secretToken, botTokenRef: SECRETS.botTokenRef } }),
+      row({ type: 'x', config: { username: 'ops', accessToken: SECRETS.accessToken, refreshToken: SECRETS.refreshToken } }),
+      row({ type: 'slack', config: { teamId: 'T1', signingSecret: SECRETS.signingSecret, webhookUrl: SECRETS.webhookUrl, oauthStateNonce: SECRETS.oauthStateNonce, pendingBind: { teamId: 'T1', botTokenRef: SECRETS.botTokenRef } } }),
+    ]);
+
+    const admin = await request(app).get('/api/integrations/admin/all');
+    const pod = await request(app).get(`/api/integrations/${POD}`);
+
+    expect(admin.status).toBe(200);
+    expect(pod.status).toBe(200);
+    for (const body of [admin.body, pod.body]) {
+      expect(body).toHaveLength(3);
+      const configs = body.map((entry) => entry.config);
+      Object.keys(SECRETS).forEach((key) => {
+        configs.forEach((config) => expect(config).not.toHaveProperty(key));
+      });
+      const slack = body.find((entry) => entry.type === 'slack');
+      expect(slack.config.pendingBind).toEqual({ teamId: 'T1' });
+      const serialized = JSON.stringify(body);
+      Object.values(SECRETS).forEach((value) => expect(serialized).not.toContain(value));
+      expect(body.find((entry) => entry.type === 'telegram').config.connectCode).toBe('CODE-1');
+    }
   });
 });
