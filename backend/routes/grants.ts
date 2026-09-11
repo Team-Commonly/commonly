@@ -185,9 +185,13 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
-    // The broker is the catalogue's business, never the body's: the grant
-    // names the proxy the seeded tool Installable points at, and may only
-    // allow tools that Installable enables (tools plan §2, §6).
+    // The broker is the catalogue's business, never the body's (Vera 67728):
+    // a caller who names one is refused, the grant names the proxy the seeded
+    // tool Installable points at, and may only allow tools that Installable
+    // enables (tools plan §2, §6).
+    if (body.brokerId !== undefined) {
+      return res.status(400).json({ error: 'invalid_broker', message: 'brokerId is set by the server, not the caller' });
+    }
     const broker = await resolveBrokerFor(String(connection.type));
     const requestedTools = Array.isArray(body.tools) ? body.tools.map(String) : [];
     const unknownTools = requestedTools.filter((tool: string) => !broker.enabledTools.includes(tool));

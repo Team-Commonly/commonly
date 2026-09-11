@@ -76,13 +76,22 @@ beforeEach(async () => {
 
 describe('POST /api/grants', () => {
   test('brokerId comes from the tool Installable, never the body', async () => {
-    const res = await mint({ brokerId: 'attacker-proxy' });
+    const res = await mint({});
     expect(res.status).toBe(201);
-    expect(res.body.brokerId).not.toBe('attacker-proxy');
     const row = await RoomGrant.findOne({ grantId: res.body.grantId }).lean();
     expect(row.brokerId).toBe(GRANT_BROKER_ID);
     expect(row.tools).toEqual(['github.list_issues']);
     expect(Installable.findOne).toHaveBeenCalledWith({ installableId: 'github', source: 'builtin', status: 'active' });
+  });
+
+  test('a client-supplied brokerId is refused', async () => {
+    for (const brokerId of ['attacker-proxy', GRANT_BROKER_ID, '']) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await mint({ brokerId });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: 'invalid_broker' });
+    }
+    expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
   test('the mint refuses a tool the Installable does not enable', async () => {
