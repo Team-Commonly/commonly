@@ -327,6 +327,11 @@ mongoose.connection.once('open', () => {
       ).catch((err: any) =>
         console.error('[builtin-connectors] bootstrap failed:', err?.message || err),
       );
+      // Tools plan §2: the first-party GitHub tool Installable is the row the
+      // Tools page draws first and the mint reads its broker from.
+      require('./scripts/seed-builtin-tools').seedBuiltinTools().catch((err: any) =>
+        console.error('[builtin-tools] bootstrap failed:', err?.message || err),
+      );
     })();
   }
 });

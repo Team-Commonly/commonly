@@ -451,6 +451,33 @@ describe('V2ConnectorsPage', () => {
       });
     };
 
+    // Tools plan (Sam's option A, two lists): a tool Installable shares the
+    // catalogue response but belongs to the Tools page, never to this one.
+    it('a tool Installable in the catalogue never renders as a channel row', async () => {
+      mockCatalog([
+        {
+          installableId: 'github',
+          list: 'tools',
+          label: 'GitHub',
+          description: 'Issues and pull requests.',
+          available: true,
+          broker: { id: 'commonly-grant-broker' },
+          tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }],
+          connections: [],
+          installation: null,
+          integration: null,
+        },
+        entry({ list: 'channels' }),
+      ]);
+      renderPage();
+
+      expect(await screen.findByText('One Telegram chat, one pod.')).toBeInTheDocument();
+      expect(screen.queryByText('GitHub')).toBeNull();
+      expect(screen.queryByText('Issues and pull requests.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Connect' })).toHaveLength(1);
+    });
+
     it('renders an unavailable provider without a control and an available one with Connect', async () => {
       mockCatalog([
         entry(),
