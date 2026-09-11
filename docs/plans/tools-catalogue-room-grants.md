@@ -31,9 +31,12 @@ The GitHub tool Installable ships as `source: 'builtin'` with one `McpServer` co
 
 | tool | `writeMode` needed | irreversible? |
 |---|---|---|
-| `list_issues`, `get_issue`, `get_pull_request`, `list_pull_request_files` | `read` | no |
-| `comment_on_issue` | `write` | no — a comment can be edited or deleted |
-| `create_issue`, `merge_pull_request` | `write-with-confirm` | yes — a merge cannot be unmade; an issue creates notifications that cannot be recalled |
+| `github.list_issues`, `github.get_issue`, `github.get_pull_request`, `github.list_pull_request_files` | `read` | no |
+| `github.close_issue` | `write-with-confirm` | no — a closed issue can be reopened. The tool takes no comment, so its tier never depends on its arguments |
+| `github.create_issue`, `github.comment_on_issue` | `write-with-confirm` | yes — both notify subscribers, and a notification cannot be recalled; deleting a comment un-sends nothing (ADR-001 §3: a confirm gate does not catch disclosure) |
+| `github.merge_pull_request` | deferred to piece 3 | yes — removed from #1662 (Vera 67479, Wren 67484). It returns once Sam rules whether a `write` grant may ever run an irreversible tool unattended |
+
+**As built in #1662 (`2b5925a7`), and the rulings behind the table (Wren 67464–67466, 67473):** no tool requires `write`. `write` is a *grant* tier meaning "a grant that never asks", not a tool requirement; every write tool requires `write-with-confirm`, so a granter who chose the confirm tier can still let an agent comment. Irreversibility is a per-tool constant declared on the server-side tool definition, never a function of the call's arguments, so the page's "what asks first" and the approval card can list tools rather than calls. Until piece 3 lands, an irreversible tool under a `write-with-confirm` grant is refused with `approval_required`, and no budget is spent.
 
 No manifest is parsed for it. It is the row the page shows first and the fixture every test in 1–3 runs against.
 
@@ -55,7 +58,7 @@ The shape is ADR-001 §3 as amended, and this section names only what the builde
 5. `audience is snapshot ∩ current members` — a member removed from the pod after the grant gets `not_in_audience` from the broker; a member added after the grant gets the same until the granter adds them.
 6. `a grant without expiresAt is refused`.
 
-**Where:** `backend/models/RoomGrant.ts`, `backend/services/roomGrantService.ts` (mint / attenuate / revoke / `effectiveAudience`), routes under `/api/grants` (human JWT for mint and revoke; the attenuate verb takes the agent runtime token via `dualAuth`, like reactions do). The Connection for the slice is a row on the existing `Integration` model with `provider: 'github-app'` and no `podId`, following ADR-025's folded D8 (user-scoped, `linkedUserId` the admin); no new Connection model until piece 6 needs one.
+**Where:** `backend/models/RoomGrant.ts`, `backend/services/roomGrantService.ts` (mint / attenuate / revoke / `effectiveAudience`), routes under `/api/grants` (human JWT for mint and revoke; the attenuate verb takes the agent runtime token via `dualAuth`, like reactions do). The Connection for the slice is a row on the existing `Integration` model, following ADR-025's folded D8, and #1662 fixed its shape (Wren 67469–67471, 67474, 67484; Vera 67467, 67472, 67483): `type: 'github-app'`, `scope: 'user'`, no `podId`, `status: 'connected'`, `config: { installationId, owner, repo }`, and no secret — the App private key stays in env. `createdBy` is the admin who installed the App and is the owner every grant on it derives `grantedBy` from. Only the admin-only `POST /api/integrations/github-app` creates one; a repeat on the same `installationId` returns the row unchanged, a different owner/repo answers 409, and `createdBy` is never reassigned, so a re-post can neither retarget existing grants nor take the granter's power to revoke. The member route `POST /api/integrations` refuses `github-app` by name, and `installationId`, `owner`, `repo` are server-owned config keys a browser body cannot write. Both the mint and the broker refuse `connection_mismatch` unless the row is that type, connected, and unrevoked — keyed on `type`, never on which config keys happen to be present — and the broker executes as the row's installation: it mints the installation token for the row's `installationId` and never falls back to the deployment's `GITHUB_PAT`. No new Connection model until piece 6 needs one.
 
 ## 4. The broker (piece 2)
 
@@ -65,7 +68,7 @@ The shape is ADR-001 §3 as amended, and this section names only what the builde
 2. **It is already the shape ADR-008 declares.** An `McpServer` component projects to one `environment.mcp[]` entry: `{ name, transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/<grantId>', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } }`. Both placeholders are the two that `MCP_PLACEHOLDERS` in `backend/routes/agentBinding.ts` already lets through (#1598), so no daemon or adapter change is needed for an agent to reach it — the daemon writes the same `mcp-config.json` it writes today.
 3. **The ledger is Postgres, the broker is stateless, so it can sit on the spot pool** (ADR-015). The one long-lived thing — the GitHub App token refresh — already lives in `githubAppService`.
 
-**What it does per call**, in order: authenticate the agent → load the grant → refuse if revoked, expired, or the agent is outside `audience ∩ pod.members` → refuse if the tool is not in `tools` → refuse if the tool's required `writeMode` exceeds the grant's → if the tool is irreversible and the grant is `write-with-confirm`, park it (piece 3) without consuming budget → decrement `budget` → execute with the server-held credential → write the trail row → return the result. Every refusal also writes a trail row with `outcome: 'refused'` and the reason code, because a room reading the trail should see what agents *tried*.
+**What it does per call**, in order: authenticate the agent → load the grant → refuse if revoked, expired, or the agent is outside `audience ∩ pod.members` → refuse if the tool is not in `tools` → refuse if the tool's required `writeMode` exceeds the grant's → if the tool is irreversible and the grant is `write-with-confirm`, park it (piece 3) without consuming budget → reserve one budget slot on every grant in the lineage, root first, in one transaction, rolling back if any is exhausted (a child draws down its parent and stays under its own cap; Vera 67467, Wren 67471) → execute with the server-held credential → write the trail row → return the result. Every refusal also writes a trail row with `outcome: 'refused'` and the reason code, because a room reading the trail should see what agents *tried*.
 
 **The trail row** is the "attributed event to the room's record" in Sam's 67407 and what the aside's trail reads:
 
@@ -95,7 +98,7 @@ Args are digested and not stored, deliberately: a Gmail search string or an issu
 5. `never returns the credential` — a snapshot test on every tool's result shape, so no future tool can leak the installation token by returning provider headers.
 6. `budget exhausts` — `calls: 3` allows three and refuses the fourth with `budget_exhausted`.
 
-**Where:** `backend/services/toolBrokerService.ts`, `backend/routes/mcpGrants.ts` (the Streamable HTTP transport from `@modelcontextprotocol/sdk` mounted under `/api/mcp/grants/:grantId`, agent auth via `agentRuntimeAuth`), `backend/models/ToolCall.ts`, `backend/tools/github/` for the first-party tool implementations against `githubAppService`. The builtin Installable registers beside the other first-party apps.
+**Where:** `backend/services/toolBrokerService.ts`, `backend/routes/mcpGrants.ts` (the Streamable HTTP transport from `@modelcontextprotocol/sdk` mounted under `/api/mcp/grants/:grantId`, agent auth via `agentRuntimeAuth`), `backend/models/ToolCall.ts`. #1662 kept the tool definitions inline in `toolBrokerService.ts`; `backend/tools/github/` is where they move when a second provider arrives. The builtin Installable and its `environment.mcp` projection are a separate piece-2 PR, still owed after #1662.
 
 ## 5. Approval for irreversible scopes (piece 3)
 
