@@ -141,6 +141,14 @@ const normalizeBoolean = (value: any, fallback = false) => {
   return fallback;
 };
 
+/**
+ * The admin forms send accessToken only when a new one is typed; a blank
+ * field keeps the token already on file. A new integration still needs one.
+ */
+const keepOrReplaceAccessToken = (typed: unknown, existing: any): string => (
+  typed ? String(typed) : String(existing?.config?.accessToken || '')
+);
+
 const upsertXIntegration = async ({
   requesterId,
   globalPodId,
@@ -157,6 +165,7 @@ const upsertXIntegration = async ({
   followFromAuthenticatedUser,
   followingWhitelistUserIds,
   followingMaxUsers,
+  existing,
 }: {
   requesterId: any;
   globalPodId: any;
@@ -173,11 +182,11 @@ const upsertXIntegration = async ({
   followFromAuthenticatedUser?: any;
   followingWhitelistUserIds?: any;
   followingMaxUsers?: any;
+  existing?: any;
 }) => {
-  let xIntegration = await Integration.findOne({
-    type: 'x',
-    podId: globalPodId,
-  });
+  let xIntegration = existing === undefined
+    ? await Integration.findOne({ type: 'x', podId: globalPodId })
+    : existing;
   const hasFollowUsernames = followUsernames !== undefined;
   const hasFollowUserIds = followUserIds !== undefined;
   const normalizedFollowUsernames = hasFollowUsernames
@@ -523,17 +532,23 @@ router.post('/x', auth, adminAuth, async (req: any, res: any) => {
     } = req.body;
 
     // Validate required fields
-    if (!username || !userId || !accessToken) {
+    if (!username || !userId) {
       return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
     }
 
     // Find or create global pod
     const globalPod = await ensureGlobalSocialFeedPod(requesterId);
+    const existing = await Integration.findOne({ type: 'x', podId: globalPod._id });
+    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, existing);
+    if (!effectiveAccessToken) {
+      return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
+    }
     const xIntegration = await upsertXIntegration({
       requesterId,
       globalPodId: globalPod._id,
       enabled,
-      accessToken,
+      accessToken: effectiveAccessToken,
+      existing,
       username,
       userId,
       followUsernames,
@@ -568,7 +583,7 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
     } = req.body;
 
     // Validate required fields
-    if (!username || !igUserId || !accessToken) {
+    if (!username || !igUserId) {
       return res.status(400).json({ error: 'Username, igUserId, and accessToken are required' });
     }
 
@@ -580,12 +595,16 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
       type: 'instagram',
       podId: globalPod._id,
     });
+    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, instagramIntegration);
+    if (!effectiveAccessToken) {
+      return res.status(400).json({ error: 'Username, igUserId, and accessToken are required' });
+    }
 
     if (instagramIntegration) {
       // Update existing
       instagramIntegration.config = {
         ...instagramIntegration.config,
-        accessToken,
+        accessToken: effectiveAccessToken,
         username,
         igUserId,
         category: 'Social',
@@ -604,7 +623,7 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
         status: enabled ? 'connected' : 'disconnected',
         isActive: enabled,
         config: {
-          accessToken,
+          accessToken: effectiveAccessToken,
           username,
           igUserId,
           category: 'Social',
