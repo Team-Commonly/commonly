@@ -1,11 +1,12 @@
 const mockUpdateOne = jest.fn();
 const mockUpdateMany = jest.fn();
 const mockFind = jest.fn();
+const mockExists = jest.fn();
 const mockPodFindById = jest.fn();
 const mockPodFind = jest.fn();
 const mockUserFind = jest.fn();
 
-jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, updateMany: mockUpdateMany, find: mockFind }));
+jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, updateMany: mockUpdateMany, find: mockFind, exists: mockExists }));
 jest.mock('../../../models/Pod', () => ({ findById: mockPodFindById, find: mockPodFind }));
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
@@ -27,6 +28,19 @@ describe('attentionItemService', () => {
     jest.clearAllMocks();
     mockUpdateOne.mockResolvedValue({ modifiedCount: 1 });
     mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+  });
+
+  it('checks durable attention history without filtering by current status', async () => {
+    mockExists.mockResolvedValue({ _id: 'attention-1' });
+
+    await expect(AttentionItemService.hasEverHadAttention('recipient-1')).resolves.toBe(true);
+    expect(mockExists).toHaveBeenCalledWith({ recipientUserId: 'recipient-1' });
+  });
+
+  it('treats an empty attention history as day zero', async () => {
+    mockExists.mockResolvedValue(null);
+
+    await expect(AttentionItemService.hasEverHadAttention('recipient-1')).resolves.toBe(false);
   });
 
   it('materializes a mention only for mentioned human members other than the author', async () => {

@@ -75,14 +75,39 @@ export const isHostedInstallation = (installation: any): boolean => (
   String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === HOSTED_RUNTIME_TYPE
 );
 
+const hostedInstallationFilter = (userId: any) => ({
+  installedBy: userId,
+  status: 'active',
+  'config.runtime.runtimeType': HOSTED_RUNTIME_TYPE,
+});
+
 /** Active hosted installations owned by a user. Same path the install route writes. */
 export const countHostedAgentsForUser = async (userId: any): Promise<number> => (
-  AgentInstallation.countDocuments({
-    installedBy: userId,
-    status: 'active',
-    'config.runtime.runtimeType': HOSTED_RUNTIME_TYPE,
-  })
+  AgentInstallation.countDocuments(hostedInstallationFilter(userId))
 );
+
+export interface HostedInstallationSummary {
+  agentName: string;
+  instanceId: string;
+  podId: string;
+}
+
+/**
+ * Return only the owner-safe identity needed to recover from a cap error.
+ * Failed provisioning leaves the active installation in place, so a count
+ * alone strands the user with no way to tell which seat must be removed.
+ * Never return config or runtime tokens from this helper.
+ */
+export const listHostedInstallationsForUser = async (userId: any): Promise<HostedInstallationSummary[]> => {
+  const rows = await AgentInstallation.find(hostedInstallationFilter(userId))
+    .select('agentName instanceId podId')
+    .lean();
+  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+    agentName: String(row.agentName || ''),
+    instanceId: String(row.instanceId || 'default'),
+    podId: String(row.podId || ''),
+  })).filter((row) => row.agentName && row.podId);
+};
 
 const utcDayStart = (now = new Date()): Date => new Date(Date.UTC(
   now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
@@ -203,6 +228,7 @@ module.exports = {
   readRuntimeConfig,
   isHostedInstallation,
   countHostedAgentsForUser,
+  listHostedInstallationsForUser,
   turnsToday,
   meterAllowsTurn,
   HostedRuntimeError,
