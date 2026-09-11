@@ -11,9 +11,13 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
+// Identity from a header so one app can be called as a member and a stranger.
+// Pod stays real: the admin list populates `podId`, so the model has to be
+// registered, and the pod list's canViewPod gate runs against real rows.
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.user = { id: 'admin-1' };
-  req.userId = 'admin-1';
+  const id = req.get('x-test-user') || 'bbbbbbbbbbbbbbbbbbbbbb01';
+  req.user = { id };
+  req.userId = id;
   next();
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
@@ -21,8 +25,11 @@ jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 const POD = new mongoose.Types.ObjectId();
 const OTHER_POD = new mongoose.Types.ObjectId();
 const CREATOR = new mongoose.Types.ObjectId();
+const MEMBER = 'bbbbbbbbbbbbbbbbbbbbbb01'; // the auth mock's default caller
+const STRANGER = 'bbbbbbbbbbbbbbbbbbbbbb02';
 
 let mongod;
+let Pod;
 let Integration;
 let DiscordIntegration;
 let app;
@@ -40,6 +47,7 @@ const row = (over = {}) => ({
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
+  Pod = require('../../../models/Pod');
   Integration = require('../../../models/Integration');
   DiscordIntegration = require('../../../models/DiscordIntegration');
   const routes = require('../../../routes/integrations');
@@ -54,8 +62,13 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await Pod.deleteMany({});
   await Integration.deleteMany({});
   await DiscordIntegration.deleteMany({});
+  await Pod.create([
+    { _id: POD, name: 'Ops', createdBy: CREATOR, members: [MEMBER] },
+    { _id: OTHER_POD, name: 'Guild', createdBy: CREATOR, members: [MEMBER] },
+  ]);
 });
 
 const seedTelegramAndDiscord = async () => {
@@ -97,7 +110,7 @@ describe('platformIntegration virtual (#1672)', () => {
     expect(joined.platformIntegration).toMatchObject({ serverId: 'srv-1', channelId: 'chan-1' });
   });
 
-  it('the Discord join never returns the bot token or the webhook URL', async () => {
+  it('the integration lists never return the bot token or webhook secret', async () => {
     await seedTelegramAndDiscord();
 
     const admin = await request(app).get('/api/integrations/admin/all');
@@ -122,5 +135,16 @@ describe('platformIntegration virtual (#1672)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].type).toBe('telegram');
+  });
+
+  it('the pod list is gated by canViewPod', async () => {
+    await seedTelegramAndDiscord();
+
+    const stranger = await request(app).get(`/api/integrations/${POD}`).set('x-test-user', STRANGER);
+    const missing = await request(app).get(`/api/integrations/${new mongoose.Types.ObjectId()}`);
+
+    expect(stranger.status).toBe(403);
+    expect(stranger.body).toEqual({ message: 'Access denied' });
+    expect(missing.status).toBe(404);
   });
 });
