@@ -319,7 +319,10 @@ router.delete('/:id/ingest-tokens/:tokenId', auth, async (req: AuthReq, res: Res
   }
 });
 
-router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
+// Same read bucket as /user/all: token-hash/IP keyed, ahead of auth, so the
+// membership lookup below cannot be driven unmetered (CodeQL
+// js/missing-rate-limiting on the gated route).
+router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // Pod-scoped content: canViewPod decides (members, admins, the agent-dm
