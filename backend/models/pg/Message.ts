@@ -290,6 +290,19 @@ class Message {
     return result.rows.length > 0;
   }
 
+  // Has this user ever said anything in this pod? The Activity day-zero card's
+  // "Say something to it" step closes on the caller's own act (#1648, ux-lead
+  // 67071): a seat's install intro or heartbeat is not the human speaking, so
+  // the seat's last message cannot answer this. Existence check, like above.
+  static async hasMessageByUserInPod(podId: unknown, userId: unknown): Promise<boolean> {
+    if (!podId || !userId) return false;
+    const result = await (pool as PgPool).query(
+      `SELECT 1 FROM messages WHERE pod_id = $1 AND user_id = $2 AND message_type != 'system' LIMIT 1`,
+      [(podId as { toString(): string }).toString(), (userId as { toString(): string }).toString()],
+    );
+    return result.rows.length > 0;
+  }
+
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
     const query = `
       UPDATE messages

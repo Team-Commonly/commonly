@@ -239,10 +239,12 @@ describe('V2ActivityPage', () => {
     const empty = { ...recap, hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
     // Facts come from the registry's per-pod agent list (what Your Team reads), never from the
     // 24h recap window (sprint-review 66671): a hired seat that has not acted is absent from recap.
-    const mockFor = (seats, connectors) => (url: string) => {
+    // Step 2 is the caller's own act (#1648, ux-lead 67071): the route says whether this account
+    // has said anything in the pod (`callerSpoke`); a seat's `lastMessage` never closes it.
+    const mockFor = (seats, connectors, callerSpoke = false) => (url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
       if (url === '/api/integrations/user/all') return Promise.resolve({ data: connectors });
-      if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: seats } });
+      if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: seats, callerSpoke } });
       return Promise.resolve({ data: empty });
     };
     mockGet.mockImplementation(mockFor([], []));
@@ -263,9 +265,11 @@ describe('V2ActivityPage', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/agents');
     first.unmount();
 
-    // An agent exists but has not answered, no connector: steps 2 and 3, composer back, step 2 is the ink act.
-    // A provisioned seat has lastActiveAt (runtime-token use) but lastMessage null: it has never spoken.
-    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null }, { name: 'hosted-smoke', lastMessage: { content: 'x' }, internal: true }], []));
+    // An agent exists, the account has not spoken, no connector: steps 2 and 3, composer back,
+    // step 2 is the ink act. The seat has already posted its install intro (lastMessage set) and
+    // is alive (lastActiveAt from runtime-token use): neither is the person speaking (#1648).
+    const introSeat = { name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi, I am Scout.', createdAt: '2026-09-08T10:00:01.000Z' } };
+    mockGet.mockImplementation(mockFor([introSeat, { name: 'hosted-smoke', internal: true }], [], false));
     const second = renderPage();
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
@@ -273,11 +277,28 @@ describe('V2ActivityPage', () => {
     expect(screen.getByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
     second.unmount();
 
-    // Everything done: no card at all — the 0-state board already gated.
-    mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi there', createdAt: '2026-09-08T10:00:03.000Z' } }], [{ status: 'active' }]));
+    // The account spoke, reply or not: step 2 leaves — with the connector row too, no card at all.
+    const silentSeat = { name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: null };
+    mockGet.mockImplementation(mockFor([silentSeat], [{ status: 'active' }], true));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+  });
+
+  test('day zero: speaking in a pod with no seat does not close step 2, and step 2 opens the pod that has one (#1648)', async () => {
+    const empty = { ...recap, pods: [{ id: 'pod-2', name: 'GTM Programs' }, ...recap.pods], hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [{ status: 'active' }] });
+      // pod-2: the account posted, but nobody is there to hear it. pod-1: a seat, and silence from the account.
+      if (url === '/api/registry/pods/pod-2/agents') return Promise.resolve({ data: { agents: [], callerSpoke: true } });
+      if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', lastMessage: { content: 'Hi, I am Scout.' } }], callerSpoke: false } });
+      return Promise.resolve({ data: empty });
+    });
+    renderPage();
+    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open My Workspace' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
   test('an agent action proposal is decided through /api/approvals, not the Activity verbs (#1650)', async () => {
