@@ -428,9 +428,11 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const irreversible = typeof definition.irreversible === 'function'
       ? definition.irreversible(parsedArgs)
       : definition.irreversible === true;
-    // ApprovalAction is added by the next broker cut. Park irreversible
-    // writes now, before spending budget or touching the provider.
-    if (irreversible && (grant as Record<string, unknown>).writeMode === 'write-with-confirm') {
+    // Confirmation is a floor set by the tool: every irreversible operation
+    // parks for a human, including when the grant is otherwise full `write`.
+    // Reversible writes may run unattended under `write`; the tool definition
+    // still supplies the required mode to the grant usability check above.
+    if (irreversible) {
       throw new RoomGrantError('approval_required', 'irreversible tool call requires approval', 403);
     }
 
