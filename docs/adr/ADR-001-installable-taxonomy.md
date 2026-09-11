@@ -362,7 +362,8 @@ Load-bearing rules:
 - **A `writeOnly` variable is a secret reference, never a literal.** ADR-025 D6 already keeps credential material out of the row. The same rule applies here: the row stores the variable's *name* and *schema*; the value lives behind a secret reference resolved at spawn. A manifest that ships a literal for a `writeOnly` variable is **rejected at parse time** with the variable named. This is a refusal in the parser, not a reliance on the daemon-token boundary: `backend/routes/agentBinding.ts` (`MCP_PLACEHOLDERS`, #1598) already drops literal MCP env values on projection, and that guard stays — but a guard that silently drops is a worse contract than a parse error that names the field. Both exist; the parser is the one the author sees.
 - **`default` and `writeOnly` are mutually exclusive.** A default is a literal, and a literal secret is the thing the previous rule forbids.
 - **`enabledTools` projects to an allow-list.** The adapter never sees a tool the install did not enable. Absent means all; an empty array means none (a valid way to install a server for its resources or prompts only).
-- **`pin` is preserved verbatim.** An install resolves the source at the pinned SHA when one is given and records what it resolved to. Re-resolving a floating source is an *upgrade*, not a reinstall — identity continuity (invariant 5) holds across it.
+- **`pin` is optional to author and mandatory to install.** A manifest may omit it, because an author iterating on a plugin should not have to re-pin on every push. An *install* never runs unpinned: the install path resolves the ref to its exact commit SHA once, freezes that SHA on the row as `pin`, and refuses the install if resolution fails. A pin that is given and is not a 40-character SHA is invalid at parse time. After that, an upstream push cannot change what an installed room runs; re-resolving is an *upgrade* someone asks for, not something that happens to them — identity continuity (invariant 5) holds across it. (Vera 67397, Kai 67399.)
+- **`source` is a fetch target, so it is validated before anything reads it.** A plain string or git URL accepts far more than GitHub: `file://`, `ssh://`, or an internal host would make the resolver fetch from inside our own network. v1 allow-lists scheme and host — `https://github.com` is enough to start — and rejects the rest by name. `subpath` is normalised and must stay inside the checkout: absolute paths and any `..` segment are rejected. Validation and canonicalisation run first; an invalid target never reaches a network call. (Vera 67393.)
 
 Projection onto ADR-008: one `McpServer` component becomes one `environment.mcp[]` entry — `name`, `transport`, and either `command` or `url` — with `env` carrying **only** the `${COMMONLY_*}` placeholders the adapters resolve. Non-secret variables are substituted into `command`/`url` at spawn; secret variables reach the server through the broker path in §3, or, until the broker exists, through the operator's own out-of-band environment exactly as ADR-008 describes for provider keys today.
 
@@ -381,39 +382,47 @@ A plugin root is a directory containing `.claude-plugin/` or `.cursor-plugin/`. 
 
 The Installable's `kind` is `'app'` unless the manifest ships only skills (`'skill'`). `source` on the Installable row is `'marketplace'` when it arrives through the catalogue and `'user'` when an admin points the parser at a local root.
 
-What the parser does **not** do in its first cut: fetch. It reads a local root. Resolving `owner/repo` or a git URL to a checkout at a pinned SHA is the second cut, behind the same contract. This ordering is deliberate: the manifest contract gets exercised by tests against fixtures before any network path exists.
+What the parser does **not** do in its first cut: fetch. It validates and canonicalises `source` (§1's allow-list and subpath rules), then reads a local root. Resolving `owner/repo` or a git URL to a checkout at a pinned SHA — and freezing the resolved SHA on the row when the manifest left `pin` absent — is the second cut, behind the same contract; a local root has no SHA to freeze, and its `source: 'user'` on the Installable row is what says so. This ordering is deliberate: the manifest contract gets exercised by tests against fixtures before any network path exists.
 
 #### 3. Room grants — the record, and why it does not ship yet
 
-The catalogue's differentiator is that an install targets a **room**, not a person: one member grants Gmail once, every agent in the room can use it, and every call is attributed. That is a shared credential, and the review of it (Vera, pod messages 67376–67378) found three things the naive shape gets wrong. The record below is written so each one has a field that answers it.
+The catalogue's differentiator is that an install targets a **room**, not a person: one member grants Gmail once, every agent in the room can use it, and every call is attributed. That is a shared credential, and the review of it (Vera, pod messages 67376–67378, 67391–67392) found what the naive shape gets wrong. The record below is written so each finding has a field that answers it.
+
+The objects come from the 1 September Connections brief as Sam relayed it (67401): a **Connection** is per person — ADR-025's folded D8, the user-scoped record that owns the credential — and a **Grant** covers `{connection, seat or pod, tool allow-list, write mode, budget, expiry}`, with every call under it producing an audit event. This record is that Grant for the room case; the owner and the secret reference live on the Connection, not here.
 
 ```typescript
 RoomGrant {
   grantId: string;
+  connectionId: string;            // the per-person Connection (ADR-025 D8) whose credential this is
   installationId: string;          // the InstallableInstallation this grant serves
-  podId: string;                   // the room
-  grantedBy: string;               // userId whose credential this is
-  scopes: string[];                // chosen at grant time; never widened in place
-  audience: string[];              // SNAPSHOT of member userIds at grant time
-  secretRef: string;               // ADR-025 D6 reference; never the material
+  target: { kind: 'pod' | 'seat'; id: string };  // the room, or one seat in it
+  tools: string[];                 // allow-list; chosen at grant time, never widened in place
+  writeMode: 'read' | 'write' | 'write-with-confirm';
+  budget?: { calls?: number; windowMs?: number };
+  audience: string[];              // SNAPSHOT of member userIds at grant time — see the ∩ rule
   expiresAt: Date;                 // required; a grant without expiry is refused
   revokedAt?: Date;
+  parentGrantId?: string;          // set when attenuated from another grant
   brokerId: string;                // the proxy that holds the material — REQUIRED
 }
 ```
 
-- **Audience is a snapshot, not live membership.** A room's members at call time is the wrong audience: someone who joins after the grant would inherit an inbox nobody chose to give them. The grant records who was in the room when it was made; a later joiner is added by the granting member, on purpose, as a new audience entry with its own timestamp. (Membership drift, 67377.)
+- **Audience is the snapshot intersected with current members.** Live membership alone is the wrong audience: someone who joins after the grant would inherit an inbox nobody chose to give them. A snapshot alone is wrong in the other direction: someone removed from the room, possibly for cause, would keep the grant because they are still in the list. So the effective audience at call time is `audience ∩ pod.members` — a joiner has to be added by the granting member, on purpose, as a new audience entry with its own timestamp; a leaver drops out automatically. (Membership drift, 67377; the leaver clause, 67391.)
+- **Grants attenuate; they never widen.** A seat may pass a narrower grant to a sub-agent — a subset of `tools`, a `writeMode` no higher, a `budget` no larger, an `expiresAt` no later — and the child records its `parentGrantId`. Revoking a parent revokes every descendant. A child that asks for more than its parent holds is refused at creation, not at call time.
 - **Attribution and "revoke shows what was done" both require that the agent never holds the material.** An agent with the raw token can call the provider directly, outside anything Commonly logs. So `brokerId` is required: the grant names a proxy that holds the secret, makes the call on the agent's behalf, and writes one ledger row per call with the agent, the grant and the tool. `main` has no such broker today — `connectorSecrets` does put/get/revoke/rewrap and nothing scoped — which is why **room-shared grants do not ship until the broker exists**. Per-member installs, where the credential is the installing user's own and the agent acting for them is already attributable, ship first. (67376.)
-- **Derived memory carries the grant as provenance.** Revoking a credential does not un-learn what agents read under it. Any `AgentMemory` row written while a grant was in effect carries `derivedFrom: { grantId }`, and revoke narrows those rows' audience to the granting member rather than leaving them at whatever visibility the writer chose. `AgentMemory` hard-codes `'private'` for two kinds today; that is narrower than an audience rule, and this field is what an audience rule attaches to. (67378.)
+- **Derived memory carries the grant as provenance — and the claim stops where the tag does.** Revoking a credential does not un-learn what agents read under it. Any `AgentMemory` row written through a path that knows which grant the turn was using carries `derivedFrom: { grantId }`, and revoke narrows those rows' audience to the granting member rather than leaving them at whatever visibility the writer chose. That is the whole claim. An agent that reads under a grant and records the fact in a later turn, or restates it in its own words, produces memory with no grant id, and revoke does not reach it. Revoke narrows what is *tagged*, not everything *learned*; the record promises the first and the revoke UI must not imply the second. `AgentMemory` hard-codes `'private'` for two kinds today; that is narrower than an audience rule, and this field is what an audience rule attaches to. (67378; the limit, 67392.)
 - **A confirm-before-irreversible gate does not catch disclosure.** "A person confirms anything irreversible" stops a send. It does not stop an agent reading an injected email and posting its contents to the room, because posting is not irreversible in the provider's terms. The broker's ledger is the instrument that makes that visible after the fact; preventing it is a prompt-injection problem this amendment names and does not solve.
 
 ### Build sequence
 
 1. **This amendment** — docs only; Vera's gate on §3 is the review that matters.
-2. **Manifest parser** (Kai; sized 2–3 days) — local roots → Installable, fixtures for both plugin roots, the `writeOnly`-literal refusal and the `default`/`writeOnly` exclusion as named tests. No fetch.
+2. **Manifest parser** (Kai; sized 2–3 days) — local roots → Installable, fixtures for both plugin roots, and named tests for: the `writeOnly`-literal refusal, the `default`/`writeOnly` exclusion, the `source` scheme/host allow-list, subpath escape rejection, and the non-40-character pin. No fetch; the SHA-freeze at install is the second cut.
 3. **Hook endpoint** (Kai; sized 5–7 days for ingress and claim checks) — `PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop` as JSON to a Commonly URL, with a `PreToolUse` reply able to refuse a tool call that touches a resource another agent holds under an ADR-028 work claim, and `PostToolUse` written to the room's work record. Recording or redacting tool payloads is a separate follow-on (+2–3 days), not folded in.
-4. **Broker** — unsized, and the precondition for anything in §3 becoming buildable.
-5. **Catalogue page** — after Sam rules on the mocks; Connectors keeps the page per Ruling A (2026-09-02).
+4. **Broker with an attributed call trail** — unsized, and the precondition for anything in §3 becoming buildable. The ledger row per call is what the mock's "trail of calls" draws, so the trail is not a separate item: it is the broker's output.
+5. **Approval step for irreversible scopes** — `writeMode: 'write-with-confirm'` routes the call through `commonly_request_decision` before the broker executes it. Sits on the broker; small once the broker exists.
+6. **Catalogue page** — after Sam rules on the mocks; Connectors keeps the page per Ruling A (2026-09-02). The page draws only what 1–5 enforce.
+
+Sam's gap list (67401) — tool-server component, grant record, attributed call trail, approval step — maps to items 1, 1 (§3), 4 and 5.
 
 ### What this does NOT change
 
@@ -430,4 +439,5 @@ The 2026-04-12 amendment added Skill because the union had no slot for an agent-
 
 - **Broker shape.** In-process proxy in the backend, or a separate service the daemon talks to? ADR-015's spot/dev-pool split argues for the backend if it is stateless and the ledger is in Postgres; a long-lived OAuth refresh loop argues against spot.
 - **Grant audience and `agent-dm` pods.** A 1:1 DM has an audience of two by construction; does a grant there need a snapshot at all, or is the pod type the audience?
+- **Budget unit.** The brief names a budget without a unit; calls per window is the shape here, and cost is the obvious alternative once the broker has a ledger to sum.
 - **`enabledTools` and server upgrades.** If a pinned source is re-resolved and the server now exposes a tool the allow-list never named, the allow-list wins — but should the upgrade surface the new tool to the installer as a choice?
