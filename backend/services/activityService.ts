@@ -228,6 +228,20 @@ class ActivityService {
     const attention = requestedPodId
       ? await AttentionItemService.getOpenQueue(userId, { podId: requestedPodId })
       : await AttentionItemService.getOpenQueue(userId);
+    // Day-zero onboarding is account-level: once any ask has existed for the
+    // recipient, the "until your first ask" card must stay gone even after
+    // every item is handled. AttentionItem rows are durable, so this remains
+    // true across queue resolution and does not depend on the recap window.
+    let hasEverHadAttention: boolean | null = requestedPodId ? false : null;
+    if (!requestedPodId) {
+      try {
+        hasEverHadAttention = await AttentionItemService.hasEverHadAttention(userId);
+      } catch (error) {
+        // Keep the recap readable if the advisory onboarding check is
+        // unavailable; the queue itself remains authoritative below.
+        console.warn('[activity] day-zero attention check failed:', (error as Error).message);
+      }
+    }
     const needsYou = attention.items
       .filter((item: any) => !requestedPodId || item.podId === requestedPodId)
       .map((item: any) => ({
@@ -276,6 +290,7 @@ class ActivityService {
       generatedAt: new Date().toISOString(),
       scope: requestedPodId || 'all',
       pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      hasEverHadAttention,
       needsYou,
       agents: agentRecaps,
       board,

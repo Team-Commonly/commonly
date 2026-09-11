@@ -70,6 +70,9 @@ interface BoardItem {
 
 interface ActivityRecap {
   pods: Array<{ id: string; name: string }>;
+  // Account-level durable fact: once any attention item has existed, the
+  // first-ask onboarding card should not return after the queue is resolved.
+  hasEverHadAttention?: boolean | null;
   needsYou: NeedsYouItem[];
   agents: AgentRecap[];
   board: BoardItem[];
@@ -1166,7 +1169,7 @@ const V2ActivityPage: React.FC = () => {
             {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
           </section>
           )}
-          {startSteps.length > 0 && (
+          {queueCount === 0 && recap.hasEverHadAttention === false && startSteps.length > 0 && (
             <section className="v2-activity__start" aria-labelledby="activity-get-started">
               <div className="v2-activity__start-head">
                 <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>

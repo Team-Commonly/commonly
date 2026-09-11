@@ -236,7 +236,7 @@ describe('V2ActivityPage', () => {
   });
 
   test('day zero: Get started is its own card above Needs you, the composer hides until an agent exists, and steps leave one by one (66658/66666)', async () => {
-    const empty = { ...recap, needsYou: [], agents: [], board: [] };
+    const empty = { ...recap, hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
     // Facts come from the registry's per-pod agent list (what Your Team reads), never from the
     // 24h recap window (sprint-review 66671): a hired seat that has not acted is absent from recap.
     const mockFor = (seats, connectors) => (url: string) => {
@@ -277,6 +277,46 @@ describe('V2ActivityPage', () => {
     mockGet.mockImplementation(mockFor([{ name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi there', createdAt: '2026-09-08T10:00:03.000Z' } }], [{ status: 'active' }]));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+  });
+
+  test('hides Get started after any historical attention item, even with unfinished steps', async () => {
+    const handledAskRecap = { ...recap, hasEverHadAttention: true, needsYou: [], agents: [], board: [] };
+    let releaseRegistry: ((value: { data: { agents: unknown[] } }) => void) | null = null;
+    const registryResponse = new Promise<{ data: { agents: unknown[] } }>((resolve) => { releaseRegistry = resolve; });
+    const mockFor = (url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+      if (url.startsWith('/api/registry/pods/')) return registryResponse;
+      return Promise.resolve({ data: handledAskRecap });
+    };
+    mockGet.mockImplementation(mockFor);
+
+    renderPage();
+
+    expect(await screen.findByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    await act(async () => { releaseRegistry?.({ data: { agents: [] } }); });
+    await waitFor(() => expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument());
+    expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing needs you.')).toBeInTheDocument();
+  });
+
+  test('fails closed when attention history is unavailable', async () => {
+    const unknownAskRecap = { ...recap, hasEverHadAttention: null, needsYou: [], agents: [], board: [] };
+    let releaseRegistry: ((value: { data: { agents: unknown[] } }) => void) | null = null;
+    const registryResponse = new Promise<{ data: { agents: unknown[] } }>((resolve) => { releaseRegistry = resolve; });
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+      if (url.startsWith('/api/registry/pods/')) return registryResponse;
+      return Promise.resolve({ data: unknownAskRecap });
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    await act(async () => { releaseRegistry?.({ data: { agents: [] } }); });
+    await waitFor(() => expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
   });
 
