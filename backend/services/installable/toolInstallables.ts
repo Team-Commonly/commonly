@@ -9,8 +9,17 @@
  * The page never renders a control the server does not enforce, so the mint
  * reads the seeded row (the catalogue the page saw) rather than this constant.
  */
-import { getToolDefinitions } from '../toolBrokerService';
+import type { ToolDefinition } from '../toolBrokerService';
 import { RoomGrantError } from '../roomGrantService';
+
+// Resolved on first use, not at import: the broker module loads
+// githubAppService (jsonwebtoken), and routes/grants.ts must stay loadable
+// without GitHub crypto so the read routes' suite mounts it unmocked.
+const toolDefinitions = (): ToolDefinition[] => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { getToolDefinitions } = require('../toolBrokerService');
+  return getToolDefinitions();
+};
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Installable = require('../../models/Installable');
@@ -55,7 +64,7 @@ export const TOOL_INSTALLABLES: Record<string, ToolInstallableMeta> = {
   },
 };
 
-const githubToolNames = (): string[] => getToolDefinitions()
+const githubToolNames = (): string[] => toolDefinitions()
   .filter((definition) => definition.connectionType === 'github-app')
   .map((definition) => definition.name);
 
@@ -91,7 +100,7 @@ export const mcpComponentOf = (installable: { components?: McpComponentLike[] } 
 export const projectTools = (component: McpComponentLike | null): ProjectedTool[] => {
   if (!component) return [];
   const enabled = Array.isArray(component.enabledTools) ? new Set(component.enabledTools) : null;
-  return getToolDefinitions()
+  return toolDefinitions()
     .filter((definition) => !enabled || enabled.has(definition.name))
     .map((definition) => ({
       name: definition.name,
