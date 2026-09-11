@@ -9494,6 +9494,8 @@ body.modern-ui.v2-canvas {
  * zh-CN. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-tools__title,
+.v2-root:lang(zh) .v2-tools__count strong,
 .v2-root:lang(zh) .v2-artifacts__title,
 .v2-root:lang(zh) .v2-team__title,
 .v2-root:lang(zh) .v2-team-card__name,
@@ -9765,6 +9767,31 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 12px 12px; }
 .v2-connector-gate__lead { min-height: 30px; padding: 0 8px; font-size: 12px; }
 
+/* Tools — the second list (tools plan §6). Rows reuse .v2-connector-row; the
+   aside reuses the connector aside cards. Outcomes are words in muted mono,
+   never a coloured word. */
+.v2-tools { flex: none; }
+.v2-tools__head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.v2-tools__title { margin: 0; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.v2-tools__count-line { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
+.v2-tools__search { min-width: 0; flex: 1 1 200px; min-height: 32px; margin-left: auto; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
+.v2-tools__search:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 0; }
+.v2-tools__segment { flex: none; }
+.v2-tools__empty { margin: 0; padding: 14px 16px; color: var(--v2-text-tertiary); font-size: 13px; }
+.v2-tools__facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 14px 0 0; }
+.v2-tools__facts dt { margin-top: 8px; color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; }
+.v2-tools__facts dt:first-child { margin-top: 0; }
+.v2-tools__facts dd { margin: 0; min-width: 0; color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+/* A tool name is one token: the chip never breaks inside it, it wraps to the next line whole. */
+.v2-tools__facts dd code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; overflow-wrap: normal; white-space: nowrap; }
+.v2-tools__counts { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 12px; }
+.v2-tools__count { display: flex; flex-direction: column; gap: 2px; }
+.v2-tools__count strong { color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 26px; }
+.v2-tools__count span { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; }
+.v2-tools__trail { margin: 0; padding: 0; list-style: none; }
+.v2-tools__trail-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
+.v2-tools__trail-line > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.v2-tools__trail-when { flex: none; }
 @media (max-width: 760px) {
   .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
@@ -9781,6 +9808,8 @@ body.modern-ui.v2-canvas {
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }
+  .v2-tools__head { gap: 8px; }
+  .v2-tools__search { flex-basis: 100%; margin-left: 0; }
 }
 
 /* Activity queue: reply-in-place on mention rows (Sam, 2026-09-01). The
