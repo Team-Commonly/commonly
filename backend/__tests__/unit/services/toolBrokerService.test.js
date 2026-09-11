@@ -20,6 +20,9 @@ jest.mock('../../../models/ToolCall', () => ({
   digestArgs: (args) => require('crypto').createHash('sha256').update(JSON.stringify(args || {})).digest('hex'),
   reserveBudgetLineage: mockReserveBudgetLineage,
 }));
+jest.mock('../../../services/approvalActionService', () => ({
+  proposeAction: jest.fn().mockResolvedValue({ ok: true, approvalId: 'approval-test' }),
+}));
 jest.mock('../../../services/githubAppService', () => mockGithub);
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
