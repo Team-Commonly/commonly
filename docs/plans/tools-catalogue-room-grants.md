@@ -137,7 +137,7 @@ The channels list stays exactly as it is on main. Under it, in the same containe
 | installed per member (before the broker, and after it for a member's own install) | cobalt, solid | **GitHub** {what it does} · installed by **you** | `your agents may use it · nothing is shared with the room` | `installed {rel}` | Manage (bordered) |
 | not yet granted | dashed `#98a2b3`, name muted | {what the tool does} | `read, or read and write` | `not granted` | Add (ink) |
 
-Heading **Tools**, count in mono (`2 granted · 3 more`), a search field and a category segment on the same line. `{agents}` is the effective audience rendered as display labels via `resolveAgentDisplayLabel`; `{what asks first}` is the list of irreversible tools under a `write-with-confirm` grant, or `nothing asks first` under `read`. `granted {rel}` reads the grant's `createdAt`; "used in the last 10 min" reads the newest trail row's `at`.
+Heading **Tools**, count in mono (`2 granted · 3 more`), a search field and a category segment on the same line. `{agents}` is the effective audience rendered as display labels via `resolveAgentDisplayLabel`; `{what asks first}` follows the confirmation floor (piece 2b): `nothing asks first` under `read`; `every write asks first` under `write-with-confirm`; the list of irreversible tools under `write`. `granted {rel}` reads the grant's `createdAt`; "used in the last 10 min" reads the newest trail row's `at`.
 
 The aside for a selected tool is the grant: who granted it and when it ends; the agents allowed; what it can do (the `tools` allow-list grouped by `writeMode`); what asks a person first; **Change access** (bordered; opens the same form Add uses, pre-filled — a change is a new grant and a revoke of the old one, because `tools` is never widened in place) and **Revoke** (bordered, two-click confirm, as Disconnect does today). Under that the trail: one line per `ToolCall`, `{agent} · {tool} · {outcome}` with mono `{rel}`, newest first, and three counts in display 22 + mono 11: **calls**, **refused**, **awaiting a person**. The counts are `COUNT(*)` on `ToolCall` by outcome for the grant; nothing is estimated.
 
@@ -146,6 +146,8 @@ The Add form: a `writeMode` segment (`read` / `read and write, ask first` / `rea
 **Pins for `v2-layout-invariants.test.ts`:** the Tools list reuses the connector row grid (`200px minmax(0, 1fr) 200px 120px`) — the test's existing pin covers it if the row class is shared, which it should be; one new pin: the trail line uses `var(--v2-text-muted)` mono and no `--v2-success` / `--v2-warning` / `--v2-danger`, so an outcome never becomes a coloured word.
 
 **390:** as the channels list — two lines per row, aside stacked under, `scrollWidth` 390 is the gate.
+
+**Sequencing:** the page reads only what is on main — `RoomGrant`, the `ToolCall` trail (`pending_approval` rows since #1664) and the connector row grid — so it can start alongside piece 3. It needs two read routes first, neither of which is piece 3: `GET /api/pods/:podId/grants` (`canViewPod`, effective audience) and `GET /api/grants/:grantId/calls` (the trail and the three counts). Only the gate waits on piece 3, because the `pending_approval` screenshot needs a real card.
 
 **Gate:** UX Lead, screenshots at 1440 and 390 from the deployed page with one granted GitHub row (live, from a real grant on dev), one not-yet row, and a trail with at least one `ok`, one `refused`, and one `pending_approval` line. The `pending_approval` line has to come from a real parked call with a real card in the room, not a seed.
 
