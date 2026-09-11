@@ -115,7 +115,8 @@ test('does not execute if the budget was exhausted between propose and approve',
   mockReserveBudgetLineage.mockResolvedValue(false);
   await expect(broker.executeApprovedToolCall({
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
-    args: { title: 'hello' }, expectedArgsDigest: 'digest:{"title":"hello"}', approvalId: 'approval-1',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}', approvalId: 'approval-1',
   })).rejects.toMatchObject({ code: 'budget_exhausted' });
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
     outcome: 'refused', reason: 'budget_exhausted', approvalId: 'approval-1',
@@ -135,11 +136,37 @@ test('captures the pull head SHA in the approval envelope', async () => {
   })).rejects.toMatchObject({ code: 'approval_required' });
   expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({
     toolCall: expect.objectContaining({
-      canonicalArgs: { pullNumber: 42, mergeMethod: 'squash', headSha: 'head-sha-1' },
+      canonicalArgs: {
+        pullNumber: 42, mergeMethod: 'squash', headSha: 'head-sha-1',
+        owner: 'Team-Commonly', repo: 'commonly',
+      },
     }),
   }));
   expect(github.getPullRequest).toHaveBeenCalledWith(expect.objectContaining({
     pullNumber: 42, installationId: 'gh-1', forceApp: true,
+  }));
+});
+
+test('the envelope pins owner/repo and a changed connection refuses', async () => {
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({ code: 'approval_required' });
+  const proposed = mockProposeAction.mock.calls[0][0].toolCall;
+  expect(proposed.canonicalArgs).toEqual({
+    title: 'hello', owner: 'Team-Commonly', repo: 'commonly',
+  });
+
+  mockIntegration.findOne.mockResolvedValue({
+    type: 'github-app', status: 'connected', createdBy: 'owner-1',
+    config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'another-repo' },
+  });
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
+    args: proposed.canonicalArgs, expectedArgsDigest: proposed.argsDigest, approvalId: 'approval-1',
+  })).rejects.toMatchObject({ code: 'repo_mismatch', statusCode: 409 });
+  expect(require('../../../services/githubAppService').createIssue).not.toHaveBeenCalled();
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'repo_mismatch', approvalId: 'approval-1',
   }));
 });
 
@@ -159,7 +186,9 @@ test('a push after propose refuses the merge when the head SHA moved', async () 
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.merge_pull_request',
     args: proposed.canonicalArgs, expectedArgsDigest: proposed.argsDigest, approvalId: 'approval-1',
   })).rejects.toMatchObject({ code: 'merge_head_mismatch', statusCode: 409 });
-  expect(github.mergePullRequest).toHaveBeenCalledWith(expect.objectContaining({ sha: 'head-sha-1' }));
+  expect(github.mergePullRequest).toHaveBeenCalledWith(expect.objectContaining({
+    owner: 'Team-Commonly', repo: 'commonly', sha: 'head-sha-1',
+  }));
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
     outcome: 'refused', reason: 'merge_head_mismatch', approvalId: 'approval-1',
   }));

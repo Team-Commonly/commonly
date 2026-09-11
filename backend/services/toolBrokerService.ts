@@ -100,6 +100,30 @@ const nonEmptyString = (value: unknown, field: string): string => {
   return value.trim();
 };
 
+// Approval envelopes bind the provider destination as well as the visible
+// tool arguments. These fields are server-owned metadata: the executor
+// validates them against the current connection, then removes them before
+// invoking the provider so an approved envelope can never steer the call.
+const pinConnectionRepository = (
+  rawArgs: Record<string, unknown>,
+  connection: ToolConnection,
+): Record<string, unknown> => ({
+  ...rawArgs,
+  owner: connection.owner,
+  repo: connection.repo,
+});
+
+const providerArgsFromApprovedEnvelope = (
+  args: Record<string, unknown>,
+  connection: ToolConnection,
+): Record<string, unknown> => {
+  if (args.owner !== connection.owner || args.repo !== connection.repo) {
+    throw new RoomGrantError('repo_mismatch', 'connected repository changed since approval', 409);
+  }
+  const { owner: _owner, repo: _repo, ...providerArgs } = args;
+  return providerArgs;
+};
+
 const listIssues: ToolDefinition = {
   name: 'github.list_issues',
   description: 'List open issues in the Commonly repository.',
@@ -140,6 +164,9 @@ const createIssue: ToolDefinition = {
     },
     required: ['title'],
     additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
   },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['title', 'body', 'labels']);
@@ -257,6 +284,9 @@ const commentIssue: ToolDefinition = {
     required: ['issueNumber', 'body'],
     additionalProperties: false,
   },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber', 'body']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
@@ -288,6 +318,9 @@ const closeIssue: ToolDefinition = {
     },
     required: ['issueNumber'],
     additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
   },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber']);
@@ -336,7 +369,7 @@ const mergePullRequest: ToolDefinition = {
     if (!headSha) {
       throw new RoomGrantError('merge_head_unavailable', 'pull request head SHA is unavailable', 409);
     }
-    return { ...rawArgs, pullNumber, headSha };
+    return pinConnectionRepository({ ...rawArgs, pullNumber, headSha }, connection);
   },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'mergeMethod', 'commitTitle', 'commitMessage', 'headSha']);
@@ -706,11 +739,12 @@ export const executeApprovedToolCall = async (
       requiredWriteMode: definition.requiredWriteMode,
     });
     const connection = await resolveConnection(grant, definition);
+    const executionArgs = providerArgsFromApprovedEnvelope(input.args, connection);
     const budgetEntries = await budgetEntriesFor(grant);
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
       throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
-    const result = await definition.call(input.args, providerConnection(connection));
+    const result = await definition.call(executionArgs, providerConnection(connection));
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
