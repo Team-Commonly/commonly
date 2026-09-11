@@ -208,6 +208,8 @@ app.use('/api/users', userRoutes);
 // GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
 // otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
+// Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
+app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -238,7 +240,6 @@ app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
 app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
 app.use('/api/grants', require('./routes/grants')); // ADR-001 room-grant record: server-enforced attenuation + cascade revocation
-app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broker: stateless MCP transport + attributed trail
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle

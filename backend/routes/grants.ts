@@ -262,24 +262,43 @@ router.delete('/:grantId', grantRateLimit, auth, revokeHandler);
  * goes only to the granter and that seat. A line carries `argsDigest`, never
  * the arguments — the broker never stored them (ToolCall.digestArgs).
  */
+/**
+ * One gate for both reads (Vera 67727): a pod grant belongs to the pod, so
+ * canViewPod decides for a human or a seat on its runtime token; a seat grant
+ * goes only to the granter (the Connection's owner) and that seat.
+ */
+const gateGrantRead = async (
+  grant: { target: { kind: 'pod' | 'seat'; id: string }; connectionId: string },
+  req: AuthenticatedRequest,
+): Promise<{ status: number; error: string } | { members: string[]; granter: string | null }> => {
+  const agentId = (req as any).agentUser?._id ? String((req as any).agentUser._id) : '';
+  const humanId = agentId ? '' : callerId(req);
+  if (!agentId && !humanId) return { status: 401, error: 'unauthorized' };
+  const granters = await resolveGranters([grant.connectionId]);
+  const granter = granters.get(grant.connectionId) ?? null;
+  if (grant.target.kind === 'seat') {
+    const isGranter = Boolean(humanId) && granter === humanId;
+    const isSeat = Boolean(agentId) && agentId === String(grant.target.id);
+    if (!isGranter && !isSeat) return { status: 403, error: 'access_denied' };
+    return { members: [], granter };
+  }
+  const pod = await loadPod(grant.target.id);
+  if (!pod) return { status: 404, error: 'target_not_found' };
+  if (!await DMService.canViewPod(agentId || humanId, pod)) return { status: 403, error: 'access_denied' };
+  return { members: memberIdsOf(pod), granter };
+};
+
+/**
+ * The trail (plan §6): one line per ToolCall, newest first, plus COUNT(*) by
+ * outcome. A line carries `argsDigest`, never the arguments — the broker never
+ * stored them (ToolCall.digestArgs).
+ */
 router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId }).lean();
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
-    const agentId = (req as any).agentUser?._id ? String((req as any).agentUser._id) : '';
-    const humanId = agentId ? '' : callerId(req);
-    if (!agentId && !humanId) return res.status(401).json({ error: 'unauthorized' });
-
-    if (grant.target.kind === 'seat') {
-      const granters = await resolveGranters([grant.connectionId]);
-      const isGranter = Boolean(humanId) && granters.get(grant.connectionId) === humanId;
-      const isSeat = Boolean(agentId) && agentId === String(grant.target.id);
-      if (!isGranter && !isSeat) return res.status(403).json({ error: 'access_denied' });
-    } else {
-      const pod = await loadPod(grant.target.id);
-      if (!pod) return res.status(404).json({ error: 'target_not_found' });
-      if (!await DMService.canViewPod(agentId || humanId, pod)) return res.status(403).json({ error: 'access_denied' });
-    }
+    const gate = await gateGrantRead(grant, req);
+    if ('status' in gate) return res.status(gate.status).json({ error: gate.error });
 
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(500, Math.trunc(limitRaw)) : 100;
@@ -307,16 +326,16 @@ router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: Authenticate
   }
 });
 
-// Read is intentionally member-scoped and projected: the explicit field list
-// and nothing else — never connectionId, brokerId or the raw audience snapshot.
-router.get('/:grantId', grantRateLimit, auth, async (req: AuthenticatedRequest, res: express.Response) => {
+// Read is gated exactly as the trail is, and projected: the explicit field
+// list and nothing else — never connectionId, brokerId or the raw audience.
+router.get('/:grantId', grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId }).lean();
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
-    const members = await ensureTargetAccess(grant.target, callerId(req));
-    const currentMembers = grant.target.kind === 'seat' ? grant.audience : members;
-    const granters = await resolveGranters([grant.connectionId]);
-    return res.json(projectGrant(grant, currentMembers, granters.get(grant.connectionId) ?? null));
+    const gate = await gateGrantRead(grant, req);
+    if ('status' in gate) return res.status(gate.status).json({ error: gate.error });
+    const currentMembers = grant.target.kind === 'seat' ? grant.audience : gate.members;
+    return res.json(projectGrant(grant, currentMembers, gate.granter));
   } catch (error) {
     return handleError(res, error);
   }

@@ -211,4 +211,21 @@ describe('GET /api/grants/:grantId', () => {
     // Still member-scoped, as before the tightening.
     expect((await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', STRANGER)).status).toBe(403);
   });
+
+  test("a seat grant's read is gated like its trail: granter and seat only (Vera 67727)", async () => {
+    const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] }));
+    const read = (headers) => request(app).get(`/api/grants/${row.grantId}`).set(headers);
+    const owner = await read({ 'x-test-user': OWNER });
+    expect(owner.status).toBe(200);
+    expect(owner.body.grantedBy).toBe(OWNER);
+    expect(owner.body.effectiveAudience).toEqual([SEAT]);
+    expect((await read({ Authorization: 'Bearer cm_agent_x', 'x-test-agent': SEAT })).status).toBe(200);
+    // A stranger in no pod, a pod member who is not the granter, another seat: 403, tools and granter unseen.
+    for (const headers of [{ 'x-test-user': STRANGER }, { 'x-test-user': MEMBER }, { Authorization: 'Bearer cm_agent_x', 'x-test-agent': OTHER_SEAT }]) {
+      const res = await read(headers);
+      expect(res.status).toBe(403);
+      expect(res.body.tools).toBeUndefined();
+      expect(res.body.grantedBy).toBeUndefined();
+    }
+  });
 });
