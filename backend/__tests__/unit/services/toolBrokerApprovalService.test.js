@@ -67,6 +67,20 @@ test('parks an irreversible broker call in an owner-bound approval envelope', as
   }));
 });
 
+test('records a refusal when the approval proposal throws', async () => {
+  mockProposeAction.mockRejectedValue(new Error('approval store unavailable'));
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({
+    code: 'approval_unavailable',
+    details: { recorded: true },
+  });
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'approval_unavailable',
+  }));
+  expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));
+});
+
 test('refuses execution when the stored args digest does not match', async () => {
   await expect(broker.executeApprovedToolCall({
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',

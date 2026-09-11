@@ -574,10 +574,17 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           },
         });
       } catch {
-        // A broker call is still fail-closed if the approval projection is
-        // unavailable. Keep the audit trail pending and do not call GitHub;
-        // the normal deployment has the approval service available.
-        proposal = undefined;
+        // A proposal failure must never leave a pending ledger row with no
+        // approval id. Record the refusal immediately, then surface the same
+        // fail-closed error as the explicit `{ ok: false }` branch below.
+        const refusedCallId = await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+          callId,
+          args: canonicalArgs,
+        });
+        throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
+          recorded: true,
+          callId: refusedCallId,
+        });
       }
       if (proposal && !proposal.ok) {
         await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {

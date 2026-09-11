@@ -100,6 +100,25 @@ test('executes on approved with the stored args and writes the second trail row'
   expect(resolved.executionResult).toEqual({ id: 9 });
 });
 
+test('uses the approver display name in the execution receipt', async () => {
+  const pending = row();
+  const resolved = row({ status: 'resolved', decision: 'approved' });
+  mockApproval.findById.mockResolvedValue(pending);
+  mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
+  mockUser.findById.mockReturnValue({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({ isBot: false, username: 'samxu01', displayName: 'Sam Xu' }),
+    })),
+  });
+  broker.executeApprovedToolCall.mockResolvedValue({ callId: 'tool_call_second', result: { id: 9 } });
+
+  await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
+
+  expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+    content: "Sam Xu approved grant-broker's github.comment_on_issue · done",
+  }));
+});
+
 test('two concurrent approvals execute the tool once', async () => {
   const pending = row();
   const resolved = row({ status: 'resolved', decision: 'approved' });

@@ -491,7 +491,9 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   // ADR-017 §Decision-authorization: no agent may decide, even one holding
   // the owner's pod. Route-level auth already excludes agent tokens; this is
   // defense in depth against a future dualAuth slip.
-  const caller = await User.findById(callerUserId).select('isBot').lean() as { isBot?: boolean } | null;
+  const caller = await User.findById(callerUserId)
+    .select('isBot username displayName')
+    .lean() as { isBot?: boolean; username?: string; displayName?: string } | null;
   if (!caller || caller.isBot) {
     return { status: 403, body: { error: 'Only a human can decide an approval' } };
   }
@@ -595,7 +597,8 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
           const AgentMessageService = require('./agentMessageService');
-          const receipt = `${callerUserId} approved ${transitioned.agentName}'s ${parkedCall.tool} · done`;
+          const approverName = caller.displayName?.trim() || caller.username?.trim() || callerUserId;
+          const receipt = `${approverName} approved ${transitioned.agentName}'s ${parkedCall.tool} · done`;
           const metadata = { source: 'approval-tool-call', approvalId: String(transitioned._id) };
           if (typeof AgentMessageService._postToTarget === 'function' && transitioned.agentUserId) {
             const agentUser = await User.findById(transitioned.agentUserId);
