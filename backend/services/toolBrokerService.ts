@@ -430,9 +430,11 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       : definition.irreversible === true;
     // Confirmation is a floor set by the tool: every irreversible operation
     // parks for a human, including when the grant is otherwise full `write`.
-    // Reversible writes may run unattended under `write`; the tool definition
-    // still supplies the required mode to the grant usability check above.
-    if (irreversible) {
+    // A `write-with-confirm` grant also confirms every write; full `write`
+    // alone is the tier that permits reversible writes to run unattended.
+    const requiresConfirmation = irreversible
+      || (grant.writeMode === 'write-with-confirm' && definition.requiredWriteMode !== 'read');
+    if (requiresConfirmation) {
       throw new RoomGrantError('approval_required', 'irreversible tool call requires approval', 403);
     }
 

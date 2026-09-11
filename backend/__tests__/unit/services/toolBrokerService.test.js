@@ -265,4 +265,18 @@ describe('tool broker guard rails', () => {
     expect(mockGithub.closeIssue).toHaveBeenCalledTimes(1);
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
   });
+
+  it('parks a reversible write under a write-with-confirm grant', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.close_issue'], writeMode: 'write-with-confirm', budget: { calls: 1 },
+    }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue', args: { issueNumber: 7 },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'pending_approval', reason: 'approval_required',
+    }));
+    expect(mockGithub.closeIssue).not.toHaveBeenCalled();
+  });
 });
