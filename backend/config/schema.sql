@@ -158,6 +158,33 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   UNIQUE (message_id, user_id, emoji)
 );
 CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id);
+
+-- Room-grant broker audit and budget ledger. The budget counter is separate
+-- from Mongo's grant document so every reservation is a single Postgres
+-- conditional write; concurrent broker calls cannot read the same remaining
+-- slot and both spend it. `window_started_at` is retained for windowed caps;
+-- a NULL window on the grant is represented by a lifetime counter here.
+CREATE TABLE IF NOT EXISTS tool_call_budgets (
+  grant_id VARCHAR(255) PRIMARY KEY,
+  calls_used INTEGER NOT NULL DEFAULT 0,
+  window_started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+  call_id VARCHAR(255) PRIMARY KEY,
+  grant_id VARCHAR(255) NOT NULL,
+  pod_id VARCHAR(255),
+  installation_id VARCHAR(255),
+  agent_user_id VARCHAR(255) NOT NULL,
+  tool VARCHAR(255) NOT NULL,
+  args_digest CHAR(64) NOT NULL,
+  occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  outcome VARCHAR(32) NOT NULL CHECK (outcome IN ('ok', 'refused', 'pending_approval', 'failed')),
+  reason VARCHAR(255),
+  approval_id VARCHAR(255),
+  duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_grant_at ON tool_calls(grant_id, occurred_at DESC);
 -- Per-user, per-thread state (W-T, TASK-029). ONE record carrying both
 -- booleans, per ux-lead's ruling in docs/design/threading-surface-ruling.md
 -- ("One state record, two booleans"): persisted collapse and follow share the

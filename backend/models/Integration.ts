@@ -8,7 +8,8 @@ export type IntegrationType =
   | 'groupme'
   | 'whatsapp'
   | 'x'
-  | 'instagram';
+  | 'instagram'
+  | 'github-app';
 
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'pending';
 export type IntegrationScope = 'pod' | 'user';
@@ -61,6 +62,10 @@ export interface IIntegration extends Document {
   type: IntegrationType;
   status: IntegrationStatus;
   config: {
+    /** GitHub App installation connection (server-owned, no credential). */
+    installationId?: string;
+    owner?: string;
+    repo?: string;
     serverId?: string;
     serverName?: string;
     channelId?: string;
@@ -183,7 +188,7 @@ const IntegrationSchema = new Schema<IIntegration>(
     type: {
       type: String,
       required: true,
-      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram'],
+      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram', 'github-app'],
       default: 'discord',
     },
     status: {
@@ -193,6 +198,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       default: 'pending',
     },
     config: {
+      installationId: String,
+      owner: String,
+      repo: String,
       serverId: String,
       serverName: String,
       channelId: String,

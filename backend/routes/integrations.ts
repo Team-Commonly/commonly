@@ -45,6 +45,9 @@ import {
 // caller name someone else as the author or bind a chat without a code.
 const SERVER_OWNED_CONFIG_KEYS = [
   'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
+  // GitHub App connection identity is administrator-owned. A member may not
+  // retarget an existing row that a grant already references.
+  'installationId', 'owner', 'repo',
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
@@ -191,6 +194,45 @@ router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// GitHub App installations are administrator-owned user-scope connections.
+// They intentionally do not pass through the pod-member connector route: a
+// member must never be able to bind the broker to Commonly's App credential.
+router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
+  try {
+    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
+    const installationId = String(body.installationId || '').trim();
+    const owner = String(body.owner || '').trim();
+    const repo = String(body.repo || '').trim();
+    if (!installationId || !owner || !repo) {
+      return res.status(400).json({ message: 'installationId, owner, and repo are required' });
+    }
+    const existing = await Integration.findOne({ type: 'github-app', installationId });
+    if (existing) {
+      const current = existing.config || {};
+      if (String(current.owner || '') !== owner || String(current.repo || '') !== repo) {
+        return res.status(409).json({ message: 'installationId is already bound to a different repository' });
+      }
+      // Connection rows are immutable in this cut. In particular, do not
+      // reassign createdBy or revive/retarget grants on a repeated POST.
+      return res.json({ integration: existing });
+    }
+    const integration = new Integration({
+      installationId,
+      type: 'github-app',
+      scope: 'user',
+      status: 'connected',
+      config: { installationId, owner, repo },
+      createdBy: req.user?.id,
+      isActive: true,
+    });
+    await integration.save();
+    return res.status(201).json({ integration });
+  } catch (error) {
+    console.error('Error creating GitHub App integration:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {
   try {
     const { provider, integrationId, event, messages } = (req.body || {}) as { provider?: string; integrationId?: string; event?: unknown; messages?: unknown[] };
@@ -292,6 +334,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
+    if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
     const manifest = (manifests as Record<string, unknown>)[type];
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
     if ('linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
