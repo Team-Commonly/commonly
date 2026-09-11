@@ -180,6 +180,8 @@ export const reserveBudget = async (
 ): Promise<boolean> => reserveBudgetLineage([{ grantId, calls, windowMs }]);
 
 class ToolCall {
+  static countsForGrant: (grantId: string) => Promise<ToolCallCounts>;
+
   static async create(record: ToolCallRecord): Promise<void> {
     const db = await ensureTables();
     await db.query(
@@ -231,6 +233,31 @@ class ToolCall {
     }));
   }
 }
+
+export interface ToolCallCounts {
+  total: number;
+  ok: number;
+  refused: number;
+  pending_approval: number;
+  failed: number;
+}
+
+/** The page's three numbers are COUNT(*) by outcome; nothing is estimated. */
+ToolCall.countsForGrant = async function countsForGrant(grantId: string): Promise<ToolCallCounts> {
+  const db = await ensureTables();
+  const result = await db.query(
+    'SELECT outcome, COUNT(*) AS n FROM tool_calls WHERE grant_id = $1 GROUP BY outcome',
+    [grantId],
+  );
+  const counts: ToolCallCounts = { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 };
+  for (const row of result.rows) {
+    const outcome = String(row.outcome) as ToolCallOutcome;
+    const n = Number(row.n) || 0;
+    if (outcome in counts) counts[outcome] = n;
+    counts.total += n;
+  }
+  return counts;
+};
 
 export { ToolCall };
 export default ToolCall;

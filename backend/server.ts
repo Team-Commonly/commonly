@@ -208,6 +208,8 @@ app.use('/api/users', userRoutes);
 // GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
 // otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
+// Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
+app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
