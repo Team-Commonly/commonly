@@ -49,7 +49,7 @@ export interface CardPayload {
   summary: string;
   params: Record<string, unknown>;
   /** Safe tool metadata visible on the shared card; arguments remain owner-only. */
-  toolName?: string;
+  toolCall?: { tool: string };
   status: string;
   decision?: string;
   // Owner id lets the client decide whether to show action buttons. This is
@@ -72,7 +72,7 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   // owner-scoped read, never in the shared card payload.
   params: row.actionType === 'tool_call' ? {} : (row.params || {}) as Record<string, unknown>,
   ...(row.actionType === 'tool_call' && row.toolCall?.tool
-    ? { toolName: row.toolCall.tool }
+    ? { toolCall: { tool: row.toolCall.tool } }
     : {}),
   status: row.status,
   ...(row.decision ? { decision: row.decision } : {}),

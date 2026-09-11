@@ -65,10 +65,10 @@ beforeEach(() => {
 test('renders canonical args to the owner and to nobody else', () => {
   const pending = row();
   expect(JSON.stringify(service.buildCardPayload(pending))).not.toContain('approved text');
-  expect(service.buildCardPayload(pending).toolName).toBe(toolCall.tool);
-  expect((service.buildCardPayload(pending)).toolCall).toBeUndefined();
+  expect(service.buildCardPayload(pending).toolCall).toEqual({ tool: toolCall.tool });
+  expect(service.buildCardPayload(pending).toolCall.canonicalArgs).toBeUndefined();
   expect(service.buildOwnerCardPayload(pending, OWNER).toolCall.canonicalArgs).toEqual(toolCall.canonicalArgs);
-  expect(service.buildOwnerCardPayload(pending, OTHER).toolCall).toBeUndefined();
+  expect(service.buildOwnerCardPayload(pending, OTHER).toolCall).toEqual({ tool: toolCall.tool });
 });
 
 test('parks a call as an ApprovalAction owned by the granter and returns pending_approval', async () => {
@@ -83,8 +83,9 @@ test('parks a call as an ApprovalAction owned by the granter and returns pending
     ownerUserId: OWNER, actionType: 'tool_call', params: {}, toolCall,
   }));
   expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-    payload: expect.not.objectContaining({ toolCall: expect.anything() }),
+    payload: expect.objectContaining({ toolCall: { tool: toolCall.tool } }),
   }));
+  expect(mockPostMessage.mock.calls[0][0].payload.toolCall.canonicalArgs).toBeUndefined();
 });
 
 test('executes on approved with the stored args and writes the second trail row', async () => {

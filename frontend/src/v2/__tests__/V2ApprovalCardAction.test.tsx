@@ -182,7 +182,7 @@ describe('tool-call approval details stay owner-scoped', () => {
       status: 'flagged',
       ownerUserId: 'another-user',
       actionType: 'tool_call',
-      toolName: 'github.create_issue',
+      toolCall: { tool: 'github.create_issue' },
       summary: 'Comment on the issue',
     });
 
@@ -200,7 +200,24 @@ describe('tool-call approval details stay owner-scoped', () => {
       status: 'flagged',
       ownerUserId: 'viewer-1',
       actionType: 'tool_call',
-      toolName: 'github.create_issue',
+      toolCall: { tool: 'github.create_issue' },
+      summary: 'Create an issue',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call-state')).toHaveTextContent(/can't show what you'd approve/i));
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
+  });
+
+  test('a pending row without toolCall keeps Approve disabled', async () => {
+    mockGet.mockResolvedValue({ approvals: [{ approvalId: 'tool-4' }] });
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-4',
+      status: 'flagged',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      toolCall: { tool: 'github.create_issue' },
       summary: 'Create an issue',
     });
 

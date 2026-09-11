@@ -116,9 +116,11 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     api.get<PendingApprovalsResponse>(`/api/approvals/pending?podId=${encodeURIComponent(podId)}`)
       .then((response) => {
         if (cancelled) return;
+        const cardApprovalId = String(payload.approvalId || '').trim();
+        const cardMessageId = String(message.id || '').trim();
         const match = (response.approvals || []).find((approval) => (
-          String(approval.approvalId || '') === String(payload.approvalId || '')
-          || String(approval.messageId || '') === String(message.id)
+          (cardApprovalId && String(approval.approvalId || '').trim() === cardApprovalId)
+          || (cardMessageId && String(approval.messageId || '').trim() === cardMessageId)
         ));
         const envelope = match?.toolCall;
         if (!envelope?.tool || !envelope.canonicalArgs || typeof envelope.canonicalArgs !== 'object') {
@@ -204,7 +206,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         ) : isToolCall ? (
           <>
             <div className="v2-approval__action" data-testid="approval-action">
-              {payload.toolName || t('approvalCard.toolCall.name')}
+              {payload.toolCall?.tool || t('approvalCard.toolCall.name')}
             </div>
             {needsToolCall ? (
               <div className="v2-approval__state" data-testid="approval-tool-call-state">
