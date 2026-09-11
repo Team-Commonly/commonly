@@ -204,6 +204,13 @@ Why no tier may demote instead of re-evaluate: neither trigger is outside the mo
 - **Every decision is a pod message** — attributed, CAP-visible, referenced from `decision.messageRef`. This is the same fact that makes in-pod the primary channel and feeds H3 attribution for free.
 - **Expiry fails closed.** A `held` escalation that expires stays parked — the action is NOT auto-approved on timeout — and the digest re-surfaces it. `expired` is a lifecycle state, not a decision.
 
+  **Scope boundary — parked broker tool calls.** The `expired stays decidable`
+  rule above applies to the legacy escalation action types. `ApprovalAction`
+  rows with `actionType: 'tool_call'` are the consent envelope for disclosure
+  to an external provider; their decide path and expiry sweep terminally mark
+  the row `expired`, scrub `toolCall.canonicalArgs`, and refuse a late
+  decision. They therefore never inherit the legacy late-approval behavior.
+
 **Routing composes four inputs:** the three feeds plus the budget (H2, e.g. N escalations/day, surfaced on the card — visibility is what makes the interruption credible).
 
 **The hold is not the interrupt (ux-lead amendment, load-bearing).** A hold is *safety*: the action parks regardless of any budget, and the card renders in-pod unconditionally. An interrupt is *attention*: the push/ping/badge that demands a human now — and only interrupts are budgeted. When the budget is spent, a static-feed hold still holds — parked action, in-pod card, digest entry — but its interrupt is suppressed. Safety never gets muted; the attention budget never gets breached. Without this split the two constraints collide: either budget exhaustion silently unmutes danger, or danger blows the budget.

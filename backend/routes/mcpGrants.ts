@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import { getToolDefinitions, callTool } from '../services/toolBrokerService';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
@@ -14,6 +14,8 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 
 const router = express.Router();
 
@@ -25,7 +27,7 @@ const brokerRateLimit = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: express.Request): string => (req.ip ? ipKeyGenerator(req.ip) : 'mcp-unknown'),
+  keyGenerator: agentRateLimitKeyGenerator,
   handler: (_req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
@@ -44,7 +46,8 @@ const errorPayload = (error: unknown): Record<string, unknown> => {
  * secret is placed in the MCP tool list or response.
  */
 router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.Request, res: express.Response) => {
-  const agentUserId = String((req as express.Request & { agentUser?: { _id?: unknown } }).agentUser?._id || '');
+  const agent = (req as express.Request & { agentUser?: { _id?: unknown; username?: string; agentName?: string } }).agentUser;
+  const agentUserId = String(agent?._id || '');
   if (!agentUserId) return res.status(401).json({ error: 'agent_identity_required' });
 
   const server = new Server(
@@ -66,6 +69,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
       const result = await callTool({
         grantId: String(req.params.grantId),
         agentUserId,
+        agentName: agent?.agentName || agent?.username,
         tool,
         args,
       });
@@ -73,6 +77,15 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
         content: [{ type: 'text', text: JSON.stringify(result.result) }],
       };
     } catch (error) {
+      const approvalError = error as { code?: string; details?: { approvalId?: string } };
+      if (approvalError.code === 'approval_required') {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            status: 'pending_approval',
+            approvalId: approvalError.details?.approvalId || null,
+          }) }],
+        };
+      }
       return {
         isError: true,
         content: [{ type: 'text', text: JSON.stringify(errorPayload(error)) }],
