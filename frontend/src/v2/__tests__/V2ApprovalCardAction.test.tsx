@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2ApprovalCard from '../components/V2ApprovalCard';
 import en from '../../i18n/locales/en.json';
@@ -20,9 +20,11 @@ import zhCN from '../../i18n/locales/zh-CN.json';
  * today (sprint-review, fleet review 2026-08-13).
  */
 
+const mockGet = jest.fn();
+
 jest.mock('../hooks/useV2Api', () => ({
   useV2Api: () => ({
-    get: jest.fn(), post: jest.fn(), patch: jest.fn(), del: jest.fn(),
+    get: mockGet, post: jest.fn(), patch: jest.fn(), del: jest.fn(),
   }),
 }));
 
@@ -34,6 +36,7 @@ const MISLEADING = 'Just tidying up your notes';
 
 const cardMessage = (payload: Record<string, unknown>) => ({
   id: 'm1',
+  pod_id: 'pod-1',
   content: 'fallback content',
   payload,
 } as never);
@@ -43,6 +46,10 @@ const renderCard = (payload: Record<string, unknown>) => render(
     <V2ApprovalCard message={cardMessage(payload)} authorLabel="Scout" time="3:45 PM" />
   </MemoryRouter>,
 );
+
+beforeEach(() => {
+  mockGet.mockReset();
+});
 
 describe('the approval card consents to the action, not the prose', () => {
   test('a misleading summary cannot occupy the action line', () => {
@@ -136,5 +143,49 @@ describe('both locales carry the action phrasings', () => {
       expect(action.unknown).toMatch(/\{\{actionType\}\}/);
       expect(action.unknown).toMatch(/\{\{params\}\}/);
     });
+  });
+});
+
+describe('tool-call approval details stay owner-scoped', () => {
+  test('the owner fetches canonical args and must see them before approving', async () => {
+    mockGet.mockResolvedValue({
+      approvals: [{
+        approvalId: 'tool-1',
+        messageId: 'm1',
+        toolCall: {
+          tool: 'github.merge_pull_request',
+          canonicalArgs: { pullNumber: 42, mergeMethod: 'squash', headSha: 'abc123' },
+        },
+      }],
+    });
+
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-1',
+      status: 'flagged',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      summary: 'Merge the pull request',
+    });
+
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call')).toHaveTextContent('"headSha": "abc123"'));
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('github.merge_pull_request');
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+    expect(mockGet).toHaveBeenCalledWith('/api/approvals/pending?podId=pod-1');
+  });
+
+  test('a non-owner never fetches or renders canonical args', () => {
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-2',
+      status: 'flagged',
+      ownerUserId: 'another-user',
+      actionType: 'tool_call',
+      summary: 'Comment on the issue',
+    });
+
+    expect(mockGet).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('approval-tool-call')).not.toBeInTheDocument();
   });
 });

@@ -7,7 +7,7 @@
 // → server rewrites the payload → `messageCardUpdated` patches every client.
 // No optimistic update: an approval is exactly the kind of state where the
 // server's word is the only honest one (same discipline as reactions).
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
@@ -18,6 +18,24 @@ interface V2ApprovalCardProps {
   message: V2Message;
   authorLabel: string;
   time: string | null;
+}
+
+interface ToolCallEnvelope {
+  grantId?: string;
+  callId?: string;
+  tool?: string;
+  canonicalArgs?: Record<string, unknown>;
+  argsDigest?: string;
+}
+
+interface PendingApproval {
+  approvalId?: string;
+  messageId?: string | null;
+  toolCall?: ToolCallEnvelope;
+}
+
+interface PendingApprovalsResponse {
+  approvals?: PendingApproval[];
 }
 
 // The consent line is derived from the fields the executor actually reads —
@@ -72,6 +90,50 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const payload = message.payload || {};
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
+  const needsToolCall = isOwner && status === 'flagged' && payload.actionType === 'tool_call';
+  const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
+  const [toolCallLoading, setToolCallLoading] = useState(false);
+  const [toolCallError, setToolCallError] = useState(false);
+
+  // Raw canonicalArgs are deliberately omitted from the shared message
+  // payload. Fetch the durable pending index only for the owner, and only
+  // while the action is flagged; GET /pending applies the same owner gate on
+  // the server. Approval buttons must not allow an owner to approve blind.
+  useEffect(() => {
+    if (!needsToolCall) {
+      setPendingToolCall(null);
+      setToolCallLoading(false);
+      setToolCallError(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPendingToolCall(null);
+    setToolCallLoading(true);
+    setToolCallError(false);
+    const podId = String(message.pod_id || '');
+    api.get<PendingApprovalsResponse>(`/api/approvals/pending?podId=${encodeURIComponent(podId)}`)
+      .then((response) => {
+        if (cancelled) return;
+        const match = (response.approvals || []).find((approval) => (
+          String(approval.approvalId || '') === String(payload.approvalId || '')
+          || String(approval.messageId || '') === String(message.id)
+        ));
+        const envelope = match?.toolCall;
+        if (!envelope?.tool || !envelope.canonicalArgs || typeof envelope.canonicalArgs !== 'object') {
+          throw new Error('approval details unavailable');
+        }
+        setPendingToolCall(envelope);
+      })
+      .catch(() => {
+        if (!cancelled) setToolCallError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setToolCallLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [api.get, message.id, message.pod_id, needsToolCall, payload.approvalId]);
   // ADR-017:201 — expiry is advisory AGE, not refusal. A flagged card past
   // expiresAt stays decidable; it renders an age warning beside live buttons
   // rather than dead ones. Only an explicitly-transitioned 'expired' status
@@ -100,9 +162,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const agentJoinFailed = execution?.agentJoined === false;
   const action = describeAction(payload.actionType, payload.params);
   const prose = payload.summary || message.content;
+  const toolCallReady = !needsToolCall || !!pendingToolCall;
 
   const decide = async (decision: 'approved' | 'declined') => {
-    if (deciding || !payload.approvalId) return;
+    if (
+      deciding
+      || !payload.approvalId
+      || (decision === 'approved' && needsToolCall && !pendingToolCall)
+    ) return;
     setDeciding(true);
     setError(null);
     try {
@@ -124,7 +191,24 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>
-        {action ? (
+        {pendingToolCall ? (
+          <>
+            <div className="v2-approval__action" data-testid="approval-action">
+              {pendingToolCall.tool}
+            </div>
+            <pre className="v2-approval__tool-call" data-testid="approval-tool-call">
+              {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
+            </pre>
+          </>
+        ) : needsToolCall ? (
+          <div className="v2-approval__action" data-testid="approval-action">
+            {toolCallLoading
+              ? t('approvalCard.toolCall.loading')
+              : toolCallError
+                ? t('approvalCard.toolCall.unavailable')
+                : t('approvalCard.toolCall.loading')}
+          </div>
+        ) : action ? (
           <>
             <div className="v2-approval__action" data-testid="approval-action">
               {t(action.key, action.vars)}
@@ -150,7 +234,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 <button
                   type="button"
                   className="v2-approval__btn v2-approval__btn--approve"
-                  disabled={deciding}
+                  disabled={deciding || !toolCallReady}
                   onClick={() => decide('approved')}
                 >
                   {deciding ? t('approvalCard.deciding') : t('approvalCard.approve')}

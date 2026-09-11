@@ -1256,6 +1256,10 @@
       "connectLocalAgent": "Connect a local agent seat named \"{{name}}\"",
       "unknown": "Run \"{{actionType}}\" with: {{params}}"
     },
+    "toolCall": {
+      "loading": "Loading the exact tool call…",
+      "unavailable": "Approval details unavailable — refresh before deciding."
+    },
     "approve": "Approve",
     "decline": "Decline",
     "deciding": "Deciding…",
