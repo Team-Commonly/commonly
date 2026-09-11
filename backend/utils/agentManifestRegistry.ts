@@ -398,6 +398,10 @@ const normalizePublishPayload = (payload: any = {}) => {
 module.exports = {
   ManifestValidationError,
   normalizePublishPayload,
+  // The plugin parser lives separately so the legacy agent-manifest contract
+  // stays stable, while keeping the registry utility as the discoverable
+  // import for callers that already consume manifest helpers.
+  ...require('./pluginManifestParser'),
 };
 
 export {};
