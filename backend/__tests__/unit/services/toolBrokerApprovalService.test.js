@@ -57,7 +57,7 @@ beforeEach(() => {
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
 });
 
-test("a seat grant's card posts in the granter's room with the seat", async () => {
+test("a parked call leaves the seat's botMetadata unchanged", async () => {
   await expect(broker.callTool({
     grantId: 'grant-1', agentUserId: 'agent-1', agentName: 'openclaw', instanceId: 'aria',
     tool: 'github.create_issue', args: { title: 'hello' },
@@ -148,6 +148,17 @@ test('captures the pull head SHA in the approval envelope', async () => {
   expect(github.getPullRequest).toHaveBeenCalledWith(expect.objectContaining({
     pullNumber: 42, installationId: 'gh-1', forceApp: true,
   }));
+});
+
+test('the envelope overwrites an agent-supplied owner and repo', async () => {
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'attacker', repo: 'other-repo' },
+  })).rejects.toMatchObject({ code: 'approval_required' });
+  const proposed = mockProposeAction.mock.calls[0][0].toolCall;
+  expect(proposed.canonicalArgs).toEqual({
+    title: 'hello', owner: 'Team-Commonly', repo: 'commonly',
+  });
 });
 
 test('the envelope pins owner/repo and a changed connection refuses', async () => {
