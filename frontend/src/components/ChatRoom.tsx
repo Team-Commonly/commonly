@@ -269,6 +269,10 @@ const buildAgentUsername = (agentName, instanceId) => {
 
 const normalizeIdentityKey = (value) => String(value || '').trim().toLowerCase();
 
+// Saved tokens never come back from the API; the field is write-only once one is on file.
+const SAVED_TOKEN_PLACEHOLDER = 'Saved \u2014 leave blank to keep';
+const SAVED_TOKEN_HELPER = 'A token is on file. Paste a new one to replace it.';
+
 interface TypingAgentEntry {
     key: string;
     agentName: string;
@@ -610,6 +614,8 @@ const ChatRoom = () => {
     const [xIntegration, setXIntegration] = useState(null);
     const [xDraftIntegrationId, setXDraftIntegrationId] = useState(null);
     const [xAccessToken, setXAccessToken] = useState('');
+    // The API never returns a saved token; this flag stands in for "one is on file".
+    const [xTokenOnFile, setXTokenOnFile] = useState(false);
     const [xUsername, setXUsername] = useState('');
     const [xCategory, setXCategory] = useState('');
     const [xError, setXError] = useState('');
@@ -619,6 +625,7 @@ const ChatRoom = () => {
     const [instagramIntegration, setInstagramIntegration] = useState(null);
     const [instagramDraftIntegrationId, setInstagramDraftIntegrationId] = useState(null);
     const [instagramAccessToken, setInstagramAccessToken] = useState('');
+    const [instagramTokenOnFile, setInstagramTokenOnFile] = useState(false);
     const [instagramUserId, setInstagramUserId] = useState('');
     const [instagramUsername, setInstagramUsername] = useState('');
     const [instagramCategory, setInstagramCategory] = useState('');
@@ -1480,6 +1487,7 @@ const ChatRoom = () => {
         xDiscardOnCreateRef.current = false;
         setXError('');
         setXAccessToken('');
+        setXTokenOnFile(false);
         setXUsername('');
         setXCategory('');
         setXIntegration(null);
@@ -1488,7 +1496,7 @@ const ChatRoom = () => {
 
         if (existingIntegration) {
             setXIntegration(existingIntegration);
-            setXAccessToken(existingIntegration.config?.accessToken || '');
+            setXTokenOnFile(existingIntegration.status === 'connected');
             setXUsername(existingIntegration.config?.username || '');
             setXCategory(existingIntegration.config?.category || '');
             setXSaving(false);
@@ -1545,7 +1553,7 @@ const ChatRoom = () => {
             setXError('Integration not ready yet.');
             return;
         }
-        if (!xAccessToken.trim() || !xUsername.trim()) {
+        if ((!xAccessToken.trim() && !xTokenOnFile) || !xUsername.trim()) {
             setXError('Please provide both the access token and username.');
             return;
         }
@@ -1557,7 +1565,8 @@ const ChatRoom = () => {
             const token = localStorage.getItem('token');
             await axios.patch(`/api/integrations/${xIntegration._id}`, {
                 config: {
-                    accessToken: xAccessToken.trim(),
+                    // Omitted when blank: the PATCH only writes the keys it receives.
+                    accessToken: xAccessToken.trim() || undefined,
                     username: xUsername.trim(),
                     category: xCategory.trim() || undefined
                 },
@@ -1605,6 +1614,7 @@ const ChatRoom = () => {
         instagramDiscardOnCreateRef.current = false;
         setInstagramError('');
         setInstagramAccessToken('');
+        setInstagramTokenOnFile(false);
         setInstagramUserId('');
         setInstagramUsername('');
         setInstagramCategory('');
@@ -1614,7 +1624,7 @@ const ChatRoom = () => {
 
         if (existingIntegration) {
             setInstagramIntegration(existingIntegration);
-            setInstagramAccessToken(existingIntegration.config?.accessToken || '');
+            setInstagramTokenOnFile(existingIntegration.status === 'connected');
             setInstagramUserId(existingIntegration.config?.igUserId || '');
             setInstagramUsername(existingIntegration.config?.username || '');
             setInstagramCategory(existingIntegration.config?.category || '');
@@ -1672,7 +1682,7 @@ const ChatRoom = () => {
             setInstagramError('Integration not ready yet.');
             return;
         }
-        if (!instagramAccessToken.trim() || !instagramUserId.trim()) {
+        if ((!instagramAccessToken.trim() && !instagramTokenOnFile) || !instagramUserId.trim()) {
             setInstagramError('Please provide both the access token and IG user ID.');
             return;
         }
@@ -1684,7 +1694,7 @@ const ChatRoom = () => {
             const token = localStorage.getItem('token');
             await axios.patch(`/api/integrations/${instagramIntegration._id}`, {
                 config: {
-                    accessToken: instagramAccessToken.trim(),
+                    accessToken: instagramAccessToken.trim() || undefined,
                     igUserId: instagramUserId.trim(),
                     username: instagramUsername.trim() || undefined,
                     category: instagramCategory.trim() || undefined
@@ -3923,6 +3933,9 @@ const ChatRoom = () => {
                                             type="password"
                                             value={xAccessToken}
                                             onChange={(event) => setXAccessToken(event.target.value)}
+                                            placeholder={xTokenOnFile ? SAVED_TOKEN_PLACEHOLDER : undefined}
+                                            helperText={xTokenOnFile ? SAVED_TOKEN_HELPER : undefined}
+                                            InputLabelProps={xTokenOnFile ? { shrink: true } : undefined}
                                         />
                                         <TextField
                                             label="Username"
@@ -3986,6 +3999,9 @@ const ChatRoom = () => {
                                             type="password"
                                             value={instagramAccessToken}
                                             onChange={(event) => setInstagramAccessToken(event.target.value)}
+                                            placeholder={instagramTokenOnFile ? SAVED_TOKEN_PLACEHOLDER : undefined}
+                                            helperText={instagramTokenOnFile ? SAVED_TOKEN_HELPER : undefined}
+                                            InputLabelProps={instagramTokenOnFile ? { shrink: true } : undefined}
                                         />
                                         <TextField
                                             label="IG User ID"

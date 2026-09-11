@@ -1,8 +1,10 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const crypto: any = require('crypto');
 const axios = require('axios');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const Integration = require('../../models/Integration');
 const OAuthState = require('../../models/OAuthState');
 const Pod = require('../../models/Pod');
@@ -141,6 +143,30 @@ const normalizeBoolean = (value: any, fallback = false) => {
   return fallback;
 };
 
+// The two admin saves below read the stored row before writing. Generous
+// for a human operator, bounded against token-stuffing on the admin surface
+// (CodeQL js/missing-rate-limiting); same shape as routes/admin/users.ts.
+const adminWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 60 admin writes per 15 minutes',
+    code: 'rate_limited',
+  }),
+});
+
+/**
+ * The admin forms send accessToken only when a new one is typed; a blank
+ * field keeps the token already on file. A new integration still needs one.
+ */
+const keepOrReplaceAccessToken = (typed: unknown, existing: any): string => (
+  typed ? String(typed) : String(existing?.config?.accessToken || '')
+);
+
 const upsertXIntegration = async ({
   requesterId,
   globalPodId,
@@ -157,6 +183,7 @@ const upsertXIntegration = async ({
   followFromAuthenticatedUser,
   followingWhitelistUserIds,
   followingMaxUsers,
+  existing,
 }: {
   requesterId: any;
   globalPodId: any;
@@ -173,11 +200,11 @@ const upsertXIntegration = async ({
   followFromAuthenticatedUser?: any;
   followingWhitelistUserIds?: any;
   followingMaxUsers?: any;
+  existing?: any;
 }) => {
-  let xIntegration = await Integration.findOne({
-    type: 'x',
-    podId: globalPodId,
-  });
+  let xIntegration = existing === undefined
+    ? await Integration.findOne({ type: 'x', podId: globalPodId })
+    : existing;
   const hasFollowUsernames = followUsernames !== undefined;
   const hasFollowUserIds = followUserIds !== undefined;
   const normalizedFollowUsernames = hasFollowUsernames
@@ -504,7 +531,7 @@ router.post('/policy', auth, adminAuth, async (req: any, res: any) => {
  * Save X global integration
  * POST /api/admin/integrations/global/x
  */
-router.post('/x', auth, adminAuth, async (req: any, res: any) => {
+router.post('/x', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const requesterId = getUserId(req);
     if (!requesterId) {
@@ -523,17 +550,23 @@ router.post('/x', auth, adminAuth, async (req: any, res: any) => {
     } = req.body;
 
     // Validate required fields
-    if (!username || !userId || !accessToken) {
+    if (!username || !userId) {
       return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
     }
 
     // Find or create global pod
     const globalPod = await ensureGlobalSocialFeedPod(requesterId);
+    const existing = await Integration.findOne({ type: 'x', podId: globalPod._id });
+    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, existing);
+    if (!effectiveAccessToken) {
+      return res.status(400).json({ error: 'Username, userId, and accessToken are required' });
+    }
     const xIntegration = await upsertXIntegration({
       requesterId,
       globalPodId: globalPod._id,
       enabled,
-      accessToken,
+      accessToken: effectiveAccessToken,
+      existing,
       username,
       userId,
       followUsernames,
@@ -557,7 +590,7 @@ router.post('/x', auth, adminAuth, async (req: any, res: any) => {
  * Save Instagram global integration
  * POST /api/admin/integrations/global/instagram
  */
-router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
+router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
@@ -568,7 +601,7 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
     } = req.body;
 
     // Validate required fields
-    if (!username || !igUserId || !accessToken) {
+    if (!username || !igUserId) {
       return res.status(400).json({ error: 'Username, igUserId, and accessToken are required' });
     }
 
@@ -580,12 +613,16 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
       type: 'instagram',
       podId: globalPod._id,
     });
+    const effectiveAccessToken = keepOrReplaceAccessToken(accessToken, instagramIntegration);
+    if (!effectiveAccessToken) {
+      return res.status(400).json({ error: 'Username, igUserId, and accessToken are required' });
+    }
 
     if (instagramIntegration) {
       // Update existing
       instagramIntegration.config = {
         ...instagramIntegration.config,
-        accessToken,
+        accessToken: effectiveAccessToken,
         username,
         igUserId,
         category: 'Social',
@@ -604,7 +641,7 @@ router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
         status: enabled ? 'connected' : 'disconnected',
         isActive: enabled,
         config: {
-          accessToken,
+          accessToken: effectiveAccessToken,
           username,
           igUserId,
           category: 'Social',
