@@ -48,7 +48,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
   kind: { type: String, enum: ['mention', 'approval', 'decision', 'handoff'], required: true },
   source: {
-    type: { type: String, enum: ['message', 'approval', 'decision_request', 'task'], required: true },
+    type: { type: String, enum: ['message', 'approval', 'approval_action', 'decision_request', 'task'], required: true },
     id: { type: String, required: true },
   },
   title: { type: String, required: true },

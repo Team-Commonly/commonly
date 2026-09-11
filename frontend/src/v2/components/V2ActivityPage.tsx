@@ -42,6 +42,9 @@ interface NeedsYouItem {
   attentionItemId?: string;
   actorName?: string;
   actorUserId?: string;
+  // Which store the row came from — an agent's action proposal ('approval_action')
+  // resolves through /api/approvals, a scope approval through /api/activity (#1650).
+  sourceType?: string;
   // A settled decision keeps its ruling (from durable history) so the 0-state
   // can say when the last ask was answered.
   ruling?: { value?: string; by?: string; at?: string | null } | null;
@@ -883,12 +886,23 @@ const V2ActivityPage: React.FC = () => {
     setActionErrorItemId(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post<{ success?: boolean }>(
-        `/api/activity/${encodeURIComponent(item.id)}/${action}`,
-        { notes: `${action === 'approve' ? 'Approved' : 'Rejected'} via Activity` },
-        { headers: { 'x-auth-token': token ?? '' } },
-      );
-      if (!response.data?.success) throw new Error('Approval action failed');
+      const headers = { 'x-auth-token': token ?? '' };
+      if (item.sourceType === 'approval_action') {
+        // A runtime action proposal: the approvals store decides it, and answers { ok }.
+        const response = await axios.post<{ ok?: boolean }>(
+          `/api/approvals/${encodeURIComponent(item.id)}/resolve`,
+          { decision: action === 'approve' ? 'approved' : 'declined' },
+          { headers },
+        );
+        if (!response.data?.ok) throw new Error('Approval action failed');
+      } else {
+        const response = await axios.post<{ success?: boolean }>(
+          `/api/activity/${encodeURIComponent(item.id)}/${action}`,
+          { notes: `${action === 'approve' ? 'Approved' : 'Rejected'} via Activity` },
+          { headers },
+        );
+        if (!response.data?.success) throw new Error('Approval action failed');
+      }
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {

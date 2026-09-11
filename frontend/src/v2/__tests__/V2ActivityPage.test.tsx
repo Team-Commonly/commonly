@@ -280,6 +280,37 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
   });
 
+  test('an agent action proposal is decided through /api/approvals, not the Activity verbs (#1650)', async () => {
+    const approvalQueue = {
+      items: [{
+        id: 'appr-1', kind: 'approval', sourceType: 'approval_action', title: 'Scout requests approval', detail: 'May I open a room?',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-09-10T11:00:00.000Z',
+      }],
+      count: 1,
+      composePodId: 'pod-1',
+    };
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? approvalQueue : { items: [], count: 0, composePodId: 'pod-1' } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
+    mockPost.mockResolvedValue({ data: { ok: true } });
+    renderPage();
+
+    // It rings, counts and badges like any ask (ux-lead on #1650).
+    expect(await screen.findByLabelText('1 waiting on you')).toHaveTextContent('1');
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/approvals/appr-1/resolve',
+      { decision: 'declined' },
+      expect.anything(),
+    ));
+    expect(mockPost).not.toHaveBeenCalledWith(expect.stringContaining('/api/activity/appr-1'), expect.anything(), expect.anything());
+  });
+
   test('hides Get started after any historical attention item, even with unfinished steps', async () => {
     const handledAskRecap = { ...recap, hasEverHadAttention: true, needsYou: [], agents: [], board: [] };
     let releaseRegistry: ((value: { data: { agents: unknown[] } }) => void) | null = null;

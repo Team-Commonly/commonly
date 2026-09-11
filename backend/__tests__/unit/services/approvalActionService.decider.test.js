@@ -56,6 +56,11 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+const mockRecordActionApproval = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../services/attentionItemService', () => ({
+  recordActionApproval: (...args) => mockRecordActionApproval(...args),
+  resolve: jest.fn().mockResolvedValue(undefined),
+}));
 
 const { proposeAction } = require('../../../services/approvalActionService');
 
@@ -114,6 +119,31 @@ describe('proposeAction — decider derivation', () => {
     }));
     mockPostMessage.mockResolvedValue({ success: true, message: { _id: 'msg-1' } });
     userLookup(HUMANS);
+  });
+
+  test('a posted proposal is projected into the inbox as an approval ask (#1650)', async () => {
+    podLookup(HUMAN_POD_CREATOR);
+    installLookup({ installedBy: null });
+
+    const result = await propose();
+
+    expect(result.ok).toBe(true);
+    expect(mockRecordActionApproval).toHaveBeenCalledTimes(1);
+    expect(mockRecordActionApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'appr-1', podId: 'pod-1', agentName: 'scout', summary: 'Create a pod for design work', messageId: 'msg-1' }),
+      'Scout',
+    );
+  });
+
+  test('a proposal whose card never posted is moot and is NOT projected — no phantom ask', async () => {
+    podLookup(HUMAN_POD_CREATOR);
+    installLookup({ installedBy: null });
+    mockPostMessage.mockResolvedValueOnce({ success: false });
+
+    const result = await propose();
+
+    expect(result.ok).toBe(false);
+    expect(mockRecordActionApproval).not.toHaveBeenCalled();
   });
 
   test('human-created pod with no installation — creator is the decider (baseline)', async () => {
