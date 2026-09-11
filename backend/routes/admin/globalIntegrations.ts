@@ -1,8 +1,10 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const crypto: any = require('crypto');
 const axios = require('axios');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const Integration = require('../../models/Integration');
 const OAuthState = require('../../models/OAuthState');
 const Pod = require('../../models/Pod');
@@ -140,6 +142,22 @@ const normalizeBoolean = (value: any, fallback = false) => {
   }
   return fallback;
 };
+
+// The two admin saves below read the stored row before writing. Generous
+// for a human operator, bounded against token-stuffing on the admin surface
+// (CodeQL js/missing-rate-limiting); same shape as routes/admin/users.ts.
+const adminWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 60 admin writes per 15 minutes',
+    code: 'rate_limited',
+  }),
+});
 
 /**
  * The admin forms send accessToken only when a new one is typed; a blank
@@ -513,7 +531,7 @@ router.post('/policy', auth, adminAuth, async (req: any, res: any) => {
  * Save X global integration
  * POST /api/admin/integrations/global/x
  */
-router.post('/x', auth, adminAuth, async (req: any, res: any) => {
+router.post('/x', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const requesterId = getUserId(req);
     if (!requesterId) {
@@ -572,7 +590,7 @@ router.post('/x', auth, adminAuth, async (req: any, res: any) => {
  * Save Instagram global integration
  * POST /api/admin/integrations/global/instagram
  */
-router.post('/instagram', auth, adminAuth, async (req: any, res: any) => {
+router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) {
