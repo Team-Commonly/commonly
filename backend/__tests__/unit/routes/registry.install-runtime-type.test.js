@@ -228,14 +228,14 @@ describe('registry install runtimeType fallback', () => {
       manifest: { context: { required: [] }, runtime: { type: 'standalone', runtimeType: 'hosted' } },
     });
     const req = {
-      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: '  Your first teammate.   Answers how things work here. ' },
+      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: `  Your first teammate.   Answers how things work here. ${'x'.repeat(200)}` },
       user: { id: 'user-1', username: 'installer' }, userId: 'user-1',
     };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await installHandler(req, res);
-    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith('sample-agent', expect.objectContaining({
-      description: 'Your first teammate. Answers how things work here.',
-    }));
+    const passed = AgentIdentityService.getOrCreateAgentUser.mock.calls.find(([name]) => name === 'sample-agent')[1].description;
+    expect(passed.startsWith('Your first teammate. Answers how things work here. xxx')).toBe(true);
+    expect(passed).toHaveLength(160);
   });
 
   it('keeps install successful when the first-contact trigger fails', async () => {

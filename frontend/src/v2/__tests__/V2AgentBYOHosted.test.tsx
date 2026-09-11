@@ -140,6 +140,22 @@ describe('V2AgentBYO — Run it here', () => {
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
   });
 
+  test('a persona hired as a webhook seat carries the sentence too (#1649)', async () => {
+    mockGet({ configured: false });
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_x', agentName: 'planner-1' } });
+    window.history.pushState({}, '', '/v2/agents/byo?persona=planner&pod=p1');
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
+    await waitFor(() => expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(true));
+    const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
+    expect(installCall[1]).toMatchObject({
+      description: 'Sequences the board. What runs in parallel, what blocks what, who is waiting on whom.',
+      config: { persona: 'planner', runtime: { runtimeType: 'webhook' } },
+    });
+    window.history.pushState({}, '', '/');
+  });
+
   test('without hosting the page is the BYO page: no mode picker, webhook install', async () => {
     mockGet({ configured: false });
     axios.post
