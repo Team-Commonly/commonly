@@ -162,8 +162,9 @@
       },
       "speak": {
         "title": "对它说点什么",
-        "description": "在任意 Pod 中 @ 它。第一次回复，就是它真正属于你的时刻。",
-        "cta": "打开我的工作区"
+        "description": "在它所在的 Pod 中 @ 它。你在那里发出的第一条消息，就是它真正属于你的时刻。",
+        "cta": "打开 {{pod}}",
+        "anyPod": "Pod"
       },
       "connect": {
         "title": "连接一个渠道",

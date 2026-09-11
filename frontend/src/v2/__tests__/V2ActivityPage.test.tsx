@@ -252,7 +252,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByRole('heading', { name: 'Get started' })).toBeInTheDocument();
     expect(await screen.findByText('3 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hire an agent' })).toHaveClass('v2-activity__start-cta--current');
-    expect(screen.getByRole('button', { name: 'Open My Workspace' })).not.toHaveClass('v2-activity__start-cta--current');
+    expect(screen.getByRole('button', { name: 'Open Launch pod' })).not.toHaveClass('v2-activity__start-cta--current');
     expect(screen.getByRole('button', { name: 'Add a connector' })).toBeInTheDocument();
     // Needs you still renders its panel underneath, with no count.
     expect(screen.getByText('Nothing needs you.')).toBeInTheDocument();
@@ -273,7 +273,7 @@ describe('V2ActivityPage', () => {
     const second = renderPage();
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open My Workspace' })).toHaveClass('v2-activity__start-cta--current');
+    expect(screen.getByRole('button', { name: 'Open Launch pod' })).toHaveClass('v2-activity__start-cta--current');
     expect(screen.getByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
     second.unmount();
 
@@ -283,6 +283,37 @@ describe('V2ActivityPage', () => {
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+  });
+
+  test('day zero: a roster without the field, or a roster that fails, never reads as spoken (#1648)', async () => {
+    const empty = { ...recap, pods: [{ id: 'pod-2', name: 'GTM Programs' }, ...recap.pods], hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
+    const seat = { name: 'scout', displayName: 'Scout', lastMessage: { content: 'Hi, I am Scout.' } };
+    // A roster that predates the field (frontend and backend rolling out apart): step 2 stays open.
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [{ status: 'active' }] });
+      if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [seat] } });
+      if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+      return Promise.resolve({ data: empty });
+    });
+    const first = renderPage();
+    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Launch pod' })).toHaveClass('v2-activity__start-cta--current');
+    first.unmount();
+
+    // One pod's roster fails: it counts for nothing — neither a seat nor speech — and the card
+    // still answers from the pods that did load.
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [{ status: 'active' }] });
+      if (url === '/api/registry/pods/pod-2/agents') return Promise.reject(new Error('roster down'));
+      if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [seat], callerSpoke: false } });
+      return Promise.resolve({ data: empty });
+    });
+    renderPage();
+    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Launch pod' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
   test('day zero: speaking in a pod with no seat does not close step 2, and step 2 opens the pod that has one (#1648)', async () => {
@@ -297,7 +328,7 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open My Workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Launch pod' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 

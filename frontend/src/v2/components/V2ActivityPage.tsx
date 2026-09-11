@@ -585,12 +585,15 @@ const V2ActivityPage: React.FC = () => {
     if (connectorCount !== null && connectorCount === 0) open.push('connect');
     return open;
   }, [recap, podId, seatPods, seatedPods, connectorCount]);
+  // Step 2 names the pod it lands in (ux-lead 67327): the first pod holding a seat, else the
+  // account's first pod — the one step 1 will seat an agent in.
+  const speakPod = useMemo(() => {
+    const target = seatedPods[0]?.podId ?? recap?.pods[0]?.id;
+    return target ? { id: target, name: recap?.pods.find((pod) => pod.id === target)?.name ?? '' } : null;
+  }, [seatedPods, recap]);
   const startStepTarget = (step: 'hire' | 'speak' | 'connect') => {
     if (step === 'hire') return '/v2/agents';
-    if (step === 'speak') {
-      const target = seatedPods[0]?.podId ?? recap?.pods[0]?.id;
-      return target ? `/v2/pods/${target}` : '/v2';
-    }
+    if (step === 'speak') return speakPod ? `/v2/pods/${speakPod.id}` : '/v2';
     return '/v2/connectors';
   };
 
@@ -1207,7 +1210,7 @@ const V2ActivityPage: React.FC = () => {
                     <p>{t(`activity.getStarted.${step}.description`)}</p>
                   </div>
                   <div className="v2-activity__start-act">
-                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`)}</button>
+                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`, { pod: speakPod?.name || t('activity.getStarted.speak.anyPod') })}</button>
                   </div>
                 </div>
               ))}
