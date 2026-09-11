@@ -282,10 +282,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     setError(null);
     try {
       const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
-      // The mint's body, as routes/grants.ts takes it: the server names the broker.
+      // The mint's body, as routes/grants.ts takes it: the server names the broker (Vera 67728)
+      // and takes the installation from the Connection (#1677, Vera 67821) — neither is the caller's.
       await api.post('/api/grants', {
         connectionId: draft.connectionId,
-        installationId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
         tools: draftTools(draftEntry, draft.writeMode),
         writeMode: draft.writeMode,

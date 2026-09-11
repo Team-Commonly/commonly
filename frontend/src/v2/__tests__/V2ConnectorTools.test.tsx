@@ -174,8 +174,11 @@ test('the catalogue draws the not-yet row, and Add mints the grant exactly as th
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   const [url, body] = axios.post.mock.calls[0];
   expect(url).toBe('/api/grants');
-  expect(body).toMatchObject({ connectionId: 'conn-1', installationId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'write', audience: ['a1'], tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] });
+  expect(body).toMatchObject({ connectionId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'write', audience: ['a1'], tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] });
+  // Both are the server's: the broker from the catalogue (Vera 67728), the installation from the Connection (#1677).
   expect(body).not.toHaveProperty('brokerId');
+  expect(body).not.toHaveProperty('installationId');
+  expect(Object.keys(body).sort()).toEqual(['audience', 'connectionId', 'expiresAt', 'target', 'tools', 'writeMode']);
   const days = (new Date(body.expiresAt).getTime() - Date.now()) / 86400000;
   expect(days).toBeGreaterThan(29.9);
   expect(days).toBeLessThan(30.1);
