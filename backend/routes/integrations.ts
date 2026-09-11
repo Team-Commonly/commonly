@@ -194,7 +194,7 @@ router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
 // GitHub App installations are administrator-owned user-scope connections.
 // They intentionally do not pass through the pod-member connector route: a
 // member must never be able to bind the broker to Commonly's App credential.
-router.post('/github-app', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
     const installationId = String(body.installationId || '').trim();
