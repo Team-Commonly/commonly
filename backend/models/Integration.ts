@@ -341,15 +341,13 @@ IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
 // solely by its workspace and channel, then still checks isActive.
 IntegrationSchema.index({ type: 1, 'config.teamId': 1, 'config.chatId': 1, isActive: 1 });
 
+// Only Discord keeps platform state in a collection of its own; every other
+// connector carries it in `config`. A ref naming a model nothing registers is
+// not a no-op: Mongoose throws MissingSchemaError at populate time, and one
+// Telegram row took the admin list down with it (#1672). Null skips the join.
 IntegrationSchema.virtual('platformIntegration', {
   ref() {
-    switch ((this as IIntegration).type) {
-      case 'discord': return 'DiscordIntegration';
-      case 'telegram': return 'TelegramIntegration';
-      case 'slack': return 'SlackIntegration';
-      case 'messenger': return 'MessengerIntegration';
-      default: return null;
-    }
+    return (this as IIntegration).type === 'discord' ? 'DiscordIntegration' : null;
   },
   localField: '_id',
   foreignField: 'integrationId',
