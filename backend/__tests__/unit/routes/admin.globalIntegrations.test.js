@@ -191,6 +191,120 @@ describe('admin global integrations route', () => {
     });
   });
 
+  it('the admin X save keeps the stored token when the body omits it', async () => {
+    const handler = getRouteHandler('/x', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: {
+        enabled: true,
+        username: 'commonly',
+        userId: 'x-user-id',
+      },
+    };
+    const res = createRes();
+    const stored = {
+      _id: 'x-int-1',
+      type: 'x',
+      status: 'connected',
+      config: { accessToken: 'stored-x-token', refreshToken: 'stored-refresh', username: 'old' },
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    Integration.findOne.mockResolvedValueOnce(stored);
+
+    await handler(req, res);
+
+    expect(Integration.findOne).toHaveBeenCalledTimes(1);
+    expect(Integration.create).not.toHaveBeenCalled();
+    expect(stored.save).toHaveBeenCalled();
+    expect(stored.config.accessToken).toBe('stored-x-token');
+    expect(stored.config.refreshToken).toBe('stored-refresh');
+    expect(stored.config.username).toBe('commonly');
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
+  });
+
+  it('the admin X save replaces the stored token when a new one is typed', async () => {
+    const handler = getRouteHandler('/x', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: { enabled: true, accessToken: 'fresh-x-token', username: 'commonly', userId: 'x-user-id' },
+    };
+    const res = createRes();
+    const stored = {
+      _id: 'x-int-1',
+      type: 'x',
+      status: 'connected',
+      config: { accessToken: 'stored-x-token' },
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    Integration.findOne.mockResolvedValueOnce(stored);
+
+    await handler(req, res);
+
+    expect(stored.config.accessToken).toBe('fresh-x-token');
+    expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
+  });
+
+  it('a new admin X integration still needs a token', async () => {
+    const handler = getRouteHandler('/x', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: { enabled: true, username: 'commonly', userId: 'x-user-id' },
+    };
+    const res = createRes();
+
+    Integration.findOne.mockResolvedValueOnce(null);
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(Integration.create).not.toHaveBeenCalled();
+  });
+
+  it('the admin Instagram save keeps the stored token when the body omits it', async () => {
+    const handler = getRouteHandler('/instagram', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: { enabled: true, username: 'commonly', igUserId: 'ig-1' },
+    };
+    const res = createRes();
+    const stored = {
+      _id: 'ig-int-1',
+      type: 'instagram',
+      status: 'connected',
+      config: { accessToken: 'stored-ig-token', username: 'old' },
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    Integration.findOne.mockResolvedValueOnce(stored);
+
+    await handler(req, res);
+
+    expect(stored.save).toHaveBeenCalled();
+    expect(stored.config.accessToken).toBe('stored-ig-token');
+    expect(stored.config.username).toBe('commonly');
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ success: true, integration: stored });
+  });
+
+  it('a new admin Instagram integration still needs a token', async () => {
+    const handler = getRouteHandler('/instagram', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: { enabled: true, username: 'commonly', igUserId: 'ig-1' },
+    };
+    const res = createRes();
+
+    Integration.findOne.mockResolvedValueOnce(null);
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(Integration.create).not.toHaveBeenCalled();
+  });
+
   it('lists OAuth following accounts for connected global X integration', async () => {
     const handler = getRouteHandler('/x/following', 'get');
     const req = { userId: 'admin-1', query: { limit: '2' } };

@@ -16,6 +16,7 @@ import {
   RoomGrantError,
 } from '../services/roomGrantService';
 import type { RoomGrantCreateInput } from '../services/roomGrantService';
+import { resolveBrokerFor } from '../services/installable/toolInstallables';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -184,6 +185,23 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
+    // The broker is the catalogue's business, never the body's (Vera 67728):
+    // a caller who names one is refused, the grant names the proxy the seeded
+    // tool Installable points at, and may only allow tools that Installable
+    // enables (tools plan §2, §6).
+    if (body.brokerId !== undefined) {
+      return res.status(400).json({ error: 'invalid_broker', message: 'brokerId is set by the server, not the caller' });
+    }
+    const broker = await resolveBrokerFor(String(connection.type));
+    const requestedTools = Array.isArray(body.tools) ? body.tools.map(String) : [];
+    const unknownTools = requestedTools.filter((tool: string) => !broker.enabledTools.includes(tool));
+    if (unknownTools.length) {
+      return res.status(400).json({
+        error: 'invalid_tools',
+        message: `tools not enabled by ${broker.installableId}: ${unknownTools.join(', ')}`,
+      });
+    }
+
     const grantInput: RoomGrantCreateInput = {
       connectionId,
       installationId: String(body.installationId || ''),
@@ -193,7 +211,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       budget: body.budget,
       audience: audienceValues,
       expiresAt: body.expiresAt,
-      brokerId: String(body.brokerId || ''),
+      brokerId: broker.brokerId,
     };
     const grant = await createGrant(grantInput);
     return res.status(201).json(grant);

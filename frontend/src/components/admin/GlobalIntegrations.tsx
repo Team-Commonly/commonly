@@ -80,6 +80,10 @@ const OPENCLAW_MODEL_OPTIONS = {
   anthropic: ANTHROPIC_MODELS,
 };
 
+// Saved tokens never come back from the API; the field is write-only once one is on file.
+const SAVED_TOKEN_PLACEHOLDER = 'Saved \u2014 leave blank to keep';
+const SAVED_TOKEN_HELPER = 'A token is on file. Paste a new one to replace it.';
+
 const GlobalIntegrations = () => {
   const v2Embedded = useV2Embedded();
   const location = useLocation();
@@ -121,6 +125,7 @@ const GlobalIntegrations = () => {
   const [xConfig, setXConfig] = useState({
     enabled: false,
     accessToken: '',
+    tokenOnFile: false,
     username: '',
     userId: '',
     followUsernames: '',
@@ -135,6 +140,7 @@ const GlobalIntegrations = () => {
   const [instagramConfig, setInstagramConfig] = useState({
     enabled: false,
     accessToken: '',
+    tokenOnFile: false,
     username: '',
     igUserId: '',
     status: 'disconnected'
@@ -177,7 +183,9 @@ const GlobalIntegrations = () => {
       if (x) {
         setXConfig({
           enabled: x.status === 'connected',
-          accessToken: x.config?.accessToken || '',
+          // The API never returns the saved token; a stored row always carries one.
+          accessToken: '',
+          tokenOnFile: true,
           username: x.config?.username || '',
           userId: x.config?.userId || '',
           followUsernames: Array.isArray(x.config?.followUsernames) ? x.config.followUsernames.join(', ') : '',
@@ -196,7 +204,8 @@ const GlobalIntegrations = () => {
       if (instagram) {
         setInstagramConfig({
           enabled: instagram.status === 'connected',
-          accessToken: instagram.config?.accessToken || '',
+          accessToken: '',
+          tokenOnFile: true,
           username: instagram.config?.username || '',
           igUserId: instagram.config?.igUserId || '',
           status: instagram.status
@@ -369,7 +378,8 @@ const GlobalIntegrations = () => {
       await axios.post('/api/admin/integrations/global/x',
         {
           enabled: xConfig.enabled,
-          accessToken: xConfig.accessToken,
+          // Omitted when blank: the server keeps the token on file.
+          accessToken: xConfig.accessToken || undefined,
           username: xConfig.username,
           userId: xConfig.userId,
           followUsernames: xConfig.followUsernames,
@@ -403,7 +413,7 @@ const GlobalIntegrations = () => {
       await axios.post('/api/admin/integrations/global/instagram',
         {
           enabled: instagramConfig.enabled,
-          accessToken: instagramConfig.accessToken,
+          accessToken: instagramConfig.accessToken || undefined,
           username: instagramConfig.username,
           igUserId: instagramConfig.igUserId
         },
@@ -615,13 +625,14 @@ const GlobalIntegrations = () => {
 
                 <TextField
                   label="Access Token"
-                  placeholder="Bearer token..."
+                  placeholder={xConfig.tokenOnFile ? SAVED_TOKEN_PLACEHOLDER : 'Bearer token...'}
                   value={xConfig.accessToken}
                   onChange={(e) => setXConfig({ ...xConfig, accessToken: e.target.value })}
                   fullWidth
                   size="small"
                   type="password"
-                  helperText="OAuth 2.0 Bearer token"
+                  helperText={xConfig.tokenOnFile ? SAVED_TOKEN_HELPER : 'OAuth 2.0 Bearer token'}
+                  InputLabelProps={xConfig.tokenOnFile ? { shrink: true } : undefined}
                 />
 
                 <TextField
@@ -694,7 +705,7 @@ const GlobalIntegrations = () => {
                     variant="contained"
                     startIcon={<SaveIcon />}
                     onClick={handleSaveX}
-                    disabled={saving || !xConfig.username || !xConfig.userId || !xConfig.accessToken}
+                    disabled={saving || !xConfig.username || !xConfig.userId || !(xConfig.accessToken || xConfig.tokenOnFile)}
                     fullWidth
                   >
                     Save X Configuration
@@ -791,13 +802,14 @@ const GlobalIntegrations = () => {
 
                 <TextField
                   label="Access Token"
-                  placeholder="Long-lived access token..."
+                  placeholder={instagramConfig.tokenOnFile ? SAVED_TOKEN_PLACEHOLDER : 'Long-lived access token...'}
                   value={instagramConfig.accessToken}
                   onChange={(e) => setInstagramConfig({ ...instagramConfig, accessToken: e.target.value })}
                   fullWidth
                   size="small"
                   type="password"
-                  helperText="Long-lived access token from Facebook Graph API"
+                  helperText={instagramConfig.tokenOnFile ? SAVED_TOKEN_HELPER : 'Long-lived access token from Facebook Graph API'}
+                  InputLabelProps={instagramConfig.tokenOnFile ? { shrink: true } : undefined}
                 />
 
                 <Box display="flex" gap={1} mt={1}>
@@ -805,7 +817,7 @@ const GlobalIntegrations = () => {
                     variant="contained"
                     startIcon={<SaveIcon />}
                     onClick={handleSaveInstagram}
-                    disabled={saving || !instagramConfig.username || !instagramConfig.igUserId || !instagramConfig.accessToken}
+                    disabled={saving || !instagramConfig.username || !instagramConfig.igUserId || !(instagramConfig.accessToken || instagramConfig.tokenOnFile)}
                     fullWidth
                   >
                     Save Instagram Configuration
