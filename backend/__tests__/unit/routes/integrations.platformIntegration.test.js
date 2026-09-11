@@ -97,6 +97,23 @@ describe('platformIntegration virtual (#1672)', () => {
     expect(joined.platformIntegration).toMatchObject({ serverId: 'srv-1', channelId: 'chan-1' });
   });
 
+  it('the Discord join never returns the bot token or the webhook URL', async () => {
+    await seedTelegramAndDiscord();
+
+    const admin = await request(app).get('/api/integrations/admin/all');
+    const pod = await request(app).get(`/api/integrations/${OTHER_POD}`);
+
+    expect(admin.status).toBe(200);
+    expect(pod.status).toBe(200);
+    for (const body of [admin.body, pod.body]) {
+      const joined = body.find((entry) => entry.type === 'discord').platformIntegration;
+      expect(joined).toMatchObject({ serverId: 'srv-1', webhookId: '1' });
+      expect(joined).not.toHaveProperty('botToken');
+      expect(joined).not.toHaveProperty('webhookUrl');
+      expect(JSON.stringify(body)).not.toMatch(/bot-token|api\/webhooks/);
+    }
+  });
+
   it('the pod list answers 200 with a Telegram row', async () => {
     await seedTelegramAndDiscord();
 
