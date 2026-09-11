@@ -143,6 +143,22 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-waiting')).toBeInTheDocument();
   });
 
+  test('a persona hire onto a machine carries the persona sentence too (#1649)', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    window.history.pushState({}, '', '/v2/agents/byo?persona=recorder&pod=p1');
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      description: "The room's memory. Keeps decisions, corrections and who asked for what.",
+      config: expect.objectContaining({ persona: 'recorder', runtime: { runtimeType: 'wrapper' } }),
+    }), expect.anything());
+    window.history.pushState({}, '', '/');
+  });
+
   test('a chosen model rides the install as config.runtime.model; the default sends none', async () => {
     mockGet();
     axios.post.mockResolvedValue({ data: {} });

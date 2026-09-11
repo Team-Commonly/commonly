@@ -303,6 +303,8 @@ const V2AgentBYO: React.FC = () => {
           scopes: DEFAULT_SCOPES,
           config: { runtime: { runtimeType: 'hosted' }, ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
+          // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
+          ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
         const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number } } })
@@ -347,6 +349,8 @@ const V2AgentBYO: React.FC = () => {
             ...(personaCard ? { persona: personaCard.key } : {}),
           },
           displayName: personaCard?.name || cleanName,
+          // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
+          ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
         // Same identity-continuity tolerance as the BYO path below.
@@ -398,6 +402,8 @@ const V2AgentBYO: React.FC = () => {
           scopes: DEFAULT_SCOPES,
           config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
+          // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
+          ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
         // "Already installed" is identity continuity (ADR-001), not a

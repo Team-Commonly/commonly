@@ -77,6 +77,28 @@ const reset = () => {
 describe('inline displayName collision resolver (sticky dedup)', () => {
   beforeEach(reset);
 
+  test('a hire that carries a description stores it; one that does not gets no line, never "<name> agent" (#1649)', async () => {
+    await AgentIdentityService.getOrCreateAgentUser('scout-1', {
+      instanceId: 'scout', displayName: 'Scout', description: 'Your first teammate. Answers how things work here.',
+    });
+    expect(mockSaved[0].botMetadata.description).toBe('Your first teammate. Answers how things work here.');
+    reset();
+    await AgentIdentityService.getOrCreateAgentUser('scout-2', { instanceId: 'scout', displayName: 'Scout' });
+    expect(mockSaved[0].botMetadata.description).toBe('');
+    expect(mockSaved[0].botMetadata.description).not.toMatch(/ agent$/);
+  });
+
+  test('the upgrade branch (existing non-bot user) and the repair branch (bot user with stale meta) store no placeholder either (#1649)', async () => {
+    mockExisting = { _id: 'human-id', username: 'scout-3-scout', isBot: false };
+    await AgentIdentityService.getOrCreateAgentUser('scout-3', { instanceId: 'scout', displayName: 'Scout' });
+    expect(mockSaved[0].botMetadata.description).toBe('');
+    reset();
+    mockExisting = { _id: 'bot-id', username: 'scout-4-scout', isBot: true, botMetadata: { agentName: 'scout-4', instanceId: 'scout', displayName: 'Scout' } };
+    await AgentIdentityService.getOrCreateAgentUser('scout-4', { instanceId: 'scout', displayName: 'Scout' });
+    expect(mockSaved[0].botMetadata.description).toBe('');
+    expect(mockSaved[0].botMetadata.description).not.toMatch(/ agent$/);
+  });
+
   test('new install with no peers — bare displayName is kept', async () => {
     await AgentIdentityService.getOrCreateAgentUser('openclaw', {
       instanceId: 'pixel',
