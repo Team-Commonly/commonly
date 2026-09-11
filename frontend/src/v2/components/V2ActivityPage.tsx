@@ -201,15 +201,16 @@ const V2ActivityPage: React.FC = () => {
   const [queueAutoPending, setQueueAutoPending] = useState(false);
   // Day zero (ux-lead 66658/66666): Get started is its own card above Needs you and a step is
   // not an ask — no actor, no ring, no count, no badge; a step leaves when the account does
-  // something. hire ← an agent exists; speak ← an agent has answered; connect ← a connector row.
+  // something. hire ← an agent exists; speak ← you said something in a pod that has a seat;
+  // connect ← a connector row.
   const [connectorCount, setConnectorCount] = useState<number | null>(null);
-  // "Hired" and "has answered" are facts about the account's seats, not about the last 24h
+  // "Hired" and "spoke" are facts about the account's seats, not about the last 24h
   // (sprint-review 66671: recap.agents only carries agents that acted inside the recap window).
-  // The registry's per-pod agent list is what Your Team reads. `lastMessage` is proof of speech
-  // (null when the seat has never spoken in that pod); `lastActiveAt` is only proof of life —
-  // provisioning uses a runtime token and sets it (sprint-review 66678) — so it must not close
-  // the step whose job is to notice a seat that never answered.
-  const [hiredAgents, setHiredAgents] = useState<Array<{ name: string; lastMessage?: unknown; internal?: boolean }> | null>(null);
+  // The registry's per-pod agent list is what Your Team reads. Step 2 closes on the caller's own
+  // act (#1648, ux-lead 67071): `callerSpoke` is the account's own message in that pod, reply or
+  // not. A seat's `lastMessage` cannot carry it — an install intro sets it before anyone spoke —
+  // and `lastActiveAt` is only proof of life (provisioning sets it, sprint-review 66678).
+  const [seatPods, setSeatPods] = useState<Array<{ podId: string; callerSpoke: boolean; agents: Array<{ name: string; internal?: boolean }> }> | null>(null);
   const [queueLoadingMore, setQueueLoadingMore] = useState(false);
   const [queueMoreError, setQueueMoreError] = useState(false);
   const [historyRemaining, setHistoryRemaining] = useState(0);
@@ -564,23 +565,35 @@ const V2ActivityPage: React.FC = () => {
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
     Promise.all(recap.pods.slice(0, 20).map((pod) => axios
-      .get<{ agents?: Array<{ name: string; lastMessage?: unknown; internal?: boolean }> }>(`/api/registry/pods/${pod.id}/agents`, { headers })
-      .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []))
-      .catch(() => [])))
-      .then((lists) => { if (active) setHiredAgents(lists.flat().filter((agent) => !agent.internal)); });
+      .get<{ agents?: Array<{ name: string; internal?: boolean }>; callerSpoke?: boolean }>(`/api/registry/pods/${pod.id}/agents`, { headers })
+      .then((res) => ({
+        podId: pod.id,
+        callerSpoke: res.data?.callerSpoke === true,
+        agents: (Array.isArray(res.data?.agents) ? res.data.agents : []).filter((agent) => !agent.internal),
+      }))
+      .catch(() => ({ podId: pod.id, callerSpoke: false, agents: [] }))))
+      .then((pods) => { if (active) setSeatPods(pods); });
     return () => { active = false; };
   }, [recap, podId]);
+  // The pods that hold a seat the account can speak to; step 2 lands the person in the first one.
+  const seatedPods = useMemo(() => (seatPods ?? []).filter((pod) => pod.agents.length > 0), [seatPods]);
   const startSteps = useMemo(() => {
-    if (!recap || podId !== 'all' || hiredAgents === null) return [] as Array<'hire' | 'speak' | 'connect'>;
+    if (!recap || podId !== 'all' || seatPods === null) return [] as Array<'hire' | 'speak' | 'connect'>;
     const open: Array<'hire' | 'speak' | 'connect'> = [];
-    if (hiredAgents.length === 0) open.push('hire');
-    if (!hiredAgents.some((agent) => agent.lastMessage != null)) open.push('speak');
+    if (seatedPods.length === 0) open.push('hire');
+    if (!seatedPods.some((pod) => pod.callerSpoke)) open.push('speak');
     if (connectorCount !== null && connectorCount === 0) open.push('connect');
     return open;
-  }, [recap, podId, hiredAgents, connectorCount]);
+  }, [recap, podId, seatPods, seatedPods, connectorCount]);
+  // Step 2 names the pod it lands in (ux-lead 67327): the first pod holding a seat, else the
+  // account's first pod — the one step 1 will seat an agent in.
+  const speakPod = useMemo(() => {
+    const target = seatedPods[0]?.podId ?? recap?.pods[0]?.id;
+    return target ? { id: target, name: recap?.pods.find((pod) => pod.id === target)?.name ?? '' } : null;
+  }, [seatedPods, recap]);
   const startStepTarget = (step: 'hire' | 'speak' | 'connect') => {
     if (step === 'hire') return '/v2/agents';
-    if (step === 'speak') return recap?.pods[0] ? `/v2/pods/${recap.pods[0].id}` : '/v2';
+    if (step === 'speak') return speakPod ? `/v2/pods/${speakPod.id}` : '/v2';
     return '/v2/connectors';
   };
 
@@ -1197,7 +1210,7 @@ const V2ActivityPage: React.FC = () => {
                     <p>{t(`activity.getStarted.${step}.description`)}</p>
                   </div>
                   <div className="v2-activity__start-act">
-                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`)}</button>
+                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`, { pod: speakPod?.name || t('activity.getStarted.speak.anyPod') })}</button>
                   </div>
                 </div>
               ))}

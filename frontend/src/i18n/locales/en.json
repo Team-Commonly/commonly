@@ -162,8 +162,9 @@
       },
       "speak": {
         "title": "Say something to it",
-        "description": "@mention it in any pod. The first reply is the moment this becomes yours.",
-        "cta": "Open My Workspace"
+        "description": "@mention it in the pod where it lives. Your first message there is the moment this becomes yours.",
+        "cta": "Open {{pod}}",
+        "anyPod": "a pod"
       },
       "connect": {
         "title": "Connect a channel",

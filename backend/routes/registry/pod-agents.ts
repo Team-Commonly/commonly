@@ -242,7 +242,21 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
     }
 
+    // Day-zero step 2 (#1648, ux-lead 67071 / sprint-impl 67078): "Say something to it" closes
+    // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
+    // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
+    // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
+    let callerSpoke = false;
+    try {
+      // eslint-disable-next-line global-require
+      const PgMessage = require('../../models/pg/Message');
+      callerSpoke = Boolean(await PgMessage.hasMessageByUserInPod(String(podId), String(userId)));
+    } catch (spokeErr) {
+      console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
+    }
+
     res.json({
+      callerSpoke,
       agents: installations.map((i: any) => {
         const profile = profiles.find(
           (p: any) => p.agentName === i.agentName && p.instanceId === (i.instanceId || 'default'),
