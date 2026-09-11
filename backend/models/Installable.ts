@@ -6,7 +6,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *
  * Replaces the pre-v2 `App` + `AgentRegistry` split. A single Installable carries
  * one or more polymorphic `components` (agent, slash-command, event-handler,
- * scheduled-job, widget, webhook, data-schema), so a single marketplace entry
+ * scheduled-job, widget, webhook, data-schema, skill, mcp-server), so a single marketplace entry
  * can ship a bundle (e.g. an agent + its companion slash command + a widget)
  * while preserving component-level addressing and scoping.
  *
@@ -70,7 +70,8 @@ export type ComponentType =
   | 'widget'
   | 'webhook'
   | 'data-schema'
-  | 'skill';
+  | 'skill'
+  | 'mcp-server';
 
 export type AddressMode =
   | '@mention'
@@ -125,6 +126,22 @@ export interface IComponentPersona {
   avatar?: string;
   systemPrompt?: string;
   memoryStrategy?: ComponentMemoryStrategy;
+}
+
+export interface IMcpSource {
+  spec: string;
+  subpath?: string;
+  pin?: string;
+}
+
+export type McpVariableType = 'string' | 'number' | 'boolean';
+
+export interface IMcpVariable {
+  type: McpVariableType;
+  description?: string;
+  default?: string | number | boolean;
+  enum?: Array<string | number>;
+  writeOnly?: boolean;
 }
 
 export interface ISlashCommandParameter {
@@ -191,6 +208,14 @@ export interface IComponent {
   skillPrompt?: string;
   skillTools?: string[];
   skillExamples?: unknown;
+
+  // MCP-server-specific (agent-only — no addresses)
+  transport?: 'stdio' | 'http';
+  source?: IMcpSource;
+  command?: string[];
+  url?: string;
+  variables?: Record<string, IMcpVariable>;
+  enabledTools?: string[];
 
   // Component-level free-form metadata.
   metadata?: Record<string, unknown>;
@@ -356,6 +381,7 @@ const ComponentSchema = new Schema<IComponent>(
         'webhook',
         'data-schema',
         'skill',
+        'mcp-server',
       ],
       required: true,
     },
@@ -414,6 +440,20 @@ const ComponentSchema = new Schema<IComponent>(
     skillPrompt: { type: String },
     skillTools: { type: [String], default: undefined },
     skillExamples: { type: Schema.Types.Mixed },
+
+    // MCP server (agent-only — no addresses)
+    transport: { type: String, enum: ['stdio', 'http'] },
+    source: {
+      type: new Schema({
+        spec: { type: String, required: true },
+        subpath: { type: String },
+        pin: { type: String },
+      }, { _id: false }),
+    },
+    command: { type: [String], default: undefined },
+    url: { type: String },
+    variables: { type: Schema.Types.Mixed },
+    enabledTools: { type: [String], default: undefined },
 
     // Free-form component metadata
     metadata: { type: Schema.Types.Mixed },

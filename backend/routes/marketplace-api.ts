@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Installable = require('../models/Installable');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
+const { validateMcpComponent } = require('../utils/pluginManifestParser');
 
 const router = express.Router();
 
@@ -48,13 +49,20 @@ const COMPONENT_TYPES = [
   'webhook',
   'data-schema',
   'skill',
+  'mcp-server',
 ];
 
-// The four `Schema.Types.Mixed` fields on ComponentSchema. Mixed accepts any
+// The five `Schema.Types.Mixed` fields on ComponentSchema. Mixed accepts any
 // JSON of any size, and at 50 components per manifest that is an unbounded
 // write reachable by anyone who can publish — a larger surface than the URL
 // and independent of it, so a widgetUrl allowlist alone would not touch it.
-const MIXED_COMPONENT_FIELDS = ['widgetConfigSchema', 'schemaFields', 'skillExamples', 'metadata'];
+const MIXED_COMPONENT_FIELDS = [
+  'widgetConfigSchema',
+  'schemaFields',
+  'skillExamples',
+  'variables',
+  'metadata',
+];
 const MAX_MIXED_FIELD_BYTES = 16 * 1024;
 
 const MAX_COMPONENTS = 50;
@@ -95,6 +103,14 @@ const validateComponents = (components: any) => {
       }
       if (component.description.length > 500) {
         return `${at}.description must be 500 characters or fewer`;
+      }
+    }
+
+    if (component.type === 'mcp-server') {
+      const mcpErrors = validateMcpComponent(component, at);
+      if (mcpErrors.length) {
+        const firstError = mcpErrors[0];
+        return `${firstError.field}: ${firstError.message}`;
       }
     }
 

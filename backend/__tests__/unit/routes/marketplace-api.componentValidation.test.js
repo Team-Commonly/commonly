@@ -96,6 +96,35 @@ describe('marketplace publish validates inside the components array', () => {
     expect(Installable.create).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts the ADR-001 McpServer component and bounds its variables field', async () => {
+    const res = await publish([{
+      name: 'Calendar',
+      type: 'mcp-server',
+      transport: 'stdio',
+      source: { spec: 'acme/calendar', pin: '0123456789abcdef0123456789abcdef01234567' },
+      command: ['node', 'server.js'],
+      variables: { account: { type: 'string' } },
+      enabledTools: ['events.read'],
+    }]);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(Installable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies parser security rules when an MCP component is published directly', async () => {
+    const res = await publish([{
+      name: 'Calendar',
+      type: 'mcp-server',
+      transport: 'stdio',
+      source: { spec: 'file:///etc/passwd' },
+      command: ['node', 'server.js'],
+    }]);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(errorOf(res)).toMatch(/components\[0\]\.source\.spec/i);
+    expect(Installable.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a components value that is not an array', async () => {
     // A string has `.length`, so the old `components.length > 50` gate passed
     // any string of 50 characters or fewer straight through.
@@ -162,6 +191,7 @@ describe('marketplace publish validates inside the components array', () => {
     ['widgetConfigSchema'],
     ['schemaFields'],
     ['skillExamples'],
+    ['variables'],
     ['metadata'],
   ])('caps the Mixed field %s', async (field) => {
     const res = await publish([widget({ [field]: { blob: 'x'.repeat(20 * 1024) } })]);
