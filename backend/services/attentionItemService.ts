@@ -455,11 +455,23 @@ export const acknowledgeAttention = async (recipientUserId: unknown, attentionIt
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
+/**
+ * Whether this recipient has ever had an attention item, regardless of its
+ * current status. Resolved rows are retained deliberately, so this answers
+ * the Activity day-zero question without reconstructing history from source
+ * stores (or imposing a retention window).
+ */
+export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boolean> => {
+  if (!recipientUserId) return false;
+  const row = await AttentionItem.exists({ recipientUserId });
+  return Boolean(row);
+};
+
 // Kept as the public name for the existing Activity route. The selector is
 // now deliberately recipient-owned and covers mentions plus handoffs while
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
