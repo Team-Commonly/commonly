@@ -42,7 +42,7 @@ const broker = require('../../../services/toolBrokerService');
 const grant = (overrides = {}) => ({
   grantId: 'grant-1', connectionId: 'connection-1', installationId: 'install-1',
   target: { kind: 'seat', id: 'agent-1' }, tools: ['github.create_issue'], writeMode: 'write',
-  audience: ['agent-1'], expiresAt: new Date(Date.now() + 60_000), ...overrides,
+  audience: ['agent-1'], expiresAt: new Date(Date.now() + 60000), ...overrides,
 });
 
 beforeEach(() => {
@@ -59,12 +59,15 @@ beforeEach(() => {
 
 test("a seat grant's card posts in the granter's room with the seat", async () => {
   await expect(broker.callTool({
-    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+    grantId: 'grant-1', agentUserId: 'agent-1', agentName: 'openclaw', instanceId: 'aria',
+    tool: 'github.create_issue', args: { title: 'hello' },
   })).rejects.toMatchObject({ code: 'approval_required' });
   expect(mockDmService.getOrCreateAgentRoom).toHaveBeenCalledWith(
-    'agent-1', 'owner-1', { agentName: 'grant-broker', instanceId: 'default' },
+    'agent-1', 'owner-1', { agentName: 'openclaw', instanceId: 'aria' },
   );
-  expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ podId: 'room-1' }));
+  expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({
+    podId: 'room-1', agentName: 'openclaw', instanceId: 'aria',
+  }));
 });
 
 test('parks an irreversible broker call in an owner-bound approval envelope', async () => {

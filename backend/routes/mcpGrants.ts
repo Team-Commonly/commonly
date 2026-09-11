@@ -46,9 +46,16 @@ const errorPayload = (error: unknown): Record<string, unknown> => {
  * secret is placed in the MCP tool list or response.
  */
 router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.Request, res: express.Response) => {
-  const agent = (req as express.Request & { agentUser?: { _id?: unknown; username?: string; agentName?: string } }).agentUser;
+  const agent = req.agentUser;
+  const installation = req.agentInstallation;
   const agentUserId = String(agent?._id || '');
   if (!agentUserId) return res.status(401).json({ error: 'agent_identity_required' });
+  const agentName = installation?.agentName
+    || agent?.botMetadata?.agentName
+    || agent?.username;
+  const instanceId = installation?.instanceId
+    || agent?.botMetadata?.instanceId
+    || 'default';
 
   const server = new Server(
     { name: 'commonly-grant-broker', version: '0.1.0' },
@@ -69,7 +76,8 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
       const result = await callTool({
         grantId: String(req.params.grantId),
         agentUserId,
-        agentName: agent?.agentName || agent?.username,
+        agentName,
+        instanceId,
         tool,
         args,
       });

@@ -36,6 +36,7 @@ export interface BrokerCallInput {
   grantId: string;
   agentUserId: string;
   agentName?: string;
+  instanceId?: string;
   tool: string;
   args?: unknown;
 }
@@ -489,6 +490,7 @@ const resolveApprovalPodId = async (
   grant: IRoomGrant | Record<string, unknown>,
   connection: ToolConnection,
   agentName?: string,
+  instanceId?: string,
 ): Promise<string> => {
   const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
   if (!target?.kind || !target.id) {
@@ -503,7 +505,7 @@ const resolveApprovalPodId = async (
   const room = await DMService.getOrCreateAgentRoom(
     String(target.id),
     connection.ownerUserId,
-    { agentName: agentName || 'grant-broker', instanceId: 'default' },
+    { agentName: agentName || 'grant-broker', instanceId: instanceId || 'default' },
   );
   if (!room?._id) {
     throw new RoomGrantError('approval_unavailable', 'approval room could not be created', 503);
@@ -615,13 +617,18 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       }
       let proposal: { ok: boolean; approvalId?: string } | undefined;
       try {
-        const approvalPodId = await resolveApprovalPodId(grant, connection, input.agentName);
+        const approvalPodId = await resolveApprovalPodId(
+          grant,
+          connection,
+          input.agentName,
+          input.instanceId,
+        );
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const approvalService = require('./approvalActionService');
         proposal = await approvalService.proposeAction({
           podId: approvalPodId,
           agentName: input.agentName || 'grant-broker',
-          instanceId: 'default',
+          instanceId: input.instanceId || 'default',
           actionType: 'tool_call',
           params: {},
           summary: `${definition.description} (approval required)`,
