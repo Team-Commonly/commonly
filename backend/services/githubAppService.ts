@@ -49,6 +49,24 @@ interface CloseIssueOptions {
   comment?: string;
 }
 
+interface IssueNumberOptions {
+  owner?: string;
+  repo?: string;
+  issueNumber: number;
+}
+
+interface PullRequestOptions {
+  owner?: string;
+  repo?: string;
+  pullNumber: number;
+}
+
+interface MergePullRequestOptions extends PullRequestOptions {
+  commitTitle?: string;
+  commitMessage?: string;
+  mergeMethod?: 'merge' | 'squash' | 'rebase';
+}
+
 type PullReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 
 interface PullDiffOptions {
@@ -149,8 +167,16 @@ class GitHubAppService {
    */
   static async _apiHeaders(token?: string): Promise<Record<string, string>> {
     const pat = token || process.env.GITHUB_PAT;
+    let credential = pat;
+    if (!credential && this.isConfigured()) {
+      const installation = await this.getInstallationToken(
+        process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY as string,
+      );
+      credential = installation.token;
+    }
+    if (!credential) throw new Error('github_not_configured');
     return {
-      Authorization: `Bearer ${pat}`,
+      Authorization: `Bearer ${credential}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
@@ -208,6 +234,57 @@ class GitHubAppService {
     const res = await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { state: 'closed' },
+      { headers },
+    );
+    return res.data;
+  }
+
+  /** Fetch one issue without exposing the server credential to the caller. */
+  static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber }: IssueNumberOptions): Promise<GitHubIssue> {
+    const headers = await this._apiHeaders();
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
+      { headers },
+    );
+    return res.data;
+  }
+
+  /** Fetch one pull request. */
+  static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber }: PullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders();
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
+      { headers },
+    );
+    return res.data;
+  }
+
+  /** List files changed by one pull request. */
+  static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber }: PullRequestOptions): Promise<unknown[]> {
+    const headers = await this._apiHeaders();
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
+      { headers },
+    );
+    return res.data;
+  }
+
+  /** Merge a pull request; callers must satisfy the broker approval gate. */
+  static async mergePullRequest({
+    owner = 'Team-Commonly',
+    repo = 'commonly',
+    pullNumber,
+    commitTitle,
+    commitMessage,
+    mergeMethod = 'squash',
+  }: MergePullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders();
+    const payload: Record<string, unknown> = { merge_method: mergeMethod };
+    if (commitTitle) payload.commit_title = commitTitle;
+    if (commitMessage) payload.commit_message = commitMessage;
+    const res = await axios.put(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
+      payload,
       { headers },
     );
     return res.data;
