@@ -45,6 +45,13 @@ describe('installable catalog service', () => {
       config: {
         botTokenRef: 'secret-ref',
         oauthStateNonce: 'nonce',
+        botToken: 'tg-bot-token',
+        secretToken: 'tg-secret-token',
+        accessToken: 'x-access-token',
+        refreshToken: 'x-refresh-token',
+        signingSecret: 'slack-signing-secret',
+        webhookUrl: 'https://hooks.slack.com/services/T1/B1/hook-secret',
+        connectCode: 'CODE-1',
         chatTitle: 'Ops',
         adminPause: {
           reason: 'Safety review in progress.',
@@ -71,6 +78,7 @@ describe('installable catalog service', () => {
         integration: expect.objectContaining({
           installationId,
           config: {
+            connectCode: 'CODE-1',
             chatTitle: 'Ops',
             adminPause: {
               reason: 'Safety review in progress.',
@@ -88,7 +96,7 @@ describe('installable catalog service', () => {
       }),
     ]);
     expect(InstallableInstallation.find).toHaveBeenCalledWith(expect.objectContaining({ targetId: userId }));
-    expect(JSON.stringify(catalog)).not.toMatch(/SLACK_|CONNECTOR_SECRET|private-claim|secret-ref|nonce|adminId|admin-private-id/);
+    expect(JSON.stringify(catalog)).not.toMatch(/SLACK_|CONNECTOR_SECRET|private-claim|secret-ref|nonce|adminId|admin-private-id|-token|signing-secret|hook-secret/);
   });
 
   it('does not read projections when the caller has no live parent', async () => {
