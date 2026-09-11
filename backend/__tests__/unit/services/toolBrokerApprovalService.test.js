@@ -3,6 +3,7 @@ const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockToolCall = { create: jest.fn(), digestArgs: (args) => `digest:${JSON.stringify(args || {})}` };
 const mockReserveBudgetLineage = jest.fn().mockResolvedValue(true);
+const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
@@ -19,6 +20,7 @@ jest.mock('../../../services/githubAppService', () => ({
 }));
 const mockProposeAction = jest.fn();
 jest.mock('../../../services/approvalActionService', () => ({ proposeAction: (...args) => mockProposeAction(...args) }));
+jest.mock('../../../services/dmService', () => mockDmService);
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
     constructor(code, message, statusCode = 400, details) {
@@ -52,6 +54,17 @@ beforeEach(() => {
     config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
+  mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
+});
+
+test("a seat grant's card posts in the granter's room with the seat", async () => {
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({ code: 'approval_required' });
+  expect(mockDmService.getOrCreateAgentRoom).toHaveBeenCalledWith(
+    'agent-1', 'owner-1', { agentName: 'grant-broker', instanceId: 'default' },
+  );
+  expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ podId: 'room-1' }));
 });
 
 test('parks an irreversible broker call in an owner-bound approval envelope', async () => {

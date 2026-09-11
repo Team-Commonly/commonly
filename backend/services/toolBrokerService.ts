@@ -30,7 +30,6 @@ export interface ToolConnection {
   owner: string;
   repo: string;
   ownerUserId?: string;
-  podId?: string;
 }
 
 export interface BrokerCallInput {
@@ -424,7 +423,6 @@ const resolveConnection = async (
     status?: string;
     revokedAt?: Date | null;
     createdBy?: unknown;
-    podId?: unknown;
     config?: { installationId?: string; owner?: string; repo?: string };
   } | null;
   const config = row?.config;
@@ -445,8 +443,39 @@ const resolveConnection = async (
     owner: String(config.owner),
     repo: String(config.repo),
     ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
-    podId: row.podId ? String(row.podId) : undefined,
   };
+};
+
+/**
+ * Approval cards share the grant's target audience. A pod grant can post to
+ * that pod directly; a seat grant must use the private room between the
+ * granter and the seat so no third party can observe its credentials or
+ * approval arguments.
+ */
+const resolveApprovalPodId = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  connection: ToolConnection,
+  agentName?: string,
+): Promise<string> => {
+  const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
+  if (!target?.kind || !target.id) {
+    throw new RoomGrantError('invalid_target', 'grant target is invalid', 403);
+  }
+  if (target.kind !== 'seat') return String(target.id);
+  if (!connection.ownerUserId) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection owner is missing', 403);
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const DMService = require('./dmService');
+  const room = await DMService.getOrCreateAgentRoom(
+    String(target.id),
+    connection.ownerUserId,
+    { agentName: agentName || 'grant-broker', instanceId: 'default' },
+  );
+  if (!room?._id) {
+    throw new RoomGrantError('approval_unavailable', 'approval room could not be created', 503);
+  }
+  return String(room._id);
 };
 
 const providerConnection = (connection: ToolConnection): ToolConnection => ({
@@ -553,11 +582,11 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       }
       let proposal: { ok: boolean; approvalId?: string } | undefined;
       try {
+        const approvalPodId = await resolveApprovalPodId(grant, connection, input.agentName);
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const approvalService = require('./approvalActionService');
         proposal = await approvalService.proposeAction({
-          podId: connection.podId
-            || String(((grant as Record<string, unknown>).target as { id?: string })?.id || ''),
+          podId: approvalPodId,
           agentName: input.agentName || 'grant-broker',
           instanceId: 'default',
           actionType: 'tool_call',

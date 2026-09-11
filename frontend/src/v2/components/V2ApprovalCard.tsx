@@ -90,7 +90,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const payload = message.payload || {};
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
-  const needsToolCall = isOwner && status === 'flagged' && payload.actionType === 'tool_call';
+  const isToolCall = payload.actionType === 'tool_call';
+  const needsToolCall = isOwner && status === 'flagged' && isToolCall;
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
   const [toolCallLoading, setToolCallLoading] = useState(false);
   const [toolCallError, setToolCallError] = useState(false);
@@ -200,14 +201,25 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
             </pre>
           </>
-        ) : needsToolCall ? (
-          <div className="v2-approval__action" data-testid="approval-action">
-            {toolCallLoading
-              ? t('approvalCard.toolCall.loading')
-              : toolCallError
-                ? t('approvalCard.toolCall.unavailable')
-                : t('approvalCard.toolCall.loading')}
-          </div>
+        ) : isToolCall ? (
+          <>
+            <div className="v2-approval__action" data-testid="approval-action">
+              {payload.toolName || t('approvalCard.toolCall.name')}
+            </div>
+            {needsToolCall ? (
+              <div className="v2-approval__state" data-testid="approval-tool-call-state">
+                {toolCallLoading
+                  ? t('approvalCard.toolCall.loading')
+                  : toolCallError
+                    ? t('approvalCard.toolCall.unavailable')
+                    : t('approvalCard.toolCall.loading')}
+              </div>
+            ) : (
+              <div className="v2-approval__pitch" data-testid="approval-tool-call-owner-only">
+                {t('approvalCard.toolCall.ownerOnly')}
+              </div>
+            )}
+          </>
         ) : action ? (
           <>
             <div className="v2-approval__action" data-testid="approval-action">

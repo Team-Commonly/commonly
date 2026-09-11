@@ -70,6 +70,9 @@ export interface V2Message {
     actionType?: string;
     summary?: string;
     params?: Record<string, unknown>;
+    // Safe shared metadata for tool-call cards; canonical arguments are
+    // delivered only by the owner-scoped pending-approval read.
+    toolName?: string;
     status?: string;
     decision?: string;
     ownerUserId?: string;

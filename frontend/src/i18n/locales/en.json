@@ -1257,8 +1257,10 @@
       "unknown": "Run \"{{actionType}}\" with: {{params}}"
     },
     "toolCall": {
+      "name": "Tool call",
       "loading": "Loading the exact tool call…",
-      "unavailable": "Approval details unavailable — refresh before deciding."
+      "unavailable": "Can't show what you'd approve — refresh before deciding.",
+      "ownerOnly": "Arguments are visible to the approval owner only."
     },
     "approve": "Approve",
     "decline": "Decline",

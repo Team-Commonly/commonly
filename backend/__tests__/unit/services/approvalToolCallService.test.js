@@ -65,6 +65,8 @@ beforeEach(() => {
 test('renders canonical args to the owner and to nobody else', () => {
   const pending = row();
   expect(JSON.stringify(service.buildCardPayload(pending))).not.toContain('approved text');
+  expect(service.buildCardPayload(pending).toolName).toBe(toolCall.tool);
+  expect((service.buildCardPayload(pending)).toolCall).toBeUndefined();
   expect(service.buildOwnerCardPayload(pending, OWNER).toolCall.canonicalArgs).toEqual(toolCall.canonicalArgs);
   expect(service.buildOwnerCardPayload(pending, OTHER).toolCall).toBeUndefined();
 });

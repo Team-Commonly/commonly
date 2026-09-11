@@ -182,10 +182,30 @@ describe('tool-call approval details stay owner-scoped', () => {
       status: 'flagged',
       ownerUserId: 'another-user',
       actionType: 'tool_call',
+      toolName: 'github.create_issue',
       summary: 'Comment on the issue',
     });
 
     expect(mockGet).not.toHaveBeenCalled();
     expect(screen.queryByTestId('approval-tool-call')).not.toBeInTheDocument();
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('github.create_issue');
+    expect(screen.getByTestId('approval-tool-call-owner-only')).toHaveTextContent(en.approvalCard.toolCall.ownerOnly);
+  });
+
+  test('a failed args fetch disables Approve while leaving Decline available', async () => {
+    mockGet.mockRejectedValue(new Error('offline'));
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-3',
+      status: 'flagged',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      toolName: 'github.create_issue',
+      summary: 'Create an issue',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call-state')).toHaveTextContent(/can't show what you'd approve/i));
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
   });
 });
