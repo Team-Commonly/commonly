@@ -17,7 +17,7 @@ Sam's review note on order is taken: **one first-party tool works end to end in 
 | 3 | Approval for parked calls — the existing `propose-action` consent path (`ApprovalAction`) as the pending-call envelope | Kai | 1–2 d | a person with authority consents to the exact call before the broker executes it, once; nothing new is invented for it |
 | 4 | The page — the Tools list with per-member rows first, then the grant aside and the trail; option A | Kai builds, UX Lead gates | 3–4 d | the page draws what the server enforces at the time it draws it, and only that |
 | 5 | The manifest parser — `.claude-plugin` / `.cursor-plugin` → Installable, with the validation in ADR-001 §1–§2 | Kai | 2–3 d | a third-party server becomes a catalogue row |
-| 6 | Per-person Connections — GitHub OAuth (and Gmail after it) as the credential a member grants | unsized | — | the "granted by {member}" row when the member is not the admin |
+| 6 | Per-person Connections — GitHub OAuth (and Gmail after it) as the credential a member grants; proposal in §10, HOLD for Sam's read | unsized | — | the "granted by {member}" row when the member is not the admin |
 | 7 | HTTP hook endpoint + CLI hooks-config writer | Kai | 5–7 d ingress/claim only | ADR-028 claims enforced at `PreToolUse`; separate lane, unchanged from 67387 |
 
 Pieces 1 → 2 → 3 are strictly ordered. **4 is not gated on the broker** (Sam 67413): per-member installs ship before it, so the Tools list ships first with per-member rows — "installed by you · your agents may use it" — from the catalogue's existing `InstallableInstallation` rows, and room-grant rows, the aside's grant, and the trail appear as 1–3 land. The page work can start the day this plan merges. 5 has no dependency on 1–4 and goes after them only because there is one builder; a second builder takes it in parallel. 6 and 7 are after the slice and not in this sprint.
@@ -172,7 +172,7 @@ The contract is ADR-001 §1–§2 as amended and Kai's 67390/67395/67399; nothin
 | "{agents} may use it" | pod membership | effective audience `audience ∩ pod.members` (piece 1) |
 | the trail, and the three counts | nothing records tool calls; `ChannelVerdict` records relay verdicts, which is the right *pattern* and the wrong table | `ToolCall` (piece 2) |
 | "what asks a person first" | `ApprovalAction` with two action types, neither for a tool; `DecisionRequest` is advisory by contract | `actionType: 'tool_call'` on `ApprovalAction` (piece 3) |
-| a member's own Gmail or GitHub as the credential | `Integration` rows for Telegram/Slack/Discord; `githubAppService` for the App | the App is the slice's Connection; per-person OAuth is piece 6 |
+| a member's own Gmail or GitHub as the credential | `Integration` rows for Telegram/Slack/Discord; `githubAppService` for the App; `connectorSecrets` holds Slack's bot token by reference | the App is the slice's Connection; per-person OAuth is piece 6 (§10) |
 | a third-party tool row | no parser | piece 5 |
 | the agent reaching the tool at all | ADR-008 `mcp[]` + the `MCP_PLACEHOLDERS` guard | exists; the broker URL is a placeholder-only entry, no adapter change |
 
@@ -180,4 +180,63 @@ The contract is ADR-001 §1–§2 as amended and Kai's 67390/67395/67399; nothin
 
 - **`write` above or below `write-with-confirm` in the attenuation order.** This plan says a child may *add* the confirm and never remove it, so `write-with-confirm` is narrower than `write`. If Sam reads "write mode" as a single axis where confirm is a separate flag, the record gains `confirmIrreversible: boolean` and the order question disappears. Wren's recommendation: keep it one field, narrower-with-confirm, because a form with one segment is what the mock draws.
 - **Budget unit.** Calls per window in v1, because the broker can count calls before it can price them. Cost becomes possible once the trail carries `durationMs` and a provider cost, and is not in this sprint.
-- **Who can mint a room grant on a Connection they do not own.** Nobody, in v1: `grantedBy` is the Connection's owner, full stop. An admin granting *their* App installation to a room is the slice; a member granting *their* Gmail is piece 6; an admin granting *someone else's* Gmail is refused.
+- **Who can mint a room grant on a Connection they do not own.** Nobody, in v1: `grantedBy` is the Connection's owner, full stop. An admin granting *their* App installation to a room is the slice; a member granting *their* Gmail is piece 6 (§10 keeps the rule); an admin granting *someone else's* Gmail is refused.
+
+## 10. Per-person Connections (piece 6) — proposal, HOLD for Sam's read
+
+**Status:** proposed, not scheduled, not sized. Direction from Sam (67645, 2026-09-11); the four security constraints from Vera (67647) are folded in where they bite, not listed separately. Nothing here changes pieces 1–5; every sentence below extends a thing the slice already has. **Sam reads this before anything in it is built.**
+
+Sam's boundary, which this section is built around: *a credential should reach only the rooms and agents it is granted to.* Grok's per-user model gives every agent a person runs all of that person's credentials; a key file the agent "can use but not read" still sits in the agent's environment. Here the credential never enters an environment at all — the broker holds it, the grant names who may cause it to be used, and the trail names who did.
+
+### 10.1 The record — no new model
+
+A per-person Connection is an `Integration` row at `scope: 'user'` (ADR-025 D8), owned by `createdBy`, with no `podId`:
+
+```ts
+{ type: 'github-user',            // 'gmail' after it; the App row stays 'github-app'
+  scope: 'user', createdBy: <the person>, status: 'connected' | 'disconnected' | 'error',
+  config: {
+    intake: 'oauth' | 'token',    // how it came in (10.2); the App path keeps its own row type
+    providerLogin: 'octocat',     // whose it is, from the provider at intake, shown on the page
+    owner, repo,                  // one Connection is one credential on one repo, like the App row
+    scopes: string[],             // what the provider said it can do, recorded at intake (10.2)
+    expiresAt: Date | null,       // the provider's, or null for a token that does not expire
+    credentialRef, refreshTokenRef, // opaque `connectorSecrets` references (10.3)
+    credentialHint: '…3f9a' } }   // the only thing about the material any API returns
+```
+
+Same model, same owner field, same `owner`/`repo` config the slice's App row carries, so the three places that read a Connection extend by **type**, not by table: the mint's owner check (`connectionOwnerId`, `routes/grants.ts`), the broker's `resolveConnection` (`toolBrokerService.ts`), and the catalogue's `connections[]` projection (§6). §3's line "no new Connection model until piece 6 needs one" holds: it does not need one. A person can hold several (one per repo); the Add form lists theirs, as it lists the admin's App rows today.
+
+### 10.2 Intake — three paths, in order of preference
+
+1. **OAuth, where the provider has it.** For GitHub this is the *GitHub App's user authorization* (user-to-server tokens: 8-hour access token, 6-month refresh token, capability = the App's permissions ∩ the person's own access on the repo), not a new OAuth App — the App already exists and its permission set is already the ceiling the broker's tools were written against. Route family `GET /api/integrations/connect/:provider/start` → provider → `GET /api/integrations/connect/:provider/callback`, `auth` on start, a single-use state nonce bound to the caller's user id with a TTL (the shape Slack's connect flow keeps in `config.oauthStateNonce`, `routes/installables.ts`), rate-limited like `oauthLimiter`. **It does not reuse the login OAuth app** (`/api/auth/oauth/github`, `GITHUB_OAUTH_CLIENT_ID`): that app authenticates people and stays scoped to `read:user user:email`; widening it would hand every login the tool scope. Gmail follows the same route family with a Google client once the consent-screen review §2 named is done, `gmail.readonly` for `read`, `gmail.send` added for `write`. Two new secrets (`GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`) reach the backend the way `githubAppService` documents for `GITHUB_APP_PRIVATE_KEY` (GCP SM, through the `api-keys` ExternalSecret), and "Request user authorization during installation" is switched on at the App.
+2. **App install, where the scope is org-wide.** This is the slice, unchanged: `POST /api/integrations/github-app`, admin-only, the App installation as the Connection, the admin as granter (§3). Piece 6 does not touch it. A member who wants their *own* scope in a room uses path 1; an admin who wants the org's uses this one; the page shows which kind a row is.
+3. **Pasted token — the fallback, and never the default.** The form's primary control is "Connect GitHub" (path 1); the paste field sits under a disclosure with a link to create a **fine-grained** token with an expiry. At intake the server does three things with the pasted value before it stores anything, and refuses on any failure with a reason code and no stored material: `GET /user` — **whose** it is (`providerLogin`); `GET /repos/{owner}/{repo}` — that it can reach the chosen repo, and the `permissions` object it returns is what gets recorded as `scopes` (a classic token adds its `X-OAuth-Scopes` header; a fine-grained token has no scope header, so repo permissions are the record for both); the `github-authentication-token-expiration` header — `expiresAt`, and a token that does not expire is accepted with `expiresAt: null` and drawn on the page as "does not expire", which Vera's constraint reads as: prefer expiring tokens, do not forbid the other kind in v1. The paste field is write-only from the first save, the pattern #1674 established.
+
+### 10.3 Where it lives — behind a reference, opened only on the broker path
+
+`connectorSecrets` is reused as it is (AES-256-GCM, key ring, `rewrap-connector-secrets.ts`; ADR-025 D6, as Slack's `botTokenRef` already uses it): the access token goes in with `connectorSecrets.put(integrationId, provider, material)` and the row stores the returned opaque reference at `config.credentialRef`; an OAuth refresh token goes behind `refreshTokenRef` the same way. Both keys join `INTEGRATION_SECRET_CONFIG_KEYS` (`models/integrationPublicConfig.ts`), so `toPublicIntegrationConfig` strips them from every response the way #1673 made it strip `accessToken` and `botTokenRef`; `credentialHint` (last four characters, computed once at intake) is the only trace and is what the row shows after saving.
+
+The material is decrypted in exactly one place: the broker's `resolveConnection` grows a `credentialFor(connection)` that returns `{ token, expiresAt }` — the same shape `githubAppService.getInstallationToken` returns for the App row — and the executing tool never sees which kind it got. On an OAuth Connection whose access token is past `expiresAt`, `credentialFor` refreshes, `put`s the new pair, `revoke`s the old references, and updates the row, in that order, so a failed refresh leaves the old working pair in place; a refresh the provider refuses sets `status: 'error'` and the next call is refused `connection_mismatch`, as a disconnected App row is today. No agent environment holds anything: the ADR-008 `mcp[]` entry stays the broker URL placeholder, and the agent's only credential stays `${COMMONLY_AGENT_TOKEN}` (§4). Two tests extend rather than appear: `never returns the credential` (§4) runs over a `github-user` Connection, and `no integration response carries a credential` (#1673) gains a row with both references set.
+
+### 10.4 How a grant scopes it — the record does not change
+
+A grant on a per-person Connection is the same `RoomGrant` as on the App row: `connectionId` names the person's row; `grantedBy` is its `createdBy` because the mint takes the granter from the Connection and never from the body (`routes/grants.ts`, plan §9 — Vera's fourth constraint is the rule that already exists, restated for the new row type); `audience` is the room's members or one named seat, and the effective audience stays `audience ∩ pod.members`, so the credential reaches the rooms and agents it was granted to and no others; tiers, attenuation, budget, expiry and the confirmation floor are pieces 1–3 unchanged. Two things are added at mint: the grant's `writeMode` may not exceed what `scopes` recorded — a `write` grant on a token whose repo permission is read-only is refused `400 insufficient_credential_scope` at mint rather than failing on the first call — and a grant's `expiresAt` is capped at the Connection's `expiresAt` when there is one, the same way a child's expiry is capped at its parent's. The Tools page row this produces is the one §1's table names: "granted to {room} by {member}", the member not being the admin; Revoke renders for the granter only (the 2026-09-11 ruling).
+
+### 10.5 Removing a Connection — grants first, material second, provider third
+
+Today `DELETE /api/integrations/:id` (`routes/integrations.ts`) deletes the row and nothing else; a grant on a deleted row is refused by the broker (`connection_mismatch`) but stays live on the page and in the record. Piece 6 makes removal a sequence, and applies it to the App row too, since the gap is the same there:
+
+1. **Grants.** A `RoomGrant.revokeByConnection(connectionId)` static finds every root grant on the row and runs `revokeCascade` on each, so every child dies at the same boundary #1661 built for a room revoke; one `revokedAt`.
+2. **Row.** `status: 'disconnected'`, `revokedAt` — the broker refuses from this instant even if step 3 is slow.
+3. **Material.** `connectorSecrets.revoke` on both references.
+4. **Provider.** GitHub App user tokens are revoked with `DELETE /applications/{client_id}/grant` (the whole authorization, so the refresh token dies with it); Google with the token-revocation endpoint. A pasted token has no revocation API, so the removal response carries a `revokeAt` URL for the person and the page shows it once.
+5. **Delete** the row.
+
+Named tests: `removing a Connection revokes every grant on it`, `a removed Connection's secret is gone by reference`, `a removed Connection is revoked at the provider where it can be`.
+
+### 10.6 Open, for Sam's read
+
+- **The granter leaves the room.** Options: the grant survives to its expiry (it always has one), or it is revoked on leave. Wren's recommendation: revoke on leave, because the person who could revoke it can no longer see the trail that would tell them to.
+- **A token that does not expire.** Accepted and marked in v1 (10.2), or refused outright. Recommendation: accept and mark; refusing pushes people to the classic PAT with an expiry they set to a year.
+- **Gmail's place.** After GitHub proves 10.2–10.5 on one real person's Connection, not in parallel; the Google consent-screen review is calendar time no sequencing shortens.
