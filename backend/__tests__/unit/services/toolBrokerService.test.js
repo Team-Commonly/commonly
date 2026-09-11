@@ -144,10 +144,10 @@ describe('tool broker guard rails', () => {
   });
 
   it('writes one trail row with token identity when the body names another agent', async () => {
-    const grant = seatGrant({ tools: ['github.create_issue'], writeMode: 'write' });
+    const grant = seatGrant({ tools: ['github.close_issue'], writeMode: 'write' });
     mockRoomGrant.findOne.mockResolvedValue(grant);
     await callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.create_issue',
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue',
       args: { title: 'x', agentUserId: 'agent-b' },
     }).catch(() => {});
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -233,5 +233,50 @@ describe('tool broker guard rails', () => {
     expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval', reason: 'approval_required' }));
     expect(mockGithub.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('parks an irreversible tool under a write grant', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.create_issue'], writeMode: 'write', budget: { calls: 1 },
+    }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.create_issue', args: { title: 'needs approval' },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'pending_approval', reason: 'approval_required',
+    }));
+    expect(mockGithub.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('a write grant runs a reversible write unattended', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.close_issue'], writeMode: 'write',
+    }));
+    mockGithub.closeIssue.mockResolvedValue({
+      number: 7, title: 'closed', html_url: 'https://github.com/Team-Commonly/commonly/issues/7',
+      state: 'closed',
+    });
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue', args: { issueNumber: 7 },
+    })).resolves.toEqual(expect.objectContaining({
+      result: expect.objectContaining({ number: 7, title: 'closed' }),
+    }));
+    expect(mockGithub.closeIssue).toHaveBeenCalledTimes(1);
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+  });
+
+  it('parks a reversible write under a write-with-confirm grant', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.close_issue'], writeMode: 'write-with-confirm', budget: { calls: 1 },
+    }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue', args: { issueNumber: 7 },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'pending_approval', reason: 'approval_required',
+    }));
+    expect(mockGithub.closeIssue).not.toHaveBeenCalled();
   });
 });
