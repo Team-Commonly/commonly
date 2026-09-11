@@ -423,11 +423,19 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const { agentsPerUser } = HostedRuntime.hostedCaps();
       const used = await HostedRuntime.countHostedAgentsForUser(userId);
       if (used >= agentsPerUser) {
+        let holders: any[] = [];
+        try {
+          holders = await HostedRuntime.listHostedInstallationsForUser(userId);
+        } catch (error: any) {
+          // Keep the cap response authoritative if diagnostics are unavailable.
+          console.warn('[registry/install] cap holder lookup failed:', error?.message || error);
+        }
         return res.status(403).json({
           code: 'hosted_cap_reached',
           message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
           used,
           cap: agentsPerUser,
+          holders,
         });
       }
     }

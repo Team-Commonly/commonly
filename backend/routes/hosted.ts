@@ -163,11 +163,20 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
     const { agentsPerUser } = hostedRuntime.hostedCaps();
     const owned = await hostedRuntime.countHostedAgentsForUser(userId);
     if (owned > agentsPerUser) {
+      let holders: any[] = [];
+      try {
+        holders = await hostedRuntime.listHostedInstallationsForUser(userId);
+      } catch (error: any) {
+        // The cap is still authoritative if the diagnostic lookup is down;
+        // omit holder metadata rather than turning a useful 403 into a 500.
+        console.warn('[hosted] cap holder lookup failed:', error?.message || error);
+      }
       return res.status(403).json({
         code: 'hosted_cap_reached',
         message: `Hosted agents are capped at ${agentsPerUser} per user in beta`,
         used: owned,
         cap: agentsPerUser,
+        holders,
       });
     }
 
