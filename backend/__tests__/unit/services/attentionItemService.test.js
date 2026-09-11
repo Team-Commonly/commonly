@@ -348,6 +348,15 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('an action proposal whose owner has left the pod projects nothing — no dead row for nobody (#1652)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [{ userId: 'sam' }] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+
+    await AttentionItemService.recordActionApproval({ _id: 'appr-2', podId: 'pod-1', ownerUserId: 'gone', agentName: 'scout', summary: 'May I?' }, 'Scout');
+
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('materializes a blocked board row once for each current human recipient', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
     mockUserFind.mockReturnValue(chain([
