@@ -55,6 +55,7 @@ export const launchdPlist = ({ nodePath, cliPath, home = homedir() }) => `<?xml 
 \t\t<string>${xmlEscape(cliPath)}</string>
 \t\t<string>daemon</string>
 \t\t<string>run</string>
+\t\t<string>--foreground</string>
 \t</array>
 \t<key>RunAtLoad</key>
 \t<true/>
@@ -73,7 +74,7 @@ Description=Commonly local agent daemon (ADR-026)
 After=network-online.target
 
 [Service]
-ExecStart=${nodePath} ${cliPath} daemon run
+ExecStart=${nodePath} ${cliPath} daemon run --foreground
 Restart=always
 RestartSec=5
 Environment=PATH=${childPath(nodePath)}
@@ -90,11 +91,18 @@ export const installDaemonService = async ({
   writeFile,
   mkdirp,
   execCmd, // async (argv: string[]) => void — throws on failure
+  chmod = () => {},
+  ensureFile,
   log = () => {},
 }) => {
   const target = servicePaths(platform, home);
   mkdirp(dirname(target.file));
   mkdirp(dirname(daemonLogPath(home)));
+  chmod(dirname(daemonLogPath(home)), 0o700);
+  if (ensureFile) {
+    ensureFile(daemonLogPath(home));
+    chmod(daemonLogPath(home), 0o600);
+  }
 
   if (target.kind === 'launchd') {
     writeFile(target.file, launchdPlist({ nodePath, cliPath, home }));
@@ -133,3 +141,33 @@ export const uninstallDaemonService = async ({
   log(`Removed ${target.kind} service (${target.file}).`);
   return target;
 };
+
+const serviceAction = async ({
+  action,
+  platform = process.platform,
+  home = homedir(),
+  execCmd,
+}) => {
+  const target = servicePaths(platform, home);
+  if (target.kind === 'launchd') {
+    if (action === 'start') {
+      // `install` already loads the plist. A second `start` should be
+      // idempotent rather than failing with "already loaded".
+      await execCmd(['launchctl', 'load', '-w', target.file]).catch(async () => {
+        await execCmd(['launchctl', 'start', LAUNCHD_LABEL]);
+      });
+    }
+    else if (action === 'stop') await execCmd(['launchctl', 'unload', '-w', target.file]);
+    else {
+      await execCmd(['launchctl', 'unload', '-w', target.file]).catch(() => {});
+      await execCmd(['launchctl', 'load', '-w', target.file]);
+    }
+  } else {
+    await execCmd(['systemctl', '--user', action, SYSTEMD_UNIT]);
+  }
+  return target;
+};
+
+export const startDaemonService = (options) => serviceAction({ ...options, action: 'start' });
+export const stopDaemonService = (options) => serviceAction({ ...options, action: 'stop' });
+export const restartDaemonService = (options) => serviceAction({ ...options, action: 'restart' });

@@ -395,27 +395,46 @@ export const setWakeOnMessage = async ({ client, record, enabled }) => {
 export const updateAgentConfiguration = async ({
   client,
   record,
+  adapter = null,
   model = null,
   effort = null,
   envPath = null,
   parseEnv = parseEnvironmentFile,
+  adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
   if (!record?.podId || !record?.agentName) {
     throw new Error('token record is missing podId/agentName — re-attach the agent');
   }
   const instanceId = record.instanceId || 'default';
   const runtime = {};
+  const environmentRuntime = {};
+  if (adapter !== null && adapter !== undefined) {
+    const normalizedAdapter = String(adapter).trim().toLowerCase();
+    const knownAdapters = adapterRegistry.listAdapterNames();
+    const selectedAdapter = adapterRegistry.getAdapter(normalizedAdapter);
+    if (!selectedAdapter || !knownAdapters.includes(normalizedAdapter)) {
+      throw new Error(
+        `Unknown adapter '${normalizedAdapter}'. Known: ${knownAdapters.join(', ')}`,
+      );
+    }
+    if (!await selectedAdapter.detect()) {
+      throw new Error(`Adapter '${normalizedAdapter}' not found on PATH. Install it and retry.`);
+    }
+    runtime.adapter = normalizedAdapter;
+  }
   if (model !== null && model !== undefined) {
     const normalizedModel = String(model);
     const validation = validateEnvironmentSpec({ model: normalizedModel });
     if (!validation.ok) throw new Error(validation.errors.join('; '));
     runtime.model = normalizedModel;
+    environmentRuntime.model = normalizedModel;
   }
   if (effort !== null && effort !== undefined) {
     const normalizedEffort = String(effort);
     const validation = validateEnvironmentSpec({ effort: normalizedEffort });
     if (!validation.ok) throw new Error(validation.errors.join('; '));
     runtime.effort = normalizedEffort;
+    environmentRuntime.effort = normalizedEffort;
   }
   const config = {};
   if (Object.keys(runtime).length) config.runtime = runtime;
@@ -429,15 +448,15 @@ export const updateAgentConfiguration = async ({
   // an ADR-008 environment, a model/effort flag must update that declaration
   // too; otherwise the daemon would correctly prefer the old explicit value
   // over the new legacy runtime overlay.
-  if (environment && Object.keys(runtime).length) {
-    environment = { ...environment, ...runtime };
+  if (environment && Object.keys(environmentRuntime).length) {
+    environment = { ...environment, ...environmentRuntime };
   }
-  if (!environment && Object.keys(runtime).length) {
-    environment = { ...runtime };
+  if (!environment && Object.keys(environmentRuntime).length) {
+    environment = { ...environmentRuntime };
   }
   if (environment) config.environment = environment;
   if (!Object.keys(config).length) {
-    throw new Error('provide at least one of --model, --effort, or --env');
+    throw new Error('provide at least one of --adapter, --model, --effort, or --env');
   }
 
   await client.patch(
@@ -449,6 +468,7 @@ export const updateAgentConfiguration = async ({
     podId: record.podId,
     instanceId,
     changed: Object.keys(config),
+    ...(runtime.adapter ? { adapter: runtime.adapter } : {}),
     ...(environment ? { environment } : {}),
   };
 };
@@ -2077,6 +2097,7 @@ Examples:
 
   # List installed agents
   $ commonly agent list
+  $ commonly agent config my-claude --adapter claude --model gpt-5.4 --effort high
   $ commonly agent config my-claude --model gpt-5.4 --effort high
 
 Docs:
@@ -2453,6 +2474,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
+      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -2704,6 +2726,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
   agent
     .command('config <name>')
     .description('Update an attached agent\'s server-side runtime configuration')
+    .option('--adapter <name>', 'Local runtime adapter (must be installed on this machine)')
     .option('--model <id>', 'Model identifier to use on the next daemon restart')
     .option('--effort <level>', 'Reasoning effort (low|medium|high|xhigh|max)')
     .option('--env <path>', 'Replace the ADR-008 environment spec with this JSON file')
@@ -2722,12 +2745,17 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         const result = await updateAgentConfiguration({
           client,
           record,
+          adapter: opts.adapter,
           model: opts.model,
           effort: opts.effort,
           envPath: opts.env ? pathResolve(opts.env) : null,
         });
-        if (result.environment) {
-          saveAgentToken(name, { ...record, environment: result.environment });
+        if (result.environment || result.adapter) {
+          saveAgentToken(name, {
+            ...record,
+            ...(result.environment ? { environment: result.environment } : {}),
+            ...(result.adapter ? { adapter: result.adapter } : {}),
+          });
         }
         console.log(`✓ Updated ${result.agentName} in pod ${result.podId} (${result.changed.join(', ')})`);
         console.log('  The daemon will apply the change on its next poll; a standalone agent run needs a restart.');
