@@ -29,6 +29,15 @@ jest.mock('../../../models/ToolCall', () => ({
   listForGrant: jest.fn(),
   countsForGrant: jest.fn(),
 }));
+// pods.ts ends with `router.get('/:type/:id', getPodById)`, which would answer
+// `/:podId/grants` as type=<podId>, id='grants' if it were mounted first
+// (Wren 67721 / Vera 67727). The controller is stubbed so that shadowing shows.
+jest.mock('../../../controllers/podController', () => ({
+  getAllPods: jest.fn((req, res) => res.status(500).json({ shadowed: 'getAllPods' })),
+  getPodsByType: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodsByType' })),
+  getPodById: jest.fn((req, res) => res.status(500).json({ shadowed: 'getPodById', params: req.params })),
+  createPod: jest.fn(), joinPod: jest.fn(), leavePod: jest.fn(), removeMember: jest.fn(), deletePod: jest.fn(),
+}));
 jest.mock('../../../services/dmService', () => ({
   canViewPod: jest.fn(async (userId, pod) => (pod.members || []).map(String).includes(String(userId))),
 }));
@@ -83,7 +92,9 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/grants', grants);
+  // Same order as server.ts: the grants list before the pod routes' catch-all.
   app.use('/api/pods', grants.podGrantsRouter);
+  app.use('/api/pods', require('../../../routes/pods'));
 });
 
 afterAll(async () => {
@@ -106,6 +117,14 @@ beforeEach(async () => {
 });
 
 describe('GET /api/pods/:podId/grants', () => {
+  test('GET /api/pods/:podId/grants is reachable with the pod routes mounted', async () => {
+    await RoomGrant.create(grant());
+    const res = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
+    expect(res.status).toBe(200);
+    expect(res.body.shadowed).toBeUndefined();
+    expect(res.body.grants).toHaveLength(1);
+  });
+
   test('the pod grants list refuses a non-member', async () => {
     await RoomGrant.create(grant());
     const stranger = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', STRANGER);
