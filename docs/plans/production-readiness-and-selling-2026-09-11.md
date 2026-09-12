@@ -1,6 +1,6 @@
 # Production readiness and readiness to sell — the plan
 
-**Status:** Proposed 2026-09-11 (Sam asked for "a real plan for the production usability and readiness for selling"). Companion to ADR-011 (shell-first), ADR-023 (hosted default), ADR-025/026 (connectors, daemon), `retention-traction-onboarding-2026-07.md` (the funnel half). This document is the operations-and-selling half: what has to be true before we tell a stranger with a credit card to rely on us.
+**Status:** Accepted 2026-09-12 (decisions in §5 made by delegation; Sam re-opens any with one line) (Sam asked for "a real plan for the production usability and readiness for selling"). Companion to ADR-011 (shell-first), ADR-023 (hosted default), ADR-025/026 (connectors, daemon), `retention-traction-onboarding-2026-07.md` (the funnel half). This document is the operations-and-selling half: what has to be true before we tell a stranger with a credit card to rely on us.
 
 **Owner:** Sam. **Lanes named below:** Connectors (Wren/Vera/Kai/Engineering Wave), Sharpen (kernel + deploys), GTM (Juno + GTM session). Nothing here is assigned to a seat without a pod post naming the owner, the piece, and the gate.
 
@@ -118,15 +118,15 @@ Distribution (the ~1.6 signups/day) is the GTM plan's problem, not this document
 
 ---
 
-## 5. What Sam decides
+## 5. Decisions — made 2026-09-12 by delegation ("decide for me")
 
-1. D2/D3: the free-vs-Pro split of hosted agents and turns, and when beta ends.
-2. B4: read and approve the ToS and Privacy text before it ships.
-3. A4: where the fleet lives (a small VM vs the cluster) and the seat-by-seat cutover window.
-4. E5: which of the four paying users to ask for a reference.
-5. Whether M0's alerting goes to Sam's phone alone or also to a fleet seat that can act (the Sharpen commander exists).
+Sam delegated these on 2026-09-12; each is the reversible option, and each can be re-opened by Sam with one line in the connector pod.
 
----
+1. **D2 free-vs-Pro hosted split:** free = 1 hosted agent, 200 turns/day (today's constants, now the free row of the pricing table); Pro = 3 hosted agents, 1,000 turns/day, unlimited history, Community listing. The constants read from one table that the pricing page copy is generated from, so they cannot disagree. **D3 beta end:** a trigger, not a date — the "Free in beta" badge comes off when M0 and M1 exit tests both pass.
+2. **B4 ToS/Privacy:** GTM drafts both from a standard SaaS template naming the actual data flows (tokens, messages, retention windows, third-party model providers); the delegate reviews for accuracy against the code; **Sam still reads the final text once** — a legal document under the company's name is the one thing this delegation does not cover.
+3. **A4 fleet location:** a small always-on VM (2 vCPU / 8 GB class) as the daemon machine, not the cluster (seats need local CLIs and the operator's model logins; the cluster's spot pool can reclaim with 30 s notice). Cutover seat by seat, never in bulk, because the mint-rotate path kills a live seat; the operator laptop stays registered as a second machine.
+4. **E5 references:** ask all four paying users, not a subset — the ask is cheap and the answer is data.
+5. **A1 who alerts page:** Sam's phone AND the Sharpen commander seat's pod, so a fleet seat can act on the ones a person would sleep through; anything unresolved after 15 minutes re-pages Sam.
 
 ## Appendix — the measurement (re-run weekly; read-only)
 
