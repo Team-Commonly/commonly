@@ -172,20 +172,16 @@ Socket Mode path and are not read by this design.
   marks retries with `X-Slack-Retry-Num`; the events route acknowledges immediately and processes
   after the response, and dedupes on `event_id` **in a shared store, not in process memory**
   (Vera, 2026-09-04: a rollout runs two backend processes for ~40 s, and the scheduler's own
-  comment says so — a per-process set lets the retry land on the other replica). The store is a
-  `SlackEventReceipt { eventId (unique), teamId, state: 'processing' | 'done', claimedAt, receivedAt }`
-  collection with a TTL index of 24 h, and **the receipt is a claim, not a receipt of completion**
-  (Vera, 2026-09-04): the handler inserts `processing` before it relays and marks `done` after the
-  relay lands. A duplicate-key on insert is not "already handled" by itself: if the existing row is
-  `done`, ack and stop; if it is `processing` and younger than `EVENT_CLAIM_TTL_MS` (10 s), another
-  replica is on it — ack and stop; if it is `processing` and older than that, the first worker died
-  mid-relay, so **take it over with a CAS** (`findOneAndUpdate({ eventId, state: 'processing',
-  claimedAt: { $lte: staleBefore } }, { $set: { claimedAt: now } })`) and relay — exactly the lease
-  shape #1527 uses for install claims. A crash therefore costs at most one duplicate relay, never a
-  silent loss, which is the direction Slack's own retries assume (at-least-once, dedupe at the
-  consumer). Dedupe is at the event, before relay — a unique index on
-  `config.messageBuffer.externalId` is not enough. Telegram has no equivalent; this is new
-  verification surface.
+  comment says so — a per-process set lets the retry land on the other replica). The shared
+  `WebhookDelivery { provider, deliveryId, expiresAt }` collection carries a 24 h TTL and a
+  compound unique key; Slack stores `deliveryId` as `team_id:event_id`. The row is a claim, not a
+  receipt of completion: it is inserted before relay, and a duplicate key is acknowledged without
+  running the handler. If processing fails before the provider-side write, the claim is released so
+  Slack can retry; a successful or intentionally dropped event remains until TTL expiry. This is
+  the same claim-before-run contract as Telegram and works across backend replicas. Dedupe is at
+  the event, before relay — a unique index on `config.messageBuffer.externalId` is not enough.
+  Telegram keeps its own `update_id` namespace; this shared model is the Slack verification
+  surface added by B2 (see `docs/plans/webhook-hardening-2026-09-12.md`).
 
 ### 2d. The #1527 invariants, checked one by one
 
@@ -323,12 +319,11 @@ be `im` for inbound relay, mirroring #1289.
    no inbound was ever authored as the victim.
 4. Inbound `message.im` for the bound team+channel → one pod post authored as `linkedUserId`;
    `channel_type: 'channel'` → dropped; unsigned or stale-timestamp request → 401; a retried event
-   (same `event_id`, `X-Slack-Retry-Num: 1`) after a `done` receipt → no second post, **asserted
-   through a second process or a second app instance sharing the DB, not the same handler** — the
-   receipt row is what dedupes, and a fresh `SlackEventReceipt` unique index is exercised against
-   real Mongo. A retry against a `processing` receipt younger than 10 s → no second post; against
-   one older than 10 s (first worker died) → the CAS takes it over and the relay runs once more —
-   one duplicate, never a loss; two workers racing the takeover → exactly one wins the CAS.
+   (same `event_id`, `X-Slack-Retry-Num: 1`) after a successful or intentionally dropped event →
+   no second post, **asserted through a second process or a second app instance sharing the DB, not
+   the same handler** — the shared `WebhookDelivery` unique index is what dedupes, and the claim is
+   exercised against real Mongo. A retry after a pre-write processing failure → the released claim
+   allows one retry.
 4b. **Key ring.** Secret written under `k1`; ring rotated to `k2` and re-wrapped; `k1` removed;
    `get` returns the material. `k2` removed from the ring: `get` throws
    `ConnectorSecretKeyMissing`, the bridge logs integration + team, the reconciler marks the
