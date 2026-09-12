@@ -589,8 +589,8 @@ const machines = {
     await daemonBearer('MACHINE_STRANGER', stranger, 'machine-stranger-1');
     const Gateway = model.Gateway();
     await Gateway.create({ name: 'Local Gateway', slug: 'default', mode: 'local', createdBy: admin });
-    // PATCH /api/gateways/:id writes its body verbatim and reads
-    // metadata.gatewayToken from it, so a row can carry the gateway token.
+    // Rows written before the route stopped storing it can still carry
+    // metadata.gatewayToken; no read may return it.
     await Gateway.create({
       name: 'Leak Gateway', slug: 'leak-gw', mode: 'k8s', baseUrl: 'http://gw.example.test', createdBy: admin,
       metadata: { namespace: 'ns', gatewayToken: s('GATEWAY_METADATA_GATEWAYTOKEN') },
