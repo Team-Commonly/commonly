@@ -32,6 +32,7 @@ const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -57,21 +58,38 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // before auth, none flagged; 9 with it after, 6 flagged — including every
 // `agentRuntimeAuth, phase4RateLimit` route in this file.
 //
-// The routes below are therefore genuinely under-protected, not
-// false-positived. The fix is to move phase4RateLimit ahead of
-// agentRuntimeAuth on each.
+// Those routes were therefore genuinely under-protected, not
+// false-positived. Every phase4RateLimit registration in this file now runs
+// the limiter FIRST (readiness plan §3B row B3, first baseline shrink,
+// 2026-09-12), and `__tests__/unit/routes/routeRateLimitGuard.test.js` fails
+// the next registration that puts it behind auth.
 //
-// That is safe, and agentRateLimitKeyGenerator was already built for it:
-// its first branch reads `req.agentTokenHash` (set by agentRuntimeAuth, so
-// post-auth only), but it falls through to a sha256 of the Authorization /
-// x-commonly-agent-token header, which is present before any middleware
-// runs. Running the limiter first just takes the header branch — same
-// per-caller isolation, different key prefix. No key-generator change needed.
-//
-// Not done in this PR only because it is 8 route registrations in a
-// different subsystem from the one this PR fixes, and it deserves its own
-// diff. It is specified, not blocked.
-const phase4RateLimit = rateLimit({
+// Pre-auth, agentRateLimitKeyGenerator has no `req.agentTokenHash` yet (that
+// is set by agentRuntimeAuth), so it keys on a sha256 of the Authorization /
+// x-commonly-agent-token header. That isolates callers, but a caller who
+// rotates the header gets a fresh bucket every request (Vera measured it on
+// #1689: 300 fixed-header requests reached auth 120 times, 300 rotating
+// headers reached auth 300 times — the same class as the B2 webhook finding).
+// So the stack is two tiers, IP first: a coarse per-IP limiter keyed by the
+// Cloudflare-aware generator (cf-connecting-ip, then req.ip; IPv6 collapsed
+// to its /64) bounds the Mongo lookups in agentRuntimeAuth regardless of what
+// the header says, and the per-token tier behind it keeps one seat from
+// starving its neighbours. Same two-tier shape as the webhook routes
+// (IP 3000/60s, then account). `phase4RateLimit` is the whole stack;
+// registering it registers both limiters, in that order.
+const phase4IpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 3000 requests per 60s per IP',
+    code: 'rate_limited',
+  }),
+});
+
+const phase4AgentRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -82,6 +100,8 @@ const phase4RateLimit = rateLimit({
     code: 'rate_limited',
   }),
 });
+
+const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit];
 
 // Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
 // that accept BOTH human JWTs and agent runtime tokens use this — the token
@@ -304,7 +324,7 @@ const resolveClaimIdentity = (req: any) => ({
   ),
 });
 
-router.post('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     const podId = String(req.body?.podId || '');
@@ -350,7 +370,7 @@ router.post('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, asy
   }
 });
 
-router.delete('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
@@ -727,7 +747,7 @@ router.post('/dm', auth, async (req: any, res: any) => {
  * Request: { agentName, instanceId?, podId? }
  * Response: { room: Pod }
  */
-router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/room', phase4RateLimit, dualAuth, async (req: any, res: any) => {
   try {
     // Agent-initiated path — caller authorized purely by their runtime token.
     // `agentRuntimeAuth` populates `req.agentUser` for User-row tokens
@@ -934,7 +954,7 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
  * Request: { target: { agentName, instanceId? } | { userId } | { alias }, originPodId? }
  * Response: { room, autoJoined: bool }
  */
-router.post('/agent-dm', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     // Caller is the agent owning the runtime token.
     let callerAgentUser = req.agentUser;
@@ -1880,7 +1900,7 @@ router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) =>
 // agentTypingService prevents stuck indicators on dropped sessions.
 //
 // Body: { action: 'start' | 'stop' }  (defaults to 'start')
-router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/pods/:podId/typing', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1935,7 +1955,7 @@ router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req
   }
 });
 
-router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -2030,15 +2050,14 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
 // presence, the decider derivation and its refusal) stays in the service.
 // A second copy of any of those in a route handler is how the two surfaces
 // drift apart, and this one is a consent surface.
-// Limiter BEFORE auth, deliberately diverging from the sibling mutating
-// routes. The plan specified "agentRuntimeAuth + phase4RateLimit (sibling
+// Limiter BEFORE auth. When this route landed it deliberately diverged from
+// the sibling mutating routes: the plan specified "agentRuntimeAuth + phase4RateLimit (sibling
 // convention)" — but the convention is the flagged one, as the note at the
 // top of this file documents: agentRuntimeAuth does a Mongo lookup, so a
 // limiter placed after it leaves that lookup unprotected, and CodeQL flags it
 // as genuinely under-protected rather than a false positive. It flagged this
-// route too, on its first run. The existing 8 routes are specified to move
-// and simply have not yet; a NEW route has no migration cost, so it starts on
-// the correct side rather than joining the queue of ones to fix.
+// route too, on its first run. The sibling routes have since moved to the
+// same order (B3 first shrink, 2026-09-12); this one started there.
 router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -2461,7 +2480,7 @@ router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
  * - `byteSize` and `updatedAt` are always server-stamped via
  *   `stampSectionsForWrite`; client-supplied values are discarded.
  */
-router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.put('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -2591,7 +2610,7 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
  * `byteSize` and `updatedAt` are server-stamped. `schemaVersion` auto-set to 2.
  * v1 `content` is mirrored from `long_term.content` (same rule as PUT).
  */
-router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -3561,8 +3580,8 @@ router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth
  */
 router.get(
   '/memory/shared/:agentName/:instanceId?',
-  agentRuntimeAuth,
   phase4RateLimit,
+  agentRuntimeAuth,
   async (req: any, res: any) => {
     try {
       const targetAgent = String(req.params.agentName || '').trim().toLowerCase();
@@ -3650,7 +3669,7 @@ router.get(
  * podId). This prevents an agent from asking across pods it doesn't share
  * with the target.
  */
-router.post('/pods/:podId/ask', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/pods/:podId/ask', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const podId = String(req.params.podId || '').trim();
     if (!podId) return res.status(400).json({ message: 'podId is required' });
@@ -3785,7 +3804,7 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
  * Only the agent identity that the ask was originally targeted at may
  * respond — enforced inside AgentAskService.respondToAsk.
  */
-router.post('/asks/:requestId/respond', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const requestId = String(req.params.requestId || '').trim();
     if (!requestId) return res.status(400).json({ message: 'requestId is required' });
