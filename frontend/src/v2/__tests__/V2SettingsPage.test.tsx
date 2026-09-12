@@ -120,9 +120,10 @@ describe('V2SettingsPage', () => {
     renderSettings();
 
     expect(await screen.findByText(/shown once, when generated/i)).toBeInTheDocument();
-    expect(screen.getByText(/ending in cret/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Show' })).toBeDisabled();
+    expect(screen.getByText(/ends in cret/i)).toBeInTheDocument();
+    expect(screen.getByText('Created 4 Sep 2026')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show' })).not.toBeInTheDocument();
     expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();
   });
 

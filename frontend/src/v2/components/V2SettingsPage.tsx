@@ -15,6 +15,13 @@ type TokenStatus = {
   last4?: string | null;
 };
 
+const formatTokenCreatedAt = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  return `Created ${date.getDate()} ${month} ${date.getFullYear()}`;
+};
+
 const LANGUAGE_OPTIONS = [
   { code: 'en' as const, label: 'English' },
   { code: 'zh-CN' as const, label: '中文' },
@@ -217,6 +224,7 @@ const V2ApiTokenSection: React.FC = () => {
   };
 
   const maskedToken = '••••••••••••••••••••••••••••••••';
+  const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
 
   return (
     <div className="v2-settings__token">
@@ -226,13 +234,17 @@ const V2ApiTokenSection: React.FC = () => {
         <>
           <div className="v2-settings__token-value">
             <code>{token && showToken ? token : maskedToken}</code>
-            <button type="button" className="v2-settings__secondary" disabled={!token} onClick={() => setShowToken((visible) => !visible)}>
-              {showToken ? 'Hide' : 'Show'}
-            </button>
-            <button type="button" className="v2-settings__secondary" disabled={!token} onClick={() => void copy()}>Copy</button>
+            {token && (
+              <>
+                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+              </>
+            )}
           </div>
-          {!token && <p className="v2-settings__meta">Shown once, when generated.{last4 ? ` Ending in ${last4}.` : ''}</p>}
-          {createdAt && <p className="v2-settings__meta">created {new Date(createdAt).toLocaleString()}</p>}
+          {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
+          {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
           <div className="v2-settings__actions">
             <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
               {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}
