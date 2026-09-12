@@ -23,13 +23,17 @@ and `TELEGRAM_SECRET_TOKEN` verification with the explicit local-dev
 | Provider | Canonical delivery identity | Verification | TTL |
 | --- | --- | --- | --- |
 | Slack Events API | `team_id:event_id` | HMAC over the raw body (`v0:{timestamp}:{body}`), with a 300-second timestamp window; missing/invalid secret or signature is `401` | 24 hours |
-| GroupMe callback | `bot_id:message.id` | Require configured `bot_id` (falling back to `GROUPME_BOT_ID` when the row has no value) and matching callback `bot_id`; GroupMe exposes no signing primitive. Missing/mismatched identity is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
+| GroupMe callback | `group_id:message.id` | Require configured `group_id` and matching callback `group_id`; GroupMe V3 callbacks do not include the outbound bot id and expose no signing primitive. Missing/mismatched group identity is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 | Discord webhook events | `webhook_id:event.id` | Ed25519 over `X-Signature-Timestamp + raw body` using `DISCORD_PUBLIC_KEY`; missing/invalid headers or key is `401`. `DISCORD_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 
 Slack URL-verification challenges are authenticated before returning the
 challenge. Discord PINGs are authenticated before returning PONG. Requests
 without a provider delivery id are rejected (`400`) on event paths rather than
 processed without deduplication.
+
+`GROUPME_BOT_ID` remains the outbound bot-id fallback for command replies when
+an integration row omits `config.botId`; it is not used for callback
+authentication because GroupMe V3 callback bodies do not carry `bot_id`.
 
 ## Ingress limits and outage behavior
 

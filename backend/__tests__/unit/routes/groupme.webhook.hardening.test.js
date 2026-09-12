@@ -21,7 +21,6 @@ const integration = {
 };
 
 const payload = (overrides = {}) => ({
-  bot_id: 'bot-1',
   group_id: 'group-1',
   id: 'message-1',
   sender_type: 'user',
@@ -43,19 +42,21 @@ describe('GroupMe webhook hardening', () => {
     });
   });
 
-  test('rejects callbacks without the configured bot identity', async () => {
+  test('accepts the docs-shaped callback with the configured group identity', async () => {
     const response = await request(app)
       .post('/api/webhooks/groupme/integration-1')
-      .send(payload({ bot_id: undefined }));
+      .send(payload());
 
-    expect(response.status).toBe(401);
-    expect(deliveries.create).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'groupme', deliveryId: 'group-1:message-1',
+    }));
   });
 
-  test('rejects a callback for another bot', async () => {
+  test('rejects a callback for another group', async () => {
     const response = await request(app)
       .post('/api/webhooks/groupme/integration-1')
-      .send(payload({ bot_id: 'other-bot' }));
+      .send(payload({ group_id: 'other-group' }));
 
     expect(response.status).toBe(401);
     expect(deliveries.create).not.toHaveBeenCalled();
@@ -68,21 +69,29 @@ describe('GroupMe webhook hardening', () => {
 
     expect(response.status).toBe(200);
     expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'groupme', deliveryId: 'bot-1:message-1',
+      provider: 'groupme', deliveryId: 'group-1:message-1',
     }));
     expect(registry.get).toHaveBeenCalledWith('groupme', integration);
   });
 
-  test('uses GROUPME_BOT_ID when the integration row has no bot id', async () => {
-    process.env.GROUPME_BOT_ID = 'env-bot-1';
-    Integration.findById.mockResolvedValue({ ...integration, config: { groupId: 'group-1' } });
+  test('rejects callbacks without the configured group identity', async () => {
     const response = await request(app)
       .post('/api/webhooks/groupme/integration-1')
-      .send(payload({ bot_id: 'env-bot-1' }));
+      .send(payload({ group_id: undefined }));
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  test('allows an unverified callback only with the explicit escape hatch', async () => {
+    process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    const response = await request(app)
+      .post('/api/webhooks/groupme/integration-1')
+      .send(payload({ group_id: undefined }));
 
     expect(response.status).toBe(200);
     expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryId: 'env-bot-1:message-1',
+      deliveryId: 'group-1:message-1',
     }));
   });
 
@@ -107,15 +116,4 @@ describe('GroupMe webhook hardening', () => {
     expect(registry.get).not.toHaveBeenCalled();
   });
 
-  test('allows missing bot identity only with the explicit escape hatch', async () => {
-    process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED = 'true';
-    const response = await request(app)
-      .post('/api/webhooks/groupme/integration-1')
-      .send(payload({ bot_id: undefined }));
-
-    expect(response.status).toBe(200);
-    expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryId: 'bot-1:message-1',
-    }));
-  });
 });
