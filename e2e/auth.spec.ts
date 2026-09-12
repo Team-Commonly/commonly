@@ -25,7 +25,11 @@ test.describe('Authentication', () => {
       (url) => /^\/v2\/pods\/[^/]+$/.test(url.pathname),
       { timeout: 15000 },
     );
-    await expect(page.getByRole('heading', { name: 'My Workspace' })).toBeVisible({ timeout: 15000 });
+    // Scope the assertion to the pod header: the sidebar row and onboarding
+    // card also expose a heading with the workspace name.
+    await expect(
+      page.locator('header.v2-pod-header').getByRole('heading', { name: 'My Workspace' }),
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('login with wrong password shows error', async ({ page }) => {
