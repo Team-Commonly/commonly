@@ -48,6 +48,8 @@ const auth = {
   register: jest.fn(), login: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
 };
 
+const TOKEN_CREATED_AT = '2026-09-04T12:00:00.000Z';
+
 // The page links to the admin routes, so it renders under a router.
 const renderSettings = () => render(
   <AuthContext.Provider value={auth}>
@@ -102,7 +104,7 @@ describe('V2SettingsPage', () => {
 
   test('generates and reveals a new API token without leaving Settings', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
-    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: '2026-09-04T12:00:00.000Z' } });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: TOKEN_CREATED_AT } });
     renderSettings();
 
     fireEvent.click(screen.getByRole('button', { name: 'Generate API token' }));
@@ -115,13 +117,15 @@ describe('V2SettingsPage', () => {
 
   test('shows metadata for an existing token without attempting to re-display its secret', async () => {
     (axios.get as jest.Mock).mockResolvedValue({
-      data: { hasToken: true, createdAt: '2026-09-04T12:00:00.000Z', scopes: ['agent:context:read'], last4: 'cret' },
+      data: { hasToken: true, createdAt: TOKEN_CREATED_AT, scopes: ['agent:context:read'], last4: 'cret' },
     });
     renderSettings();
 
     expect(await screen.findByText(/shown once, when generated/i)).toBeInTheDocument();
     expect(screen.getByText(/ends in cret/i)).toBeInTheDocument();
-    expect(screen.getByText('Created 4 Sep 2026')).toBeInTheDocument();
+    const created = new Date(TOKEN_CREATED_AT);
+    const expectedCreatedLabel = `Created ${created.getDate()} ${created.toLocaleDateString('en-US', { month: 'short' })} ${created.getFullYear()}`;
+    expect(screen.getByText(expectedCreatedLabel)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show' })).not.toBeInTheDocument();
     expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();
