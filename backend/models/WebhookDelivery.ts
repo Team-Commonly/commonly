@@ -6,15 +6,14 @@ import mongoose, { Document, Schema } from 'mongoose';
 // redelivery of an already-processed update becomes a duplicate pod message and
 // a duplicate agent wake (admitted in the bridge's own comments).
 //
-// Contract (claim-before-run, forget-on-error):
+// Contract (claim-before-run, route-specific error policy):
 //   1. On receipt, atomically create {provider, deliveryId}. A duplicate-key
 //      error means another delivery of the same update is processing or done —
 //      ack 200 and stop.
-//   2. If processing THROWS after the claim, release the claim before the
-//      non-2xx response, so the provider's redelivery is a retry rather than
-//      a swallowed drop. (A post-write failure must NOT release — the writer
-//      handles its own partial-failure semantics; see the liveRelay comment in
-//      routes/webhooks/telegram.ts.)
+//   2. If processing THROWS before relay starts, a route may release the claim
+//      before its non-2xx response so the provider's redelivery retries. Once
+//      relay starts, retain the claim through downstream errors: a post-write
+//      failure must not release and duplicate the pod message.
 // The TTL bounds the table: a delivery id only needs to be remembered for as
 // long as the provider keeps redelivering it.
 //
