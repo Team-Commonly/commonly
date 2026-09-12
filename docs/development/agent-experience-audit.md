@@ -2488,12 +2488,26 @@ considered and declined, or the next reader re-derives it.
 
 4. *The base branch predates the workflow fix* → the fix never applies. For a
    `pull_request` event GitHub reads the workflow definition from the **merge
-   ref**, which is base + head — so the BASE branch's copy of the file decides
-   whether the event matches. `#1123` dropped `branches: [main]` from
-   `tests.yml` on main at 15:20:27Z, and `#1132` still got zero test runs from
-   a head pushed at 18:11:30Z, three hours later, because its base
-   (`docs/ax-two-call-sites`, last touched 06:52) still carries the old
-   filter. Verified by reading `tests.yml` on that branch.
+   ref**, which is base + head — so when the head does not touch that workflow
+   file, the BASE branch's copy of it decides whether the event matches. A head
+   that edits the workflow itself contributes its version to the merge ref and
+   can fix its own triggering; that is not the case below. `#1123` dropped
+   `branches: [main]` from `tests.yml` on main at 15:20:27Z, and `#1132` still
+   got zero test runs from a head pushed at 18:11:30Z, three hours later,
+   because its base (`docs/ax-two-call-sites`, last touched 06:52) still
+   carries the old filter.
+
+   **Evidence classes differ across this mechanism, and the difference is worth
+   marking.** The example is verified *here*: pre-`#1123` the block was
+   `pull_request: branches: [main, v1.0.x]` with no `paths:` at all, so the
+   filter is the sole candidate cause rather than merely a present one — an
+   earlier basis established only that it was present, which a competing cause
+   would survive. The qualifying clause is different: *"a head that edits the
+   workflow contributes its version to the merge ref"* is a **GitHub platform
+   rule, unverified in this repo** — no PR here has edited a workflow its own
+   base would have excluded, so nothing in this history reads it. It is
+   documentation of the platform, not a measurement of us. (@sprint-review,
+   58118/58119. Same standing as the `edited` line elsewhere in this entry.)
 
    Its whole check list is one skipped `Release Branch Guard`, and its
    `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
