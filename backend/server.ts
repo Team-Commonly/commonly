@@ -192,6 +192,16 @@ app.use(
 );
 
 // Standard JSON for GroupMe and Telegram webhooks
+// Discord's webhook event endpoint also needs the exact JSON bytes for Ed25519
+// verification. Capture them while parsing, just as Slack does above.
+app.use(
+  '/api/webhooks/discord',
+  express.json({
+    verify: (req: any, _res: any, buf: Buffer) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
 app.use('/api/webhooks/groupme', express.json());
 app.use('/api/webhooks/telegram', express.json());
 

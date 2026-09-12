@@ -35,6 +35,7 @@ describe('GroupMe provider commands', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.GROUPME_BOT_ID;
   });
 
   it('responds to !summary when buffer is empty', async () => {
@@ -159,6 +160,41 @@ describe('GroupMe provider commands', () => {
     expect(groupmeService.sendMessage).toHaveBeenCalledWith(
       'bot-1',
       'Pod Summary\n\nHello world',
+    );
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+  });
+
+  it('uses GROUPME_BOT_ID for outbound commands when the row has no bot id', async () => {
+    process.env.GROUPME_BOT_ID = 'env-bot-1';
+    const latest = {
+      ...integration,
+      config: { groupId: 'group-1', messageBuffer: [] },
+    };
+    Integration.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(latest),
+    });
+    groupmeService.sendMessage.mockResolvedValue({ success: true });
+
+    const provider = createGroupMeProvider({
+      ...integration,
+      config: { groupId: 'group-1' },
+    });
+    const req = {
+      body: {
+        text: '!summary',
+        group_id: 'group-1',
+        sender_type: 'user',
+        name: 'Sam',
+        user_id: 'user-1',
+      },
+    };
+    const res = buildRes();
+
+    await provider.getWebhookHandlers().events(req, res);
+
+    expect(groupmeService.sendMessage).toHaveBeenCalledWith(
+      'env-bot-1',
+      'No recent GroupMe activity to summarize.',
     );
     expect(res.sendStatus).toHaveBeenCalledWith(200);
   });

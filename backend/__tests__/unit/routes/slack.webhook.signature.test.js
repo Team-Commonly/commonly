@@ -4,10 +4,10 @@ const express = require('express');
 
 jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
-jest.mock('../../../services/slackEventReceiptService', () => ({ claim: jest.fn(), markDone: jest.fn() }));
+jest.mock('../../../models/WebhookDelivery', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../../services/slackBridgeService', () => ({ relaySlackMessageToPod: jest.fn() }));
 
-const receipts = require('../../../services/slackEventReceiptService');
+const deliveries = require('../../../models/WebhookDelivery');
 const Integration = require('../../../models/Integration');
 const slackRoutes = require('../../../routes/webhooks/slack');
 
@@ -33,44 +33,92 @@ describe('installable Slack webhook signature and acknowledgement', () => {
   beforeEach(() => {
     process.env.SLACK_SIGNING_SECRET = signingSecret;
     jest.clearAllMocks();
+    deliveries.create.mockResolvedValue({});
+    deliveries.deleteOne.mockResolvedValue({});
   });
   afterAll(() => delete process.env.SLACK_SIGNING_SECRET);
 
   test('rejects invalid signatures before receipt creation', async () => {
     const response = await request(app).post('/api/webhooks/slack/events').send(eventBody);
     expect(response.status).toBe(401);
-    expect(receipts.claim).not.toHaveBeenCalled();
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects signatures outside the five-minute freshness window', async () => {
+    const staleTimestamp = Math.floor((Date.now() - (5 * 60_000 + 1)) / 1000);
+    const response = await request(app)
+      .post('/api/webhooks/slack/events')
+      .set(signatureHeaders(eventBody, staleTimestamp))
+      .send(eventBody);
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects when the signing secret is missing', async () => {
+    delete process.env.SLACK_SIGNING_SECRET;
+    const response = await request(app)
+      .post('/api/webhooks/slack/events')
+      .set(signatureHeaders(eventBody))
+      .send(eventBody);
+
+    expect(response.status).toBe(401);
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
+  test('returns 503 when the delivery claim store is unavailable', async () => {
+    deliveries.create.mockRejectedValueOnce(new Error('mongo unavailable'));
+    const response = await request(app)
+      .post('/api/webhooks/slack/events')
+      .set(signatureHeaders(eventBody))
+      .send(eventBody);
+
+    expect(response.status).toBe(503);
+    expect(require('../../../services/slackBridgeService').relaySlackMessageToPod).not.toHaveBeenCalled();
+  });
+
+  test('authenticates and answers a legacy URL verification challenge before deduplication', async () => {
+    const legacyIntegration = { _id: 'integration-1', type: 'slack', config: { signingSecret } };
+    Integration.findById.mockResolvedValue(legacyIntegration);
+    const body = { type: 'url_verification', challenge: 'challenge-1' };
+    const response = await request(app)
+      .post('/api/webhooks/slack/integration-1')
+      .set(signatureHeaders(body))
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ challenge: 'challenge-1' });
+    expect(deliveries.create).not.toHaveBeenCalled();
   });
 
   test('drops non-DM events before they create a receipt or resolve a connector', async () => {
     const body = { ...eventBody, event: { ...eventBody.event, channel_type: 'channel' } };
     const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(body)).send(body);
     expect(response.status).toBe(200);
-    expect(receipts.claim).not.toHaveBeenCalled();
+    expect(deliveries.create).not.toHaveBeenCalled();
     expect(Integration.findOne).not.toHaveBeenCalled();
   });
 
   test('acknowledges a claimed DM event and resolves only its bound team/channel', async () => {
-    receipts.claim.mockResolvedValue('claimed');
-    receipts.markDone.mockResolvedValue(undefined);
     Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
 
     const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
     expect(response.status).toBe(200);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(receipts.claim).toHaveBeenCalledWith('Ev1', 'T1');
+    expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'slack', deliveryId: 'T1:Ev1',
+    }));
     expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
       type: 'slack', 'config.teamId': 'T1', 'config.chatId': 'D1', 'config.chatType': 'im', isActive: true,
     }));
-    expect(receipts.markDone).toHaveBeenCalledWith('Ev1');
   });
 
   test('acks a paused connector event, records its receipt, and relays again after resume', async () => {
-    receipts.claim
-      .mockResolvedValueOnce('claimed')
-      .mockResolvedValueOnce('duplicate')
-      .mockResolvedValueOnce('claimed');
-    receipts.markDone.mockResolvedValue(undefined);
+    const duplicate = Object.assign(new Error('duplicate'), { code: 11000 });
+    deliveries.create
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(duplicate)
+      .mockResolvedValueOnce({});
     const pausedIntegration = {
       _id: 'integration-paused', type: 'slack', isActive: true, status: 'connected',
       config: {
@@ -103,11 +151,23 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
       'config.adminPause': { $exists: false },
     }));
-    expect(receipts.markDone).toHaveBeenCalledWith('Ev1');
-    expect(receipts.markDone).toHaveBeenCalledWith('Ev2');
     expect(bridge.relaySlackMessageToPod).toHaveBeenCalledTimes(1);
     expect(bridge.relaySlackMessageToPod).toHaveBeenCalledWith(expect.objectContaining({
       integration: resumedIntegration,
     }));
+  });
+
+  test('keeps the claim when relay reports a post-write failure', async () => {
+    Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+      _id: 'integration-1', type: 'slack', config: { teamId: 'T1', chatId: 'D1', chatType: 'im', liveRelay: true },
+    }) });
+    const bridge = require('../../../services/slackBridgeService');
+    bridge.relaySlackMessageToPod.mockRejectedValueOnce(Object.assign(new Error('write completed'), { postWrite: true }));
+
+    const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(200);
+    expect(deliveries.deleteOne).not.toHaveBeenCalled();
   });
 });

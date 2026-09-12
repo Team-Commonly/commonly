@@ -252,12 +252,5 @@
   "routes/users.ts GET /:id [unlimited]",
   "routes/users.ts GET /:id/public-activity [unlimited]",
   "routes/users.ts GET /profile [unlimited]",
-  "routes/users.ts POST /:id/follow [unlimited]",
-  "routes/webhooks/discord.ts GET /channels/:integrationId [unlimited]",
-  "routes/webhooks/discord.ts POST / [unlimited]",
-  "routes/webhooks/discord.ts POST /invite [unlimited]",
-  "routes/webhooks/discord.ts POST /test/:integrationId [unlimited]",
-  "routes/webhooks/groupme.ts POST /:integrationId [unlimited]",
-  "routes/webhooks/slack.ts POST /:integrationId [unlimited]",
-  "routes/webhooks/telegram.ts POST / [unlimited]"
+  "routes/users.ts POST /:id/follow [unlimited]"
 ]
