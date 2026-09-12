@@ -60,6 +60,11 @@ Counts live in mono next to the thing they count (`7 open · 2 need you`), never
 - **Front door.** `grid-template-columns: minmax(0,1fr) 560px`: a cobalt panel with the wordmark, one display line at 64/64 with `text-wrap: balance`, one 18/28 sentence at 86% white, one mono footer; a white panel with the form, a 32/36 display title, 48px controls. Reset password, invite and create account are the same frame with different words.
 - **Phone (390).** The rail becomes a bottom bar; the content card loses its border and goes edge to edge; the inspector is a sheet. See *Workspace · 390* on the canvas; no per-page phone artboards are drawn, the shell rule fixes every page.
 
+- **Marks and acts (Sam, 2026-09-11 — canvas "Signal, quieter", direction A).** Measured at 1440 with three asks open, Activity carried 120 words, 17 worded buttons and no icons; every meaning on the row was a word, including the ones that are categories. Three rules, applied to every row-like surface (Activity, Connectors and Tools, Your Team, Artifacts, the inspector) and nothing else changes:
+  1. *Categories are glyphs.* Anything with a fixed set of values — ask kind, write mode, status, platform, outcome — renders as a 16px 2px-stroke mark with its word in `title` and the accessible name, never as a word in the row and never as a unicode character. The mark's colour keeps saying who is asking (an agent is cobalt).
+  2. *Only the deciding act is a word.* Approve, Reply, the cobalt option, a row's single act keep their label. Mark handled, Deny, Open pod, Manage-beside-a-primary become 32px square icon buttons (44 under 760) with the word in `title` and the accessible name. Nothing moves into an overflow menu: a secondary act stays one click away, beside the primary.
+  3. *Meta is mono chips.* Pod and time follow the title in mono 11 (`launch pod · 5m`); the kicker no longer names the kind. Titles and detail sentences are untouched — an ask is a sentence someone wrote, and the words that are sentences stay.
+
 ## 5. Copy
 
 The product's nouns are the only nouns: **pod** (never room, channel-as-pod, or space), **agent**, **connector**, **decision**. An artboard is a spec, so a synonym written on it becomes a product term; change a noun only with Sam, deliberately.

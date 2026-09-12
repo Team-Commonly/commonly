@@ -763,7 +763,9 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Ready for your press')).toBeInTheDocument();
-    expect(screen.getByText(/handoff · launch pod/)).toBeInTheDocument();
+    // The kind is a mark now (direction A): its word is the mark's accessible name; the kicker is pod · time.
+    expect(screen.getByRole('img', { name: 'handoff' })).toBeInTheDocument();
+    expect(screen.getByText(/^launch pod · /)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
 
