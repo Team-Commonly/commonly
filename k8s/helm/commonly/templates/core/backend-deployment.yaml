@@ -259,6 +259,12 @@ spec:
               name: api-keys
               key: discord-guild-id
               optional: true
+        - name: DISCORD_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: discord-public-key
+              optional: true
 
         # Social login (OAuth) providers — names match what
         # controllers/oauthController.ts reads. The old GITHUB_CLIENT_ID /
