@@ -9,7 +9,12 @@ const mockDefinitions = [{
 }];
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
-  req.agentUser = { _id: 'agent-a' };
+  req.agentUser = {
+    _id: 'agent-a',
+    username: 'openclaw-aria',
+    botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+  };
+  req.agentInstallation = { agentName: 'openclaw', instanceId: 'aria' };
   next();
 });
 jest.mock('../../../services/toolBrokerService', () => ({
@@ -67,7 +72,12 @@ describe('MCP grant transport', () => {
     expect(called.status).toBe(200);
     expect(called.text).toContain('issues');
     expect(mockCallTool).toHaveBeenCalledWith({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      agentName: 'openclaw',
+      instanceId: 'aria',
+      tool: 'github.list_issues',
+      args: {},
     });
   });
 });

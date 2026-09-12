@@ -73,6 +73,13 @@ interface PullRequestOptions {
   forceApp?: boolean;
 }
 
+interface MergePullRequestOptions extends PullRequestOptions {
+  mergeMethod?: 'merge' | 'squash' | 'rebase';
+  commitTitle?: string;
+  commitMessage?: string;
+  sha?: string;
+}
+
 type PullReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 
 interface PullDiffOptions {
@@ -170,9 +177,11 @@ class GitHubAppService {
 
   /**
    * Shared headers for GitHub REST API calls (uses PAT or App token).
+   * Supplying an installationId is an app-only request. This keeps a future
+   * broker tool fail-closed even if its caller forgets to pass forceApp.
    */
   static async _apiHeaders(token?: string, installationId?: string, forceApp = false): Promise<Record<string, string>> {
-    const pat = forceApp ? undefined : (token || process.env.GITHUB_PAT);
+    const pat = forceApp || installationId ? undefined : (token || process.env.GITHUB_PAT);
     let credential = pat;
     const appConfigured = !!(
       process.env.GITHUB_APP_ID
@@ -275,6 +284,25 @@ class GitHubAppService {
     const headers = await this._apiHeaders(undefined, installationId, forceApp);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
+      { headers },
+    );
+    return res.data;
+  }
+
+  /** Merge one pull request using the connected GitHub App installation. */
+  static async mergePullRequest({
+    owner = 'Team-Commonly', repo = 'commonly', pullNumber, mergeMethod, commitTitle, commitMessage,
+    installationId, forceApp, sha,
+  }: MergePullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(undefined, installationId, forceApp);
+    const payload: Record<string, unknown> = {};
+    if (sha) payload.sha = sha;
+    if (mergeMethod) payload.merge_method = mergeMethod;
+    if (commitTitle) payload.commit_title = commitTitle;
+    if (commitMessage) payload.commit_message = commitMessage;
+    const res = await axios.put(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
+      payload,
       { headers },
     );
     return res.data;
