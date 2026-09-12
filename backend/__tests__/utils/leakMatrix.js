@@ -191,7 +191,6 @@ const R_INT_SECRETS = 'Integration toJSON strips config secrets but not ingestTo
 const R_INT_CONNECTCODE = 'config.connectCode reaches a caller that is not the owner reading it from a surface that needs it';
 const R_INST_LEAN = 'installableCatalogService reads Integration with .lean(), bypassing the toJSON transform';
 const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth state; no surface reads it';
-const R_GATEWAY_TOKEN = 'GET /api/gateways returns lean rows verbatim, including metadata.gatewayToken';
 /* eslint-enable max-len */
 
 /**
@@ -217,8 +216,6 @@ const KNOWN_EXPOSURES = [
   { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/gateways — follow-up: project Gateway rows; never return metadata.gatewayToken
-  { method: 'GET', path: '/api/gateways', role: 'admin', sentinelKey: 'GATEWAY_METADATA_GATEWAYTOKEN', reason: R_GATEWAY_TOKEN },
   // GET /api/installables — follow-up: project Integration through toJSON/integrationPublicConfig in installableCatalogService
   { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_CONNECTCODE', reason: R_SLACK_OAUTH_STATE },
   { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_INGEST_TOKENHASH', reason: R_INST_LEAN },

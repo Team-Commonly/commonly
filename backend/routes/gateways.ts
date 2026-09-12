@@ -1,5 +1,9 @@
+import rateLimit from 'express-rate-limit';
+
 // eslint-disable-next-line global-require
 const express = require('express');
+// eslint-disable-next-line global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -24,6 +28,26 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// Admin-only, but auth and adminAuth both read User, so the limiters run
+// first and key on the Cloudflare client IP. Writes provision k8s objects, so
+// they get a tighter budget than the list the Agents Hub dialogs fetch.
+const gatewayReadRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  message: { error: 'rate limit exceeded: too many gateway requests' },
+});
+const gatewayWriteRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  message: { error: 'rate limit exceeded: too many gateway changes' },
+});
+
 const slugify = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 const getUserId = (req: AuthReq): unknown => req.userId || req.user?.id || req.user?._id;
 
@@ -34,18 +58,35 @@ const ensureDefaultGateway = async (userId: unknown) => {
   return Gateway.create({ name: 'Local Gateway', slug: 'default', type: 'openclaw', mode: 'local', configPath: configPath || '', status: 'active', createdBy: userId || undefined });
 };
 
-router.get('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
+// The gateway token is a bearer secret. It lives in the gateway's k8s Secret
+// and is shown once, top-level, in the POST response that minted it. It must
+// never be stored on the row or returned from one.
+const withoutGatewayToken = (metadata: unknown): Record<string, unknown> => {
+  if (!metadata || typeof metadata !== 'object') return {};
+  const { gatewayToken: _omit, ...rest } = metadata as Record<string, unknown>;
+  return rest;
+};
+
+const toPublicGateway = (row: unknown): Record<string, unknown> | null => {
+  if (!row) return null;
+  const doc = row as { toObject?: () => Record<string, unknown> };
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : (row as Record<string, unknown>);
+  if (!plain.metadata) return plain;
+  return { ...plain, metadata: withoutGatewayToken(plain.metadata) };
+};
+
+router.get('/', gatewayReadRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     await ensureDefaultGateway(getUserId(req));
     const gateways = await Gateway.find().sort({ createdAt: 1 }).lean();
-    return res.json({ gateways });
+    return res.json({ gateways: gateways.map(toPublicGateway) });
   } catch (error) {
     console.error('Error listing gateways:', error);
     return res.status(500).json({ error: 'Failed to list gateways' });
   }
 });
 
-router.post('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.post('/', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { name, slug, type = 'openclaw', mode = 'local', baseUrl = '', configPath = '', status = 'active', metadata = {} } = (req.body || {}) as { name?: string; slug?: string; type?: string; mode?: string; baseUrl?: string; configPath?: string; status?: string; metadata?: Record<string, unknown> };
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -53,46 +94,49 @@ router.post('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
     if (!resolvedSlug) return res.status(400).json({ error: 'slug is required' });
     const existing = await Gateway.findOne({ slug: resolvedSlug });
     if (existing) return res.status(400).json({ error: 'slug already exists' });
-    const gateway = await Gateway.create({ name, slug: resolvedSlug, type, mode, baseUrl, configPath, status, metadata, createdBy: getUserId(req) });
+    const gateway = await Gateway.create({ name, slug: resolvedSlug, type, mode, baseUrl, configPath, status, metadata: withoutGatewayToken(metadata), createdBy: getUserId(req) });
     if (mode === 'k8s') {
       const gatewayToken = k8sGatewayProvisioner.generateGatewayToken();
       try {
         const provisioned = await k8sGatewayProvisioner.provisionGateway({ gateway, token: gatewayToken }) as { baseUrl?: string; namespace?: string; service?: string; deployment?: string };
-        const updates = { baseUrl: gateway.baseUrl || provisioned.baseUrl, metadata: { ...(gateway.metadata || {}), namespace: provisioned.namespace, service: provisioned.service, deployment: provisioned.deployment } };
+        const updates = { baseUrl: gateway.baseUrl || provisioned.baseUrl, metadata: { ...withoutGatewayToken(gateway.metadata), namespace: provisioned.namespace, service: provisioned.service, deployment: provisioned.deployment } };
         const updatedGateway = await Gateway.findByIdAndUpdate(gateway._id, updates, { new: true });
-        return res.status(201).json({ gateway: updatedGateway, gatewayToken });
+        return res.status(201).json({ gateway: toPublicGateway(updatedGateway), gatewayToken });
       } catch (error) {
         await gateway.deleteOne();
         throw error;
       }
     }
-    return res.status(201).json({ gateway });
+    return res.status(201).json({ gateway: toPublicGateway(gateway) });
   } catch (error) {
     console.error('Error creating gateway:', error);
     return res.status(500).json({ error: 'Failed to create gateway' });
   }
 });
 
-router.patch('/:id', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.patch('/:id', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const updates = { ...(req.body || {}) } as Record<string, unknown>;
     if (updates.slug) updates.slug = slugify(updates.slug);
+    // The token reaches the provisioner (the k8s Secret) and never the row.
+    const token = (updates.metadata as Record<string, unknown> | undefined)?.gatewayToken;
+    if (updates.metadata !== undefined) updates.metadata = withoutGatewayToken(updates.metadata);
     const gateway = await Gateway.findByIdAndUpdate(id, updates, { new: true }) as Record<string, unknown> & { mode?: string; baseUrl?: string; metadata?: Record<string, unknown>; _id?: unknown; slug?: string } | null;
     if (!gateway) return res.status(404).json({ error: 'Gateway not found' });
     if (gateway.mode === 'k8s') {
-      const provisioned = await k8sGatewayProvisioner.provisionGateway({ gateway, token: (updates?.metadata as Record<string, unknown>)?.gatewayToken }) as { baseUrl?: string; namespace?: string; service?: string; deployment?: string };
-      const updated = await Gateway.findByIdAndUpdate(gateway._id, { baseUrl: gateway.baseUrl || provisioned.baseUrl, metadata: { ...(gateway.metadata || {}), namespace: provisioned.namespace, service: provisioned.service, deployment: provisioned.deployment } }, { new: true });
-      return res.json({ gateway: updated });
+      const provisioned = await k8sGatewayProvisioner.provisionGateway({ gateway, token }) as { baseUrl?: string; namespace?: string; service?: string; deployment?: string };
+      const updated = await Gateway.findByIdAndUpdate(gateway._id, { baseUrl: gateway.baseUrl || provisioned.baseUrl, metadata: { ...withoutGatewayToken(gateway.metadata), namespace: provisioned.namespace, service: provisioned.service, deployment: provisioned.deployment } }, { new: true });
+      return res.json({ gateway: toPublicGateway(updated) });
     }
-    return res.json({ gateway });
+    return res.json({ gateway: toPublicGateway(gateway) });
   } catch (error) {
     console.error('Error updating gateway:', error);
     return res.status(500).json({ error: 'Failed to update gateway' });
   }
 });
 
-router.delete('/:id', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.delete('/:id', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const gateway = await Gateway.findById(id) as Record<string, unknown> & { slug?: string; mode?: string; deleteOne: () => Promise<void> } | null;
