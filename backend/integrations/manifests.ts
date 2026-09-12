@@ -113,7 +113,7 @@ const manifests: Record<string, IntegrationManifest> = {
       provider: 'telegram',
       category: 'chat',
       docsPath: 'docs/telegram/README.md',
-      description: 'Ingest Telegram updates into pod summaries.',
+      description: 'One Telegram chat, one pod.',
       capabilities: ['webhook', 'summary', 'commands'],
     },
   }),

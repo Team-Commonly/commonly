@@ -60,4 +60,9 @@ describe('installable connector manifest readiness', () => {
     process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     expect(manifests.telegram.readiness()).toEqual({ available: true });
   });
+
+  it('describes Telegram as one chat connected to one pod', () => {
+    expect(manifests.telegram.catalog.description).toBe('One Telegram chat, one pod.');
+    expect(manifests.telegram.catalog.description).not.toMatch(/ingest|summar/i);
+  });
 });
