@@ -26,11 +26,14 @@ const PROVIDER = 'slack';
 // before HMAC verification and receipt creation.
 const slackWebhookRateLimit = rateLimit({
   windowMs: 60_000,
-  max: 240,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  keyGenerator: (req: any) => {
+    const accountId = String(req.params?.integrationId || req.body?.team_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    return accountId ? `slack:${accountId}` : `slack:${cloudflareIpRateLimitKeyGenerator(req)}`;
+  },
   handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Slack webhook requests' }),
 });
 
@@ -57,6 +60,7 @@ const signed = (req: any, res: any, next: () => void) => {
 };
 
 const finishEvent = async (deliveryId: string, teamId: string, event: any): Promise<void> => {
+  let relayStarted = false;
   try {
     // Keep provider input scalar before it reaches Mongoose. The direct
     // String/strip form is intentionally adjacent to the selector so both
@@ -76,10 +80,18 @@ const finishEvent = async (deliveryId: string, teamId: string, event: any): Prom
       'config.adminPause': { $exists: false },
       status: { $ne: 'error' },
     }).lean();
-    if (integration) await relaySlackMessageToPod({ integration, event });
+    if (integration) {
+      relayStarted = true;
+      await relaySlackMessageToPod({ integration, event });
+    }
   } catch (error) {
     console.error('[slack-events] processing failed:', (error as Error).message);
-    await releaseDelivery(PROVIDER, deliveryId);
+    // Once relay starts it may already have written the pod message. Keep the
+    // claim on every downstream throw; only pre-relay lookup failures are safe
+    // to release for a provider retry.
+    if (!relayStarted) {
+      await releaseDelivery(PROVIDER, deliveryId);
+    }
   }
 };
 
@@ -110,6 +122,7 @@ router.post('/events', slackWebhookRateLimit, signed, async (req: any, res: any)
     console.error('[slack-events] delivery claim failed:', (error as Error).message);
     return res.status(503).json({ error: 'Slack event delivery unavailable' });
   }
+  if (claimed === 'unavailable') return res.status(503).json({ error: 'Slack event delivery unavailable' });
   if (claimed !== 'claimed') return res.status(200).json({ ok: true });
   // Ack before the bridge's database/PG work. Slack's 3s deadline is a
   // transport concern; WebhookDelivery carries the work claim.
@@ -194,12 +207,19 @@ router.post('/:integrationId', slackWebhookRateLimit, async (req: any, res: any)
     if (!verifySlackRequestSignature({ signingSecret, timestamp, signature, rawBody })) {
       return res.status(401).json({ error: 'Invalid Slack signature' });
     }
+    if (body.type === 'url_verification') {
+      return res.status(200).json({ challenge: body.challenge });
+    }
     const eventId = body.event_id || body.event?.event_id || body.event?.ts || body.ts;
     if (!eventId) return res.status(400).json({ error: 'Missing Slack event id' });
     const teamId = String(body.team_id || body.event?.team || integration.config?.teamId || 'legacy')
       .replace(/[^a-zA-Z0-9_-]/g, '');
     deliveryId = `${teamId}:${String(eventId)}`;
-    if ((await claimDelivery(PROVIDER, deliveryId, WEBHOOK_DELIVERY_TTL_MS)) !== 'claimed') {
+    const claim = await claimDelivery(PROVIDER, deliveryId, WEBHOOK_DELIVERY_TTL_MS);
+    if (claim === 'unavailable') {
+      return res.status(503).json({ error: 'Slack event delivery unavailable' });
+    }
+    if (claim !== 'claimed') {
       return res.sendStatus(200);
     }
     const provider = registry.get('slack', integration);

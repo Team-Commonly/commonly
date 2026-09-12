@@ -6,9 +6,11 @@
 ## Scope and invariants
 
 All provider routes claim a delivery before running provider work. The claim is
-an atomic `WebhookDelivery` row and is released when processing fails before a
-provider-side write. A duplicate claim is acknowledged without running the
-handler. Claims are namespaced by provider and provider account in the
+an atomic `WebhookDelivery` row. A pre-relay lookup failure may release it for
+a provider retry; once relay starts, the claim is retained through downstream
+throws so an already-written pod message cannot be duplicated. A duplicate
+claim is acknowledged without running the handler. Claims are namespaced by
+provider and provider account in the
 `deliveryId` value so independent bots/workspaces cannot collide while the
 existing `{ provider, deliveryId }` unique index remains compatible.
 
@@ -21,13 +23,29 @@ and `TELEGRAM_SECRET_TOKEN` verification with the explicit local-dev
 | Provider | Canonical delivery identity | Verification | TTL |
 | --- | --- | --- | --- |
 | Slack Events API | `team_id:event_id` | HMAC over the raw body (`v0:{timestamp}:{body}`), with a 300-second timestamp window; missing/invalid secret or signature is `401` | 24 hours |
-| GroupMe callback | `bot_id:message.id` | Require configured `bot_id` and matching callback `bot_id`; GroupMe exposes no signing primitive. Missing/mismatched identity is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
+| GroupMe callback | `bot_id:message.id` | Require configured `bot_id` (falling back to `GROUPME_BOT_ID` when the row has no value) and matching callback `bot_id`; GroupMe exposes no signing primitive. Missing/mismatched identity is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 | Discord webhook events | `webhook_id:event.id` | Ed25519 over `X-Signature-Timestamp + raw body` using `DISCORD_PUBLIC_KEY`; missing/invalid headers or key is `401`. `DISCORD_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 
 Slack URL-verification challenges are authenticated before returning the
 challenge. Discord PINGs are authenticated before returning PONG. Requests
 without a provider delivery id are rejected (`400`) on event paths rather than
 processed without deduplication.
+
+## Ingress limits and outage behavior
+
+Each provider route has a burst limiter before verification and database work:
+Slack is 600 requests per 60 seconds per `slack:<team_id>` (or legacy
+`integrationId`); GroupMe is 600 per 60 seconds per integration; Discord is
+600 per 60 seconds per `discord:<webhook_id>`; Telegram is 600 per 60 seconds
+per source IP. If the provider/account id is absent, the key falls back to the
+Cloudflare-aware source IP. These are burst ceilings, not delivery
+authorization; provider signatures or identity checks still apply.
+
+The shared claim is intentionally a plain insert with a TTL. A replica crash
+after Slack receives its `200` but before relay completes can therefore
+suppress that delivery until the 24-hour row expires. This is the same known
+trade-off as Telegram; a stale-claim CAS/takeover policy is a follow-up once
+we have measurements for safe retry timing.
 
 ## Rollout order (no delivery gap)
 

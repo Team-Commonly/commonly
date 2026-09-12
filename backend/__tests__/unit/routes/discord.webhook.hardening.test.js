@@ -91,6 +91,18 @@ describe('Discord webhook hardening', () => {
     expect(DiscordService).not.toHaveBeenCalled();
   });
 
+  test('returns 503 when the delivery claim store is unavailable', async () => {
+    process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    deliveries.create.mockRejectedValueOnce(new Error('mongo unavailable'));
+
+    const response = await request(app)
+      .post('/api/webhooks/discord?webhook_id=webhook-1')
+      .send(event({ id: 'event-unavailable' }));
+
+    expect(response.status).toBe(503);
+    expect(DiscordService).not.toHaveBeenCalled();
+  });
+
   test('allows unsigned events only with the explicit escape hatch', async () => {
     process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     const response = await request(app)

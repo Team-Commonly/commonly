@@ -13,11 +13,15 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 
 const discordWebhookRateLimit = rateLimit({
   windowMs: 60_000,
-  max: 240,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
-  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  keyGenerator: (req: any) => {
+    const webhookId = String(req.query?.webhook_id || req.headers?.['x-discord-webhook-id'] || '')
+      .replace(/[^a-zA-Z0-9_-]/g, '');
+    return webhookId ? `discord:${webhookId}` : `discord:${cloudflareIpRateLimitKeyGenerator(req)}`;
+  },
   handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Discord webhook requests' }),
 });
 
@@ -76,7 +80,11 @@ router.post('/', discordWebhookRateLimit, async (req: any, res: any) => {
     const eventId = event.id;
     if (!eventId) return res.status(400).json({ error: 'Missing Discord event id' });
     deliveryId = `${String(webhookId)}:${String(eventId)}`;
-    if ((await claimDelivery('discord', deliveryId, WEBHOOK_DELIVERY_TTL_MS)) !== 'claimed') {
+    const claim = await claimDelivery('discord', deliveryId, WEBHOOK_DELIVERY_TTL_MS);
+    if (claim === 'unavailable') {
+      return res.status(503).json({ error: 'Discord delivery unavailable' });
+    }
+    if (claim !== 'claimed') {
       return res.json({ success: true, duplicate: true });
     }
 

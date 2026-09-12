@@ -66,6 +66,31 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     expect(deliveries.create).not.toHaveBeenCalled();
   });
 
+  test('returns 503 when the delivery claim store is unavailable', async () => {
+    deliveries.create.mockRejectedValueOnce(new Error('mongo unavailable'));
+    const response = await request(app)
+      .post('/api/webhooks/slack/events')
+      .set(signatureHeaders(eventBody))
+      .send(eventBody);
+
+    expect(response.status).toBe(503);
+    expect(require('../../../services/slackBridgeService').relaySlackMessageToPod).not.toHaveBeenCalled();
+  });
+
+  test('authenticates and answers a legacy URL verification challenge before deduplication', async () => {
+    const legacyIntegration = { _id: 'integration-1', type: 'slack', config: { signingSecret } };
+    Integration.findById.mockResolvedValue(legacyIntegration);
+    const body = { type: 'url_verification', challenge: 'challenge-1' };
+    const response = await request(app)
+      .post('/api/webhooks/slack/integration-1')
+      .set(signatureHeaders(body))
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ challenge: 'challenge-1' });
+    expect(deliveries.create).not.toHaveBeenCalled();
+  });
+
   test('drops non-DM events before they create a receipt or resolve a connector', async () => {
     const body = { ...eventBody, event: { ...eventBody.event, channel_type: 'channel' } };
     const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(body)).send(body);
@@ -130,5 +155,19 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     expect(bridge.relaySlackMessageToPod).toHaveBeenCalledWith(expect.objectContaining({
       integration: resumedIntegration,
     }));
+  });
+
+  test('keeps the claim when relay reports a post-write failure', async () => {
+    Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+      _id: 'integration-1', type: 'slack', config: { teamId: 'T1', chatId: 'D1', chatType: 'im', liveRelay: true },
+    }) });
+    const bridge = require('../../../services/slackBridgeService');
+    bridge.relaySlackMessageToPod.mockRejectedValueOnce(Object.assign(new Error('write completed'), { postWrite: true }));
+
+    const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(200);
+    expect(deliveries.deleteOne).not.toHaveBeenCalled();
   });
 });

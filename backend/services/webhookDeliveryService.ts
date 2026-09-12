@@ -6,7 +6,7 @@ const WebhookDelivery = require('../models/WebhookDelivery');
 
 export const WEBHOOK_DELIVERY_TTL_MS = 24 * 60 * 60 * 1000;
 
-export type WebhookDeliveryClaim = 'claimed' | 'duplicate';
+export type WebhookDeliveryClaim = 'claimed' | 'duplicate' | 'unavailable';
 
 export const claimDelivery = async (
   provider: string,
@@ -22,14 +22,14 @@ export const claimDelivery = async (
     return 'claimed';
   } catch (error) {
     if ((error as { code?: number }).code === 11000) return 'duplicate';
-    // Preserve the Telegram contract: a dedup-store outage must not take a
-    // provider bridge down. The caller continues unclaimed and logs only the
-    // provider/id, never the request body or provider credentials.
+    // Let each route choose its outage policy. Telegram preserves its legacy
+    // fail-open behavior; HTTP webhook routes return 503 so the provider
+    // retries instead of silently losing an already-acknowledged delivery.
     console.error(`[${provider}-webhook] delivery claim unavailable`, {
       deliveryId,
       error: (error as Error).message,
     });
-    return 'claimed';
+    return 'unavailable';
   }
 };
 

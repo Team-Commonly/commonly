@@ -1,4 +1,6 @@
 const express = require('express');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const rateLimit = require('express-rate-limit');
 const Integration = require('../../models/Integration');
 const registry = require('../../integrations');
 const {
@@ -6,11 +8,26 @@ const {
   claimDelivery,
   releaseDelivery,
 } = require('../../services/webhookDeliveryService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 const router = express.Router({ mergeParams: true });
 
+const groupMeWebhookRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => {
+    const integrationId = String(req.params?.integrationId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    return integrationId ? `groupme:${integrationId}` : `groupme:${cloudflareIpRateLimitKeyGenerator(req)}`;
+  },
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many GroupMe webhook requests' }),
+});
+
 // GroupMe sends JSON via POST with bot_id, group_id, etc.
-router.post('/:integrationId', async (req: any, res: any) => {
+router.post('/:integrationId', groupMeWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const { integrationId } = req.params;
@@ -20,7 +37,7 @@ router.post('/:integrationId', async (req: any, res: any) => {
     }
 
     const body = req.body || {};
-    const expectedBotId = String(integration.config?.botId || '').trim();
+    const expectedBotId = String(integration.config?.botId || process.env.GROUPME_BOT_ID || '').trim();
     const actualBotId = String(body.bot_id || '').trim();
     const allowUnverified = process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED === 'true';
     // GroupMe has no callback signature. The bot id is the provider's only
@@ -36,7 +53,11 @@ router.post('/:integrationId', async (req: any, res: any) => {
     const eventId = body.id;
     if (!eventId) return res.status(400).send('missing GroupMe message id');
     deliveryId = `${expectedBotId || actualBotId || 'unverified'}:${String(eventId)}`;
-    if ((await claimDelivery('groupme', deliveryId, WEBHOOK_DELIVERY_TTL_MS)) !== 'claimed') {
+    const claim = await claimDelivery('groupme', deliveryId, WEBHOOK_DELIVERY_TTL_MS);
+    if (claim === 'unavailable') {
+      return res.status(503).json({ error: 'GroupMe delivery unavailable' });
+    }
+    if (claim !== 'claimed') {
       return res.sendStatus(200);
     }
 

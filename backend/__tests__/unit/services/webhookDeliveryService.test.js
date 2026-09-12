@@ -31,9 +31,9 @@ describe('shared webhook delivery claim gate', () => {
     expect(await claimDelivery('discord', 'webhook:event')).toBe('duplicate');
   });
 
-  test('continues unclaimed when the store is unavailable', async () => {
+  test('reports store unavailability so routes can retry', async () => {
     WebhookDelivery.create.mockRejectedValueOnce(new Error('mongo down'));
-    expect(await claimDelivery('groupme', 'bot:message')).toBe('claimed');
+    expect(await claimDelivery('groupme', 'bot:message')).toBe('unavailable');
   });
 
   test('releases a provider claim by the same compound key', async () => {

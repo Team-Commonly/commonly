@@ -34,6 +34,7 @@ describe('GroupMe webhook hardening', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED;
+    delete process.env.GROUPME_BOT_ID;
     Integration.findById.mockResolvedValue(integration);
     deliveries.create.mockResolvedValue({});
     deliveries.deleteOne.mockResolvedValue({});
@@ -70,6 +71,29 @@ describe('GroupMe webhook hardening', () => {
       provider: 'groupme', deliveryId: 'bot-1:message-1',
     }));
     expect(registry.get).toHaveBeenCalledWith('groupme', integration);
+  });
+
+  test('uses GROUPME_BOT_ID when the integration row has no bot id', async () => {
+    process.env.GROUPME_BOT_ID = 'env-bot-1';
+    Integration.findById.mockResolvedValue({ ...integration, config: { groupId: 'group-1' } });
+    const response = await request(app)
+      .post('/api/webhooks/groupme/integration-1')
+      .send(payload({ bot_id: 'env-bot-1' }));
+
+    expect(response.status).toBe(200);
+    expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryId: 'env-bot-1:message-1',
+    }));
+  });
+
+  test('returns 503 when the delivery claim store is unavailable', async () => {
+    deliveries.create.mockRejectedValueOnce(new Error('mongo unavailable'));
+    const response = await request(app)
+      .post('/api/webhooks/groupme/integration-1')
+      .send(payload());
+
+    expect(response.status).toBe(503);
+    expect(registry.get).not.toHaveBeenCalled();
   });
 
   test('acknowledges duplicate provider message ids without dispatch', async () => {

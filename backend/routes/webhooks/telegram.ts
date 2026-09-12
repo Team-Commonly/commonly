@@ -1,4 +1,6 @@
 const express = require('express');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const rateLimit = require('express-rate-limit');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
 const Summary = require('../../models/Summary');
@@ -11,8 +13,20 @@ const {
   claimDelivery: claimWebhookDelivery,
   releaseDelivery: releaseWebhookDelivery,
 } = require('../../services/webhookDeliveryService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 const router = express.Router({ mergeParams: true });
+
+const telegramWebhookRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => `telegram:${cloudflareIpRateLimitKeyGenerator(req)}`,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Telegram webhook requests' }),
+});
 
 const ENABLE_COMMAND = '/commonly-enable';
 // Underscore alias: Telegram's registered-command menu forbids hyphens, so
@@ -373,9 +387,10 @@ const handleUnmuteCommand = async (chat: any, integration: any) => {
 const DEDUP_TTL_MS = 10 * 60_000;
 
 // Atomic claim on this update's delivery id (claim-before-run; see
-// models/WebhookDelivery.ts for the contract). Returns 'claimed' | 'duplicate'.
+// models/WebhookDelivery.ts for the contract). Returns 'claimed' | 'duplicate'
+// | 'unavailable'; Telegram intentionally proceeds on the last state.
 // Universal Telegram webhook (single bot, many chats)
-router.post('/', async (req: any, res: any) => {
+router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
   const updateId = req.body?.update_id;
   try {
     if (!verifyTelegramHeader(req)) {
@@ -386,7 +401,10 @@ router.post('/', async (req: any, res: any) => {
     // a parallel delivery): ack and stop, or it becomes a duplicate pod
     // message and a duplicate agent wake.
     if (updateId !== undefined && updateId !== null) {
-      if ((await claimWebhookDelivery('telegram', String(updateId), DEDUP_TTL_MS)) === 'duplicate') {
+      const claim = await claimWebhookDelivery('telegram', String(updateId), DEDUP_TTL_MS);
+      // Telegram historically proceeds when the dedup store is unavailable;
+      // preserve that fail-open contract while HTTP providers return 503.
+      if (claim === 'duplicate') {
         return res.sendStatus(200);
       }
     }
