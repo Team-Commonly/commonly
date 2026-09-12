@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync } from 'fs';
+import { dirname, join, resolve as pathResolve, isAbsolute } from 'path';
 import { homedir } from 'os';
+import { createHash } from 'crypto';
 
 export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'];
 export const DEFAULT_HOOK_TIMEOUT_MS = 3000;
@@ -15,7 +16,7 @@ export const buildHookCommand = ({ agentName, timeoutMs = DEFAULT_HOOK_TIMEOUT_M
   `commonly agent hooks-forward ${shellQuote(agentName)} --timeout ${Math.max(250, Math.trunc(timeoutMs))}`
 );
 
-const hookEntry = ({ agentName, event, timeoutMs }) => ({
+const hookEntry = ({ agentName, timeoutMs }) => ({
   matcher: '',
   hooks: [{
     type: 'command',
@@ -23,9 +24,58 @@ const hookEntry = ({ agentName, event, timeoutMs }) => ({
     // Claude interprets this as seconds.  Keep it short so a dead backend
     // cannot stall every tool call for the 600s default.
     timeout: Math.max(1, Math.ceil(timeoutMs / 1000)),
-    metadata: { commonly: true, event },
   }],
 });
+
+const stableJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const digestArgs = (value) => createHash('sha256').update(stableJson(value ?? {})).digest('hex');
+
+const localPath = (value, root = process.cwd()) => {
+  if (typeof value !== 'string' || !value.trim() || value.includes('\0')) return null;
+  const absolute = isAbsolute(value) ? pathResolve(value) : pathResolve(root, value);
+  const resolvedRoot = pathResolve(root);
+  if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}/`)) return null;
+  let current = absolute;
+  const suffix = [];
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) return null;
+    suffix.unshift(current.slice(parent.length + 1));
+    current = parent;
+  }
+  let resolved;
+  try { resolved = realpathSync(current); } catch { resolved = current; }
+  const candidate = pathResolve(resolved, ...suffix);
+  return candidate === resolvedRoot || candidate.startsWith(`${resolvedRoot}/`) ? candidate : null;
+};
+
+const inputPaths = (input = {}) => {
+  const values = [input.path, input.file_path, input.filePath, input.target_file, input.paths]
+    .flatMap((value) => Array.isArray(value) ? value : [value]);
+  return values.filter((value) => typeof value === 'string' && value.trim());
+};
+
+/** Strip raw tool arguments before they leave the local harness. */
+export const sanitizeHookPayload = (payload = {}, { cwd = process.cwd() } = {}) => {
+  const event = payload.event || payload.hook_event_name || payload.event_name || '';
+  const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
+  const tool = payload.tool || payload.tool_name || payload.toolName;
+  const paths = inputPaths(input).map((value) => localPath(value, cwd)).filter(Boolean);
+  return {
+    ...(event ? { event } : {}),
+    ...(payload.eventId || payload.event_id ? { eventId: payload.eventId || payload.event_id } : {}),
+    ...(typeof tool === 'string' && tool ? { tool } : {}),
+    argsDigest: payload.argsDigest || payload.args_digest || digestArgs(input),
+    ...(paths.length > 0 ? { paths: Array.from(new Set(paths)) } : {}),
+  };
+};
 
 /** Merge Commonly hooks into settings while preserving every user setting. */
 export const mergeHooksConfig = (
@@ -40,10 +90,9 @@ export const mergeHooksConfig = (
     // Replace only the entry generated for this agent; unrelated matchers and
     // command hooks remain byte-for-byte represented in the resulting JSON.
     const retained = prior.filter((entry) => !entry?.hooks?.some((h) => (
-      h?.metadata?.commonly === true
-      && h?.command?.includes(`hooks-forward '${String(agentName).replaceAll("'", "'\\''")}'`)
+      h?.command?.includes(`commonly agent hooks-forward '${String(agentName).replaceAll("'", "'\\''")}'`)
     )));
-    hooks[event] = [...retained, hookEntry({ agentName, event, timeoutMs })];
+    hooks[event] = [...retained, hookEntry({ agentName, timeoutMs })];
   }
   return { ...source, hooks };
 };
@@ -84,8 +133,9 @@ export const writeHooksConfig = ({
 /**
  * Execute one hook event.  It is intentionally dependency-light so the
  * generated Claude command works on a fresh CLI install (Node 20's fetch).
- * On a PreToolUse transport failure, exit 2 and print a deny decision: Claude
- * treats either signal as blocking.  Other events are best-effort acks.
+ * On any transport failure, fail open with no output.  A deny is only the
+ * positive decision returned by the Commonly endpoint; D7 does not let a
+ * missing/slow ledger become an accidental write blocker.
  */
 export const forwardHookEvent = async ({
   endpoint,
@@ -94,8 +144,6 @@ export const forwardHookEvent = async ({
   timeoutMs = DEFAULT_HOOK_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
   stdout = (value) => process.stdout.write(value),
-  stderr = (value) => process.stderr.write(value),
-  exit = (code) => process.exitCode = code,
 } = {}) => {
   let payload;
   try { payload = typeof input === 'string' ? JSON.parse(input || '{}') : input; } catch {
@@ -104,10 +152,6 @@ export const forwardHookEvent = async ({
   const event = payload?.event || payload?.hook_event_name || payload?.event_name || '';
   const preTool = event === 'PreToolUse';
   if (!endpoint || !token || !fetchImpl) {
-    if (preTool) {
-      stdout(JSON.stringify({ permissionDecision: 'deny', reason: 'hook_unavailable' }));
-      exit(2);
-    }
     return { acknowledged: false, reason: 'hook_unavailable' };
   }
   const controller = new AbortController();
@@ -116,23 +160,21 @@ export const forwardHookEvent = async ({
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(sanitizeHookPayload(payload)),
       signal: controller.signal,
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (preTool) stdout(JSON.stringify({ permissionDecision: body.permissionDecision || 'allow', ...(body.reason ? { reason: body.reason } : {}) }));
+    if (preTool && body.permissionDecision === 'deny') {
+      stdout(JSON.stringify({ permissionDecision: 'deny', ...(body.reason ? { reason: body.reason } : {}) }));
+    }
     return body;
   } catch (error) {
-    if (preTool) {
-      stdout(JSON.stringify({ permissionDecision: 'deny', reason: 'hook_unavailable' }));
-      exit(2);
-    } else {
-      stderr(`Commonly hook unavailable: ${error.message}\n`);
-    }
+    // Deliberately silent and exit-0 for every failure.  Claude's default is
+    // fail-open, and an unavailable advisory hook must not block a tool.
+    void error;
     return { acknowledged: false, reason: 'hook_unavailable' };
   } finally {
     clearTimeout(timer);
   }
 };
-

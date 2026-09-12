@@ -7,6 +7,7 @@ import {
   mergeHooksConfig,
   writeHooksConfig,
   forwardHookEvent,
+  sanitizeHookPayload,
 } from '../src/lib/hooks-config.js';
 
 describe('hooks config writer', () => {
@@ -43,7 +44,7 @@ describe('hooks config writer', () => {
     expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
   });
 
-  test('fails closed for a PreToolUse transport error', async () => {
+  test('fails open for a PreToolUse transport error', async () => {
     const stdout = [];
     let exitCode;
     await forwardHookEvent({
@@ -55,8 +56,19 @@ describe('hooks config writer', () => {
       stderr: () => {},
       exit: (code) => { exitCode = code; },
     });
-    expect(JSON.parse(stdout[0])).toMatchObject({ permissionDecision: 'deny' });
-    expect(exitCode).toBe(2);
+    expect(stdout).toHaveLength(0);
+    expect(exitCode).toBeUndefined();
+  });
+
+  test('sends only tool name, args digest, and resolved paths', () => {
+    const payload = sanitizeHookPayload({
+      hook_event_name: 'PreToolUse',
+      event_id: 'e1',
+      tool_name: 'Write',
+      tool_input: { file_path: 'src/a.ts', content: 'never send this' },
+    }, { cwd: process.cwd() });
+    expect(payload).toEqual(expect.objectContaining({ event: 'PreToolUse', eventId: 'e1', tool: 'Write' }));
+    expect(payload.argsDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(payload)).not.toContain('never send this');
   });
 });
-

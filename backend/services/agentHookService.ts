@@ -10,6 +10,8 @@
 import fs from 'fs';
 import path from 'path';
 
+const HookLedgerEvent = require('../models/HookLedgerEvent');
+
 export const HOOK_EVENT_TYPES = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const;
 export type HookEventType = typeof HOOK_EVENT_TYPES[number];
 
@@ -32,16 +34,43 @@ export interface HookDecision {
 }
 
 type ClaimProvider = (podId: string) => Promise<ActiveWorkClaim[]>;
-
-const REPLAY_TTL_MS = 10 * 60 * 1000;
-const MAX_REPLAY_ENTRIES = 10_000;
-const replay = new Map<string, { expiresAt: number; response: HookDecision; statusCode: number }>();
+type LedgerKey = { podId: string; agentName: string; eventId: string };
+type LedgerStore = {
+  find: (key: LedgerKey) => Promise<any | null>;
+  insertOrGet: (key: LedgerKey, value: Record<string, unknown>) => Promise<any | null>;
+  clear?: () => Promise<void>;
+};
 
 // The D1 work-claim store is still being built.  Keeping the provider behind
 // this seam lets the endpoint ship now and lets the ledger become durable
 // without changing the public hook contract.  Tests and the ledger adapter can
 // replace it; the safe default is no claim, which preserves D7.
 let claimProvider: ClaimProvider = async () => [];
+let injectedLedgerStore: LedgerStore | null = null;
+
+const mongoLedgerStore: LedgerStore = {
+  async find(key) {
+    return HookLedgerEvent.findOne(key).lean();
+  },
+  async insertOrGet(key, value) {
+    return HookLedgerEvent.findOneAndUpdate(
+      key,
+      { $setOnInsert: value },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+  },
+  async clear() {
+    await HookLedgerEvent.deleteMany({});
+  },
+};
+
+const getLedgerStore = (): LedgerStore | null => {
+  if (injectedLedgerStore) return injectedLedgerStore;
+  // Mongoose buffers operations while disconnected for 10 seconds by
+  // default.  A hook must not inherit that stall; treat an unavailable ledger
+  // as the ruled fail-open path instead.
+  return HookLedgerEvent?.db?.readyState === 1 ? mongoLedgerStore : null;
+};
 
 export const setActiveClaimProvider = (provider: ClaimProvider): void => {
   claimProvider = provider;
@@ -51,8 +80,12 @@ export const resetActiveClaimProvider = (): void => {
   claimProvider = async () => [];
 };
 
-export const resetHookReplay = (): void => {
-  replay.clear();
+export const setHookLedgerStore = (store: LedgerStore | null): void => {
+  injectedLedgerStore = store;
+};
+
+export const resetHookReplay = async (): Promise<void> => {
+  try { await getLedgerStore()?.clear?.(); } catch { /* test/db cleanup is best effort */ }
 };
 
 const normalize = (value: unknown): string => String(value || '').trim().toLowerCase();
@@ -110,6 +143,8 @@ const asPathValues = (value: unknown): string[] => {
 
 /** Extract only path-shaped fields; command text is intentionally not parsed. */
 export const extractToolPaths = (payload: any): string[] => {
+  const declared = asPathValues(payload?.paths || payload?.resolvedPaths);
+  if (declared.length > 0) return Array.from(new Set(declared.map((value) => value.trim()).filter(Boolean)));
   const input = payload?.tool_input || payload?.data?.tool_input || {};
   const values = [
     ...asPathValues(input.path),
@@ -167,11 +202,11 @@ export const evaluatePreToolUse = async ({
   try {
     claims = await provider(podId);
   } catch {
-    // The generated CLI config is fail-closed for PreToolUse.  Returning a
-    // deny decision plus 503 lets the harness stop while callers can retry.
+    // D7 is fail-open at the runtime edge: a missing/temporarily unavailable
+    // ledger is not evidence of a foreign claim and must not stall a tool.
     return {
-      decision: { ...base, permissionDecision: 'deny', reason: 'claim_lookup_failed' },
-      statusCode: 503,
+      decision: { ...base, reason: 'claim_lookup_unavailable' },
+      statusCode: 200,
     };
   }
 
@@ -196,25 +231,10 @@ export const evaluatePreToolUse = async ({
       ...base,
       permissionDecision: 'deny',
       holder,
-      reason: `path is under ${holder}'s active claim; claim it before proceeding`,
+      reason: `path is under ${holder}'s active claim; call commonly_claim_task before proceeding`,
     },
     statusCode: 200,
   };
-};
-
-const replayKey = (podId: string, agentName: string, eventId: string): string => (
-  `${podId}:${normalize(agentName)}:${eventId}`
-);
-
-const pruneReplay = (now = Date.now()): void => {
-  for (const [key, value] of replay) {
-    if (value.expiresAt <= now) replay.delete(key);
-  }
-  while (replay.size > MAX_REPLAY_ENTRIES) {
-    const first = replay.keys().next().value;
-    if (first) replay.delete(first);
-    else break;
-  }
 };
 
 export const processHookEvent = async (options: {
@@ -224,21 +244,68 @@ export const processHookEvent = async (options: {
   eventId: string;
   payload: any;
   rootDir?: string;
+  provider?: ClaimProvider;
 }): Promise<{ response: HookDecision; statusCode: number; replayed: boolean }> => {
-  const now = Date.now();
-  pruneReplay(now);
-  const key = replayKey(options.podId, options.agentName, options.eventId);
-  const existing = replay.get(key);
-  if (existing && existing.expiresAt > now) {
-    return { response: { ...existing.response, replayed: true }, statusCode: existing.statusCode, replayed: true };
+  const key = {
+    podId: String(options.podId),
+    agentName: normalize(options.agentName),
+    eventId: String(options.eventId),
+  };
+  const ledger = getLedgerStore();
+  try {
+    const existing = await ledger?.find(key);
+    if (existing) {
+      return {
+        response: {
+          permissionDecision: existing.permissionDecision,
+          eventId: existing.eventId,
+          event: existing.event,
+          ...(existing.reason ? { reason: existing.reason } : {}),
+          ...(existing.holder ? { holder: existing.holder } : {}),
+          replayed: true,
+        },
+        statusCode: 200,
+        replayed: true,
+      };
+    }
+  } catch {
+    // D7: a ledger read failure is not evidence of a foreign claim. Continue
+    // to evaluate and attempt the append; the caller remains fail-open.
   }
 
   const result = await evaluatePreToolUse(options);
   const response = { ...result.decision, replayed: false };
-  replay.set(key, { expiresAt: now + REPLAY_TTL_MS, response, statusCode: result.statusCode });
-  pruneReplay(now);
-  return { response, statusCode: result.statusCode, replayed: false };
+  try {
+    const inserted = await ledger?.insertOrGet(key, {
+      ...key,
+      event: options.event,
+      ...(typeof options.payload?.tool === 'string' ? { tool: options.payload.tool } : {}),
+      ...(typeof options.payload?.argsDigest === 'string' ? { argsDigest: options.payload.argsDigest } : {}),
+      paths: extractToolPaths(options.payload),
+      permissionDecision: response.permissionDecision,
+      ...(response.reason ? { reason: response.reason } : {}),
+      ...(response.holder ? { holder: response.holder } : {}),
+    });
+    if (inserted && String(inserted.eventId) === String(options.eventId)
+      && String(inserted.agentName) === normalize(options.agentName)
+      && inserted.permissionDecision !== response.permissionDecision) {
+      return {
+        response: {
+          permissionDecision: inserted.permissionDecision,
+          eventId: inserted.eventId,
+          event: inserted.event,
+          ...(inserted.reason ? { reason: inserted.reason } : {}),
+          ...(inserted.holder ? { holder: inserted.holder } : {}),
+          replayed: true,
+        },
+        statusCode: 200,
+        replayed: true,
+      };
+    }
+  } catch {
+    // Fail-open if the append races or the ledger is temporarily unavailable.
+  }
+  return { response, statusCode: 200, replayed: false };
 };
 
-export const _test = { replay, replayKey, claimIsActive, withinRoot };
-
+export const _test = { claimIsActive, withinRoot };

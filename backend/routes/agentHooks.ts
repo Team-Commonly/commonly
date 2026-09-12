@@ -56,6 +56,16 @@ const readLean = async (query: any): Promise<any> => {
 
 const eventName = (body: any): unknown => body?.event || body?.hook_event_name || body?.event_name;
 
+const sanitizeHookBody = (body: any, event: string, eventId: string) => ({
+  event,
+  eventId,
+  ...(typeof body?.tool === 'string' ? { tool: body.tool } : {}),
+  ...(typeof body?.tool_name === 'string' ? { tool: body.tool_name } : {}),
+  ...(typeof body?.argsDigest === 'string' ? { argsDigest: body.argsDigest } : {}),
+  ...(typeof body?.args_digest === 'string' ? { argsDigest: body.args_digest } : {}),
+  ...(Array.isArray(body?.paths) ? { paths: body.paths.filter((value: any) => typeof value === 'string') } : {}),
+});
+
 /**
  * Claude/Codex hook ingress.  The endpoint returns the same decision for a
  * replayed (pod, agent, eventId) tuple and never echoes the event payload.
@@ -100,28 +110,28 @@ router.post('/pods/:podId/hooks', hookRateLimit, agentRuntimeAuth, async (req: a
       return res.status(403).json({ code: 'not_installed', message: 'agent is not installed in this pod' });
     }
 
+    // Hook bodies are an ingress contract, not an event archive.  Keep only
+    // the tool name, digest, and already-resolved paths; in particular never
+    // pass Claude's raw tool_input (which may contain Write contents) onward.
+    const payload = sanitizeHookBody(body, String(event), eventId);
     const result = await processHookEvent({
       podId,
       agentName,
       event,
       eventId,
-      payload: body,
+      payload,
     });
     return res.status(result.statusCode).json(result.response);
   } catch (error: any) {
     // Do not include body/tool_input in diagnostics: hook payloads may carry
-    // source, credentials, or command arguments.  PreToolUse remains
-    // fail-closed if the claim provider is unavailable.
-    if (event === 'PreToolUse') {
-      return res.status(503).json({
-        code: 'hook_unavailable',
-        eventId,
-        event,
-        permissionDecision: 'deny',
-        reason: 'hook_unavailable',
-      });
-    }
-    return res.status(500).json({ code: 'hook_failed', message: error?.message || 'hook failed' });
+    // source, credentials, or command arguments. D7 is fail-open at this
+    // runtime edge, so an unavailable ledger cannot invent a deny decision.
+    return res.status(200).json({
+      eventId,
+      event,
+      permissionDecision: 'allow',
+      reason: 'hook_unavailable',
+    });
   }
 });
 
