@@ -5,7 +5,7 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { toPublicIntegration } = require('../../models/integrationPublicConfig');
+const { toPublicIntegration, withoutConnectCode } = require('../../models/integrationPublicConfig');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -38,7 +38,10 @@ const publicIntegration = (integration: unknown): unknown => {
     ? (integration as { toJSON: () => unknown }).toJSON()
     : JSON.parse(JSON.stringify(integration));
   if (!raw || typeof raw !== 'object') return raw;
-  return toPublicIntegration(raw as Record<string, unknown>);
+  const result = toPublicIntegration(raw as Record<string, unknown>);
+  // A Slack row's connect code is its OAuth state. The catalog has no reader
+  // for it; the Connectors page polls on it from the owner's list.
+  return result?.type === 'slack' ? withoutConnectCode(result) : result;
 };
 
 // The parent has operational fields that are useful to the owner's state

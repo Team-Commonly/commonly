@@ -183,7 +183,10 @@ describe('platformIntegration virtual (#1672)', () => {
       expect(slack.config.pendingBind).toEqual({ teamId: 'T1' });
       const serialized = JSON.stringify(body);
       Object.values(SECRETS).forEach((value) => expect(serialized).not.toContain(value));
-      expect(body.find((entry) => entry.type === 'telegram').config.connectCode).toBe('CODE-1');
     }
+    // The enable code survives the secret strip on the pod list, which ChatRoom
+    // reads it from; the admin list has no reader for it and drops it.
+    expect(pod.body.find((entry) => entry.type === 'telegram').config.connectCode).toBe('CODE-1');
+    expect(admin.body.find((entry) => entry.type === 'telegram').config).not.toHaveProperty('connectCode');
   });
 });

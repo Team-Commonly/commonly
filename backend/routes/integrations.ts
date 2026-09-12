@@ -30,6 +30,8 @@ const { hash, randomSecret } = require('../utils/secret');
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
+// eslint-disable-next-line global-require
+const { withoutConnectCode } = require('../models/integrationPublicConfig');
 import { Types } from 'mongoose';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
@@ -509,7 +511,8 @@ router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
 router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
   try {
     const integrations = await Integration.find({ isActive: true }).populate('podId', 'name type createdBy').populate('createdBy', 'username email').populate('platformIntegration').sort({ createdAt: -1 });
-    res.json(integrations);
+    // The connect code is a member's one-time enable code; the admin list has no reader for it.
+    res.json(integrations.map((integration: { toJSON: () => Record<string, unknown> }) => withoutConnectCode(integration.toJSON())));
   } catch (error) {
     console.error('Error fetching all integrations:', error);
     res.status(500).json({ message: 'Server error' });

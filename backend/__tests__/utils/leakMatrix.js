@@ -186,11 +186,6 @@ const ALLOWED_DISCLOSURES = [
  */
 const ACCESS_2XX = 'ACCESS_2XX';
 
-/* eslint-disable max-len */
-const R_INT_CONNECTCODE = 'config.connectCode reaches a caller that is not the owner reading it from a surface that needs it';
-const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth state; no surface reads it';
-/* eslint-enable max-len */
-
 /**
  * Leaks that reproduce on main today, sorted by (path, variant, method, role,
  * sentinelKey). Each entry is an exact (method, path, role, sentinelKey) tuple
@@ -198,14 +193,7 @@ const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth stat
  * leak not listed; the ratchet fails on any entry that no longer reproduces,
  * so the list only shrinks. Remove an entry when its fix lands.
  */
-/* eslint-disable max-len */
-const KNOWN_EXPOSURES = [
-  // GET /api/installables — follow-up: a Slack row's connectCode is its OAuth state; keep it off the catalog
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_CONNECTCODE', reason: R_SLACK_OAUTH_STATE },
-  // GET /api/integrations/admin/all — follow-up: drop connectCode from the admin list
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_TELEGRAM_CONNECTCODE', reason: R_INT_CONNECTCODE },
-];
-/* eslint-enable max-len */
+const KNOWN_EXPOSURES = [];
 
 // `variant` distinguishes two cases on one route template (a pod grant vs a
 // seat grant on GET /api/grants/:grantId); an entry must name it to match.
