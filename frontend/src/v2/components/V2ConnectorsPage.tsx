@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import V2ConnectorTools from './V2ConnectorTools';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -1287,6 +1288,9 @@ const V2ConnectorsPage: React.FC = () => {
             ))}
         </div>
       )}
+
+      {/* Tools plan §6: the second list, under the channels, in the same grammar. */}
+      {!loading && <V2ConnectorTools pods={pods} />}
 
       {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
     </div>
