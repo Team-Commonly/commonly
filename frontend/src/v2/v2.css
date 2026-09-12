@@ -9618,13 +9618,16 @@ body.modern-ui.v2-canvas {
   line-height: 20px;
 }
 .v2-connectors__loading { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; }
-.v2-connectors__content { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; align-items: stretch; }
+.v2-connectors__content { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: stretch; }
 .v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
 .v2-connectors__rows { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
 
 .v2-connector-row {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 200px 120px;
+  /* Keep columns aligned while giving details the only flexible track. The
+     old fixed 200px + 200px + 120px tracks left details ~20px wide at 1184px,
+     while a flexible action track let each row drift and clipped its label. */
+  grid-template-columns: 140px minmax(150px, 1fr) 100px 120px;
   align-items: center;
   min-height: 82px;
   padding: 16px 18px;
@@ -9637,7 +9640,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-connector-row__selection {
   display: grid;
   grid-column: 1 / 4;
-  grid-template-columns: 200px minmax(0, 1fr) 200px;
+  grid-template-columns: 140px minmax(150px, 1fr) 100px;
   align-items: center;
   min-width: 0;
   padding: 0;
@@ -9666,7 +9669,7 @@ body.modern-ui.v2-canvas {
 @media (prefers-reduced-motion: reduce) {
   .v2-connector-row__dot--pulse { animation: none; }
 }
-.v2-connector-row__details { display: flex; min-width: 0; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
+.v2-connector-row__details { display: flex; min-width: 0; padding-right: 8px; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
 /* Line 1 wraps like meta does; a sentence never ellipsises at 390 (wren, 64144). */
 .v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
@@ -9807,6 +9810,11 @@ body.modern-ui.v2-canvas {
 .v2-tools__agents { display: grid; gap: 6px; }
 .v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
 .v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
+@media (max-width: 1010px) {
+  .v2-connectors { min-height: 0; }
+  .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .v2-connectors__rows { flex: none; }
+}
 @media (max-width: 760px) {
   .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
