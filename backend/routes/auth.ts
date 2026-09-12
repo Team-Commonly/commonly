@@ -132,6 +132,20 @@ const deviceManageLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: too many device authorization requests'),
 });
 
+// The signed-in session reads and writes the caller's own User: refresh,
+// GET /user, GET and PUT /profile. Authentication itself reads User, so the
+// limiter runs first. Generous, not login-tight: every app load fetches
+// /user more than once, and the key is per IP behind shared NATs.
+const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: too many session requests'),
+});
+
 // Waitlist is a one-shot action per person — 5/hour/IP.
 const waitlistLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -270,14 +284,14 @@ router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
 router.post('/forgot-password', forgotLimiter, forgotPassword);
 router.post('/resend-verification', resendVerificationLimiter, resendVerification);
 router.post('/reset-password', loginLimiter, resetPassword);
-router.post('/refresh', auth, (req: AuthReq, res: Res) => {
+router.post('/refresh', sessionLimiter, auth, (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   return refresh(req, res);
 });
-router.get('/user', auth, getCurrentUser);
+router.get('/user', sessionLimiter, auth, getCurrentUser);
 router.get('/verify-email', verifyEmail);
-router.get('/profile', auth, getProfile);
-router.put('/profile', auth, updateProfile);
+router.get('/profile', sessionLimiter, auth, getProfile);
+router.put('/profile', sessionLimiter, auth, updateProfile);
 
 router.get('/admin/check', auth, adminAuth, (_req: unknown, res: Res) => {
   res.json({ isAdmin: true, message: 'Admin access confirmed' });

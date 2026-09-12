@@ -298,6 +298,8 @@ const users = {
     // Routes whose subject is always the caller: only `self` is meaningful.
     ...matrix('GET', '/api/auth/user', () => '/api/auth/user', { self: 200 }),
     ...matrix('GET', '/api/auth/profile', () => '/api/auth/profile', { self: 200 }),
+    // PUT returns the saved User too, so it must carry the same projection.
+    ...matrix('PUT', '/api/auth/profile', () => '/api/auth/profile', { self: 200 }),
     ...matrix('GET', '/api/auth/api-token', () => '/api/auth/api-token', { self: 200 }),
     ...matrix('GET', '/api/users/profile', () => '/api/users/profile', { self: 200 }),
     // Routes with a subject: the seeded `self` user, viewed by each role.
