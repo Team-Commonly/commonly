@@ -1129,6 +1129,24 @@ const resolveBotUserIds = async (
 };
 
 /**
+ * Anchored, case-insensitive matcher for one @handle — escaped, not
+ * interpolated raw.
+ *
+ * This is not a live injection fix. `extractMentions` constrains handles to
+ * `[a-z0-9_-]`, and none of those are regex metacharacters, so the raw form
+ * was safe. It is a LOCALITY fix (@sprint-review on #1157): the safety rested
+ * on a character class defined ~850 lines away, and the very commit that added
+ * this lookup also widened that class. A precondition maintained in another
+ * function is one edit away from not holding, and nothing at this call site
+ * would fail when it stops — the query would just silently match the wrong
+ * users. Escaping makes the guarantee local and survives the next widening.
+ */
+const handleMatcher = (username: string): RegExp => new RegExp(
+  `^${String(username).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+  'i',
+);
+
+/**
  * Resolve explicit @handles that belong to humans, not installed agents.
  *
  * The composer inserts a member's real username, while `extractMentions`
@@ -1151,7 +1169,7 @@ const resolveHumanMentionUserIds = async (
   try {
     const rows = await User.find({
       isBot: false,
-      $or: handles.map((username) => ({ username: new RegExp(`^${username}$`, 'i') })),
+      $or: handles.map((username) => ({ username: handleMatcher(username) })),
     }).select('_id username').lean() as Array<{ _id?: unknown }>;
     return new Set(
       rows
@@ -2170,6 +2188,12 @@ const enqueueDmEvent = async ({
 
 export {
   extractMentions,
+  // Exported for the escaping test: the property that matters — a metacharacter
+  // in a handle matches literally — is unreachable through `enqueueMentions`
+  // while `extractMentions` still excludes metacharacters. A test that can only
+  // observe the safe inputs cannot fail when the class widens, which is the
+  // whole defect this guards.
+  handleMatcher,
   enqueueMentions,
   enqueueDmEvent,
   MENTION_ALIASES,
