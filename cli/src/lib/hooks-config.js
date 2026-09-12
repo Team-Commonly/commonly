@@ -1,10 +1,16 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync } from 'fs';
-import { dirname, join, resolve as pathResolve, isAbsolute } from 'path';
+import { dirname, join, resolve as pathResolve, isAbsolute, relative } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
 
 export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'];
 export const DEFAULT_HOOK_TIMEOUT_MS = 3000;
+export const MAX_HOOK_TIMEOUT_MS = 5000;
+
+export const clampHookTimeoutMs = (value) => Math.min(
+  MAX_HOOK_TIMEOUT_MS,
+  Math.max(250, Math.trunc(Number.isFinite(Number(value)) ? Number(value) : DEFAULT_HOOK_TIMEOUT_MS)),
+);
 
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
@@ -13,7 +19,7 @@ const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
  * COMMONLY_AGENT_TOKEN from the process environment at invocation time.
  */
 export const buildHookCommand = ({ agentName, timeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) => (
-  `commonly agent hooks-forward ${shellQuote(agentName)} --timeout ${Math.max(250, Math.trunc(timeoutMs))}`
+  `commonly agent hooks-forward ${shellQuote(agentName)} --timeout ${clampHookTimeoutMs(timeoutMs)}`
 );
 
 const hookEntry = ({ agentName, timeoutMs }) => ({
@@ -23,7 +29,7 @@ const hookEntry = ({ agentName, timeoutMs }) => ({
     command: buildHookCommand({ agentName, timeoutMs }),
     // Claude interprets this as seconds.  Keep it short so a dead backend
     // cannot stall every tool call for the 600s default.
-    timeout: Math.max(1, Math.ceil(timeoutMs / 1000)),
+    timeout: Math.ceil(clampHookTimeoutMs(timeoutMs) / 1000),
   }],
 });
 
@@ -37,10 +43,15 @@ const stableJson = (value) => {
 
 const digestArgs = (value) => createHash('sha256').update(stableJson(value ?? {})).digest('hex');
 
+/** Resolve a caller-side path and emit the repo-relative POSIX wire form. */
 const localPath = (value, root = process.cwd()) => {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) return null;
-  const absolute = isAbsolute(value) ? pathResolve(value) : pathResolve(root, value);
+  if (value.trim().split(/[\\/]/).includes('..')) return null;
   const resolvedRoot = pathResolve(root);
+  const rootReal = (() => {
+    try { return realpathSync(resolvedRoot); } catch { return resolvedRoot; }
+  })();
+  const absolute = isAbsolute(value) ? pathResolve(value) : pathResolve(resolvedRoot, value);
   if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}/`)) return null;
   let current = absolute;
   const suffix = [];
@@ -53,7 +64,9 @@ const localPath = (value, root = process.cwd()) => {
   let resolved;
   try { resolved = realpathSync(current); } catch { resolved = current; }
   const candidate = pathResolve(resolved, ...suffix);
-  return candidate === resolvedRoot || candidate.startsWith(`${resolvedRoot}/`) ? candidate : null;
+  if (candidate !== rootReal && !candidate.startsWith(`${rootReal}/`)) return null;
+  const repoPath = relative(rootReal, candidate).replaceAll('\\', '/');
+  return repoPath || '.';
 };
 
 const inputPaths = (input = {}) => {
@@ -67,7 +80,12 @@ export const sanitizeHookPayload = (payload = {}, { cwd = process.cwd() } = {}) 
   const event = payload.event || payload.hook_event_name || payload.event_name || '';
   const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
   const tool = payload.tool || payload.tool_name || payload.toolName;
-  const paths = inputPaths(input).map((value) => localPath(value, cwd)).filter(Boolean);
+  const root = payload.cwd || cwd;
+  const declaredPaths = [payload.paths, payload.resolvedPaths]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value) => typeof value === 'string');
+  const paths = [...inputPaths(input), ...declaredPaths]
+    .map((value) => localPath(value, root)).filter(Boolean);
   return {
     ...(event ? { event } : {}),
     ...(payload.eventId || payload.event_id ? { eventId: payload.eventId || payload.event_id } : {}),
@@ -155,7 +173,7 @@ export const forwardHookEvent = async ({
     return { acknowledged: false, reason: 'hook_unavailable' };
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(250, Math.trunc(timeoutMs)));
+  const timer = setTimeout(() => controller.abort(), clampHookTimeoutMs(timeoutMs));
   try {
     const response = await fetchImpl(endpoint, {
       method: 'POST',

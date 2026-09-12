@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
+  MAX_HOOK_TIMEOUT_MS,
   buildHookCommand,
   mergeHooksConfig,
   writeHooksConfig,
@@ -19,6 +20,7 @@ describe('hooks config writer', () => {
     ]));
     expect(JSON.stringify(config)).not.toContain('cm_agent_');
     expect(buildHookCommand({ agentName: 'nova' })).toContain(`--timeout ${DEFAULT_HOOK_TIMEOUT_MS}`);
+    expect(buildHookCommand({ agentName: 'nova', timeoutMs: 6000 })).toContain(`--timeout ${MAX_HOOK_TIMEOUT_MS}`);
   });
 
   test('preserves unrelated hooks and replaces only this agent entry', () => {
@@ -69,6 +71,15 @@ describe('hooks config writer', () => {
     }, { cwd: process.cwd() });
     expect(payload).toEqual(expect.objectContaining({ event: 'PreToolUse', eventId: 'e1', tool: 'Write' }));
     expect(payload.argsDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(payload.paths).toEqual(['src/a.ts']);
     expect(JSON.stringify(payload)).not.toContain('never send this');
+  });
+
+  test('drops parent traversal and paths outside the caller checkout', () => {
+    const payload = sanitizeHookPayload({
+      hook_event_name: 'PreToolUse',
+      tool_input: { file_path: '../outside.txt', paths: ['/tmp/outside.txt'] },
+    }, { cwd: process.cwd() });
+    expect(payload.paths).toBeUndefined();
   });
 });

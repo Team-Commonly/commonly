@@ -7,9 +7,6 @@
  * retain hook payloads or write tool_input to logs.
  */
 
-import fs from 'fs';
-import path from 'path';
-
 const HookLedgerEvent = require('../models/HookLedgerEvent');
 
 export const HOOK_EVENT_TYPES = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const;
@@ -17,6 +14,9 @@ export type HookEventType = typeof HOOK_EVENT_TYPES[number];
 
 export interface ActiveWorkClaim {
   claimId?: string;
+  agentId?: string;
+  agentUserId?: string;
+  ownerId?: string;
   agentName?: string;
   claimedBy?: string;
   instanceId?: string;
@@ -34,7 +34,7 @@ export interface HookDecision {
 }
 
 type ClaimProvider = (podId: string) => Promise<ActiveWorkClaim[]>;
-type LedgerKey = { podId: string; agentName: string; eventId: string };
+type LedgerKey = { podId: string; agentId: string; eventId: string };
 type LedgerStore = {
   find: (key: LedgerKey) => Promise<any | null>;
   insertOrGet: (key: LedgerKey, value: Record<string, unknown>) => Promise<any | null>;
@@ -94,45 +94,21 @@ export const isHookEventType = (value: unknown): value is HookEventType => (
   typeof value === 'string' && (HOOK_EVENT_TYPES as readonly string[]).includes(value)
 );
 
-const withinRoot = (candidate: string, root: string): boolean => (
-  candidate === root || candidate.startsWith(`${root}${path.sep}`)
-);
-
 /**
- * Resolve a path without allowing `..`, absolute-path, or symlink escapes.
- * Non-existent files are resolved through their nearest existing parent so a
- * new file can still be checked against a claim.
+ * Normalize the repo-relative path contract emitted by the CLI.  The server
+ * intentionally performs no filesystem access: the caller resolves symlinks
+ * on its own checkout, and the ingress only accepts safe POSIX path strings.
  */
-export const resolvePathWithinRoot = (value: unknown, rootDir = process.env.COMMONLY_HOOK_REPO_ROOT || process.cwd()): string | null => {
+export const resolvePathWithinRoot = (value: unknown, _rootDir?: string): string | null => {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) return null;
-  let root: string;
-  try {
-    root = fs.realpathSync.native(path.resolve(rootDir));
-  } catch {
-    root = path.resolve(rootDir);
-  }
-
   const raw = value.trim();
-  const absolute = path.isAbsolute(raw) ? path.normalize(raw) : path.resolve(root, raw);
-  if (!withinRoot(absolute, root)) return null;
-
-  let current = absolute;
-  const suffix: string[] = [];
-  while (!fs.existsSync(current)) {
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    suffix.unshift(path.basename(current));
-    current = parent;
-  }
-
-  let resolved: string;
-  try {
-    resolved = fs.realpathSync.native(current);
-  } catch {
-    resolved = path.resolve(current);
-  }
-  resolved = path.resolve(resolved, ...suffix);
-  return withinRoot(resolved, root) ? resolved : null;
+  // POSIX paths are the wire format.  Backslashes and drive prefixes are
+  // rejected rather than interpreted differently by another host OS.
+  if (raw.includes('\\') || raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) return null;
+  const segments = raw.split('/');
+  if (segments.some((segment) => segment === '..')) return null;
+  const normalized = segments.filter((segment) => segment && segment !== '.').join('/');
+  return normalized || '.';
 };
 
 const asPathValues = (value: unknown): string[] => {
@@ -144,19 +120,20 @@ const asPathValues = (value: unknown): string[] => {
 /** Extract only path-shaped fields; command text is intentionally not parsed. */
 export const extractToolPaths = (payload: any): string[] => {
   const declared = asPathValues(payload?.paths || payload?.resolvedPaths);
-  if (declared.length > 0) return Array.from(new Set(declared.map((value) => value.trim()).filter(Boolean)));
-  const input = payload?.tool_input || payload?.data?.tool_input || {};
-  const values = [
-    ...asPathValues(input.path),
-    ...asPathValues(input.file_path),
-    ...asPathValues(input.filePath),
-    ...asPathValues(input.target_file),
-    ...asPathValues(input.paths),
-  ];
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+  return Array.from(new Set(
+    declared
+      .map((value) => resolvePathWithinRoot(value))
+      .filter((value): value is string => Boolean(value)),
+  ));
 };
 
-const claimOwner = (claim: ActiveWorkClaim): string => normalize(claim.agentName || claim.claimedBy);
+const claimOwnerId = (claim: ActiveWorkClaim): string => normalize(
+  claim.agentId || claim.agentUserId || claim.ownerId,
+);
+
+const claimHolderLabel = (claim: ActiveWorkClaim): string => String(
+  claim.agentName || claim.claimedBy || claim.agentId || claim.agentUserId || 'another agent',
+);
 
 const claimIsActive = (claim: ActiveWorkClaim, now = Date.now()): boolean => {
   if (!claim.expiresAt) return true;
@@ -164,9 +141,14 @@ const claimIsActive = (claim: ActiveWorkClaim, now = Date.now()): boolean => {
   return Number.isFinite(expiry) && expiry > now;
 };
 
-const claimCoversPath = (claimPath: string, targetPath: string, rootDir: string): boolean => {
-  const claimResolved = resolvePathWithinRoot(claimPath, rootDir);
-  return Boolean(claimResolved && withinRoot(targetPath, claimResolved));
+const withinRoot = (candidate: string, root: string): boolean => (
+  root === '.' || candidate === root || candidate.startsWith(`${root}/`)
+);
+
+const claimCoversPath = (claimPath: string, targetPath: string): boolean => {
+  const claimResolved = resolvePathWithinRoot(claimPath);
+  const targetResolved = resolvePathWithinRoot(targetPath);
+  return Boolean(claimResolved && targetResolved && withinRoot(targetResolved, claimResolved));
 };
 
 export const evaluatePreToolUse = async ({
@@ -175,11 +157,12 @@ export const evaluatePreToolUse = async ({
   event,
   eventId,
   payload,
-  rootDir = process.env.COMMONLY_HOOK_REPO_ROOT || process.cwd(),
+  agentId,
   provider = claimProvider,
 }: {
   podId: string;
   agentName: string;
+  agentId?: string;
   event: HookEventType;
   eventId: string;
   payload: any;
@@ -191,9 +174,7 @@ export const evaluatePreToolUse = async ({
   };
   if (event !== 'PreToolUse') return { decision: base, statusCode: 200 };
 
-  const paths = extractToolPaths(payload)
-    .map((candidate) => resolvePathWithinRoot(candidate, rootDir))
-    .filter((candidate): candidate is string => Boolean(candidate));
+  const paths = extractToolPaths(payload);
   // A hook with no path-shaped input cannot prove a work-area conflict.  D7
   // says the kernel must not turn an absent claim into a blocked write.
   if (paths.length === 0) return { decision: base, statusCode: 200 };
@@ -210,22 +191,22 @@ export const evaluatePreToolUse = async ({
     };
   }
 
-  const caller = normalize(agentName);
+  const callerId = normalize(agentId || agentName);
   const active = claims.filter((claim) => claimIsActive(claim));
   const ownCoverage = active.some((claim) => (
-    claimOwner(claim) === caller
-    && (claim.paths || []).some((claimPath) => paths.some((target) => claimCoversPath(claimPath, target, rootDir)))
+    claimOwnerId(claim) === callerId
+      && (claim.paths || []).some((claimPath) => paths.some((target) => claimCoversPath(claimPath, target)))
   ));
   if (ownCoverage) return { decision: base, statusCode: 200 };
 
   const conflict = active.find((claim) => {
-    const owner = claimOwner(claim);
-    return owner && owner !== caller
-      && (claim.paths || []).some((claimPath) => paths.some((target) => claimCoversPath(claimPath, target, rootDir)));
+    const owner = claimOwnerId(claim);
+    return owner && owner !== callerId
+      && (claim.paths || []).some((claimPath) => paths.some((target) => claimCoversPath(claimPath, target)));
   });
   if (!conflict) return { decision: base, statusCode: 200 };
 
-  const holder = claimOwner(conflict);
+  const holder = claimHolderLabel(conflict);
   return {
     decision: {
       ...base,
@@ -239,6 +220,7 @@ export const evaluatePreToolUse = async ({
 
 export const processHookEvent = async (options: {
   podId: string;
+  agentId?: string;
   agentName: string;
   event: HookEventType;
   eventId: string;
@@ -248,7 +230,7 @@ export const processHookEvent = async (options: {
 }): Promise<{ response: HookDecision; statusCode: number; replayed: boolean }> => {
   const key = {
     podId: String(options.podId),
-    agentName: normalize(options.agentName),
+    agentId: normalize(options.agentId || options.agentName),
     eventId: String(options.eventId),
   };
   const ledger = getLedgerStore();
@@ -278,6 +260,7 @@ export const processHookEvent = async (options: {
   try {
     const inserted = await ledger?.insertOrGet(key, {
       ...key,
+      agentName: normalize(options.agentName),
       event: options.event,
       ...(typeof options.payload?.tool === 'string' ? { tool: options.payload.tool } : {}),
       ...(typeof options.payload?.argsDigest === 'string' ? { argsDigest: options.payload.argsDigest } : {}),
@@ -287,7 +270,7 @@ export const processHookEvent = async (options: {
       ...(response.holder ? { holder: response.holder } : {}),
     });
     if (inserted && String(inserted.eventId) === String(options.eventId)
-      && String(inserted.agentName) === normalize(options.agentName)
+      && String(inserted.agentId || inserted.agentName) === normalize(options.agentId || options.agentName)
       && inserted.permissionDecision !== response.permissionDecision) {
       return {
         response: {

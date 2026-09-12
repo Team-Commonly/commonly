@@ -42,6 +42,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
+  clampHookTimeoutMs,
   forwardHookEvent,
   writeHooksConfig,
 } from '../lib/hooks-config.js';
@@ -2846,14 +2847,15 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         console.error('--timeout must be at least 250 milliseconds.');
         process.exit(1);
       }
+      const effectiveTimeoutMs = clampHookTimeoutMs(timeoutMs);
       const result = writeHooksConfig({
         filePath: opts.file ? pathResolve(opts.file) : null,
         scope: opts.scope,
         agentName: name,
-        timeoutMs,
+        timeoutMs: effectiveTimeoutMs,
       });
       console.log(`✓ Claude hooks written to ${result.filePath}`);
-      console.log(`  Events: PreToolUse, PostToolUse, Stop, SubagentStop (timeout ${Math.ceil(timeoutMs / 1000)}s)`);
+      console.log(`  Events: PreToolUse, PostToolUse, Stop, SubagentStop (timeout ${Math.ceil(effectiveTimeoutMs / 1000)}s)`);
     });
 
   // ── hooks-forward (internal command emitted by hooks-config) ─────────────

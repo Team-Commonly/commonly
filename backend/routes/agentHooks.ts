@@ -36,7 +36,8 @@ const hookRateLimit = rateLimit({
 
 const normalize = (value: unknown): string => String(value || '').trim().toLowerCase();
 
-const resolveIdentity = (req: any): { agentName: string; instanceId: string } => ({
+const resolveIdentity = (req: any): { agentId: string; agentName: string; instanceId: string } => ({
+  agentId: String(req.agentUser?._id || req.agentUser?.id || '').trim(),
   agentName: normalize(
     req.agentUser?.botMetadata?.agentName
       || req.agentInstallation?.agentName
@@ -55,6 +56,9 @@ const readLean = async (query: any): Promise<any> => {
 };
 
 const eventName = (body: any): unknown => body?.event || body?.hook_event_name || body?.event_name;
+
+const hasControlCharacter = (value: string): boolean => Array.from(value)
+  .some((character) => character.charCodeAt(0) < 0x20);
 
 const sanitizeHookBody = (body: any, event: string, eventId: string) => ({
   event,
@@ -89,12 +93,12 @@ router.post('/pods/:podId/hooks', hookRateLimit, agentRuntimeAuth, async (req: a
       message: `event must be one of ${HOOK_EVENT_TYPES.join(', ')}`,
     });
   }
-  if (!eventId || eventId.length > 200 || /[\u0000-\u001f]/.test(eventId)) {
+  if (!eventId || eventId.length > 200 || hasControlCharacter(eventId)) {
     return res.status(400).json({ code: 'invalid_event_id', message: 'eventId is required' });
   }
 
-  const { agentName, instanceId } = resolveIdentity(req);
-  if (!agentName) return res.status(401).json({ code: 'agent_identity_unresolved' });
+  const { agentId, agentName, instanceId } = resolveIdentity(req);
+  if (!agentId || !agentName) return res.status(401).json({ code: 'agent_identity_unresolved' });
 
   try {
     // agentRuntimeAuth authorizes a token globally.  This second lookup is
@@ -116,13 +120,14 @@ router.post('/pods/:podId/hooks', hookRateLimit, agentRuntimeAuth, async (req: a
     const payload = sanitizeHookBody(body, String(event), eventId);
     const result = await processHookEvent({
       podId,
+      agentId,
       agentName,
       event,
       eventId,
       payload,
     });
     return res.status(result.statusCode).json(result.response);
-  } catch (error: any) {
+  } catch {
     // Do not include body/tool_input in diagnostics: hook payloads may carry
     // source, credentials, or command arguments. D7 is fail-open at this
     // runtime edge, so an unavailable ledger cannot invent a deny decision.

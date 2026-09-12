@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
-  req.agentUser = { botMetadata: { agentName: 'Nova', instanceId: 'default' } };
+  req.agentUser = { _id: 'seat-1', botMetadata: { agentName: 'Nova', instanceId: 'default' } };
   next();
 });
 
@@ -67,6 +67,7 @@ describe('HTTP hook ingress', () => {
     expect(JSON.stringify(result.body)).not.toContain('do-not-echo');
     expect(mockProcess).toHaveBeenCalledWith(expect.objectContaining({
       podId: 'p1',
+      agentId: 'seat-1',
       agentName: 'nova',
       payload: expect.not.objectContaining({ tool_input: expect.anything() }),
     }));
