@@ -1730,7 +1730,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
     expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px 120px');
     expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px');
-    expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(0, 1fr) 400px');
+    expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
     const connectors = ruleBody(v2, '.v2-connectors');
     expect(connectors).toContain('min-height: calc(100vh - 86px)');
     expect(connectors).not.toContain('max-width');
@@ -1764,6 +1764,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-tools__trail-line')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-tools__count strong')).toContain('font-size: 22px');
     expect(ruleBody(v2, '.v2-tools__count span')).toContain('font-size: 11px');
+    expect(connectorCss).toMatch(/@media \(max-width: 1000px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\); gap: 24px;/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connector-row \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\);/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
