@@ -236,6 +236,16 @@ test('Revoke renders only for the granter', async () => {
   await waitFor(() => expect(within(aside).getByText('calls').previousElementSibling).toHaveTextContent('3'));
 });
 
+test('Grant again renders only for the granter', async () => {
+  mockApi([githubEntry]);
+  const member = { ...authValue, currentUser: { _id: 'u2', username: 'rae' }, user: { _id: 'u2', username: 'rae' } };
+  render(<AuthContext.Provider value={member}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+  await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  // The dead row offers a member Manage (read the grant), never the mint.
+  expect(screen.queryByRole('button', { name: 'Grant again' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(2);
+});
+
 test('Change access keeps the minted grant when the revoke fails and retries only the revoke', async () => {
   mockApi([githubEntry]);
   axios.post.mockImplementation((url) => (url === '/api/grants'

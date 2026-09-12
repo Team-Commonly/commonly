@@ -400,7 +400,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           </span>
           <span className="v2-connector-row__when">{when}</span>
         </button>
-        {dead && entry ? (
+        {dead && entry && isGranter(grant) ? (
+          // Grant again is the granter's too (Wren 67920): the mint 403s anyone but the Connection's owner.
           <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry, grant)}>
             {t('tools.grantAgain', { defaultValue: 'Grant again' })}
           </button>
