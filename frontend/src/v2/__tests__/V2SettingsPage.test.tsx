@@ -119,7 +119,7 @@ describe('V2SettingsPage', () => {
     });
     renderSettings();
 
-    expect(await screen.findByText(/shown only when generated/i)).toBeInTheDocument();
+    expect(await screen.findByText(/shown once, when generated/i)).toBeInTheDocument();
     expect(screen.getByText(/ending in cret/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Show' })).toBeDisabled();

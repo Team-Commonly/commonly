@@ -231,7 +231,7 @@ const V2ApiTokenSection: React.FC = () => {
             </button>
             <button type="button" className="v2-settings__secondary" disabled={!token} onClick={() => void copy()}>Copy</button>
           </div>
-          {!token && <p className="v2-settings__meta">The token is shown only when generated. Reload to see metadata{last4 ? ` (ending in ${last4})` : ''}.</p>}
+          {!token && <p className="v2-settings__meta">Shown once, when generated.{last4 ? ` Ending in ${last4}.` : ''}</p>}
           {createdAt && <p className="v2-settings__meta">created {new Date(createdAt).toLocaleString()}</p>}
           <div className="v2-settings__actions">
             <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>

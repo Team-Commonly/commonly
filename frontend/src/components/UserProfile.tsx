@@ -697,7 +697,7 @@ const UserProfile = () => {
                                     </Box>
                                     {!apiToken && (
                                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                            The token is shown only when generated. Reload to see metadata{apiTokenLast4 ? ` (ending in ${apiTokenLast4})` : ''}.
+                                            Shown once, when generated.{apiTokenLast4 ? ` Ending in ${apiTokenLast4}.` : ''}
                                         </Typography>
                                     )}
 
