@@ -6,7 +6,8 @@
  *   GET /api/registry/pods/:podId/agents/:name/user-token      (selects +apiToken)
  * The agent User carries apiToken / agentRuntimeTokens[].tokenHash sentinels;
  * the AgentInstallation carries runtimeTokens[].tokenHash and a config with
- * runtime.webhookSecret, authProfiles[].key and skillEnv values as sentinels.
+ * runtime.webhookSecret, authProfiles[].key and skillEnv values as sentinels;
+ * the member-facing payload must project these out.
  * The full /api/registry router is mounted, as server.ts does.
  * Skipped routes: none of the three. Harness and KNOWN_EXPOSURES: __tests__/utils/leakMatrix.js.
  */
