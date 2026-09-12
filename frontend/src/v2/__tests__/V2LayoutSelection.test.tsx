@@ -119,6 +119,27 @@ describe('V2Layout default pod selection', () => {
     expect(screen.queryByRole('button', { name: 'toggle inspector' })).not.toBeInTheDocument();
   });
 
+  test('keeps the create-pod query on /v2 until the sidebar finishes the round trip', async () => {
+    render(
+      <MemoryRouter initialEntries={['/v2?newPod=1']}>
+        <Routes>
+          <Route
+            path="/v2"
+            element={(
+              <>
+                <V2Layout selectionMode="auto" />
+                <CurrentPath />
+              </>
+            )}
+          />
+          <Route path="/v2/pods/:podId" element={<CurrentPath />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('current-path')).toHaveTextContent('/v2'));
+  });
+
   test('opening a pod records it in the visit log that orders the sidebar’s Recent', () => {
     render(
       <MemoryRouter initialEntries={['/v2/pods/workspace']}>

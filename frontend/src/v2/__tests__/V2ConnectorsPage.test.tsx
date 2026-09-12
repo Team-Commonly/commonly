@@ -544,7 +544,23 @@ describe('V2ConnectorsPage', () => {
       expect(await screen.findByText('pods list')).toBeInTheDocument();
     });
 
-    it('does not present the zero-pod CTA when pod loading fails', async () => {
+    it('keeps the existing picker visible while pod membership is still loading', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return new Promise(() => {});
+        return Promise.resolve({ data: [] });
+      });
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(screen.getByRole('group', { name: 'Channel provider' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create a pod' })).toBeNull();
+    });
+
+    it('keeps the existing picker visible when pod membership cannot be read', async () => {
       axios.get.mockImplementation((url) => {
         if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
         if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
@@ -554,8 +570,8 @@ describe('V2ConnectorsPage', () => {
       renderPage();
 
       fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
-      expect(await screen.findByText('Could not load your pods.')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Channel provider' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
       expect(screen.queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Create a pod' })).toBeNull();
     });
