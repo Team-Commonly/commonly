@@ -4,12 +4,14 @@ import axios from '../../utils/axiosConfig';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 import { Trans, useTranslation } from 'react-i18next';
+import { useAuth } from '../../context/AuthContext';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
 // Register flow: honor the invite-only policy, POST /api/auth/register, then
-// surface the backend's message and hand off to sign-in (the backend may send
-// a verification email; it does not always return a usable session).
+// establish a session from the submitted credentials (the backend may send a
+// verification email). The sign-in screen remains the fallback if that login
+// is unavailable.
 //
 // The .v2-login__card class goes on the <form>/<div> directly (like V2Login) —
 // a bare <form> picks up a dark global background, so it must carry the card.
@@ -24,6 +26,7 @@ const Brand: React.FC = () => (
 );
 
 const V2Register: React.FC = () => {
+  const { login } = useAuth();
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -69,11 +72,20 @@ const V2Register: React.FC = () => {
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');
-      // The backend only sends a verification email (and withholds a usable
-      // session) when SMTP is configured — its message says to check email in
-      // that case. The login shell admits unverified users and keeps a
-      // persistent verification reminder visible, so the success screen can
-      // take them directly to sign-in without creating a dead end.
+
+      // Registration succeeds before a session exists. Sign in immediately
+      // with the credentials already supplied so a new user reaches the
+      // workspace without a second form. Unverified users are admitted by the
+      // login route and see the persistent verification reminder in the shell.
+      try {
+        await login(email.trim(), password);
+        navigate(nextPath || '/v2', { replace: true });
+        return;
+      } catch {
+        // Keep the success state as a safe fallback when the follow-up login
+        // is unavailable (for example while an older backend is rolling out).
+      }
+
       setVerifyPending(message.toLowerCase().includes('check your email'));
       setDone(message);
     } catch (err) {
