@@ -297,7 +297,7 @@ router.get('/admin/check', auth, adminAuth, (_req: unknown, res: Res) => {
   res.json({ isAdmin: true, message: 'Admin access confirmed' });
 });
 
-router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
+router.post('/api-token/generate', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -318,7 +318,7 @@ router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.delete('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -335,15 +335,23 @@ router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');
-    const user = await User.findById(req.user?.id).select('apiToken apiTokenCreatedAt');
+    const user = await User.findById(req.user?.id).select('apiToken apiTokenCreatedAt apiTokenScopes');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    return res.json({ hasToken: !!user.apiToken, createdAt: user.apiTokenCreatedAt, token: user.apiToken });
+    // This is deliberately a status projection. The raw bearer is returned
+    // only by POST /api-token/generate, when the user explicitly creates or
+    // rotates it; a reload must never turn this endpoint into a secret reader.
+    return res.json({
+      hasToken: !!user.apiToken,
+      createdAt: user.apiTokenCreatedAt || null,
+      scopes: user.apiTokenScopes || [],
+      last4: user.apiToken ? user.apiToken.slice(-4) : null,
+    });
   } catch (error) {
     console.error('Error fetching API token:', error);
     return res.status(500).json({ message: 'Server error' });

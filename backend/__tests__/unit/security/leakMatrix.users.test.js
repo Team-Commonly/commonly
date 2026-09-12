@@ -7,7 +7,9 @@
  *   GET /api/admin/users (as self / stranger / admin)
  * requireBrowserJwt is satisfied by the auth mock setting authType 'jwt', the
  * value the real JWT branch of middleware/auth.ts sets.
- * Skipped routes: none. Harness and KNOWN_EXPOSURES: __tests__/utils/leakMatrix.js.
+ * The API-token status route is covered here; its raw-token exposure row was
+ * removed once the route became metadata-only. Harness and KNOWN_EXPOSURES:
+ * __tests__/utils/leakMatrix.js.
  */
 jest.mock('../../../middleware/auth', () => require('../../utils/leakMatrix').authMock);
 jest.mock('../../../middleware/agentRuntimeAuth', () => require('../../utils/leakMatrix').agentRuntimeAuthMock);

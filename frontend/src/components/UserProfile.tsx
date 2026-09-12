@@ -103,8 +103,10 @@ const UserProfile = () => {
     const [avatarPreview, setAvatarPreview] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
     const [currentTab, setCurrentTab] = useState('overview');
+    const [apiTokenPresent, setApiTokenPresent] = useState(false);
     const [apiToken, setApiToken] = useState<string | null>(null);
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState<string | null>(null);
+    const [apiTokenLast4, setApiTokenLast4] = useState<string | null>(null);
     // Hosted-agent invitation redemption (settings-surface twin of the Your
     // Team strip — same POST /api/auth/redeem-invitation).
     const [redeemCode, setRedeemCode] = useState('');
@@ -175,11 +177,13 @@ const UserProfile = () => {
                     setPublicActivityLoading(false);
                 }
 
-                // Set API token info
-                if (tokenRes.data.hasToken) {
-                    setApiToken(tokenRes.data.token);
-                    setApiTokenCreatedAt(tokenRes.data.createdAt);
-                }
+                // The status endpoint never returns the bearer. Keep only
+                // metadata after a reload; generation is the one-time reveal.
+                setApiTokenPresent(Boolean(tokenRes.data.hasToken));
+                setApiToken(null);
+                setApiTokenCreatedAt(tokenRes.data.createdAt || null);
+                setApiTokenLast4(tokenRes.data.last4 || null);
+                setShowToken(false);
 
                 // Calculate post count and comment count
                 const allPosts = postsRes.data.posts || postsRes.data;
@@ -309,8 +313,11 @@ const UserProfile = () => {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
 
-            setApiToken(response.data.apiToken);
+            const generatedToken = response.data.apiToken || null;
+            setApiTokenPresent(true);
+            setApiToken(generatedToken);
             setApiTokenCreatedAt(response.data.createdAt);
+            setApiTokenLast4(generatedToken ? generatedToken.slice(-4) : null);
             setShowToken(true);
             setSnackbar({
                 open: true,
@@ -335,8 +342,10 @@ const UserProfile = () => {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
 
+            setApiTokenPresent(false);
             setApiToken(null);
             setApiTokenCreatedAt(null);
+            setApiTokenLast4(null);
             setShowToken(false);
             setSnackbar({
                 open: true,
@@ -652,7 +661,7 @@ const UserProfile = () => {
                                 Keep your token secure and don&apos;t share it publicly.
                             </Typography>
 
-                            {apiToken ? (
+                            {apiTokenPresent ? (
                                 <Box sx={{ mt: 3 }}>
                                     <Alert severity="info" sx={{ mb: 3 }}>
                                         Your API token was created on {' '}
@@ -663,7 +672,7 @@ const UserProfile = () => {
                                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
                                         <TextField
                                             label="API Token"
-                                            value={showToken ? apiToken : '••••••••••••••••••••••••••••••••'}
+                                            value={apiToken && showToken ? apiToken : '••••••••••••••••••••••••••••••••'}
                                             fullWidth
                                             variant="outlined"
                                             InputProps={{
@@ -672,12 +681,13 @@ const UserProfile = () => {
                                             }}
                                         />
                                         <Tooltip title="Copy to clipboard">
-                                            <IconButton onClick={handleCopyToken} color="primary">
+                                            <IconButton onClick={handleCopyToken} color="primary" disabled={!apiToken}>
                                                 <ContentCopyIcon />
                                             </IconButton>
                                         </Tooltip>
                                         <Tooltip title={showToken ? "Hide token" : "Show token"}>
                                             <IconButton
+                                                disabled={!apiToken}
                                                 onClick={() => setShowToken(!showToken)}
                                                 color="primary"
                                             >
@@ -685,6 +695,11 @@ const UserProfile = () => {
                                             </IconButton>
                                         </Tooltip>
                                     </Box>
+                                    {!apiToken && (
+                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                            Shown once, when generated.{apiTokenLast4 ? ` Ending in ${apiTokenLast4}.` : ''}
+                                        </Typography>
+                                    )}
 
                                     <Box sx={{ display: 'flex', gap: 2 }}>
                                         <Button

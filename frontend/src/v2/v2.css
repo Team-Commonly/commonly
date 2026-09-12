@@ -7184,6 +7184,14 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
+.v2-settings__token-meta {
+  margin: 8px 0 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font);
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
+}
+
 .v2-settings__actions {
   display: flex;
   flex-wrap: wrap;
