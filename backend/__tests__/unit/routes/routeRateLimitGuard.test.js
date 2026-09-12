@@ -8,6 +8,9 @@
  *
  * The rule is read from names, not behaviour — see
  * `__tests__/utils/routeRateLimitScan.js` for the classifier and its limits.
+ * A file-level `router.use(auth)` counts as auth for every later route, the
+ * last argument is the handler and never a limiter, and `router.route(path)`
+ * chains are scanned per verb.
  * The canonical shape is routes/agentHooks.ts:
  *
  *   router.post('/pods/:podId/hooks', hookRateLimit, agentRuntimeAuth, …)
@@ -162,5 +165,61 @@ describe('route rate-limit scanner classification', () => {
       "router.use('/sub', subRouter);",
       'router.get(dynamicPath, auth, handler);',
     ])).toEqual([]);
+  });
+
+  // The three blind spots Vera probed at #1682 (68057), closed in the first
+  // baseline shrink.
+  test('a preceding file-level router.use(auth) puts a route-level limiter behind auth', () => {
+    expect(only([
+      "router.get('/before', fooRateLimit, handler);",
+      'router.use(auth);',
+      "router.get('/after', fooRateLimit, handler);",
+      "router.get('/none', handler);",
+    ])).toEqual([
+      { method: 'GET', path: '/before', reason: 'ok' },
+      { method: 'GET', path: '/after', reason: 'limiter-after-auth' },
+      { method: 'GET', path: '/none', reason: 'unlimited' },
+    ]);
+  });
+
+  test('file-level use calls keep their file order against each other', () => {
+    expect(only([
+      'router.use(fooRateLimit);',
+      'router.use(auth);',
+      "router.get('/a', handler);",
+    ])).toEqual([{ method: 'GET', path: '/a', reason: 'ok' }]);
+    expect(only([
+      'router.use(auth);',
+      'router.use(fooRateLimit);',
+      "router.get('/b', handler);",
+    ])).toEqual([{ method: 'GET', path: '/b', reason: 'limiter-after-auth' }]);
+  });
+
+  test('the handler is never a limiter, whatever it is called', () => {
+    expect(only([
+      "router.get('/a', auth, getLimits);",
+      "router.get('/b', auth, listRateLimits);",
+      "router.get('/c', fooRateLimit);",
+    ])).toEqual([
+      { method: 'GET', path: '/a', reason: 'unlimited' },
+      { method: 'GET', path: '/b', reason: 'unlimited' },
+      { method: 'GET', path: '/c', reason: 'unlimited' },
+    ]);
+  });
+
+  test('router.route() chains are scanned per verb, with .all() middleware ahead', () => {
+    expect(only([
+      "router.route('/a').get(fooRateLimit, auth, handler).post(auth, fooRateLimit, handler);",
+      "router.route('/b').all(auth).get(fooRateLimit, handler);",
+      "router.route('/c').all(fooRateLimit).put(auth, handler).delete(handler);",
+      "router.route('/d').get(auth, getLimits);",
+    ]).sort((x, y) => `${x.path}${x.method}`.localeCompare(`${y.path}${y.method}`))).toEqual([
+      { method: 'GET', path: '/a', reason: 'ok' },
+      { method: 'POST', path: '/a', reason: 'limiter-after-auth' },
+      { method: 'GET', path: '/b', reason: 'limiter-after-auth' },
+      { method: 'DELETE', path: '/c', reason: 'ok' },
+      { method: 'PUT', path: '/c', reason: 'ok' },
+      { method: 'GET', path: '/d', reason: 'unlimited' },
+    ]);
   });
 });
