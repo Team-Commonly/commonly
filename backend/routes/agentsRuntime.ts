@@ -7,6 +7,7 @@ export {};
 import rateLimit from 'express-rate-limit';
 
 const express = require('express');
+const agentHooksRoutes = require('./agentHooks');
 
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const auth = require('../middleware/auth');
@@ -3863,5 +3864,10 @@ router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), asyn
     return res.status(500).json({ message: 'Failed to upload file' });
   }
 });
+
+// Keep hook ingress in the runtime namespace so callers and tests that mount
+// only this router still receive POST /pods/:podId/hooks.  The hook router is
+// a separate module to keep its auth/rate-limit contract independently testable.
+router.use(agentHooksRoutes);
 
 module.exports = router;

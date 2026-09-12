@@ -1,0 +1,138 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { dirname, join } from 'path';
+import { homedir } from 'os';
+
+export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'];
+export const DEFAULT_HOOK_TIMEOUT_MS = 3000;
+
+const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+/**
+ * Keep hook commands free of bearer material.  The dispatcher reads
+ * COMMONLY_AGENT_TOKEN from the process environment at invocation time.
+ */
+export const buildHookCommand = ({ agentName, timeoutMs = DEFAULT_HOOK_TIMEOUT_MS }) => (
+  `commonly agent hooks-forward ${shellQuote(agentName)} --timeout ${Math.max(250, Math.trunc(timeoutMs))}`
+);
+
+const hookEntry = ({ agentName, event, timeoutMs }) => ({
+  matcher: '',
+  hooks: [{
+    type: 'command',
+    command: buildHookCommand({ agentName, timeoutMs }),
+    // Claude interprets this as seconds.  Keep it short so a dead backend
+    // cannot stall every tool call for the 600s default.
+    timeout: Math.max(1, Math.ceil(timeoutMs / 1000)),
+    metadata: { commonly: true, event },
+  }],
+});
+
+/** Merge Commonly hooks into settings while preserving every user setting. */
+export const mergeHooksConfig = (
+  existing = {},
+  { agentName, events = HOOK_EVENTS, timeoutMs = DEFAULT_HOOK_TIMEOUT_MS } = {},
+) => {
+  if (!agentName) throw new Error('agentName is required');
+  const source = existing && typeof existing === 'object' ? existing : {};
+  const hooks = source.hooks && typeof source.hooks === 'object' ? { ...source.hooks } : {};
+  for (const event of events) {
+    const prior = Array.isArray(hooks[event]) ? hooks[event] : [];
+    // Replace only the entry generated for this agent; unrelated matchers and
+    // command hooks remain byte-for-byte represented in the resulting JSON.
+    const retained = prior.filter((entry) => !entry?.hooks?.some((h) => (
+      h?.metadata?.commonly === true
+      && h?.command?.includes(`hooks-forward '${String(agentName).replaceAll("'", "'\\''")}'`)
+    )));
+    hooks[event] = [...retained, hookEntry({ agentName, event, timeoutMs })];
+  }
+  return { ...source, hooks };
+};
+
+export const settingsPathForScope = ({ scope = 'project', cwd = process.cwd(), home = homedir() } = {}) => {
+  if (scope === 'user') return join(home, '.claude', 'settings.json');
+  if (scope !== 'project') throw new Error("scope must be 'project' or 'user'");
+  return join(cwd, '.claude', 'settings.local.json');
+};
+
+export const readJsonSettings = (filePath, fsApi = { readFileSync, existsSync }) => {
+  if (!fsApi.existsSync(filePath)) return {};
+  try {
+    const parsed = JSON.parse(fsApi.readFileSync(filePath, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    throw new Error(`Could not parse ${filePath}: ${error.message}`);
+  }
+};
+
+export const writeHooksConfig = ({
+  filePath,
+  agentName,
+  scope = 'project',
+  cwd = process.cwd(),
+  home = homedir(),
+  timeoutMs = DEFAULT_HOOK_TIMEOUT_MS,
+  fsApi = { readFileSync, writeFileSync, mkdirSync, existsSync },
+} = {}) => {
+  const target = filePath || settingsPathForScope({ scope, cwd, home });
+  const existing = readJsonSettings(target, fsApi);
+  const next = mergeHooksConfig(existing, { agentName, timeoutMs });
+  fsApi.mkdirSync(dirname(target), { recursive: true });
+  fsApi.writeFileSync(target, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  return { filePath: target, config: next };
+};
+
+/**
+ * Execute one hook event.  It is intentionally dependency-light so the
+ * generated Claude command works on a fresh CLI install (Node 20's fetch).
+ * On a PreToolUse transport failure, exit 2 and print a deny decision: Claude
+ * treats either signal as blocking.  Other events are best-effort acks.
+ */
+export const forwardHookEvent = async ({
+  endpoint,
+  token = process.env.COMMONLY_AGENT_TOKEN,
+  input = '',
+  timeoutMs = DEFAULT_HOOK_TIMEOUT_MS,
+  fetchImpl = globalThis.fetch,
+  stdout = (value) => process.stdout.write(value),
+  stderr = (value) => process.stderr.write(value),
+  exit = (code) => process.exitCode = code,
+} = {}) => {
+  let payload;
+  try { payload = typeof input === 'string' ? JSON.parse(input || '{}') : input; } catch {
+    payload = {};
+  }
+  const event = payload?.event || payload?.hook_event_name || payload?.event_name || '';
+  const preTool = event === 'PreToolUse';
+  if (!endpoint || !token || !fetchImpl) {
+    if (preTool) {
+      stdout(JSON.stringify({ permissionDecision: 'deny', reason: 'hook_unavailable' }));
+      exit(2);
+    }
+    return { acknowledged: false, reason: 'hook_unavailable' };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(250, Math.trunc(timeoutMs)));
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (preTool) stdout(JSON.stringify({ permissionDecision: body.permissionDecision || 'allow', ...(body.reason ? { reason: body.reason } : {}) }));
+    return body;
+  } catch (error) {
+    if (preTool) {
+      stdout(JSON.stringify({ permissionDecision: 'deny', reason: 'hook_unavailable' }));
+      exit(2);
+    } else {
+      stderr(`Commonly hook unavailable: ${error.message}\n`);
+    }
+    return { acknowledged: false, reason: 'hook_unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+

@@ -41,6 +41,11 @@ import {
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import {
+  DEFAULT_HOOK_TIMEOUT_MS,
+  forwardHookEvent,
+  writeHooksConfig,
+} from '../lib/hooks-config.js';
+import {
   formatRetryDelay,
   spawnRetryJitter,
   spawnRetryPolicy,
@@ -2816,4 +2821,68 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         process.exit(1);
       }
     });
+
+  // ── hooks-config (piece 7) ───────────────────────────────────────────────
+  agent
+    .command('hooks-config <name>')
+    .description('Write Claude Code HTTP hook entries for an attached agent')
+    .option('--scope <scope>', 'Write project or user settings', 'project')
+    .option('--pod <podId>', 'Pod to receive hook events (defaults to the attached pod)')
+    .option('--file <path>', 'Explicit Claude settings file')
+    .option('--timeout <ms>', 'Hook request timeout in milliseconds', String(DEFAULT_HOOK_TIMEOUT_MS))
+    .action((name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record?.runtimeToken) {
+        console.error(`No runtime token found for '${name}'. Run commonly agent attach first.`);
+        process.exit(1);
+      }
+      const podId = opts.pod || record.podId;
+      if (!podId) {
+        console.error('A pod is required (pass --pod or attach the agent to a pod).');
+        process.exit(1);
+      }
+      const timeoutMs = Number(opts.timeout);
+      if (!Number.isFinite(timeoutMs) || timeoutMs < 250) {
+        console.error('--timeout must be at least 250 milliseconds.');
+        process.exit(1);
+      }
+      const result = writeHooksConfig({
+        filePath: opts.file ? pathResolve(opts.file) : null,
+        scope: opts.scope,
+        agentName: name,
+        timeoutMs,
+      });
+      console.log(`✓ Claude hooks written to ${result.filePath}`);
+      console.log(`  Events: PreToolUse, PostToolUse, Stop, SubagentStop (timeout ${Math.ceil(timeoutMs / 1000)}s)`);
+    });
+
+  // ── hooks-forward (internal command emitted by hooks-config) ─────────────
+  agent
+    .command('hooks-forward <name>')
+    .description('Forward one Claude Code hook event to Commonly')
+    .option('--pod <podId>', 'Pod to receive hook events (defaults to the attached pod)')
+    .option('--timeout <ms>', 'Hook request timeout in milliseconds', String(DEFAULT_HOOK_TIMEOUT_MS))
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      const podId = opts.pod || record?.podId;
+      const instanceUrl = record?.instanceUrl || process.env.COMMONLY_API_URL || resolveInstanceUrl(undefined);
+      const token = process.env.COMMONLY_AGENT_TOKEN;
+      const chunks = [];
+      if (!process.stdin.isTTY) {
+        for await (const chunk of process.stdin) chunks.push(chunk);
+      }
+      const input = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : '{}';
+      await forwardHookEvent({
+        endpoint: podId
+          ? `${instanceUrl.replace(/\/$/, '')}/api/agents/runtime/pods/${encodeURIComponent(podId)}/hooks`
+          : null,
+        token,
+        input,
+        timeoutMs: Number(opts.timeout),
+      });
+    });
 };
+
+// Re-exported for consumers that build their own wrapper command rather than
+// invoking commander (and for unit tests of the config contract).
+export { forwardHookEvent, writeHooksConfig } from '../lib/hooks-config.js';
