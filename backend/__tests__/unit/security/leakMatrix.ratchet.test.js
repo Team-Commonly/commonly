@@ -94,8 +94,10 @@ describe('ratchet', () => {
     await disconnectMemoryMongo(mongod);
   });
 
+  // Replays every suite's world in one test: ~9s alone, but past jest's 30s
+  // default under the parallel full-suite run, so it carries its own budget.
   test('every KNOWN_EXPOSURES entry still reproduces (fixing one forces the list to shrink)', async () => {
     const problems = await assertKnownExposuresStillLeak(Object.values(SUITES));
     expect(problems).toEqual([]);
-  });
+  }, 120_000);
 });
