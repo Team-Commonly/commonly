@@ -4,6 +4,12 @@ const path = require('path');
 const JSON5 = require('json5');
 const { hasAnyEnv } = require('./helpers');
 const { listOpenClawPlugins } = require('../../services/agentProvisionerService');
+const { manifests } = require('../../integrations/manifests');
+
+const isManifestReady = (id: string): boolean => {
+  const readiness = manifests?.[id]?.readiness;
+  return typeof readiness === 'function' && readiness().available === true;
+};
 
 const detectGatewayPresetCapabilities = async () => {
   const capability = {
@@ -18,7 +24,7 @@ const detectGatewayPresetCapabilities = async () => {
     },
     integrations: {
       discord: hasAnyEnv(['DISCORD_BOT_TOKEN']),
-      slack: hasAnyEnv(['SLACK_BOT_TOKEN', 'SLACK_CLIENT_ID']),
+      slack: isManifestReady('slack'),
       telegram: hasAnyEnv(['TELEGRAM_BOT_TOKEN']),
       x: hasAnyEnv(['X_API_BASE_URL']),
       instagram: hasAnyEnv(['INSTAGRAM_GRAPH_API_BASE']),
