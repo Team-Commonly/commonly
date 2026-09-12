@@ -15,6 +15,7 @@ jest.mock('../../../middleware/auth', () => {
 });
 
 const { hash } = require('../../../utils/secret');
+const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth');
 
 let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine;
 const DAEMON_A = `cm_daemon_${'a'.repeat(32)}`;
@@ -30,6 +31,7 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/agent-binding', require('../../../routes/agentBinding'));
+  app.get('/runtime-auth-probe', agentRuntimeAuth, (_req, res) => res.json({ ok: true }));
 });
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
@@ -296,6 +298,50 @@ describe('runtime-token mint', () => {
     expect(identity.agentRuntimeTokens.map((t) => t.tokenHash)).toEqual([hash(second.body.token)]);
     const install = await AgentInstallation.findOne({ agentName: 'wren-test' }).lean();
     expect(install.runtimeTokens || []).toEqual([]);
+  });
+
+  it('detects installation-only legacy tokens and invalidates both auth paths on rotate', async () => {
+    await adopt(DAEMON_A);
+    const oldUserToken = `cm_agent_${'u'.repeat(64)}`;
+    const oldInstallationToken = `cm_agent_${'i'.repeat(64)}`;
+    await User.updateOne(
+      { _id: bot._id },
+      {
+        $set: {
+          agentRuntimeTokens: [{ tokenHash: hash(oldUserToken), label: 'user legacy', createdAt: new Date() }],
+        },
+      },
+    );
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      {
+        $set: {
+          runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'installation legacy', createdAt: new Date() }],
+        },
+      },
+    );
+
+    const refused = await mint(DAEMON_A);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('token_exists');
+
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(oldUserToken);
+
+    const userAuth = await request(app)
+      .get('/runtime-auth-probe')
+      .set('Authorization', `Bearer ${oldUserToken}`);
+    const installationAuth = await request(app)
+      .get('/runtime-auth-probe')
+      .set('Authorization', `Bearer ${oldInstallationToken}`);
+    expect(userAuth.status).toBe(401);
+    expect(installationAuth.status).toBe(401);
+
+    const identity = await User.findById(bot._id).lean();
+    expect(identity.agentRuntimeTokens.map((token) => token.tokenHash)).not.toContain(hash(oldUserToken));
+    const installations = await AgentInstallation.find({ agentName: 'wren-test', instanceId: 'default' }).lean();
+    expect(installations.flatMap((install) => install.runtimeTokens || [])).toEqual([]);
   });
 
   it('never mints for a daemon whose machine does not hold the binding', async () => {

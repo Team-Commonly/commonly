@@ -7,6 +7,7 @@ const mockFindOne = jest.fn();
 const mockFind = jest.fn();
 const mockUserFindOne = jest.fn();
 const mockIssueToken = jest.fn();
+const mockRevokeRuntimeTokens = jest.fn();
 const mockHosted = {
   HOSTED_RUNTIME_TYPE: 'hosted',
   isConfigured: jest.fn(),
@@ -38,6 +39,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 jest.mock('../../../services/hostedRuntimeService', () => mockHosted);
 jest.mock('../../../routes/registry/tokens', () => ({
+  revokeRuntimeTokensForAgent: (...args) => mockRevokeRuntimeTokens(...args),
   issueRuntimeTokenForAgent: (...args) => mockIssueToken(...args),
 }));
 
@@ -70,6 +72,21 @@ describe('/api/hosted', () => {
     mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout', agentRuntimeTokens: [] });
     mockCredentialUpdateMany.mockResolvedValue({ modifiedCount: 0 });
     mockIssueToken.mockResolvedValue({ token: 'cm_agent_secret', existing: false });
+    mockRevokeRuntimeTokens.mockImplementation(async ({ agentUser, installation }) => {
+      const hashes = Array.from(new Set((agentUser?.agentRuntimeTokens || [])
+        .concat(installation?.runtimeTokens || [])
+        .map((entry) => entry?.tokenHash)
+        .filter(Boolean)));
+      if (hashes.length) {
+        await mockCredentialUpdateMany(
+          { tokenHash: { $in: hashes }, status: 'active' },
+          { $set: { status: 'revoked', revokedAt: new Date() } },
+        );
+      }
+      if (agentUser) agentUser.agentRuntimeTokens = [];
+      if (installation) installation.runtimeTokens = [];
+      return hashes;
+    });
     mockHosted.provisionAgent.mockResolvedValue({ provisioned: true });
   });
 
@@ -204,6 +221,12 @@ describe('/api/hosted', () => {
     expect(mockIssueToken).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'bot-1' }), 'Hosted runtime', installation, { ownerUserId: 'owner-1' },
     );
+    expect(mockRevokeRuntimeTokens).toHaveBeenCalledWith({
+      agentUser: expect.objectContaining({ _id: 'bot-1' }),
+      agentName: 'scout',
+      instanceId: 'demo',
+      installation,
+    });
     expect(mockHosted.provisionAgent).toHaveBeenCalledWith({ agentName: 'scout', instanceId: 'demo', runtimeToken: 'cm_agent_secret' });
     expect(installation.config.get('hosted').provisionedAt).toBeInstanceOf(Date);
     expect(installation.save).toHaveBeenCalled();
@@ -217,6 +240,12 @@ describe('/api/hosted', () => {
     mockIssueToken.mockResolvedValue({ token: 'cm_agent_fresh', existing: false });
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(200);
+    expect(mockRevokeRuntimeTokens).toHaveBeenCalledWith({
+      agentUser,
+      agentName: 'scout',
+      instanceId: 'default',
+      installation,
+    });
     expect(mockCredentialUpdateMany).toHaveBeenCalledWith(
       { tokenHash: { $in: ['old-hash'] }, status: 'active' },
       { $set: expect.objectContaining({ status: 'revoked' }) },

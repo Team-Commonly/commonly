@@ -43,6 +43,92 @@ const normalizeContextPolicy = (policy: any) => {
   return next;
 };
 
+type RuntimeTokenOwner = {
+  agentUser: any;
+  agentName: string;
+  instanceId?: string;
+  installation?: any;
+};
+
+const normalizeRuntimeIdentity = (agentName: any, instanceId: any) => ({
+  agentName: String(agentName || '').trim().toLowerCase(),
+  instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
+});
+
+/**
+ * Return every legacy hash for an agent identity, across the portable User
+ * row and every installation copy. The two stores are both authentication
+ * paths, so a rotation that sees only one is incomplete.
+ */
+const getRuntimeTokenHashesForAgent = async ({
+  agentUser,
+  agentName,
+  instanceId,
+  installation = null,
+}: RuntimeTokenOwner): Promise<string[]> => {
+  const identity = normalizeRuntimeIdentity(agentName, instanceId);
+  const userTokens = Array.isArray(agentUser?.agentRuntimeTokens) ? agentUser.agentRuntimeTokens : [];
+  const localInstallationTokens = Array.isArray(installation?.runtimeTokens)
+    ? installation.runtimeTokens
+    : [];
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  const installations = await AgentInstallation.find({
+    agentName: identity.agentName,
+    instanceId: identity.instanceId,
+  }).select('runtimeTokens').lean();
+  const persistedInstallationTokens = (installations || []).flatMap((row: any) => row.runtimeTokens || []);
+  return Array.from(new Set([
+    ...userTokens,
+    ...localInstallationTokens,
+    ...persistedInstallationTokens,
+  ].map((token: any) => token?.tokenHash).filter(Boolean)));
+};
+
+/**
+ * Revoke runtime credentials and clear both legacy token stores for one
+ * identity. Call this immediately before minting a replacement token.
+ */
+const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<string[]> => {
+  const identity = normalizeRuntimeIdentity(owner.agentName, owner.instanceId);
+  const hashes = await getRuntimeTokenHashesForAgent(owner);
+
+  if (hashes.length) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentCredential = require('../../models/AgentCredential');
+    await AgentCredential.updateMany(
+      { tokenHash: { $in: hashes }, kind: 'runtime', status: 'active' },
+      { $set: { status: 'revoked', revokedAt: new Date() } },
+    );
+  }
+
+  if (Array.isArray(owner.agentUser?.agentRuntimeTokens) && owner.agentUser.agentRuntimeTokens.length) {
+    owner.agentUser.agentRuntimeTokens = [];
+    await owner.agentUser.save();
+  }
+
+  // Clear every installation, not only the row that happened to receive the
+  // request. Runtime auth accepts any active installation copy for the same
+  // identity, so leaving a sibling row would leave the old bearer alive.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  await AgentInstallation.updateMany(
+    { agentName: identity.agentName, instanceId: identity.instanceId },
+    { $set: { runtimeTokens: [] } },
+  );
+
+  // A route may hold a hydrated installation that is not represented by the
+  // mocked query above (or has a pending in-memory mutation). Keep that
+  // object aligned too; a fresh issue call appends to it immediately after.
+  if (owner.installation && Array.isArray(owner.installation.runtimeTokens)
+      && owner.installation.runtimeTokens.length) {
+    owner.installation.runtimeTokens = [];
+    if (typeof owner.installation.save === 'function') await owner.installation.save();
+  }
+
+  return hashes;
+};
+
 /**
  * Issue a runtime token for an agent.
  * Tokens are stored on the User model (shared across all pod installations).
@@ -60,8 +146,8 @@ const normalizeContextPolicy = (policy: any) => {
 // (additive migration; auth falls back for those).
 const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
   // Check if agent already has a runtime token (reuse existing)
-  if (agentUser.agentRuntimeTokens?.length > 0) {
-    const existingToken = agentUser.agentRuntimeTokens[0];
+  const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
+  if (existingToken) {
     // Backfill a credential row for the pre-substrate token so the existing
     // fleet becomes listable and cascade-revocable (Vera on #1312: without
     // this the collection stays near-empty while coverage looks fine).
@@ -202,6 +288,8 @@ module.exports = {
   sanitizeStringList,
   normalizeToolPolicy,
   normalizeContextPolicy,
+  getRuntimeTokenHashesForAgent,
+  revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueRuntimeTokenForInstallation,
   issueUserTokenForInstallation,

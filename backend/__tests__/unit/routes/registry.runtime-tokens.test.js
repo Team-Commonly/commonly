@@ -14,7 +14,14 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
     findOne: jest.fn(),
+    find: jest.fn(() => ({
+      select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) })),
+    })),
+    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
+}));
+jest.mock('../../../models/AgentCredential', () => ({
+  updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
@@ -33,6 +40,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
+const AgentCredential = require('../../../models/AgentCredential');
 const User = require('../../../models/User');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 const registryRoutes = require('../../../routes/registry');
@@ -44,6 +52,10 @@ app.use('/api/registry', registryRoutes);
 describe('agent runtime tokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    AgentInstallation.find.mockImplementation(() => ({
+      select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) })),
+    }));
+    AgentCredential.updateMany.mockResolvedValue({ modifiedCount: 0 });
   });
 
   it('issues a runtime token for an installed agent', async () => {
@@ -159,6 +171,63 @@ describe('agent runtime tokens', () => {
     // The stale token is gone; only the fresh one remains.
     expect(agentUser.agentRuntimeTokens.length).toBe(1);
     expect(agentUser.agentRuntimeTokens[0].label).toBe('Re-attach');
+    expect(AgentCredential.updateMany).toHaveBeenCalledWith(
+      { tokenHash: { $in: ['stale'] }, kind: 'runtime', status: 'active' },
+      { $set: expect.objectContaining({ status: 'revoked', revokedAt: expect.any(Date) }) },
+    );
+    expect(AgentInstallation.updateMany).toHaveBeenCalledWith(
+      { agentName: 'commonly-bot', instanceId: 'default' },
+      { $set: { runtimeTokens: [] } },
+    );
+  });
+
+  it('treats an installation-only token as existing and force rotation clears its copy', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+      }),
+    });
+    const installation = {
+      agentName: 'commonly-bot',
+      podId: 'pod-1',
+      instanceId: 'default',
+      displayName: 'Commonly Bot',
+      status: 'active',
+      runtimeTokens: [{ tokenHash: 'legacy-installation', label: 'legacy', createdAt: new Date() }],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = {
+      agentRuntimeTokens: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentInstallation.find.mockReturnValue({
+      select: jest.fn(() => ({
+        lean: jest.fn().mockResolvedValue([{ runtimeTokens: installation.runtimeTokens }]),
+      })),
+    });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const existing = await request(app)
+      .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
+      .send({ label: 'Re-attach' });
+    expect(existing.status).toBe(200);
+    expect(existing.body.existing).toBe(true);
+    expect(existing.body.token).toBeUndefined();
+
+    const rotated = await request(app)
+      .post('/api/registry/pods/pod-1/agents/commonly-bot/runtime-tokens')
+      .send({ label: 'Re-attach', force: true });
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.token).toMatch(/^cm_agent_/);
+    expect(rotated.body.existing).toBe(false);
+    expect(AgentCredential.updateMany).toHaveBeenCalledWith(
+      { tokenHash: { $in: ['legacy-installation'] }, kind: 'runtime', status: 'active' },
+      { $set: expect.objectContaining({ status: 'revoked', revokedAt: expect.any(Date) }) },
+    );
+    expect(installation.runtimeTokens).toHaveLength(1);
+    expect(installation.runtimeTokens[0].tokenHash).not.toBe('legacy-installation');
   });
 
   it('lists shared runtime tokens from agent user', async () => {
