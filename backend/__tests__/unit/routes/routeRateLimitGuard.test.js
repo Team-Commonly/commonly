@@ -67,10 +67,13 @@ describe('route rate-limit guard', () => {
       throw new Error([
         'Route registrations without a rate limiter ahead of auth:',
         detail,
-        'Fix the route, not the baseline: add a `<name>RateLimit` built with',
-        'express-rate-limit as the FIRST middleware, before auth/agentRuntimeAuth/',
-        'dualAuth (see routes/agentHooks.ts). Auth does a Mongo lookup; a limiter',
-        'behind it protects nothing and CodeQL flags the route.',
+        'Fix the route, not the baseline:',
+        "  import rateLimit from 'express-rate-limit';",
+        '  const <name>RateLimit = rateLimit({ windowMs, max, keyGenerator, standardHeaders: true, legacyHeaders: false });',
+        '  router.<verb>(path, <name>RateLimit, auth /* or agentRuntimeAuth, dualAuth */, handler);',
+        'The limiter goes FIRST (routes/agentHooks.ts is the shape; key generators live in',
+        'middleware/agentRateLimit.ts, ipRateLimit.ts, integrationRateLimit.ts). Auth does a',
+        'Mongo lookup, so a limiter behind it protects nothing and CodeQL flags the route.',
       ].join('\n'));
     }
   });
