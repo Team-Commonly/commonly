@@ -5,7 +5,7 @@ const nacl = require('tweetnacl');
 jest.mock('../../../models/DiscordIntegration', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/discordService', () => jest.fn().mockImplementation(() => ({
   handleWebhook: jest.fn().mockResolvedValue(undefined),
-})), { virtual: true });
+})));
 jest.mock('../../../models/WebhookDelivery', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
 
 const DiscordIntegration = require('../../../models/DiscordIntegration');
