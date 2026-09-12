@@ -51,11 +51,12 @@ router.post('/:integrationId', groupMeWebhookIpRateLimit, groupMeWebhookRateLimi
     const expectedGroupId = String(integration.config?.groupId || '').trim();
     const actualGroupId = String(body.group_id || '').trim();
     const allowUnverified = process.env.GROUPME_WEBHOOK_ALLOW_UNVERIFIED === 'true';
-    // GroupMe has no callback signature. The callback's group_id is the only
-    // request-bound identity, so require it to match this integration. The
+    // GroupMe has no callback signature. The callback's group_id is a routing
+    // key, so require it to match this integration. This does not authenticate
+    // the sender; a per-integration callback URL secret is a follow-up. The
     // bot_id belongs to the outbound API and is not present in V3 callbacks.
     if (actualGroupId && expectedGroupId && actualGroupId !== expectedGroupId) {
-      return res.status(401).send('invalid GroupMe group identity');
+      return res.status(401).send('invalid GroupMe group');
     }
     if ((!expectedGroupId || !actualGroupId) && !allowUnverified) {
       return res.status(401).send('unverified GroupMe webhook');

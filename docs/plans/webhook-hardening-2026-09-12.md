@@ -23,7 +23,7 @@ and `TELEGRAM_SECRET_TOKEN` verification with the explicit local-dev
 | Provider | Canonical delivery identity | Verification | TTL |
 | --- | --- | --- | --- |
 | Slack Events API | `team_id:event_id` | HMAC over the raw body (`v0:{timestamp}:{body}`), with a 300-second timestamp window; missing/invalid secret or signature is `401` | 24 hours |
-| GroupMe callback | `group_id:message.id` | Require configured `group_id` and matching callback `group_id`; GroupMe V3 callbacks do not include the outbound bot id and expose no signing primitive. Missing/mismatched group identity is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
+| GroupMe callback | `group_id:message.id` | Require configured `group_id` and matching callback `group_id` as a routing check; GroupMe V3 callbacks do not include the outbound bot id and expose no signing primitive. This does not authenticate the sender; a per-integration callback-URL secret is the follow-up. Missing/mismatched group routing key is `401`. `GROUPME_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 | Discord webhook events | `webhook_id:event.id` | Ed25519 over `X-Signature-Timestamp + raw body` using `DISCORD_PUBLIC_KEY`; missing/invalid headers or key is `401`. `DISCORD_WEBHOOK_ALLOW_UNVERIFIED=true` is an explicit local/dev escape hatch | 24 hours |
 
 Slack URL-verification challenges are authenticated before returning the
