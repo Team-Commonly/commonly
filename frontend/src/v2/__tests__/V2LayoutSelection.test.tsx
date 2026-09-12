@@ -137,7 +137,7 @@ describe('V2Layout default pod selection', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(screen.getByTestId('current-path')).toHaveTextContent('/v2'));
+    await waitFor(() => expect(screen.getByTestId('current-path').textContent).toBe('/v2'));
   });
 
   test('opening a pod records it in the visit log that orders the sidebar’s Recent', () => {
