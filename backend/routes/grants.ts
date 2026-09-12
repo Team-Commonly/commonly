@@ -16,6 +16,7 @@ import {
   RoomGrantError,
 } from '../services/roomGrantService';
 import type { RoomGrantCreateInput } from '../services/roomGrantService';
+import { resolveBrokerFor } from '../services/installable/toolInstallables';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -152,8 +153,14 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     const connection = await findConnection(connectionId);
     if (!connection) return res.status(404).json({ error: 'connection_not_found' });
     if (connectionOwnerId(connection) !== userId) return res.status(403).json({ error: 'access_denied' });
-    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt) {
+    // The installation is the connection's, never the body's (Vera 67821):
+    // a grant on connection A must not be able to name installation B.
+    const installationId = String(connection.installationId || connection.config?.installationId || '').trim();
+    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt || !installationId) {
       return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
+    }
+    if (body.installationId !== undefined) {
+      return res.status(400).json({ error: 'invalid_installation', message: 'installationId is set by the server from the connection, not the caller' });
     }
 
     const target = body.target;
@@ -184,16 +191,33 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       return res.status(400).json({ error: 'invalid_audience', message: 'audience must be current target members' });
     }
 
+    // The broker is the catalogue's business, never the body's (Vera 67728):
+    // a caller who names one is refused, the grant names the proxy the seeded
+    // tool Installable points at, and may only allow tools that Installable
+    // enables (tools plan §2, §6).
+    if (body.brokerId !== undefined) {
+      return res.status(400).json({ error: 'invalid_broker', message: 'brokerId is set by the server, not the caller' });
+    }
+    const broker = await resolveBrokerFor(String(connection.type));
+    const requestedTools = Array.isArray(body.tools) ? body.tools.map(String) : [];
+    const unknownTools = requestedTools.filter((tool: string) => !broker.enabledTools.includes(tool));
+    if (unknownTools.length) {
+      return res.status(400).json({
+        error: 'invalid_tools',
+        message: `tools not enabled by ${broker.installableId}: ${unknownTools.join(', ')}`,
+      });
+    }
+
     const grantInput: RoomGrantCreateInput = {
       connectionId,
-      installationId: String(body.installationId || ''),
+      installationId,
       target,
       tools: body.tools,
       writeMode: body.writeMode,
       budget: body.budget,
       audience: audienceValues,
       expiresAt: body.expiresAt,
-      brokerId: String(body.brokerId || ''),
+      brokerId: broker.brokerId,
     };
     const grant = await createGrant(grantInput);
     return res.status(201).json(grant);

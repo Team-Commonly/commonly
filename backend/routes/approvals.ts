@@ -71,13 +71,15 @@ router.get('/pending', approvalResolveLimit, auth, async (req: AuthedReq & { que
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ApprovalAction = require('../models/ApprovalAction');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { buildCardPayload } = require('../services/approvalActionService');
+    const { buildCardPayload, buildOwnerCardPayload } = require('../services/approvalActionService');
     const rows = await ApprovalAction.find({ podId, status: 'flagged' })
       .sort({ createdAt: -1 })
       .limit(50);
     return res.status(200).json({
       approvals: rows.map((row: unknown) => ({
-        ...buildCardPayload(row),
+        ...((row as { actionType?: string }).actionType === 'tool_call'
+          ? buildOwnerCardPayload(row, callerUserId)
+          : buildCardPayload(row)),
         messageId: (row as { messageId?: string }).messageId || null,
         createdAt: (row as { createdAt?: Date }).createdAt || null,
       })),

@@ -19,6 +19,8 @@ export interface ToolDefinition {
   connectionType: 'github-app';
   irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
   inputSchema: Record<string, unknown>;
+  /** Enrich the canonical approval payload with provider state captured now. */
+  prepareApproval?: (args: Record<string, unknown>, connection: ToolConnection) => Promise<Record<string, unknown>>;
   call: (args: Record<string, unknown>, connection: ToolConnection) => Promise<unknown>;
 }
 
@@ -27,11 +29,14 @@ export interface ToolConnection {
   installationId: string;
   owner: string;
   repo: string;
+  ownerUserId?: string;
 }
 
 export interface BrokerCallInput {
   grantId: string;
   agentUserId: string;
+  agentName?: string;
+  instanceId?: string;
   tool: string;
   args?: unknown;
 }
@@ -96,6 +101,30 @@ const nonEmptyString = (value: unknown, field: string): string => {
   return value.trim();
 };
 
+// Approval envelopes bind the provider destination as well as the visible
+// tool arguments. These fields are server-owned metadata: the executor
+// validates them against the current connection, then removes them before
+// invoking the provider so an approved envelope can never steer the call.
+const pinConnectionRepository = (
+  rawArgs: Record<string, unknown>,
+  connection: ToolConnection,
+): Record<string, unknown> => ({
+  ...rawArgs,
+  owner: connection.owner,
+  repo: connection.repo,
+});
+
+const providerArgsFromApprovedEnvelope = (
+  args: Record<string, unknown>,
+  connection: ToolConnection,
+): Record<string, unknown> => {
+  if (args.owner !== connection.owner || args.repo !== connection.repo) {
+    throw new RoomGrantError('repo_mismatch', 'connected repository changed since approval', 409);
+  }
+  const { owner: _owner, repo: _repo, ...providerArgs } = args;
+  return providerArgs;
+};
+
 const listIssues: ToolDefinition = {
   name: 'github.list_issues',
   description: 'List open issues in the Commonly repository.',
@@ -136,6 +165,9 @@ const createIssue: ToolDefinition = {
     },
     required: ['title'],
     additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
   },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['title', 'body', 'labels']);
@@ -253,6 +285,9 @@ const commentIssue: ToolDefinition = {
     required: ['issueNumber', 'body'],
     additionalProperties: false,
   },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber', 'body']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
@@ -285,6 +320,9 @@ const closeIssue: ToolDefinition = {
     required: ['issueNumber'],
     additionalProperties: false,
   },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
@@ -299,6 +337,83 @@ const closeIssue: ToolDefinition = {
   },
 };
 
+const mergePullRequest: ToolDefinition = {
+  name: 'github.merge_pull_request',
+  description: 'Merge a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pullNumber: { type: 'integer', minimum: 1 },
+      mergeMethod: { type: 'string', enum: ['merge', 'squash', 'rebase'] },
+      commitTitle: { type: 'string' },
+      commitMessage: { type: 'string' },
+    },
+    required: ['pullNumber'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
+    const pull = await GitHubAppService.getPullRequest({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      pullNumber,
+    }) as Record<string, unknown>;
+    const head = pull?.head && typeof pull.head === 'object'
+      ? pull.head as Record<string, unknown>
+      : undefined;
+    const headSha = typeof head?.sha === 'string' ? head.sha.trim() : '';
+    if (!headSha) {
+      throw new RoomGrantError('merge_head_unavailable', 'pull request head SHA is unavailable', 409);
+    }
+    return pinConnectionRepository({ ...rawArgs, pullNumber, headSha }, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['pullNumber', 'mergeMethod', 'commitTitle', 'commitMessage', 'headSha']);
+    const mergeMethod = rawArgs.mergeMethod;
+    if (mergeMethod !== undefined && !['merge', 'squash', 'rebase'].includes(String(mergeMethod))) {
+      throw new RoomGrantError('invalid_tool_args', 'mergeMethod must be merge, squash, or rebase', 400);
+    }
+    for (const field of ['commitTitle', 'commitMessage']) {
+      if (rawArgs[field] !== undefined && typeof rawArgs[field] !== 'string') {
+        throw new RoomGrantError('invalid_tool_args', `${field} must be a string`, 400);
+      }
+    }
+    const headSha = nonEmptyString(rawArgs.headSha, 'headSha');
+    let merged: unknown;
+    try {
+      merged = await GitHubAppService.mergePullRequest({
+        owner: connection.owner,
+        repo: connection.repo,
+        installationId: connection.installationId,
+        forceApp: true,
+        pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
+        mergeMethod: mergeMethod as 'merge' | 'squash' | 'rebase' | undefined,
+        commitTitle: rawArgs.commitTitle as string | undefined,
+        commitMessage: rawArgs.commitMessage as string | undefined,
+        sha: headSha,
+      });
+    } catch (error) {
+      const status = (error as { response?: { status?: unknown }; statusCode?: unknown }).response?.status
+        || (error as { statusCode?: unknown }).statusCode;
+      if (Number(status) === 409) {
+        throw new RoomGrantError('merge_head_mismatch', 'pull request head changed since approval', 409);
+      }
+      throw error;
+    }
+    const result = (merged && typeof merged === 'object') ? merged as Record<string, unknown> : {};
+    return {
+      merged: result.merged,
+      sha: result.sha,
+      message: result.message,
+    };
+  },
+};
+
 export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [listIssues.name]: listIssues,
   [getIssue.name]: getIssue,
@@ -307,6 +422,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [createIssue.name]: createIssue,
   [commentIssue.name]: commentIssue,
   [closeIssue.name]: closeIssue,
+  [mergePullRequest.name]: mergePullRequest,
 };
 
 export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS);
@@ -340,6 +456,7 @@ const resolveConnection = async (
     type?: string;
     status?: string;
     revokedAt?: Date | null;
+    createdBy?: unknown;
     config?: { installationId?: string; owner?: string; repo?: string };
   } | null;
   const config = row?.config;
@@ -359,8 +476,49 @@ const resolveConnection = async (
     installationId: String(config.installationId),
     owner: String(config.owner),
     repo: String(config.repo),
+    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
   };
 };
+
+/**
+ * Approval cards share the grant's target audience. A pod grant can post to
+ * that pod directly; a seat grant must use the private room between the
+ * granter and the seat so no third party can observe its credentials or
+ * approval arguments.
+ */
+const resolveApprovalPodId = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  connection: ToolConnection,
+  agentName?: string,
+  instanceId?: string,
+): Promise<string> => {
+  const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
+  if (!target?.kind || !target.id) {
+    throw new RoomGrantError('invalid_target', 'grant target is invalid', 403);
+  }
+  if (target.kind !== 'seat') return String(target.id);
+  if (!connection.ownerUserId) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection owner is missing', 403);
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const DMService = require('./dmService');
+  const room = await DMService.getOrCreateAgentRoom(
+    String(target.id),
+    connection.ownerUserId,
+    { agentName: agentName || 'grant-broker', instanceId: instanceId || 'default' },
+  );
+  if (!room?._id) {
+    throw new RoomGrantError('approval_unavailable', 'approval room could not be created', 503);
+  }
+  return String(room._id);
+};
+
+const providerConnection = (connection: ToolConnection): ToolConnection => ({
+  type: connection.type,
+  installationId: connection.installationId,
+  owner: connection.owner,
+  repo: connection.repo,
+});
 
 const safeReason = (error: unknown): string => {
   if (error instanceof RoomGrantError) return error.code;
@@ -375,8 +533,9 @@ const recordCall = async (
   outcome: 'ok' | 'refused' | 'failed' | 'pending_approval',
   startedAt: number,
   reason?: string,
+  overrides?: { callId?: string; approvalId?: string; args?: unknown },
 ): Promise<string> => {
-  const callId = `tool_call_${randomUUID()}`;
+  const callId = overrides?.callId || `tool_call_${randomUUID()}`;
   await ToolCall.create({
     callId,
     grantId: input.grantId,
@@ -384,13 +543,29 @@ const recordCall = async (
     installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
     agentUserId: input.agentUserId,
     tool: input.tool,
-    argsDigest: digestArgs(input.args),
+    argsDigest: digestArgs(overrides?.args === undefined ? input.args : overrides.args),
     at: new Date(startedAt),
     outcome,
     reason,
+    approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
   });
   return callId;
+};
+
+const budgetEntriesFor = async (
+  grant: IRoomGrant | Record<string, unknown>,
+): Promise<Array<{ grantId: string; calls: number; windowMs?: number }>> => {
+  const lineage = await getGrantLineage(grant);
+  return lineage.reverse().flatMap((item) => {
+    const budget = (item as Record<string, unknown>).budget as { calls?: number; windowMs?: number } | undefined;
+    if (budget?.calls === undefined) return [];
+    return [{
+      grantId: String((item as Record<string, unknown>).grantId),
+      calls: budget.calls,
+      windowMs: budget.windowMs,
+    }];
+  });
 };
 
 /**
@@ -435,25 +610,86 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const requiresConfirmation = irreversible
       || (grant.writeMode === 'write-with-confirm' && definition.requiredWriteMode !== 'read');
     if (requiresConfirmation) {
-      throw new RoomGrantError('approval_required', 'irreversible tool call requires approval', 403);
+      const callId = `tool_call_${randomUUID()}`;
+      let canonicalArgs = parsedArgs;
+      if (definition.prepareApproval) {
+        canonicalArgs = await definition.prepareApproval(parsedArgs, providerConnection(connection));
+      }
+      let proposal: { ok: boolean; approvalId?: string } | undefined;
+      try {
+        const approvalPodId = await resolveApprovalPodId(
+          grant,
+          connection,
+          input.agentName,
+          input.instanceId,
+        );
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const approvalService = require('./approvalActionService');
+        proposal = await approvalService.proposeAction({
+          podId: approvalPodId,
+          agentName: input.agentName || 'grant-broker',
+          instanceId: input.instanceId || 'default',
+          actionType: 'tool_call',
+          params: {},
+          summary: `${definition.description} (approval required)`,
+          ownerUserId: connection.ownerUserId,
+          agentUserId: input.agentUserId,
+          toolCall: {
+            grantId: String((grant as Record<string, unknown>).grantId || input.grantId),
+            callId,
+            tool: definition.name,
+            canonicalArgs,
+            argsDigest: digestArgs(canonicalArgs),
+          },
+        });
+      } catch {
+        // A proposal failure must never leave a pending ledger row with no
+        // approval id. Record the refusal immediately, then surface the same
+        // fail-closed error as the explicit `{ ok: false }` branch below.
+        const refusedCallId = await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+          callId,
+          args: canonicalArgs,
+        });
+        throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
+          recorded: true,
+          callId: refusedCallId,
+        });
+      }
+      if (proposal && !proposal.ok) {
+        await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+          callId,
+          args: canonicalArgs,
+        });
+        throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
+          recorded: true,
+          callId,
+        });
+      }
+      await recordCall(input, grant, 'pending_approval', startedAt, 'approval_required', {
+        callId,
+        approvalId: proposal?.approvalId,
+        args: canonicalArgs,
+      });
+      const approvalError = new RoomGrantError(
+        'approval_required',
+        'tool call requires approval',
+        403,
+        {
+          approvalId: proposal?.approvalId,
+          callId,
+          recorded: true,
+        },
+      );
+      throw approvalError;
     }
 
-    const lineage = await getGrantLineage(grant);
-    const budgetEntries = lineage.reverse().flatMap((item) => {
-      const budget = (item as Record<string, unknown>).budget as { calls?: number; windowMs?: number } | undefined;
-      if (budget?.calls === undefined) return [];
-      return [{
-        grantId: String((item as Record<string, unknown>).grantId),
-        calls: budget.calls,
-        windowMs: budget.windowMs,
-      }];
-    });
+    const budgetEntries = await budgetEntriesFor(grant);
     if (budgetEntries.length > 0) {
       const reserved = await reserveBudgetLineage(budgetEntries);
       if (!reserved) throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
 
-    const result = await definition.call(parsedArgs, connection);
+    const result = await definition.call(parsedArgs, providerConnection(connection));
     const callId = await recordCall(input, grant, 'ok', startedAt);
     return { callId, result };
   } catch (error) {
@@ -464,16 +700,88 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const outcome = error instanceof RoomGrantError
       ? (error.code === 'approval_required' ? 'pending_approval' : 'refused')
       : 'failed';
-    const callId = await recordCall(input, grant, outcome, startedAt, reason);
+    const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
+    const callId = alreadyRecorded
+      ? String(error.details?.callId || '')
+      : await recordCall(input, grant, outcome, startedAt, reason);
     if (error instanceof RoomGrantError) {
-      Object.assign(error, { details: { ...(error.details || {}), callId } });
+      Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
     throw error;
   }
 };
 
+export interface ApprovedToolCallInput {
+  grantId: string;
+  agentUserId: string;
+  tool: string;
+  args: Record<string, unknown>;
+  expectedArgsDigest: string;
+  approvalId: string;
+}
+
+/** Execute the exact envelope captured by an approval winner. This path never
+ * consults request arguments and never re-parks; all normal grant, audience,
+ * connection and budget checks still run immediately before the provider. */
+export const executeApprovedToolCall = async (
+  input: ApprovedToolCallInput,
+): Promise<BrokerCallResult> => {
+  const startedAt = Date.now();
+  const definition = TOOL_DEFINITIONS[input.tool];
+  let grant: IRoomGrant | Record<string, unknown> | undefined;
+  const callId = `tool_call_${randomUUID()}`;
+  try {
+    if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
+    if (digestArgs(input.args) !== input.expectedArgsDigest) {
+      throw new RoomGrantError('args_digest_mismatch', 'approved tool arguments no longer match', 409);
+    }
+    grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
+    if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
+    const members = await currentMemberIds(grant);
+    await assertGrantUsable({
+      grant,
+      agentUserId: input.agentUserId,
+      currentMemberIds: members,
+      tool: definition.name,
+      requiredWriteMode: definition.requiredWriteMode,
+    });
+    const connection = await resolveConnection(grant, definition);
+    const executionArgs = providerArgsFromApprovedEnvelope(input.args, connection);
+    const budgetEntries = await budgetEntriesFor(grant);
+    if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
+      throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
+    }
+    const result = await definition.call(executionArgs, providerConnection(connection));
+    await recordCall(
+      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+      grant,
+      'ok',
+      startedAt,
+      undefined,
+      { callId, approvalId: input.approvalId, args: input.args },
+    );
+    return { callId, result };
+  } catch (error) {
+    const reason = safeReason(error);
+    await recordCall(
+      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+      grant,
+      error instanceof RoomGrantError ? 'refused' : 'failed',
+      startedAt,
+      reason,
+      { callId, approvalId: input.approvalId, args: input.args },
+    );
+    throw error;
+  }
+};
+
 // Exported for route tests and for the MCP catalogue projection.
-export default { callTool, getToolDefinitions, TOOL_DEFINITIONS };
+export default {
+  callTool,
+  executeApprovedToolCall,
+  getToolDefinitions,
+  TOOL_DEFINITIONS,
+};
 
 // CJS compat: let require() return the default export directly.
 // eslint-disable-next-line @typescript-eslint/no-require-imports

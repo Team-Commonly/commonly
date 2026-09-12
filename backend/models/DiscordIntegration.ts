@@ -81,7 +81,19 @@ DiscordIntegrationSchema.virtual('recentMessages').get(function (this: IDiscordI
     .slice(0, 50);
 });
 
-DiscordIntegrationSchema.set('toJSON', { virtuals: true });
+// The record joins onto Integration as `platformIntegration` and rides out
+// through every list that populates it (admin Apps list, pod list, create).
+// botToken is the instance-wide DISCORD_BOT_TOKEN and webhookUrl carries the
+// webhook's secret; both stay server-only in every JSON response. Server code
+// reads them off the document, never off its JSON.
+DiscordIntegrationSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, returned: Record<string, unknown>) => {
+    delete returned.botToken;
+    delete returned.webhookUrl;
+    return returned;
+  },
+});
 DiscordIntegrationSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model<IDiscordIntegration>('DiscordIntegration', DiscordIntegrationSchema);

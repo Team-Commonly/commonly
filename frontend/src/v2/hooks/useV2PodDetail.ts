@@ -77,6 +77,16 @@ export interface V2Message {
     expiresAt?: string;
     executionResult?: { podId?: string; podName?: string } | Record<string, unknown>;
     executionError?: string;
+    // Raw tool-call arguments are intentionally absent from the shared card
+    // payload. The owner fetches this field from /api/approvals/pending while
+    // the action is flagged; the backend scopes it to ownerUserId.
+    toolCall?: {
+      grantId?: string;
+      callId?: string;
+      tool?: string;
+      canonicalArgs?: Record<string, unknown>;
+      argsDigest?: string;
+    };
   } | null;
 }
 
