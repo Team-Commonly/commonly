@@ -9624,10 +9624,10 @@ body.modern-ui.v2-canvas {
 
 .v2-connector-row {
   display: grid;
-  /* Keep the name and timestamp readable when the aside leaves a narrow
-     desktop list. The old fixed 200px + 200px + 120px tracks left the
-     details column ~20px wide at 1184px, so every word wrapped vertically. */
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) minmax(110px, 1fr) auto;
+  /* Keep columns aligned while giving details the only flexible track. The
+     old fixed 200px + 200px + 120px tracks left details ~20px wide at 1184px,
+     while a flexible action track let each row drift and clipped its label. */
+  grid-template-columns: 140px minmax(150px, 1fr) 100px 120px;
   align-items: center;
   min-height: 82px;
   padding: 16px 18px;
@@ -9640,7 +9640,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-connector-row__selection {
   display: grid;
   grid-column: 1 / 4;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) minmax(110px, 1fr);
+  grid-template-columns: 140px minmax(150px, 1fr) 100px;
   align-items: center;
   min-width: 0;
   padding: 0;

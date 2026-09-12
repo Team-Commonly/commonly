@@ -1728,8 +1728,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
-    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) minmax(110px, 1fr) auto');
-    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: minmax(160px, 1fr) minmax(180px, 2fr) minmax(110px, 1fr)');
+    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px 120px');
+    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px');
     expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(0, 1fr) 400px');
     const connectors = ruleBody(v2, '.v2-connectors');
     expect(connectors).toContain('min-height: calc(100vh - 86px)');
