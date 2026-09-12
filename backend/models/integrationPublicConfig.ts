@@ -10,8 +10,10 @@
  * accessToken from the pod list because it happened to be there.
  * `connectCode` is deliberately NOT here: it is the one-time enable code a
  * member pastes into Telegram, and ChatRoom and the Connectors page read it
- * from the pod list. Ingest tokens are listed without their hash by
- * GET /api/integrations/:id/ingest-tokens.
+ * from the pod list and the owner's list. Surfaces with no reader drop it
+ * through withoutConnectCode instead: the admin list, and a Slack row in the
+ * catalog, where the code is the OAuth state. Ingest tokens are listed without
+ * their hash by GET /api/integrations/:id/ingest-tokens.
  *
  * Every JSON path an Integration takes out of the server runs through
  * toPublicIntegration: the model's toJSON, and the lean catalog read in
@@ -60,6 +62,19 @@ export const toPublicIntegration = (
     });
   }
   toPublicIntegrationConfig(integration.config as Record<string, unknown> | null | undefined);
+  return integration;
+};
+
+// For an already-public Integration on a surface that has no reader for the
+// connect code: drops the code and its expiry together.
+export const withoutConnectCode = (
+  integration: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null | undefined => {
+  const config = integration?.config;
+  if (config && typeof config === 'object') {
+    delete (config as Record<string, unknown>).connectCode;
+    delete (config as Record<string, unknown>).connectCodeExpiresAt;
+  }
   return integration;
 };
 

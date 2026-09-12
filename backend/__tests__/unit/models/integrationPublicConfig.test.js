@@ -3,7 +3,7 @@
 // leave through neither the model's toJSON nor the lean catalog read.
 
 const Integration = require('../../../models/Integration');
-const { toPublicIntegration } = require('../../../models/integrationPublicConfig');
+const { toPublicIntegration, withoutConnectCode } = require('../../../models/integrationPublicConfig');
 
 const TOKEN_HASH = 'hash_of_an_ingest_token';
 const INSTALL_CLAIM = 'install_claim_fence';
@@ -51,5 +51,19 @@ describe('toPublicIntegration', () => {
   it('passes null and non-objects through', () => {
     expect(toPublicIntegration(null)).toBeNull();
     expect(toPublicIntegration(undefined)).toBeUndefined();
+  });
+});
+
+describe('withoutConnectCode', () => {
+  it('drops the connect code and its expiry and keeps the rest of config', () => {
+    const out = withoutConnectCode(toPublicIntegration(JSON.parse(JSON.stringify({
+      ...row(), config: { connectCode: 'ENABLE123', connectCodeExpiresAt: '2026-09-12T00:10:00Z', chatTitle: 'Ops' },
+    }))));
+    expect(out.config).toEqual({ chatTitle: 'Ops' });
+  });
+
+  it('passes a row without config through', () => {
+    expect(withoutConnectCode({ type: 'slack' })).toEqual({ type: 'slack' });
+    expect(withoutConnectCode(null)).toBeNull();
   });
 });
