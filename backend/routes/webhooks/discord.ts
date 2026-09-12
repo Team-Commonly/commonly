@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const DiscordService = require('../../services/discordService');
 const DiscordIntegration = require('../../models/DiscordIntegration');
@@ -8,6 +9,17 @@ const {
   releaseDelivery,
 } = require('../../services/webhookDeliveryService');
 const { verifyDiscordSignature } = require('../../services/webhookVerificationService');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+
+const discordWebhookRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Discord webhook requests' }),
+});
 
 const header = (req: any, name: string): string => String(req.get?.(name) || req.headers?.[name.toLowerCase()] || '');
 
@@ -23,7 +35,7 @@ export const verifyDiscordWebhookRequest = (req: any): boolean => {
 };
 
 // Discord webhook endpoint
-router.post('/', async (req: any, res: any) => {
+router.post('/', discordWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const event = req.body;

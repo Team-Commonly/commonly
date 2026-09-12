@@ -177,7 +177,7 @@ router.post('/commands', slackWebhookRateLimit, signed, async (req: any, res: an
 
 // Legacy per-row Slack integrations preserve their old provider path. It is
 // intentionally last so /events and /commands cannot be swallowed as an id.
-router.post('/:integrationId', async (req: any, res: any) => {
+router.post('/:integrationId', slackWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const { integrationId } = req.params;
