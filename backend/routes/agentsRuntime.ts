@@ -32,6 +32,7 @@ const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -63,13 +64,32 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // 2026-09-12), and `__tests__/unit/routes/routeRateLimitGuard.test.js` fails
 // the next registration that puts it behind auth.
 //
-// Running the limiter pre-auth is safe because agentRateLimitKeyGenerator
-// was built for it: its first branch reads `req.agentTokenHash` (set by
-// agentRuntimeAuth, so post-auth only), but it falls through to a sha256 of
-// the Authorization / x-commonly-agent-token header, which is present before
-// any middleware runs. Pre-auth the limiter takes the header branch — same
-// per-caller isolation, different key prefix. No key-generator change needed.
-const phase4RateLimit = rateLimit({
+// Pre-auth, agentRateLimitKeyGenerator has no `req.agentTokenHash` yet (that
+// is set by agentRuntimeAuth), so it keys on a sha256 of the Authorization /
+// x-commonly-agent-token header. That isolates callers, but a caller who
+// rotates the header gets a fresh bucket every request (Vera measured it on
+// #1689: 300 fixed-header requests reached auth 120 times, 300 rotating
+// headers reached auth 300 times — the same class as the B2 webhook finding).
+// So the stack is two tiers, IP first: a coarse per-IP limiter keyed by the
+// Cloudflare-aware generator (cf-connecting-ip, then req.ip; IPv6 collapsed
+// to its /64) bounds the Mongo lookups in agentRuntimeAuth regardless of what
+// the header says, and the per-token tier behind it keeps one seat from
+// starving its neighbours. Same two-tier shape as the webhook routes
+// (IP 3000/60s, then account). `phase4RateLimit` is the whole stack;
+// registering it registers both limiters, in that order.
+const phase4IpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 3000 requests per 60s per IP',
+    code: 'rate_limited',
+  }),
+});
+
+const phase4AgentRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
@@ -80,6 +100,8 @@ const phase4RateLimit = rateLimit({
     code: 'rate_limited',
   }),
 });
+
+const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit];
 
 // Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
 // that accept BOTH human JWTs and agent runtime tokens use this — the token
