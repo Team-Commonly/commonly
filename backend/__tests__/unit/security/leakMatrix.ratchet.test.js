@@ -15,7 +15,7 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => require('../../utils/lea
 // Node 26 (buffer-equal-constant-time) and is pulled in transitively.
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
 jest.mock('../../../models/ToolCall', () => require('../../utils/leakMatrix').toolCallMock);
-// Same network backstop as leakMatrix.webhooks.test.js, so a replayed webhook case sees the same world.
+// Keep the network boundary stubbed while replaying the route suites.
 jest.mock('axios', () => require('../../utils/leakMatrix').axiosMock);
 
 const fs = require('fs');
