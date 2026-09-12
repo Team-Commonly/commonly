@@ -202,6 +202,8 @@ const V2ConnectorsPage: React.FC = () => {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [pods, setPods] = useState<V2Pod[]>([]);
+  const [podsStatus, setPodsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [podsLoadAttempt, setPodsLoadAttempt] = useState(0);
   const [newPodId, setNewPodId] = useState('');
   const [addingType, setAddingType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -283,6 +285,7 @@ const V2ConnectorsPage: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    setPodsStatus('loading');
     void (async () => {
       try {
         // Membership is the only rule, and it is the server's: every pod that
@@ -292,13 +295,14 @@ const V2ConnectorsPage: React.FC = () => {
         if (!cancelled) {
           setPods(eligible);
           setNewPodId((current) => current || eligible[0]?._id || '');
+          setPodsStatus('ready');
         }
       } catch {
-        // The picker stays empty when no pod can be read.
+        if (!cancelled) setPodsStatus('error');
       }
     })();
     return () => { cancelled = true; };
-  }, [api]);
+  }, [api, podsLoadAttempt]);
 
   const podNameById = (podId: string | null | undefined, fallback?: Connector | null): string => {
     const pod = pods.find((candidate) => String(candidate._id) === String(podId || ''));
@@ -1224,44 +1228,63 @@ const V2ConnectorsPage: React.FC = () => {
   const availableProviders = catalog
     ? catalog.filter((entry) => entry.available && !entry.installation).map((entry) => ({ type: entry.installableId }))
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
-  const renderAddForm = (aside = false) => (
-    <div className={`v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`}>
-      {pods.length > 0 ? (
-        <>
-          <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
-            {availableProviders.map((provider) => (
-              <button
-                key={provider.type}
-                type="button"
-                className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
-                onClick={() => setAddingType(provider.type)}
-              >
-                {TYPE_LABELS[provider.type] || provider.type}
-              </button>
-            ))}
+  const renderAddForm = (aside = false) => {
+    const rowClass = `v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`;
+    if (podsStatus === 'loading') {
+      return <div className={rowClass}><div className="v2-connectors__empty-pods"><p>{t('connectors.podsLoading', { defaultValue: 'Loading your pods…' })}</p></div></div>;
+    }
+    if (podsStatus === 'error') {
+      return (
+        <div className={rowClass}>
+          <div className="v2-connectors__empty-pods">
+            <p>{t('connectors.podsLoadError', { defaultValue: 'Could not load your pods.' })}</p>
+            <button type="button" className="v2-connectors__create" onClick={() => setPodsLoadAttempt((attempt) => attempt + 1)}>
+              {t('connectors.retryPods', { defaultValue: 'Retry' })}
+            </button>
           </div>
-          <select
-            className="v2-connectors__select"
-            value={newPodId}
-            onChange={(event) => setNewPodId(event.target.value)}
-            aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
-          >
-            {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
-          </select>
-          <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
-            {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
-          </button>
-        </>
-      ) : (
-        <div className="v2-connectors__empty-pods">
-          <p>{t('connectors.noPodsToConnect', { defaultValue: 'No pod yet. Create one, then come back to connect a channel.' })}</p>
-          <button type="button" className="v2-connectors__create" onClick={() => navigate('/v2?newPod=1')}>
-            {t('connectors.createPod', { defaultValue: 'Create a pod' })}
-          </button>
         </div>
-      )}
-    </div>
-  );
+      );
+    }
+    if (pods.length === 0) {
+      return (
+        <div className={rowClass}>
+          <div className="v2-connectors__empty-pods">
+            <p>{t('connectors.noPodsToConnect', { defaultValue: 'No pod yet. Create one, then come back to connect a channel.' })}</p>
+            <button type="button" className="v2-connectors__create" onClick={() => navigate('/v2?newPod=1')}>
+              {t('connectors.createPod', { defaultValue: 'Create a pod' })}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className={rowClass}>
+        <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
+          {availableProviders.map((provider) => (
+            <button
+              key={provider.type}
+              type="button"
+              className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
+              onClick={() => setAddingType(provider.type)}
+            >
+              {TYPE_LABELS[provider.type] || provider.type}
+            </button>
+          ))}
+        </div>
+        <select
+          className="v2-connectors__select"
+          value={newPodId}
+          onChange={(event) => setNewPodId(event.target.value)}
+          aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
+        >
+          {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
+        </select>
+        <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
+          {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
+        </button>
+      </div>
+    );
+  };
 
   const selectedAside = selectedItem ? renderAside(selectedItem) : null;
 
@@ -1300,7 +1323,7 @@ const V2ConnectorsPage: React.FC = () => {
                 <button type="button" className="v2-connectors__connect" onClick={() => setAddingType((current) => current ? null : availableProviders[0]?.type || null)}>
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
-                {pods.length > 0 && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
+                {podsStatus === 'ready' && pods.length > 0 && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                 {adding && selectedAside && renderAddForm()}
               </div>
             )}
@@ -1310,7 +1333,7 @@ const V2ConnectorsPage: React.FC = () => {
               <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
                 <section className="v2-connector-aside__step">
                   <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                  {pods.length > 0 && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
+                  {podsStatus === 'ready' && pods.length > 0 && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                   {renderAddForm(true)}
                 </section>
               </aside>

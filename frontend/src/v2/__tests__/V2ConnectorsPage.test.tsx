@@ -544,6 +544,22 @@ describe('V2ConnectorsPage', () => {
       expect(await screen.findByText('pods list')).toBeInTheDocument();
     });
 
+    it('does not present the zero-pod CTA when pod loading fails', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return Promise.reject(new Error('pods unavailable'));
+        return Promise.resolve({ data: [] });
+      });
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(await screen.findByText('Could not load your pods.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(screen.queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create a pod' })).toBeNull();
+    });
+
     it('shows Setting up… without a control while the claim is fresh, and Cancel once it is stale', async () => {
       mockCatalog([entry({ installation: { status: 'installing', claimedAt: new Date().toISOString(), components: [] } })]);
       const fresh = renderPage();
