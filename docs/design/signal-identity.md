@@ -63,7 +63,7 @@ Counts live in mono next to the thing they count (`7 open · 2 need you`), never
 - **Marks and acts (Sam, 2026-09-11 — canvas "Signal, quieter", direction A).** Measured at 1440 with three asks open, Activity carried 120 words, 17 worded buttons and no icons; every meaning on the row was a word, including the ones that are categories. Three rules, applied to every row-like surface (Activity, Connectors and Tools, Your Team, Artifacts, the inspector) and nothing else changes:
   1. *Categories are glyphs.* Anything with a fixed set of values — ask kind, write mode, status, platform, outcome — renders as a 16px 2px-stroke mark with its word in `title` and the accessible name, never as a word in the row and never as a unicode character. The mark's colour keeps saying who is asking (an agent is cobalt).
   2. *Only the deciding act is a word.* Approve, Reply, the cobalt option, a row's single act keep their label. Mark handled, Deny, Open pod, Manage-beside-a-primary become 32px square icon buttons (44 under 760) with the word in `title` and the accessible name. Nothing moves into an overflow menu: a secondary act stays one click away, beside the primary.
-  3. *Meta is mono chips.* Pod and time follow the title in mono 11 (`launch pod · 5m`); the kicker no longer names the kind. Titles and detail sentences are untouched — an ask is a sentence someone wrote, and the words that are sentences stay.
+  3. *Meta is mono chips.* Pod and time are the row's kicker — mono 11 above the title (`launch pod · 5m`), as the build and the canvas draw it; the kicker no longer names the kind. Titles and detail sentences are untouched — an ask is a sentence someone wrote, and the words that are sentences stay.
 
 ## 5. Copy
 
