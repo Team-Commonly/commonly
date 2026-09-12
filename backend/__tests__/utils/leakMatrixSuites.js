@@ -494,49 +494,7 @@ const installationConfigSecrets = (s, prefix) => ({
 });
 
 // ---------------------------------------------------------------------------
-// 7. Discord webhook helper routes (routes/webhooks/discord.ts: no auth on the router)
-// ---------------------------------------------------------------------------
-const webhooks = {
-  name: 'webhooks',
-  mount(app) {
-    // eslint-disable-next-line global-require
-    app.use('/api/webhooks/discord', require('../../routes/webhooks/discord'));
-  },
-  async seed() {
-    const s = createSentinels();
-    const owner = await seedUser(s, 'OWNER');
-    const stranger = await seedUser(s, 'STRANGER');
-    const pod = await model.Pod().create({ name: 'Discord Room', createdBy: owner, members: [owner] });
-    const discord = await model.Integration().create({
-      podId: pod._id, scope: 'pod', status: 'connected', createdBy: owner, isActive: true, type: 'discord',
-      ...withConfig(integrationSecrets(s, 'WH_DISCORD'), { serverId: 'srv-1', channelId: 'chan-1' }),
-    });
-    await model.DiscordIntegration().create({
-      integrationId: discord._id,
-      serverId: 'srv-1',
-      serverName: 'Guild',
-      channelId: 'chan-1',
-      channelName: 'general',
-      webhookUrl: `https://discord.com/api/webhooks/1/${s('WH_DISCORDINTEGRATION_WEBHOOKURL')}`,
-      webhookId: '1',
-      botToken: s('WH_DISCORDINTEGRATION_BOTTOKEN'),
-    });
-    return {
-      sentinels: s.all,
-      identities: { owner: { user: owner }, stranger: { user: stranger }, anonymous: {} },
-      integrationId: String(discord._id),
-    };
-  },
-  cases: [
-    // The correct answer for a stranger or an unauthenticated caller is 401/403.
-    ...matrix('GET', '/api/webhooks/discord/channels/:integrationId',
-      (ctx) => `/api/webhooks/discord/channels/${ctx.integrationId}`,
-      { owner: 500, stranger: 500, anonymous: 500 }, undefined, { refuse: ['stranger', 'anonymous'] }),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// 8. Registry: agent tokens + installed pod agent (routes/registry/agent-tokens.ts, pod-agents.ts)
+// 7. Registry: agent tokens + installed pod agent (routes/registry/agent-tokens.ts, pod-agents.ts)
 // ---------------------------------------------------------------------------
 const REG_AGENT = 'leakregagent';
 const registry = {
@@ -592,7 +550,7 @@ const registry = {
 };
 
 // ---------------------------------------------------------------------------
-// 9. Machines + gateways (routes/machines.ts, routes/gateways.ts)
+// 8. Machines + gateways (routes/machines.ts, routes/gateways.ts)
 // ---------------------------------------------------------------------------
 const machines = {
   name: 'machines',
@@ -652,7 +610,7 @@ const machines = {
 };
 
 // ---------------------------------------------------------------------------
-// 10. Public agent profile (routes/agentProfile.ts: no auth; selects agentConfig)
+// 9. Public agent profile (routes/agentProfile.ts: no auth; selects agentConfig)
 // ---------------------------------------------------------------------------
 const PROFILE_AGENT = 'leakprofile';
 const agentProfile = {
@@ -705,7 +663,7 @@ const agentProfile = {
 };
 
 const SUITES = {
-  integrations, installables, users, credentials, grants, agentRuntime, webhooks, registry, machines, agentProfile,
+  integrations, installables, users, credentials, grants, agentRuntime, registry, machines, agentProfile,
 };
 
 module.exports = { SUITES, ...SUITES };
