@@ -152,6 +152,11 @@ const LEGACY_RUNTIME_RENAME: Record<string, string> = {
   claude: 'claude-code',
 };
 
+// Runtime secrets follow the same explicit key-list rule as Integration
+// config. Keep the response projection here so a member of a pod can inspect
+// runtime metadata without receiving the webhook signing secret.
+const AGENT_RUNTIME_SECRET_CONFIG_KEYS = ['webhookSecret'];
+
 const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
   let runtimeType: string | undefined = rest.runtimeType ? String(rest.runtimeType) : undefined;
   let host: 'cloud' | 'byo' | undefined = rest.host === 'byo' || rest.host === 'cloud' ? rest.host : undefined;
@@ -187,6 +192,7 @@ const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
 const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
   const cfg = runtimeConfig && typeof runtimeConfig === 'object' ? runtimeConfig : {};
   const { authProfiles, skillEnv, ...rest } = cfg;
+  AGENT_RUNTIME_SECRET_CONFIG_KEYS.forEach((key) => { delete rest[key]; });
   const providers = authProfiles && typeof authProfiles === 'object'
     ? Array.from(new Set(
       Object.values(authProfiles)

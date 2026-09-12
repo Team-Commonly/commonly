@@ -1464,7 +1464,11 @@ describe('Integrations E2E Tests', () => {
         expect(res.status).toBe(200);
         expect(res.body.integrations).toHaveLength(1);
         expect(res.body.integrations[0].type).toBe('discord');
-        expect(res.body.integrations[0].botToken).toBe('discord-bot-token');
+        expect(res.body.integrations[0]).not.toHaveProperty('botToken');
+        expect(res.body.integrations[0]).toMatchObject({
+          channelId: 'discord-channel-123',
+          channelName: 'general',
+        });
       });
 
       test('should include availableIntegrations in heartbeat payload for eligible agents', async () => {

@@ -1,6 +1,8 @@
 const request = require('supertest');
 const express = require('express');
 
+jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
+
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: 'user-1' };
   req.userId = 'user-1';
@@ -117,6 +119,15 @@ describe('registry list pod agents config payload', () => {
           skillSync: {
             mode: 'all', allPods: true, podIds: [], skillNames: [],
           },
+          runtime: {
+            runtimeType: 'webhook',
+            webhookUrl: 'https://agent.example.test/events',
+            webhookSecret: 'member-only-secret',
+            authProfiles: {
+              'openai:default': { type: 'api_key', provider: 'openai', key: 'member-api-key' },
+            },
+            skillEnv: { github: { GITHUB_TOKEN: 'member-github-token' } },
+          },
         })),
       },
     ]);
@@ -149,6 +160,15 @@ describe('registry list pod agents config payload', () => {
         mode: 'all', allPods: true, podIds: [], skillNames: [],
       },
     });
+    expect(res.body.agents[0].runtime).toEqual(expect.objectContaining({
+      runtimeType: 'webhook',
+      webhookUrl: 'https://agent.example.test/events',
+      authProviders: ['openai'],
+      hasCustomAuthProfiles: true,
+      hasCustomSkillEnv: true,
+      skillEnvKeys: ['github'],
+    }));
+    expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
   });
 
   it('keeps a pod-scoped label when the portable principal has a different label', async () => {

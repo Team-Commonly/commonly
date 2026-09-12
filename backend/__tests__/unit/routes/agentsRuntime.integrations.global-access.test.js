@@ -3,6 +3,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
   requireApiTokenScopes: () => (req, res, next) => next(),
 }));
+jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
 
 jest.mock('../../../models/Integration', () => ({
   find: jest.fn(),
@@ -112,9 +113,15 @@ describe('agentsRuntime integrations global access', () => {
 
     expect(res.json).toHaveBeenCalledWith({
       integrations: expect.arrayContaining([
-        expect.objectContaining({ id: 'pod-int-1', type: 'discord', botToken: 'discord-token' }),
-        expect.objectContaining({ id: 'global-x-1', type: 'x', accessToken: 'x-token' }),
+        expect.objectContaining({
+          id: 'pod-int-1', type: 'discord', channelId: 'c1', channelName: 'general',
+        }),
+        expect.objectContaining({ id: 'global-x-1', type: 'x' }),
       ]),
     });
+
+    const [podIntegration, globalIntegration] = res.json.mock.calls[0][0].integrations;
+    expect(podIntegration).not.toHaveProperty('botToken');
+    expect(globalIntegration).not.toHaveProperty('accessToken');
   });
 });

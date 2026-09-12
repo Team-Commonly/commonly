@@ -193,9 +193,7 @@ const R_INST_LEAN = 'installableCatalogService reads Integration with .lean(), b
 const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth state; no surface reads it';
 const R_USER_RUNTIME_HASH = 'User serialization keeps agentRuntimeTokens[].tokenHash';
 const R_USER_APITOKEN = 'returns the caller\'s raw apiToken; decide whether the browser may ever re-read it';
-const R_RT_PLAINTEXT = 'fix PR pending: stripped from the agent route (68039 item 1)';
 const R_GATEWAY_TOKEN = 'GET /api/gateways returns lean rows verbatim, including metadata.gatewayToken';
-const R_REG_WEBHOOKSECRET = 'sanitizeRuntimeConfig strips authProfiles/skillEnv but passes runtime.webhookSecret through';
 /* eslint-enable max-len */
 
 /**
@@ -214,13 +212,6 @@ const KNOWN_EXPOSURES = [
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/agents/runtime/pods/:podId/integrations — follow-up: the 68039 item-1 fix PR (plaintext botToken/accessToken to agents)
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_GLOBAL_X_ACCESSTOKEN', reason: R_RT_PLAINTEXT },
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_GLOBAL_X_BOTTOKEN', reason: R_RT_PLAINTEXT },
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_TELEGRAM_ACCESSTOKEN', reason: R_RT_PLAINTEXT },
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_TELEGRAM_BOTTOKEN', reason: R_RT_PLAINTEXT },
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_X_ACCESSTOKEN', reason: R_RT_PLAINTEXT },
-  { method: 'GET', path: '/api/agents/runtime/pods/:podId/integrations', role: 'agent', sentinelKey: 'RT_X_BOTTOKEN', reason: R_RT_PLAINTEXT },
   // GET /api/auth/api-token — follow-up: decide whether GET may return the raw apiToken at all
   { method: 'GET', path: '/api/auth/api-token', role: 'self', sentinelKey: 'SELF_USER_APITOKEN', reason: R_USER_APITOKEN },
   // GET /api/auth/profile — follow-up: drop agentRuntimeTokens[].tokenHash from User serialization
@@ -320,9 +311,6 @@ const KNOWN_EXPOSURES = [
   { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/registry/pods/:podId/agents/:name — follow-up: strip runtime.webhookSecret in sanitizeRuntimeConfig
-  { method: 'GET', path: '/api/registry/pods/:podId/agents/:name', role: 'member', sentinelKey: 'REG_INSTALL_RUNTIME_WEBHOOKSECRET', reason: R_REG_WEBHOOKSECRET },
-  { method: 'GET', path: '/api/registry/pods/:podId/agents/:name', role: 'owner', sentinelKey: 'REG_INSTALL_RUNTIME_WEBHOOKSECRET', reason: R_REG_WEBHOOKSECRET },
 ];
 /* eslint-enable max-len */
 

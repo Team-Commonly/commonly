@@ -28,6 +28,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
+const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig');
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
@@ -3252,19 +3253,21 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: 
       index === list.findIndex((item) => item._id?.toString() === integration._id?.toString())
     ));
 
-    // Return sanitized integration data
+    // Keep this projection on the shared Integration public-config boundary.
+    // The runtime caller needs routing metadata only; bearer credentials are
+    // never part of the agent-facing response, including global integrations.
     return res.json({
-      integrations: integrations.map((integration) => ({
-        id: integration._id,
-        type: integration.type,
-        channelId: integration.config?.channelId,
-        channelName: integration.config?.channelName,
-        groupId: integration.config?.groupId,
-        groupName: integration.config?.groupName,
-        // Bot tokens exposed ONLY to agents with proper scopes
-        botToken: integration.config?.botToken,
-        accessToken: integration.config?.accessToken,
-      })),
+      integrations: integrations.map((integration) => {
+        const publicConfig = toPublicIntegrationConfig({ ...(integration.config || {}) }) || {};
+        return {
+          id: integration._id,
+          type: integration.type,
+          channelId: publicConfig.channelId,
+          channelName: publicConfig.channelName,
+          groupId: publicConfig.groupId,
+          groupName: publicConfig.groupName,
+        };
+      }),
     });
   } catch (error: any) {
     console.error('Error fetching integrations for agent:', error);
