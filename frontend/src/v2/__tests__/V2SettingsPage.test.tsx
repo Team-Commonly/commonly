@@ -102,7 +102,7 @@ describe('V2SettingsPage', () => {
 
   test('generates and reveals a new API token without leaving Settings', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
-    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: '2026-09-04T19:00:00.000Z' } });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: '2026-09-04T12:00:00.000Z' } });
     renderSettings();
 
     fireEvent.click(screen.getByRole('button', { name: 'Generate API token' }));
@@ -115,7 +115,7 @@ describe('V2SettingsPage', () => {
 
   test('shows metadata for an existing token without attempting to re-display its secret', async () => {
     (axios.get as jest.Mock).mockResolvedValue({
-      data: { hasToken: true, createdAt: '2026-09-04T19:00:00.000Z', scopes: ['agent:context:read'], last4: 'cret' },
+      data: { hasToken: true, createdAt: '2026-09-04T12:00:00.000Z', scopes: ['agent:context:read'], last4: 'cret' },
     });
     renderSettings();
 
