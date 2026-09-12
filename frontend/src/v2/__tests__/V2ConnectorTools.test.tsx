@@ -116,7 +116,7 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
   expect(lines.map((line) => line.textContent)).toEqual([
     'Scout · github.list_issues · ok2m ago',
     'Scout · github.comment_on_issue · refused5m ago',
-    'Scout · github.comment_on_issue · pending_approval7m ago',
+    'Scout · github.comment_on_issue · awaiting a person7m ago',
   ]);
   // The arguments never reach the page: only the digest does, and it is not rendered.
   expect(aside.textContent).not.toContain('a'.repeat(64));
@@ -221,6 +221,39 @@ test('Change access mints a new grant then revokes the old one; Grant again on a
   fireEvent.click(within(again).getByRole('button', { name: 'Grant' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   expect(axios.post.mock.calls[0][0]).toBe('/api/grants');
+});
+
+test('Revoke renders only for the granter', async () => {
+  mockApi([githubEntry]);
+  const member = { ...authValue, currentUser: { _id: 'u2', username: 'rae' }, user: { _id: 'u2', username: 'rae' } };
+  render(<AuthContext.Provider value={member}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+  fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(aside).getByText(/Granted by sam/)).toBeInTheDocument();
+  expect(within(aside).queryByRole('button', { name: 'Revoke' })).toBeNull();
+  expect(within(aside).queryByRole('button', { name: 'Change access' })).toBeNull();
+  // The trail is the room's: a member still reads it.
+  await waitFor(() => expect(within(aside).getByText('calls').previousElementSibling).toHaveTextContent('3'));
+});
+
+test('Change access keeps the minted grant when the revoke fails and retries only the revoke', async () => {
+  mockApi([githubEntry]);
+  axios.post.mockImplementation((url) => (url === '/api/grants'
+    ? Promise.resolve({ data: { grantId: 'grant_new' } })
+    : Promise.reject(new Error('revoke down'))));
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
+  fireEvent.click(within(await screen.findByRole('complementary', { name: 'Grant details' })).getByRole('button', { name: 'Change access' }));
+  fireEvent.click(within(await screen.findByRole('complementary', { name: 'Change access' })).getByRole('button', { name: 'Grant' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(await within(aside).findByText('The new grant is live. This old one still is too — its revoke did not go through.')).toBeInTheDocument();
+  expect(within(aside).queryByRole('button', { name: 'Revoke' })).toBeNull();
+  axios.post.mockResolvedValue({ data: { grantId: 'grant_live', revoked: 1 } });
+  fireEvent.click(within(aside).getByRole('button', { name: 'Revoke the old grant' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(3));
+  // Only the revoke went out again — no third mint.
+  expect(axios.post.mock.calls.map(([u]) => u)).toEqual(['/api/grants', '/api/grants/grant_live/revoke', '/api/grants/grant_live/revoke']);
 });
 
 test('search filters by tool name and the segment hides not-yet rows; with no grants and no catalogue it renders nothing', async () => {

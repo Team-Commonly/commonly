@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 
@@ -126,6 +127,10 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
 const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const { t } = useTranslation();
   const api = useV2Api();
+  // Revoke and Change access are the granter's (Vera 67912 / Wren 67913): the route 403s anyone else.
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
+  const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
   const [grants, setGrants] = useState<ToolGrant[] | null>(null);
   const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
@@ -134,6 +139,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const [trailError, setTrailError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftGrant | null>(null);
+  // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
+  const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,6 +236,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
       ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: list.join(', ') })
       : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
   };
+  const outcomeLabel = (outcome: ToolOutcome): string => ({
+    ok: t('tools.outcomeOk', { defaultValue: 'ok' }),
+    refused: t('tools.outcomeRefused', { defaultValue: 'refused' }),
+    pending_approval: t('tools.awaiting', { defaultValue: 'awaiting a person' }),
+    failed: t('tools.outcomeFailed', { defaultValue: 'failed' }),
+  })[outcome] || outcome;
   const modeLabel = (mode: GrantWriteMode): string => ({
     read: t('tools.modeRead', { defaultValue: 'read' }),
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
@@ -284,7 +297,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
       const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
       // The mint's body, as routes/grants.ts takes it: the server names the broker (Vera 67728)
       // and takes the installation from the Connection (#1677, Vera 67821) — neither is the caller's.
-      await api.post('/api/grants', {
+      const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
         tools: draftTools(draftEntry, draft.writeMode),
@@ -292,13 +305,42 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         audience: draft.audience,
         expiresAt,
       });
-      // Change access: a change is a new grant and a revoke of the old one, because `tools` is never widened in place.
-      if (draft.replaces) await api.post(`/api/grants/${draft.replaces}/revoke`);
+      // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
+      // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
+      // (Vera on 0368992e), never by minting a third grant.
+      if (draft.replaces) {
+        const oldGrantId = draft.replaces;
+        const newGrantId = String(minted?.grantId || '');
+        try {
+          await api.post(`/api/grants/${oldGrantId}/revoke`);
+        } catch {
+          setStaleAfterChange({ oldGrantId, newGrantId });
+          setDraft(null);
+          setSelectedId(oldGrantId);
+          await load();
+          return;
+        }
+      }
       setDraft(null);
       await load();
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
       setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryStaleRevoke = async () => {
+    if (!staleAfterChange) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/api/grants/${staleAfterChange.oldGrantId}/revoke`);
+      setStaleAfterChange(null);
+      await load();
+    } catch {
+      setError(t('tools.revokeError', { defaultValue: 'Could not revoke the grant.' }));
     } finally {
       setBusy(false);
     }
@@ -516,7 +558,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               </>
             )}
           </dl>
-          {!dead && (confirmRevoke === grant.grantId ? (
+          {staleAfterChange?.oldGrantId === grant.grantId && (
+            <div className="v2-connector-aside__actions" role="alert">
+              <p className="v2-connector-aside__note">{t('tools.staleAfterChange', { defaultValue: 'The new grant is live. This old one still is too — its revoke did not go through.' })}</p>
+              <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void retryStaleRevoke(); }}>
+                {t('tools.revokeOld', { defaultValue: 'Revoke the old grant' })}
+              </button>
+            </div>
+          )}
+          {!dead && isGranter(grant) && staleAfterChange?.oldGrantId !== grant.grantId && (confirmRevoke === grant.grantId ? (
             <div className="v2-connector-aside__actions">
               <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void revoke(grant); }}>
                 {t('tools.revokeConfirm', { defaultValue: 'Yes, revoke it' })}
@@ -552,7 +602,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <ol className="v2-tools__trail">
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
-                  <span><span className="v2-tools__outcome" title={line.outcome} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {line.outcome}</span>
+                  <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
                   <span className="v2-tools__trail-when">{relativeTime(line.at)}</span>
                 </li>
               ))}
