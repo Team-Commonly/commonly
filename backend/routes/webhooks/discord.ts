@@ -120,69 +120,6 @@ router.post('/', discordWebhookIpRateLimit, discordWebhookRateLimit, async (req:
   }
 });
 
-// Discord-specific routes
-router.get('/channels/:integrationId', async (req: any, res: any) => {
-  try {
-    const { integrationId } = req.params;
-
-    const service = new DiscordService(integrationId);
-    const channels = await service.getChannels();
-
-    res.json(channels);
-  } catch (error) {
-    console.error('Error fetching Discord channels:', error);
-    res.status(500).json({ error: 'Failed to fetch channels' });
-  }
-});
-
-// Generate bot invite link
-router.post('/invite', async (req: any, res: any) => {
-  try {
-    const { clientId, permissions, guildId } = req.body;
-
-    if (!clientId) {
-      return res.status(400).json({ error: 'Client ID is required' });
-    }
-
-    const baseUrl = 'https://discord.com/api/oauth2/authorize';
-    const scopes = ['bot', 'applications.commands'];
-    const botPermissions = permissions || '2048'; // Read Messages, Send Messages
-
-    const inviteUrl = `${baseUrl}?client_id=${clientId}&scope=${scopes.join('%20')}&permissions=${botPermissions}${
-      guildId ? `&guild_id=${guildId}` : ''
-    }`;
-
-    res.json({ inviteUrl });
-  } catch (error) {
-    console.error('Error generating invite link:', error);
-    res.status(500).json({ error: 'Failed to generate invite link' });
-  }
-});
-
-// Test webhook endpoint
-router.post('/test/:integrationId', async (req: any, res: any) => {
-  try {
-    const { integrationId } = req.params;
-
-    const service = new DiscordService(integrationId);
-    const isConnected = await service.testConnection();
-
-    if (isConnected) {
-      res.json({
-        success: true,
-        message: 'Webhook connection test successful',
-      });
-    } else {
-      res
-        .status(400)
-        .json({ success: false, message: 'Webhook connection test failed' });
-    }
-  } catch (error) {
-    console.error('Error testing webhook:', error);
-    res.status(500).json({ error: 'Failed to test webhook' });
-  }
-});
-
 module.exports = router;
 module.exports.verifyDiscordWebhookRequest = verifyDiscordWebhookRequest;
 // LEGACY: in-platform webhook. External provider service will replace this route.

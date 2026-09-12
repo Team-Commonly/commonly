@@ -113,4 +113,10 @@ describe('Discord webhook hardening', () => {
     expect(response.body).toEqual({ type: 1 });
     expect(deliveries.create).not.toHaveBeenCalled();
   });
+
+  test('does not expose unused unauthenticated Discord routes', async () => {
+    await request(app).get('/api/webhooks/discord/channels/integration-1').expect(404);
+    await request(app).post('/api/webhooks/discord/invite').send({ clientId: 'client-1' }).expect(404);
+    await request(app).post('/api/webhooks/discord/test/integration-1').expect(404);
+  });
 });
