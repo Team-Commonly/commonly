@@ -12,6 +12,11 @@ the only response that carries a raw token. Calling it again is an explicit
 rotation: the prior token is replaced and the newly issued token is shown once.
 `DELETE /api/auth/api-token` continues to revoke the current token.
 
+All three token-management routes are protected by the shared
+`deviceManageLimiter` (60 requests per 15 minutes per Cloudflare-aware IP)
+before authentication. This bounds credential reads, generation/rotation, and
+revocation without introducing another limiter bucket.
+
 ## Client migration
 
 The V2 Settings page and the legacy `UserProfile` settings surface both call

@@ -283,7 +283,7 @@ router.get('/admin/check', auth, adminAuth, (_req: unknown, res: Res) => {
   res.json({ isAdmin: true, message: 'Admin access confirmed' });
 });
 
-router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
+router.post('/api-token/generate', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -304,7 +304,7 @@ router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.delete('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -321,7 +321,7 @@ router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
