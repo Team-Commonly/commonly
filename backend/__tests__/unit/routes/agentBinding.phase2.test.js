@@ -31,7 +31,6 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/agent-binding', require('../../../routes/agentBinding'));
-  app.get('/runtime-auth-probe', agentRuntimeAuth, (_req, res) => res.json({ ok: true }));
 });
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
@@ -108,6 +107,18 @@ const mint = (tok, body = {}) => request(app)
   .post('/api/agent-binding/runtime-token')
   .set('Authorization', `Bearer ${tok}`)
   .send({ agentName: 'wren-test', instanceId: 'default', ...body });
+
+const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
+  let status = 200;
+  const req = {
+    header: (name) => name.toLowerCase() === 'authorization' ? `Bearer ${token}` : undefined,
+  };
+  const res = {
+    status: (code) => { status = code; return res; },
+    json: (body) => resolve({ status, body }),
+  };
+  Promise.resolve(agentRuntimeAuth(req, res, () => resolve({ status: 200 }))).catch(reject);
+});
 
 describe('placement request', () => {
   it('records a directive without binding, and null withdraws it', async () => {
@@ -320,6 +331,11 @@ describe('runtime-token mint', () => {
         },
       },
     );
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'sibling legacy', createdAt: new Date() }],
+    });
 
     const refused = await mint(DAEMON_A);
     expect(refused.status).toBe(409);
@@ -329,14 +345,12 @@ describe('runtime-token mint', () => {
     expect(rotated.status).toBe(201);
     expect(rotated.body.token).not.toBe(oldUserToken);
 
-    const userAuth = await request(app)
-      .get('/runtime-auth-probe')
-      .set('Authorization', `Bearer ${oldUserToken}`);
-    const installationAuth = await request(app)
-      .get('/runtime-auth-probe')
-      .set('Authorization', `Bearer ${oldInstallationToken}`);
+    const userAuth = await runtimeAuthProbe(oldUserToken);
+    const installationAuth = await runtimeAuthProbe(oldInstallationToken);
+    const freshAuth = await runtimeAuthProbe(rotated.body.token);
     expect(userAuth.status).toBe(401);
     expect(installationAuth.status).toBe(401);
+    expect(freshAuth.status).toBe(200);
 
     const identity = await User.findById(bot._id).lean();
     expect(identity.agentRuntimeTokens.map((token) => token.tokenHash)).not.toContain(hash(oldUserToken));
@@ -349,5 +363,19 @@ describe('runtime-token mint', () => {
     const res = await mint(DAEMON_B);
     expect(res.status).toBe(409);
     expect(res.body.boundTo).toBe('machine-a');
+  });
+
+  it('rotates installations stored with mixed-case instance IDs', async () => {
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      { $set: { instanceId: 'DeFaUlT' } },
+    );
+    expect((await adopt(DAEMON_A)).status).toBe(200);
+    const first = await mint(DAEMON_A);
+    expect(first.status).toBe(201);
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(first.body.token);
+    expect((await runtimeAuthProbe(first.body.token)).status).toBe(401);
   });
 });

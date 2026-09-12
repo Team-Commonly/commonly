@@ -39,6 +39,7 @@ const bindingRateLimit = rateLimit({
 });
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 // The daemon needs the driver-neutral ADR-008 shape, but its bearer must not
 // become a read-all projection of an installation's opaque config. Keep this
@@ -147,11 +148,11 @@ const ownsAgent = async (
   const { AgentInstallation } = require('../models/AgentRegistry');
   const mine = await AgentInstallation.findOne({
     agentName, instanceId, installedBy: ownerUserId, status: 'active',
-  }).select('_id').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
   const others = await AgentInstallation.findOne({
     agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).select('installedBy').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
   if (!others) return { owned: true };
   // MongoDB $ne also matches a missing field. Keep that legacy state safely
   // non-adoptable, but report it separately so an owner can repair it.

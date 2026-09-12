@@ -55,6 +55,11 @@ const normalizeRuntimeIdentity = (agentName: any, instanceId: any) => ({
   instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
 });
 
+// AgentInstallation.instanceId predates the normalized intake path and may
+// still be stored with mixed casing. Keep identity normalization for callers,
+// but match legacy rows case-insensitively during a rotation.
+const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
+
 /**
  * Return every legacy hash for an agent identity, across the portable User
  * row and every installation copy. The two stores are both authentication
@@ -76,7 +81,7 @@ const getRuntimeTokenHashesForAgent = async ({
   const installations = await AgentInstallation.find({
     agentName: identity.agentName,
     instanceId: identity.instanceId,
-  }).select('runtimeTokens').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('runtimeTokens').lean();
   const persistedInstallationTokens = (installations || []).flatMap((row: any) => row.runtimeTokens || []);
   return Array.from(new Set([
     ...userTokens,
@@ -115,7 +120,7 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   await AgentInstallation.updateMany(
     { agentName: identity.agentName, instanceId: identity.instanceId },
     { $set: { runtimeTokens: [] } },
-  );
+  ).collation(RUNTIME_INSTALLATION_COLLATION);
 
   // A route may hold a hydrated installation that is not represented by the
   // mocked query above (or has a pending in-memory mutation). Keep that

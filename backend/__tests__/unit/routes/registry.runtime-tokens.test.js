@@ -15,9 +15,12 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     findOne: jest.fn(),
     find: jest.fn(() => ({
+      collation: jest.fn(function collation() { return this; }),
       select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) })),
     })),
-    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+    updateMany: jest.fn(() => ({
+      collation: jest.fn(() => Promise.resolve({ modifiedCount: 0 })),
+    })),
   },
 }));
 jest.mock('../../../models/AgentCredential', () => ({
@@ -53,6 +56,7 @@ describe('agent runtime tokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     AgentInstallation.find.mockImplementation(() => ({
+      collation: jest.fn(function collation() { return this; }),
       select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) })),
     }));
     AgentCredential.updateMany.mockResolvedValue({ modifiedCount: 0 });
@@ -202,6 +206,7 @@ describe('agent runtime tokens', () => {
     };
     AgentInstallation.findOne.mockResolvedValue(installation);
     AgentInstallation.find.mockReturnValue({
+      collation: jest.fn(function collation() { return this; }),
       select: jest.fn(() => ({
         lean: jest.fn().mockResolvedValue([{ runtimeTokens: installation.runtimeTokens }]),
       })),
