@@ -11640,7 +11640,6 @@ body.modern-ui.v2-canvas {
 @media (max-width: 640px) {
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
-  .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }
 
   .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; }
   .v2-activity__queue-row .v2-activity__option-choice { max-width: 100%; }
@@ -11723,6 +11722,8 @@ body.modern-ui.v2-canvas {
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }
+  /* Icon acts stay 44px squares under 760 — the full-width `> button` rule above would stretch them. */
+  .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }
   .v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }
 }
 /* Get started — day zero (ux-lead 66658/66666, board 66663/66664). One bordered card above
