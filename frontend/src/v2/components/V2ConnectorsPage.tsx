@@ -157,6 +157,14 @@ const codeIsLive = (connector: Connector): boolean => Boolean(
   && new Date(connector.config.connectCodeExpiresAt).getTime() > Date.now(),
 );
 
+const codeExpiresInMinutes = (connector: Connector): number => {
+  const expiry = connector.config?.connectCodeExpiresAt
+    ? new Date(connector.config.connectCodeExpiresAt).getTime()
+    : NaN;
+  if (!Number.isFinite(expiry)) return 0;
+  return Math.max(1, Math.ceil((expiry - Date.now()) / 60_000));
+};
+
 const relativeTime = (date?: string): string => {
   const timestamp = date ? new Date(date).getTime() : NaN;
   if (!Number.isFinite(timestamp)) return 'just now';
@@ -602,9 +610,14 @@ const V2ConnectorsPage: React.FC = () => {
       return {
         action: 'show-code',
         actionLabel: t('connectors.showCode', { defaultValue: 'Show code' }),
-        detail: t('connectors.codeExpires', { defaultValue: 'code expires soon' }),
+        detail: t('connectors.codeExpires', {
+          defaultValue: 'Code expires in {{minutes}} min',
+          minutes: codeExpiresInMinutes(connector),
+        }),
         dot: 'pending',
-        line: t('connectors.waitingTelegram', { defaultValue: 'Waiting for one message in your Telegram chat.' }),
+        line: t('connectors.waitingTelegram', {
+          defaultValue: 'Send /commonly-enable in your Telegram chat.',
+        }),
         pulse: true,
         when: started,
       };

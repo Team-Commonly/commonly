@@ -44,7 +44,7 @@ const connectors = [
     type: 'telegram',
     status: 'pending',
     createdAt: new Date(Date.now() - 60_000).toISOString(),
-    config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+    config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
     podId: { _id: 'p1', name: 'Rewire Live Demo' },
   },
   {
@@ -96,7 +96,8 @@ describe('V2ConnectorsPage', () => {
     const { container } = renderPage();
 
     await screen.findByRole('button', { name: 'View Telegram' });
-    expect(screen.getByText('Waiting for one message in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
     expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();

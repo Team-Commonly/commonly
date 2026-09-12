@@ -1839,6 +1839,8 @@
     "pending": "等待频道确认",
     "enableHint": "打开与 Commonly 机器人的私聊",
     "enableHintSend": "，然后发送：",
+    "waitingTelegram": "在 Telegram 聊天中发送 /commonly-enable 命令。",
+    "codeExpires": "代码将在 {{minutes}} 分钟后过期",
     "liveRelay": "中继",
     "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
     "newTitle": "连接频道",
