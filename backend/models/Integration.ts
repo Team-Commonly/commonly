@@ -1,5 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
-import { toPublicIntegrationConfig } from './integrationPublicConfig';
+import { toPublicIntegration } from './integrationPublicConfig';
 
 export type IntegrationType =
   | 'discord'
@@ -355,14 +355,15 @@ IntegrationSchema.virtual('platformIntegration', {
   justOne: true,
 });
 
-// Bearer credentials and the references that point at one are server-only in
-// every normal JSON response, including the pending OAuth bind that needs to
-// show its workspace/user details. The key list lives in
-// integrationPublicConfig so the lean catalog read strips the same fields.
+// Bearer credentials and the references that point at one (claim ids, ingest
+// token hashes) are server-only in every normal JSON response, including the
+// pending OAuth bind that needs to show its workspace/user details. The list
+// lives in integrationPublicConfig so the lean catalog read strips the same
+// fields.
 IntegrationSchema.set('toJSON', {
   virtuals: true,
-  transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
-    toPublicIntegrationConfig(returned.config);
+  transform: (_doc: unknown, returned: Record<string, unknown>) => {
+    toPublicIntegration(returned);
     return returned;
   },
 });

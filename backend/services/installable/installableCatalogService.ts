@@ -5,7 +5,7 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { toPublicIntegrationConfig } = require('../../models/integrationPublicConfig');
+const { toPublicIntegration } = require('../../models/integrationPublicConfig');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -38,9 +38,7 @@ const publicIntegration = (integration: unknown): unknown => {
     ? (integration as { toJSON: () => unknown }).toJSON()
     : JSON.parse(JSON.stringify(integration));
   if (!raw || typeof raw !== 'object') return raw;
-  const result = raw as { config?: Record<string, unknown> };
-  toPublicIntegrationConfig(result.config);
-  return result;
+  return toPublicIntegration(raw as Record<string, unknown>);
 };
 
 // The parent has operational fields that are useful to the owner's state
