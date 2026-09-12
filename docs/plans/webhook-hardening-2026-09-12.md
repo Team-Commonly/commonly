@@ -33,13 +33,16 @@ processed without deduplication.
 
 ## Ingress limits and outage behavior
 
-Each provider route has a burst limiter before verification and database work:
-Slack is 600 requests per 60 seconds per `slack:<team_id>` (or legacy
-`integrationId`); GroupMe is 600 per 60 seconds per integration; Discord is
-600 per 60 seconds per `discord:<webhook_id>`; Telegram is 600 per 60 seconds
-per source IP. If the provider/account id is absent, the key falls back to the
-Cloudflare-aware source IP. These are burst ceilings, not delivery
-authorization; provider signatures or identity checks still apply.
+Each provider route has a two-tier burst limiter before verification and
+database work. A coarse Cloudflare-aware source-IP bucket (3,000 requests per
+60 seconds) is first, because account identifiers are sender-controlled until
+verification. The second bucket is provider/account scoped: Slack is 600 per
+60 seconds per `slack:<team_id>` (or legacy `integrationId`); GroupMe is 600
+per 60 seconds per integration; Discord is 600 per 60 seconds per
+`discord:<webhook_id>`; Telegram is 600 per 60 seconds per source IP. If the
+provider/account id is absent, its key falls back to source IP. These are burst
+ceilings, not delivery authorization; provider signatures or identity checks
+still apply.
 
 The shared claim is intentionally a plain insert with a TTL. A replica crash
 after Slack receives its `200` but before relay completes can therefore

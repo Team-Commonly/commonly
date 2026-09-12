@@ -13,6 +13,16 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 
 const router = express.Router({ mergeParams: true });
 
+const groupMeWebhookIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3_000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => `groupme-ip:${cloudflareIpRateLimitKeyGenerator(req)}`,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many GroupMe webhook requests from this IP' }),
+});
+
 const groupMeWebhookRateLimit = rateLimit({
   windowMs: 60_000,
   max: 600,
@@ -27,7 +37,7 @@ const groupMeWebhookRateLimit = rateLimit({
 });
 
 // GroupMe sends JSON via POST with bot_id, group_id, etc.
-router.post('/:integrationId', groupMeWebhookRateLimit, async (req: any, res: any) => {
+router.post('/:integrationId', groupMeWebhookIpRateLimit, groupMeWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const { integrationId } = req.params;

@@ -21,9 +21,21 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 const router = express.Router({ mergeParams: true });
 const PROVIDER = 'slack';
 
-// Slack retries delivery aggressively, so this budget deliberately leaves
-// room for a busy shared workspace while still bounding unauthenticated work
-// before HMAC verification and receipt creation.
+// Keep a coarse source-IP ceiling before the account bucket. The team id in a
+// request body is sender-controlled until HMAC verification, so it cannot be
+// the only abuse key.
+const slackWebhookIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3_000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => `slack-ip:${cloudflareIpRateLimitKeyGenerator(req)}`,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Slack webhook requests from this IP' }),
+});
+
+// Slack retries delivery aggressively, so this account budget leaves room for
+// a busy workspace while still bounding verified-account bursts.
 const slackWebhookRateLimit = rateLimit({
   windowMs: 60_000,
   max: 600,
@@ -100,7 +112,7 @@ const finishEvent = async (deliveryId: string, teamId: string, event: any): Prom
  * the legacy /:integrationId provider route below: one Slack app has one
  * global request URL and resolves its target by team + DM channel.
  */
-router.post('/events', slackWebhookRateLimit, signed, async (req: any, res: any) => {
+router.post('/events', slackWebhookIpRateLimit, slackWebhookRateLimit, signed, async (req: any, res: any) => {
   const body = req.body || {};
   if (body.type === 'url_verification') return res.status(200).json({ challenge: body.challenge });
   const event = body.event;
@@ -133,7 +145,7 @@ router.post('/events', slackWebhookRateLimit, signed, async (req: any, res: any)
 
 const commandHelp = 'Use /commonly status, mode mirror|attention, mute [minutes], or unmute.';
 
-router.post('/commands', slackWebhookRateLimit, signed, async (req: any, res: any) => {
+router.post('/commands', slackWebhookIpRateLimit, slackWebhookRateLimit, signed, async (req: any, res: any) => {
   const body = req.body || {};
   const teamId = String(body.team_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   const channelId = String(body.channel_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -190,7 +202,7 @@ router.post('/commands', slackWebhookRateLimit, signed, async (req: any, res: an
 
 // Legacy per-row Slack integrations preserve their old provider path. It is
 // intentionally last so /events and /commands cannot be swallowed as an id.
-router.post('/:integrationId', slackWebhookRateLimit, async (req: any, res: any) => {
+router.post('/:integrationId', slackWebhookIpRateLimit, slackWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const { integrationId } = req.params;

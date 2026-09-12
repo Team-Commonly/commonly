@@ -11,6 +11,18 @@ const {
 const { verifyDiscordSignature } = require('../../services/webhookVerificationService');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
+// webhook_id is supplied by the caller before signature verification, so keep
+// a coarse Cloudflare-aware IP ceiling ahead of the per-webhook bucket.
+const discordWebhookIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3_000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => `discord-ip:${cloudflareIpRateLimitKeyGenerator(req)}`,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Discord webhook requests from this IP' }),
+});
+
 const discordWebhookRateLimit = rateLimit({
   windowMs: 60_000,
   max: 600,
@@ -39,7 +51,7 @@ export const verifyDiscordWebhookRequest = (req: any): boolean => {
 };
 
 // Discord webhook endpoint
-router.post('/', discordWebhookRateLimit, async (req: any, res: any) => {
+router.post('/', discordWebhookIpRateLimit, discordWebhookRateLimit, async (req: any, res: any) => {
   let deliveryId: string | null = null;
   try {
     const event = req.body;
