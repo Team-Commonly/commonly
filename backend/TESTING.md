@@ -85,6 +85,8 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 - **New route registration? It needs a rate limiter ahead of auth.** `__tests__/unit/routes/routeRateLimitGuard.test.js` scans every `router.<verb>(path, …)` under `routes/` and fails when a registration has no `*RateLimit*` middleware, or has one behind `auth`/`agentRuntimeAuth`/`dualAuth` (the auth lookup is the DB work CodeQL's js/missing-rate-limiting flags). A file-level `router.use(auth)` counts as auth for every route after it, the last argument is the handler (never a limiter), and `router.route(path)` chains are scanned per verb. Shape to copy: `routes/agentHooks.ts`. Pre-existing violations sit in `routeRateLimitGuard.baseline.json`, which may only shrink — fix the route, never extend the list; delete a row once its route is compliant.
 - **New test file, which tier?** Put it under `__tests__/service/` if it exercises real query semantics (Mongo index behavior, regex, ObjectId coercion, PG ILIKE, transactions). Put it under `__tests__/unit/` or similar if a mocked DB is sufficient.
 
+- Never use Jest `{ virtual: true }` for a module that exists on disk; under shared workers it can resolve a different module ID and silently bypass the mock (#1691).
+
 ## Frontend and other suites
 
 Frontend testing is documented separately at `frontend/TESTING.md`. Contracts tests (`__tests__/contracts/`) are Tier 0 by default and use provider mocks.
