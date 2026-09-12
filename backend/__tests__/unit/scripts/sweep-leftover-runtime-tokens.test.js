@@ -103,12 +103,12 @@ describe('sweep-leftover-runtime-tokens', () => {
     const result = await sweepLeftoverRuntimeTokens();
 
     expect(result.apply).toBe(false);
-    expect(result.copiesToPull).toBe(3);
+    expect(result.copiesToPull).toBe(2);
     expect(result.copiesSkippedRecent).toBe(1);
-    expect(result.candidateHashes).toBe(2);
+    expect(result.candidateHashes).toBe(1);
     expect(result.identities).toEqual([
       expect.objectContaining({ agentName: 'openclaw', instanceId: 'nova', count: 2, skippedRecent: 1 }),
-      expect.objectContaining({ agentName: 'pixel', instanceId: 'default', count: 1, skippedRecent: 0 }),
+      expect.objectContaining({ agentName: 'pixel', instanceId: 'default', count: 0, skippedRecent: 0, legacyOnly: 1 }),
     ]);
 
     await expect(AgentInstallation.findById(first._id).lean()).resolves.toEqual(
@@ -134,8 +134,8 @@ describe('sweep-leftover-runtime-tokens', () => {
     const result = await sweepLeftoverRuntimeTokens({ apply: true });
 
     expect(result.apply).toBe(true);
-    expect(result.copiesToPull).toBe(3);
-    expect(result.installationRowsChanged).toBe(3);
+    expect(result.copiesToPull).toBe(2);
+    expect(result.installationRowsChanged).toBe(2);
     expect(result.credentialsRevoked).toBe(1);
 
     const firstTokens = (await AgentInstallation.findById(first._id).lean()).runtimeTokens;
@@ -143,7 +143,7 @@ describe('sweep-leftover-runtime-tokens', () => {
     const otherTokens = (await AgentInstallation.findById(other._id).lean()).runtimeTokens;
     expect(firstTokens.map((token) => token.tokenHash)).toEqual(['recent', 'user-live', 'revoked']);
     expect(secondTokens).toEqual([]);
-    expect(otherTokens).toEqual([]);
+    expect(otherTokens).toEqual([expect.objectContaining({ tokenHash: 'no-ledger' })]);
     expect((await AgentCredential.findOne({ tokenHash: 'stale' }).lean()).status).toBe('revoked');
     expect((await AgentCredential.findOne({ tokenHash: 'recent' }).lean()).status).toBe('active');
     expect((await AgentCredential.findOne({ tokenHash: 'revoked' }).lean()).status).toBe('revoked');

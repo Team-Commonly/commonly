@@ -49,6 +49,7 @@ export type LeftoverRuntimeTokenIdentity = {
   instanceId: string;
   count: number;
   skippedRecent: number;
+  legacyOnly: number;
   newestLastUsedAt: Date | null;
 };
 
@@ -90,11 +91,15 @@ const buildCandidates = (
   credentials: CredentialRow[],
   cutoff: Date,
 ) => {
-  const userHashes = new Set<string>();
+  const userHashesByIdentity = new Map<string, Set<string>>();
   for (const user of users) {
+    if (!user.botMetadata?.agentName) continue;
+    const key = identityKey(user.botMetadata?.agentName, user.botMetadata?.instanceId);
+    const userHashes = userHashesByIdentity.get(key) || new Set<string>();
     for (const token of user.agentRuntimeTokens || []) {
       if (token?.tokenHash) userHashes.add(token.tokenHash);
     }
+    userHashesByIdentity.set(key, userHashes);
   }
 
   const credentialByHash = new Map<string, CredentialRow>();
@@ -133,15 +138,24 @@ const buildCandidates = (
   let copiesSkippedRecent = 0;
   for (const [key, tokensByHash] of byIdentity) {
     const [agentName, instanceId] = key.split(':');
+    const userHashes = userHashesByIdentity.get(key);
     const selectedHashes: string[] = [];
     let count = 0;
     let skippedRecent = 0;
+    let legacyOnly = 0;
     let newestLastUsedAt: Date | null = null;
     for (const candidate of tokensByHash.values()) {
       newestLastUsedAt = newestDate(newestLastUsedAt, candidate.newestLastUsedAt);
-      // A token hash should belong to one identity, but excluding it if it is
-      // present on any bot User row is the safe failure mode for a malformed
-      // duplicate: never pull a bearer that still has a User auth path.
+      // An installation-only identity has no replacement bearer. Leave every
+      // copy untouched and report it for an operator-led migration instead of
+      // deleting its only authentication path.
+      if (!userHashes?.size) {
+        legacyOnly += candidate.copies;
+        continue;
+      }
+      // Excluding a hash present on this identity's User row preserves its
+      // portable authentication path without letting another identity's hash
+      // suppress a legitimate stale candidate.
       if (userHashes.has(candidate.hash) || candidate.revoked) continue;
       if (candidate.recentlyUsed) {
         skippedRecent += candidate.copies;
@@ -152,8 +166,8 @@ const buildCandidates = (
       count += candidate.copies;
       copiesToPull += candidate.copies;
     }
-    if (count || skippedRecent) {
-      identities.push({ agentName, instanceId, count, skippedRecent, newestLastUsedAt });
+    if (count || skippedRecent || legacyOnly) {
+      identities.push({ agentName, instanceId, count, skippedRecent, legacyOnly, newestLastUsedAt });
       selectedHashesByIdentity.set(key, selectedHashes);
     }
   }
@@ -186,7 +200,7 @@ export const sweepLeftoverRuntimeTokens = async (
     'runtimeTokens.0': { $exists: true },
   }).select('agentName instanceId runtimeTokens').lean() as InstallationRow[];
   const users = await User.find({ isBot: true })
-    .select('agentRuntimeTokens')
+    .select('agentRuntimeTokens botMetadata')
     .lean() as any[];
   const allHashes = Array.from(new Set(
     installations.flatMap((installation) => (installation.runtimeTokens || [])
@@ -220,7 +234,7 @@ export const sweepLeftoverRuntimeTokens = async (
             },
           },
         },
-      );
+      ).collation({ locale: 'en', strength: 2 });
       installationRowsChanged += modifiedCount(pulled);
     }
     if (plan.candidateHashes) {
