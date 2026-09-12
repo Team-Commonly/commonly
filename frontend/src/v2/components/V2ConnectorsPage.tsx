@@ -5,6 +5,7 @@
 // owner-only PATCH accepts (D3/D4).
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
@@ -197,9 +198,13 @@ const botMembers = (pod: V2Pod | undefined): V2PodMember[] => (
 const V2ConnectorsPage: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
+  const navigate = useNavigate();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
-  const [pods, setPods] = useState<V2Pod[]>([]);
+  // `null` means membership is not available yet (or the read failed).  An
+  // empty array is the only confirmed zero-pod state, so it alone may replace
+  // the existing picker with the create-a-pod path.
+  const [pods, setPods] = useState<V2Pod[] | null>(null);
   const [newPodId, setNewPodId] = useState('');
   const [addingType, setAddingType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,6 +218,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const adding = addingType !== null;
+  const podList = pods || [];
 
   const load = useCallback(async () => {
     try {
@@ -292,14 +298,15 @@ const V2ConnectorsPage: React.FC = () => {
           setNewPodId((current) => current || eligible[0]?._id || '');
         }
       } catch {
-        // The picker stays empty when no pod can be read.
+        // Keep the normal picker visible when membership cannot be read. A
+        // zero-pod CTA requires a confirmed `[]`, never an unavailable read.
       }
     })();
     return () => { cancelled = true; };
   }, [api]);
 
   const podNameById = (podId: string | null | undefined, fallback?: Connector | null): string => {
-    const pod = pods.find((candidate) => String(candidate._id) === String(podId || ''));
+    const pod = podList.find((candidate) => String(candidate._id) === String(podId || ''));
     if (pod) return pod.name || 'Untitled pod';
     if (fallback && typeof fallback.podId === 'object' && fallback.podId?.name) return fallback.podId.name;
     return 'Untitled pod';
@@ -307,7 +314,7 @@ const V2ConnectorsPage: React.FC = () => {
 
   const boundPodName = (boundPodId: string | undefined): string => {
     const existing = connectors.find((connector) => connectorPodId(connector) === String(boundPodId));
-    const boundPod = pods.find((pod) => String(pod._id) === String(boundPodId));
+    const boundPod = podList.find((pod) => String(pod._id) === String(boundPodId));
     return existing ? podNameById(connectorPodId(existing), existing) : (boundPod?.name || 'another pod');
   };
 
@@ -399,7 +406,7 @@ const V2ConnectorsPage: React.FC = () => {
   // otherwise every toggle would 403 for up to one sweep (Vera, 63997).
   const writeGate = (connector: Connector, podId: string, next: ConnectorGate) => {
     const current = connector.config?.gates || {};
-    const memberOf = new Set(pods.map((pod) => String(pod._id)));
+    const memberOf = new Set(podList.map((pod) => String(pod._id)));
     const gates: Record<string, ConnectorGate> = {};
     Object.entries(current).forEach(([key, gate]) => {
       if (!memberOf.has(String(key))) return;
@@ -926,10 +933,10 @@ const V2ConnectorsPage: React.FC = () => {
             ? t('connectors.pickWhere', { defaultValue: 'Pick where your messages go' })
             : t('connectors.gatesTitle', { defaultValue: 'Pods that reach this channel' })}
         </p>
-        {pods.length === 0 && (
+        {podList.length === 0 && (
           <p className="v2-connector-gates__empty">{t('connectors.noPods', { defaultValue: 'Join a pod first.' })}</p>
         )}
-        {pods.map((pod) => {
+        {podList.map((pod) => {
           const gate = gates[pod._id];
           const enabled = gate?.enabled === true;
           const active = String(activePodId || '') === String(pod._id);
@@ -1222,33 +1229,48 @@ const V2ConnectorsPage: React.FC = () => {
   const availableProviders = catalog
     ? catalog.filter((entry) => entry.available && !entry.installation).map((entry) => ({ type: entry.installableId }))
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
-  const renderAddForm = (aside = false) => (
-    <div className={`v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`}>
-      <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
-        {availableProviders.map((provider) => (
-          <button
-            key={provider.type}
-            type="button"
-            className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
-            onClick={() => setAddingType(provider.type)}
-          >
-            {TYPE_LABELS[provider.type] || provider.type}
-          </button>
-        ))}
+  const renderAddForm = (aside = false) => {
+    const rowClass = `v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`;
+    if (pods !== null && pods.length === 0) {
+      return (
+        <div className={rowClass}>
+          <div className="v2-connectors__empty-pods">
+            <p>{t('connectors.noPodsToConnect', { defaultValue: 'No pod yet. Create one, then come back to connect a channel.' })}</p>
+            <button type="button" className="v2-connectors__create" onClick={() => navigate('/v2?newPod=1')}>
+              {t('connectors.createPod', { defaultValue: 'Create a pod' })}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className={rowClass}>
+        <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
+          {availableProviders.map((provider) => (
+            <button
+              key={provider.type}
+              type="button"
+              className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
+              onClick={() => setAddingType(provider.type)}
+            >
+              {TYPE_LABELS[provider.type] || provider.type}
+            </button>
+          ))}
+        </div>
+        <select
+          className="v2-connectors__select"
+          value={newPodId}
+          onChange={(event) => setNewPodId(event.target.value)}
+          aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
+        >
+          {podList.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
+        </select>
+        <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
+          {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
+        </button>
       </div>
-      <select
-        className="v2-connectors__select"
-        value={newPodId}
-        onChange={(event) => setNewPodId(event.target.value)}
-        aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
-      >
-        {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
-      </select>
-      <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
-        {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
-      </button>
-    </div>
-  );
+    );
+  };
 
   const selectedAside = selectedItem ? renderAside(selectedItem) : null;
 
@@ -1287,7 +1309,7 @@ const V2ConnectorsPage: React.FC = () => {
                 <button type="button" className="v2-connectors__connect" onClick={() => setAddingType((current) => current ? null : availableProviders[0]?.type || null)}>
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
-                <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>
+                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                 {adding && selectedAside && renderAddForm()}
               </div>
             )}
@@ -1297,7 +1319,7 @@ const V2ConnectorsPage: React.FC = () => {
               <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
                 <section className="v2-connector-aside__step">
                   <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                  <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>
+                  {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                   {renderAddForm(true)}
                 </section>
               </aside>
@@ -1306,7 +1328,7 @@ const V2ConnectorsPage: React.FC = () => {
       )}
 
       {/* Tools plan §6: the second list, under the channels, in the same grammar. */}
-      {!loading && <V2ConnectorTools pods={pods} />}
+      {!loading && <V2ConnectorTools pods={podList} />}
 
       {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
     </div>

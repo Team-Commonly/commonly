@@ -1854,6 +1854,8 @@
     "newTitle": "Connect a channel",
     "choosePod": "Choose a pod",
     "podPicker": "Pod to bridge",
+    "noPodsToConnect": "No pod yet. Create one, then come back to connect a channel.",
+    "createPod": "Create a pod",
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",
     "footnote": "You get a one-time code to send to the bot. More platforms are on the way."

@@ -9719,6 +9719,9 @@ body.modern-ui.v2-canvas {
 .v2-connectors__new-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px; margin-top: 16px; }
 .v2-connectors__new-row--aside { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-connectors__new-row--aside .v2-connectors__select { grid-column: 1 / -1; }
+.v2-connectors__empty-pods { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.v2-connectors__empty-pods p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
+.v2-connectors__empty-pods > .v2-connectors__create { flex: 0 0 auto; }
 .v2-connectors__providers { display: inline-flex; overflow: hidden; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); }
 .v2-root button.v2-connectors__provider { min-height: 38px; padding: 7px 12px; border: none; border-right: 1px solid var(--v2-border); background: var(--v2-surface); color: var(--v2-text-secondary); font: 600 13px/18px var(--v2-font); cursor: pointer; }
 .v2-root button.v2-connectors__provider:last-child { border-right: none; }

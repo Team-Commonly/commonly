@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Pinned } from '../hooks/useV2Pinned';
@@ -191,6 +191,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   selectedPodId, podsState, attentionCountByPod = {}, variant = 'column',
 }) => {
   const { t } = useTranslation();
+  const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { pinned, toggle: togglePin } = useV2Pinned();
@@ -210,6 +211,12 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const [newPodGoal, setNewPodGoal] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const createReturnToConnectors = location.pathname === '/v2'
+    && new URLSearchParams(location.search).get('newPod') === '1';
+
+  useEffect(() => {
+    if (createReturnToConnectors) setShowCreate(true);
+  }, [createReturnToConnectors]);
 
   // The visit log is written by the layout when a pod opens; re-read it here so
   // Recent reorders without a reload. Times refresh once a minute.
@@ -299,7 +306,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       setNewPodName('');
       setNewPodGoal('');
       setShowCreate(false);
-      selectPod(pod._id);
+      if (createReturnToConnectors) navigate('/v2/connectors', { replace: true });
+      else selectPod(pod._id);
     } finally {
       setCreating(false);
     }

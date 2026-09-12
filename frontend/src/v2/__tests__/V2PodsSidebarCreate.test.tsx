@@ -119,6 +119,30 @@ describe('V2PodsSidebar create flow', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
   });
 
+  it('opens from Connectors and returns there after creating the first pod', async () => {
+    const podsState = {
+      pods: [],
+      loading: false,
+      error: null,
+      createPod: mockCreatePod,
+      patchLastMessage: jest.fn(),
+    };
+    render(
+      <MemoryRouter initialEntries={['/v2?newPod=1']}>
+        <V2PodsSidebar selectedPodId={null} podsState={podsState} />
+        <CurrentPath />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByPlaceholderText('Pod name')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Pod name'), {
+      target: { value: 'First pod' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/connectors'));
+  });
+
   it('the simplified create form still localizes (zh-CN)', async () => {
     await act(async () => {
       await i18n.changeLanguage('zh-CN');

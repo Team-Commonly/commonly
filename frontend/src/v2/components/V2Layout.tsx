@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2Thread from './V2Thread';
@@ -71,11 +71,14 @@ const createdAtTime = (createdAt?: string): number => {
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { podId: paramPodId } = useParams<{ podId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const podsState = useV2Pods();
   const { pods, loading } = podsState;
   const attention = useV2PodAttention();
+  const createFromConnectors = location.pathname === '/v2'
+    && new URLSearchParams(location.search).get('newPod') === '1';
 
   // Direction C on the phone: the pods list is a page and a pod is the next
   // page. There is no drawer. `phone` tracks the viewport so `/v2` renders the
@@ -148,7 +151,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // in their self-created invite-only workspace rather than the auto-joined HQ.
   // The phone never redirects: `/v2` is the pods list page there.
   useEffect(() => {
-    if (selectionMode !== 'auto' || paramPodId || loading || phone) return;
+    if (selectionMode !== 'auto' || paramPodId || loading || phone || createFromConnectors) return;
     if (pods.length === 0) return;
 
     const lastPodId = readLastPodId();
@@ -162,7 +165,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     const destination = lastPod || ownWorkspace || pods[0];
 
     navigate(`/v2/pods/${destination._id}`, { replace: true });
-  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id, phone]);
+  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id, phone, createFromConnectors]);
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
