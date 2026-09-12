@@ -677,7 +677,10 @@ const V2ConnectorsPage: React.FC = () => {
     if (!installation) {
       return {
         action: 'connect',
-        actionLabel: t('connectors.connect', { defaultValue: 'Connect' }),
+        // The row action opens the pod picker; the form's Connect button is
+        // the actual install action. Distinct labels keep the two-step flow
+        // legible to a stranger.
+        actionLabel: t('connectors.choosePod', { defaultValue: 'Choose a pod' }),
         detail: entry.installableId === 'telegram'
           ? t('connectors.availableTelegram', { defaultValue: 'one message' })
           : t('connectors.availableSlack', { defaultValue: 'one click in your workspace' }),
