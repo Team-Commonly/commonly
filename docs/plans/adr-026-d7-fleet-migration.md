@@ -121,7 +121,7 @@ adopted 2026-09-08, and no rotation was logged.
 
 | seats | what relaunches the old runner | same-machine cutover rotates | breaks if the old owner is not stopped first | cross-machine cutover |
 |---|---|---|---|---|
-| sprint-impl, ux-lead, wren, kai, sage, juno, piper | a launchd seat plist (KeepAlive), and the fleet supervisor | nothing | a duplicate child: KeepAlive relaunches the old runner the moment it exits | rotates. The old runner dies at once if its token is on the User row, and keeps working if it is installation-only |
+| sprint-impl, ux-lead, wren, kai, sage, juno, piper | a launchd seat plist (KeepAlive), and the fleet supervisor; kai also has a one-shot handoff job from 2026-09-07 (RunAtLoad, not KeepAlive), loaded but not running, which starts again at the next load or login | nothing | a duplicate child: KeepAlive relaunches the old runner the moment it exits | rotates. The old runner dies at once if its token is on the User row, and keeps working if it is installation-only |
 | sprint-review, vera, hq-support, anvil, vale, nova, reed, hollis | the fleet supervisor (relaunches within 10 minutes) | nothing | a duplicate child within 10 minutes | as above |
 | quill | the daemon | — | — | — |
 
@@ -167,9 +167,11 @@ What this means for the fixes:
 On the same machine (this plan):
 
 1. Stop everything that relaunches the seat. Take it out of the fleet
-   supervisor's kept list (or pause the supervisor), and `launchctl bootout`
-   its seat plist if it has one. A kill or a graceful stop alone is undone by
-   KeepAlive within seconds.
+   supervisor's kept list (or pause the supervisor). Then `launchctl bootout`
+   every launchd job that can start it: its seat plist, and any one-shot
+   RunAtLoad handoff job, such as kai's. A kill or a graceful stop alone is
+   undone by KeepAlive within seconds; ux-lead's plist has already started it
+   3 times.
 2. Wait for the idle boundary and stop the old runner gracefully.
 3. Let the daemon adopt. It reuses the seat's token file, so the token never
    changes and is valid throughout. Rollback means restarting the old owner
