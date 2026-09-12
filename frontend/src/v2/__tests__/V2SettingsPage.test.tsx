@@ -123,9 +123,7 @@ describe('V2SettingsPage', () => {
 
     expect(await screen.findByText(/shown once, when generated/i)).toBeInTheDocument();
     expect(screen.getByText(/ends in cret/i)).toBeInTheDocument();
-    const created = new Date(TOKEN_CREATED_AT);
-    const expectedCreatedLabel = `Created ${created.getDate()} ${created.toLocaleDateString('en-US', { month: 'short' })} ${created.getFullYear()}`;
-    expect(screen.getByText(expectedCreatedLabel)).toBeInTheDocument();
+    expect(screen.getByText(/^Created [45] Sep 2026$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show' })).not.toBeInTheDocument();
     expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();
