@@ -113,6 +113,19 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
   });
 
+  test('shows metadata for an existing token without attempting to re-display its secret', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: { hasToken: true, createdAt: '2026-09-04T19:00:00.000Z', scopes: ['agent:context:read'], last4: 'cret' },
+    });
+    renderSettings();
+
+    expect(await screen.findByText(/shown only when generated/i)).toBeInTheDocument();
+    expect(screen.getByText(/ending in cret/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Show' })).toBeDisabled();
+    expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();
+  });
+
   test('saves only the editable name from the Account section and exposes the staged email-change control', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateProfile.mockResolvedValue({ ...auth.currentUser, displayName: 'Lily Shen' });

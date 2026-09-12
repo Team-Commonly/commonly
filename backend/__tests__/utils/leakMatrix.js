@@ -192,7 +192,6 @@ const R_INT_CONNECTCODE = 'config.connectCode reaches a caller that is not the o
 const R_INST_LEAN = 'installableCatalogService reads Integration with .lean(), bypassing the toJSON transform';
 const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth state; no surface reads it';
 const R_USER_RUNTIME_HASH = 'User serialization keeps agentRuntimeTokens[].tokenHash';
-const R_USER_APITOKEN = 'returns the caller\'s raw apiToken; decide whether the browser may ever re-read it';
 const R_GATEWAY_TOKEN = 'GET /api/gateways returns lean rows verbatim, including metadata.gatewayToken';
 /* eslint-enable max-len */
 
@@ -212,8 +211,6 @@ const KNOWN_EXPOSURES = [
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
   { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/auth/api-token — follow-up: decide whether GET may return the raw apiToken at all
-  { method: 'GET', path: '/api/auth/api-token', role: 'self', sentinelKey: 'SELF_USER_APITOKEN', reason: R_USER_APITOKEN },
   // GET /api/auth/profile — follow-up: drop agentRuntimeTokens[].tokenHash from User serialization
   { method: 'GET', path: '/api/auth/profile', role: 'self', sentinelKey: 'SELF_USER_AGENTRUNTIMETOKEN_HASH', reason: R_USER_RUNTIME_HASH },
   // GET /api/auth/user — follow-up: drop agentRuntimeTokens[].tokenHash from User serialization

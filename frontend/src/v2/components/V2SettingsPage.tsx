@@ -10,8 +10,9 @@ import V2Avatar from './V2Avatar';
 
 type TokenStatus = {
   hasToken?: boolean;
-  token?: string;
   createdAt?: string;
+  scopes?: string[];
+  last4?: string | null;
 };
 
 const LANGUAGE_OPTIONS = [
@@ -138,8 +139,10 @@ const V2AccountSection: React.FC = () => {
 };
 
 const V2ApiTokenSection: React.FC = () => {
+  const [hasToken, setHasToken] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [last4, setLast4] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [busy, setBusy] = useState<'generate' | 'revoke' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -150,9 +153,12 @@ const V2ApiTokenSection: React.FC = () => {
     const load = async () => {
       try {
         const response = await axios.get<TokenStatus>('/api/auth/api-token');
-        if (!active || !response.data?.hasToken) return;
-        setToken(response.data.token || null);
-        setCreatedAt(response.data.createdAt || null);
+        if (!active) return;
+        setHasToken(Boolean(response.data?.hasToken));
+        setToken(null);
+        setCreatedAt(response.data?.createdAt || null);
+        setLast4(response.data?.last4 || null);
+        setShowToken(false);
       } catch {
         // A missing token is an expected state. The generate action remains available.
       }
@@ -167,8 +173,11 @@ const V2ApiTokenSection: React.FC = () => {
     setNotice(null);
     try {
       const response = await axios.post<{ apiToken?: string; createdAt?: string }>('/api/auth/api-token/generate', {});
-      setToken(response.data.apiToken || null);
+      const generatedToken = response.data.apiToken || null;
+      setHasToken(true);
+      setToken(generatedToken);
       setCreatedAt(response.data.createdAt || null);
+      setLast4(generatedToken ? generatedToken.slice(-4) : null);
       setShowToken(true);
       setNotice('New API token generated. Copy it now; treat it like a password.');
     } catch {
@@ -184,8 +193,10 @@ const V2ApiTokenSection: React.FC = () => {
     setNotice(null);
     try {
       await axios.delete('/api/auth/api-token');
+      setHasToken(false);
       setToken(null);
       setCreatedAt(null);
+      setLast4(null);
       setShowToken(false);
       setNotice('API token revoked.');
     } catch {
@@ -211,15 +222,16 @@ const V2ApiTokenSection: React.FC = () => {
     <div className="v2-settings__token">
       {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
-      {token ? (
+      {hasToken ? (
         <>
           <div className="v2-settings__token-value">
-            <code>{showToken ? token : maskedToken}</code>
-            <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+            <code>{token && showToken ? token : maskedToken}</code>
+            <button type="button" className="v2-settings__secondary" disabled={!token} onClick={() => setShowToken((visible) => !visible)}>
               {showToken ? 'Hide' : 'Show'}
             </button>
-            <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+            <button type="button" className="v2-settings__secondary" disabled={!token} onClick={() => void copy()}>Copy</button>
           </div>
+          {!token && <p className="v2-settings__meta">The token is shown only when generated. Reload to see metadata{last4 ? ` (ending in ${last4})` : ''}.</p>}
           {createdAt && <p className="v2-settings__meta">created {new Date(createdAt).toLocaleString()}</p>}
           <div className="v2-settings__actions">
             <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
