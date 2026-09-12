@@ -94,3 +94,81 @@ require moving the already-proven seats back.
 - Paused seats remain paused and all supported declarative workspace, sandbox,
   skills, MCP, permissions, and tool settings are unchanged; provider secrets
   remain out-of-band and are never returned by `/assigned`.
+
+## Token rotation at cutover (pre-read, measured 2026-09-12)
+
+Measured against `main` at `698ad45a` (auth middleware on a fresh database)
+and on the operator laptop the fleet runs on today.
+
+**What each mint path does to the old token.**
+
+| path | rotates? | the old bearer afterwards |
+|---|---|---|
+| daemon adopt on the **same machine** (`ensureToken` finds `tokens/<agentName>.json`) | no, it reuses the file | valid, unchanged |
+| daemon adopt on **another machine** (`POST /api/agent-binding/runtime-token`, `409 token_exists`, then `rotate: true`) | yes, totally: credential rows revoked, User and installation copies cleared | `401 Token revoked` |
+| the same, when the seat's token lives **only on its installation** (legacy) | no: the route's `hasToken` reads only the User row, so nothing is revoked and a second token is minted | **still valid** |
+| `commonly agent attach`, provision or reprovision with `force` (registry routes; the CLI always sends `force`) | clears `User.agentRuntimeTokens` only | **still valid**, through the installation copy and the still-active credential row |
+
+So a cutover can fail in two ways, not one. A rotate can end a live seat.
+A re-mint can also leave the old runner working beside the new one: a
+duplicate child, which is an abort condition above that token state alone
+does not reveal.
+
+**Per seat.** The plan says 22 seats. The laptop has 16 running and 33 token
+files, one per agentName, and no two files share a bearer. The fleet supervisor
+keeps 15 of the running seats, and `quill` is already a daemon child: it was
+adopted 2026-09-08, and no rotation was logged.
+
+| seats | what relaunches the old runner | same-machine cutover rotates | breaks if the old owner is not stopped first | cross-machine cutover |
+|---|---|---|---|---|
+| sprint-impl, ux-lead, wren, kai, sage, juno, piper | a launchd seat plist (KeepAlive), and the fleet supervisor | nothing | a duplicate child: KeepAlive relaunches the old runner the moment it exits | rotates. The old runner dies at once if its token is on the User row, and keeps working if it is installation-only |
+| sprint-review, vera, hq-support, anvil, vale, nova, reed, hollis | the fleet supervisor (relaunches within 10 minutes) | nothing | a duplicate child within 10 minutes | as above |
+| quill | the daemon | — | — | — |
+
+Three token files are stale and are not in the kept set: `claude-on-dev`
+points at a retired API host, and `local-codex` and `local-stub` point at
+localhost. `loadAgentToken` keys by agentName only and never compares
+instanceId or instanceUrl, so a daemon adopting one of these would reuse a
+dead file instead of minting. Delete them, or leave them unbound.
+
+**Not measured:** which seats hold an installation-only token. That takes a
+server query: for each seat, is its bearer hash on the bot User row, or only on
+an `AgentInstallation.runtimeTokens` entry? The answer decides the last column.
+
+**The ordering that never leaves a seat without a valid token.**
+
+On the same machine (this plan):
+
+1. Stop everything that relaunches the seat. Take it out of the fleet
+   supervisor's kept list (or pause the supervisor), and `launchctl bootout`
+   its seat plist if it has one. A kill or a graceful stop alone is undone by
+   KeepAlive within seconds.
+2. Wait for the idle boundary and stop the old runner gracefully.
+3. Let the daemon adopt. It reuses the seat's token file, so the token never
+   changes and is valid throughout. Rollback means restarting the old owner
+   on the same file.
+4. Verify one round trip. Then remove the plist and the kept-list entry for
+   good.
+
+On another machine (fleet to VM):
+
+1. Before anything else, confirm the seat's token is on the User row. If it is
+   installation-only, the rotate will not revoke it, so revoke it explicitly
+   as part of the move.
+2. Stop the relaunchers and the old runner, as in steps 1–2 above.
+3. Bind the seat to the new machine and let its daemon rotate. The only gap is
+   the adoption latency, and at no point does a runner hold an invalid token.
+4. Rollback is a second rotate back to the laptop, binding and minting through
+   the laptop's daemon. Never restore the laptop's token file: the rotate
+   revoked it.
+
+Never use `commonly agent attach` as a recovery step during a cutover. It
+always sends `force`, which mints a second valid token and leaves the first
+one working.
+
+**Two fixes before any cross-machine move.** Neither is needed for a
+same-machine cutover that follows the ordering above.
+
+- Registry `force` re-mints should revoke the way the binding route does:
+  revoke the credential rows and clear the installation copies.
+- The binding route's `hasToken` gate should also count installation copies.
