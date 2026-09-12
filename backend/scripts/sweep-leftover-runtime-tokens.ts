@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import AgentCredential from '../models/AgentCredential';
 import { AgentInstallation } from '../models/AgentRegistry';
 import User from '../models/User';
+import { revokeRuntimeCredentials } from '../routes/registry/tokens';
 
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -223,18 +224,15 @@ export const sweepLeftoverRuntimeTokens = async (
       installationRowsChanged += modifiedCount(pulled);
     }
     if (plan.candidateHashes) {
-      const revoked = await AgentCredential.updateMany(
+      const revoked = await revokeRuntimeCredentials(
+        Array.from(plan.selectedHashesByIdentity.values()).flat(),
         {
-          tokenHash: { $in: Array.from(plan.selectedHashesByIdentity.values()).flat() },
-          kind: 'runtime',
-          status: 'active',
           $or: [
             { lastUsedAt: { $exists: false } },
             { lastUsedAt: null },
             { lastUsedAt: { $lt: cutoff } },
           ],
         },
-        { $set: { status: 'revoked', revokedAt: new Date() } },
       );
       credentialsRevoked = modifiedCount(revoked);
     }

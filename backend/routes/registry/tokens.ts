@@ -60,6 +60,20 @@ const normalizeRuntimeIdentity = (agentName: any, instanceId: any) => ({
 // but match legacy rows case-insensitively during a rotation.
 const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
+/** Revoke selected runtime ledger rows, optionally guarded by a freshness filter. */
+export const revokeRuntimeCredentials = async (
+  hashes: string[],
+  extraFilter: Record<string, unknown> = {},
+) => {
+  if (!hashes.length) return { modifiedCount: 0 };
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AgentCredential = require('../../models/AgentCredential');
+  return AgentCredential.updateMany(
+    { tokenHash: { $in: hashes }, kind: 'runtime', status: 'active', ...extraFilter },
+    { $set: { status: 'revoked', revokedAt: new Date() } },
+  );
+};
+
 /**
  * Return every legacy hash for an agent identity, across the portable User
  * row and every installation copy. The two stores are both authentication
@@ -99,12 +113,7 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   const hashes = await getRuntimeTokenHashesForAgent(owner);
 
   if (hashes.length) {
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const AgentCredential = require('../../models/AgentCredential');
-    await AgentCredential.updateMany(
-      { tokenHash: { $in: hashes }, kind: 'runtime', status: 'active' },
-      { $set: { status: 'revoked', revokedAt: new Date() } },
-    );
+    await revokeRuntimeCredentials(hashes);
   }
 
   if (Array.isArray(owner.agentUser?.agentRuntimeTokens) && owner.agentUser.agentRuntimeTokens.length) {
@@ -294,6 +303,7 @@ module.exports = {
   normalizeToolPolicy,
   normalizeContextPolicy,
   getRuntimeTokenHashesForAgent,
+  revokeRuntimeCredentials,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueRuntimeTokenForInstallation,
