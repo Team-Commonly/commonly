@@ -5,8 +5,11 @@ const express = require('express');
 // shown once, top-level, in the POST that minted it, and must never be stored
 // on the Gateway row or returned from one.
 
-// createdBy is an ObjectId path, so the caller id must cast.
+// createdBy is an ObjectId path, so the caller id must cast. Calls are counted
+// so the limiter test can show it answers before auth runs.
+let mockAuthCalls = 0;
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
+  mockAuthCalls += 1;
   req.user = { id: '64b000000000000000000001' };
   req.userId = '64b000000000000000000001';
   next();
@@ -114,5 +117,22 @@ describe('gateway token never leaves through a Gateway row', () => {
     expect(res.body.gateway.metadata).toEqual({ image: 'img' });
     const stored = await Gateway.findById(gw._id).lean();
     expect(stored.metadata).toEqual({ image: 'img' });
+  });
+
+  // Last: the write limiter is module state, so earlier writes count toward it.
+  it('answers gateway writes with 429 before auth runs once the budget is spent', async () => {
+    const missing = '64b0000000000000000000ff';
+    let res;
+    let authBefore;
+    for (let i = 0; i < 40; i += 1) {
+      authBefore = mockAuthCalls;
+      // eslint-disable-next-line no-await-in-loop
+      res = await request(app).delete(`/api/gateways/${missing}`);
+      if (res.status !== 404) break;
+    }
+
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/rate limit exceeded/);
+    expect(mockAuthCalls).toBe(authBefore);
   });
 });

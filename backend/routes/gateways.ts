@@ -1,5 +1,9 @@
+import rateLimit from 'express-rate-limit';
+
 // eslint-disable-next-line global-require
 const express = require('express');
+// eslint-disable-next-line global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -23,6 +27,26 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// Admin-only, but auth and adminAuth both read User, so the limiters run
+// first and key on the Cloudflare client IP. Writes provision k8s objects, so
+// they get a tighter budget than the list the Agents Hub dialogs fetch.
+const gatewayReadRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  message: { error: 'rate limit exceeded: too many gateway requests' },
+});
+const gatewayWriteRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  message: { error: 'rate limit exceeded: too many gateway changes' },
+});
 
 const slugify = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 const getUserId = (req: AuthReq): unknown => req.userId || req.user?.id || req.user?._id;
@@ -51,7 +75,7 @@ const toPublicGateway = (row: unknown): Record<string, unknown> | null => {
   return { ...plain, metadata: withoutGatewayToken(plain.metadata) };
 };
 
-router.get('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.get('/', gatewayReadRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     await ensureDefaultGateway(getUserId(req));
     const gateways = await Gateway.find().sort({ createdAt: 1 }).lean();
@@ -62,7 +86,7 @@ router.get('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.post('/', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { name, slug, type = 'openclaw', mode = 'local', baseUrl = '', configPath = '', status = 'active', metadata = {} } = (req.body || {}) as { name?: string; slug?: string; type?: string; mode?: string; baseUrl?: string; configPath?: string; status?: string; metadata?: Record<string, unknown> };
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -90,7 +114,7 @@ router.post('/', auth, adminAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.patch('/:id', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.patch('/:id', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const updates = { ...(req.body || {}) } as Record<string, unknown>;
@@ -112,7 +136,7 @@ router.patch('/:id', auth, adminAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/:id', auth, adminAuth, async (req: AuthReq, res: Res) => {
+router.delete('/:id', gatewayWriteRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const gateway = await Gateway.findById(id) as Record<string, unknown> & { slug?: string; mode?: string; deleteOne: () => Promise<void> } | null;
