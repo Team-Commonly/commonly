@@ -539,6 +539,7 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
       expect(screen.queryByRole('group', { name: 'Channel provider' })).toBeNull();
       expect(screen.getByText('No pod yet. Create one, then come back to connect a channel.')).toBeInTheDocument();
+      expect(screen.queryByText('Choose a channel and the pod it should join.')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Create a pod' }));
       expect(await screen.findByText('pods list')).toBeInTheDocument();
     });
