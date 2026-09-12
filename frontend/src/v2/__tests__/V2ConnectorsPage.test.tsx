@@ -3,7 +3,7 @@
 // channel owns code, confirmation, relay controls, and disconnect in its aside.
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -515,6 +515,32 @@ describe('V2ConnectorsPage', () => {
       fireEvent.click(choosePod);
       expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    });
+
+    it('gives a zero-pod owner a path to create a pod before connecting', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return Promise.resolve({ data: [] });
+        return Promise.resolve({ data: [] });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/connectors']}>
+            <Routes>
+              <Route path="/v2/connectors" element={<V2ConnectorsPage />} />
+              <Route path="/v2" element={<div>pods list</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
+      expect(screen.queryByRole('group', { name: 'Channel provider' })).toBeNull();
+      expect(screen.getByText('No pod yet. Create one, then come back to connect a channel.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Create a pod' }));
+      expect(await screen.findByText('pods list')).toBeInTheDocument();
     });
 
     it('shows Setting up… without a control while the claim is fresh, and Cancel once it is stale', async () => {

@@ -1846,6 +1846,8 @@
     "newTitle": "连接频道",
     "choosePod": "选择 Pod",
     "podPicker": "要桥接的 Pod",
+    "noPodsToConnect": "还没有 Pod。创建一个，然后回来连接频道。",
+    "createPod": "创建 Pod",
     "creating": "创建中…",
     "createTelegram": "新建 Telegram 连接器",
     "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"

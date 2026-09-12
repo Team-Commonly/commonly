@@ -5,6 +5,7 @@
 // owner-only PATCH accepts (D3/D4).
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
@@ -197,6 +198,7 @@ const botMembers = (pod: V2Pod | undefined): V2PodMember[] => (
 const V2ConnectorsPage: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
+  const navigate = useNavigate();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [pods, setPods] = useState<V2Pod[]>([]);
@@ -1224,29 +1226,40 @@ const V2ConnectorsPage: React.FC = () => {
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
   const renderAddForm = (aside = false) => (
     <div className={`v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`}>
-      <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
-        {availableProviders.map((provider) => (
-          <button
-            key={provider.type}
-            type="button"
-            className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
-            onClick={() => setAddingType(provider.type)}
+      {pods.length > 0 ? (
+        <>
+          <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
+            {availableProviders.map((provider) => (
+              <button
+                key={provider.type}
+                type="button"
+                className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
+                onClick={() => setAddingType(provider.type)}
+              >
+                {TYPE_LABELS[provider.type] || provider.type}
+              </button>
+            ))}
+          </div>
+          <select
+            className="v2-connectors__select"
+            value={newPodId}
+            onChange={(event) => setNewPodId(event.target.value)}
+            aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
           >
-            {TYPE_LABELS[provider.type] || provider.type}
+            {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
+          </select>
+          <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
+            {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
           </button>
-        ))}
-      </div>
-      <select
-        className="v2-connectors__select"
-        value={newPodId}
-        onChange={(event) => setNewPodId(event.target.value)}
-        aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
-      >
-        {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
-      </select>
-      <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
-        {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
-      </button>
+        </>
+      ) : (
+        <div className="v2-connectors__empty-pods">
+          <p>{t('connectors.noPodsToConnect', { defaultValue: 'No pod yet. Create one, then come back to connect a channel.' })}</p>
+          <button type="button" className="v2-connectors__create" onClick={() => navigate('/v2?newPod=1')}>
+            {t('connectors.createPod', { defaultValue: 'Create a pod' })}
+          </button>
+        </div>
+      )}
     </div>
   );
 
