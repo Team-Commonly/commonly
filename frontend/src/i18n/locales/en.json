@@ -1850,6 +1850,7 @@
     "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
+    "choosePod": "Choose a pod",
     "podPicker": "Pod to bridge",
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",

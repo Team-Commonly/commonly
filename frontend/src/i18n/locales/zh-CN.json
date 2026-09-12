@@ -1842,6 +1842,7 @@
     "liveRelay": "中继",
     "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
     "newTitle": "连接频道",
+    "choosePod": "选择 Pod",
     "podPicker": "要桥接的 Pod",
     "creating": "创建中…",
     "createTelegram": "新建 Telegram 连接器",

@@ -475,10 +475,10 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('GitHub')).toBeNull();
       expect(screen.queryByText('Issues and pull requests.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
-      expect(screen.getAllByRole('button', { name: 'Connect' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Choose a pod' })).toHaveLength(1);
     });
 
-    it('renders an unavailable provider without a control and an available one with Connect', async () => {
+    it('renders an unavailable provider without a control and an available one with Choose a pod', async () => {
       mockCatalog([
         entry(),
         entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
@@ -491,9 +491,9 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
       expect(screen.getByText('not connected')).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
-      const connects = screen.getAllByRole('button', { name: 'Connect' });
-      expect(connects).toHaveLength(1);
-      fireEvent.click(connects[0]);
+      const choosePod = screen.getAllByRole('button', { name: 'Choose a pod' });
+      expect(choosePod).toHaveLength(1);
+      fireEvent.click(choosePod[0]);
       expect(screen.getByRole('button', { name: 'Telegram' })).toHaveClass('v2-connectors__provider--selected');
       expect(screen.queryByRole('button', { name: 'Slack' })).toBeNull();
       fireEvent.click(document.querySelector('.v2-connectors__create'));
@@ -502,6 +502,18 @@ describe('V2ConnectorsPage', () => {
         { podId: 'p1' },
         expect.anything(),
       ));
+    });
+
+    it('labels the row step separately from the final connect action', async () => {
+      mockCatalog([entry()]);
+      renderPage();
+
+      const choosePod = await screen.findByRole('button', { name: 'Choose a pod' });
+      expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+
+      fireEvent.click(choosePod);
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
     });
 
     it('shows Setting up… without a control while the claim is fresh, and Cancel once it is stale', async () => {
