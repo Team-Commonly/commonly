@@ -131,9 +131,36 @@ localhost. `loadAgentToken` keys by agentName only and never compares
 instanceId or instanceUrl, so a daemon adopting one of these would reuse a
 dead file instead of minting. Delete them, or leave them unbound.
 
-**Not measured:** which seats hold an installation-only token. That takes a
-server query: for each seat, is its bearer hash on the bot User row, or only on
-an `AgentInstallation.runtimeTokens` entry? The answer decides the last column.
+**Installation-only tokens, measured 2026-09-12.** This was a read-only query
+in the cluster. For every active installation, it counted the token hashes
+that are not on the matching bot User row and have no revoked credential row.
+The auth middleware still accepts every one of these.
+
+- **No identity is fully legacy.** Every identity whose installation carries
+  tokens also has its current hash on the User row. The binding route's
+  `hasToken` is therefore true for every seat, and a cross-machine rotate
+  clears every installation copy, so today it is total for all of them.
+- **Older bearers are still live.** 14 identities carry 1,539 bearers left
+  behind by earlier `force` re-mints. None was used in the last 7 days, 5 in
+  the last 30 days, and 882 never.
+  - Laptop seats: `hollis` 2, `juno` 2, `piper` 2, `reed` 1 and `vale` 1, all
+    five running and kept by the fleet supervisor, plus `pod-architect` 2,
+    which has a token file but is not running. Each seat's 30-day uses predate
+    its current attach on 2026-09-01 or 2026-09-04.
+  - Cluster identities: `commonly-bot` (two instances, 514 between them), four
+    `openclaw` instances (805), `newshound` (209) and `hosted-smoke` (1). All
+    were last used in July or August.
+- The `.bak` token files on the laptop hold the same bearer as their live
+  files, so the disk carries no extra bearer.
+
+What this means for the fixes:
+
+- The `force` fix is the one that matters today.
+- The `hasToken` fix guards a state no identity is in right now.
+- Neither fix removes the 1,539 bearers already live. That takes a one-time
+  sweep: remove each installation copy that is not on its User row, and revoke
+  any credential row for it. Before the sweep runs, re-check that no survivor
+  has been used recently.
 
 **The ordering that never leaves a seat without a valid token.**
 
