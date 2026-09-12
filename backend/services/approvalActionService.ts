@@ -11,7 +11,8 @@
  * resources owned by `ownerUserId` — never by the agent's bot user. The
  * resolved row is the AuthorizedAction audit record.
  */
-import ApprovalAction, { IApprovalAction, ApprovalActionType } from '../models/ApprovalAction';
+import { randomUUID } from 'crypto';
+import ApprovalAction, { IApprovalAction, ApprovalActionType, ApprovalToolCall } from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
 
@@ -25,7 +26,7 @@ const CARD_KIND = 'approval-card';
 // with arbitrary membership breaks the §3.10 invariant.
 const CREATABLE_POD_TYPES = new Set(['chat', 'team']);
 
-const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent']);
+const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent', 'tool_call']);
 
 // Same shape the registry install route enforces for self-serve names (no
 // scoped @publisher/ names for local seats). Mirrors the BYO page's
@@ -47,6 +48,8 @@ export interface CardPayload {
   actionType: ApprovalActionType;
   summary: string;
   params: Record<string, unknown>;
+  /** Safe tool metadata visible on the shared card; arguments remain owner-only. */
+  toolCall?: { tool: string };
   status: string;
   decision?: string;
   // Owner id lets the client decide whether to show action buttons. This is
@@ -65,7 +68,12 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   approvalId: String(row._id),
   actionType: row.actionType,
   summary: row.summary,
-  params: (row.params || {}) as Record<string, unknown>,
+  // Broker arguments are secret-bearing user input. They are rendered by an
+  // owner-scoped read, never in the shared card payload.
+  params: row.actionType === 'tool_call' ? {} : (row.params || {}) as Record<string, unknown>,
+  ...(row.actionType === 'tool_call' && row.toolCall?.tool
+    ? { toolCall: { tool: row.toolCall.tool } }
+    : {}),
   status: row.status,
   ...(row.decision ? { decision: row.decision } : {}),
   ownerUserId: String(row.ownerUserId),
@@ -76,6 +84,18 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   ...(row.executionError ? { executionError: row.executionError } : {}),
 });
 
+/** Add the parked call's exact arguments only for its accountable owner. */
+export const buildOwnerCardPayload = (
+  row: IApprovalAction,
+  callerUserId: string,
+): CardPayload & { toolCall?: ApprovalToolCall } => {
+  const payload = buildCardPayload(row) as CardPayload & { toolCall?: ApprovalToolCall };
+  if (row.actionType === 'tool_call' && String(row.ownerUserId) === String(callerUserId) && row.toolCall) {
+    payload.toolCall = row.toolCall;
+  }
+  return payload;
+};
+
 interface ProposeOptions {
   podId: string;
   agentName: string;
@@ -85,6 +105,10 @@ interface ProposeOptions {
   params: Record<string, unknown>;
   summary: string;
   installationConfig?: unknown;
+  /** Broker calls bind approval to the Integration owner, not pod creator. */
+  ownerUserId?: string;
+  agentUserId?: string;
+  toolCall?: ApprovalToolCall;
 }
 
 interface ProposeResult {
@@ -111,6 +135,10 @@ const validateParams = (actionType: ApprovalActionType, params: Record<string, u
     if (!LOCAL_AGENT_NAME_RE.test(name)) {
       return 'params.name must be 2-40 chars of lowercase letters, digits, and dashes';
     }
+    return null;
+  }
+  if (actionType === 'tool_call') {
+    if (!params || Object.keys(params).length !== 0) return 'tool_call params must be empty';
     return null;
   }
   return `unknown actionType '${actionType}'`;
@@ -252,6 +280,7 @@ export const proposeActionForRuntime = async (input: {
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
+    ownerUserId: requestedOwnerUserId, agentUserId, toolCall,
   } = options;
 
   if (!KNOWN_ACTION_TYPES.has(actionType as ApprovalActionType)) {
@@ -259,6 +288,20 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       ok: false,
       error: `unknown actionType '${actionType}' — known: ${Array.from(KNOWN_ACTION_TYPES).join(', ')}`,
     };
+  }
+  if (actionType === 'tool_call' && (!toolCall
+    || !toolCall.grantId || !toolCall.callId || !toolCall.tool || !toolCall.argsDigest
+    || !toolCall.canonicalArgs || !agentUserId)) {
+    return { ok: false, error: 'tool_call envelope is incomplete' };
+  }
+  if (actionType === 'tool_call' && toolCall) {
+    // Bind the approval to the exact canonical payload at the trust boundary;
+    // the broker repeats this check immediately before provider execution.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { digestArgs } = require('../models/ToolCall');
+    if (digestArgs(toolCall.canonicalArgs) !== toolCall.argsDigest) {
+      return { ok: false, error: 'tool_call args digest does not match canonical args' };
+    }
   }
   const paramsError = validateParams(actionType as ApprovalActionType, params || {});
   if (paramsError) return { ok: false, error: paramsError };
@@ -276,7 +319,9 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     instanceId: instanceId || 'default',
     status: 'active',
   });
-  const ownerUserId = await resolveHumanDecider([install?.installedBy, pod.createdBy]);
+  const ownerUserId = actionType === 'tool_call'
+    ? await resolveHumanDecider([requestedOwnerUserId])
+    : await resolveHumanDecider([install?.installedBy, pod.createdBy]);
   if (!ownerUserId) {
     return {
       ok: false,
@@ -299,9 +344,11 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     podId,
     ownerUserId,
     agentName: String(agentName).toLowerCase(),
+    ...(actionType === 'tool_call' && agentUserId ? { agentUserId } : {}),
     instanceId: instanceId || 'default',
     actionType,
-    params: params || {},
+    params: actionType === 'tool_call' ? {} : (params || {}),
+    ...(actionType === 'tool_call' && toolCall ? { toolCall } : {}),
     summary: trimmedSummary.slice(0, 500),
   });
 
@@ -339,8 +386,17 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     // Card without a render is a dead flag — mark it moot rather than leave
     // a phantom pending approval nothing can see. (ADR-017: moot is never a
     // default decision branch — this is a delivery failure, not a decision.)
-    row.status = 'moot';
-    await row.save();
+    if (actionType === 'tool_call') {
+      await ApprovalAction.updateOne(
+        { _id: row._id, status: 'flagged' },
+        { $set: { status: 'moot' }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      );
+      row.status = 'moot';
+      if (row.toolCall) delete row.toolCall.canonicalArgs;
+    } else {
+      row.status = 'moot';
+      await row.save();
+    }
     return { ok: false, error: 'card message could not be posted' };
   }
 
@@ -404,6 +460,30 @@ const updateCardEverywhere = async (row: IApprovalAction): Promise<void> => {
   }
 };
 
+const recordToolCallDecision = async (
+  row: IApprovalAction,
+  outcome: 'refused' | 'failed',
+  reason: string,
+  toolCallOverride?: ApprovalToolCall,
+): Promise<void> => {
+  const toolCall = toolCallOverride || row.toolCall;
+  if (!toolCall) return;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const ToolCall = require('../models/ToolCall');
+  const { digestArgs } = ToolCall;
+  await ToolCall.create({
+    callId: `tool_call_${randomUUID()}`,
+    grantId: toolCall.grantId,
+    podId: String(row.podId),
+    agentUserId: row.agentUserId || '',
+    tool: toolCall.tool,
+    argsDigest: toolCall.argsDigest || digestArgs({}),
+    outcome,
+    reason,
+    approvalId: String(row._id),
+  });
+};
+
 export const resolveApproval = async (options: ResolveOptions): Promise<ResolveResult> => {
   const { approvalId, callerUserId, decision } = options;
 
@@ -416,7 +496,9 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   // ADR-017 §Decision-authorization: no agent may decide, even one holding
   // the owner's pod. Route-level auth already excludes agent tokens; this is
   // defense in depth against a future dualAuth slip.
-  const caller = await User.findById(callerUserId).select('isBot').lean() as { isBot?: boolean } | null;
+  const caller = await User.findById(callerUserId)
+    .select('isBot username displayName')
+    .lean() as { isBot?: boolean; username?: string; displayName?: string } | null;
   if (!caller || caller.isBot) {
     return { status: 403, body: { error: 'Only a human can decide an approval' } };
   }
@@ -428,6 +510,42 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       status: 409,
       body: { error: `Already ${row.status}`, approval: buildCardPayload(row) },
     };
+  }
+
+  // Copy the envelope before the terminal write. Some test doubles (and a
+  // future ODM optimisation) may share nested object references between the
+  // initial read and findOneAndUpdate's returned document; scrubbing the
+  // returned row must never erase the private args the winner is about to
+  // execute.
+  const parkedCall = row.actionType === 'tool_call' && row.toolCall
+    ? {
+      ...row.toolCall,
+      canonicalArgs: row.toolCall.canonicalArgs === undefined
+        ? undefined
+        : JSON.parse(JSON.stringify(row.toolCall.canonicalArgs)),
+    }
+    : undefined;
+  // Unlike legacy action cards, a parked broker call expires closed. Check in
+  // the decide path itself so a decision racing the sweeper cannot execute a
+  // stale call or leave its canonical arguments behind.
+  if (parkedCall && row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+    const expired = await ApprovalAction.findOneAndUpdate(
+      { _id: row._id, status: 'flagged' },
+      { $set: { status: 'expired', resolvedAt: new Date() }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      { new: true },
+    );
+    if (!expired) {
+      const current = await ApprovalAction.findById(approvalId);
+      return { status: 409, body: { error: 'Already decided', approval: current ? buildCardPayload(current) : null } };
+    }
+    if (expired.toolCall) expired.toolCall.canonicalArgs = undefined;
+    // The expired decision is still terminal for the inbox item.
+    // eslint-disable-next-line global-require
+    const { resolve: resolveExpiredAttention } = require('./attentionItemService');
+    await resolveExpiredAttention('approval_action', expired._id);
+    await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
+    await updateCardEverywhere(expired);
+    return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
   }
 
   // ADR-017:201 — expired stays DECIDABLE. Refusing a late decision would
@@ -451,6 +569,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         resolvedAt: new Date(),
         ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
       },
+      ...(parkedCall ? { $unset: { 'toolCall.canonicalArgs': 1 } } : {}),
     },
     { new: true },
   );
@@ -461,6 +580,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       body: { error: 'Already decided', approval: current ? buildCardPayload(current) : null },
     };
   }
+  if (parkedCall && transitioned.toolCall) transitioned.toolCall.canonicalArgs = undefined;
   // The ask is answered either way; the inbox row leaves with it.
   // eslint-disable-next-line global-require
   const { resolve: resolveAttention } = require('./attentionItemService');
@@ -468,19 +588,118 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
 
   if (decision === 'approved') {
     try {
-      const result = await executeAction(transitioned);
+      // Keep a private in-memory copy captured before the terminal write. The
+      // database copy is scrubbed atomically, so no later reader can recover
+      // the raw arguments; only this winning resolver can execute them.
+      const result = parkedCall
+        ? await executeApprovedToolCall(parkedCall, String(row._id), String(row.agentUserId || ''))
+        : await executeAction(transitioned);
       transitioned.executedAt = new Date();
       transitioned.executionResult = result;
+      if (parkedCall) {
+        // Room-visible receipt deliberately contains no canonical arguments.
+        // The owner already saw the exact payload in the private pending read.
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const AgentMessageService = require('./agentMessageService');
+          const approverName = caller.displayName?.trim() || caller.username?.trim() || callerUserId;
+          const receipt = `${approverName} approved ${transitioned.agentName}'s ${parkedCall.tool} · done`;
+          const metadata = { source: 'approval-tool-call', approvalId: String(transitioned._id) };
+          if (typeof AgentMessageService._postToTarget === 'function' && transitioned.agentUserId) {
+            const agentUser = await User.findById(transitioned.agentUserId);
+            if (!agentUser) throw new Error('approved agent identity not found');
+            await AgentMessageService._postToTarget({
+              agentName: transitioned.agentName,
+              instanceId: transitioned.instanceId || 'default',
+              podId: String(transitioned.podId),
+              messageType: 'system',
+              content: receipt,
+              metadata,
+              agentUser,
+              skipDeliveryUpdate: true,
+              skipSummaryPersistence: true,
+            });
+          } else {
+            await AgentMessageService.postMessage({
+              agentName: transitioned.agentName,
+              instanceId: transitioned.instanceId || 'default',
+              podId: String(transitioned.podId),
+              messageType: 'system',
+              content: receipt,
+              metadata,
+              skipSummaryPersistence: true,
+            });
+          }
+        } catch (error) {
+          console.warn('[approval] tool-call receipt failed:', (error as Error).message);
+        }
+      }
     } catch (err) {
       // Honest failure face: resolved + approved + executionError. Never
       // roll back the decision — the user DID approve; the execution failed.
       transitioned.executionError = (err as Error).message?.slice(0, 500) || 'execution failed';
     }
     await transitioned.save();
+  } else if (parkedCall) {
+    await recordToolCallDecision(transitioned, 'refused', 'approval_declined', parkedCall);
   }
 
   await updateCardEverywhere(transitioned);
   return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
+};
+
+const executeApprovedToolCall = async (
+  toolCall: ApprovalToolCall,
+  approvalId: string,
+  agentUserId: string,
+): Promise<unknown> => {
+  if (!toolCall.canonicalArgs) throw new Error('approval arguments unavailable');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const broker = require('./toolBrokerService');
+  const execute = broker.executeApprovedToolCall as ((input: {
+    grantId: string;
+    agentUserId: string;
+    tool: string;
+    args: Record<string, unknown>;
+    expectedArgsDigest: string;
+    approvalId: string;
+  }) => Promise<{ result: unknown }>);
+  const response = await execute({
+    grantId: toolCall.grantId,
+    agentUserId,
+    tool: toolCall.tool,
+    args: toolCall.canonicalArgs,
+    expectedArgsDigest: toolCall.argsDigest,
+    approvalId,
+  });
+  return response.result;
+};
+
+/** First-sweep hook for abandoned broker approvals. */
+export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<number> => {
+  const rows = await ApprovalAction.find({
+    actionType: 'tool_call',
+    status: 'flagged',
+    expiresAt: { $lte: now },
+  });
+  let expired = 0;
+  for (const row of rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await ApprovalAction.findOneAndUpdate(
+      { _id: row._id, status: 'flagged' },
+      { $set: { status: 'expired', resolvedAt: now }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      { new: true },
+    );
+    if (result) {
+      expired += 1;
+      if (result.toolCall) result.toolCall.canonicalArgs = undefined;
+      // eslint-disable-next-line global-require
+      const { resolve: resolveExpiredAttention } = require('./attentionItemService');
+      await resolveExpiredAttention('approval_action', row._id);
+      await updateCardEverywhere(result);
+    }
+  }
+  return expired;
 };
 
 // ── executors (D2: user authority owns the result) ──────────────────────────
@@ -700,7 +919,13 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
   };
 };
 
-export default { proposeAction, resolveApproval, buildCardPayload };
+export default {
+  proposeAction,
+  resolveApproval,
+  buildCardPayload,
+  buildOwnerCardPayload,
+  sweepExpiredToolCallApprovals,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);

@@ -9,6 +9,7 @@ const mockGithub = {
   closeIssue: jest.fn(),
 };
 const mockReserveBudgetLineage = jest.fn();
+const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
@@ -20,6 +21,10 @@ jest.mock('../../../models/ToolCall', () => ({
   digestArgs: (args) => require('crypto').createHash('sha256').update(JSON.stringify(args || {})).digest('hex'),
   reserveBudgetLineage: mockReserveBudgetLineage,
 }));
+jest.mock('../../../services/approvalActionService', () => ({
+  proposeAction: jest.fn().mockResolvedValue({ ok: true, approvalId: 'approval-test' }),
+}));
+jest.mock('../../../services/dmService', () => mockDmService);
 jest.mock('../../../services/githubAppService', () => mockGithub);
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
@@ -71,6 +76,7 @@ beforeEach(() => {
   mockToolCall.create.mockResolvedValue(undefined);
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app', status: 'connected',
+    createdBy: 'owner-1',
     config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockIntegration.findById.mockResolvedValue(null);
@@ -81,6 +87,7 @@ beforeEach(() => {
     title: 'test',
     html_url: 'https://github.com/Team-Commonly/commonly/issues/1',
   });
+  mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
 });
 
 describe('tool broker guard rails', () => {

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import V2ConnectorTools from './V2ConnectorTools';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -58,6 +59,9 @@ interface CatalogInstallation {
 
 interface CatalogEntry {
   installableId: string;
+  // Two lists (tools plan, Sam's option A): this page draws channels; the
+  // Tools page draws tool Installables, so a `tools` row never renders here.
+  list?: 'channels' | 'tools';
   label?: string;
   description?: string;
   available: boolean;
@@ -211,7 +215,9 @@ const V2ConnectorsPage: React.FC = () => {
         api.get<CatalogResponse>('/api/installables').catch(() => null),
       ]);
       setConnectors(Array.isArray(rows) ? rows : []);
-      setCatalog(catalogResponse && Array.isArray(catalogResponse.installables) ? catalogResponse.installables : null);
+      setCatalog(catalogResponse && Array.isArray(catalogResponse.installables)
+        ? catalogResponse.installables.filter((entry) => entry.list !== 'tools')
+        : null);
       setError(null);
     } catch {
       setError(t('connectors.loadError', { defaultValue: 'Could not load connectors.' }));
@@ -1282,6 +1288,9 @@ const V2ConnectorsPage: React.FC = () => {
             ))}
         </div>
       )}
+
+      {/* Tools plan §6: the second list, under the channels, in the same grammar. */}
+      {!loading && <V2ConnectorTools pods={pods} />}
 
       {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
     </div>

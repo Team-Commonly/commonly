@@ -13,9 +13,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *   - transitions are one-way and idempotent: a card resolves at most once,
  *     and execution happens at most once (executedAt set exactly when the
  *     approved action ran)
- *   - expiresAt is advisory AGE, never refusal (ADR-017:201): a decision
- *     past it is honored and stamped `decidedAfterExpiry`. Nothing writes
- *     status 'expired' in v1 — the state exists for future sweeps only.
+ *   - expiresAt is advisory AGE for legacy actions; tool_call actions close
+ *     as `expired` and scrub their envelope when the deadline passes.
  *
  * The resolved row IS the AuthorizedAction record from ADR-020 D2: it links
  * the approving user, the executing agent identity, the action + params, and
@@ -29,7 +28,17 @@ export type ApprovalDecision = 'approved' | 'declined';
 // executor in services/approvalExecutors.ts — the enum here only widens in
 // the same PR as an executor, so a card can never exist for an action the
 // kernel cannot run.
-export type ApprovalActionType = 'create_pod' | 'connect_local_agent';
+export type ApprovalActionType = 'create_pod' | 'connect_local_agent' | 'tool_call';
+
+/** Server-only envelope for a parked broker call. canonicalArgs is present
+ * only while the action is flagged and is scrubbed on every terminal write. */
+export interface ApprovalToolCall {
+  grantId: string;
+  callId: string;
+  tool: string;
+  canonicalArgs?: Record<string, unknown>;
+  argsDigest: string;
+}
 
 export interface IApprovalAction extends Document {
   podId: Types.ObjectId;
@@ -38,17 +47,19 @@ export interface IApprovalAction extends Document {
   messageId?: string;
   ownerUserId: Types.ObjectId;
   agentName: string;
+  /** Server-only executor identity for tool_call; never in the shared card. */
+  agentUserId?: string;
   instanceId: string;
   actionType: ApprovalActionType;
   params: Record<string, unknown>;
+  toolCall?: ApprovalToolCall;
   summary: string;
   status: ApprovalStatus;
   decision?: ApprovalDecision;
   resolvedBy?: Types.ObjectId;
   resolvedAt?: Date;
-  // ADR-017:201 — expiry is advisory age, not refusal. A decision landed
-  // past expiresAt is honored AND stamped, so the audit record carries the
-  // staleness fact.
+  // ADR-017:201 remains the legacy default. tool_call is terminal on expiry
+  // because it authorizes disclosure to an external provider.
   decidedAfterExpiry?: boolean;
   executedAt?: Date;
   executionResult?: unknown;
@@ -66,9 +77,13 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     messageId: { type: String },
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     agentName: { type: String, required: true, lowercase: true, trim: true },
+    agentUserId: { type: String },
     instanceId: { type: String, default: 'default' },
-    actionType: { type: String, enum: ['create_pod', 'connect_local_agent'], required: true },
+    actionType: { type: String, enum: ['create_pod', 'connect_local_agent', 'tool_call'], required: true },
     params: { type: Schema.Types.Mixed, default: {} },
+    // Mixed keeps this optional for legacy action rows. The service validates
+    // the required envelope fields before a tool_call row is created.
+    toolCall: { type: Schema.Types.Mixed },
     summary: { type: String, required: true, maxlength: 500 },
     status: {
       type: String,
