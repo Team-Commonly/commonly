@@ -15,6 +15,7 @@ jest.mock('../../../middleware/auth', () => {
 });
 
 const { hash } = require('../../../utils/secret');
+const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth');
 
 let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine;
 const DAEMON_A = `cm_daemon_${'a'.repeat(32)}`;
@@ -106,6 +107,18 @@ const mint = (tok, body = {}) => request(app)
   .post('/api/agent-binding/runtime-token')
   .set('Authorization', `Bearer ${tok}`)
   .send({ agentName: 'wren-test', instanceId: 'default', ...body });
+
+const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
+  let status = 200;
+  const req = {
+    header: (name) => name.toLowerCase() === 'authorization' ? `Bearer ${token}` : undefined,
+  };
+  const res = {
+    status: (code) => { status = code; return res; },
+    json: (body) => resolve({ status, body }),
+  };
+  Promise.resolve(agentRuntimeAuth(req, res, () => resolve({ status: 200 }))).catch(reject);
+});
 
 describe('placement request', () => {
   it('records a directive without binding, and null withdraws it', async () => {
@@ -298,10 +311,71 @@ describe('runtime-token mint', () => {
     expect(install.runtimeTokens || []).toEqual([]);
   });
 
+  it('detects installation-only legacy tokens and invalidates both auth paths on rotate', async () => {
+    await adopt(DAEMON_A);
+    const oldUserToken = `cm_agent_${'u'.repeat(64)}`;
+    const oldInstallationToken = `cm_agent_${'i'.repeat(64)}`;
+    await User.updateOne(
+      { _id: bot._id },
+      {
+        $set: {
+          agentRuntimeTokens: [{ tokenHash: hash(oldUserToken), label: 'user legacy', createdAt: new Date() }],
+        },
+      },
+    );
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      {
+        $set: {
+          runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'installation legacy', createdAt: new Date() }],
+        },
+      },
+    );
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'sibling legacy', createdAt: new Date() }],
+    });
+
+    const refused = await mint(DAEMON_A);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('token_exists');
+
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(oldUserToken);
+
+    const userAuth = await runtimeAuthProbe(oldUserToken);
+    const installationAuth = await runtimeAuthProbe(oldInstallationToken);
+    const freshAuth = await runtimeAuthProbe(rotated.body.token);
+    expect(userAuth.status).toBe(401);
+    expect(installationAuth.status).toBe(401);
+    expect(freshAuth.status).toBe(200);
+
+    const identity = await User.findById(bot._id).lean();
+    expect(identity.agentRuntimeTokens.map((token) => token.tokenHash)).not.toContain(hash(oldUserToken));
+    const installations = await AgentInstallation.find({ agentName: 'wren-test', instanceId: 'default' }).lean();
+    expect(installations.flatMap((install) => install.runtimeTokens || [])).toEqual([]);
+  });
+
   it('never mints for a daemon whose machine does not hold the binding', async () => {
     await adopt(DAEMON_A);
     const res = await mint(DAEMON_B);
     expect(res.status).toBe(409);
     expect(res.body.boundTo).toBe('machine-a');
+  });
+
+  it('rotates installations stored with mixed-case instance IDs', async () => {
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      { $set: { instanceId: 'DeFaUlT' } },
+    );
+    expect((await adopt(DAEMON_A)).status).toBe(200);
+    const first = await mint(DAEMON_A);
+    expect(first.status).toBe(201);
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(first.body.token);
+    expect((await runtimeAuthProbe(first.body.token)).status).toBe(401);
   });
 });

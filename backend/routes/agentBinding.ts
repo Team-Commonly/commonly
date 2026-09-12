@@ -13,6 +13,11 @@ import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 const auth = require('../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  getRuntimeTokenHashesForAgent,
+  revokeRuntimeTokensForAgent,
+} = require('./registry/tokens');
 
 const router = express.Router();
 
@@ -34,6 +39,7 @@ const bindingRateLimit = rateLimit({
 });
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 // The daemon needs the driver-neutral ADR-008 shape, but its bearer must not
 // become a read-all projection of an installation's opaque config. Keep this
@@ -142,11 +148,11 @@ const ownsAgent = async (
   const { AgentInstallation } = require('../models/AgentRegistry');
   const mine = await AgentInstallation.findOne({
     agentName, instanceId, installedBy: ownerUserId, status: 'active',
-  }).select('_id').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
   const others = await AgentInstallation.findOne({
     agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).select('installedBy').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
   if (!others) return { owned: true };
   // MongoDB $ne also matches a missing field. Keep that legacy state safely
   // non-adoptable, but report it separately so an owner can repair it.
@@ -351,9 +357,14 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
       });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const AgentCredential = require('../models/AgentCredential');
-    const hasToken = (agentUser.agentRuntimeTokens || []).length > 0;
+    // Runtime auth accepts both the portable User row and legacy installation
+    // copies. Count both stores before deciding whether rotate is required.
+    const runtimeTokenHashes = await getRuntimeTokenHashesForAgent({
+      agentUser,
+      agentName,
+      instanceId,
+    });
+    const hasToken = runtimeTokenHashes.length > 0;
     if (hasToken && req.body?.rotate !== true) {
       return res.status(409).json({
         message: 'Agent already has a runtime token — pass rotate:true to invalidate it and mint one for this machine',
@@ -361,20 +372,11 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
       });
     }
     if (hasToken) {
-      // Rotation must be total: revoke the ledger rows AND clear both legacy
-      // stores (User + installation copies), or the old bearer keeps working
-      // through the legacy auth fallback.
-      const hashes = (agentUser.agentRuntimeTokens || []).map((t: { tokenHash: string }) => t.tokenHash);
-      await AgentCredential.updateMany(
-        { tokenHash: { $in: hashes }, kind: 'runtime' },
-        { $set: { status: 'revoked', revokedAt: new Date() } },
-      );
-      agentUser.agentRuntimeTokens = [];
-      await agentUser.save();
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { AgentInstallation } = require('../models/AgentRegistry');
-      await AgentInstallation.updateMany({ agentName, instanceId }, { $set: { runtimeTokens: [] } });
+      await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId });
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const AgentCredential = require('../models/AgentCredential');
 
     // req.machine is deliberately a minimal projection (Vera's S1 ruling), so
     // re-derive the issuing daemon credential for parent lineage.

@@ -43,6 +43,7 @@ const {
 } = require('./helpers');
 const {
   normalizeScopes,
+  revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
 } = require('./tokens');
@@ -152,27 +153,23 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
-    let issued = await issueRuntimeTokenForAgent(
+    // ADR-005 §detach + reattach: force rotation is a replacement operation,
+    // not merely clearing the User row. Runtime auth accepts both the shared
+    // User token and legacy installation copies, so revoke every hash before
+    // issuing the replacement.
+    if (force) {
+      await revokeRuntimeTokensForAgent({
+        agentUser,
+        agentName: installation.agentName || name,
+        instanceId: normalizedInstanceId,
+        installation,
+      });
+    }
+    const issued = await issueRuntimeTokenForAgent(
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
     );
-    // ADR-005 §detach + reattach: a fresh attach after detach has no local
-    // copy of the prior token (the file was deleted on detach), but the
-    // agent User row's hashed token persists per ADR-001 identity-continuity.
-    // issueRuntimeTokenForAgent then returns `{existing: true}` with no
-    // usable raw token, leaving the CLI with nothing to save. The same
-    // workaround already lives in reprovision.ts/provision.ts; surfacing it
-    // here as an explicit `force` body flag keeps the install flow honest.
-    if (issued.existing && force) {
-      agentUser.agentRuntimeTokens = [];
-      const fresh = await issueRuntimeTokenForAgent(
-        agentUser,
-        label || `Provisioned ${normalizedInstanceId}`,
-        installation,
-      );
-      issued = { ...issued, ...fresh };
-    }
     return res.json(issued);
   } catch (error) {
     console.error('Error issuing agent runtime token:', error);

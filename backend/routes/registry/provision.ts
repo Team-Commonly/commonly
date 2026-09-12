@@ -31,6 +31,7 @@ const {
   resolveRuntimeInstanceId,
 } = require('./helpers');
 const {
+  revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
 } = require('./tokens');
@@ -180,23 +181,20 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
+    if (force) {
+      await revokeRuntimeTokensForAgent({
+        agentUser,
+        agentName: installation.agentName || name,
+        instanceId: normalizedInstanceId,
+        installation,
+      });
+    }
     const runtimeIssued = await issueRuntimeTokenForAgent(
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
       { ownerUserId: req.user?.id || req.user?._id },
     );
-
-    if (runtimeIssued.existing && force) {
-      agentUser.agentRuntimeTokens = [];
-      const freshToken = await issueRuntimeTokenForAgent(
-        agentUser,
-        label || `Provisioned ${normalizedInstanceId}`,
-        installation,
-        { ownerUserId: req.user?.id || req.user?._id },
-      );
-      Object.assign(runtimeIssued, freshToken);
-    }
 
     let userIssued = null;
     if (includeUserToken || runtimeType === 'moltbot') {

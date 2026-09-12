@@ -22,6 +22,7 @@ const {
   buildAgentProfileId,
 } = require('./helpers');
 const {
+  revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
 } = require('./tokens');
@@ -69,12 +70,15 @@ const reprovisionInstallation = async ({
     label: issueLabel,
   };
   if (!runtimeToken) {
-    runtimeIssued = await issueRuntimeTokenForAgent(agentUser, issueLabel, installation);
-    if (runtimeIssued.existing && force) {
-      agentUser.agentRuntimeTokens = [];
-      const freshToken = await issueRuntimeTokenForAgent(agentUser, issueLabel, installation);
-      runtimeIssued = { ...runtimeIssued, ...freshToken };
+    if (force) {
+      await revokeRuntimeTokensForAgent({
+        agentUser,
+        agentName: name,
+        instanceId: normalizedInstanceId,
+        installation,
+      });
     }
+    runtimeIssued = await issueRuntimeTokenForAgent(agentUser, issueLabel, installation);
     runtimeToken = runtimeIssued.token || null;
     if (runtimeToken) {
       runtimeTokenCache.set(identityKey, runtimeToken);
