@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 // eslint-disable-next-line global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line global-require
@@ -10,6 +8,8 @@ const SlackApi = require('../../services/slackApi');
 const { normalizeSlackMessage } = require('./slackNormalizer');
 // eslint-disable-next-line global-require
 const { normalizeBufferMessage } = require('../normalizeBufferMessage');
+// eslint-disable-next-line global-require
+const { verifySlackSignature } = require('../../services/webhookVerificationService');
 
 interface SlackProvider {
   validateConfig(): Promise<void>;
@@ -35,17 +35,6 @@ try {
   };
 }
 
-function verifySlackSignature(signingSecret: string, timestamp: string, body: string, signature: string | undefined): boolean {
-  const basestring = `v0:${timestamp}:${body}`;
-  const mySig = `v0=${crypto.createHmac('sha256', signingSecret).update(basestring).digest('hex')}`;
-  if (!signature) return false;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(mySig, 'utf8'), Buffer.from(signature, 'utf8'));
-  } catch {
-    return false;
-  }
-}
-
 function createSlackProvider(integration: { _id: unknown; config?: Record<string, unknown>; [key: string]: unknown }): SlackProvider {
   const config = integration?.config || {};
 
@@ -59,14 +48,19 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
       return {
         verify: (_req: unknown, res: { sendStatus: (n: number) => unknown }) => res.sendStatus(200),
         events: async (req: { headers: Record<string, string>; body: Record<string, unknown>; rawBody?: string }, res: { status: (n: number) => { send: (s: unknown) => unknown }; sendStatus: (n: number) => unknown }) => {
-          if (req.body?.type === 'url_verification') {
-            return res.status(200).send(req.body.challenge);
-          }
           const ts = req.headers['x-slack-request-timestamp'];
           const sig = req.headers['x-slack-signature'];
-          const raw = req.rawBody || '';
-          if (!verifySlackSignature(config.signingSecret as string, ts, raw, sig)) {
+          const raw = req.rawBody || JSON.stringify(req.body || {});
+          if (!verifySlackSignature({
+            signingSecret: config.signingSecret,
+            timestamp: ts,
+            signature: sig,
+            rawBody: raw,
+          })) {
             return res.status(401).send('invalid signature');
+          }
+          if (req.body?.type === 'url_verification') {
+            return res.status(200).send(req.body.challenge);
           }
           const normalized = normalizeSlackMessage(req.body?.event);
           if (normalized && config.channelId && normalized.metadata?.channelId !== config.channelId) {

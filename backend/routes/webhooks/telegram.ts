@@ -1,5 +1,4 @@
 const express = require('express');
-const WebhookDelivery = require('../../models/WebhookDelivery');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
 const Summary = require('../../models/Summary');
@@ -8,6 +7,10 @@ const IntegrationSummaryService = require('../../services/integrationSummaryServ
 const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
 const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
+const {
+  claimDelivery: claimWebhookDelivery,
+  releaseDelivery: releaseWebhookDelivery,
+} = require('../../services/webhookDeliveryService');
 
 const router = express.Router({ mergeParams: true });
 
@@ -371,31 +374,6 @@ const DEDUP_TTL_MS = 10 * 60_000;
 
 // Atomic claim on this update's delivery id (claim-before-run; see
 // models/WebhookDelivery.ts for the contract). Returns 'claimed' | 'duplicate'.
-const claimDelivery = async (updateId: any) => {
-  try {
-    await WebhookDelivery.create({
-      provider: 'telegram',
-      deliveryId: String(updateId),
-      expiresAt: new Date(Date.now() + DEDUP_TTL_MS),
-    });
-    return 'claimed';
-  } catch (err: any) {
-    if (err?.code === 11000) return 'duplicate';
-    // A dedup-store failure must not take the bridge down: proceed unclaimed
-    // (worst case is the pre-existing duplicate behavior, loudly).
-    console.error('Telegram webhook: dedup claim failed, processing without a claim', err);
-    return 'claimed';
-  }
-};
-
-const releaseDelivery = async (updateId: any) => {
-  try {
-    await WebhookDelivery.deleteOne({ provider: 'telegram', deliveryId: String(updateId) });
-  } catch (err) {
-    console.error('Telegram webhook: failed to release dedup claim', err);
-  }
-};
-
 // Universal Telegram webhook (single bot, many chats)
 router.post('/', async (req: any, res: any) => {
   const updateId = req.body?.update_id;
@@ -408,7 +386,7 @@ router.post('/', async (req: any, res: any) => {
     // a parallel delivery): ack and stop, or it becomes a duplicate pod
     // message and a duplicate agent wake.
     if (updateId !== undefined && updateId !== null) {
-      if ((await claimDelivery(updateId)) === 'duplicate') {
+      if ((await claimWebhookDelivery('telegram', String(updateId), DEDUP_TTL_MS)) === 'duplicate') {
         return res.sendStatus(200);
       }
     }
@@ -506,7 +484,7 @@ router.post('/', async (req: any, res: any) => {
     // claim must not survive to swallow that retry. (Per the liveRelay comment
     // above, anything that threw did so before the pod write persisted.)
     if (updateId !== undefined && updateId !== null) {
-      await releaseDelivery(updateId);
+      await releaseWebhookDelivery('telegram', String(updateId));
     }
     return res.status(500).json({ error: 'Internal server error' });
   }

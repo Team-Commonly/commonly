@@ -40,8 +40,9 @@ processed without deduplication.
    corresponding fail-closed path. The explicit unverified flags are for local
    development only and are not set in production.
 4. Confirm duplicate, stale/fresh signature, missing-secret, and provider
-   verification tests in CI, then remove the obsolete Slack receipt path after
-   one retention window (24 hours) has elapsed in production.
+   verification tests in CI. Leave the old Slack receipt collection in place
+   while its 24-hour rows drain, then remove that unused collection/index in a
+   follow-up migration; the new route writes only `WebhookDelivery` rows.
 
 The ordering ensures a callback is never switched to a route that rejects it
 before its secret/key is present, while the atomic claim prevents retries from

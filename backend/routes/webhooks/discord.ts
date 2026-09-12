@@ -1,13 +1,40 @@
 const express = require('express');
-
 const router = express.Router();
 const DiscordService = require('../../services/discordService');
 const DiscordIntegration = require('../../models/DiscordIntegration');
+const {
+  WEBHOOK_DELIVERY_TTL_MS,
+  claimDelivery,
+  releaseDelivery,
+} = require('../../services/webhookDeliveryService');
+const { verifyDiscordSignature } = require('../../services/webhookVerificationService');
+
+const header = (req: any, name: string): string => String(req.get?.(name) || req.headers?.[name.toLowerCase()] || '');
+
+export const verifyDiscordWebhookRequest = (req: any): boolean => {
+  if (process.env.DISCORD_WEBHOOK_ALLOW_UNVERIFIED === 'true') return true;
+  const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(req.body || {});
+  return verifyDiscordSignature({
+    publicKey: process.env.DISCORD_PUBLIC_KEY,
+    timestamp: header(req, 'x-signature-timestamp'),
+    signature: header(req, 'x-signature-ed25519'),
+    rawBody,
+  });
+};
 
 // Discord webhook endpoint
 router.post('/', async (req: any, res: any) => {
+  let deliveryId: string | null = null;
   try {
     const event = req.body;
+
+    if (!event || typeof event !== 'object') {
+      return res.status(400).json({ error: 'Invalid Discord event' });
+    }
+
+    if (!verifyDiscordWebhookRequest(req)) {
+      return res.status(401).json({ error: 'Invalid Discord signature' });
+    }
 
     // Handle Discord webhook verification
     if (event.type === 1) {
@@ -34,14 +61,28 @@ router.post('/', async (req: any, res: any) => {
       return res.status(404).json({ error: 'Integration not found' });
     }
 
+    const eventId = event.id;
+    if (!eventId) return res.status(400).json({ error: 'Missing Discord event id' });
+    deliveryId = `${String(webhookId)}:${String(eventId)}`;
+    if ((await claimDelivery('discord', deliveryId, WEBHOOK_DELIVERY_TTL_MS)) !== 'claimed') {
+      return res.json({ success: true, duplicate: true });
+    }
+
     // Create Discord service instance
     const service = new DiscordService(discordIntegration.integrationId);
 
     // Handle the webhook event
-    await service.handleWebhook(event);
+    try {
+      await service.handleWebhook(event);
+    } catch (error) {
+      await releaseDelivery('discord', deliveryId);
+      deliveryId = null;
+      throw error;
+    }
 
     res.json({ success: true });
   } catch (error) {
+    if (deliveryId) await releaseDelivery('discord', deliveryId);
     console.error('Error handling Discord webhook:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -111,6 +152,7 @@ router.post('/test/:integrationId', async (req: any, res: any) => {
 });
 
 module.exports = router;
+module.exports.verifyDiscordWebhookRequest = verifyDiscordWebhookRequest;
 // LEGACY: in-platform webhook. External provider service will replace this route.
 
 export {};

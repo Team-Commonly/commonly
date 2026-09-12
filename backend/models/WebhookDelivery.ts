@@ -18,11 +18,10 @@ import mongoose, { Document, Schema } from 'mongoose';
 // The TTL bounds the table: a delivery id only needs to be remembered for as
 // long as the provider keeps redelivering it.
 //
-// Key scope: {provider, deliveryId} assumes ONE id space per provider.
-// Telegram's update_id is sequential per BOT — correct while the route serves
-// a single bot; a second bot on the same route would collide id spaces and
-// drop legitimate updates as duplicates. Widen the key (e.g. include bot id)
-// before multi-bot.
+// Key scope: {provider, deliveryId}. Provider routes that serve more than one
+// account namespace their deliveryId with the account identity (for example,
+// Slack `team:event` and Discord `webhook:event`). Telegram serves one bot and
+// retains its sequential update_id as-is.
 export interface IWebhookDelivery extends Document {
   provider: string;
   deliveryId: string;
