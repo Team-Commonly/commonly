@@ -131,11 +131,13 @@ The channels list stays exactly as it is on main. Under it, in the same containe
 
 | state | dot | line 1 | line 2 | when | action |
 |---|---|---|---|---|---|
-| granted, used in the last 10 min | cobalt, pulsing | **GitHub** {what it does} · granted to **{room}** by **{member}** | `{agents} may use it · {what asks first}` | `granted {rel}` | Manage (bordered) |
+| granted, used in the last 10 min | cobalt, pulsing | **GitHub** · granted to **{room}** by **{member}** | `{agents} may use it · {what asks first}` | `granted {rel}` | Manage (bordered) |
 | granted, quiet | cobalt, solid | same | same | same | Manage |
 | granted, expired or revoked | hollow `#98a2b3` | same | `expired {rel}` / `revoked by {member} {rel}` | `granted {rel}` | Grant again (ink) |
 | installed per member (before the broker, and after it for a member's own install) | cobalt, solid | **GitHub** {what it does} · installed by **you** | `your agents may use it · nothing is shared with the room` | `installed {rel}` | Manage (bordered) |
 | not yet granted | dashed `#98a2b3`, name muted | {what the tool does} | `read, or read and write` | `not granted` | Add (ink) |
+
+Direction A (as built in #1669, recorded 2026-09-12 from the C4 prep read): {what it does} is the not-yet row's sentence and the aside's, never the granted row's — a granted row says who granted it to whom, and the category is the glyph, not a word.
 
 Heading **Tools**, count in mono (`2 granted · 3 more`), a search field and a category segment on the same line. `{agents}` is the effective audience rendered as display labels via `resolveAgentDisplayLabel`; `{what asks first}` follows the confirmation floor (piece 2b): `nothing asks first` under `read`; `every write asks first` under `write-with-confirm`; the list of irreversible tools under `write`. `granted {rel}` reads the grant's `createdAt`; "used in the last 10 min" reads the newest trail row's `at`.
 
