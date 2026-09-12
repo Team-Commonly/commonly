@@ -153,8 +153,14 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     const connection = await findConnection(connectionId);
     if (!connection) return res.status(404).json({ error: 'connection_not_found' });
     if (connectionOwnerId(connection) !== userId) return res.status(403).json({ error: 'access_denied' });
-    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt) {
+    // The installation is the connection's, never the body's (Vera 67821):
+    // a grant on connection A must not be able to name installation B.
+    const installationId = String(connection.installationId || connection.config?.installationId || '').trim();
+    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt || !installationId) {
       return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
+    }
+    if (body.installationId !== undefined) {
+      return res.status(400).json({ error: 'invalid_installation', message: 'installationId is set by the server from the connection, not the caller' });
     }
 
     const target = body.target;
@@ -204,7 +210,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
 
     const grantInput: RoomGrantCreateInput = {
       connectionId,
-      installationId: String(body.installationId || ''),
+      installationId,
       target,
       tools: body.tools,
       writeMode: body.writeMode,
