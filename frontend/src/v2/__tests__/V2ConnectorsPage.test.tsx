@@ -96,7 +96,8 @@ describe('V2ConnectorsPage', () => {
     const { container } = renderPage();
 
     await screen.findByRole('button', { name: 'View Telegram' });
-    expect(screen.getByText('Waiting for one message in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Code expires in 1 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
     expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();

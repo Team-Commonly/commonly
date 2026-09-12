@@ -1847,6 +1847,8 @@
     "pending": "Waiting for the channel",
     "enableHint": "Open a private chat with the Commonly bot",
     "enableHintSend": " and send:",
+    "waitingTelegram": "Send /commonly-enable in your Telegram chat.",
+    "codeExpires": "Code expires in {{minutes}} min",
     "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
