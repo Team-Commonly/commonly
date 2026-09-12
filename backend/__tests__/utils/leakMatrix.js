@@ -187,9 +187,7 @@ const ALLOWED_DISCLOSURES = [
 const ACCESS_2XX = 'ACCESS_2XX';
 
 /* eslint-disable max-len */
-const R_INT_SECRETS = 'Integration toJSON strips config secrets but not ingestTokens[].tokenHash, installationClaimId or config.oauthStateClaimId';
 const R_INT_CONNECTCODE = 'config.connectCode reaches a caller that is not the owner reading it from a surface that needs it';
-const R_INST_LEAN = 'installableCatalogService reads Integration with .lean(), bypassing the toJSON transform';
 const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth state; no surface reads it';
 /* eslint-enable max-len */
 
@@ -202,104 +200,10 @@ const R_SLACK_OAUTH_STATE = 'a Slack row\'s config.connectCode is its OAuth stat
  */
 /* eslint-disable max-len */
 const KNOWN_EXPOSURES = [
-  // GET /api/admin/integrations/global — follow-up: strip hashes/claim ids in the Integration toJSON transform
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/admin/integrations/global', role: 'admin', sentinelKey: 'GLOBAL_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/discord/binding/:podId — follow-up: strip hashes/claim ids in the Integration toJSON transform
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/discord/binding/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/installables — follow-up: project Integration through toJSON/integrationPublicConfig in installableCatalogService
+  // GET /api/installables — follow-up: a Slack row's connectCode is its OAuth state; keep it off the catalog
   { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_CONNECTCODE', reason: R_SLACK_OAUTH_STATE },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_INGEST_TOKENHASH', reason: R_INST_LEAN },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_INSTALLATIONCLAIMID', reason: R_INST_LEAN },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_SLACK_OAUTHSTATECLAIMID', reason: R_INST_LEAN },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_TELEGRAM_INGEST_TOKENHASH', reason: R_INST_LEAN },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INST_LEAN },
-  { method: 'GET', path: '/api/installables', role: 'owner', sentinelKey: 'INST_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INST_LEAN },
-  // GET /api/integrations/:podId — follow-up: strip hashes/claim ids in the Integration toJSON transform
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_SLACK_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_SLACK_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_SLACK_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_TELEGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'admin', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_SLACK_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_SLACK_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_SLACK_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_TELEGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'member', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_SLACK_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_SLACK_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_SLACK_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_TELEGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/:podId', role: 'owner', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/integrations/admin/all — follow-up: strip hashes/claim ids in toJSON; drop connectCode from the admin list
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'GLOBAL_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_SLACK_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_SLACK_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_SLACK_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
+  // GET /api/integrations/admin/all — follow-up: drop connectCode from the admin list
   { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_TELEGRAM_CONNECTCODE', reason: R_INT_CONNECTCODE },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_TELEGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/admin/all', role: 'admin', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  // GET /api/integrations/user/all — follow-up: strip hashes/claim ids in the Integration toJSON transform
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_INSTAGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'admin', sentinelKey: 'GLOBAL_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_DISCORD_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_DISCORD_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_DISCORD_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_SLACK_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_SLACK_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_SLACK_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_TELEGRAM_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_TELEGRAM_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_TELEGRAM_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_INGEST_TOKENHASH', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_INSTALLATIONCLAIMID', reason: R_INT_SECRETS },
-  { method: 'GET', path: '/api/integrations/user/all', role: 'owner', sentinelKey: 'INT_X_OAUTHSTATECLAIMID', reason: R_INT_SECRETS },
 ];
 /* eslint-enable max-len */
 
