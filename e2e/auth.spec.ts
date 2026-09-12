@@ -11,7 +11,7 @@ test.describe('Authentication', () => {
     await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
   });
 
-  test('register new user shows success message', async ({ page }) => {
+  test('register new user enters the starter workspace', async ({ page }) => {
     const tag = uniqueTag();
     await page.goto('/v2/register');
     await page.getByLabel('Username').fill(`user_${tag}`);
@@ -19,8 +19,13 @@ test.describe('Authentication', () => {
     await page.getByLabel('Password').fill('TestPass123!');
     await page.getByRole('button', { name: 'Create account' }).click();
 
-    // v2 register swaps to a success state with a "Continue to sign in" CTA
-    await expect(page.getByRole('button', { name: 'Continue to sign in' })).toBeVisible({ timeout: 8000 });
+    // Registration establishes a session; V2Layout then selects the invite-only
+    // My Workspace pod created for the new user.
+    await page.waitForURL(
+      (url) => /^\/v2\/pods\/[^/]+$/.test(url.pathname),
+      { timeout: 15000 },
+    );
+    await expect(page.getByRole('heading', { name: 'My Workspace' })).toBeVisible({ timeout: 15000 });
   });
 
   test('login with wrong password shows error', async ({ page }) => {
