@@ -33,6 +33,8 @@ export interface IRoomGrant extends Document {
   audience: string[];
   expiresAt: Date;
   revokedAt?: Date | null;
+  /** User who revoked this grant (and its descendants), when known. */
+  revokedBy?: string | null;
   parentGrantId?: string | null;
   /** Denormalized root used to close revoke/mint races and check lineage. */
   rootGrantId?: string | null;
@@ -44,7 +46,7 @@ export interface IRoomGrant extends Document {
 
 export interface RoomGrantModel extends Model<IRoomGrant> {
   /** Revoke a grant and all descendants with one updateMany write. */
-  revokeCascade(grantId: string): Promise<number>;
+  revokeCascade(grantId: string, revokedBy: string): Promise<number>;
 }
 
 const GrantBudgetSchema = new Schema<IRoomGrantBudget>(
@@ -83,6 +85,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     // reason to delete the grant or its call trail.
     expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
+    revokedBy: { type: String, default: null, trim: true },
     parentGrantId: { type: String, default: null, trim: true },
     rootGrantId: { type: String, default: null, trim: true },
     brokerId: { type: String, required: true, trim: true },
@@ -102,6 +105,7 @@ RoomGrantSchema.index({ connectionId: 1, installationId: 1 });
  */
 RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
   grantId: string,
+  revokedBy: string,
 ): Promise<number> {
   const ids: string[] = [grantId];
   const seen = new Set(ids);
@@ -126,7 +130,7 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
       grantId: { $in: ids },
       $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
     },
-    { $set: { revokedAt } },
+    { $set: { revokedAt, revokedBy } },
   );
   return result.modifiedCount || 0;
 };
