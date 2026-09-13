@@ -29,6 +29,7 @@ export interface ToolGrant {
   effectiveAudience: string[];
   expiresAt: string;
   revokedAt: string | null;
+  revokedBy: string | null;
   parentGrantId: string | null;
   rootGrantId: string | null;
   createdAt: string;
@@ -368,9 +369,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const entry = entryFor(grant);
     const label = toolLabel(grant);
     const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt) });
+    const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
       ? (grant.revokedAt
-        ? t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt) })
+        ? (revokedBy
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt) }))
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt) }))
       : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })} · ${asksFirst(grant)}`;
     return (

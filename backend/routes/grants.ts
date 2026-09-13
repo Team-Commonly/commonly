@@ -62,7 +62,7 @@ interface AuthenticatedRequest extends express.Request {
  * left, so only the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
-  | 'expiresAt' | 'revokedAt' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
+  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: string | null) => ({
   grantId: grant.grantId,
@@ -74,6 +74,7 @@ const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: stri
   effectiveAudience: effectiveAudience(grant, currentMembers),
   expiresAt: grant.expiresAt,
   revokedAt: grant.revokedAt ?? null,
+  revokedBy: grant.revokedBy ?? null,
   parentGrantId: grant.parentGrantId ?? null,
   rootGrantId: grant.rootGrantId ?? null,
   createdAt: grant.createdAt,
@@ -270,7 +271,7 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
     if (!connection || connectionOwnerId(connection) !== userId) {
       return res.status(403).json({ error: 'access_denied' });
     }
-    const revoked = await revokeGrant(grant.grantId);
+    const revoked = await revokeGrant(grant.grantId, userId);
     return res.json({ grantId: grant.grantId, revoked });
   } catch (error) {
     return handleError(res, error);

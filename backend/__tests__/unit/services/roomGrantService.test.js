@@ -126,10 +126,13 @@ describe('RoomGrant', () => {
     const root = await service.mintGrant(baseGrant({ grantId: 'root-revoke' }));
     const child = await service.attenuateGrant({ parentGrantId: root.grantId, grantId: 'ignored-child' });
     const grandchild = await service.attenuateGrant({ parentGrantId: child.grantId });
-    await service.revokeGrant(root.grantId);
+    const revokedBy = 'revoker-1';
+    await service.revokeGrant(root.grantId, revokedBy);
     for (const grant of [root, child, grandchild]) {
       await expect(service.assertGrantUsable({ grantId: grant.grantId }))
         .rejects.toMatchObject({ code: 'grant_revoked' });
+      const saved = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+      expect(saved.revokedBy).toBe(revokedBy);
     }
   });
 });

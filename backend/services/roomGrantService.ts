@@ -387,11 +387,12 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   });
 };
 
-export const revokeGrant = async (grantId: string): Promise<number> => {
+export const revokeGrant = async (grantId: string, revokedBy: string): Promise<number> => {
   const id = asId(grantId, 'grantId');
+  const actor = asId(revokedBy, 'revokedBy');
   const root = await RoomGrant.findOne({ grantId: id }).select('grantId').lean();
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
-  return RoomGrant.revokeCascade(id);
+  return RoomGrant.revokeCascade(id, actor);
 };
 
 export const assertGrantUsable = async (
