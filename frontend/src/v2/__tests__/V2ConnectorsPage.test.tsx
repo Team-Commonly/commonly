@@ -479,7 +479,7 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getAllByRole('button', { name: 'Choose a pod' })).toHaveLength(1);
     });
 
-    it('renders an unavailable provider without a control and an available one with Choose a pod', async () => {
+    it('renders an unavailable provider with Ask and an available one with Choose a pod', async () => {
       mockCatalog([
         entry(),
         entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
@@ -492,6 +492,12 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
       expect(screen.getByText('not connected')).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
+      const ask = screen.getAllByRole('link', { name: 'Ask' }).find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
+      expect(ask).toBeDefined();
+      expect(ask).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
+      expect(ask).toHaveClass('v2-connector-row__action--secondary');
+      expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
+      expect(ask.closest('.v2-connector-row')?.querySelector('.v2-connector-row__detail')).toHaveTextContent('ask your operator');
       const choosePod = screen.getAllByRole('button', { name: 'Choose a pod' });
       expect(choosePod).toHaveLength(1);
       fireEvent.click(choosePod[0]);

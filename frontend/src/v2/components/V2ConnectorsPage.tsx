@@ -100,6 +100,7 @@ interface ConnectorRow {
   dot: 'live' | 'idle' | 'pending' | 'empty' | 'not-yet';
   line: string;
   muted?: boolean;
+  notEnabled?: boolean;
   pulse: boolean;
   secondary?: boolean;
   when: string;
@@ -690,6 +691,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'not-yet',
         line: t('connectors.notEnabled', { defaultValue: 'Not enabled on this instance.' }),
         muted: true,
+        notEnabled: true,
         pulse: false,
         when: '—',
       };
@@ -884,7 +886,7 @@ const V2ConnectorsPage: React.FC = () => {
     return (
       <article
         key={item.key}
-        className={`v2-connector-row${selected ? ' v2-connector-row--selected' : ''}${row.muted ? ' v2-connector-row--not-yet' : ''}`}
+        className={`v2-connector-row${selected ? ' v2-connector-row--selected' : ''}${row.muted ? ' v2-connector-row--not-yet' : ''}${row.notEnabled ? ' v2-connector-row--not-enabled' : ''}`}
       >
         <button
           type="button"
@@ -915,6 +917,11 @@ const V2ConnectorsPage: React.FC = () => {
               ? t('connectors.slackAuthorizing', { defaultValue: 'Opening Slack…' })
               : row.actionLabel}
           </button>
+        )}
+        {row.notEnabled && (
+          <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+            {t('tools.ask', { defaultValue: 'Ask' })}
+          </a>
         )}
       </article>
     );
