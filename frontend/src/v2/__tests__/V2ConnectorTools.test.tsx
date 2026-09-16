@@ -92,6 +92,7 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   await waitFor(() => expect(liveDot).toHaveClass('v2-connector-row__dot--pulse'));
   const gone = screen.getByRole('button', { name: 'View GitHub in Ops' });
   expect(within(gone).getByText('revoked by sam 10m ago')).toBeInTheDocument();
+  expect(gone.closest('.v2-connector-row')).toHaveClass('v2-connector-row--dead');
   expect(gone.querySelector('.v2-connector-row__dot')).toHaveClass('v2-connector-row__dot--empty');
   // No not-yet row and no Add without a catalogue: nothing the server does not enforce.
   expect(screen.queryByText('not granted')).not.toBeInTheDocument();
@@ -137,7 +138,7 @@ test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant 
   fireEvent.click(screen.getByRole('button', { name: 'View GitHub in Ops' }));
   const gone = await screen.findByRole('complementary', { name: 'Grant details' });
   expect(within(gone).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
-  expect(within(gone).getByText(/Revoked 10m ago\./)).toBeInTheDocument();
+  expect(within(gone).getByText(/Revoked by sam 10m ago\./)).toBeInTheDocument();
   await waitFor(() => expect(within(gone).getByText('No calls yet.')).toBeInTheDocument());
 });
 
