@@ -261,7 +261,7 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 
 // Keep Commonly placeholders in the MCP JSON and expose their values only in
 // Claude's per-spawn environment. Claude Code natively expands ${VAR} in MCP
-// command/args/env/url fields. Substituting here used to materialize the raw
+// command/args/env/url/headers fields. Substituting here used to materialize the raw
 // cm_agent_* bearer token in a transient JSON file, which made the token
 // readable to any co-confined child allowed to read that config directory.
 //
@@ -300,6 +300,7 @@ const buildMcpConfig = (mcpServers) => {
       if (args.length) entry.args = args;
     }
     if (server.env) entry.env = { ...server.env };
+    if (server.headers) entry.headers = { ...server.headers };
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
