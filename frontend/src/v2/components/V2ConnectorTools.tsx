@@ -374,9 +374,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           ? String(createdBy._id)
           : '';
       if (createdById && viewerId && createdById !== viewerId) {
-        // This admin-only edge is intentionally English-only; #1717 owns the
-        // shipped zh-CN copy for the nine setup keys during the native pass.
-        setError('This GitHub App is already installed by another administrator.');
+        setError(t('tools.githubAppOwnedByOther', { defaultValue: 'This GitHub App is already installed by another administrator.' }));
         return;
       }
       setGithubAppSetup(null);
@@ -520,7 +518,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}>
         <section className="v2-connector-aside__card">
-          <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'admin setup' })}</p>
+          <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'administrator setup' })}</p>
           <h2>{t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}</h2>
           <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their rooms.' })}</p>
           <div className="v2-tools__form">
