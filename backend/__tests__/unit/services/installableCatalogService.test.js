@@ -133,7 +133,7 @@ describe('installable catalog service', () => {
     expect(Integration.find).not.toHaveBeenCalled();
   });
 
-  it('projects first-party descriptions for zh-CN and falls back to canonical English', async () => {
+  it('projects the complete first-party description map and keeps canonical English', async () => {
     mockInstallables([
       {
         installableId: 'telegram',
@@ -155,15 +155,18 @@ describe('installable catalog service', () => {
     ]);
     InstallableInstallation.find.mockReturnValue(lean([]));
 
-    const zh = await catalogFor(userId, 'zh-CN');
-    expect(zh.installables.find((entry) => entry.installableId === 'telegram').description)
-      .toBe('一个 Telegram 聊天，一个 Pod。');
-    expect(zh.installables.find((entry) => entry.installableId === 'slack').description)
-      .toBe('Your Slack DM, every pod you\'re in.');
-
-    const fr = await catalogFor(userId, 'fr-FR');
-    expect(fr.installables.find((entry) => entry.installableId === 'telegram').description)
-      .toBe('One Telegram chat, one pod.');
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.find((entry) => entry.installableId === 'telegram')).toEqual(expect.objectContaining({
+      description: 'One Telegram chat, one pod.',
+      descriptions: {
+        en: 'One Telegram chat, one pod.',
+        'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+      },
+    }));
+    expect(catalog.installables.find((entry) => entry.installableId === 'slack')).toEqual(expect.objectContaining({
+      description: 'Your Slack DM, every pod you\'re in.',
+      descriptions: { en: 'Your Slack DM, every pod you\'re in.' },
+    }));
   });
 
   it('never translates a non-builtin row even when it carries a locale map', async () => {
@@ -175,9 +178,11 @@ describe('installable catalog service', () => {
     InstallableInstallation.find.mockReturnValue(lean([]));
     Integration.find.mockReturnValue(lean([]));
 
-    const catalog = await catalogFor(userId, 'zh-CN');
-    expect(catalog.installables.find((entry) => entry.list === 'tools').description)
-      .toBe('Issues and pull requests.');
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.find((entry) => entry.list === 'tools')).toEqual(expect.objectContaining({
+      description: 'Issues and pull requests.',
+      descriptions: { en: 'Issues and pull requests.' },
+    }));
   });
 
   it('the catalogue returns the GitHub tool Installable with its tools, broker and the caller\'s connections, on the tools list', async () => {
@@ -203,6 +208,10 @@ describe('installable catalog service', () => {
       list: 'tools',
       label: 'GitHub',
       description: 'Issues and pull requests.',
+      descriptions: {
+        en: 'Issues and pull requests.',
+        'zh-CN': '问题和代码审查请求。',
+      },
       available: true,
       broker: { id: 'commonly-grant-broker' },
       tools: [
@@ -214,8 +223,6 @@ describe('installable catalog service', () => {
       integration: null,
     });
 
-    const zhTool = (await catalogFor(userId, 'zh-CN')).installables.find((entry) => entry.list === 'tools');
-    expect(zhTool.description).toBe('问题和代码审查请求。');
     expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: { $in: ['github-app'] }, createdBy: userId, status: 'connected', revokedAt: null,
     }));

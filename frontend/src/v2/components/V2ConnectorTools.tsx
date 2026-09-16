@@ -16,6 +16,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { localizeInstallableDescription } from '../utils/localizeInstallableDescription';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -62,6 +63,7 @@ export interface ToolCatalogEntry {
   list?: 'channels' | 'tools';
   label: string;
   description: string;
+  descriptions?: Record<string, string>;
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
@@ -484,7 +486,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <span>{entry.label}</span>
         </span>
         <span className="v2-connector-row__details">
-          <strong>{entry.description}</strong>
+          <strong>{localizeInstallableDescription(entry)}</strong>
           <span className="v2-connector-row__detail">
             {!entry.available
               ? t('tools.notEnabled', { defaultValue: 'not enabled on this instance · ask your operator' })
@@ -584,7 +586,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
           <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
-          <p>{draftEntry.description}</p>
+          <p>{localizeInstallableDescription(draftEntry)}</p>
           <div className="v2-tools__form">
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
