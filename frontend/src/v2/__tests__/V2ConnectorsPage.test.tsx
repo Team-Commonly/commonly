@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
+import i18n, { i18nReady, LANGUAGE_STORAGE_KEY } from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -509,6 +510,37 @@ describe('V2ConnectorsPage', () => {
         { podId: 'p1' },
         expect.anything(),
       ));
+    });
+
+    it('uses the in-app language for catalog descriptions, independent of the browser language', async () => {
+      await i18nReady;
+      const originalNavigatorLanguage = navigator.language;
+      Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
+      const localized = entry({
+        descriptions: {
+          en: 'One Telegram chat, one pod.',
+          'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+        },
+      });
+
+      try {
+        window.localStorage.setItem(LANGUAGE_STORAGE_KEY, 'zh-CN');
+        await i18n.changeLanguage('zh-CN');
+        mockCatalog([localized]);
+        const zhView = renderPage();
+        expect(await screen.findByText('一个 Telegram 聊天，一个 Pod。')).toBeInTheDocument();
+        zhView.unmount();
+
+        window.localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en');
+        await i18n.changeLanguage('en');
+        mockCatalog([localized]);
+        renderPage();
+        expect(await screen.findByText('One Telegram chat, one pod.')).toBeInTheDocument();
+      } finally {
+        window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+        await i18n.changeLanguage('en');
+        Object.defineProperty(navigator, 'language', { configurable: true, value: originalNavigatorLanguage });
+      }
     });
 
     it('labels the row step separately from the final connect action', async () => {
