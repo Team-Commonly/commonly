@@ -198,6 +198,19 @@ test('a not-yet row without a Connection or on an unconfigured instance offers n
   expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
 });
 
+test('an unavailable not-yet tool row offers the same Ask affordance as unavailable channels', async () => {
+  const unavailable = { ...githubEntry, available: false, connections: [] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [unavailable] } });
+    if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: [] } });
+    if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  renderTools();
+  expect(await screen.findByText('not enabled on this instance · ask your operator')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
+});
+
 test('Change access mints a new grant then revokes the old one; Grant again on a dead grant only mints', async () => {
   mockApi([githubEntry]);
   axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
