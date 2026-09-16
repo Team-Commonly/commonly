@@ -374,7 +374,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           ? String(createdBy._id)
           : '';
       if (createdById && viewerId && createdById !== viewerId) {
-        setError(t('tools.githubAppAlreadyInstalled', { defaultValue: 'This GitHub App is already installed by another administrator.' }));
+        // This admin-only edge is intentionally English-only; #1717 owns the
+        // shipped zh-CN copy for the nine setup keys during the native pass.
+        setError('This GitHub App is already installed by another administrator.');
         return;
       }
       setGithubAppSetup(null);

@@ -1865,7 +1865,6 @@
     "githubAppError": "Could not install the GitHub App.",
     "githubAppRequired": "Enter the installation ID, owner, and repository.",
     "githubAppSetupHint": "Connect the GitHub App once so people can grant GitHub tools to their rooms.",
-    "githubAppAlreadyInstalled": "This GitHub App is already installed by another administrator.",
     "installationId": "installation ID",
     "installGitHubApp": "Install GitHub App",
     "installingGitHubApp": "Installing…",
