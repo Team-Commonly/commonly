@@ -438,6 +438,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           </span>
         </span>
         <span className="v2-connector-row__when">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
+        {!entry.available && (
+          <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+            {t('tools.ask', { defaultValue: 'Ask' })}
+          </a>
+        )}
         {canAdd && (
           <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry)}>
             {t('tools.add', { defaultValue: 'Add' })}
