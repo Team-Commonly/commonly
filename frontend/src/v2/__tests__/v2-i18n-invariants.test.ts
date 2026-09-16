@@ -27,4 +27,20 @@ describe('Connectors and Tools locale coverage', () => {
       expect(lookup(zhCN, key)).toEqual(expect.any(String));
     }
   });
+
+  test('rendered time and fallback copy does not bypass translation keys', () => {
+    const rawEnglishTemplates = [
+      /`started \$\{/,
+      /`since \$\{/,
+      /`added \$\{/,
+      /`paused \$\{/,
+      /`Slack answered \$\{/,
+      /`\$\{title\} · linked to/,
+      /\|\| 'Untitled pod'/,
+      /\|\| 'another pod'/,
+      /\|\| 'This Slack workspace'/,
+      /\? `@\$\{[^}]+\}` : 'your Slack user'/,
+    ];
+    for (const pattern of rawEnglishTemplates) expect(source).not.toMatch(pattern);
+  });
 });

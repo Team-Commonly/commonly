@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -178,6 +179,19 @@ const relativeTime = (date?: string): string => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
+const localizeRelativeTime = (date: string | undefined, t: TFunction): string => {
+  const raw = relativeTime(date);
+  if (raw === 'just now') return t('connectors.time.justNow', { defaultValue: 'just now' });
+  const match = raw.match(/^(\d+)([mhd]) ago$/);
+  if (!match) return raw;
+  const [, countText, unit] = match;
+  const key = unit === 'm' ? 'minutesAgo' : unit === 'h' ? 'hoursAgo' : 'daysAgo';
+  return t(`connectors.time.${key}`, {
+    count: Number(countText),
+    defaultValue: `${countText}${unit} ago`,
+  });
+};
+
 const claimIsStale = (installation: CatalogInstallation): boolean => {
   const claimedAt = installation.claimedAt ? new Date(installation.claimedAt).getTime() : NaN;
   if (!Number.isFinite(claimedAt)) return true;
@@ -308,15 +322,15 @@ const V2ConnectorsPage: React.FC = () => {
 
   const podNameById = (podId: string | null | undefined, fallback?: Connector | null): string => {
     const pod = podList.find((candidate) => String(candidate._id) === String(podId || ''));
-    if (pod) return pod.name || 'Untitled pod';
+    if (pod) return pod.name || t('connectors.untitledPod', { defaultValue: 'Untitled pod' });
     if (fallback && typeof fallback.podId === 'object' && fallback.podId?.name) return fallback.podId.name;
-    return 'Untitled pod';
+    return t('connectors.untitledPod', { defaultValue: 'Untitled pod' });
   };
 
   const boundPodName = (boundPodId: string | undefined): string => {
     const existing = connectors.find((connector) => connectorPodId(connector) === String(boundPodId));
     const boundPod = podList.find((pod) => String(pod._id) === String(boundPodId));
-    return existing ? podNameById(connectorPodId(existing), existing) : (boundPod?.name || 'another pod');
+    return existing ? podNameById(connectorPodId(existing), existing) : (boundPod?.name || t('connectors.anotherPod', { defaultValue: 'another pod' }));
   };
 
   const installInProgressMessage = (boundPodId?: string): string => (
@@ -563,7 +577,10 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const rowFor = (connector: Connector): ConnectorRow => {
-    const started = `started ${relativeTime(connector.createdAt)}`;
+    const started = t('connectors.startedWhen', {
+      defaultValue: 'started {{rel}}',
+      rel: localizeRelativeTime(connector.createdAt, t),
+    });
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
     const title = connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type;
@@ -576,7 +593,10 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
-        when: `since ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+        when: t('connectors.sinceWhen', {
+          defaultValue: 'since {{rel}}',
+          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t),
+        }),
       };
     }
 
@@ -592,7 +612,10 @@ const V2ConnectorsPage: React.FC = () => {
           dot: 'idle',
           line: t('connectors.notLinkedLine', { defaultValue: '{{title}} · not linked to a pod', title }),
           pulse: false,
-          when: `added ${relativeTime(connector.createdAt)}`,
+          when: t('connectors.addedWhen', {
+            defaultValue: 'added {{rel}}',
+            rel: localizeRelativeTime(connector.createdAt, t),
+          }),
         };
       }
       const relay = Boolean(connector.config?.liveRelay);
@@ -607,10 +630,17 @@ const V2ConnectorsPage: React.FC = () => {
             : t('connectors.rowAttention', { defaultValue: 'attention · escalations reach the channel' }))
           : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' }),
         dot: relay ? 'live' : 'idle',
-        line: `${title} · linked to ${podNameById(activePodId, connector)}`,
+        line: t('connectors.linkedLine', {
+          defaultValue: '{{title}} · linked to {{pod}}',
+          title,
+          pod: podNameById(activePodId, connector),
+        }),
         pulse: relay && Boolean(recent),
         secondary: true,
-        when: `added ${relativeTime(connector.createdAt)}`,
+        when: t('connectors.addedWhen', {
+          defaultValue: 'added {{rel}}',
+          rel: localizeRelativeTime(connector.createdAt, t),
+        }),
       };
     }
 
@@ -644,8 +674,8 @@ const V2ConnectorsPage: React.FC = () => {
     }
 
     if (isSlack && connector.config?.pendingBind) {
-      const workspace = connector.config.pendingBind.teamName || 'This Slack workspace';
-      const user = connector.config.pendingBind.slackUserName ? `@${connector.config.pendingBind.slackUserName}` : 'your Slack user';
+      const workspace = connector.config.pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' });
+      const user = connector.config.pendingBind.slackUserName ? `@${connector.config.pendingBind.slackUserName}` : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' });
       return {
         action: 'confirm',
         actionLabel: t('connectors.slackConfirm', { defaultValue: 'Confirm' }),
@@ -653,7 +683,10 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'pending',
         line: t('connectors.slackConfirmRow', { defaultValue: '{{workspace}} says {{user}} connected — is that you?', workspace, user }),
         pulse: true,
-        when: `Slack answered ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+        when: t('connectors.slackAnsweredWhen', {
+          defaultValue: 'Slack answered {{rel}}',
+          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t),
+        }),
       };
     }
 
@@ -673,7 +706,10 @@ const V2ConnectorsPage: React.FC = () => {
       action: null,
       detail: t('connectors.pending', { defaultValue: 'Waiting for the channel' }),
       dot: 'empty',
-      line: `${TYPE_LABELS[connector.type] || connector.type} is waiting to connect.`,
+      line: t('connectors.waitingToConnect', {
+        defaultValue: '{{label}} is waiting to connect.',
+        label: TYPE_LABELS[connector.type] || connector.type,
+      }),
       pulse: false,
       when: started,
     };
@@ -712,8 +748,14 @@ const V2ConnectorsPage: React.FC = () => {
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };
     }
-    const since = `since ${relativeTime(installation.updatedAt)}`;
-    const started = `started ${relativeTime(installation.claimedAt || installation.updatedAt)}`;
+    const since = t('connectors.sinceWhen', {
+      defaultValue: 'since {{rel}}',
+      rel: localizeRelativeTime(installation.updatedAt, t),
+    });
+    const started = t('connectors.startedWhen', {
+      defaultValue: 'started {{rel}}',
+      rel: localizeRelativeTime(installation.claimedAt || installation.updatedAt, t),
+    });
     const stale = claimIsStale(installation);
     if (installation.status === 'installing' || installation.status === 'activating') {
       return stale
@@ -777,7 +819,10 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: `${t('connectors.pausedLine', { defaultValue: 'Paused by an administrator.' })}${reason}`,
         pulse: false,
-        when: `paused ${relativeTime(pause?.at || installation.updatedAt)}`,
+        when: t('connectors.pausedWhen', {
+          defaultValue: 'paused {{rel}}',
+          rel: localizeRelativeTime(pause?.at || installation.updatedAt, t),
+        }),
       };
     }
     if (installation.status === 'stale') {
@@ -964,7 +1009,10 @@ const V2ConnectorsPage: React.FC = () => {
                   {active && <span className="v2-connector-gate__tag">{t('connectors.activeTag', { defaultValue: 'active' })}</span>}
                 </button>
                 <span className={`v2-connector-gate__since${enabled ? '' : ' v2-connector-gate__since--off'}`}>
-                  {enabled ? `since ${relativeTime(gate?.since)}` : t('connectors.gateOff', { defaultValue: 'off' })}
+                  {enabled ? t('connectors.sinceWhen', {
+                    defaultValue: 'since {{rel}}',
+                    rel: localizeRelativeTime(gate?.since, t),
+                  }) : t('connectors.gateOff', { defaultValue: 'off' })}
                 </span>
                 <input
                   type="checkbox"
@@ -1145,8 +1193,8 @@ const V2ConnectorsPage: React.FC = () => {
               <>
                 <p>{t('connectors.slackConfirmHint', {
                   defaultValue: '{{workspace}} wants to connect as {{user}}.',
-                  workspace: pendingBind.teamName || 'This Slack workspace',
-                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
+                  workspace: pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' }),
+                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' }),
                 })}</p>
                 <div className="v2-connector-aside__actions">
                   <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm'); }}>
