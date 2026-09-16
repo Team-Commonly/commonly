@@ -13,6 +13,10 @@ const USED_KEYS = [...new Set(
   [...source.matchAll(/t\(\s*['"]((?:connectors|tools)\.[^'"]+)/g)].map((match) => match[1]),
 )].sort();
 
+const SHARED_TIME_KEYS = [...new Set(
+  [...source.matchAll(/t\(\s*['"](time\.[^'"]+)/g)].map((match) => match[1]),
+)].sort();
+
 const lookup = (bundle: Record<string, unknown>, key: string): unknown => (
   key.split('.').reduce<unknown>((value, part) => (
     value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined
@@ -26,6 +30,18 @@ describe('Connectors and Tools locale coverage', () => {
       expect(lookup(en, key)).toEqual(expect.any(String));
       expect(lookup(zhCN, key)).toEqual(expect.any(String));
     }
+  });
+
+  test('both pages use one shared time family', () => {
+    expect(SHARED_TIME_KEYS.length).toBeGreaterThan(0);
+    for (const key of SHARED_TIME_KEYS) {
+      expect(lookup(en, key)).toEqual(expect.any(String));
+      expect(lookup(zhCN, key)).toEqual(expect.any(String));
+    }
+    expect(lookup(en, 'connectors.time')).toBeUndefined();
+    expect(lookup(en, 'tools.time')).toBeUndefined();
+    expect(lookup(zhCN, 'connectors.time')).toBeUndefined();
+    expect(lookup(zhCN, 'tools.time')).toBeUndefined();
   });
 
   test('rendered time and fallback copy does not bypass translation keys', () => {

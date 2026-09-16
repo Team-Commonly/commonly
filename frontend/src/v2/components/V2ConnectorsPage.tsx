@@ -7,11 +7,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import V2ConnectorTools from './V2ConnectorTools';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -168,29 +168,7 @@ const codeExpiresInMinutes = (connector: Connector): number => {
   return Math.max(1, Math.ceil((expiry - Date.now()) / 60_000));
 };
 
-const relativeTime = (date?: string): string => {
-  const timestamp = date ? new Date(date).getTime() : NaN;
-  if (!Number.isFinite(timestamp)) return 'just now';
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
-
-const localizeRelativeTime = (date: string | undefined, t: TFunction): string => {
-  const raw = relativeTime(date);
-  if (raw === 'just now') return t('connectors.time.justNow', { defaultValue: 'just now' });
-  const match = raw.match(/^(\d+)([mhd]) ago$/);
-  if (!match) return raw;
-  const [, countText, unit] = match;
-  const key = unit === 'm' ? 'minutesAgo' : unit === 'h' ? 'hoursAgo' : 'daysAgo';
-  return t(`connectors.time.${key}`, {
-    count: Number(countText),
-    defaultValue: `${countText}${unit} ago`,
-  });
-};
+const connectorRelativeTimeOptions = { includeFuture: false, missing: 'just now', rounding: 'floor' } as const;
 
 const claimIsStale = (installation: CatalogInstallation): boolean => {
   const claimedAt = installation.claimedAt ? new Date(installation.claimedAt).getTime() : NaN;
@@ -579,7 +557,7 @@ const V2ConnectorsPage: React.FC = () => {
   const rowFor = (connector: Connector): ConnectorRow => {
     const started = t('connectors.startedWhen', {
       defaultValue: 'started {{rel}}',
-      rel: localizeRelativeTime(connector.createdAt, t),
+      rel: localizeRelativeTime(connector.createdAt, t, connectorRelativeTimeOptions),
     });
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
@@ -595,7 +573,7 @@ const V2ConnectorsPage: React.FC = () => {
         pulse: false,
         when: t('connectors.sinceWhen', {
           defaultValue: 'since {{rel}}',
-          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t),
+          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t, connectorRelativeTimeOptions),
         }),
       };
     }
@@ -614,7 +592,7 @@ const V2ConnectorsPage: React.FC = () => {
           pulse: false,
           when: t('connectors.addedWhen', {
             defaultValue: 'added {{rel}}',
-            rel: localizeRelativeTime(connector.createdAt, t),
+            rel: localizeRelativeTime(connector.createdAt, t, connectorRelativeTimeOptions),
           }),
         };
       }
@@ -639,7 +617,7 @@ const V2ConnectorsPage: React.FC = () => {
         secondary: true,
         when: t('connectors.addedWhen', {
           defaultValue: 'added {{rel}}',
-          rel: localizeRelativeTime(connector.createdAt, t),
+          rel: localizeRelativeTime(connector.createdAt, t, connectorRelativeTimeOptions),
         }),
       };
     }
@@ -685,7 +663,7 @@ const V2ConnectorsPage: React.FC = () => {
         pulse: true,
         when: t('connectors.slackAnsweredWhen', {
           defaultValue: 'Slack answered {{rel}}',
-          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t),
+          rel: localizeRelativeTime(connector.updatedAt || connector.createdAt, t, connectorRelativeTimeOptions),
         }),
       };
     }
@@ -750,11 +728,11 @@ const V2ConnectorsPage: React.FC = () => {
     }
     const since = t('connectors.sinceWhen', {
       defaultValue: 'since {{rel}}',
-      rel: localizeRelativeTime(installation.updatedAt, t),
+      rel: localizeRelativeTime(installation.updatedAt, t, connectorRelativeTimeOptions),
     });
     const started = t('connectors.startedWhen', {
       defaultValue: 'started {{rel}}',
-      rel: localizeRelativeTime(installation.claimedAt || installation.updatedAt, t),
+      rel: localizeRelativeTime(installation.claimedAt || installation.updatedAt, t, connectorRelativeTimeOptions),
     });
     const stale = claimIsStale(installation);
     if (installation.status === 'installing' || installation.status === 'activating') {
@@ -821,7 +799,7 @@ const V2ConnectorsPage: React.FC = () => {
         pulse: false,
         when: t('connectors.pausedWhen', {
           defaultValue: 'paused {{rel}}',
-          rel: localizeRelativeTime(pause?.at || installation.updatedAt, t),
+          rel: localizeRelativeTime(pause?.at || installation.updatedAt, t, connectorRelativeTimeOptions),
         }),
       };
     }
@@ -1011,7 +989,7 @@ const V2ConnectorsPage: React.FC = () => {
                 <span className={`v2-connector-gate__since${enabled ? '' : ' v2-connector-gate__since--off'}`}>
                   {enabled ? t('connectors.sinceWhen', {
                     defaultValue: 'since {{rel}}',
-                    rel: localizeRelativeTime(gate?.since, t),
+                    rel: localizeRelativeTime(gate?.since, t, connectorRelativeTimeOptions),
                   }) : t('connectors.gateOff', { defaultValue: 'off' })}
                 </span>
                 <input

@@ -17,6 +17,9 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { localizeRelativeTime, relativeTime } from '../utils/localizeRelativeTime';
+
+export { localizeRelativeTime, relativeTime } from '../utils/localizeRelativeTime';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -103,43 +106,12 @@ const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 
-export const relativeTime = (date?: string | null): string => {
-  if (!date) return '—';
-  const ms = Date.now() - new Date(date).getTime();
-  if (!Number.isFinite(ms)) return '—';
-  const abs = Math.abs(ms);
-  const suffix = ms >= 0 ? 'ago' : 'from now';
-  const minutes = Math.round(abs / 60_000);
-  if (minutes < 1) return ms >= 0 ? 'just now' : 'in a moment';
-  if (minutes < 60) return `${minutes}m ${suffix}`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ${suffix}`;
-  const days = Math.round(hours / 24);
-  return `${days}d ${suffix}`;
-};
-
-const localizeRelativeTime = (date: string | null | undefined, t: TFunction): string => {
-  const raw = relativeTime(date);
-  if (raw === '—') return raw;
-  if (raw === 'just now') return t('tools.time.justNow', { defaultValue: 'just now' });
-  if (raw === 'in a moment') return t('tools.time.inAMoment', { defaultValue: 'in a moment' });
-  const match = raw.match(/^(\d+)([mhd]) (ago|from now)$/);
-  if (!match) return raw;
-  const [, countText, unit, direction] = match;
-  const unitName = unit === 'm' ? 'minutes' : unit === 'h' ? 'hours' : 'days';
-  const key = `${unitName}${direction === 'ago' ? 'Ago' : 'FromNow'}`;
-  return t(`tools.time.${key}`, {
-    count: Number(countText),
-    defaultValue: `${countText}${unit} ${direction}`,
-  });
-};
-
 const localizeWindow = (windowMs: number, t: TFunction): string => {
   const minutes = Math.max(1, Math.round(windowMs / 60_000));
-  if (minutes < 60) return t('tools.time.minutesDuration', { count: minutes, defaultValue: `${minutes}m` });
+  if (minutes < 60) return t('time.minutesDuration', { count: minutes, defaultValue: `${minutes}m` });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return t('tools.time.hoursDuration', { count: hours, defaultValue: `${hours}h` });
-  return t('tools.time.daysDuration', { count: Math.round(hours / 24), defaultValue: `${Math.round(hours / 24)}d` });
+  if (hours < 24) return t('time.hoursDuration', { count: hours, defaultValue: `${hours}h` });
+  return t('time.daysDuration', { count: Math.round(hours / 24), defaultValue: `${Math.round(hours / 24)}d` });
 };
 
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
