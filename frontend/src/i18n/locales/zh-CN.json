@@ -1979,7 +1979,7 @@
     "sinceWhen": "{{rel}}起",
     "addedWhen": "{{rel}}添加",
     "pausedWhen": "{{rel}}暂停",
-    "slackAnsweredWhen": "{{rel}}回复",
+    "slackAnsweredWhen": "Slack {{rel}}回复",
     "linkedLine": "{{title}} · 已连接到 {{pod}}",
     "waitingToConnect": "{{label}} 正在等待连接。",
     "untitledPod": "未命名 Pod",
