@@ -20,6 +20,10 @@ describe('the builtin GitHub tool Installable', () => {
 
   test('the builtin GitHub Installable enables exactly the broker\'s GitHub tools', () => {
     const installable = buildGithubToolInstallable();
+    expect(installable.descriptions).toEqual({
+      en: installable.description,
+      'zh-CN': '装有 GitHub App 的那个仓库里的 issue 和 pull request，由 Commonly 的代理按 Pod 授权代为调用。',
+    });
     const component = mcpComponentOf(installable);
     expect(installable).toMatchObject({ installableId: 'github', source: 'builtin', kind: 'app', scope: 'pod', status: 'active' });
     expect(installable.components).toHaveLength(1);

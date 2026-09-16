@@ -141,7 +141,9 @@ router.get('/', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) 
   const userId = requesterId(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    return res.json(await catalogFor(String(userId)));
+    const header = req.headers?.['accept-language'];
+    const locale = Array.isArray(header) ? header[0] : header;
+    return res.json(await catalogFor(String(userId), locale || 'en'));
   } catch (error) {
     console.error('[installable] catalog read failed:', (error as Error).message);
     return res.status(500).json({ error: 'Could not load connector catalog' });

@@ -16,6 +16,8 @@ interface IntegrationManifest {
     category: string;
     docsPath: string;
     description: string;
+    /** Locale-specific first-party copy; `description` remains the en source. */
+    descriptions?: Record<string, string>;
     capabilities: string[];
   } | null;
 }
@@ -60,6 +62,10 @@ const manifests: Record<string, IntegrationManifest> = {
       category: 'chat',
       docsPath: 'docs/discord/DISCORD.md',
       description: 'Ingest Discord channel activity and post pod summaries.',
+      descriptions: {
+        en: 'Ingest Discord channel activity and post pod summaries.',
+        'zh-CN': '接入 Discord 频道动态，发布 Pod 摘要。',
+      },
       capabilities: ['webhook', 'gateway', 'summary', 'commands'],
     },
   }),
@@ -81,7 +87,11 @@ const manifests: Record<string, IntegrationManifest> = {
       provider: 'slack',
       category: 'chat',
       docsPath: 'docs/slack/README.md',
-      description: 'Ingest Slack Events API messages into pod summaries.',
+      description: 'Your Slack DM, every pod you\'re in.',
+      descriptions: {
+        en: 'Your Slack DM, every pod you\'re in.',
+        'zh-CN': '你的 Slack 私信，你所在的每个 Pod。',
+      },
       capabilities: ['webhook', 'summary', 'commands'],
     },
   }),
@@ -95,6 +105,10 @@ const manifests: Record<string, IntegrationManifest> = {
       category: 'chat',
       docsPath: 'docs/groupme/README.md',
       description: 'Buffer GroupMe messages and summarize them into pods.',
+      descriptions: {
+        en: 'Buffer GroupMe messages and summarize them into pods.',
+        'zh-CN': '缓存 GroupMe 消息，汇总进 Pod。',
+      },
       capabilities: ['webhook', 'commands', 'summary'],
     },
   }),
@@ -114,6 +128,10 @@ const manifests: Record<string, IntegrationManifest> = {
       category: 'chat',
       docsPath: 'docs/telegram/README.md',
       description: 'One Telegram chat, one pod.',
+      descriptions: {
+        en: 'One Telegram chat, one pod.',
+        'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+      },
       capabilities: ['webhook', 'summary', 'commands'],
     },
   }),

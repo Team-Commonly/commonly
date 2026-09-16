@@ -24,6 +24,7 @@ const TELEGRAM_CONNECTOR = {
   // package wrapper, so it must not fork a second source of truth.
   name: telegramCatalog.label,
   description: telegramCatalog.description,
+  descriptions: telegramCatalog.descriptions,
   version: '1.0.0',
   kind: 'app',
   source: 'builtin',
@@ -58,7 +59,8 @@ if (!slackCatalog) {
 const SLACK_CONNECTOR = {
   installableId: 'slack',
   name: slackCatalog.label,
-  description: 'Link your Slack DM to Commonly — every pod you\'re in gets a voice where you already talk.',
+  description: slackCatalog.description,
+  descriptions: slackCatalog.descriptions,
   version: '1.0.0',
   kind: 'app',
   source: 'builtin',
@@ -108,9 +110,15 @@ export const seedBuiltinConnectors = async (): Promise<void> => {
     // create their uniqueness/TTL indexes during the deterministic boot seed
     // rather than discovering a missing index on the first external request.
     await Promise.all([ConnectorSecret.syncIndexes(), WebhookDelivery.syncIndexes()]);
-    await Promise.all([TELEGRAM_CONNECTOR, SLACK_CONNECTOR].map((connector) => (
-      Installable.findOneAndUpdate(
-        { installableId: connector.installableId },
+    await Promise.all([TELEGRAM_CONNECTOR, SLACK_CONNECTOR].map(async (connector) => {
+      const holder = await Installable.findOne({ installableId: connector.installableId })
+        .select('source').lean() as { source?: string } | null;
+      if (holder && holder.source !== 'builtin') {
+        console.warn(`[builtin-connectors] installableId '${connector.installableId}' is held by a '${holder.source}' row; the builtin seed leaves it alone`);
+        return;
+      }
+      return Installable.findOneAndUpdate(
+        { installableId: connector.installableId, source: 'builtin' },
         {
           $set: connector,
           $setOnInsert: {
@@ -118,8 +126,8 @@ export const seedBuiltinConnectors = async (): Promise<void> => {
           },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true },
-      )
-    )));
+      );
+    }));
     console.log('[builtin-connectors] Telegram and Slack manifests ready');
   } catch (error) {
     console.error('[builtin-connectors] seed failed:', (error as Error).message);

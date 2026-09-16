@@ -278,6 +278,8 @@ export interface IInstallable extends Document {
   installableId: string;
   name: string;
   description: string;
+  /** First-party locale copy; `description` remains the canonical English value. */
+  descriptions?: Record<string, string>;
   version: string;
 
   // Marketplace surface hint — which aisle to shelve this in. See
@@ -529,6 +531,22 @@ const InstallableSchema = new Schema<IInstallable>(
     },
     name: { type: String, required: true },
     description: { type: String, required: true, default: '' },
+    descriptions: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+      validate: {
+        validator: (value: unknown): boolean => (
+          value === undefined
+          || (value !== null
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.entries(value as Record<string, unknown>).every(([locale, text]) => (
+              locale.trim().length > 0 && typeof text === 'string' && text.trim().length > 0
+            )))
+        ),
+        message: 'descriptions must be a map of locale keys to non-empty strings',
+      },
+    },
     version: { type: String, required: true },
 
     kind: {

@@ -18,6 +18,53 @@ type ProviderManifest = {
   readiness?: () => ProviderReadiness;
 };
 
+type LocalizedInstallable = {
+  description?: unknown;
+  descriptions?: unknown;
+  source?: string;
+};
+
+/**
+ * Return the most specific locale in a browser Accept-Language value. The
+ * catalog only translates first-party builtins; every other source keeps its
+ * canonical description even when it happens to carry a locale map.
+ */
+const localeCandidates = (locale?: string): string[] => {
+  const raw = typeof locale === 'string' ? locale : '';
+  const candidates: string[] = [];
+  raw.split(',').forEach((part) => {
+    const token = part.trim().split(';', 1)[0]?.trim();
+    if (!token) return;
+    const normalized = token.replace(/_/g, '-');
+    const [language, region, ...rest] = normalized.split('-');
+    if (!language) return;
+    const canonical = [language.toLowerCase(), region?.toUpperCase(), ...rest].filter(Boolean).join('-');
+    if (canonical && !candidates.includes(canonical)) candidates.push(canonical);
+    const base = language.toLowerCase();
+    if (!candidates.includes(base)) candidates.push(base);
+  });
+  if (!candidates.includes('en')) candidates.push('en');
+  return candidates;
+};
+
+const localizedDescription = (installable: LocalizedInstallable | null | undefined, locale?: string): string => {
+  const canonical = typeof installable?.description === 'string' ? installable.description : '';
+  if (installable?.source && installable.source !== 'builtin') return canonical;
+
+  const descriptions = installable?.descriptions;
+  if (!descriptions || typeof descriptions !== 'object' || Array.isArray(descriptions)) return canonical;
+  const read = (key: string): unknown => (
+    descriptions instanceof Map
+      ? descriptions.get(key)
+      : (descriptions as Record<string, unknown>)[key]
+  );
+  for (const candidate of localeCandidates(locale)) {
+    const value = read(candidate);
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return canonical;
+};
+
 const providerInstallableIds = (): string[] => Object.values(manifests as Record<string, ProviderManifest>)
   .filter((manifest) => typeof manifest.readiness === 'function')
   .map((manifest) => manifest.id);
@@ -79,7 +126,7 @@ const publicConnection = (integration: any) => ({
  * form needs — the allow-list projected from the broker's definitions, the
  * broker it names, and the caller's own Connections — and never a credential.
  */
-const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
+const toolEntriesFor = async (userId: string, locale?: string): Promise<unknown[]> => {
   const rows = (await Installable.find({
     source: 'builtin',
     status: 'active',
@@ -101,7 +148,7 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       installableId: row.installableId,
       list: 'tools',
       label: row.name || row.installableId,
-      description: row.description || '',
+      description: localizedDescription(row, locale),
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },
@@ -115,7 +162,7 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
   });
 };
 
-const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> => {
+const catalogFor = async (userId: string, locale = 'en'): Promise<{ installables: unknown[] }> => {
   const installableIds = providerInstallableIds();
   const [installables, installations] = await Promise.all([
     Installable.find({
@@ -144,7 +191,7 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
     (integrations as any[]).map((integration) => [integration.installationId, integration]),
   );
 
-  const tools = await toolEntriesFor(userId);
+  const tools = await toolEntriesFor(userId, locale);
   return {
     installables: [...installableIds.map((installableId) => {
       const installable = installableById.get(installableId);
@@ -154,7 +201,7 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
         installableId,
         list: 'channels',
         label: installable?.name || installableId,
-        description: installable?.description || '',
+        description: localizedDescription(installable, locale),
         available: readiness.available,
         ...(readiness.reason ? { unavailableReason: readiness.reason } : {}),
         installation: publicInstallation(installation),
@@ -166,6 +213,11 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
   };
 };
 
-module.exports = { catalogFor, providerReadiness, publicIntegration };
+module.exports = {
+  catalogFor,
+  providerReadiness,
+  publicIntegration,
+  localizedDescription,
+};
 
 export {};

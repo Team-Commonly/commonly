@@ -92,7 +92,19 @@ describe('installable connector routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ installables: [{ installationId }] });
-    expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111');
+    expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111', 'en');
+  });
+
+  it('passes the caller locale from Accept-Language to the catalog service', async () => {
+    catalogService.catalogFor.mockResolvedValue({ installables: [] });
+
+    const res = await request(app)
+      .get('/api/installables')
+      .set(auth)
+      .set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
+
+    expect(res.status).toBe(200);
+    expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111', 'zh-CN,zh;q=0.9,en;q=0.8');
   });
 
   it('refuses an unavailable provider before reading a pod or claiming a parent', async () => {
