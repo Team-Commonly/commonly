@@ -10,8 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
-import V2ConnectorTools from './V2ConnectorTools';
-import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import V2ConnectorTools, { localizeRelativeTime } from './V2ConnectorTools';
 
 interface ConnectorGate {
   enabled?: boolean;
