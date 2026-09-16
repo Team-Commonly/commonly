@@ -42,6 +42,13 @@ describe('Connectors and Tools locale coverage', () => {
       expect(lookup(en, key)).toEqual(expect.any(String));
       expect(lookup(zhCN, key)).toEqual(expect.any(String));
     }
+    const enTime = en.time as Record<string, unknown>;
+    const zhTime = zhCN.time as Record<string, unknown>;
+    expect(Object.keys(enTime).sort()).toEqual(Object.keys(zhTime).sort());
+    for (const key of Object.keys(enTime)) {
+      expect(enTime[key]).toEqual(expect.any(String));
+      expect(zhTime[key]).toEqual(expect.any(String));
+    }
     expect(lookup(en, 'connectors.time')).toBeUndefined();
     expect(lookup(en, 'tools.time')).toBeUndefined();
     expect(lookup(zhCN, 'connectors.time')).toBeUndefined();
