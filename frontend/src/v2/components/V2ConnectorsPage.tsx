@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { CONNECTOR_REQUEST_URL } from '../utils/feedbackLinks';
 import V2ConnectorTools from './V2ConnectorTools';
 
 interface ConnectorGate {
@@ -91,7 +92,7 @@ interface SlackAuthorizeResponse {
 
 type ConnectorAction =
   | 'manage' | 'show-code' | 'new-code' | 'authorize' | 'confirm'
-  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod';
+  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod' | 'ask';
 
 interface ConnectorRow {
   action: ConnectorAction | null;
@@ -686,13 +687,15 @@ const V2ConnectorsPage: React.FC = () => {
     const installation = entry.installation;
     if (!entry.available) {
       return {
-        action: null,
+        action: 'ask',
+        actionLabel: t('connectors.ask', { defaultValue: 'Ask' }),
         detail: t('connectors.askOperator', { defaultValue: 'ask your operator' }),
         dot: 'not-yet',
         line: t('connectors.notEnabled', { defaultValue: 'Not enabled on this instance.' }),
         muted: true,
         notEnabled: true,
         pulse: false,
+        secondary: true,
         when: '—',
       };
     }
@@ -906,7 +909,11 @@ const V2ConnectorsPage: React.FC = () => {
           </span>
           <span className="v2-connector-row__when">{row.when}</span>
         </button>
-        {row.action && (
+        {row.action === 'ask' ? (
+          <a className="v2-connector-row__action v2-connector-row__action--secondary" href={CONNECTOR_REQUEST_URL}>
+            {row.actionLabel}
+          </a>
+        ) : row.action && (
           <button
             type="button"
             className={`v2-connector-row__action${row.secondary ? ' v2-connector-row__action--secondary' : ''}`}
@@ -917,11 +924,6 @@ const V2ConnectorsPage: React.FC = () => {
               ? t('connectors.slackAuthorizing', { defaultValue: 'Opening Slack…' })
               : row.actionLabel}
           </button>
-        )}
-        {row.notEnabled && (
-          <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
-            {t('connectors.ask', { defaultValue: 'Ask' })}
-          </a>
         )}
       </article>
     );
@@ -1305,7 +1307,7 @@ const V2ConnectorsPage: React.FC = () => {
                   <strong>{t('connectors.notYetLine', { defaultValue: 'Not yet. Tell us which channel you need and we build it next.' })}</strong>
                 </span>
                 <span className="v2-connector-row__when">—</span>
-                <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+                <a className="v2-connector-row__action v2-connector-row__action--secondary" href={CONNECTOR_REQUEST_URL}>
                   {t('connectors.ask', { defaultValue: 'Ask' })}
                 </a>
               </article>

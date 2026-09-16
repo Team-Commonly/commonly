@@ -16,6 +16,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { CONNECTOR_REQUEST_URL } from '../utils/feedbackLinks';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -439,7 +440,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         </span>
         <span className="v2-connector-row__when">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
         {!entry.available && (
-          <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+          <a className="v2-connector-row__action v2-connector-row__action--secondary" href={CONNECTOR_REQUEST_URL}>
             {t('tools.ask', { defaultValue: 'Ask' })}
           </a>
         )}
