@@ -17,7 +17,7 @@ jest.mock('../../../middleware/auth', () => {
 const { hash } = require('../../../utils/secret');
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth');
 
-let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine;
+let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine; let Pod; let RoomGrant;
 const DAEMON_A = `cm_daemon_${'a'.repeat(32)}`;
 const DAEMON_B = `cm_daemon_${'b'.repeat(32)}`;
 
@@ -27,6 +27,8 @@ beforeAll(async () => {
   AgentCredential = require('../../../models/AgentCredential');
   User = require('../../../models/User');
   Machine = require('../../../models/Machine');
+  Pod = require('../../../models/Pod');
+  RoomGrant = require('../../../models/RoomGrant');
   AgentInstallation = require('../../../models/AgentRegistry').AgentInstallation;
   app = express();
   app.use(express.json());
@@ -35,10 +37,11 @@ beforeAll(async () => {
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
 
-let owner; let bot; let daemonCredA;
+let owner; let bot; let pod; let daemonCredA;
 beforeEach(async () => {
   await Promise.all([
     User.deleteMany({}), AgentCredential.deleteMany({}), AgentInstallation.deleteMany({}), Machine.deleteMany({}),
+    Pod.deleteMany({}), RoomGrant.deleteMany({}),
   ]);
   owner = await User.create({ username: `o${Date.now() % 1e6}`, email: `o${Date.now()}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
@@ -46,8 +49,9 @@ beforeEach(async () => {
     username: `b${Date.now() % 1e6}`, email: `b${Date.now()}@agents.commonly.local`, password: 'x'.repeat(12),
     isBot: true, botMetadata: { agentName: 'wren-test', instanceId: 'default' },
   });
+  pod = await Pod.create({ name: `p${Date.now()}`, createdBy: owner._id, members: [owner._id, bot._id] });
   await AgentInstallation.create({
-    agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+    agentName: 'wren-test', instanceId: 'default', podId: pod._id,
     version: '1.0.0', status: 'active', installedBy: owner._id,
     config: {
       runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
@@ -66,6 +70,10 @@ beforeEach(async () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
+          headers: {
+            Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}',
+            'X-Private': 'must-not-travel',
+          },
           env: {
             COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
             COMMONLY_API_URL: 'literal-api-value-must-not-travel',
@@ -181,6 +189,7 @@ describe('daemon work list', () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
+          headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
           env: {
             COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
             COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
@@ -194,6 +203,68 @@ describe('daemon work list', () => {
 
     const seenByB = await assigned(DAEMON_B);
     expect(seenByB.body.agents).toEqual([]);
+  });
+
+  it('projects live broker grants into the audience seat environment', async () => {
+    const seatId = String(bot._id);
+    await RoomGrant.create({
+      grantId: 'grant-seat-live', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+    });
+    await RoomGrant.create({
+      grantId: 'grant-seat-revoked', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+      revokedAt: new Date(),
+    });
+    await RoomGrant.create({
+      grantId: 'grant-seat-expired', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() - 60000), brokerId: 'commonly-grant-broker',
+    });
+    await RoomGrant.create({
+      grantId: 'grant-foreign-broker', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'other-broker',
+    });
+
+    await requestPlacement('machine-a');
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+      {
+        name: 'commonly-grant-broker',
+        transport: 'http',
+        url: '${COMMONLY_API_URL}/api/mcp/grants/grant-seat-live',
+        headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+      },
+    ]);
+  });
+
+  it('requires current pod membership before projecting a pod grant', async () => {
+    const seatId = String(bot._id);
+    await RoomGrant.create({
+      grantId: 'grant-pod-live', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'pod', id: String(pod._id) }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+    });
+    await requestPlacement('machine-a');
+    let seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+      expect.objectContaining({
+        name: 'commonly-grant-broker',
+        url: '${COMMONLY_API_URL}/api/mcp/grants/grant-pod-live',
+      }),
+    ]);
+
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: bot._id } });
+    seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+    ]);
   });
 
   it('flips to bound after adopt, and adopt consumes the request', async () => {
