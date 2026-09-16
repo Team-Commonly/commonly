@@ -208,7 +208,9 @@ test('an unavailable not-yet tool row offers the same Ask affordance as unavaila
   });
   renderTools();
   expect(await screen.findByText('not enabled on this instance · ask your operator')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
+  const ask = screen.getByRole('link', { name: 'Ask' });
+  expect(ask).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
+  expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
 });
 
 test('Change access mints a new grant then revokes the old one; Grant again on a dead grant only mints', async () => {

@@ -421,7 +421,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const renderNotYet = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
     return (
-      <article key={entry.installableId} className="v2-connector-row v2-connector-row--not-yet">
+      <article key={entry.installableId} className={`v2-connector-row v2-connector-row--not-yet${!entry.available ? ' v2-connector-row--not-enabled' : ''}`}>
         <span className="v2-connector-row__name">
           <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
           <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry.installableId} /></span>
