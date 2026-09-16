@@ -8,6 +8,7 @@ import express from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
+import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -55,6 +56,8 @@ const MCP_PLACEHOLDERS = new Set([
   '${COMMONLY_INSTANCE_URL}',
 ]);
 
+const GRANT_BROKER_AUTHORIZATION = 'Bearer ${COMMONLY_AGENT_TOKEN}';
+
 const projectMcpEnv = (raw: unknown, serverName: string): Record<string, string> | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const projected: Record<string, string> = {};
@@ -66,6 +69,27 @@ const projectMcpEnv = (raw: unknown, serverName: string): Record<string, string>
       // but env projections deliberately accept only a placeholder by itself.
       // Warn without logging the value so an operator can repair the spec.
       console.warn('[agent-binding] dropped MCP env placeholder declaration', {
+        server: serverName,
+        key,
+      });
+    }
+  }
+  return Object.keys(projected).length ? projected : null;
+};
+
+// HTTP MCP servers authenticate with a declarative header rather than a
+// process environment variable. Keep the same placeholder-only boundary as
+// MCP env so an installation cannot smuggle a bearer or arbitrary header into
+// the daemon work list. The broker projection below creates this exact shape
+// for each active grant.
+const projectMcpHeaders = (raw: unknown, serverName: string): Record<string, string> | null => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const projected: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'Authorization' && value === GRANT_BROKER_AUTHORIZATION) {
+      projected[key] = value;
+    } else if (typeof value === 'string' && value.includes('${COMMONLY_')) {
+      console.warn('[agent-binding] dropped MCP header placeholder declaration', {
         server: serverName,
         key,
       });
@@ -112,12 +136,108 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
         const serverName = typeof server.name === 'string' ? server.name : 'unknown';
         const env = projectMcpEnv(server.env, serverName);
         if (env) entry.env = env;
+        const headers = projectMcpHeaders(server.headers, serverName);
+        if (headers) entry.headers = headers;
         return entry;
       })
       .filter((server: Record<string, unknown>) => Object.keys(server).length);
     if (mcp.length) projected.mcp = mcp;
   }
   return Object.keys(projected).length ? projected : null;
+};
+
+type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
+type GrantTarget = { kind?: unknown; id?: unknown };
+type ActiveGrant = { grantId?: unknown; target?: GrantTarget; audience?: unknown[] };
+type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null };
+
+const grantBrokerServer = (grantId: string, name: string): Record<string, unknown> => ({
+  name,
+  transport: 'http',
+  url: GRANT_BROKER_URL.replace('${COMMONLY_GRANT_ID}', encodeURIComponent(grantId)),
+  headers: { Authorization: GRANT_BROKER_AUTHORIZATION },
+});
+
+/**
+ * Project live room grants into a daemon assignment. Grants are capabilities,
+ * not installation config: querying them here means revoke and expiry take
+ * effect on the next daemon poll without rewriting every AgentInstallation.
+ * Pod grants additionally require the seat to remain a member of the target
+ * pod (the grant's audience is a mint-time snapshot).
+ */
+const grantServersForIdentities = async (
+  identities: AssignedIdentity[],
+  entries: Map<string, AssignmentEntry>,
+): Promise<Map<string, Record<string, unknown>[]>> => {
+  const identityIds = identities
+    .map((identity) => String(identity._id || ''))
+    .filter(Boolean);
+  if (!identityIds.length) return new Map();
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const RoomGrant = require('../models/RoomGrant');
+  const grants = await RoomGrant.find({
+    brokerId: GRANT_BROKER_ID,
+    revokedAt: null,
+    expiresAt: { $gt: new Date() },
+    audience: { $in: identityIds },
+  }).select('grantId target audience').lean() as ActiveGrant[];
+  if (!grants.length) return new Map();
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Pod = require('../models/Pod');
+  const podIds = Array.from(new Set(Array.from(entries.values()).flatMap((entry) => entry.podIds)))
+    .filter((id) => /^[a-f\d]{24}$/i.test(id));
+  const pods = podIds.length
+    ? await Pod.find({ _id: { $in: podIds } }).select('_id members').lean()
+    : [];
+  const podMembers = new Map<string, Set<string>>(
+    pods.map((pod: { _id: unknown; members?: unknown[] }) => [
+      String(pod._id),
+      new Set((pod.members || []).map((member) => String(member))),
+    ]),
+  );
+
+  const output = new Map<string, Record<string, unknown>[]>();
+  for (const identityId of identityIds) {
+    const entry = identities
+      .find((identity) => String(identity._id || '') === identityId);
+    const meta = entry?.botMetadata || {};
+    const key = `${normalize(meta.agentName)}\0${normalize(meta.instanceId) || 'default'}`;
+    const assigned = entries.get(key);
+    if (!assigned) continue;
+    const installedPods = new Set(assigned.podIds);
+    const existingMcp = Array.isArray(assigned.environment?.mcp) ? assigned.environment.mcp : [];
+    const usedNames = new Set(
+      existingMcp
+        // The builtin component is a template only; once a live grant exists,
+        // replace that placeholder entry with the grant-specific URL below.
+        .filter((server: Record<string, unknown>) => !(
+          server?.name === GRANT_BROKER_ID && server?.url === GRANT_BROKER_URL
+        ))
+        .map((server: Record<string, unknown>) => server?.name)
+        .filter((name: unknown): name is string => typeof name === 'string'),
+    );
+    const servers: Record<string, unknown>[] = [];
+    for (const grant of grants) {
+      const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
+      const target = grant.target || {};
+      const targetId = String(target.id || '');
+      const inAudience = (grant.audience || []).map(String).includes(identityId);
+      const seatTarget = target.kind === 'seat' && targetId === identityId;
+      const podTarget = target.kind === 'pod'
+        && installedPods.has(targetId)
+        && podMembers.get(targetId)?.has(identityId);
+      if (!grantId || !inAudience || (!seatTarget && !podTarget)) continue;
+
+      let serverName = GRANT_BROKER_ID;
+      if (usedNames.has(serverName)) serverName = `${GRANT_BROKER_ID}-${grantId}`;
+      usedNames.add(serverName);
+      servers.push(grantBrokerServer(grantId, serverName));
+    }
+    if (servers.length) output.set(identityId, servers);
+  }
+  return output;
 };
 
 // Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
@@ -275,7 +395,13 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       .select('agentName instanceId podId config').lean();
     if (!installs.length) return res.json({ agents: [] });
 
-    const byIdentity = new Map<string, { agentName: string; instanceId: string; podIds: string[]; runtime: unknown; environment: unknown }>();
+    const byIdentity = new Map<string, {
+      agentName: string;
+      instanceId: string;
+      podIds: string[];
+      runtime: unknown;
+      environment: Record<string, unknown> | null;
+    }>();
     for (const install of installs) {
       const agentName = normalize(install.agentName);
       const instanceId = normalize(install.instanceId) || 'default';
@@ -300,22 +426,40 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         { 'botMetadata.machineId': machine.machineId },
         { 'botMetadata.requestedMachineId': machine.machineId },
       ],
-    }).select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId').lean();
+    }).select('_id botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId').lean() as AssignedIdentity[];
 
-    const agents = identities.flatMap((identity: { botMetadata?: Record<string, unknown> }) => {
+    const grantServers = await grantServersForIdentities(identities, byIdentity);
+
+    const agents = identities.flatMap((identity: AssignedIdentity) => {
       const meta = identity.botMetadata || {};
       const key = `${normalize(meta.agentName)} ${normalize(meta.instanceId) || 'default'}`;
       const entry = byIdentity.get(key);
       // An identity outside the owner's installation set (shared, or another
       // user's) never appears in this daemon's work list.
       if (!entry) return [];
+      const agentId = String(identity._id || '');
+      const brokerServers = grantServers.get(agentId) || [];
+      const environment = entry.environment
+        ? {
+          ...entry.environment,
+          ...(brokerServers.length
+            ? {
+              mcp: [
+                ...(Array.isArray(entry.environment.mcp) ? entry.environment.mcp : [])
+                  .filter((server: any) => !brokerServers.some((broker) => broker.name === server?.name)),
+                ...brokerServers,
+              ],
+            }
+            : {}),
+        }
+        : (brokerServers.length ? { mcp: brokerServers } : null);
       return [{
         agentName: entry.agentName,
         instanceId: entry.instanceId,
         state: meta.machineId === machine.machineId ? 'bound' : 'requested',
         podIds: entry.podIds,
         runtime: entry.runtime,
-        ...(entry.environment ? { environment: entry.environment } : {}),
+        ...(environment ? { environment } : {}),
       }];
     });
     return res.json({ agents });

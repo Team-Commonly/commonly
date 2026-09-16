@@ -309,6 +309,30 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls[0].opts.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
   });
 
+  test('projected broker headers stay placeholder-based while the token is supplied to Claude', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {
+        mcp: [{
+          name: 'github-grant',
+          transport: 'http',
+          url: 'https://api.commonly.me/api/mcp/grants/grant-live',
+          headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+        }],
+      },
+      runtimeToken: 'cm_agent_test',
+      _spawnImpl: impl,
+    });
+
+    const server = calls[0].config.mcpServers['github-grant'];
+    expect(server.url).toBe('https://api.commonly.me/api/mcp/grants/grant-live');
+    expect(server.headers.Authorization).toBe('Bearer ${COMMONLY_AGENT_TOKEN}');
+    expect(JSON.stringify(calls[0].config)).not.toContain('cm_agent_test');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_test');
+  });
+
   test('${COMMONLY_INSTANCE_URL} alias is supplied to native expansion', async () => {
     const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
