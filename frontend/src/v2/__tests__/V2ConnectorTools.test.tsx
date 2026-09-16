@@ -138,7 +138,7 @@ test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant 
   fireEvent.click(screen.getByRole('button', { name: 'View GitHub in Ops' }));
   const gone = await screen.findByRole('complementary', { name: 'Grant details' });
   expect(within(gone).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
-  expect(within(gone).getByText(/Revoked 10m ago\./)).toBeInTheDocument();
+  expect(within(gone).getByText(/Revoked by sam 10m ago\./)).toBeInTheDocument();
   await waitFor(() => expect(within(gone).getByText('No calls yet.')).toBeInTheDocument());
 });
 

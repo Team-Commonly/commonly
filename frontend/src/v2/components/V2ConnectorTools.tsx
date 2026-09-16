@@ -529,6 +529,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const dead = isDead(grant);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
+    const revokedBy = memberName(grant.revokedBy);
     const entry = entryFor(grant);
     const counts = trail?.counts;
     return (
@@ -542,7 +543,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: relativeTime(grant.createdAt) })}
             {' '}
             {grant.revokedAt
-              ? t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt) })
+              ? (revokedBy
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: relativeTime(grant.revokedAt) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt) }))
               : (isExpired(grant)
                 ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt) })
                 : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt) }))}
