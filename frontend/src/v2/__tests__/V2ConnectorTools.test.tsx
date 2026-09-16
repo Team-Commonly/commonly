@@ -32,9 +32,9 @@ const pods = [
 const grantLive = {
   grantId: 'grant_live', installationId: 'inst-1', target: { kind: 'pod', id: 'p1' }, tools: ['github.list_issues', 'github.comment_on_issue'],
   writeMode: 'write-with-confirm', budget: { calls: 50, windowMs: 3600000 }, effectiveAudience: ['a1'], expiresAt: iso(6 * 86400000),
-  revokedAt: null, parentGrantId: null, rootGrantId: null, createdAt: iso(-3600000), grantedBy: 'u1',
+  revokedAt: null, revokedBy: null, parentGrantId: null, rootGrantId: null, createdAt: iso(-3600000), grantedBy: 'u1',
 };
-const grantRevoked = { ...grantLive, grantId: 'grant_gone', target: { kind: 'pod', id: 'p2' }, writeMode: 'read', effectiveAudience: [], revokedAt: iso(-600000), createdAt: iso(-86400000) };
+const grantRevoked = { ...grantLive, grantId: 'grant_gone', target: { kind: 'pod', id: 'p2' }, writeMode: 'read', effectiveAudience: [], revokedAt: iso(-600000), revokedBy: 'u1', createdAt: iso(-86400000) };
 const trail = {
   grantId: 'grant_live',
   calls: [
@@ -91,7 +91,7 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   expect(liveDot).toHaveClass('v2-connector-row__dot--live');
   await waitFor(() => expect(liveDot).toHaveClass('v2-connector-row__dot--pulse'));
   const gone = screen.getByRole('button', { name: 'View GitHub in Ops' });
-  expect(within(gone).getByText('revoked 10m ago')).toBeInTheDocument();
+  expect(within(gone).getByText('revoked by sam 10m ago')).toBeInTheDocument();
   expect(gone.querySelector('.v2-connector-row__dot')).toHaveClass('v2-connector-row__dot--empty');
   // No not-yet row and no Add without a catalogue: nothing the server does not enforce.
   expect(screen.queryByText('not granted')).not.toBeInTheDocument();

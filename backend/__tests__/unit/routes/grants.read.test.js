@@ -82,7 +82,7 @@ const trailRow = (over = {}) => ({
 });
 
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
-  'expiresAt', 'revokedAt', 'parentGrantId', 'rootGrantId', 'createdAt', 'grantedBy'];
+  'expiresAt', 'revokedAt', 'revokedBy', 'parentGrantId', 'rootGrantId', 'createdAt', 'grantedBy'];
 
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
@@ -219,7 +219,7 @@ describe('GET /api/grants/:grantId', () => {
     expect(res.body).toMatchObject({
       grantId: row.grantId, installationId: 'install-1', target: { kind: 'pod', id: POD },
       tools: ['github.list_issues', 'github.comment'], writeMode: 'write-with-confirm',
-      budget: { calls: 10, windowMs: 60000 }, effectiveAudience: [SEAT], revokedAt: null,
+      budget: { calls: 10, windowMs: 60000 }, effectiveAudience: [SEAT], revokedAt: null, revokedBy: null,
       parentGrantId: null, rootGrantId: 'grant_root', grantedBy: OWNER,
     });
     expect(res.body.connectionId).toBeUndefined();
@@ -246,5 +246,18 @@ describe('GET /api/grants/:grantId', () => {
       expect(res.body.tools).toBeUndefined();
       expect(res.body.grantedBy).toBeUndefined();
     }
+  });
+});
+
+describe('POST /api/grants/:grantId/revoke', () => {
+  test('records the authenticated caller as revokedBy', async () => {
+    const row = await RoomGrant.create(grant());
+    const res = await request(app).post(`/api/grants/${row.grantId}/revoke`).set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ grantId: row.grantId, revoked: 1 });
+
+    const saved = await RoomGrant.findOne({ grantId: row.grantId }).lean();
+    expect(saved.revokedAt).toBeInstanceOf(Date);
+    expect(saved.revokedBy).toBe(OWNER);
   });
 });
