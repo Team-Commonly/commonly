@@ -2,8 +2,6 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/Team-Commonly/commonly';
 
 export const DISCUSSIONS_QA_URL = `${GITHUB_REPOSITORY_URL}/discussions/new?category=q-a`;
 
-export const CONNECTOR_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?title=Connector%20request`;
-
 export const buildBugReportUrl = (route: string): string => {
   const url = new URL(`${GITHUB_REPOSITORY_URL}/issues/new`);
   url.searchParams.set('template', 'bug_report.yml');
