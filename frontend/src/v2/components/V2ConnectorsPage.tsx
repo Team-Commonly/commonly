@@ -920,7 +920,7 @@ const V2ConnectorsPage: React.FC = () => {
         )}
         {row.notEnabled && (
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
-            {t('connectors.ask', { defaultValue: 'Ask' })}
+            {t('tools.ask', { defaultValue: 'Ask' })}
           </a>
         )}
       </article>
