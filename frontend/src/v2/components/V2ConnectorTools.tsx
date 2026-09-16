@@ -378,7 +378,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt) }))
       : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })} · ${asksFirst(grant)}`;
     return (
-      <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}`}>
+      <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
           type="button"
           className="v2-connector-row__selection"

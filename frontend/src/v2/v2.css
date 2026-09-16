@@ -9829,7 +9829,7 @@ body.modern-ui.v2-canvas {
   .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
   .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  .v2-connector-row__detail { display: none; }
+  .v2-connector-row:not(.v2-connector-row--dead) .v2-connector-row__detail { display: none; }
   .v2-root button.v2-connector-row__action, .v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }

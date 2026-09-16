@@ -1773,6 +1773,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
+    expect(connectorCss).toMatch(/\.v2-connector-row:not\(.v2-connector-row--dead\) \.v2-connector-row__detail \{ display: none; \}/);
   });
 
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
