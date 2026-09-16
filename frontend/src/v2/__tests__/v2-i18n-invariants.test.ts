@@ -3,10 +3,14 @@ import zhCN from '../../i18n/locales/zh-CN.json';
 import fs from 'fs';
 import path from 'path';
 
-const COMPONENTS = ['V2ConnectorsPage.tsx', 'V2ConnectorTools.tsx'];
+const SOURCES = [
+  path.join(__dirname, '../components/V2ConnectorsPage.tsx'),
+  path.join(__dirname, '../components/V2ConnectorTools.tsx'),
+  path.join(__dirname, '../utils/localizeRelativeTime.ts'),
+];
 
-const source = COMPONENTS
-  .map((name) => fs.readFileSync(path.join(__dirname, '../components', name), 'utf8'))
+const source = SOURCES
+  .map((filePath) => fs.readFileSync(filePath, 'utf8'))
   .join('\n');
 
 const USED_KEYS = [...new Set(
