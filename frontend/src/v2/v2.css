@@ -9810,6 +9810,8 @@ body.modern-ui.v2-canvas {
 .v2-tools__form { display: grid; gap: 14px; margin-top: 14px; }
 .v2-tools__field { display: grid; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
 .v2-tools__field > span:first-child, .v2-tools__field > legend { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; padding: 0; }
+.v2-tools__input { min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
+.v2-tools__input:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 0; }
 .v2-tools__agents { display: grid; gap: 6px; }
 .v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
 .v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }

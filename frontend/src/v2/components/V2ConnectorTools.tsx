@@ -86,6 +86,12 @@ interface DraftGrant {
   replaces: string | null;
 }
 
+interface GithubAppSetup {
+  installationId: string;
+  owner: string;
+  repo: string;
+}
+
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
@@ -140,6 +146,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const [trailError, setTrailError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftGrant | null>(null);
+  const [githubAppSetup, setGithubAppSetup] = useState<GithubAppSetup | null>(null);
   // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
   const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
@@ -147,6 +154,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [segment, setSegment] = useState<'all' | 'granted' | 'not-yet'>('all');
+
+  const isAdmin = currentUser?.role === 'admin';
 
   const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
 
@@ -286,6 +295,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     setConfirmRevoke(null);
     setError(null);
   };
+  const openGithubAppSetup = () => {
+    setGithubAppSetup({ installationId: '', owner: '', repo: '' });
+    setDraft(null);
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    setError(null);
+  };
   const draftEntry = draft ? catalog.find((entry) => entry.installableId === draft.installableId) || null : null;
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
@@ -327,6 +343,29 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
       setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitGithubAppSetup = async () => {
+    if (!githubAppSetup || !isAdmin) return;
+    const installationId = githubAppSetup.installationId.trim();
+    const owner = githubAppSetup.owner.trim();
+    const repo = githubAppSetup.repo.trim();
+    if (!installationId || !owner || !repo) {
+      setError(t('tools.githubAppRequired', { defaultValue: 'Enter the installation ID, owner, and repository.' }));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/api/integrations/github-app', { installationId, owner, repo });
+      setGithubAppSetup(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(code?.message || code?.error || t('tools.githubAppError', { defaultValue: 'Could not install the GitHub App.' }));
     } finally {
       setBusy(false);
     }
@@ -420,6 +459,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
 
   const renderNotYet = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
+    const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
     return (
       <article key={entry.installableId} className={`v2-connector-row v2-connector-row--not-yet${!entry.available ? ' v2-connector-row--not-enabled' : ''}`}>
         <span className="v2-connector-row__name">
@@ -448,7 +488,68 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             {t('tools.add', { defaultValue: 'Add' })}
           </button>
         )}
+        {canInstallGithubApp && (
+          <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
+            {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
+          </button>
+        )}
       </article>
+    );
+  };
+
+  const renderGithubAppSetup = () => {
+    if (!githubAppSetup) return null;
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'admin setup' })}</p>
+          <h2>{t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}</h2>
+          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their rooms.' })}</p>
+          <div className="v2-tools__form">
+            <label className="v2-tools__field">
+              <span>{t('tools.installationId', { defaultValue: 'installation ID' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.installationId}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, installationId: event.target.value })}
+                aria-label={t('tools.installationId', { defaultValue: 'installation ID' })}
+              />
+            </label>
+            <label className="v2-tools__field">
+              <span>{t('tools.owner', { defaultValue: 'owner' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.owner}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, owner: event.target.value })}
+                aria-label={t('tools.owner', { defaultValue: 'owner' })}
+              />
+            </label>
+            <label className="v2-tools__field">
+              <span>{t('tools.repository', { defaultValue: 'repository' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.repo}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, repo: event.target.value })}
+                aria-label={t('tools.repository', { defaultValue: 'repository' })}
+              />
+            </label>
+          </div>
+          <div className="v2-connector-aside__actions">
+            <button
+              type="button"
+              className="v2-connector-aside__primary"
+              disabled={busy || !githubAppSetup.installationId.trim() || !githubAppSetup.owner.trim() || !githubAppSetup.repo.trim()}
+              onClick={() => { void submitGithubAppSetup(); }}
+            >
+              {busy ? t('tools.installingGitHubApp', { defaultValue: 'Installing…' }) : t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
+            </button>
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setGithubAppSetup(null)}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
     );
   };
 
@@ -670,7 +771,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           )}
         </div>
       </section>
-      {draft ? renderDraft() : (selected ? renderAside(selected) : null)}
+      {draft ? renderDraft() : (selected ? renderAside(selected) : renderGithubAppSetup())}
     </div>
   );
 };
