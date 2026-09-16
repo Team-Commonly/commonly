@@ -196,6 +196,64 @@ test('a not-yet row without a Connection or on an unconfigured instance offers n
   renderTools();
   expect(await screen.findByText('install the GitHub App first · an admin does this once')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Install GitHub App' })).toBeNull();
+});
+
+test('an admin can install the GitHub App from the no-connection Tools row', async () => {
+  const noConnection = { ...githubEntry, connections: [] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [noConnection] } });
+    if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: [] } });
+    if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  axios.post.mockResolvedValue({ data: { integration: { installationId: 'install-42', createdBy: 'u1' } } });
+  const admin = {
+    ...authValue,
+    currentUser: { ...authValue.currentUser, role: 'admin' },
+    user: { ...authValue.user, role: 'admin' },
+  };
+  render(<AuthContext.Provider value={admin}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install GitHub App' }));
+  const form = await screen.findByRole('complementary', { name: 'Install GitHub App' });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'installation ID' }), { target: { value: 'install-42' } });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'owner' }), { target: { value: 'Team-Commonly' } });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'repository' }), { target: { value: 'commonly' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Install GitHub App' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    '/api/integrations/github-app',
+    { installationId: 'install-42', owner: 'Team-Commonly', repo: 'commonly' },
+    expect.any(Object),
+  ));
+  await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Install GitHub App' })).toBeNull());
+});
+
+test('an admin is told when another administrator already owns the GitHub App installation', async () => {
+  const noConnection = { ...githubEntry, connections: [] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [noConnection] } });
+    if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: [] } });
+    if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  axios.post.mockResolvedValue({ data: { integration: { installationId: 'install-42', createdBy: 'other-admin' } } });
+  const admin = {
+    ...authValue,
+    currentUser: { ...authValue.currentUser, _id: 'u2', role: 'admin' },
+    user: { ...authValue.user, _id: 'u2', role: 'admin' },
+  };
+  render(<AuthContext.Provider value={admin}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Install GitHub App' }));
+  const form = await screen.findByRole('complementary', { name: 'Install GitHub App' });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'installation ID' }), { target: { value: 'install-42' } });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'owner' }), { target: { value: 'Team-Commonly' } });
+  fireEvent.change(within(form).getByRole('textbox', { name: 'repository' }), { target: { value: 'commonly' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Install GitHub App' }));
+
+  await waitFor(() => expect(within(form).getByRole('alert')).toHaveTextContent('This GitHub App is already installed by another administrator.'));
+  expect(screen.getByRole('complementary', { name: 'Install GitHub App' })).toBeInTheDocument();
 });
 
 test('an unavailable not-yet tool row offers the same Ask affordance as unavailable channels', async () => {
