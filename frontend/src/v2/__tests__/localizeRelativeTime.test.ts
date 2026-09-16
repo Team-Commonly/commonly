@@ -15,10 +15,10 @@ describe('localizeRelativeTime', () => {
     const options = { includeFuture: false, missing: 'just now', rounding: 'floor' } as const;
     expect(relativeParts(undefined, options)).toEqual({ kind: 'missing' });
     expect(localizeRelativeTime(undefined, translate, options)).toBe('just now');
-    expect(translate).not.toHaveBeenCalled();
+    expect(translate).toHaveBeenCalledWith('time.justNow', { defaultValue: 'just now' });
     expect(relativeParts(at('2026-09-16T08:02:00.000Z'), options)).toEqual({ kind: 'now', future: false });
     expect(localizeRelativeTime(at('2026-09-16T08:02:00.000Z'), translate, options)).toBe('just now');
-    expect(translate).toHaveBeenCalledWith('time.justNow', { defaultValue: 'just now' });
+    expect(translate).toHaveBeenLastCalledWith('time.justNow', { defaultValue: 'just now' });
   });
 
   it.each([

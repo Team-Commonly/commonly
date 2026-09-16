@@ -56,7 +56,12 @@ export const localizeRelativeTime = (
 ): string => {
   const parts = relativeParts(date, options);
   const missing = options.missing ?? '—';
-  if (parts.kind === 'missing') return missing;
+  if (parts.kind === 'missing') {
+    if (missing === 'just now' || missing === 'in a moment') {
+      return t(`time.${missing === 'just now' ? 'justNow' : 'inAMoment'}`, { defaultValue: missing });
+    }
+    return missing;
+  }
   if (parts.kind === 'now') {
     return t(`time.${parts.future ? 'inAMoment' : 'justNow'}`, {
       defaultValue: formatRelativeParts(parts, missing),
