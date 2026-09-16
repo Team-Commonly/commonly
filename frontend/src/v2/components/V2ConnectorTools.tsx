@@ -92,6 +92,12 @@ interface GithubAppSetup {
   repo: string;
 }
 
+interface GithubAppIntegrationResponse {
+  integration?: {
+    createdBy?: string | { _id?: string } | null;
+  };
+}
+
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
@@ -360,7 +366,17 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     setBusy(true);
     setError(null);
     try {
-      await api.post('/api/integrations/github-app', { installationId, owner, repo });
+      const response = await api.post<GithubAppIntegrationResponse>('/api/integrations/github-app', { installationId, owner, repo });
+      const createdBy = response?.integration?.createdBy;
+      const createdById = typeof createdBy === 'string'
+        ? createdBy
+        : createdBy && typeof createdBy === 'object' && createdBy._id
+          ? String(createdBy._id)
+          : '';
+      if (createdById && viewerId && createdById !== viewerId) {
+        setError(t('tools.githubAppAlreadyInstalled', { defaultValue: 'This GitHub App is already installed by another administrator.' }));
+        return;
+      }
       setGithubAppSetup(null);
       await load();
     } catch (err) {

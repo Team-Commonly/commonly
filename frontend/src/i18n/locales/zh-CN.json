@@ -1852,6 +1852,18 @@
     "createTelegram": "新建 Telegram 连接器",
     "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
   },
+  "tools": {
+    "adminSetup": "管理员设置",
+    "githubAppError": "无法安装 GitHub App。",
+    "githubAppRequired": "请输入安装 ID、所有者和仓库。",
+    "githubAppSetupHint": "连接一次 GitHub App，成员即可向其 Pod 授权 GitHub 工具。",
+    "githubAppAlreadyInstalled": "此 GitHub App 已由另一位管理员安装。",
+    "installationId": "安装 ID",
+    "installGitHubApp": "安装 GitHub App",
+    "installingGitHubApp": "安装中…",
+    "owner": "所有者",
+    "repository": "仓库"
+  },
   "artifacts": {
     "title": "产物",
     "meta": "你所有 Pod 中共享的文件与页面",
