@@ -1150,7 +1150,7 @@ const V2ConnectorsPage: React.FC = () => {
                 })}</p>
                 <div className="v2-connector-aside__actions">
                   <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm'); }}>
-                    {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
+                    {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject'); }}>
                     {t('connectors.slackReject', { defaultValue: 'This is not me' })}

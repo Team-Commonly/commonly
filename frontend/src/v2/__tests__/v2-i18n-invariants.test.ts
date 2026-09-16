@@ -1,0 +1,30 @@
+import en from '../../i18n/locales/en.json';
+import zhCN from '../../i18n/locales/zh-CN.json';
+import fs from 'fs';
+import path from 'path';
+
+const COMPONENTS = ['V2ConnectorsPage.tsx', 'V2ConnectorTools.tsx'];
+
+const source = COMPONENTS
+  .map((name) => fs.readFileSync(path.join(__dirname, '../components', name), 'utf8'))
+  .join('\n');
+
+const USED_KEYS = [...new Set(
+  [...source.matchAll(/t\(\s*['"]((?:connectors|tools)\.[^'"]+)/g)].map((match) => match[1]),
+)].sort();
+
+const lookup = (bundle: Record<string, unknown>, key: string): unknown => (
+  key.split('.').reduce<unknown>((value, part) => (
+    value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined
+  ), bundle)
+);
+
+describe('Connectors and Tools locale coverage', () => {
+  test('every component translation key exists in both shipped locales', () => {
+    expect(USED_KEYS.length).toBeGreaterThan(150);
+    for (const key of USED_KEYS) {
+      expect(lookup(en, key)).toEqual(expect.any(String));
+      expect(lookup(zhCN, key)).toEqual(expect.any(String));
+    }
+  });
+});
