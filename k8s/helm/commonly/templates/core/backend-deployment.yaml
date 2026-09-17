@@ -302,6 +302,24 @@ spec:
               name: api-keys
               key: GITHUB_PAT
               optional: true
+        - name: GITHUB_APP_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_APP_ID
+              optional: true
+        - name: GITHUB_APP_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_APP_PRIVATE_KEY
+              optional: true
+        - name: GITHUB_APP_INSTALLATION_ID_COMMONLY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_APP_INSTALLATION_ID_COMMONLY
+              optional: true
         - name: X_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
