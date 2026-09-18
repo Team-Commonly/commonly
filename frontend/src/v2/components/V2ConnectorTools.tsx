@@ -119,7 +119,10 @@ export const relativeTime = (date?: string | null, now: number = Date.now()): st
 };
 
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
-const isDead = (grant: ToolGrant): boolean => Boolean(grant.revokedAt) || isExpired(grant);
+// Callers that decide what a render SHOWS pass that render's `now`; the read
+// path (`load`) leaves the default, because there the question is what is
+// live at the moment of the read.
+const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(grant.revokedAt) || isExpired(grant, now);
 
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
@@ -287,11 +290,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [grants, q, segment, catalog]);
   // A tool is "not yet" while no live grant on it exists anywhere the person can see.
+  // `now` is a dep: a grant that expires while the page sits open has to move
+  // back under Not yet on the same tick that drops the header count, or the
+  // count and the list disagree until a reload.
   const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
-    !(grants || []).some((grant) => !isDead(grant))
+    !(grants || []).some((grant) => !isDead(grant, now))
     && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
-  ))), [catalog, grants, q, segment]);
-  const grantedCount = (grants || []).filter((grant) => !isDead(grant)).length;
+  ))), [catalog, grants, now, q, segment]);
+  const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
   const moreCount = catalog.length - (grantedCount > 0 ? 1 : 0);
 
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
@@ -427,7 +433,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   };
 
   const renderRow = (grant: ToolGrant) => {
-    const dead = isDead(grant);
+    const dead = isDead(grant, now);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
     const isSelected = selectedId === grant.grantId;
@@ -658,7 +664,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   };
 
   const renderAside = (grant: ToolGrant) => {
-    const dead = isDead(grant);
+    const dead = isDead(grant, now);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
     const revokedBy = memberName(grant.revokedBy);
