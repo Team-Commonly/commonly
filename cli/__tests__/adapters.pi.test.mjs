@@ -11,7 +11,7 @@
  */
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { mkdtemp, readFile, rm, stat } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -87,12 +87,30 @@ describe('spawn', () => {
     expect((await stat(join(home, 'sessions'))).isDirectory()).toBe(true);
   });
 
-  test('a resume passes --session <id> and returns the same id', async () => {
+  test('a resume passes --session <id> and returns the same id — when pi wrote that session', async () => {
+    await mkdir(join(home, 'sessions'), { recursive: true });
+    await writeFile(join(home, 'sessions', '2026-09-18T05-00-00-000Z_abc-123.jsonl'), '{}\n');
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('again') });
     const res = await pi.spawn('more', baseCtx({ _spawnImpl: impl, sessionId: 'abc-123' }));
     expect(res.newSessionId).toBe('abc-123');
     expect(calls[0].args[calls[0].args.indexOf('--session') + 1]).toBe('abc-123');
     expect(calls[0].args).not.toContain('--session-id');
+    // A real resume carries the earlier cue in its own transcript; the wrapper does not repeat it.
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
+  });
+
+  test('a persisted id pi never wrote (a codex thread id from before the switch) starts a fresh session under a new id', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('fresh') });
+    const res = await pi.spawn('more', baseCtx({ _spawnImpl: impl, sessionId: '01a06c46-8386-7ea2-a34b-codexthread' }));
+    expect(res.newSessionId).not.toBe('01a06c46-8386-7ea2-a34b-codexthread');
+    expect(res.newSessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(calls[0].args).not.toContain('--session');
+    expect(calls[0].args[calls[0].args.indexOf('--session-id') + 1]).toBe(res.newSessionId);
+    // A fresh session gets the fresh-session memory preamble — the seat's long-term memory cue —
+    // not the resume one (sprint-review's gate: deriving freshSession from ctx.sessionId stayed green).
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('more');
+    expect(promptArg).toContain('=== Fresh session ===');
   });
 
   test('declared MCP servers ride into the bridge env with placeholders filled, and the token stays out of argv', async () => {
