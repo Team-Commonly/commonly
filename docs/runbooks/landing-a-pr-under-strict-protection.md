@@ -1,0 +1,121 @@
+# Landing a PR when `main` moves under you
+
+Four finished, fully gated PRs sat unmerged for six hours on 2026-09-18 and were
+rebased six times before the queue cleared. Nothing was wrong with any of them.
+The gap was written-down knowledge: **what has to be true for the merge button to
+exist at all**, and who can make it true. This is that note.
+
+## Measure the two settings first
+
+```bash
+gh api repos/Team-Commonly/commonly/branches/main/protection \
+  -q '{strict: .required_status_checks.strict, contexts: .required_status_checks.contexts, reviews: .required_pull_request_reviews}'
+gh api repos/Team-Commonly/commonly -q '{allow_auto_merge, allow_update_branch}'
+```
+
+Measured 2026-09-18: `strict: true`, required contexts `["Test & Coverage"]`, no
+required reviews, **`allow_update_branch: false`**, **`allow_auto_merge: false`**.
+
+Three consequences, none of them visible from a green PR page:
+
+1. **A green PR that is `BEHIND` cannot be merged by anyone.** The merge button
+   is disabled by protection. If a queue is stalled, this is the first thing to
+   check — it is very easy to misread as the reviewer or the presser hesitating.
+2. **There is no UI remedy.** "Update branch" is hidden while
+   `allow_update_branch` is false, and auto-merge is off. `gh pr edit <n> --base
+   main` retargets a base but does not *update* a branch. The only way to clear
+   `BEHIND` is to rebase the branch and push.
+3. **Every merge to `main` flips every other open PR to `BEHIND`.** One press
+   per window, not N presses.
+
+Read the state per PR rather than trusting the list view:
+
+```bash
+gh pr view <n> --json mergeStateStatus,mergeable,state \
+  -q '"\(.state) \(.mergeable) \(.mergeStateStatus)"'
+```
+
+`MERGEABLE` + `BEHIND` means *everything else is already satisfied*. That pair is
+the signature of this problem.
+
+## The window, and why it feels like a treadmill
+
+Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
+`main` was taking a merge roughly every 20 minutes and the CI set takes 10–14
+minutes, so a given PR was simultaneously green *and* current about half the
+time. Practical rules:
+
+- Rebase **immediately before** asking for a press, not hours before. A rebase
+  that is four merges old has bought nothing.
+- Re-check `mergeStateStatus` at the moment of the ask. Asking on a `BEHIND` PR
+  transfers the problem to whoever is pressing.
+- If the presser is doing the rebases themselves, stop rebasing. Two people
+  rebasing the same branches is churn, and their rebase keeps the patch-id.
+
+## Re-pinned gates are cheap — use patch-ids
+
+A head rewrite does not invalidate a review if the content is unchanged:
+
+```bash
+git show <sha> | git patch-id --stable | cut -d' ' -f1
+```
+
+Identical patch-id ⇒ identical diff ⇒ the gate carries to the new head. This is
+the standing arrangement in these pods: reviewers re-stamp by patch-id on
+request-free.
+
+## Stacked PRs are rejected here, by design
+
+`.github/workflows/pr-base-guard.yml` ("PR targets main") fails any PR whose base
+is not `main`; it deliberately has no `branches` filter so it can see stacked
+children. A stacked child also runs a **shorter** check set — measured on
+2026-09-18, 14 checks on a `main`-based PR against 5 on the stacked child (the
+child skipped CodeQL, the stale-base guard and the version guard). A stacked
+green is short, not clean.
+
+If a parent genuinely must land first: say so on the PR, land the parent, then
+`gh pr edit <n> --base main` and rebase.
+
+**GitHub does not retarget a PR when its base branch merely merges** — it
+retargets when the base branch is *deleted*. Measured the same day: #1732's base
+was still `fix/task-131-relative-now` after #1728 had squash-merged into `main`,
+so the retarget was not automatic and had to be set explicitly.
+
+### The `--onto` case (squash-merged parent)
+
+If the parent was **squash-merged**, a plain `git rebase origin/main` will replay
+the parent's commits too: a squash produces one commit whose patch-id matches
+neither parent commit, so git cannot see them as already present. Replay only
+your own work:
+
+```bash
+git rebase --onto origin/main <old-parent-sha> <branch>
+git push --force-with-lease origin <branch>
+```
+
+Pass the old parent **sha**, not a branch name — the branch ref may have moved
+(or been rebased) by the time you run this. Then verify instead of trusting it:
+
+```bash
+git diff --stat origin/main...<branch>   # should list only your own files
+```
+
+## What not to do
+
+- Don't tell a human to click "Update branch" without checking
+  `allow_update_branch`. On this repo that button does not exist, and the remedy
+  is one that a reader can neither use nor debug.
+- Don't park finished, gated work behind a local commit while waiting. Open the
+  PR even if it cannot be pressed yet — a branch with no PR reads as unstarted
+  to everyone but its author.
+- Don't run the rebase loop silently. If it is going to repeat, say what it costs
+  and who is paying it; if the answer is a human, escalate once with the numbers
+  rather than re-running the loop.
+
+## Related
+
+- `docs/runbooks/reading-github-actions-state.md` — when the *checks* look wrong
+  rather than the freshness. Different failure, different readers.
+- `.github/workflows/pr-base-guard.yml` and
+  `.github/workflows/pr-base-freshness.yml` — the two guards cited above; read
+  both, they encode different policies.
