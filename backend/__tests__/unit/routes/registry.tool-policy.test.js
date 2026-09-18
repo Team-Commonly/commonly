@@ -51,6 +51,10 @@ describe('registry tool policy update', () => {
       podId: 'pod-1',
       instanceId: 'default',
       status: 'active',
+      // TASK-055: the PATCH is gated on the installation's installer, so the
+      // fixture has to name one. Without it this suite exercises the gate
+      // instead of the profile write it is about.
+      installedBy: 'user-1',
       save: jest.fn().mockResolvedValue(true),
     });
     AgentInstallation.find.mockResolvedValue([
@@ -59,6 +63,7 @@ describe('registry tool policy update', () => {
         podId: 'pod-1',
         instanceId: 'default',
         status: 'active',
+        installedBy: 'user-1',
         save: jest.fn().mockResolvedValue(true),
       },
     ]);
