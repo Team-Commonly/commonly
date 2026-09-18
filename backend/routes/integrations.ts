@@ -463,7 +463,11 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
   }
 });
 
-router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
+// Every connector write shares one bucket (integrationRateLimit.ts), which is
+// the module's stated point: these two routes were the pair that could be burst
+// without limit while the five beside them were capped. Flagged by CodeQL on
+// this PR because the invalidation emit put them in the diff.
+router.post('/:id/connect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown; createdBy?: unknown } | null;
@@ -484,7 +488,7 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/disconnect', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown; createdBy?: unknown } | null;
