@@ -1842,7 +1842,7 @@ const ChatRoom = () => {
                 return config.groupId ? `Group ${config.groupId}` : 'GroupMe bot connected';
             case 'telegram':
                 if (config.chatTitle) return config.chatTitle;
-                return config.chatId ? `Chat ${config.chatId}` : 'Telegram bot connected';
+                return config.linked ? 'Telegram chat connected' : 'Telegram bot connected';
             case 'x':
                 if (config.username) return `@${config.username}`;
                 return config.userId ? `User ${config.userId}` : 'X feed connected';
@@ -3862,7 +3862,7 @@ const ChatRoom = () => {
                                             size="small"
                                             value={telegramConnectCode
                                                 ? `/commonly-enable ${telegramConnectCode}`
-                                                : (telegramIntegration?.config?.chatId ? 'Chat already connected' : 'Generating command...')}
+                                                : (telegramIntegration?.config?.linked ? 'Chat already connected' : 'Generating command...')}
                                             InputProps={{ readOnly: true }}
                                         />
                                         <IconButton
@@ -3883,9 +3883,9 @@ const ChatRoom = () => {
                                             Open BotFather
                                         </Button>
                                     </Box>
-                                    {telegramIntegration?.config?.chatId && (
+                                    {telegramIntegration?.config?.linked && (
                                         <Alert severity="success" sx={{ mb: 2 }}>
-                                            Connected to {telegramIntegration.config.chatTitle || `chat ${telegramIntegration.config.chatId}`}.
+                                            Connected to {telegramIntegration.config.chatTitle || 'this chat'}.
                                         </Alert>
                                     )}
                                     <Typography variant="caption" color="text.secondary">

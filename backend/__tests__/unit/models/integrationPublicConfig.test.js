@@ -67,3 +67,60 @@ describe('withoutConnectCode', () => {
     expect(withoutConnectCode(null)).toBeNull();
   });
 });
+
+// The viewer projection is applied on every surface that returns a connector
+// row: the pod read and the write echoes (PATCH /:id, POST /:id/connect-code).
+// Those write routes are gated by canDeleteIntegration, which also admits the
+// POD's creator — so "not the connector's creator" is a shape that reaches
+// them, and an echo that skips this projection is a leak (#1731 review).
+describe('projectIntegrationForViewer', () => {
+  const { projectIntegrationForViewer } = require('../../../models/integrationPublicConfig');
+  const CREATOR = '64b000000000000000000011';
+
+  const connector = (overrides = {}) => ({
+    type: 'telegram',
+    createdBy: CREATOR,
+    config: {
+      chatId: '-1004444',
+      chatTitle: 'Ops',
+      linkedUserId: CREATOR,
+      relayMap: [{ tgMessageId: '900' }],
+      messageBuffer: [{ messageId: 'm-1' }],
+      accessToken: 'SENTINEL_ACCESS_TOKEN',
+    },
+    ...overrides,
+  });
+
+  it('gives a pod member who is not the connector creator linked + chatTitle, and no routing state', () => {
+    const out = projectIntegrationForViewer(connector(), { requesterId: '64b000000000000000000099', isAdmin: false });
+    expect(out.config.linked).toBe(true);
+    expect(out.config.chatTitle).toBe('Ops');
+    expect(out.config).not.toHaveProperty('chatId');
+    expect(out.config).not.toHaveProperty('linkedUserId');
+    expect(out.config).not.toHaveProperty('relayMap');
+    expect(out.config).not.toHaveProperty('messageBuffer');
+  });
+
+  it('gives the connector creator and an admin the row whole, `linked` included', () => {
+    for (const viewer of [{ requesterId: CREATOR, isAdmin: false }, { requesterId: 'someone-else', isAdmin: true }]) {
+      const out = projectIntegrationForViewer(connector(), viewer);
+      expect(out.config.chatId).toBe('-1004444');
+      expect(out.config.relayMap).toHaveLength(1);
+      expect(out.config.linked).toBe(true);
+    }
+  });
+
+  it('accepts a document as well as a plain row, so toJSON still strips credentials', () => {
+    const out = projectIntegrationForViewer(new Integration(connector()), { requesterId: CREATOR, isAdmin: false });
+    expect(out.config.chatId).toBe('-1004444');
+    expect(out.config).not.toHaveProperty('accessToken');
+  });
+
+  it('treats a populated createdBy and a missing viewer as their own cases', () => {
+    const populated = projectIntegrationForViewer(connector({ createdBy: { _id: CREATOR } }), { requesterId: CREATOR, isAdmin: false });
+    expect(populated.config.chatId).toBe('-1004444');
+    const anonymous = projectIntegrationForViewer(connector(), null);
+    expect(anonymous.config).not.toHaveProperty('chatId');
+    expect(anonymous.config.linked).toBe(true);
+  });
+});

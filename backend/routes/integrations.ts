@@ -31,7 +31,7 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
-const { withoutConnectCode } = require('../models/integrationPublicConfig');
+const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 import { Types } from 'mongoose';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
@@ -59,6 +59,12 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // A receipt proves this channel was shown the card. Owners may configure
   // gates, but cannot invent, retarget, or close receipts from a browser.
   'cards',
+  // Routing state is written by the bridges, never by a browser: relayMap is
+  // the reply window, messageBuffer the recent-lines digest a bridge reads to
+  // answer context, and webhookListenerEnabled a runtime switch the Discord
+  // gateway reads. A body that sets any of the three names a destination or
+  // starts a listener the caller was never granted.
+  'relayMap', 'messageBuffer', 'webhookListenerEnabled',
 ];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
@@ -160,6 +166,23 @@ async function canDeleteIntegration(integration: { createdBy?: { toString: () =>
   if (pod && pod.createdBy?.toString() === userId) return true;
   if (integration?.createdBy?.toString() === userId) return true;
   return false;
+}
+
+// Who may see a connector's routing state: the connector's creator and an
+// instance administrator. Every response that echoes a connector row to a pod
+// member resolves its viewer here — `canDeleteIntegration` is the WRITE gate and
+// it also admits the POD's creator, who may not have created this connector, so
+// an echo that skips the projection hands that member back the very fields the
+// pod read redacts (#1731 review). The projection itself lives with the rest of
+// the Integration JSON contract in models/integrationPublicConfig; this is only
+// the database read that supplies it.
+type ConnectorViewer = { isAdmin: boolean; requesterId: string };
+
+async function resolveConnectorViewer(viewerId?: unknown): Promise<ConnectorViewer> {
+  // middleware/auth sets req.user.role only on the JWT branch, so an admin
+  // caller is resolved from the database rather than from the request.
+  const requester = await User.findById(viewerId) as { role?: string } | null;
+  return { isAdmin: requester?.role === 'admin', requesterId: String(viewerId || '') };
 }
 
 const extractToken = (req: AuthReq) => {
@@ -336,7 +359,15 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     const DMService = require('../services/dmService');
     if (!await DMService.canViewPod(req.user?.id, pod)) return res.status(403).json({ message: 'Access denied' });
     const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username email').populate('platformIntegration');
-    return res.json(integrations);
+    // Routing state is the connector's, not the pod's: a member who did not
+    // create this connector sees that it is linked (config.linked) and to
+    // which chat (config.chatTitle), never the external chat id, the identity
+    // inbound messages are authored as, or the reply/digest tables. The
+    // connector's creator and an instance administrator see the row whole.
+    // canViewPod admits every pod member, so the projection is what keeps a
+    // shared pod's other connectors from being readable here.
+    const viewer = await resolveConnectorViewer(req.user?.id);
+    return res.json(integrations.map((integration: unknown) => projectIntegrationForViewer(integration, viewer)));
   } catch (error) {
     console.error('Error fetching integrations:', error);
     res.status(500).json({ message: 'Server error' });
@@ -543,7 +574,9 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
     const updated = await Integration.findByIdAndUpdate(id, {
       $set: { 'config.connectCode': minted.connectCode, 'config.connectCodeExpiresAt': minted.connectCodeExpiresAt },
     }, { new: true });
-    return res.json(updated);
+    // Same gate as above admits the pod's creator: project the echo too (the
+    // code itself is not routing state and is what the caller came for).
+    return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     console.error('Error minting connect code:', error);
     return res.status(500).json({ message: 'Server error' });
@@ -680,7 +713,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // The selector is the canonical ObjectId parsed at the route boundary;
     // the access check above authorises that exact document before this write.
     const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
-    return res.json(updated);
+    // The write gate is not the read gate: canDeleteIntegration admits the pod
+    // creator, so an unprojected echo here would return the routing state the
+    // pod read withholds (chatId, linkedUserId, relayMap, messageBuffer).
+    return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     console.error('Error updating integration:', error);
     return res.status(500).json({ message: 'Server error' });
