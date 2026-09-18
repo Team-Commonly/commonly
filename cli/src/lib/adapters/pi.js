@@ -34,7 +34,7 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, readdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -127,6 +127,24 @@ export const seatHome = (ctx) => {
   return ctx._piHome || join(homedir(), '.commonly', 'pi-homes', hash);
 };
 
+/**
+ * Only a session pi wrote can be resumed. The wrapper persists one id per
+ * (agent, pod) across adapters, so a seat switched from codex hands pi the
+ * codex thread id on its first turn — pi answers `No session found` and the
+ * turn fails (sprint-impl's first spawn, 2026-09-18 05:06Z). pi's session
+ * files are `<timestamp>_<id>.jsonl` under the seat's session dir; an id with
+ * no file starts a fresh session under a new id, which the wrapper persists.
+ */
+export const sessionExists = async (sessionDir, sessionId) => {
+  if (!sessionId) return false;
+  try {
+    const files = await readdir(sessionDir);
+    return files.some((name) => name.endsWith(`_${sessionId}.jsonl`) || name === `${sessionId}.jsonl`);
+  } catch {
+    return false;
+  }
+};
+
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge,
 }) => [
@@ -196,9 +214,6 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const isResume = !!ctx.sessionId;
-    const sessionId = ctx.sessionId || randomUUID();
-    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
     const provider = resolveProvider(ctx.environment);
     const model = ctx.environment?.model || DEFAULT_MODEL;
     const thinking = thinkingFor(ctx.environment?.effort);
@@ -213,6 +228,12 @@ export default {
     const sessionDir = join(home, 'sessions');
     await mkdir(agentDir, { recursive: true, mode: 0o700 });
     await mkdir(sessionDir, { recursive: true, mode: 0o700 });
+
+    // Resume only what pi wrote; anything else (a codex thread id from before
+    // the switch, a wiped home) starts fresh under a new id.
+    const isResume = await sessionExists(sessionDir, ctx.sessionId);
+    const sessionId = isResume ? ctx.sessionId : randomUUID();
+    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
     await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(provider, model), null, 2)}\n`, { mode: 0o600 });
 
     const servers = resolveMcpServers(ctx.environment?.mcp, ctx);
