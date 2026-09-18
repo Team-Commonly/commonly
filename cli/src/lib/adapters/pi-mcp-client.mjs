@@ -27,10 +27,11 @@ const truncate = (text) => (text.length <= MAX_TEXT
   : `${text.slice(0, MAX_TEXT)}\n… [truncated ${text.length - MAX_TEXT} bytes]`);
 
 /**
- * Connect to one declared server, stdio or Streamable HTTP. The adapter's
- * `resolveMcpServers` emits exactly one of `command`/`url` per entry; `url`
- * wins if a malformed entry somehow carries both, because a server that
- * advertises an endpoint is not a command to spawn.
+ * Connect to one declared server, stdio or Streamable HTTP. `resolveMcpServers`
+ * emits exactly one of `command`/`url` per entry, and `readServers` keeps that
+ * invariant, so the shape decides; `url` wins if a hand-built entry still
+ * carries both, because a server that advertises an endpoint is not a command
+ * to spawn.
  */
 export const connectMcp = (server, opts = {}) => (typeof server?.url === 'string' && server.url
   ? connectHttpMcp(server, opts)
@@ -227,13 +228,19 @@ export const takeServers = (env = process.env) => {
 };
 
 /**
- * Entries with a non-empty `command` are stdio; entries with a `url` are
- * Streamable HTTP. Anything with neither is not a server and is dropped. Both
- * the adapter (pi.js resolveMcpServers) and this filter have to agree, or a
- * server reaches the bridge as an unstartable entry.
+ * Entries with a non-empty `command` and no `url` are stdio; entries with a
+ * non-empty `url` and no `command` are Streamable HTTP. The two are mutually
+ * exclusive on purpose: `resolveMcpServers` emits exactly one field per entry
+ * (the transport decides which), so an entry carrying BOTH did not come from it
+ * and is dropped rather than spawned — the adapter is the layer that executes,
+ * and a shape it cannot classify is not one it should run. Both the adapter
+ * (pi.js resolveMcpServers) and this filter have to agree, or a server reaches
+ * the bridge as an unstartable entry.
  */
-export const isStdioServer = (s) => Array.isArray(s?.command) && s.command.length > 0;
-export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 0;
+export const isStdioServer = (s) => Array.isArray(s?.command) && s.command.length > 0
+  && !(typeof s?.url === 'string' && s.url.length > 0);
+export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 0
+  && !(Array.isArray(s?.command) && s.command.length > 0);
 
 export const readServers = (raw) => {
   if (!raw) return [];

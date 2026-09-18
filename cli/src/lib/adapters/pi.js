@@ -79,6 +79,9 @@ const substitutePlaceholders = (value, ctx) => {
   return value.replace(PLACEHOLDER_RE, (whole, key) => (SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole));
 };
 
+const HTTP_TRANSPORTS = new Set(['http']);
+const STDIO_TRANSPORTS = new Set(['stdio']);
+
 /**
  * Declared MCP servers from the environment spec, placeholders filled. Both
  * transports the spec admits are carried through: stdio (`command` + `env`) and
@@ -91,21 +94,53 @@ const substitutePlaceholders = (value, ctx) => {
  * Filling the headers here reuses the same substitution as the stdio env, and
  * the result rides in COMMONLY_PI_MCP — which the bridge takes out of its own
  * environment before pi's bash tool can read it (see takeServers).
+ *
+ * WHICH shape an entry becomes is decided by `transport` — the same field, with
+ * the same default, that the daemon's `auditDeclaredMcp` judges it by — and the
+ * field that transport does not select is dropped unsent. Classifying by which
+ * field is PRESENT instead is a bypass, not a shorthand: an entry declaring
+ * `transport: 'http'` with the instance's own url passes the guard (its http
+ * rule checks only the url origin, and `${COMMONLY_AGENT_TOKEN}` in the command
+ * is one of the known placeholders), and a presence-classifier then ran that
+ * command as stdio with the real token substituted. The guard's judgement and
+ * the adapter's disagreed, and the adapter is what executes (Vera, Connectors
+ * 69774). A transport pi cannot speak is refused here rather than
+ * reinterpreted as one it can.
  */
-export const resolveMcpServers = (mcpServers, ctx = {}) => (mcpServers || [])
-  .filter((server) => server?.name
-    && ((Array.isArray(server.command) && server.command.length) || (typeof server.url === 'string' && server.url)))
-  .map((server) => (Array.isArray(server.command) && server.command.length
-    ? {
+export const resolveMcpServers = (mcpServers, ctx = {}) => {
+  const carried = [];
+  for (const server of mcpServers || []) {
+    if (!server?.name || typeof server.name !== 'string') continue;
+    const declared = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : '';
+    if (declared && !HTTP_TRANSPORTS.has(declared) && !STDIO_TRANSPORTS.has(declared)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[pi] declared MCP server '${server.name}' asks for transport '${declared}', which this adapter cannot speak — not starting it`);
+      continue;
+    }
+    const hasCommand = Array.isArray(server.command) && server.command.length > 0;
+    const hasUrl = typeof server.url === 'string' && server.url.length > 0;
+    // An undeclared transport falls back to the field that is present, so a
+    // hand-written local record that names only a url keeps working; when the
+    // transport IS declared it wins, and the other field is never carried.
+    const http = declared ? HTTP_TRANSPORTS.has(declared) : (!hasCommand && hasUrl);
+    if (http) {
+      if (!hasUrl) continue;
+      carried.push({
+        name: server.name,
+        url: substitutePlaceholders(server.url, ctx),
+        headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+      });
+      continue;
+    }
+    if (!hasCommand) continue;
+    carried.push({
       name: server.name,
       command: server.command.map((a) => substitutePlaceholders(a, ctx)),
       env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-    }
-    : {
-      name: server.name,
-      url: substitutePlaceholders(server.url, ctx),
-      headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-    }));
+    });
+  }
+  return carried;
+};
 
 /** The provider block for models.json: the env spec's `provider` over the LiteLLM default. */
 export const resolveProvider = (environment = {}) => {
