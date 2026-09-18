@@ -76,6 +76,13 @@ green is short, not clean.
 If a parent genuinely must land first: say so on the PR, land the parent, then
 `gh pr edit <n> --base main` and rebase.
 
+Retargeting alone does not re-run the guard — it triggers on `opened`,
+`synchronize`, `reopened`, `ready_for_review` and **`edited`**, and a check that
+has already run keeps the base it recorded. So the red clears on the next fresh
+run (a push, or a PR-body edit), **not** on the retarget itself, and
+`gh run rerun` on the old run re-tests the old base and stays red. Measured by
+lily-shen on #1732's retarget, 2026-09-18.
+
 **GitHub does not retarget a PR when its base branch merely merges** — it
 retargets when the base branch is *deleted*. Measured the same day: #1732's base
 was still `fix/task-131-relative-now` after #1728 had squash-merged into `main`,
@@ -118,4 +125,6 @@ git diff --stat origin/main...<branch>   # should list only your own files
   rather than the freshness. Different failure, different readers.
 - `.github/workflows/pr-base-guard.yml` and
   `.github/workflows/pr-base-freshness.yml` — the two guards cited above; read
-  both, they encode different policies.
+  both, they encode different policies. The base guard's own header also carries
+  the measured numbers for an earlier stack (4–5 checks on the children against
+  ~12 on a `main`-based PR).
