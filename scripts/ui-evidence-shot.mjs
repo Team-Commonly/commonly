@@ -8,10 +8,21 @@
  * response and every console error, so a blank page or a CORS block names itself
  * instead of looking like a layout bug.
  *
+ * `--selector` narrows the capture to one element, scrolled into view first.
+ * `fullPage` is not enough for content inside an inner scroller: it captures the
+ * whole document, but a panel with its own `overflow` is still clipped to its own
+ * box, so the interesting row sits below the fold of that box and the capture is of
+ * the panel's first screenful. A capture that cannot name what it shows is the
+ * reason `--selector` exists. With a selector the PNG is that element's box and an
+ * extra `<out>.selector.txt` holds the element's own innerText; the page dump and a
+ * `<out>.page.png` full-page shot are still written, so the scoped shot keeps its
+ * context.
+ *
  * See docs/runbooks/local-ui-render-harness.md for the stack this expects.
  *
  * Usage:
  *   node scripts/ui-evidence-shot.mjs --route /v2/pods/team/<podId> --out /tmp/after.png \
+ *     [--selector '.tools-trail'] \
  *     [--base-url http://localhost:3000] [--api http://localhost:5050] \
  *     [--email dev@commonly.local] [--password password123] [--wait 2500]
  */
@@ -50,7 +61,11 @@ const apiBase = (args.get('api') || process.env.UI_API_URL || 'http://localhost:
 const email = args.get('email') || process.env.UI_EMAIL || 'dev@commonly.local';
 const password = args.get('password') || process.env.UI_PASSWORD || 'password123';
 const waitMs = Number(args.get('wait') || 2500);
-const textPath = outPath.replace(/\.png$/, '') + '.txt';
+const selector = args.get('selector');
+const basePath = outPath.replace(/\.png$/, '');
+const textPath = `${basePath}.txt`;
+const selectorTextPath = selector ? `${basePath}.selector.txt` : null;
+const pagePath = selector ? `${basePath}.page.png` : null;
 
 const login = async () => {
   const res = await fetch(`${apiBase}/api/auth/login`, {
@@ -87,13 +102,32 @@ const main = async () => {
   await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle', timeout: 45000 });
   await page.waitForTimeout(waitMs);
 
-  await page.screenshot({ path: outPath, fullPage: true });
+  let selectorChars = null;
+  if (selector) {
+    const target = page.locator(selector).first();
+    // Throws with the selector named if it never appears, rather than writing a
+    // screenshot of whatever happened to be on screen.
+    await target.waitFor({ state: 'visible', timeout: 15000 });
+    // scrollIntoViewIfNeeded walks ancestor scrollers too, which is the whole
+    // point: an element inside a panel's own overflow is otherwise captured out of view.
+    await target.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(150);
+    await target.screenshot({ path: outPath });
+    const scopeText = await target.evaluate((el) => el.innerText || '');
+    writeFileSync(selectorTextPath, scopeText);
+    selectorChars = scopeText.length;
+    // Context beside the scoped shot: what the scoped element sits inside.
+    await page.screenshot({ path: pagePath, fullPage: true });
+  } else {
+    await page.screenshot({ path: outPath, fullPage: true });
+  }
   const text = await page.evaluate(() => (document.body && document.body.innerText) || '');
   writeFileSync(textPath, text);
 
   const sha = createHash('sha1').update(text).digest('hex').slice(0, 12);
-  console.log(`${outPath} | ${text.length}ch innerText sha1=${sha}`);
+  console.log(`${outPath} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | ${selector} ${selectorChars}ch`}`);
   console.log(`  text: ${textPath}`);
+  if (selector) console.log(`  selector text: ${selectorTextPath}`);
   console.log(`  non-2xx: ${badResponses.length ? [...new Set(badResponses)].join(' | ') : 'none'}`);
   console.log(`  console errors: ${consoleErrors.length ? [...new Set(consoleErrors)].join(' | ') : 'none'}`);
   if (consoleErrors.length || badResponses.length) {

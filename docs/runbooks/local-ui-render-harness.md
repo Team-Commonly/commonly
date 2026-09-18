@@ -128,6 +128,32 @@ Route shapes that cost time to rederive:
   component's members sidebar** (~line 3452), not in a `V2*` component; `/v2/connectors` is the
   other surface that lists them.
 
+### Capturing something that is below the fold — `--selector`
+
+`fullPage: true` captures the whole *document*, and that is **not** enough for content
+inside a panel with its own `overflow`. An inner scroller is still clipped to its own box,
+so a full-page shot shows its first screenful no matter how tall the page is: two captures
+of a trail that never scrolls look identical, and the evidence says nothing about the rows
+the reviewer was asked to check. Name the subject instead:
+
+```bash
+node scripts/ui-evidence-shot.mjs \
+  --route /v2/pods/team/<podId> --out /tmp/trail.png \
+  --selector '.tools-trail' \
+  --base-url http://localhost:3000 --api http://localhost:5050
+```
+
+The element is scrolled into view (walking ancestor scrollers, so the row inside the panel
+is visible), then `/tmp/trail.png` is **that element's box** rather than the page. Two extra
+artifacts come with it: `/tmp/trail.selector.txt` (`innerText` of the element — the quotable
+half, and for a below-the-fold row the only half a text-only reader can use) and
+`/tmp/trail.page.png` (the full page, so the scoped shot keeps its context). Without
+`--selector` nothing changes: one full-page PNG and one `.txt`.
+
+A selector that never appears **fails and writes nothing** (exit 1, message names the
+selector) instead of shipping a screenshot of whatever was on screen — the failure mode that
+makes an evidence capture worth less than no capture.
+
 ## 4. Capture the before/after pair
 
 A screenshot of the changed revision alone proves nothing. Render the base beside it:
@@ -229,6 +255,7 @@ Two seeding steps this example needed, both of which the API refuses to do for y
 | `…/index.html is outside of Vite serving allow list` | allow-list entry is the symlinked `/tmp`, not `/private/tmp` | list the realpath |
 | Panel/card renders empty | capture user is not a pod member | add the membership (above) |
 | Both revisions render identically | wrong viewer (the creator sees everything), or a UI change captured against a shared backend when the change is API-visible | pick a viewer the change is *for*; pair backend revisions |
+| Two captures look identical, or the row under test is missing from the shot | the content is inside a panel with its own `overflow`, and `fullPage` can't reveal it | re-shoot with `--selector` (above), and quote the `.selector.txt` |
 | `docs/skills/awesome-agent-skills-index.json` shows as modified | the boot ran without `SKILLS_CATALOG_PATH` | `git checkout -- docs/skills/awesome-agent-skills-index.json` |
 
 ## Teardown
