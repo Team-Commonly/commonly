@@ -34,6 +34,22 @@ Two knobs decide whether anything renders:
   CORS policy` + `Network Error` + `net::ERR_FAILED` — which reads like a broken app, not a missing
   allow-list entry.
 
+## 0. Create a local `.env`
+
+**No `.env` is tracked in this repo — only `.env.example`.** Everything below sources a local
+`.env`, for its database credentials and its local-login credentials, so the first step on a fresh
+clone is to make one:
+
+```bash
+[ -f .env ] || cp .env.example .env      # never clobber an existing local .env
+grep -E '^(PG_|LOCAL_DEV_LOGIN_|FRONTEND_URL|MONGO_URI)' .env
+```
+
+`.env.example` is where these actually live: `PG_USER=commonly` / `PG_PASSWORD=password`, the
+`MONGO_URI` that matches the compose container (`commonly:commonly_dev@localhost:27017`),
+`LOCAL_DEV_LOGIN_*`, and `FRONTEND_URL=http://localhost:3000`. **If you already have a `.env`,
+do not overwrite it** — check it carries those values rather than copying over it.
+
 ## 1. Bring up the "after" revision
 
 ```bash
@@ -53,8 +69,9 @@ curl -s http://localhost:5050/api/health   # expect "status":"healthy" AND postg
 
 Four details in that block are load-bearing, each measured the hard way:
 
-- **`. ../.env` first.** The repo `.env` sets `PG_USER=commonly` / `PG_PASSWORD=password`, which is
-  what the postgres container was initialised with. Passing the compose *defaults*
+- **`. ../.env` first.** Your local `.env` (copied from `.env.example` in step 0) sets
+  `PG_USER=commonly` / `PG_PASSWORD=password`, which is what the postgres container was initialised
+  with. Passing the compose *defaults*
   (`postgres`/`postgres`) authenticates as a role that does not own the database: the API still
   answers, `/api/health` says `"status":"degraded"` with `password authentication failed for user
   "postgres"`, and chat-message paths quietly fail.
@@ -62,8 +79,10 @@ Four details in that block are load-bearing, each measured the hard way:
 - **`SKILLS_CATALOG_PATH` pointed at `/tmp`.** A local boot rewrites the skills index
   (`backend/services/skillsCatalogService.ts`); without this the run leaves
   `docs/skills/awesome-agent-skills-index.json` modified in your working tree.
-- **Node 20** (`~/.local/node20/bin/node` here). The checkout's `node_modules` were installed with
-  it; the Node 26 on `PATH` fails in unrelated places.
+- **Node 20** (`~/.local/node20/bin/node` here) for the backend and vite: the checkout's
+  `node_modules` were installed with it, and the v26 on `PATH` breaks parts of the repo's tooling
+  (34 of 369 unit suites die in `buffer-equal-constant-time` under it). The capture script is not
+  one of those — see step 3.
 
 ```bash
 cd frontend
@@ -75,8 +94,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/v2/login   # 200
 
 ## 2. Sign in
 
-`LOCAL_DEV_LOGIN_ENABLED=1` (already in `.env`) makes the backend create/refresh a local login on
-boot: **`dev@commonly.local` / `password123`**. `scripts/ui-evidence-shot.mjs` logs in through
+`LOCAL_DEV_LOGIN_ENABLED=true` (set in `.env.example`, so present in your `.env` from step 0;
+read at `backend/services/localDevLoginService.ts:44`) makes the backend create/refresh a local
+login on boot: **`dev@commonly.local` / `password123`**. `scripts/ui-evidence-shot.mjs` logs in through
 `POST /api/auth/login` and injects the JWT into `localStorage.token` **before the first
 navigation**, which is where the shell reads it. No login-page step, so login flake can never
 masquerade as a rendering failure. Rest of the local credential surface:
@@ -91,7 +111,9 @@ node scripts/ui-evidence-shot.mjs \
 ```
 
 Writes `/tmp/after.png` (full page) **and `/tmp/after.txt`** (`document.body.innerText`), then prints
-the text length, its sha1, every non-2xx response and every console error.
+the text length, its sha1, every non-2xx response and every console error. Playwright resolves
+from the repo-root `node_modules`, so the script itself runs under either Node (measured under the
+v26 on `PATH`); the **backend and vite** are the two that need Node 20.
 
 **The `.txt` is the evidence; the PNG is the illustration.** A text-only agent cannot read a
 screenshot — a `diff` of two `.txt` files is quotable in a PR body, and a 403 or a console error
@@ -140,6 +162,7 @@ the *resolved* path, so list the realpath or the dev server answers
 Then run the base stack and capture both sides:
 
 ```bash
+# sources the same local .env; the base worktree has none of its own
 cd /tmp/ui-base/backend && nohup bash -c 'set -a; . /Users/me/commonly/.env; set +a; \
   export PORT=5051 NODE_ENV=development FRONTEND_URL="http://localhost:3000,http://localhost:3001" \
     SKILLS_CATALOG_PATH=/tmp/ui-harness-skills-index-base.json; \
@@ -201,7 +224,7 @@ Two seeding steps this example needed, both of which the API refuses to do for y
 | --- | --- | --- |
 | Blank page, `net::ERR_FAILED`, `blocked by CORS policy` | frontend origin not in `FRONTEND_URL` | add the port to `FRONTEND_URL` and restart the backend |
 | Every API call goes to `:5000` and fails | `REACT_APP_API_URL` not set when vite started | restart vite with it (it is baked in via `define`) |
-| `/api/health` says `degraded`, postgres auth error | compose defaults used instead of `.env` PG creds | `. ./.env` before starting the backend |
+| `/api/health` says `degraded`, postgres auth error | no local `.env` (it is untracked), or the compose defaults were used instead of its `PG_*` | `cp .env.example .env` (step 0), then `. ./.env` before starting the backend |
 | 403s for `.woff2` under `/@fs/…` in a worktree | vite `server.fs.allow` excludes the symlink target | add both paths to `fs.allow` (realpath for `/tmp`) |
 | `…/index.html is outside of Vite serving allow list` | allow-list entry is the symlinked `/tmp`, not `/private/tmp` | list the realpath |
 | Panel/card renders empty | capture user is not a pod member | add the membership (above) |
@@ -223,6 +246,8 @@ git status --short          # expect clean: no modified skills index, no stray w
 - `frontend/src/utils/apiBaseUrl.ts` — API base resolution and the localhost fallback.
 - `backend/server.ts:98` `buildAllowedOrigins` — the CORS allow-list.
 - `backend/models/integrationPublicConfig.ts` — routing state that is stripped for non-owners.
+- `.env.example` — the tracked template for the local `.env`; the `PG_*`, `MONGO_URI`,
+  `LOCAL_DEV_LOGIN_*` and `FRONTEND_URL` values above come from here.
 - `docs/development/local-credentials.md` — local logins and env flags.
 - `playwright.config.ts` + `e2e/` — the repo's browser test tier (`E2E_BASE_URL`, `E2E_API_URL`);
   this harness is for one-off evidence, not for a suite.
