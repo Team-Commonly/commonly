@@ -9,6 +9,15 @@
  * Kept separate from schedulerService + pgRetentionService so other tracks can
  * edit those files without stomping on this cron (and vice versa).
  *
+ * Native installs (`config.runtime.runtimeType === 'native'`) are exempt from
+ * the mark step. Both liveness signals are runtime-token signals in disguise:
+ * a native seat runs in-process, holds no runtime token, and emits an
+ * AgentEvent only when a person addresses it, so a quiet pod reads as a dead
+ * agent. Measured 2026-09-18: 21 of 30 Scout installs were 'stale' and every
+ * @-mention in those pods 403'd. `internal` installs are NOT exempt — they
+ * are the legacy in-process shape and stay swept. `scripts/revive-native-
+ * installations.ts` restores the rows this cron already marked.
+ *
  * Env var overrides:
  *   INSTALLATION_STALENESS_EVENT_DAYS    default 7  (days since last event before marking stale)
  *   INSTALLATION_PRUNE_AFTER_STALE_DAYS  default 14 (days after staleSince before deletion)
@@ -47,6 +56,20 @@ function resolveDays(envKey: string, fallback: number): number {
     return NaN;
   }
   return parsed;
+}
+
+/**
+ * Runtime types whose installs never carry the liveness signals the mark step
+ * reads. Keep this list to runtimes that run in-process with no token; a
+ * remote runtime that goes quiet IS stale.
+ */
+export const STALENESS_EXEMPT_RUNTIME_TYPES: readonly string[] = ['native'];
+
+type InstallRuntimeShape = { config?: { runtime?: { runtimeType?: unknown } | null } | null };
+
+export function isStalenessExempt(install: InstallRuntimeShape | null | undefined): boolean {
+  const runtimeType = String(install?.config?.runtime?.runtimeType || '').trim().toLowerCase();
+  return runtimeType !== '' && STALENESS_EXEMPT_RUNTIME_TYPES.includes(runtimeType);
 }
 
 /**
@@ -120,9 +143,16 @@ export async function markStaleInstallations(
 
   // Pull only the fields we need. Installations are scoped per pod × agent ×
   // instanceId so this set is bounded and cheap to stream.
-  const activeInstalls = await AgentInstallation.find({ status: 'active' })
-    .select('_id agentName instanceId podId')
+  // `config.runtime` rides along so the exemption below reads a real value:
+  // without the projection every install reads as non-native and the
+  // exemption is silently a no-op.
+  const allActiveInstalls = await AgentInstallation.find({ status: 'active' })
+    .select('_id agentName instanceId podId config.runtime')
     .lean();
+
+  // Exempt runtimes never enter the evaluation, so a pair that exists only as
+  // native installs is never looked up at all.
+  const activeInstalls = allActiveInstalls.filter((inst: InstallRuntimeShape) => !isStalenessExempt(inst));
 
   if (!activeInstalls.length) {
     return { marked: 0, evaluationFailures: 0 };
@@ -206,8 +236,18 @@ export async function markStaleInstallations(
   // @-mentions them, and lazily-started daemons don't run until mentioned.
   // Observed 2026-07-18: dev-jr, installed the same afternoon, was marked
   // stale minutes later and would have been deleted 14 days on.
+  //
+  // The runtimeType guard is the second half of the exemption: a pair is keyed
+  // on (agentName, instanceId) across pods, so if one pod's install of a pair
+  // is native and another's is not, the non-native rows decide staleness and
+  // this filter keeps the write off the native row.
   const result = await AgentInstallation.updateMany(
-    { status: 'active', createdAt: { $lt: cutoff }, $or: orClauses },
+    {
+      status: 'active',
+      createdAt: { $lt: cutoff },
+      'config.runtime.runtimeType': { $nin: STALENESS_EXEMPT_RUNTIME_TYPES },
+      $or: orClauses,
+    },
     { $set: { status: 'stale', staleSince: now } },
   );
 
@@ -335,6 +375,8 @@ export function initInstallationCleanup(): void {
 }
 
 export default {
+  STALENESS_EXEMPT_RUNTIME_TYPES,
+  isStalenessExempt,
   markStaleInstallations,
   pruneStaleInstallations,
   runCleanup,
