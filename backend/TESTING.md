@@ -99,9 +99,13 @@ Frontend testing is documented separately at `frontend/TESTING.md`. Contracts te
 ./dev.sh test:integration       # Tier 1 against Docker Compose services (./dev.sh up required)
 ```
 
-## Node 26 kills any suite whose require graph reaches `buffer-equal-constant-time`
+## Node 25+ kills any suite whose require graph reaches `buffer-equal-constant-time`
 
-Node 26 removed `SlowBuffer`. `buffer-equal-constant-time/index.js:37` reads
+Node 25 removed `SlowBuffer` — 22 and 24 still have it, 25 and 26 do not
+(measured: `node -e "typeof require('buffer').SlowBuffer"` is `function` on 22
+and 24, `undefined` on 25 and 26; the removal landed at 25, so "Node 26" — how
+this was first described — understates the range).
+`buffer-equal-constant-time/index.js:37` reads
 `SlowBuffer.prototype.equal` at **module scope**, so it throws the moment it is
 required — before any test runs:
 
@@ -117,7 +121,7 @@ never runs. The unconditional **read** at `:37` is the one that fires.
 **`jsonwebtoken` is the common importer, not the failing package.** The chain is
 `jsonwebtoken` → `jws` → `jwa` → `buffer-equal-constant-time`, and both
 `require('jsonwebtoken')` and `require('buffer-equal-constant-time')` throw at
-the identical frame. So a "will this suite die on 26?" check must ask whether
+the identical frame. So a "will this suite die on 25+?" check must ask whether
 that leaf is in the require graph — grepping a suite for the string
 `jsonwebtoken` misses every suite that reaches it transitively, and blames the
 wrong package when it hits.
@@ -153,7 +157,7 @@ comparison function is a faithful replacement rather than a test-only shim.
 Note that is a stub of the *leaf*, not of `jsonwebtoken` — the caution below
 about stubbing `jsonwebtoken` doesn't apply, because real signing and verifying
 still run against a real comparison.
-That is the move **if Node 26 ever becomes mandatory** — not now, while 26 is
+That is the move **if Node 25+ ever becomes mandatory** — not now, while 25+ is
 optional and Node 22 is the right answer.
 
 Note the remedy has to intercept the `require`. Lines 36-37 are dead by
@@ -192,7 +196,7 @@ actually signs or verifies a token, which is most of the runtime-token service
 suites.
 
 Suites with no jwt in their graph are unaffected — `mongoose` and
-`mongodb-memory-server` both load clean on 26.
+`mongodb-memory-server` both load clean on 25+.
 
 ## CI
 

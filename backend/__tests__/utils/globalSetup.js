@@ -9,6 +9,26 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // cached binary and never race the download lock — the root cause of the flaky
 // "Cannot unlock file ... .lock" failures in CI.
 module.exports = async () => {
+  // Name the remedy before the failure, because the failure does not. On Node
+  // 25+ every suite whose require graph reaches jsonwebtoken dies with a bare
+  // `TypeError: Cannot read properties of undefined (reading 'prototype')`
+  // raised inside buffer-equal-constant-time — a package the test never
+  // imports, four frames under jws. Measured cost of not saying this: a seat
+  // read the stack, installed deps, wrote a SlowBuffer shim, and only then
+  // found TESTING.md. One line here is cheaper than that detour.
+  if (Number(process.versions.node.split('.')[0]) >= 25) {
+    // console is not stubbed in this process (that happens per-worker in
+    // setup.js), but stderr is the honest target either way.
+    process.stderr.write(
+      `[globalSetup] Node ${process.versions.node} removed buffer.SlowBuffer, which `
+      + 'buffer-equal-constant-time reads at module scope — any suite reaching '
+      + 'jsonwebtoken will fail to load. Run on Node 22 (what CI pins):\n'
+      + '  PATH=/opt/homebrew/opt/node@22/bin:$PATH npx jest <suite>\n'
+      + '  ...or without a local install: npx -y -p node@22 node node_modules/jest/bin/jest.js <suite>\n'
+      + 'See backend/TESTING.md for the full picture.\n',
+    );
+  }
+
   // Integration runs use a real Mongo (MONGO_URI); no in-memory binary needed.
   if (process.env.INTEGRATION_TEST === 'true') return;
 

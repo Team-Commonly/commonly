@@ -3760,3 +3760,34 @@ orientation/tool-description tests; and align the CLI fork frame with the
 same AND semantics. The decision tool posts its own ask,
 remains advisory (not privileged-action consent), and does not require
 unrelated work to stop while a ruling is pending.
+
+## 57. A documented remedy that its own failure never points at (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl running TASK-130's backend suites in this
+checkout; verification: `backend/TESTING.md` ("Node 25+ kills any suite whose
+require graph reaches `buffer-equal-constant-time`"), `backend/__tests__/utils/globalSetup.js`,
+measured with `npx -y -p node@{22,24,25,26} node -e "typeof require('buffer').SlowBuffer"`.*
+
+`backend/TESTING.md` already carried the whole story of this trap, including the
+exact Node-22 invocation. The seat still lost the detour, because the failure it
+describes points nowhere near the doc. Two dependency-shaped errors arrived in a
+row, neither naming a Node version: first
+`Module ts-jest in the transform option was not found` (this checkout simply had
+no `backend/node_modules`), then, after `npm ci`,
+`TypeError: Cannot read properties of undefined (reading 'prototype')` raised
+four frames under `jws` inside a package the test never imports. The remedy is a
+paragraph in a testing doc — findable only if the version is already suspected.
+
+Two of the doc's own facts were also off by one release boundary, so even a
+reader who found it could be misled: measured, `buffer.SlowBuffer` is a
+`function` on Node 22 and 24 and `undefined` on 25 and 26. The heading said
+"Node 26", which understates the range and sends a Node 25 user looking
+elsewhere.
+
+**Repair:** the doc now states the measured boundary rather than the version on
+which it was first noticed, and `globalSetup` writes the remedy to stderr when
+Node ≥ 25, before any worker fails. One line where the consumer is, instead of a
+paragraph where the consumer is not. Rule: when a doc exists to explain a
+failure that a bare dependency error will produce, put the pointer at the
+failure, not only in the doc — and state removals as measured boundaries, not as
+the version of the machine you happened to hit them on.
