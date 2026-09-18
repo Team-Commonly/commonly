@@ -2,6 +2,7 @@
 // declares no commonly server (TASK-048).
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
+  ADAPTERS_WITH_DEFAULT_SANDBOX,
   COMMONLY_DEFAULT_SANDBOX,
   COMMONLY_MCP_SERVER_NAME,
   commonlyMcpServer,
@@ -11,6 +12,7 @@ import {
   withDefaultMcpServer,
   withDefaultSandbox,
 } from '../src/lib/default-environment.js';
+import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 
 describe('defaultMcpServers', () => {
   test.each(['claude', 'codex', 'pi'])('hands %s the commonly server', (adapterName) => {
@@ -32,6 +34,11 @@ describe('defaultMcpServers', () => {
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
     expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'pi']);
+  });
+
+  test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
+    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex']);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 });
 
@@ -172,7 +179,24 @@ describe('seatBaseline', () => {
   });
 
   test('is idempotent on both halves', () => {
-    const once = seatBaseline(null, 'pi', { sandbox: true });
-    expect(seatBaseline(once, 'pi', { sandbox: true })).toBe(once);
+    const once = seatBaseline(null, 'codex', { sandbox: true });
+    expect(seatBaseline(once, 'codex', { sandbox: true })).toBe(once);
+  });
+
+  // The sandbox half is written for the adapters that can enforce it, and NOT
+  // for every adapter that consumes mcp[]. pi fails closed on a declared
+  // sandbox (#1727), so a baseline carrying one is a seat that cannot start —
+  // the invariant is not "no sandbox key" but "the spec this adapter receives
+  // is one this adapter accepts", which is what is asserted here by running the
+  // derived value through pi's own guard rather than by inspecting a key.
+  test('gives pi the mcp half only, and a spec its own guard accepts', () => {
+    const derived = seatBaseline(null, 'pi', { sandbox: true });
+    expect(derived.sandbox).toBeUndefined();
+    expect(derived).toEqual({ mcp: [commonlyMcpServer()] });
+    expect(() => assertNoSandboxDeclared(derived)).not.toThrow();
+    // The control: the same baseline handed to an enforcing adapter does carry
+    // it, so the absence above is the adapter set and not a missing default.
+    expect(seatBaseline(null, 'claude', { sandbox: true }).sandbox)
+      .toEqual(defaultSeatSandbox());
   });
 });

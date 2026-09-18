@@ -25,6 +25,22 @@
 export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
 
 /**
+ * The adapters that can ENFORCE the default sandbox — a strict subset of the
+ * ones that consume `mcp[]`.
+ *
+ * `pi` is absent deliberately. It has no sandbox path until #1740's transport
+ * work gives it one, and since #1727 it REFUSES TO START on a spec that
+ * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on
+ * `trust: 'public'` and on any `mode` other than 'none'. So handing pi this
+ * block is not a harmless no-op — it is an unspawnable seat. A pi seat gets the
+ * `mcp[]` half only, and the residual is that such a seat runs unconfined: that
+ * belongs to the row that owns pi confinement, not to a declaration written
+ * here and hoped for. A derived pi seat used to be exactly this shape and would
+ * have failed every spawn with `public-trust seats are not supported`.
+ */
+export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex']);
+
+/**
  * The sandbox an unconfigured seat gets.
  *
  * `sandbox.mode` defaults to `'none'` in the adapters, so an ABSENT sandbox
@@ -45,9 +61,9 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
  * moves a host fact into the database and breaks the day the seat is re-homed.
  * An explicit mode in a record still wins over the derived one.
  *
- * Confinement holds for claude and codex. A pi seat gets the block and is NOT
- * confined by it — the pi adapter has no sandbox path until #1740's transport
- * work gives it one, so do not read this key on a pi record as confinement.
+ * Confinement holds for claude and codex, and only they are ever handed this
+ * block (ADAPTERS_WITH_DEFAULT_SANDBOX). A pi seat must never be: it fails
+ * closed on a declared sandbox rather than run under a spec it cannot honour.
  */
 export const COMMONLY_DEFAULT_SANDBOX = Object.freeze({ trust: 'public' });
 
@@ -132,6 +148,6 @@ export const withDefaultSandbox = (environment) => {
  */
 export const seatBaseline = (environment, adapterName, { sandbox = false } = {}) => {
   const withMcp = withDefaultMcpServer(environment, adapterName);
-  if (!sandbox || !ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return withMcp;
+  if (!sandbox || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName)) return withMcp;
   return withDefaultSandbox(withMcp);
 };

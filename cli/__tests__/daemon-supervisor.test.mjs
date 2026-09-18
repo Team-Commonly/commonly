@@ -9,6 +9,7 @@ import {
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
 } from '../src/lib/daemon-supervisor.js';
+import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 
 const record = {
   machineDbId: '507f1f77bcf86cd799439011',
@@ -140,7 +141,7 @@ describe('tick', () => {
   // runtime.adapter/model/effort and no environment at all, so the daemon mints
   // the token. Before this fix that record had no mcp[], and c4-smoke spawned
   // with no commonly_* tools until the operator hand-added the entry.
-  test('the C4-2 row shape (wrapper + pi + model/effort, no environment) mints the baseline', async () => {
+  test('the C4-2 row shape (wrapper + pi + model/effort, no environment) mints the mcp half only', async () => {
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({
         runtime: {
@@ -152,16 +153,18 @@ describe('tick', () => {
     await supervisor.tick();
     const record = saveToken.mock.calls[0][1];
     expect(record.adapter).toBe('pi');
-    // The baseline is both halves: the kernel MCP server (TASK-048) and an
-    // enforced sandbox (TASK-052). This assertion pinned mcp-only until the
-    // sandbox half landed, which is the gap the C4-6 row is about. The sandbox
-    // carries NO mode — the adapters resolve it per platform at spawn.
+    // The kernel MCP server (TASK-048), and NO sandbox: pi fails closed on a
+    // declared sandbox (#1727), so the both-halves assertion that used to sit
+    // here pinned a record whose own adapter refuses to start — the seat would
+    // have died on every spawn with 'public-trust seats are not supported'.
+    // The sandbox half is asserted for claude in 'the baseline a seat nobody
+    // authored gets' below, which is where the enforcing adapters are covered.
     expect(record.environment).toEqual({
       model: 'deepseek-v4-flash',
       effort: 'high',
       mcp: [expect.objectContaining({ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] })],
-      sandbox: { trust: 'public' },
     });
+    expect(() => assertNoSandboxDeclared(record.environment)).not.toThrow();
   });
 
   test('an adapter with no mcp consumption path still invents no environment', async () => {
