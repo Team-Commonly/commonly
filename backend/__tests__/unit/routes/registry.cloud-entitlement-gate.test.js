@@ -232,4 +232,79 @@ describe('registry install — cloud-agent entitlement gate', () => {
     expect(res.status).not.toHaveBeenCalledWith(403);
     expect(AgentInstallation.install).toHaveBeenCalled();
   });
+
+  // A runtimeType a PUBLISHED manifest declares is subject to the same gate as
+  // one the caller sends. That is load-bearing, because publish is plain `auth`
+  // — any owner can declare `runtimeType: 'native'` — and install copies the
+  // manifest value BEFORE the gate reads it (Wren, TASK-043 shape read). If
+  // these stop refusing, a manifest becomes an entitlement bypass.
+  //
+  // The fixture comes from the REAL schema, so this also guards the schema path
+  // itself: drop `runtimeType` from ManifestRuntimeSchema and the manifest
+  // carries nothing, the effective runtimeType falls through to AGENT_TYPES
+  // (null for these names), and the 403 never arrives.
+  const { AgentRegistry: RealAgentRegistry } = jest.requireActual('../../../models/AgentRegistry');
+  const manifestWithRuntimeType = (runtimeType) => new RealAgentRegistry({
+    agentName: 'manifest-declared',
+    displayName: 'Manifest Declared',
+    description: 'x',
+    manifest: { name: 'manifest-declared', version: '1.0.0', runtime: { runtimeType } },
+  }).toObject().manifest;
+
+  it('403s an unentitled installer when the runtimeType comes from a published manifest', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'manifest-declared',
+      displayName: 'Manifest Declared',
+      description: 'x',
+      latestVersion: '1.0.0',
+      manifest: manifestWithRuntimeType('native'),
+    });
+    User.findById.mockReturnValue(buildSelectLeanChain({
+      username: 'installer', role: 'user', entitlements: { cloudAgents: false },
+    }));
+
+    const req = {
+      body: {
+        agentName: 'manifest-declared', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+    const res = makeRes();
+    await installHandler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'cloud_agents_not_entitled',
+    }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  it('lets an explicit caller runtimeType win over the manifest, so a manifest edit cannot re-shape a live install', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'manifest-declared',
+      displayName: 'Manifest Declared',
+      description: 'x',
+      latestVersion: '1.0.0',
+      manifest: manifestWithRuntimeType('native'),
+    });
+    User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'user' }));
+
+    const req = {
+      body: {
+        agentName: 'manifest-declared',
+        podId: 'pod-1',
+        version: '1.0.0',
+        config: { runtime: { runtimeType: 'webhook' } },
+        scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+    const res = makeRes();
+    await installHandler(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(AgentInstallation.install.mock.calls[0][2].config.runtime.runtimeType).toBe('webhook');
+  });
 });
