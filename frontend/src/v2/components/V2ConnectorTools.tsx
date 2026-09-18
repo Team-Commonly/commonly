@@ -124,6 +124,19 @@ const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(gran
 // live at the moment of the read.
 const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(grant.revokedAt) || isExpired(grant, now);
 
+// A catalogue entry is an Installable; a grant carries tool names and an
+// `installationId` that names an install, not a catalogue id. The names are the
+// only key both sides share, so an entry is the one whose tools the grant names.
+const entryCovers = (entry: ToolCatalogEntry, grant: ToolGrant): boolean => (
+  (grant.tools || []).some((name) => (entry.tools || []).some((tool) => tool.name === name))
+);
+// A grant that names no tool of this entry grants nothing on it — that is what
+// the enforcement path does (roomGrantService refuses any tool the grant does
+// not list), so the page must not read such an entry as granted.
+const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now: number): boolean => (
+  grants.some((grant) => !isDead(grant, now) && entryCovers(entry, grant))
+);
+
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
 );
@@ -225,7 +238,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   }, [api, selectedId]);
 
   // Grants on main are GitHub App connections; the catalogue entry carries the label and what it does.
-  const entryFor = (grant?: ToolGrant | null): ToolCatalogEntry | null => catalog.find((entry) => entry.installableId === 'github') || (grant ? null : null);
+  // The entry a grant belongs to, by the tools it names. The github fallback is
+  // for a grant whose tools the catalogue no longer describes: a label beats none.
+  const entryFor = (grant?: ToolGrant | null): ToolCatalogEntry | null => (
+    (grant ? catalog.find((entry) => entryCovers(entry, grant)) : null)
+    || catalog.find((entry) => entry.installableId === 'github')
+    || null
+  );
   const toolLabel = (grant?: ToolGrant | null): string => entryFor(grant)?.label || 'GitHub';
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
@@ -294,11 +313,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   // back under Not yet on the same tick that drops the header count, or the
   // count and the list disagree until a reload.
   const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
-    !(grants || []).some((grant) => !isDead(grant, now))
+    !entryIsGranted(entry, grants || [], now)
     && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
   ))), [catalog, grants, now, q, segment]);
+  // Grants, not entries: a person may hold two live grants on one tool.
   const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
-  const moreCount = catalog.length - (grantedCount > 0 ? 1 : 0);
+  // Entries, from the same predicate the Not yet list filters on, so the header
+  // cannot claim fewer than the list shows. Deliberately not `notYet.length`:
+  // that one honours the search box too, and the header must not move as you type.
+  const moreCount = catalog.filter((entry) => !entryIsGranted(entry, grants || [], now)).length;
 
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
 
