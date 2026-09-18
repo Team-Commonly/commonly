@@ -352,11 +352,12 @@ describe('buildDefaultEnvironment', () => {
     expect(buildDefaultEnvironment('does-not-exist')).toBeNull();
   });
 
-  test.each(['claude', 'codex'])('returns a single mcp entry for %s with placeholder env values', (adapterName) => {
+  test.each(['claude', 'codex', 'pi'])('returns a single mcp entry for %s with placeholder env values', (adapterName) => {
     // codex joined the set after the 2026-07-22 as-operator attribution
     // incident: an MCP-less codex agent has no sanctioned posting tool and
     // falls back to whatever it finds in the shell (the operator's CLI
-    // profile — posting AS the human).
+    // profile — posting AS the human). pi joined with the C4 run (TASK-048),
+    // where the same gap showed up on a daemon-provisioned seat.
     const env = buildDefaultEnvironment(adapterName);
     expect(env.mcp).toHaveLength(1);
     expect(env.mcp[0].name).toBe('commonly');

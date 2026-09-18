@@ -33,6 +33,7 @@ import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
@@ -247,14 +248,9 @@ const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']
 
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
-// Adapters that can consume `mcp[]` from the resolved environment spec.
-// `claude` reads it via --mcp-config (see adapters/claude.js); `codex` via
-// `-c mcp_servers.*` config overrides (see adapters/codex.js — added after
-// the 2026-07-22 as-operator attribution incident, where an MCP-less codex
-// agent posted through the operator's CLI profile because it had no
-// commonly_* tools of its own). `stub` does not. Returning null means "no
-// default" — the wrapper proceeds with environment=null exactly like before.
-const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
+// Which adapters can consume `mcp[]`, and the server declaration they get by
+// default, live in lib/default-environment.js — the daemon's per-seat token
+// provisioning reads the same module, so the two can never drift apart.
 const CODEX_PERMISSION_PROFILE_MIN_VERSION = [0, 138, 0];
 
 const versionAtLeast = (version, minimum) => {
@@ -285,23 +281,11 @@ const BUNDLED_COMMONLY_SKILL_DIR = pathResolve(
 // reply conversationally, use the roster, don't double-post). Without the
 // skill, wrapper-spawned CLIs fly blind and behave inconsistently — some
 // narrate after tool-posting (double-post), some default to NO_REPLY on a
-// normal question. ${COMMONLY_API_URL} / ${COMMONLY_AGENT_TOKEN} are
-// substituted at spawn-time by the adapter so the env file stays secret-free.
+// normal question. Returning null means "no default" — a non-consuming adapter
+// proceeds with environment=null exactly like before.
 export const buildDefaultEnvironment = (adapterName) => {
   if (!ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return null;
-  const environment = {
-    mcp: [
-      {
-        name: 'commonly',
-        transport: 'stdio',
-        command: ['npx', '-y', '@commonlyai/mcp@latest'],
-        env: {
-          COMMONLY_API_URL: '${COMMONLY_API_URL}',
-          COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
-        },
-      },
-    ],
-  };
+  const environment = { mcp: defaultMcpServers(adapterName) };
   // Only advertise the skill if it actually shipped (defensive: a broken
   // package that dropped the skills/ dir shouldn't hand mountSkills a
   // missing-source path every spawn).
