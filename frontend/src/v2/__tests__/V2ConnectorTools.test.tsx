@@ -41,6 +41,9 @@ const trail = {
     { callId: 'c1', agentUserId: 'a1', tool: 'github.list_issues', outcome: 'ok', reason: null, approvalId: null, argsDigest: 'a'.repeat(64), at: iso(-120000), durationMs: 80 },
     { callId: 'c2', agentUserId: 'a1', tool: 'github.comment_on_issue', outcome: 'refused', reason: 'not_in_audience', approvalId: null, argsDigest: 'b'.repeat(64), at: iso(-300000), durationMs: null },
     { callId: 'c3', agentUserId: 'a1', tool: 'github.comment_on_issue', outcome: 'pending_approval', reason: null, approvalId: 'appr-1', argsDigest: 'c'.repeat(64), at: iso(-400000), durationMs: null },
+    // C4-11: the ask was answered and the call ran as the row above it; the
+    // server reports the parked row as `superseded`, never as still awaiting.
+    { callId: 'c4', agentUserId: 'a1', tool: 'github.close_issue', outcome: 'superseded', reason: null, approvalId: 'appr-2', argsDigest: 'd'.repeat(64), at: iso(-500000), durationMs: null },
   ],
   counts: { total: 3, ok: 1, refused: 1, pending_approval: 1, failed: 0 },
 };
@@ -186,7 +189,12 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
     'Scout · github.list_issues · ok2m ago',
     'Scout · github.comment_on_issue · refused5m ago',
     'Scout · github.comment_on_issue · awaiting a person7m ago',
+    'Scout · github.close_issue · answered8m ago',
   ]);
+  // A superseded request is not a call: the counts (which the server derives)
+  // still say 3 while the trail lists its 4 rows, and only the genuinely open
+  // one is counted as awaiting a person.
+  expect(lines.map((line) => line.textContent).filter((text) => text.includes('awaiting a person'))).toHaveLength(1);
   // The arguments never reach the page: only the digest does, and it is not rendered.
   expect(aside.textContent).not.toContain('a'.repeat(64));
   expect(axios.get).toHaveBeenCalledWith('/api/grants/grant_live/calls', expect.objectContaining({ headers: expect.any(Object) }));

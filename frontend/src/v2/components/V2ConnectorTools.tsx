@@ -37,7 +37,11 @@ export interface ToolGrant {
   grantedBy: string | null;
 }
 
-export type ToolOutcome = 'ok' | 'refused' | 'pending_approval' | 'failed';
+/** `superseded` is a DERIVED read-only value the server reports for a parked
+ * request whose approval has since resolved: the call itself is the row beside
+ * it (ok / refused / failed), and this row is only the ask. It is never stored,
+ * so it is never what a write sends. */
+export type ToolOutcome = 'ok' | 'refused' | 'pending_approval' | 'failed' | 'superseded';
 
 export interface ToolCallLine {
   callId: string;
@@ -145,6 +149,7 @@ const OutcomeGlyph: React.FC<{ outcome: ToolOutcome }> = ({ outcome }) => {
   if (outcome === 'ok') return <G><path d="M20 6 9 17l-5-5" /></G>;
   if (outcome === 'refused') return <G><path d="M18 6 6 18M6 6l12 12" /></G>;
   if (outcome === 'pending_approval') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M12 8v5M12 16h.01" /></G>;
+  if (outcome === 'superseded') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
   return <G><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></G>;
 };
 /** Mode marks: eye for read, pen for write, shield for write that asks first. */
@@ -288,6 +293,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     ok: t('tools.outcomeOk', { defaultValue: 'ok' }),
     refused: t('tools.outcomeRefused', { defaultValue: 'refused' }),
     pending_approval: t('tools.awaiting', { defaultValue: 'awaiting a person' }),
+    superseded: t('tools.outcomeSuperseded', { defaultValue: 'answered' }),
     failed: t('tools.outcomeFailed', { defaultValue: 'failed' }),
   })[outcome] || outcome;
   const modeLabel = (mode: GrantWriteMode): string => ({
