@@ -49,6 +49,7 @@ jest.mock('../../../services/connectorEventService', () => ({
 const Pod = require('../../../models/Pod');
 const Integration = require('../../../models/Integration');
 const ToolCall = require('../../../models/ToolCall');
+const { emitConnectorsChanged } = require('../../../services/connectorEventService');
 
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
 const OWNER = 'bbbbbbbbbbbbbbbbbbbbbb01'; // installed the App: every grant's granter
@@ -258,6 +259,26 @@ describe('GET /api/grants/:grantId', () => {
       expect(res.body.tools).toBeUndefined();
       expect(res.body.grantedBy).toBeUndefined();
     }
+  });
+});
+
+describe('POST /api/grants/:grantId/attenuate', () => {
+  test('TASK-135: the invalidation targets the connection owner, not the agent caller', async () => {
+    const row = await RoomGrant.create(grant({ audience: [SEAT] }));
+
+    const res = await request(app)
+      .post(`/api/grants/${row.grantId}/attenuate`)
+      .set('x-test-agent', SEAT)
+      .send({ tools: ['github.list_issues'] });
+
+    expect(res.status).toBe(201);
+    // The caller here is an AGENT, which has no Connectors page; the stale row
+    // lives in the connection owner's browser. This is the only path where the
+    // two ids differ, so it is the only place the distinction can rot: rewiring
+    // the emit to the caller leaves the owner's tab stale again and every other
+    // assertion in this file still passes (sprint-review on #1751).
+    expect(emitConnectorsChanged).toHaveBeenCalledWith(OWNER, 'grant-attenuated');
+    expect(emitConnectorsChanged).not.toHaveBeenCalledWith(SEAT, 'grant-attenuated');
   });
 });
 
