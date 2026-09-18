@@ -1,0 +1,241 @@
+/**
+ * pi adapter — ADR-005 adapter contract for the pi coding agent
+ * (https://pi.dev, `@earendil-works/pi-coding-agent`), the harness that lets
+ * a wrapper seat run on any OpenAI-compatible model: DeepSeek through
+ * LiteLLM today, anything LiteLLM routes tomorrow.
+ *
+ * Why a third adapter (2026-09-18): the Luna code-writer seats ran codex on
+ * ChatGPT quota, and when that ran out the fleet stalled. codex 0.153 cannot
+ * drive DeepSeek — it sends a `namespace`-type tool DeepSeek's API rejects
+ * even with every feature flag off — while pi headless on LiteLLM's
+ * `deepseek-v4-flash` wrote a file with its `write` tool, ran it with `bash`
+ * and resumed its session on the next turn (proof on this laptop, 03:57Z).
+ * pi was already the hosted turn engine (ADR-021); this is pi as a wrapper.
+ *
+ * How pi is driven:
+ *   pi -p --mode json --provider <p> --model <m> --thinking <t>
+ *      --session-dir <seat dir> (--session-id <uuid> | --session <uuid>)
+ *      -e pi-commonly-mcp.mjs "<prompt>"
+ *
+ *   - `--session-id` creates the session on the first turn; `--session`
+ *     resumes it (`--session-id` cannot be combined with `--continue`).
+ *   - stdout is NDJSON; the reply is the last assistant `message_end`.
+ *   - Provider config is a per-seat models.json under
+ *     `~/.commonly/pi-homes/<hash>/agent`, pointed at by
+ *     PI_CODING_AGENT_DIR — never the operator's ~/.pi. The API key is an
+ *     env reference (`$COMMONLY_LITELLM_KEY`), so it never lands on disk.
+ *   - Commonly's tools reach pi through pi-commonly-mcp.mjs, an extension
+ *     that speaks MCP over stdio to every server in `environment.mcp` and
+ *     registers each tool. The token rides through the child env, never argv
+ *     (same rule as codex.js).
+ *
+ * Contract (see stub.js): detect() and spawn(prompt, ctx) → { text, newSessionId }.
+ */
+
+import { spawn as childSpawn, spawnSync } from 'child_process';
+import { createHash, randomUUID } from 'crypto';
+import { mkdir, writeFile } from 'fs/promises';
+import { homedir } from 'os';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { buildMemoryPreamble } from '../memory-bridge.js';
+
+const DEFAULT_TIMEOUT_MS = (() => {
+  const fallback = 15 * 60 * 1000;
+  const raw = process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS;
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
+
+// The default provider is Commonly's own LiteLLM, reachable from a laptop
+// seat at the public ingress and from a cluster seat at the service.
+export const DEFAULT_PROVIDER = Object.freeze({
+  name: 'litellm',
+  baseUrl: 'https://litellm.commonly.me/v1',
+  api: 'openai-completions',
+  apiKeyEnv: 'COMMONLY_LITELLM_KEY',
+});
+export const DEFAULT_MODEL = 'deepseek-v4-flash';
+
+// ADR-008 `effort` → pi `--thinking`. pi's ladder is off/minimal/low/medium/high/xhigh/max.
+const THINKING = { none: 'off', off: 'off', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' };
+export const thinkingFor = (effort) => (effort ? THINKING[String(effort).toLowerCase()] || null : null);
+
+const BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-commonly-mcp.mjs');
+
+// Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
+// placeholders in the declared MCP env are the wrapper's per-(agent, pod)
+// runtime values, filled at spawn time.
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
+const substitutePlaceholders = (value, ctx) => {
+  if (typeof value !== 'string' || !value.includes('${COMMONLY_')) return value;
+  const subs = {
+    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    COMMONLY_API_URL: ctx.instanceUrl || '',
+    COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
+  };
+  return value.replace(PLACEHOLDER_RE, (whole, key) => (SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole));
+};
+
+/** stdio MCP servers from the environment spec, placeholders filled; url-only entries are skipped. */
+export const resolveMcpServers = (mcpServers, ctx = {}) => (mcpServers || [])
+  .filter((server) => server?.name && Array.isArray(server.command) && server.command.length)
+  .map((server) => ({
+    name: server.name,
+    command: server.command.map((a) => substitutePlaceholders(a, ctx)),
+    env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+  }));
+
+/** The provider block for models.json: the env spec's `provider` over the LiteLLM default. */
+export const resolveProvider = (environment = {}) => {
+  const spec = environment?.provider || {};
+  return {
+    name: spec.name || DEFAULT_PROVIDER.name,
+    baseUrl: spec.baseUrl || DEFAULT_PROVIDER.baseUrl,
+    api: spec.api || DEFAULT_PROVIDER.api,
+    apiKeyEnv: spec.apiKeyEnv || DEFAULT_PROVIDER.apiKeyEnv,
+  };
+};
+
+/** models.json content for one seat: one provider, one model, key by env reference. */
+export const buildModelsJson = (provider, model) => ({
+  providers: {
+    [provider.name]: {
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      apiKey: `$${provider.apiKeyEnv}`,
+      api: provider.api,
+      models: [{
+        id: model,
+        name: model,
+        reasoning: true,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 32000,
+      }],
+    },
+  },
+});
+
+/** Per-seat pi home: `~/.commonly/pi-homes/<hash(agent)>`. Never the operator's ~/.pi. */
+export const seatHome = (ctx) => {
+  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const hash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
+  return ctx._piHome || join(homedir(), '.commonly', 'pi-homes', hash);
+};
+
+export const buildArgs = ({
+  prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge,
+}) => [
+  '-p',
+  '--mode', 'json',
+  '--no-extensions',
+  '--no-skills',
+  '--no-prompt-templates',
+  '--no-themes',
+  '--provider', provider,
+  '--model', model,
+  ...(thinking ? ['--thinking', thinking] : []),
+  '--session-dir', sessionDir,
+  ...(isResume ? ['--session', sessionId] : ['--session-id', sessionId]),
+  ...(bridge ? ['-e', bridge] : []),
+  prompt,
+];
+
+/** The reply is the last assistant `message_end`'s text parts; tool calls are not text. */
+export const extractReply = (stdout) => {
+  let text = '';
+  let sawAssistant = false;
+  const errors = [];
+  for (const line of String(stdout).split('\n')) {
+    if (!line.trim()) continue;
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    if (event?.type === 'message_end' && event.message?.role === 'assistant') {
+      const parts = (event.message.content || []).filter((c) => c?.type === 'text').map((c) => c.text || '');
+      if (parts.length) { text = parts.join('\n').trim(); sawAssistant = true; }
+    }
+    if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
+  }
+  return { text, sawAssistant, errors };
+};
+
+const runPi = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+  let stdout = '';
+  let stderr = '';
+  let timedOut = false;
+  const proc = spawnImpl('pi', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const timer = setTimeout(() => { timedOut = true; proc.kill('SIGTERM'); }, timeoutMs);
+  proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+  proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+  proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+  proc.on('close', (code) => {
+    clearTimeout(timer);
+    if (timedOut) return reject(new Error(`pi timed out after ${timeoutMs}ms`));
+    const reply = extractReply(stdout);
+    if (code !== 0 && !reply.sawAssistant) {
+      const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
+      return reject(new Error(`pi exited ${code}: ${tail}`));
+    }
+    return resolve(reply);
+  });
+});
+
+export default {
+  name: 'pi',
+
+  async detect() {
+    const res = spawnSync('pi', ['--version'], { encoding: 'utf8' });
+    if (res.error || res.status !== 0) return null;
+    const version = String(res.stdout || '').trim().split('\n').pop() || 'unknown';
+    const which = spawnSync('which', ['pi'], { encoding: 'utf8' });
+    return { path: String(which.stdout || 'pi').trim() || 'pi', version };
+  },
+
+  async spawn(prompt, ctx = {}) {
+    const isResume = !!ctx.sessionId;
+    const sessionId = ctx.sessionId || randomUUID();
+    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
+    const provider = resolveProvider(ctx.environment);
+    const model = ctx.environment?.model || DEFAULT_MODEL;
+    const thinking = thinkingFor(ctx.environment?.effort);
+    const baseEnv = ctx.env || process.env;
+    if (!baseEnv[provider.apiKeyEnv]) {
+      throw new Error(`pi adapter: ${provider.apiKeyEnv} is not set — the seat's environment must carry the provider key (LiteLLM virtual key)`);
+    }
+
+    // Per-seat pi home: models.json holds the provider by env reference.
+    const home = seatHome(ctx);
+    const agentDir = join(home, 'agent');
+    const sessionDir = join(home, 'sessions');
+    await mkdir(agentDir, { recursive: true, mode: 0o700 });
+    await mkdir(sessionDir, { recursive: true, mode: 0o700 });
+    await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(provider, model), null, 2)}\n`, { mode: 0o600 });
+
+    const servers = resolveMcpServers(ctx.environment?.mcp, ctx);
+    const childEnv = {
+      ...baseEnv,
+      PI_CODING_AGENT_DIR: agentDir,
+      PI_SKIP_VERSION_CHECK: '1',
+      ...(servers.length ? { COMMONLY_PI_MCP: JSON.stringify(servers) } : {}),
+    };
+    const args = buildArgs({
+      prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
+      bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
+    });
+
+    const reply = await runPi({
+      args,
+      cwd: ctx.cwd,
+      env: childEnv,
+      timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+      spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+    });
+    // Empty text with a clean exit is a silent turn; the run loop treats it
+    // as NO_REPLY-shaped and re-delivers on its own rules.
+    return { text: reply.text, newSessionId: sessionId };
+  },
+};

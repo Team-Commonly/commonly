@@ -10,11 +10,13 @@
 import stub from './stub.js';
 import claude from './claude.js';
 import codex from './codex.js';
+import pi from './pi.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
   [claude.name]: claude,
   [codex.name]: codex,
+  [pi.name]: pi,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);

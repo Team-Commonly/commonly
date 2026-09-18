@@ -111,7 +111,7 @@ export const deleteAgentToken = (name) => {
 // podId) or is a local fact (which CLI binary to wrap). Returns a record ready
 // for saveAgentToken, or null when COMMONLY_AGENT_TOKEN isn't set (caller
 // falls back to the attach hint).
-export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex'];
+export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 
 export const bootstrapAgentRecordFromEnv = async ({
   name,
@@ -254,7 +254,7 @@ const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']
 // agent posted through the operator's CLI profile because it had no
 // commonly_* tools of its own). `stub` does not. Returning null means "no
 // default" — the wrapper proceeds with environment=null exactly like before.
-const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex']);
+const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
 const CODEX_PERMISSION_PROFILE_MIN_VERSION = [0, 138, 0];
 
 const versionAtLeast = (version, minimum) => {
