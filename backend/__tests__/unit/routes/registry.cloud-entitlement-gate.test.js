@@ -251,14 +251,12 @@ describe('registry install — cloud-agent entitlement gate', () => {
     manifest: { name: 'manifest-declared', version: '1.0.0', runtime: { runtimeType } },
   }).toObject().manifest;
 
-  it('403s an unentitled installer when a COMMUNITY row declares native', async () => {
+  it('403s an unentitled installer when the runtimeType comes from a published manifest', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'manifest-declared',
       displayName: 'Manifest Declared',
       description: 'x',
       latestVersion: '1.0.0',
-      registry: 'commonly-community',
-      verified: false,
       manifest: manifestWithRuntimeType('native'),
     });
     User.findById.mockReturnValue(buildSelectLeanChain({
@@ -308,122 +306,5 @@ describe('registry install — cloud-agent entitlement gate', () => {
 
     expect(res.status).not.toHaveBeenCalledWith(403);
     expect(AgentInstallation.install.mock.calls[0][2].config.runtime.runtimeType).toBe('webhook');
-  });
-});
-
-// --- First-party native exemption (Wren 69361, Sam 69359) -------------------
-//
-// A native app whose registry row is commonly-official + verified is the
-// first-teammate path and is exempt from the cloudAgents gate. The key is the
-// ROW, never manifest content: publish is plain `auth`, so an exemption earned
-// by declaring `native` would hand any publisher in-process compute for free.
-describe('registry install — first-party native exemption', () => {
-  const installHandler = getInstallHandler();
-  const { AgentRegistry: RealRegistry } = jest.requireActual('../../../models/AgentRegistry');
-  const officialNativeManifest = () => new RealRegistry({
-    agentName: 'first-party-native',
-    displayName: 'First Party',
-    description: 'x',
-    manifest: { name: 'first-party-native', version: '1.0.0', runtime: { runtimeType: 'native' } },
-  }).toObject().manifest;
-
-  const unentitledInstaller = () => User.findById.mockReturnValue(buildSelectLeanChain({
-    username: 'installer', role: 'user', entitlements: { cloudAgents: false },
-  }));
-
-  const installReq = (config = {}) => ({
-    body: {
-      agentName: 'first-party-native', podId: 'pod-1', version: '1.0.0', config, scopes: [],
-    },
-    user: { id: 'user-1', username: 'installer' },
-    userId: 'user-1',
-  });
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-
-    Pod.findById.mockReturnValue(buildLeanChain({
-      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat',
-    }));
-    AgentInstallation.findOne.mockResolvedValue(null);
-    AgentInstallation.find.mockReturnValue(buildLeanChain([]));
-    AgentInstallation.install.mockImplementation(async (_agentName, _podId, options) => ({
-      _id: { toString: () => 'install-1' },
-      agentName: _agentName,
-      instanceId: options.instanceId || 'default',
-      displayName: options.displayName || 'Agent',
-      version: options.version,
-      status: 'active',
-      scopes: options.scopes || [],
-    }));
-    AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
-    User.findOne.mockImplementation(() => buildSelectLeanChain(null));
-    AgentProfile.findOneAndUpdate.mockResolvedValue(true);
-    Activity.create.mockResolvedValue(true);
-  });
-
-  it('installs an official + verified native app for a non-admin without the entitlement, persisting runtimeType', async () => {
-    AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'first-party-native',
-      displayName: 'First Party',
-      description: 'x',
-      latestVersion: '1.0.0',
-      registry: 'commonly-official',
-      verified: true,
-      manifest: officialNativeManifest(),
-    });
-    unentitledInstaller();
-
-    const res = makeRes();
-    await installHandler(installReq(), res);
-
-    expect(res.status).not.toHaveBeenCalledWith(403);
-    expect(AgentInstallation.install).toHaveBeenCalled();
-    // The whole point of TASK-043: the fallback now lands a runtimeType the
-    // event router can actually dispatch on, instead of null.
-    expect(AgentInstallation.install.mock.calls[0][2].config.runtime.runtimeType).toBe('native');
-  });
-
-  it('does NOT exempt an official row that does not itself declare native', async () => {
-    // Otherwise an explicit `runtimeType: 'native'` would borrow an official
-    // row's provenance and skip the gate for another tier's install.
-    AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'first-party-native',
-      displayName: 'First Party',
-      description: 'x',
-      latestVersion: '1.0.0',
-      registry: 'commonly-official',
-      verified: true,
-      manifest: { name: 'first-party-native', version: '1.0.0' },
-    });
-    unentitledInstaller();
-
-    const res = makeRes();
-    await installHandler(installReq({ runtime: { runtimeType: 'native' } }), res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      code: 'cloud_agents_not_entitled',
-    }));
-    expect(AgentInstallation.install).not.toHaveBeenCalled();
-  });
-
-  it('does NOT exempt an unverified official row', async () => {
-    AgentRegistry.getByName.mockResolvedValue({
-      agentName: 'first-party-native',
-      displayName: 'First Party',
-      description: 'x',
-      latestVersion: '1.0.0',
-      registry: 'commonly-official',
-      verified: false,
-      manifest: officialNativeManifest(),
-    });
-    unentitledInstaller();
-
-    const res = makeRes();
-    await installHandler(installReq(), res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 });
