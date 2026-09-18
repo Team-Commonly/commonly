@@ -46,8 +46,29 @@ const ALLOWED_TOP_KEYS = new Set([
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
 ]);
-const ALLOWED_SANDBOX_TRUST = new Set(['public', 'internal']);
+const ALLOWED_SANDBOX_TRUST = new Set(['public']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
+
+// `trust: 'internal'` was accepted by this schema and read by NO adapter. On the
+// attach path it could only name a mode the platform cannot resolve; on the
+// daemon path it was silently inert — claude fell through to a bare unconfined
+// spawn and codex took `--dangerously-bypass-approvals-and-sandbox` — so a
+// declaration that reads as "confine me, not as a public agent" meant the
+// opposite of what it said (Vera 69592). It is refused for new declarations
+// above, and a record that already carries it is resolved TOWARD confinement,
+// never toward the bare spawn (Wren 69585): `internal` is read as `public`, so
+// such a seat is confined where it can be and refuses to derive where it
+// cannot. A real middle trust arrives as its own adapter that reads it.
+export const LEGACY_SANDBOX_TRUST = Object.freeze({ internal: 'public' });
+export const isLegacySandboxTrust = (sandbox) => (
+  typeof sandbox?.trust === 'string'
+  && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, sandbox.trust)
+);
+export const normalizeSandboxTrust = (sandbox) => (
+  isLegacySandboxTrust(sandbox)
+    ? { ...sandbox, trust: LEGACY_SANDBOX_TRUST[sandbox.trust] }
+    : sandbox
+);
 
 const expandHome = (p) => {
   if (!p || typeof p !== 'string') return p;
@@ -172,7 +193,11 @@ export const validateEnvironmentSpec = (spec) => {
         errors.push(`sandbox.mode must be one of: ${[...ALLOWED_SANDBOX_MODES].join(', ')}`);
       }
       if (trust !== undefined && !ALLOWED_SANDBOX_TRUST.has(trust)) {
-        errors.push(`sandbox.trust must be one of: ${[...ALLOWED_SANDBOX_TRUST].join(', ')}`);
+        errors.push(
+          "sandbox.trust must be 'public' — it marks a seat anyone in the pod can "
+          + 'talk to; omit it for your own seat '
+          + `(got ${JSON.stringify(trust)})`,
+        );
       }
       if (network !== undefined) {
         if (typeof network !== 'object' || network === null) {

@@ -384,6 +384,41 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  test('a legacy trust=internal record is resolved as public and confined, never run unconfined', async () => {
+    const originalPlatform = process.platform;
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-internal-state-'));
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which'
+          ? { status: 0, stdout: '/usr/bin/true\n' }
+          : { status: 0, stdout: '' }
+      ));
+
+      await claude.spawn('hi', {
+        agentName: 'legacy-internal',
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH },
+        environment: { sandbox: { mode: 'workspace', trust: 'internal' } },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+
+      // It reads as "confine me" and used to mean the opposite: before this the
+      // adapter skipped Seatbelt entirely and spawned a bare, unconfined claude
+      // (Vera 69592).
+      expect(calls).toHaveLength(1);
+      expect(calls[0].cmd).toBe('/usr/bin/sandbox-exec');
+      expect(calls[0].args).toContain('--setting-sources');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with an unresolvable explicit mode refuses rather than falls through', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(claude.spawn('hi', {

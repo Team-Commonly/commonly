@@ -61,7 +61,11 @@ import {
 import { homedir, tmpdir } from 'os';
 import { delimiter, isAbsolute, join } from 'path';
 
-import { mountSkills } from '../environment.js';
+import {
+  isLegacySandboxTrust,
+  mountSkills,
+  normalizeSandboxTrust,
+} from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import {
@@ -524,7 +528,31 @@ export default {
     }
   },
 
-  async spawn(prompt, ctx = {}) {
+  async spawn(prompt, rawCtx = {}) {
+    // `sandbox.trust: 'internal'` is refused for new declarations and read as
+    // `public` for a record that already carries it; such a seat is confined
+    // where it can be and refuses to derive where it cannot (Wren 69585).
+    // Resolved ONCE here and threaded to BOTH consumers — the public-state
+    // preparation below and the argv builder — because two independent reads of
+    // one declaration is exactly how this seat crashed with "public Claude
+    // state was not prepared" instead of spawning confined.
+    const ctx = rawCtx.environment
+      ? {
+        ...rawCtx,
+        environment: {
+          ...rawCtx.environment,
+          sandbox: normalizeSandboxTrust(rawCtx.environment.sandbox),
+        },
+      }
+      : rawCtx;
+    if (isLegacySandboxTrust(rawCtx.environment?.sandbox)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[claude] sandbox.trust=internal is no longer accepted: it reads as '
+        + 'confinement and engaged none. Resolving this seat as trust=public, so '
+        + 'it is confined or it refuses to derive — never unconfined (Wren 69585).',
+      );
+    }
     const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and

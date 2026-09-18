@@ -218,6 +218,41 @@ describe('codex adapter — spawn()', () => {
       .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
+  test('a legacy trust=internal record gets the public profile, never the bypass flag', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    const operatorAuth = join(operatorHome, 'auth.json');
+    await writeFile(operatorAuth, '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-internal"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('work safely', {
+      sessionId: null,
+      cwd: '/tmp/legacy-internal-workspace',
+      environment: {
+        sandbox: { mode: 'workspace', trust: 'internal' },
+      },
+      env: { ...process.env, CODEX_HOME: operatorHome },
+      agentName: 'legacy-internal-agent',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    });
+
+    // Before this, `internal` read by no adapter meant the operator got the
+    // bypass flag — the exact opposite of the confinement they declared
+    // (Vera 69592). It is now read as public and confined.
+    const args = calls[0].args;
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(args).not.toContain('--sandbox');
+    const cFlags = args
+      .map((a, i) => (a === '-c' ? args[i + 1] : null))
+      .filter(Boolean);
+    expect(cFlags).toContain('default_permissions="commonly_public"');
+    expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
+  });
+
   test('public workspace mode uses a deny-by-default permission profile and never the legacy sandbox or bypass', async () => {
     const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
     const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));

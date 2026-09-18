@@ -24,6 +24,8 @@ await jest.unstable_mockModule('os', () => {
 });
 
 const {
+  isLegacySandboxTrust,
+  normalizeSandboxTrust,
   parseEnvironmentFile,
   validateEnvironmentSpec,
   resolveWorkspace,
@@ -140,6 +142,23 @@ describe('validateEnvironmentSpec', () => {
     })).toEqual({ ok: true, errors: [] });
   });
 
+  test('rejects sandbox.trust=internal — a value no adapter reads', () => {
+    const res = validateEnvironmentSpec({
+      sandbox: { mode: 'workspace', trust: 'internal' },
+    });
+    expect(res.ok).toBe(false);
+    // The message has to name what DOES something, or the next author just
+    // guesses again: `public`, or no trust field at all.
+    expect(res.errors.join(' ')).toMatch(/sandbox\.trust must be 'public'/);
+    expect(res.errors.join(' ')).toMatch(/omit it for your own seat/);
+    expect(res.errors.join(' ')).toMatch(/got "internal"/);
+  });
+
+  test('accepts the two declarations that do something: public trust, or none', () => {
+    expect(validateEnvironmentSpec({ sandbox: { trust: 'public' } }).ok).toBe(true);
+    expect(validateEnvironmentSpec({ sandbox: { mode: 'bwrap' } }).ok).toBe(true);
+  });
+
   test('rejects bad sandbox.trust', () => {
     const res = validateEnvironmentSpec({
       sandbox: { mode: 'workspace', trust: 'sometimes' },
@@ -174,6 +193,23 @@ describe('validateEnvironmentSpec', () => {
     const res = validateEnvironmentSpec({ _envFileDir: '/tmp', version: 1 });
     expect(res.ok).toBe(false);
     expect(res.errors.join(' ')).toMatch(/unknown top-level key.*_envFileDir/);
+  });
+});
+
+describe('legacy sandbox trust', () => {
+  test('reads a stored internal as public, so the seat cannot stay silently unconfined', () => {
+    const legacy = { mode: 'workspace', trust: 'internal' };
+    expect(isLegacySandboxTrust(legacy)).toBe(true);
+    expect(normalizeSandboxTrust(legacy)).toEqual({ mode: 'workspace', trust: 'public' });
+  });
+
+  test('leaves every other declaration alone, including an absent sandbox block', () => {
+    const publicTrust = { trust: 'public' };
+    expect(normalizeSandboxTrust(publicTrust)).toBe(publicTrust);
+    expect(isLegacySandboxTrust(undefined)).toBe(false);
+    expect(isLegacySandboxTrust({})).toBe(false);
+    expect(isLegacySandboxTrust({ trust: 'workspace' })).toBe(false);
+    expect(normalizeSandboxTrust(undefined)).toBeUndefined();
   });
 });
 
