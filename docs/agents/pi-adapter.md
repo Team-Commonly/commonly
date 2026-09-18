@@ -78,6 +78,16 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
 
 ## Switching a seat (laptop)
 
+0. **Refresh the workspace first — it is what the seat reads.** pi loads
+   `AGENTS.md` / `CLAUDE.md` from its cwd (`environment.workspace.path`), and
+   that clone is the copy the seat obeys, not the repo on main. Measured
+   2026-09-18 before the first switch: `kai`'s clone was 400 commits behind
+   main with an 08-26 CLAUDE.md, `sprint-impl`'s sat on a feature branch 738
+   behind, `quill` had no clone. A merged rule is published, not adopted,
+   until the file the reader loads carries it (GTM rule 30). So:
+   `git -C <workspace> stash` any dirty seat work (never discard it),
+   `checkout main && pull`, and confirm the instruction file's mtime matches
+   the repo's before the first pi turn.
 1. Mint a LiteLLM virtual key scoped to the model, in the LiteLLM pod so the
    master key never leaves it:
    `POST /key/generate {"key_alias":"laptop-codex-seats-deepseek","models":["deepseek-v4-flash"],"max_budget":20,"budget_duration":"30d"}`
