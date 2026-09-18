@@ -4606,6 +4606,17 @@ const ChatRoom = () => {
                                             ? emojifyPreserveCode(rawMessageContent)
                                             : rawMessageContent;
 
+                                        // A message type this bubble does not know renders an
+                                        // author line and NOTHING else — the approval card posts
+                                        // `message_type: 'card'` (approvalActionService), so on
+                                        // this surface a person being asked to approve something
+                                        // saw an empty bubble. `content` is written as the
+                                        // plain-text fallback for exactly these legacy surfaces,
+                                        // so render it rather than drop it. Image keeps its own
+                                        // branch; system messages returned above.
+                                        const showTextBody = messageType === 'text'
+                                            || (messageType !== 'image' && !!messageContent.trim());
+
                                         // Get message timestamp with fallbacks
                                         const messageTime = msg.createdAt || msg.created_at || new Date();
 
@@ -4753,8 +4764,9 @@ const ChatRoom = () => {
                                                         </div>
                                                     )}
 
-                                                    {/* Text message */}
-                                                    {messageType === 'text' && (
+                                                    {/* Text message — and any other type whose
+                                                        body is the server's plain-text fallback */}
+                                                    {showTextBody && (
                                                         <div className={`message-bubble ${isCurrentUser ? 'sent' : 'received'}`}>
                                                             <MessageContent>{messageContent}</MessageContent>
                                                         </div>
