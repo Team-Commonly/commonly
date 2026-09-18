@@ -218,6 +218,21 @@ export const createDaemonSupervisor = ({
         log('runtime adapter changed — restarting the seat to load it');
         return 'changed';
       }
+      if (!wanted) {
+        // A record written by a CLI older than the shipped default carries no
+        // mcp[] — the c4-smoke record was exactly this, and the operator had to
+        // hand-add the entry. Behind a row that declares nothing there is no
+        // other write path: the record is never touched again, so the seat
+        // stays tool-less for as long as it runs. Heal it here, and only when
+        // the environment actually changed — otherwise every tick rewrites the
+        // file and restarts the seat forever.
+        const nextEnvironment = withDefaultMcpServer(existing.environment, existing.adapter);
+        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment || null)) {
+          saveToken(row.agentName, { ...existing, environment: nextEnvironment });
+          log('record predates the commonly MCP baseline — restarting the seat to load it');
+          return 'changed';
+        }
+      }
       return 'ready';
     }
     const requestedAdapter = row.runtime && typeof row.runtime === 'object'

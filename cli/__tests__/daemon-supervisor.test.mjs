@@ -264,7 +264,12 @@ describe('tick', () => {
     });
     await supervisor.tick();
     expect(children).toHaveLength(1);
-    expect(saveToken).not.toHaveBeenCalled();
+    // This record carries no mcp[] and the row declares no model, so the first
+    // tick heals it (Vera 69468). That write is not the subject here — clear it
+    // so the assertions below are about the adapter change alone.
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1].adapter).toBe('claude');
+    saveToken.mockClear();
 
     adapter = 'codex';
     await supervisor.tick();
@@ -329,6 +334,67 @@ describe('tick', () => {
 
   test('a row without a model never strips a hand-set environment', async () => {
     const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+  });
+
+  // Vera's probe (69468) on the first version of TASK-048: the repair above
+  // lived only inside the `wanted` branch, so a record minted before the default
+  // existed — no mcp[], a row that declares no model or effort either — reached
+  // `return 'ready'` untouched and stayed tool-less after the upgrade. This is
+  // the c4-smoke record's exact shape (adapter present, no environment).
+  test('a record that predates the baseline is healed when the row declares nothing (TASK-048)', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test', runtimeToken: 'cm_agent_old', adapter: 'pi',
+      },
+    };
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    const written = saveToken.mock.calls[0][1];
+    expect(written.adapter).toBe('pi');
+    expect(written.runtimeToken).toBe('cm_agent_old');
+    expect(written.environment.mcp).toEqual([
+      expect.objectContaining({
+        name: 'commonly',
+        command: ['npx', '-y', '@commonlyai/mcp@latest'],
+      }),
+    ]);
+    expect(children).toHaveLength(1);
+  });
+
+  // The dirty check is load-bearing: this path runs on every tick, so a record
+  // that already declares the baseline must not be rewritten — a rewrite also
+  // restarts the seat, which would loop forever.
+  test('a healed record is not rewritten on the next tick', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test', runtimeToken: 'cm_agent_old', adapter: 'claude',
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+  });
+
+  test('a record for an adapter with no consumption path is left alone on that path too', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test', runtimeToken: 'cm_agent_old', adapter: 'stub',
+      },
+    };
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
       tokens,
