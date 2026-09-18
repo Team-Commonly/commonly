@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useRelativeNow } from '../hooks/useRelativeNow';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -102,9 +103,9 @@ const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 
-export const relativeTime = (date?: string | null): string => {
+export const relativeTime = (date?: string | null, now: number = Date.now()): string => {
   if (!date) return '—';
-  const ms = Date.now() - new Date(date).getTime();
+  const ms = now - new Date(date).getTime();
   if (!Number.isFinite(ms)) return '—';
   const abs = Math.abs(ms);
   const suffix = ms >= 0 ? 'ago' : 'from now';
@@ -118,7 +119,10 @@ export const relativeTime = (date?: string | null): string => {
 };
 
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
-const isDead = (grant: ToolGrant): boolean => Boolean(grant.revokedAt) || isExpired(grant);
+// Callers that decide what a render SHOWS pass that render's `now`; the read
+// path (`load`) leaves the default, because there the question is what is
+// live at the moment of the read.
+const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(grant.revokedAt) || isExpired(grant, now);
 
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
@@ -160,6 +164,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [segment, setSegment] = useState<'all' | 'granted' | 'not-yet'>('all');
+  // Grants and trail rows carry relative ages; they must advance while the
+  // page sits open and be re-read when the tab comes back (TASK-131).
+  const now = useRelativeNow();
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -199,6 +206,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   }, [api, podIds]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [load]);
 
   useEffect(() => {
     if (!selectedId) { setTrail(null); return undefined; }
@@ -277,11 +290,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [grants, q, segment, catalog]);
   // A tool is "not yet" while no live grant on it exists anywhere the person can see.
+  // `now` is a dep: a grant that expires while the page sits open has to move
+  // back under Not yet on the same tick that drops the header count, or the
+  // count and the list disagree until a reload.
   const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
-    !(grants || []).some((grant) => !isDead(grant))
+    !(grants || []).some((grant) => !isDead(grant, now))
     && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
-  ))), [catalog, grants, q, segment]);
-  const grantedCount = (grants || []).filter((grant) => !isDead(grant)).length;
+  ))), [catalog, grants, now, q, segment]);
+  const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
   const moreCount = catalog.length - (grantedCount > 0 ? 1 : 0);
 
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
@@ -417,20 +433,20 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   };
 
   const renderRow = (grant: ToolGrant) => {
-    const dead = isDead(grant);
+    const dead = isDead(grant, now);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
-    const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt) });
+    const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt, now) });
     const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
       ? (grant.revokedAt
         ? (revokedBy
-          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt) })
-          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt) }))
-        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt) }))
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
+        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
       : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })} · ${asksFirst(grant)}`;
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
@@ -648,7 +664,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   };
 
   const renderAside = (grant: ToolGrant) => {
-    const dead = isDead(grant);
+    const dead = isDead(grant, now);
     const podId = grantPodId(grant);
     const granter = memberName(grant.grantedBy);
     const revokedBy = memberName(grant.revokedBy);
@@ -661,16 +677,16 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
           <p>
             {granter
-              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: relativeTime(grant.createdAt) })
-              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: relativeTime(grant.createdAt) })}
+              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: relativeTime(grant.createdAt, now) })
+              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: relativeTime(grant.createdAt, now) })}
             {' '}
             {grant.revokedAt
               ? (revokedBy
-                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: relativeTime(grant.revokedAt) })
-                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt) }))
-              : (isExpired(grant)
-                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt) })
-                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt) }))}
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt, now) }))
+              : (isExpired(grant, now)
+                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt, now) })
+                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt, now) }))}
           </p>
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
@@ -683,7 +699,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               <>
                 <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>
                 <dd>{grant.budget.windowMs
-                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: relativeTime(new Date(Date.now() - grant.budget.windowMs).toISOString()).replace(' ago', '') })
+                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: relativeTime(new Date(now - grant.budget.windowMs).toISOString(), now).replace(' ago', '') })
                   : t('tools.budgetTotal', { defaultValue: '{{calls}} calls', calls: grant.budget.calls })}</dd>
               </>
             )}
@@ -733,7 +749,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
                   <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
-                  <span className="v2-tools__trail-when">{relativeTime(line.at)}</span>
+                  <span className="v2-tools__trail-when">{relativeTime(line.at, now)}</span>
                 </li>
               ))}
             </ol>

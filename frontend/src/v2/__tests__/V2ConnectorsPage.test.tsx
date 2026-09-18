@@ -2,7 +2,7 @@
 // Signal Connectors page: rows preserve the Phase 1 verbs while the selected
 // channel owns code, confirmation, relay controls, and disconnect in its aside.
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
@@ -90,6 +90,29 @@ describe('V2ConnectorsPage', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
+    // Fake the clock so the minute tick is deterministic. The fixture's age
+    // only moves if the page re-renders it, which is the defect being pinned.
+    jest.useFakeTimers();
+    try {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+      mockGets([{ ...connectors[1], createdAt: fiveMinutesAgo, updatedAt: fiveMinutesAgo }]);
+      renderPage();
+
+      await screen.findByText('added 5m ago');
+
+      await act(async () => { jest.advanceTimersByTime(2 * 60_000); });
+      expect(screen.getByText('added 7m ago')).toBeInTheDocument();
+
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length;
+      const before = reads();
+      document.dispatchEvent(new Event('visibilitychange'));
+      await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   it('renders the Signal row list and opens the pending channel in the selected aside', async () => {
     mockGets();

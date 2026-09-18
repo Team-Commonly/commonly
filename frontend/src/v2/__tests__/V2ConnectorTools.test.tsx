@@ -3,7 +3,7 @@
 // grant, the trail and its three counts from the broker's rows. Nothing here
 // draws a control the server does not enforce.
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2ConnectorTools from '../components/V2ConnectorTools';
 import { AuthContext } from '../../context/AuthContext';
@@ -77,6 +77,51 @@ const renderTools = (props = {}) => render(
 );
 
 beforeEach(() => { jest.clearAllMocks(); mockApi(); });
+
+test('TASK-131: a grant age advances in place, and a returning tab re-reads, without a reload', async () => {
+  jest.useFakeTimers();
+  try {
+    renderTools();
+    expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+
+    await act(async () => { jest.advanceTimersByTime(60 * 60_000); });
+    expect(screen.getByText('granted 2h ago')).toBeInTheDocument();
+
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
+    const before = reads();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('TASK-131: a grant expiring with the page open moves its tool back to Not yet on the same tick as the count', async () => {
+  jest.useFakeTimers();
+  try {
+    // Live for one more minute, so the only thing that changes is the clock.
+    const expiring = { ...grantLive, grantId: 'grant_soon', expiresAt: iso(60_000) };
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+      if (url.endsWith('/grants')) return Promise.resolve({ data: { grants: url.includes('p1') ? [expiring] : [] } });
+      if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+      if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_soon', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+      return Promise.reject(new Error(`unmocked ${url}`));
+    });
+    renderTools();
+    expect(await screen.findByText('1 granted')).toBeInTheDocument();
+    expect(screen.queryByText('not granted')).not.toBeInTheDocument();
+
+    await act(async () => { jest.advanceTimersByTime(2 * 60_000); });
+
+    // The count always followed the clock; the list did not, so the two
+    // disagreed on screen until a reload.
+    expect(screen.getByText('0 granted · 1 more')).toBeInTheDocument();
+    expect(screen.getByText('not granted')).toBeInTheDocument();
+  } finally {
+    jest.useRealTimers();
+  }
+});
 
 test('rows carry the states table: a live grant pulses when used in the last 10 minutes, a revoked one goes hollow', async () => {
   renderTools();

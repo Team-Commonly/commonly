@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import V2ConnectorTools from './V2ConnectorTools';
@@ -167,10 +168,10 @@ const codeExpiresInMinutes = (connector: Connector): number => {
   return Math.max(1, Math.ceil((expiry - Date.now()) / 60_000));
 };
 
-const relativeTime = (date?: string): string => {
+const relativeTime = (date?: string, now: number = Date.now()): string => {
   const timestamp = date ? new Date(date).getTime() : NaN;
   if (!Number.isFinite(timestamp)) return 'just now';
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
   if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
@@ -218,6 +219,10 @@ const V2ConnectorsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ages must advance while the page sits open, and the source must be re-read
+  // when the tab comes back: a row that says `since 5m ago` is wrong twice
+  // over if it is still saying it an hour later (TASK-131).
+  const now = useRelativeNow();
   const adding = addingType !== null;
   const podList = pods || [];
 
@@ -242,6 +247,12 @@ const V2ConnectorsPage: React.FC = () => {
   }, [api, t]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [load]);
 
   // The Slack callback resolves in its own tab. Consume its opaque result and
   // leave no state or error code in the browser URL.
@@ -563,7 +574,7 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const rowFor = (connector: Connector): ConnectorRow => {
-    const started = `started ${relativeTime(connector.createdAt)}`;
+    const started = `started ${relativeTime(connector.createdAt, now)}`;
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
     const title = connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type;
@@ -576,7 +587,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
-        when: `since ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+        when: `since ${relativeTime(connector.updatedAt || connector.createdAt, now)}`,
       };
     }
 
@@ -592,7 +603,7 @@ const V2ConnectorsPage: React.FC = () => {
           dot: 'idle',
           line: t('connectors.notLinkedLine', { defaultValue: '{{title}} · not linked to a pod', title }),
           pulse: false,
-          when: `added ${relativeTime(connector.createdAt)}`,
+          when: `added ${relativeTime(connector.createdAt, now)}`,
         };
       }
       const relay = Boolean(connector.config?.liveRelay);
@@ -610,7 +621,7 @@ const V2ConnectorsPage: React.FC = () => {
         line: `${title} · linked to ${podNameById(activePodId, connector)}`,
         pulse: relay && Boolean(recent),
         secondary: true,
-        when: `added ${relativeTime(connector.createdAt)}`,
+        when: `added ${relativeTime(connector.createdAt, now)}`,
       };
     }
 
@@ -653,7 +664,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'pending',
         line: t('connectors.slackConfirmRow', { defaultValue: '{{workspace}} says {{user}} connected — is that you?', workspace, user }),
         pulse: true,
-        when: `Slack answered ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+        when: `Slack answered ${relativeTime(connector.updatedAt || connector.createdAt, now)}`,
       };
     }
 
@@ -712,8 +723,8 @@ const V2ConnectorsPage: React.FC = () => {
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };
     }
-    const since = `since ${relativeTime(installation.updatedAt)}`;
-    const started = `started ${relativeTime(installation.claimedAt || installation.updatedAt)}`;
+    const since = `since ${relativeTime(installation.updatedAt, now)}`;
+    const started = `started ${relativeTime(installation.claimedAt || installation.updatedAt, now)}`;
     const stale = claimIsStale(installation);
     if (installation.status === 'installing' || installation.status === 'activating') {
       return stale
@@ -777,7 +788,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: `${t('connectors.pausedLine', { defaultValue: 'Paused by an administrator.' })}${reason}`,
         pulse: false,
-        when: `paused ${relativeTime(pause?.at || installation.updatedAt)}`,
+        when: `paused ${relativeTime(pause?.at || installation.updatedAt, now)}`,
       };
     }
     if (installation.status === 'stale') {
@@ -964,7 +975,7 @@ const V2ConnectorsPage: React.FC = () => {
                   {active && <span className="v2-connector-gate__tag">{t('connectors.activeTag', { defaultValue: 'active' })}</span>}
                 </button>
                 <span className={`v2-connector-gate__since${enabled ? '' : ' v2-connector-gate__since--off'}`}>
-                  {enabled ? `since ${relativeTime(gate?.since)}` : t('connectors.gateOff', { defaultValue: 'off' })}
+                  {enabled ? `since ${relativeTime(gate?.since, now)}` : t('connectors.gateOff', { defaultValue: 'off' })}
                 </span>
                 <input
                   type="checkbox"
