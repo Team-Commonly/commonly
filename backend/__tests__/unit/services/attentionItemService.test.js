@@ -212,6 +212,37 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('hides a mention when the same message already has a decision row — in any state, not only open', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    const mention = { _id: 'attention-m', recipientUserId: recipient, podId: 'pod-1', kind: 'mention', source: { type: 'message', id: 'msg-1' }, messageId: 'msg-1', title: 'Ada mentioned you', createdAt: new Date('2026-09-01T00:00:00Z') };
+    const decision = { _id: 'attention-d', recipientUserId: recipient, podId: 'pod-1', kind: 'decision', source: { type: 'decision_request', id: 'd-1' }, messageId: 'msg-1', title: 'Which?', createdAt: new Date('2026-09-01T00:00:00Z') };
+    let open = [mention, decision];
+    let decisionState = 'open';
+    mockFind.mockImplementation((query) => (query.kind === 'decision'
+      ? chain([{ _id: 'attention-d', podId: 'pod-1', messageId: 'msg-1', status: decisionState }])
+      : { sort: () => ({ lean: async () => open }) }));
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: recipient, members: [] }]));
+
+    const both = await AttentionItemService.getOpenQueue(recipient);
+    expect(both.items).toEqual([expect.objectContaining({ attentionItemId: 'attention-d', kind: 'decision' })]);
+    expect(both.count).toBe(1);
+    expect(both.countsByKind).toEqual({ decision: 1 });
+    expect(both.countsByPod).toEqual({ 'pod-1': 1 });
+    // The decision row is what makes the mention redundant, so the lookup must
+    // not be narrowed to open rows: a resolved decision keeps the presentation.
+    expect(mockFind).toHaveBeenCalledWith({ recipientUserId: recipient, kind: 'decision', messageId: { $in: ['msg-1'] } });
+
+    // The same message with the decision answered: the row leaves the open
+    // queue and the mention must leave with it, not arrive a beat later as a
+    // fresh pending item.
+    decisionState = 'resolved';
+    open = [mention];
+    const answered = await AttentionItemService.getOpenQueue(recipient);
+    expect(answered.items).toEqual([]);
+    expect(answered.count).toBe(0);
+    expect(answered.countsByKind).toEqual({});
+  });
+
   it('keeps the composer target from the newest global mention beyond the page', async () => {
     const recipient = '507f191e810c19729de860ea';
     const rows = [

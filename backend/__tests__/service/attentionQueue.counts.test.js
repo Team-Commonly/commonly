@@ -67,6 +67,47 @@ describe('uncapped attention counts — persisted query and membership', () => {
     expect(next.countsByPod).toEqual({ [busy.id]: 99, [omitted.id]: 51 });
   });
 
+  it('shows one item for a decision and its same-source mention, and every count follows the visible rows', async () => {
+    const recipient = new mongoose.Types.ObjectId();
+    const [pod] = await Pod.create([{ name: 'Sharpen', type: 'team', createdBy: recipient, members: [recipient] }]);
+    const at = new Date('2026-09-01T00:00:00Z');
+    const mention = (messageId, status = 'open') => ({
+      recipientUserId: recipient, podId: pod._id, kind: 'mention', status, messageId,
+      source: { type: 'message', id: messageId }, title: 'Ada mentioned you', createdAt: at,
+    });
+    const decision = (messageId, status = 'open') => ({
+      recipientUserId: recipient, podId: pod._id, kind: 'decision', status, messageId,
+      source: { type: 'decision_request', id: `d-${messageId}` }, title: 'Which?', createdAt: at,
+    });
+    await AttentionItem.insertMany([
+      mention('msg-1'), decision('msg-1'),
+      mention('msg-2'), decision('msg-2', 'resolved'),
+      mention('msg-3'),
+    ]);
+
+    const queue = await service.getOpenQueue(recipient);
+    expect(queue.count).toBe(2);
+    expect(queue.countsByKind).toEqual({ mention: 1, decision: 1 });
+    expect(queue.countsByPod).toEqual({ [pod.id]: 2 });
+    expect(queue.items.map((item) => item.id).sort()).toEqual(['d-msg-1', 'msg-3']);
+    // Answering the decision left the mention hidden: the pair is one item for good.
+    expect(queue.items.map((item) => item.messageId)).not.toContain('msg-2');
+
+    // A projection, not a delete: both source records survive for history and
+    // for the acknowledgement path that reads them.
+    expect(await AttentionItem.countDocuments({ recipientUserId: recipient, messageId: 'msg-1' })).toBe(2);
+
+    // Answering the live pair drops one item and surfaces no leftover mention.
+    await AttentionItem.updateOne(
+      { recipientUserId: recipient, kind: 'decision', messageId: 'msg-1' },
+      { $set: { status: 'resolved' } },
+    );
+    const after = await service.getOpenQueue(recipient);
+    expect(after.count).toBe(1);
+    expect(after.items.map((item) => item.messageId)).toEqual(['msg-3']);
+    expect(after.countsByKind).toEqual({ mention: 1 });
+  });
+
   it('returns an authoritative empty shape for invalid recipients', async () => {
     expect(await service.getOpenQueue('invalid')).toEqual({
       items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,

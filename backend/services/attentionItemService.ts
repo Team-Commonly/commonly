@@ -373,6 +373,22 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
   }
 };
 
+// `${podId}:${messageId}` keys for messages that already have a decision row
+// for this recipient — in ANY state, not only open. A decision card born from a
+// message carries that message's id, and the mention row for the same message
+// is the same ask to the same person, so it is not a second item.
+const decisionBackedMessages = async (recipientUserId: unknown, rows: any[]): Promise<Set<string>> => {
+  const messageIds = [...new Set(rows
+    .filter((row: any) => row.kind === 'mention' && row.messageId)
+    .map((row: any) => String(row.messageId)))];
+  if (!messageIds.length) return new Set();
+  const decisions = await AttentionItem.find({ recipientUserId, kind: 'decision', messageId: { $in: messageIds } })
+    .select('podId messageId').lean();
+  return new Set(decisions
+    .filter((row: any) => row.messageId)
+    .map((row: any) => `${String(row.podId)}:${String(row.messageId)}`));
+};
+
 interface OpenQueueOptions {
   podId?: unknown;
   messageIds?: unknown;
@@ -412,14 +428,25 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     status: 'open',
     ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
   }).sort({ createdAt: -1 }).lean();
-  const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
+  // Suppressed before anything is counted, so every number the caller reads —
+  // per-pod, per-kind, total, remaining — counts rows the person can actually
+  // see, in every scope. Keyed on a decision row existing in any state: hiding
+  // only while the decision is open would surface the leftover mention the
+  // moment the decision is answered, i.e. the duplicate arriving in two acts.
+  // The decision row is that message's one presentation for good.
+  const superseded = await decisionBackedMessages(recipientUserId, rows);
+  const visible = superseded.size
+    ? rows.filter((row: any) => !(row.kind === 'mention'
+        && row.messageId && superseded.has(`${String(row.podId)}:${String(row.messageId)}`)))
+    : rows;
+  const podIds = [...new Set(visible.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
   const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
   const renderKind = (row: any): Kind => (
     row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
   );
-  const valid = rows.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
+  const valid = visible.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
     (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
     || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   ));
