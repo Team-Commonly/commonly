@@ -256,15 +256,48 @@ router.post('/:podId', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     if (sourceRef) {
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef }) as { status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef }) as { title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
       if (existing) {
         if (existing.status === 'done') {
+          // `sourceRef` is an idempotency key (a unique partial index backs it),
+          // so a settled row with the same ref is reopened in place rather than
+          // duplicated. Two things this branch deliberately does NOT do:
+          //
+          // 1. It does not apply the submitted title. Callers use `sourceRef` for
+          //    provenance, so a differing title here is a follow-up being filed
+          //    against the same source, not a rename of this row — but that
+          //    difference IS reported, in `notes` and in the history below,
+          //    because a caller who sent a title and got back a row with another
+          //    one has no other way to notice (AX entry 59).
+          // 2. It does not discard the previous `notes`. They are moved into the
+          //    append-only `updates` history before the reopen note replaces them;
+          //    a reopen used to overwrite a completed row's writeup with one
+          //    sentence, losing the only durable record of that work.
+          const previousNotes = (existing.notes || '').trim();
+          const titleDiffers = !!title && title !== existing.title;
+          if (previousNotes) {
+            existing.updates.push({
+              text: `Previous notes preserved from the completed run:\n${previousNotes}`,
+              author: 'system',
+              authorId: null,
+              createdAt: new Date(),
+            });
+          }
           existing.status = 'pending';
           existing.assignee = assignee || undefined;
           existing.claimedAt = null;
           existing.claimExpiresAt = null;
-          existing.notes = 'Reopened — the same source is active again.';
-          existing.updates.push({ text: 'Reopened: task was done but its source is active again — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
+          existing.notes = titleDiffers
+            ? `Reopened — the same source is active again. Submitted title ("${title}") was NOT applied; this row keeps its original title.`
+            : 'Reopened — the same source is active again.';
+          existing.updates.push({
+            text: titleDiffers
+              ? `Reopened: task was done but its source is active again — picking up again. Submitted title differed and was not applied: "${title}"`
+              : 'Reopened: task was done but its source is active again — picking up again.',
+            author: 'system',
+            authorId: null,
+            createdAt: new Date(),
+          });
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
