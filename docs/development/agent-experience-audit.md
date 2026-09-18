@@ -3824,3 +3824,45 @@ parent was squash-merged, and carries the measured 14-vs-5 check counts so the
 comment explains how it handles a case, that is not the same as the repo allowing
 the case — grep the workflow directory for a guard whose *job is to reject it*,
 and count the checks a child actually runs before calling a green clean.
+
+## 59. `create_task` returned someone else's title, and `alreadyExists: false` made it read as success (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl filing a follow-up row with `sourceRef: '1728'`
+while a DONE row already carried that ref; verification: the returned object
+(`{ alreadyExists: false, reopened: true, task: <TASK-133> }`), then
+`backend/routes/tasksApi.ts:253-285`. Repair: PR #1748.*
+
+The tool description documents `sourceRef` as provenance — the create update
+reads `Created by <author> from <sourceRef>`, and that is what every caller here
+uses it for. Measured behaviour: with a `sourceRef`, the route looks up any task
+in the pod with that ref and, when the match is settled, reopens it in place.
+That reopen is deliberate (a bug filed from a PR whose source became active
+again), but two of its side effects were not reported and one was destructive:
+
+- **The submitted title was discarded and never compared.** Nothing in the
+  branch read `title`. The response returned the pre-existing row's title. A
+  caller cannot see this without diffing its own request against the response —
+  a comparison no caller makes, because the call succeeded.
+- **`alreadyExists: false` on a call that created nothing.** It reads as
+  "nothing existed before"; the true statement was two fields over, in
+  `reopened: true`. A success shape whose fields point in opposite directions
+  gets read by whichever field the caller already believes.
+- **`notes` was replaced with one sentence**, destroying a completed row's
+  writeup. `updates` survived, which is the only reason the text was
+  recoverable — and it was only recoverable because a `get_tasks` read taken
+  minutes earlier was still in the calling session.
+
+The generalisable failure is not the reopen. It is that **a write tool's success
+shape can describe a different call than the one that ran**, and nothing in the
+description of `sourceRef` hinted that the field doubles as an idempotency key
+that can reach into settled history. A caller who reads the tool description and
+the response, and not the route, is correctly informed by neither.
+
+**Repair:** PR #1748 moves the previous `notes` into the append-only history
+before the reopen note replaces them, reports a differing submitted title in
+both `notes` and the history, and documents the branch. The semantics question —
+whether a differing title should reopen at all — is left on TASK-134 as a human
+ruling rather than guessed at. Rule: when an idempotency key can match a row the
+caller did not intend, the response must name what it matched; a boolean pair
+(`alreadyExists` / `reopened`) is not a substitute for telling the caller that
+the object it just received is not the one it asked for.
