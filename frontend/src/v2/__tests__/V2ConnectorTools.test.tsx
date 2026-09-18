@@ -18,6 +18,24 @@ jest.mock('axios', () => {
 });
 const axios = jest.requireMock('axios').default;
 
+// The list listens for the server's user-scoped invalidation and for reconnect
+// (TASK-135). A fake socket lets a test deliver either without a real server.
+const mockSocketListeners: Record<string, Array<() => void>> = {};
+const mockSocket = {
+  on: jest.fn((event: string, cb: () => void) => {
+    mockSocketListeners[event] = [...(mockSocketListeners[event] || []), cb];
+  }),
+  off: jest.fn((event: string, cb: () => void) => {
+    mockSocketListeners[event] = (mockSocketListeners[event] || []).filter((fn) => fn !== cb);
+  }),
+};
+jest.mock('../../context/SocketContext', () => ({
+  useSocket: () => ({ socket: mockSocket, connected: true, joinPod: jest.fn(), leavePod: jest.fn() }),
+}));
+const fireSocket = async (event: string) => {
+  await act(async () => { (mockSocketListeners[event] || []).forEach((cb) => cb()); });
+};
+
 const authValue = {
   currentUser: { _id: 'u1', username: 'sam' }, user: { _id: 'u1', username: 'sam' }, token: 'user-jwt',
   loading: false, error: null, isAuthenticated: true, register: jest.fn(), login: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
@@ -102,7 +120,33 @@ const renderTools = (props = {}) => render(
   </AuthContext.Provider>,
 );
 
-beforeEach(() => { jest.clearAllMocks(); mockApi(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  Object.keys(mockSocketListeners).forEach((key) => delete mockSocketListeners[key]);
+  mockApi();
+});
+
+test('TASK-135: a grant change made in another client reaches a visible list', async () => {
+  renderTools();
+  expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+
+  const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
+  const before = reads();
+
+  await fireSocket('connectors_updated');
+  await waitFor(() => expect(reads()).toBeGreaterThan(before));
+});
+
+test('TASK-135: a reconnect re-reads, because an event fired while the socket was down is not replayed', async () => {
+  renderTools();
+  expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+
+  const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
+  const before = reads();
+
+  await fireSocket('connect');
+  await waitFor(() => expect(reads()).toBeGreaterThan(before));
+});
 
 test('TASK-131: a grant age advances in place, and a returning tab re-reads, without a reload', async () => {
   jest.useFakeTimers();

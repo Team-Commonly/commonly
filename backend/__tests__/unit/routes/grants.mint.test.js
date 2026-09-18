@@ -23,11 +23,16 @@ jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/Installable', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/githubAppService', () => ({}));
+jest.mock('../../../services/connectorEventService', () => ({
+  emitConnectorsChanged: jest.fn(),
+  emitConnectorsChangedFor: jest.fn(),
+}));
 jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, digestArgs: jest.fn(), reserveBudgetLineage: jest.fn() }));
 
 const Pod = require('../../../models/Pod');
 const Integration = require('../../../models/Integration');
 const Installable = require('../../../models/Installable');
+const { emitConnectorsChanged } = require('../../../services/connectorEventService');
 const { buildGithubToolInstallable, GRANT_BROKER_ID } = require('../../../services/installable/toolInstallables');
 
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
@@ -79,6 +84,21 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test('TASK-135: the mint invalidates the granter\u2019s other clients, in the user room', async () => {
+    const res = await mint({});
+    expect(res.status).toBe(201);
+
+    // The page that must re-read is this user's other tab, not the pod: a pod
+    // fan-out would reach members who cannot see the row.
+    expect(emitConnectorsChanged).toHaveBeenCalledWith(OWNER, 'grant-created');
+  });
+
+  test('TASK-135: a refused mint emits nothing', async () => {
+    const res = await mint({ tools: ['github.delete_repo'] });
+    expect(res.status).toBe(400);
+    expect(emitConnectorsChanged).not.toHaveBeenCalled();
+  });
+
   test('brokerId comes from the tool Installable, never the body', async () => {
     const res = await mint({});
     expect(res.status).toBe(201);

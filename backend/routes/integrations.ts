@@ -40,6 +40,25 @@ import {
   listIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
+// User-scoped invalidation: a write here changes what this user's OTHER
+// clients render on the Connectors page, which until TASK-135 stayed stale
+// until the tab was hidden and shown again.
+const { emitConnectorsChanged, emitConnectorsChangedFor } = require('../services/connectorEventService');
+
+/**
+ * Invalidate the Connectors page for whoever's inventory lists the row that
+ * just moved. The actor's own tabs always re-read; when a pod creator acts on
+ * another member's connector (`canDeleteIntegration` admits them), that
+ * author's tabs are stale too, so they get the same event. `authorId` is
+ * optional because several `findById` casts in this file drop `createdBy`
+ * where the handler has no other use for it.
+ */
+const notifyConnectorsChanged = (req: AuthReq, reason: string, authorId?: unknown): void => {
+  emitConnectorsChangedFor(req, reason);
+  const actor = req.user?.id;
+  if (authorId && String(authorId) !== String(actor)) emitConnectorsChanged(authorId, reason);
+};
+
 // Bridge attribution + binding fields are server-owned. linkedUserId is the
 // identity every inbound live-relay message is AUTHORED as; chatId/chatType
 // are written only by the /commonly-enable webhook (the code is the proof);
@@ -251,6 +270,7 @@ router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (r
       isActive: true,
     });
     await integration.save();
+    notifyConnectorsChanged(req, 'integration-created');
     return res.status(201).json({ integration });
   } catch (error) {
     console.error('Error creating GitHub App integration:', error);
@@ -435,6 +455,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       const connected = await service.connect();
       if (!connected) console.warn('Integration initialized but failed to connect');
     }
+    notifyConnectorsChanged(req, 'integration-created', integration.createdBy);
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
     console.error('Error creating integration:', error);
@@ -445,7 +466,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
 router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
+    const integration = await Integration.findById(id) as { type?: string; podId?: unknown; createdBy?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
     if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
@@ -453,8 +474,10 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
     if (integration.type === 'discord') service = new DiscordService(id);
     else if (integration.type !== 'slack') return res.status(400).json({ message: 'Unsupported integration type' });
     const connected = service ? await service.connect() : true;
-    if (connected) res.json({ message: 'Integration connected successfully' });
-    else res.status(500).json({ message: 'Failed to connect integration' });
+    if (connected) {
+      notifyConnectorsChanged(req, 'integration-connected', integration.createdBy);
+      res.json({ message: 'Integration connected successfully' });
+    } else res.status(500).json({ message: 'Failed to connect integration' });
   } catch (error) {
     console.error('Error connecting integration:', error);
     res.status(500).json({ message: 'Server error' });
@@ -464,15 +487,17 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
 router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
+    const integration = await Integration.findById(id) as { type?: string; podId?: unknown; createdBy?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
     if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
     if (integration.type !== 'discord') return res.status(400).json({ message: 'Unsupported integration type' });
     const service = new DiscordService(id);
     const disconnected = await service.disconnect();
-    if (disconnected) res.json({ message: 'Integration disconnected successfully' });
-    else res.status(500).json({ message: 'Failed to disconnect integration' });
+    if (disconnected) {
+      notifyConnectorsChanged(req, 'integration-disconnected', integration.createdBy);
+      res.json({ message: 'Integration disconnected successfully' });
+    } else res.status(500).json({ message: 'Failed to disconnect integration' });
   } catch (error) {
     console.error('Error disconnecting integration:', error);
     res.status(500).json({ message: 'Server error' });
@@ -576,6 +601,7 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
     }, { new: true });
     // Same gate as above admits the pod's creator: project the echo too (the
     // code itself is not routing state and is what the caller came for).
+    notifyConnectorsChanged(req, 'integration-connect-code', integration.createdBy);
     return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     console.error('Error minting connect code:', error);
@@ -713,6 +739,7 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // The selector is the canonical ObjectId parsed at the route boundary;
     // the access check above authorises that exact document before this write.
     const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
+    notifyConnectorsChanged(req, 'integration-updated', integration.createdBy);
     // The write gate is not the read gate: canDeleteIntegration admits the pod
     // creator, so an unprojected echo here would return the routing state the
     // pod read withholds (chatId, linkedUserId, relayMap, messageBuffer).
@@ -734,6 +761,7 @@ router.delete('/:id', auth, async (req: AuthReq, res: Res) => {
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
     if (integration.type === 'discord') await DiscordIntegration.findOneAndDelete({ integrationId: id });
     await Integration.findByIdAndDelete(id);
+    notifyConnectorsChanged(req, 'integration-deleted', integration.createdBy);
     res.json({ message: 'Integration deleted successfully' });
   } catch (error) {
     console.error('Error deleting integration:', error);
