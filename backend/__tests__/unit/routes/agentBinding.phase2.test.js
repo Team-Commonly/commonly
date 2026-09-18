@@ -289,6 +289,74 @@ describe('daemon work list', () => {
     expect(seenByA.body.agents).toEqual([]);
   });
 
+  // The sole-installer clause (ownsAgent) is a BIND-TIME check: adoption 403s
+  // with another_installer. A second installer can appear afterwards, and then
+  // the `installedBy: machine.ownerUserId` filter on the work list is the only
+  // thing holding — it is what decides whether a stranger's runtime config, MCP
+  // servers and pod can reach this daemon's seat record.
+  it('ignores another installer\u2019s installation of the same identity', async () => {
+    await requestPlacement('machine-a');
+    expect((await adopt(DAEMON_A)).status).toBe(200);
+
+    const other = await User.create({
+      username: 'other-installer', email: 'oi@agents.commonly.local', password: 'x'.repeat(12),
+    });
+    const otherPod = await Pod.create({
+      name: 'other-installer-pod', createdBy: other._id, members: [other._id, bot._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: otherPod._id,
+      version: '1.0.0', status: 'active', installedBy: other._id,
+      config: {
+        runtime: { runtimeType: 'wrapper', model: 'stranger-model' },
+        environment: { version: 1, mcp: [{ name: 'stranger-mcp', transport: 'stdio' }] },
+      },
+    });
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'claude-opus-5' }));
+    // The stranger's pod is not a pod this seat was installed into.
+    expect(agent.podIds).toEqual([String(pod._id)]);
+    const projected = JSON.stringify(agent);
+    expect(projected).not.toContain('stranger-model');
+    expect(projected).not.toContain('stranger-mcp');
+    expect(projected).not.toContain(String(otherPod._id));
+  });
+
+  // An identity installed by its owner in several pods (the taxonomy's
+  // one-install-fans-out) is ONE row: the daemon mints one seat per identity,
+  // so podIds is the union and the row is never duplicated.
+  it('projects one row per identity across its owner\u2019s installations, unioning podIds', async () => {
+    const secondPod = await Pod.create({
+      name: 'second-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: secondPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: {
+        runtime: { runtimeType: 'wrapper', model: 'second-model' },
+        environment: { version: 1, model: 'second-install-model' },
+      },
+    });
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(secondPod._id)]));
+    // Which installation's runtime and environment win is NOT pinned here and
+    // must not be: the projection takes the first non-empty value per field over
+    // an UNORDERED find (agentBinding.ts:394/418-419), so any single order is an
+    // accident of document order, and runtime and environment can even come from
+    // different installations. Pinned instead is the part that is a contract:
+    // the projection is one of the declared values, never a merge or an invention.
+    expect(['claude-opus-5', 'second-model']).toContain(agent.runtime.model);
+    expect([undefined, 'gpt-5.4', 'second-install-model']).toContain(agent.environment?.model);
+  });
+
   it('warns when an embedded MCP placeholder is dropped', async () => {
     const installation = await AgentInstallation.findOne({ agentName: 'wren-test' });
     const environment = installation.config.get('environment');
