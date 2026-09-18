@@ -168,6 +168,34 @@ async function canDeleteIntegration(integration: { createdBy?: { toString: () =>
   return false;
 }
 
+// Who may see a connector's routing state: the connector's creator and an
+// instance administrator. Every response that echoes a connector row to a pod
+// member resolves its viewer here. `canDeleteIntegration` is the WRITE gate and
+// it also admits the POD's creator, who may not have created this connector —
+// so an echo that skips this projection hands that member back the very fields
+// the pod read redacts (#1731 review: PATCH and the connect-code re-mint both
+// returned the row whole).
+type ConnectorViewer = { isAdmin: boolean; requesterId: string };
+
+async function resolveConnectorViewer(viewerId?: unknown): Promise<ConnectorViewer> {
+  // middleware/auth sets req.user.role only on the JWT branch, so an admin
+  // caller is resolved from the database rather than from the request.
+  const requester = await User.findById(viewerId) as { role?: string } | null;
+  return { isAdmin: requester?.role === 'admin', requesterId: String(viewerId || '') };
+}
+
+function projectConnectorForViewer(row: unknown, viewer: ConnectorViewer): Record<string, unknown> {
+  // toJSON first on both paths: it is the transform that strips bearer
+  // credentials, and the projection below mutates what it returns.
+  const typed = row as { toJSON?: () => Record<string, unknown> } | null;
+  const plain = (typed && typeof typed.toJSON === 'function') ? typed.toJSON() : ((row || {}) as Record<string, unknown>);
+  const creator = plain.createdBy as { _id?: unknown } | string | undefined;
+  const creatorId = String((creator as { _id?: unknown })?._id ?? creator ?? '');
+  return (viewer.isAdmin || creatorId === viewer.requesterId)
+    ? withRoutingState(plain)
+    : withoutRoutingState(plain);
+}
+
 const extractToken = (req: AuthReq) => {
   const authHeader = req.header?.('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.replace('Bearer ', '').trim();
@@ -349,18 +377,8 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // connector's creator and an instance administrator see the row whole.
     // canViewPod admits every pod member, so the projection is what keeps a
     // shared pod's other connectors from being readable here.
-    const requester = await User.findById(req.user?.id) as { role?: string } | null;
-    const isAdmin = requester?.role === 'admin';
-    const requesterId = String(req.user?.id || '');
-    return res.json(integrations.map((integration: unknown) => {
-      // toJSON first: it is the transform that strips bearer credentials, and
-      // the projection below mutates what it returns.
-      const typed = integration as unknown as { toJSON?: () => Record<string, unknown> };
-      const row = typeof typed.toJSON === 'function' ? typed.toJSON() : (integration as unknown as Record<string, unknown>);
-      const creator = row.createdBy as { _id?: unknown } | string | undefined;
-      const creatorId = String((creator as { _id?: unknown })?._id ?? creator ?? '');
-      return (isAdmin || creatorId === requesterId) ? withRoutingState(row) : withoutRoutingState(row);
-    }));
+    const viewer = await resolveConnectorViewer(req.user?.id);
+    return res.json(integrations.map((integration: unknown) => projectConnectorForViewer(integration, viewer)));
   } catch (error) {
     console.error('Error fetching integrations:', error);
     res.status(500).json({ message: 'Server error' });
@@ -567,7 +585,9 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
     const updated = await Integration.findByIdAndUpdate(id, {
       $set: { 'config.connectCode': minted.connectCode, 'config.connectCodeExpiresAt': minted.connectCodeExpiresAt },
     }, { new: true });
-    return res.json(updated);
+    // Same gate as above admits the pod's creator: project the echo too (the
+    // code itself is not routing state and is what the caller came for).
+    return res.json(projectConnectorForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     console.error('Error minting connect code:', error);
     return res.status(500).json({ message: 'Server error' });
@@ -704,7 +724,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // The selector is the canonical ObjectId parsed at the route boundary;
     // the access check above authorises that exact document before this write.
     const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
-    return res.json(updated);
+    // The write gate is not the read gate: canDeleteIntegration admits the pod
+    // creator, so an unprojected echo here would return the routing state the
+    // pod read withholds (chatId, linkedUserId, relayMap, messageBuffer).
+    return res.json(projectConnectorForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
     console.error('Error updating integration:', error);
     return res.status(500).json({ message: 'Server error' });

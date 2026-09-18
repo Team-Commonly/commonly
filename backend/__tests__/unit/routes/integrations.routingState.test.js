@@ -41,6 +41,7 @@ app.use('/api/integrations', integrationRoutes);
 describe('integration routing state', () => {
   let mongod;
   let pod;
+  let memberPod;
   let creator;
   let member;
   let admin;
@@ -52,6 +53,21 @@ describe('integration routing state', () => {
     member = await User.create({ username: 'member', email: 'member@routing.test', password: 'placeholder' });
     admin = await User.create({ username: 'admin', email: 'admin@routing.test', password: 'placeholder', role: 'admin' });
     pod = await Pod.create({ name: 'Routing Ops', createdBy: creator._id, members: [creator._id, member._id, admin._id] });
+    // A pod whose CREATOR is `member`, holding a connector `member` did not
+    // create: the shape canDeleteIntegration admits to the write routes without
+    // making `member` the connector's creator.
+    memberPod = await Pod.create({ name: 'Member Pod', createdBy: member._id, members: [member._id, creator._id] });
+  });
+
+  const routingConfig = () => ({
+    chatId: '-1004444',
+    chatTitle: 'Ops',
+    chatType: 'private',
+    linkedUserId: String(creator._id),
+    relayMap: [{ tgMessageId: '900', agentUsername: 'kai', podMessageId: 'p-900' }],
+    messageBuffer: [{ messageId: 'm-1', content: 'buffered line' }],
+    liveRelay: true,
+    accessToken: 'SENTINEL_ACCESS_TOKEN',
   });
 
   afterAll(async () => {
@@ -71,16 +87,7 @@ describe('integration routing state', () => {
       isActive: true,
       // Every routing field the bridge owns, plus one credential that must
       // never leave the server on either path.
-      config: {
-        chatId: '-1004444',
-        chatTitle: 'Ops',
-        chatType: 'private',
-        linkedUserId: String(creator._id),
-        relayMap: [{ tgMessageId: '900', agentUsername: 'kai', podMessageId: 'p-900' }],
-        messageBuffer: [{ messageId: 'm-1', content: 'buffered line' }],
-        liveRelay: true,
-        accessToken: 'SENTINEL_ACCESS_TOKEN',
-      },
+      config: routingConfig(),
     });
   });
 
@@ -127,6 +134,66 @@ describe('integration routing state', () => {
     const res = await get(member._id);
     expect(res.status).toBe(200);
     expect(res.body[0].config.linked).toBe(false);
+  });
+
+  // A connector's row is echoed by the write routes too, and the write gate is
+  // not the read gate: canDeleteIntegration admits the POD's creator, who may
+  // not have created this connector. Unprojected, a no-op PATCH handed that
+  // member back every field the pod read withholds.
+  it('redacts routing state from the PATCH echo for a pod creator who is not the connector creator', async () => {
+    const foreign = await Integration.create({
+      podId: memberPod._id, scope: 'pod', type: 'telegram', status: 'connected', createdBy: creator._id, isActive: true, config: routingConfig(),
+    });
+    const res = await request(app)
+      .patch(`/api/integrations/${foreign._id}`)
+      .set('x-test-user', String(member._id))
+      .send({ isActive: true });
+    expect(res.status).toBe(200);
+    expect(res.body.isActive).toBe(true);
+    const { config } = res.body;
+    expect(config.linked).toBe(true);
+    expect(config.chatTitle).toBe('Ops');
+    expect(config).not.toHaveProperty('chatId');
+    expect(config).not.toHaveProperty('linkedUserId');
+    expect(config).not.toHaveProperty('relayMap');
+    expect(config).not.toHaveProperty('messageBuffer');
+    expect(config).not.toHaveProperty('accessToken');
+  });
+
+  it('shows the connector creator the routing state in the PATCH echo', async () => {
+    const own = await Integration.create({
+      podId: memberPod._id, scope: 'pod', type: 'telegram', status: 'connected', createdBy: creator._id, isActive: true, config: routingConfig(),
+    });
+    const res = await request(app)
+      .patch(`/api/integrations/${own._id}`)
+      .set('x-test-user', String(creator._id))
+      .send({ isActive: true });
+    expect(res.status).toBe(200);
+    expect(res.body.config.chatId).toBe('-1004444');
+    expect(res.body.config.linkedUserId).toBe(String(creator._id));
+    expect(res.body.config.linked).toBe(true);
+    expect(res.body.config).not.toHaveProperty('accessToken');
+  });
+
+  it('redacts routing state from the connect-code echo, keeping the code itself', async () => {
+    const unbound = await Integration.create({
+      podId: memberPod._id,
+      scope: 'pod',
+      type: 'telegram',
+      status: 'pending',
+      createdBy: creator._id,
+      isActive: true,
+      config: { chatTitle: 'Ops', chatType: 'private', linkedUserId: String(creator._id), liveRelay: true },
+    });
+    const res = await request(app)
+      .post(`/api/integrations/${unbound._id}/connect-code`)
+      .set('x-test-user', String(member._id));
+    expect(res.status).toBe(200);
+    expect(typeof res.body.config.connectCode).toBe('string');
+    expect(res.body.config.connectCode).toHaveLength(32);
+    expect(res.body.config.linked).toBe(false);
+    expect(res.body.config.chatTitle).toBe('Ops');
+    expect(res.body.config).not.toHaveProperty('linkedUserId');
   });
 
   it('strips relayMap, messageBuffer and webhookListenerEnabled from a client write', async () => {
