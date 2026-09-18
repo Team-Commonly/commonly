@@ -46,6 +46,7 @@ describe('registry shared agent settings', () => {
       podId: 'pod-1',
       instanceId: 'x-curator',
       status: 'active',
+      installedBy: 'user-1',
       scopes: ['integration:read'],
       config: new Map(Object.entries({
         heartbeat: { enabled: true, everyMinutes: 5 },
@@ -58,6 +59,7 @@ describe('registry shared agent settings', () => {
       podId: 'pod-2',
       instanceId: 'x-curator',
       status: 'active',
+      installedBy: 'user-1',
       scopes: ['integration:read'],
       config: new Map(Object.entries({
         heartbeat: { enabled: true, everyMinutes: 20 },
@@ -117,6 +119,7 @@ describe('registry shared agent settings', () => {
       podId: 'pod-1',
       instanceId: 'x-curator',
       status: 'active',
+      installedBy: 'user-1',
       save: jest.fn().mockResolvedValue(true),
     };
     const secondaryInstall = {
@@ -124,6 +127,7 @@ describe('registry shared agent settings', () => {
       podId: 'pod-2',
       instanceId: 'x-curator',
       status: 'active',
+      installedBy: 'user-1',
       save: jest.fn().mockResolvedValue(true),
     };
 
