@@ -14,15 +14,21 @@
  *   stdio — the command must be the shipped commonly MCP server
  *           (`npx -y @commonlyai/mcp@<tag>`) or a command the operator
  *           already installed by hand in the local token record.
- *   http  — a server whose url or headers carry `${COMMONLY_AGENT_TOKEN}` must
- *           resolve to the instance's own origin (scheme + host + port). The
- *           grant broker declares `${COMMONLY_API_URL}/api/mcp/grants/…`, so
- *           it passes; anything else keeps the token.
- * A server without the placeholder may point anywhere: it receives no secret.
+ *   http  — the url, with ONLY the two instance placeholders resolved and
+ *           nothing else expanded, must parse to the instance's own origin
+ *           (scheme + host + port). The grant broker declares
+ *           `${COMMONLY_API_URL}/api/mcp/grants/…`, so it passes.
+ * The rule is origin-based, not placeholder-based, because the claude CLI
+ * expands `${VAR}` and `${VAR:-default}` in url and headers from its own
+ * environment: `?t=${COMMONLY_AGENT_TOKEN:-}` is not the literal placeholder
+ * and still becomes the token, and outside the public sandbox that
+ * environment is the operator's, so `?k=${GITHUB_TOKEN}` leaks too (Vera,
+ * Connectors 69519). So any `${` other than the three known placeholders,
+ * anywhere in an entry — url, headers, command, env — is refused outright.
  */
 
-const TOKEN_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 const URL_PLACEHOLDERS = ['${COMMONLY_API_URL}', '${COMMONLY_INSTANCE_URL}'];
+const KNOWN_PLACEHOLDERS = [...URL_PLACEHOLDERS, '${COMMONLY_AGENT_TOKEN}'];
 const SHIPPED_PACKAGE = /^@commonlyai\/mcp(@[A-Za-z0-9._-]+)?$/;
 
 export const isShippedCommonlyMcpCommand = (command) => (
@@ -37,10 +43,25 @@ export const isShippedCommonlyMcpCommand = (command) => (
 const sameCommand = (a, b) => Array.isArray(a) && Array.isArray(b)
   && a.length === b.length && a.every((part, i) => part === b[i]);
 
-const carriesToken = (server) => {
-  if (typeof server.url === 'string' && server.url.includes(TOKEN_PLACEHOLDER)) return true;
-  const headers = server.headers && typeof server.headers === 'object' ? server.headers : {};
-  return Object.values(headers).some((v) => typeof v === 'string' && v.includes(TOKEN_PLACEHOLDER));
+// True when a string still contains `${` after the known placeholders are
+// removed — a `${VAR}`, `${VAR:-default}` or any other expansion the CLI
+// would resolve from an environment this declaration does not own.
+const hasForeignExpansion = (value) => {
+  if (typeof value !== 'string') return false;
+  let rest = value;
+  for (const placeholder of KNOWN_PLACEHOLDERS) rest = rest.split(placeholder).join('');
+  return rest.includes('${');
+};
+
+const stringsOf = (server) => {
+  const out = [];
+  if (typeof server.url === 'string') out.push(server.url);
+  for (const bag of [server.headers, server.env]) {
+    if (bag && typeof bag === 'object') out.push(...Object.values(bag));
+  }
+  if (Array.isArray(server.command)) out.push(...server.command);
+  if (Array.isArray(server.args)) out.push(...server.args);
+  return out.filter((v) => typeof v === 'string');
 };
 
 const originOf = (url, instanceUrl) => {
@@ -76,6 +97,11 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioCommand
     }
     const name = typeof server.name === 'string' && server.name ? server.name : `mcp[${index}]`;
     const transport = server.transport || 'stdio';
+    const foreign = stringsOf(server).find(hasForeignExpansion);
+    if (foreign !== undefined) {
+      refusals.push(`'${name}': ${JSON.stringify(foreign)} contains an expansion other than the instance placeholders; the CLI would resolve it from this machine's environment`);
+      return;
+    }
     if (transport === 'stdio') {
       if (isShippedCommonlyMcpCommand(server.command)) return;
       if (allowedStdioCommands.some((allowed) => sameCommand(allowed, server.command))) return;
@@ -83,10 +109,9 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioCommand
       return;
     }
     if (transport === 'http' || transport === 'sse') {
-      if (!carriesToken(server)) return;
       const origin = originOf(server.url, instanceUrl);
       if (origin && instanceOrigin && origin === instanceOrigin) return;
-      refusals.push(`'${name}': ${transport} server ${JSON.stringify(server.url)} carries ${TOKEN_PLACEHOLDER} but its origin ${origin || '(unparseable)'} is not this instance (${instanceOrigin || instanceUrl})`);
+      refusals.push(`'${name}': ${transport} server ${JSON.stringify(server.url)} resolves to origin ${origin || '(unparseable)'}, not this instance (${instanceOrigin || instanceUrl}); a declared http server may only be the instance itself`);
       return;
     }
     refusals.push(`'${name}': unknown transport ${JSON.stringify(transport)}`);
