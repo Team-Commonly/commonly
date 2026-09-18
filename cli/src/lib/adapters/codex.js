@@ -439,8 +439,14 @@ export default {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
       });
+      // A derived record stores `trust: 'public'` and no mode (the block is
+      // platform-independent; see cli/src/lib/default-environment.js). Codex's
+      // mode only selects read vs write access — its permission profiles run on
+      // both macOS and Linux — so the derived default is `workspace`, and an
+      // explicit mode in the record still wins. Before this, a mode-less public
+      // record threw `got unset` and no codex seat spawned at all.
       const publicSandboxMode = ctx.environment?.sandbox?.trust === 'public'
-        ? ctx.environment?.sandbox?.mode || 'unset'
+        ? ctx.environment?.sandbox?.mode ?? 'workspace'
         : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,

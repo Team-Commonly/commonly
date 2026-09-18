@@ -40,6 +40,7 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
+import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
@@ -302,8 +303,9 @@ export const buildDefaultEnvironment = (adapterName) => {
  * enforced sandbox.
  *
  * The public-agent sandbox is real and attack-tested, but it only engages once
- * `sandbox.trust` and `sandbox.mode` are declared: `sandbox.mode` defaults to
- * `'none'`, and nothing previously connected "this pod is public" to "this
+ * an enforced sandbox is declared: `sandbox.trust: 'public'` (the adapters then
+ * resolve the mode for the host at spawn) or an explicit non-'none'
+ * `sandbox.mode`. Nothing previously connected "this pod is public" to "this
  * agent must be confined". An agent attached with no sandbox block simply ran
  * unconfined, silently, with the operator none the wiser.
  *
@@ -327,7 +329,12 @@ export const assertSandboxDeclaredForPublicPod = async ({
 
   const mode = environment?.sandbox?.mode;
   const trust = environment?.sandbox?.trust;
-  const declared = Boolean(trust) && Boolean(mode) && mode !== 'none';
+  // An ENFORCED declaration is one the adapters act on: a public trust (whose
+  // mode they resolve per host at spawn) or an explicit non-'none' mode. This
+  // mirrors the daemon's predicate in lib/default-environment.js, so the shape
+  // the daemon writes for an unconfigured seat is one attach also accepts.
+  const declared = mode !== 'none'
+    && (trust === 'public' || typeof mode === 'string');
   if (declared) return;
 
   let pod = null;
@@ -350,10 +357,11 @@ export const assertSandboxDeclaredForPublicPod = async ({
     + 'people you do not control — but its environment declares no sandbox, and '
     + 'an undeclared sandbox means NO sandbox.\n\n'
     + 'Add a sandbox block to the environment file and retry:\n\n'
-    + '  "sandbox": { "trust": "public", "mode": "read-only" }\n\n'
-    + 'Modes for a public agent: "read-only" or "workspace" (macOS Seatbelt / '
-    + 'Linux bwrap). To attach an agent to a private pod instead, pass that '
-    + 'pod id.',
+    + '  "sandbox": { "trust": "public" }\n\n'
+    + 'That is the whole declaration: the adapters pick the enforced mode for '
+    + 'the host (Seatbelt on macOS, bwrap on Linux). Pin one explicitly with '
+    + '"mode": "read-only" or "workspace" if you want a specific access level. '
+    + 'To attach an agent to a private pod instead, pass that pod id.',
   );
 };
 
@@ -501,7 +509,10 @@ export const performAttach = async ({
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const sandboxMode = environment.sandbox?.mode || 'none';
+    const sandboxMode = environment.sandbox?.mode
+      || (environment.sandbox?.trust === 'public'
+        ? resolvePublicSandboxMode(environment.sandbox)
+        : 'none');
     const sandboxTrust = environment.sandbox?.trust;
     if (sandboxTrust === 'public' && sandboxMode === 'none') {
       throw new Error(

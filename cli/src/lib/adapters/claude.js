@@ -63,6 +63,7 @@ import { delimiter, isAbsolute, join } from 'path';
 
 import { mountSkills } from '../environment.js';
 import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
@@ -82,7 +83,6 @@ const DEFAULT_TIMEOUT_MS = (() => {
 
 const buildPrompt = buildMemoryPreamble;
 
-const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 const PUBLIC_DENIED_TOOLS = [
   'WebSearch',
   'WebFetch',
@@ -410,12 +410,20 @@ const prepareArgv = async (innerArgv, ctx) => {
       .map((name) => `mcp__${name}__*`);
   }
 
-  const sandboxMode = env.sandbox?.mode;
   const sandboxTrust = env.sandbox?.trust;
+  const sandboxMode = resolvePublicSandboxMode(env.sandbox);
   const publicNativeSandbox = sandboxTrust === 'public'
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
-  if (sandboxTrust === 'public' && sandboxMode === 'none') {
-    throw new Error('public Claude agents require an enforced sandbox mode');
+  // A public trust MUST resolve to an enforced mode. Absent mode is resolved
+  // above; anything else that lands here (the literal 'none', a typo, a
+  // non-string) used to fall through to the bare `claude` spawn below — an
+  // unconfined seat with a public record, which is how a record can claim
+  // confinement it never applies (Vera 69548).
+  if (sandboxTrust === 'public' && !publicNativeSandbox && sandboxMode !== 'bwrap') {
+    throw new Error(
+      'public Claude agents require an enforced sandbox mode '
+      + `(workspace or read-only on macOS, bwrap elsewhere), got ${JSON.stringify(sandboxMode)}`,
+    );
   }
   if (publicNativeSandbox) {
     if (process.platform !== 'darwin') {
@@ -546,7 +554,7 @@ export default {
     let publicClaudeState = null;
     try {
       const publicNativeSandbox = ctx.environment?.sandbox?.trust === 'public'
-        && PUBLIC_SANDBOX_MODES.has(ctx.environment?.sandbox?.mode);
+        && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }

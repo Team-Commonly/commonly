@@ -269,6 +269,79 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls).toHaveLength(0);
   });
 
+  // Vera 69548: a mode-less public block used to fall straight through to the
+  // bare `claude` spawn — a record claiming confinement it never got. The
+  // derived record stores trust only (the block is portable, the host is not),
+  // so the adapter has to resolve the mode here.
+  test('public trust with NO mode resolves to Seatbelt workspace on darwin', async () => {
+    const originalPlatform = process.platform;
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which'
+          ? { status: 0, stdout: '/usr/bin/true\n' }
+          : { status: 0, stdout: '' }
+      ));
+
+      await claude.spawn('hi', {
+        agentName: 'derived-sandbox',
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH },
+        environment: { sandbox: { trust: 'public' } },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].cmd).toBe('/usr/bin/sandbox-exec');
+      expect(calls[0].args[1]).toContain('(deny default)');
+      expect(calls[0].args).toContain('--setting-sources');
+      expect(calls[0].args).toContain('--permission-mode');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
+  test('public trust with NO mode resolves to bwrap off darwin', async () => {
+    const originalPlatform = process.platform;
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH },
+        environment: { sandbox: { trust: 'public' } },
+        _spawnImpl: impl,
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].cmd).toBe('bwrap');
+      expect(calls[0].args).toContain('--unshare-all');
+      expect(calls[0].args).toContain('--die-with-parent');
+      // The inner claude argv rides after `--`, inside the namespace.
+      const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
+      expect(inner[0]).toMatch(/claude$/);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
+  test('public trust with an unresolvable explicit mode refuses rather than falls through', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: { sandbox: { mode: 'unconfined', trust: 'public' } },
+      _spawnImpl: impl,
+    })).rejects.toThrow(/require an enforced sandbox mode/);
+    expect(calls).toHaveLength(0);
+  });
+
   // ── ${COMMONLY_*} native MCP environment expansion ────────────────────────
   // Values exist only in Claude's per-spawn environment. The JSON retains
   // placeholders so a cm_agent_* bearer token never exists on disk.

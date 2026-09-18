@@ -66,6 +66,27 @@ describe('public-pod sandbox gate', () => {
     })).resolves.toBeUndefined();
   });
 
+  test('allows the derived mode-less public declaration — the daemon\'s own shape', async () => {
+    // lib/default-environment.js writes `sandbox: { trust: 'public' }` with no
+    // mode, because the mode is a host fact the adapters resolve at spawn. The
+    // gate refusing that shape would make the daemon's own baseline
+    // unattachable to a public pod.
+    const client = clientFor(PUBLIC_POD);
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'p1', environment: { sandbox: { trust: 'public' } },
+    })).resolves.toBeUndefined();
+    expect(client.get).not.toHaveBeenCalled();
+  });
+
+  test('allows bwrap without a trust field — that IS confinement', async () => {
+    // The old predicate required trust AND mode, so a genuinely confined
+    // `mode: 'bwrap'` seat was refused on a public pod. bwrap wraps the spawn
+    // whatever the trust says, and attach separately checks it is installed.
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(PUBLIC_POD), podId: 'p1', environment: { sandbox: { mode: 'bwrap' } },
+    })).resolves.toBeUndefined();
+  });
+
   test('leaves private pods alone — this gate is only about public exposure', async () => {
     await expect(assertSandboxDeclaredForPublicPod({
       client: clientFor(PRIVATE_POD), podId: 'p2', environment: null,

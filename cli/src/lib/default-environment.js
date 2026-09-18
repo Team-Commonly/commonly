@@ -24,6 +24,35 @@
 
 export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
 
+/**
+ * The sandbox an unconfigured seat gets.
+ *
+ * `sandbox.mode` defaults to `'none'` in the adapters, so an ABSENT sandbox
+ * block means NO sandbox — the seat runs unconfined on the operator's machine
+ * while taking instructions from whoever is in the room. That is what a
+ * self-serve install shipped (C4-6 / TASK-052): the install declares no
+ * environment, the daemon projected nothing, and the socket was born with no
+ * confinement and no way to notice.
+ *
+ * `trust: 'public'` is the conservative declaration — "this seat takes
+ * instructions from people I do not control" — and it is the one that engages
+ * the real sandbox in the adapters.
+ *
+ * NO MODE is stored, deliberately. The record is platform-independent and the
+ * host is not: the adapters read a public trust with no mode as Seatbelt
+ * workspace on macOS and bwrap elsewhere. `mode: 'workspace'` in the row is
+ * refused on Linux, and `mode: 'bwrap'` is meaningless on macOS, so either one
+ * moves a host fact into the database and breaks the day the seat is re-homed.
+ * An explicit mode in a record still wins over the derived one.
+ *
+ * Confinement holds for claude and codex. A pi seat gets the block and is NOT
+ * confined by it — the pi adapter has no sandbox path until #1740's transport
+ * work gives it one, so do not read this key on a pi record as confinement.
+ */
+export const COMMONLY_DEFAULT_SANDBOX = Object.freeze({ trust: 'public' });
+
+export const defaultSeatSandbox = () => ({ ...COMMONLY_DEFAULT_SANDBOX });
+
 export const COMMONLY_MCP_SERVER_NAME = 'commonly';
 
 export const commonlyMcpServer = () => ({
@@ -67,4 +96,42 @@ export const withDefaultMcpServer = (environment, adapterName) => {
     return environment;
   }
   return { ...(environment || {}), mcp: [...(declared || []), commonlyMcpServer()] };
+};
+
+/**
+ * Ensure the environment declares an ENFORCED sandbox, touching nothing that
+ * is already enforced. Returns the SAME reference when nothing needs adding.
+ *
+ * Only for environments this daemon derived from the server's declaration or
+ * from nothing at all — never for a local record the operator authored. A
+ * declared `mode: 'none'` is replaced rather than honoured: absence and 'none'
+ * are the same thing to the adapter, and this is the path that decides what an
+ * undeclared sandbox means.
+ */
+export const withDefaultSandbox = (environment) => {
+  if (environment !== null && environment !== undefined
+    && (typeof environment !== 'object' || Array.isArray(environment))) {
+    return environment;
+  }
+  const sandbox = environment?.sandbox;
+  // An ENFORCED declaration is one the adapters act on: a public trust (whose
+  // mode they resolve, and refuse to spawn without) or an explicit non-'none'
+  // mode. `mode: 'none'`, an empty block and a missing one are all the same
+  // thing to a spawn — no confinement — so all three are replaced here.
+  const enforced = sandbox !== null && typeof sandbox === 'object'
+    && sandbox.mode !== 'none'
+    && (sandbox.trust === 'public' || typeof sandbox.mode === 'string');
+  if (enforced) return environment;
+  return { ...(environment || {}), sandbox: defaultSeatSandbox() };
+};
+
+/**
+ * The full baseline a seat gets from the daemon: the kernel MCP server, plus an
+ * enforced sandbox when the environment is one the daemon derived rather than
+ * one the operator wrote (`sandbox: true` at the call sites).
+ */
+export const seatBaseline = (environment, adapterName, { sandbox = false } = {}) => {
+  const withMcp = withDefaultMcpServer(environment, adapterName);
+  if (!sandbox || !ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return withMcp;
+  return withDefaultSandbox(withMcp);
 };

@@ -312,14 +312,48 @@ describe('codex adapter — spawn()', () => {
     expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
   });
 
-  test('public trust fails closed when no enforced public sandbox mode is declared', async () => {
+  // INVERTED deliberately (TASK-052, Wren 69545): this test used to require a
+  // throw for a mode-less public record. The derived record stores trust only —
+  // the block is portable, the host is not — so a mode-less public record must
+  // now spawn under the public profile with the write-capable workspace default.
+  // Leaving the throw in place would make every derived codex seat unspawnable,
+  // which is the same breakage Vera measured on Linux for claude (69542).
+  test('public trust with no mode defaults to the workspace permission profile', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-derived"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('work safely', {
+      sessionId: null,
+      cwd: '/tmp/public-agent-workspace',
+      environment: { sandbox: { trust: 'public' } },
+      env: { ...process.env, CODEX_HOME: operatorHome },
+      agentName: 'derived-sandbox-agent',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags).toContain('default_permissions="commonly_public"');
+    expect(cFlags.find((flag) => flag.startsWith(
+      'permissions.commonly_public.filesystem=',
+    ))).toContain('"."="write"');
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
+
+  test('public trust with an unreadable explicit mode still fails closed', async () => {
     const { impl } = makeSpawnImpl({
       stdoutChunks: ['{"type":"turn.completed"}\n'],
       outputContents: 'should not run',
     });
 
     await expect(codex.spawn('x', {
-      environment: { sandbox: { trust: 'public' } },
+      environment: { sandbox: { mode: 'unconfined', trust: 'public' } },
       _spawnImpl: impl,
     })).rejects.toThrow(/require sandbox.mode=workspace or read-only/);
   });
