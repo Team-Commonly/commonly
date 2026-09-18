@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
+import { auditDeclaredMcp, installedStdioCommands } from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
 
@@ -148,7 +149,23 @@ export const createDaemonSupervisor = ({
     return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
   };
 
-  // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
+  // A declared environment runs on THIS machine as the operator. Refuse any
+  // declared stdio command that is not the shipped commonly MCP server or one
+  // the operator already installed here, and any http server that would be
+  // handed the seat token off the instance's origin. Refusal keeps the current
+  // seat (or skips the mint) and says which server was kept off the machine;
+  // it never adopts a partial environment.
+  const admitDeclared = (row, environment, existing) => {
+    const audit = auditDeclaredMcp(environment, {
+      instanceUrl: existing?.instanceUrl || record.instanceUrl,
+      allowedStdioCommands: installedStdioCommands(existing),
+    });
+    if (audit.ok) return true;
+    log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);
+    for (const refusal of audit.refusals) log(`[${row.agentName}]   ${refusal}`);
+    return false;
+  };
+
   // The mint refuses to clobber an existing token (409 token_exists); the
   // binding to THIS machine is the owner's explicit takeover choice (D3), so
   // that refusal is answered with rotate:true — loudly.
@@ -162,6 +179,7 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
+      if (wanted?.declared && !admitDeclared(row, wanted.value, existing)) return false;
       const declaredAdapter = row.runtime && typeof row.runtime === 'object'
         && typeof row.runtime.adapter === 'string'
         ? row.runtime.adapter.trim().toLowerCase()
@@ -259,6 +277,8 @@ export const createDaemonSupervisor = ({
         return false;
       }
     }
+    const declaredAtMint = environmentFor(row);
+    if (declaredAtMint?.declared && !admitDeclared(row, declaredAtMint.value, null)) return false;
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
     try {
