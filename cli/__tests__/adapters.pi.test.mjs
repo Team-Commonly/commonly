@@ -95,6 +95,8 @@ describe('spawn', () => {
     expect(res.newSessionId).toBe('abc-123');
     expect(calls[0].args[calls[0].args.indexOf('--session') + 1]).toBe('abc-123');
     expect(calls[0].args).not.toContain('--session-id');
+    // A real resume carries the earlier cue in its own transcript; the wrapper does not repeat it.
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
   });
 
   test('a persisted id pi never wrote (a codex thread id from before the switch) starts a fresh session under a new id', async () => {
@@ -104,8 +106,11 @@ describe('spawn', () => {
     expect(res.newSessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(calls[0].args).not.toContain('--session');
     expect(calls[0].args[calls[0].args.indexOf('--session-id') + 1]).toBe(res.newSessionId);
-    // A fresh session gets the fresh-session memory preamble, not the resume one.
-    expect(calls[0].args[calls[0].args.length - 1]).toContain('more');
+    // A fresh session gets the fresh-session memory preamble — the seat's long-term memory cue —
+    // not the resume one (sprint-review's gate: deriving freshSession from ctx.sessionId stayed green).
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('more');
+    expect(promptArg).toContain('=== Fresh session ===');
   });
 
   test('declared MCP servers ride into the bridge env with placeholders filled, and the token stays out of argv', async () => {
