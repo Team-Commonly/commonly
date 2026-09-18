@@ -345,10 +345,10 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // the dedicated runtime identity field: `manifest.runtime.type` is
     // deployment-shape metadata (`standalone` / `commonly-hosted` / `hybrid`),
     // not the install row's canonical driver identity.
+    const manifestRuntimeType = String(
+      (agent.manifest as any)?.runtime?.runtimeType || '',
+    ).trim().toLowerCase();
     if (!runtimeConfig.runtimeType) {
-      const manifestRuntimeType = String(
-        (agent.manifest as any)?.runtime?.runtimeType || '',
-      ).trim().toLowerCase();
       if (
         manifestRuntimeType
         && !['standalone', 'commonly-hosted', 'hybrid'].includes(manifestRuntimeType)
@@ -405,7 +405,27 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
-    if (AgentIdentityService.isCloudRuntime({
+
+    // First-party native exemption (Wren 69361, Sam 69359). A native app whose
+    // registry row is commonly-official + verified is the first-teammate path:
+    // scout reaches every new signup ungated from authController's workspace
+    // creation, so gating the Hub copy of the same app would gate a thing we
+    // hand out at signup. The cloudAgents gate exists for operator-run tiers
+    // (moltbot / codex / managed-agents); the in-process native runtime is the
+    // capped one, not the entitlement-gated one.
+    //
+    // Keyed on the ROW, never on the manifest alone: publish is plain `auth`,
+    // so an exemption a publisher could earn by declaring `native` would hand
+    // out in-process compute for free. Both halves are required — the row must
+    // itself declare native (so an official row cannot be re-pointed at another
+    // tier's gate by an explicit caller runtimeType) and the row must be
+    // first-party. A community row declaring `native` stays gated.
+    const isFirstPartyNative = effectiveRuntimeType === 'native'
+      && manifestRuntimeType === 'native'
+      && agent.registry === 'commonly-official'
+      && agent.verified === true;
+
+    if (!isFirstPartyNative && AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
     })) {
