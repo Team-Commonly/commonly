@@ -120,6 +120,34 @@ export const withoutRoutingState = <T extends Record<string, unknown> | null | u
   return projected;
 };
 
+/**
+ * The viewer projection for ONE connector row, on whatever surface returns it:
+ * the pod read AND the write echoes (PATCH /:id, POST /:id/connect-code). All
+ * three answer people `canDeleteIntegration` admits, and that predicate also
+ * admits the POD's creator — who may not have created this connector. A
+ * response that skips this projection hands that member back exactly the fields
+ * the pod read withholds (#1731 review: the PATCH echo returned chatId,
+ * linkedUserId, relayMap and messageBuffer whole).
+ *
+ * `toJSON` runs first when the row is a document: that is the transform which
+ * strips bearer credentials, and this projection mutates what it returns, so it
+ * is applied to a JSON projection either way. Accepts a document or a plain
+ * row. The admin flag and requester id are resolved by the caller — this module
+ * reads the row, not the database.
+ */
+export const projectIntegrationForViewer = (
+  row: unknown,
+  viewer: { requesterId?: unknown; isAdmin?: boolean } | null | undefined,
+): Record<string, unknown> => {
+  const typed = row as { toJSON?: () => Record<string, unknown> } | null;
+  const plain = (typed && typeof typed.toJSON === 'function') ? typed.toJSON() : ((row || {}) as Record<string, unknown>);
+  const creator = plain.createdBy as { _id?: unknown } | string | undefined;
+  const creatorId = String((creator as { _id?: unknown })?._id ?? creator ?? '');
+  return (viewer?.isAdmin || creatorId === String(viewer?.requesterId || ''))
+    ? withRoutingState(plain)
+    : withoutRoutingState(plain);
+};
+
 // For an already-public Integration on a surface that has no reader for the
 // connect code: drops the code and its expiry together.
 export const withoutConnectCode = (
