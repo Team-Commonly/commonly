@@ -56,6 +56,29 @@ const githubEntry = {
   connections: [{ connectionId: 'conn-1', owner: 'Team-Commonly', repo: 'commonly' }],
 };
 
+const linearEntry = {
+  installableId: 'linear', list: 'tools', label: 'Linear', description: 'Issues in Linear.', available: true,
+  broker: { id: 'commonly-grant-broker' },
+  tools: [{ name: 'linear.create_issue', requiredWriteMode: 'write', irreversible: true }],
+  connections: [{ connectionId: 'conn-2', owner: 'Team-Commonly', repo: 'linear' }],
+};
+const grantLinear = { ...grantLive, grantId: 'grant_lin', installationId: 'inst-2', tools: ['linear.create_issue'] };
+
+// Two tools entries and one grant: the shape the page has to survive once a
+// second tool Installable ships. The old single-entry accounting hid the entry
+// it did not cover (and the header still subtracted exactly one).
+const mockTwoEntries = ({ catalog = [githubEntry, linearEntry], grants = { p1: [grantLinear], p2: [grantRevoked] } } = {}) => {
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: catalog } });
+    const pod = /^\/api\/pods\/(p\d)\/grants$/.exec(url);
+    if (pod) return Promise.resolve({ data: { podId: pod[1], grants: grants[pod[1]] || [] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+};
+
 const mockApi = (catalog = []) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: [{ installableId: 'telegram', list: 'channels' }, ...catalog] } });
@@ -383,6 +406,39 @@ test('Change access keeps the minted grant when the revoke fails and retries onl
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(3));
   // Only the revoke went out again — no third mint.
   expect(axios.post.mock.calls.map(([u]) => u)).toEqual(['/api/grants', '/api/grants/grant_live/revoke', '/api/grants/grant_live/revoke']);
+});
+
+test('TASK-133: a live grant on one entry leaves the other entry under Not yet', async () => {
+  mockTwoEntries();
+  const { container } = renderTools();
+  expect(await screen.findByRole('heading', { name: 'Tools' })).toBeInTheDocument();
+  // One entry granted, so exactly one is still to grant — and the entry the
+  // grant names is the one that leaves the list (label and glyph from its own entry).
+  expect(screen.getByText('1 granted · 1 more')).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'View Linear in Launch pod' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'View GitHub in Launch pod' })).not.toBeInTheDocument();
+  const notYet = container.querySelectorAll('.v2-connector-row--not-yet');
+  expect(notYet).toHaveLength(1);
+  expect(notYet[0].textContent).toContain('GitHub');
+  expect(notYet[0].textContent).toContain('Issues and pull requests.');
+});
+
+test('TASK-133: the granted entry itself leaves Not yet, the other one stays', async () => {
+  mockTwoEntries({ grants: { p1: [grantLive], p2: [grantRevoked] } });
+  const { container } = renderTools();
+  expect(await screen.findByRole('button', { name: 'View GitHub in Launch pod' })).toBeInTheDocument();
+  const notYet = container.querySelectorAll('.v2-connector-row--not-yet');
+  expect(notYet).toHaveLength(1);
+  expect(notYet[0].textContent).toContain('Linear');
+  expect(notYet[0].textContent).not.toContain('GitHub');
+});
+
+test('TASK-133: with every entry granted the header carries no "more"', async () => {
+  mockTwoEntries({ grants: { p1: [grantLive, grantLinear], p2: [grantRevoked] } });
+  const { container } = renderTools();
+  expect(await screen.findByText('2 granted')).toBeInTheDocument();
+  expect(screen.queryByText(/· \d+ more/)).not.toBeInTheDocument();
+  expect(container.querySelectorAll('.v2-connector-row--not-yet')).toHaveLength(0);
 });
 
 test('search filters by tool name and the segment hides not-yet rows; with no grants and no catalogue it renders nothing', async () => {
