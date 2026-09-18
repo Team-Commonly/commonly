@@ -94,6 +94,20 @@ const buildSelectLeanChain = (result) => ({
 describe('registry install runtimeType fallback', () => {
   const installHandler = getInstallHandler();
 
+  // The manifest fixture is round-tripped through the REAL model rather than
+  // hand-written, and that is the point. TASK-043: these tests asserted a
+  // fallback reading `manifest.runtime.runtimeType` while ManifestRuntimeSchema
+  // had no such path — `strict: true` dropped the field on every production
+  // write — so a hand-written object proved a path that could not survive a
+  // save. Delete the schema path and the fixture loses the field too.
+  const { AgentRegistry: RealAgentRegistry } = jest.requireActual('../../../models/AgentRegistry');
+  const persistedManifest = (manifest) => new RealAgentRegistry({
+    agentName: 'sample-agent',
+    displayName: 'Sample Agent',
+    description: 'x',
+    manifest,
+  }).toObject().manifest;
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -139,13 +153,15 @@ describe('registry install runtimeType fallback', () => {
       displayName: 'Sample Agent',
       description: 'Native first-party app',
       latestVersion: '1.0.0',
-      manifest: {
+      manifest: persistedManifest({
+        name: 'sample-agent',
+        version: '1.0.0',
         context: { required: [] },
         runtime: {
           type: 'standalone',
           runtimeType: 'native',
         },
-      },
+      }),
     });
 
     const req = {
@@ -225,7 +241,12 @@ describe('registry install runtimeType fallback', () => {
   it('passes a hire\'s description to the identity service, trimmed and capped (#1649)', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'sample-agent', displayName: 'Sample Agent', description: 'Native first-party app', latestVersion: '1.0.0',
-      manifest: { context: { required: [] }, runtime: { type: 'standalone', runtimeType: 'hosted' } },
+      manifest: persistedManifest({
+        name: 'sample-agent',
+        version: '1.0.0',
+        context: { required: [] },
+        runtime: { type: 'standalone', runtimeType: 'hosted' },
+      }),
     });
     const req = {
       body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [], displayName: 'Scout', description: `  Your first teammate.   Answers how things work here. ${'x'.repeat(200)}` },

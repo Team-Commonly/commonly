@@ -11,7 +11,7 @@
  * scheduler see it.
  */
 
-const { buildInstallationConfig } = require('../../../scripts/seed-native-agents');
+const { buildInstallationConfig, buildRegistryManifest } = require('../../../scripts/seed-native-agents');
 
 const baseApp = {
   agentName: 'test-app',
@@ -87,5 +87,32 @@ describe('buildInstallationConfig', () => {
       maxTokens: 9000,
       maxWallClockMs: 60000,
     });
+  });
+});
+
+// buildRegistryManifest — the other half of the same projection.
+//
+// routes/registry/install.ts fills a runtimeType the caller omitted from the
+// registry manifest, so a first-party app installed from the Hub (the Hub sends
+// no runtimeType) depends entirely on this literal surviving persistence. It did
+// not: the seeder wrote the identity into `runtime.runtimeType`, which had no
+// schema path, AND `type: 'native'`, which is not a member of the deployment
+// shape enum — so `strict: true` kept the invalid value and dropped the real
+// one (TASK-043).
+describe('buildRegistryManifest', () => {
+  test('declares the driver identity in the field that persists', () => {
+    const manifest = buildRegistryManifest(baseApp);
+    expect(manifest.runtime).toEqual({ runtimeType: 'native' });
+  });
+
+  test('leaves the deployment shape to the schema rather than writing a driver name into it', () => {
+    const manifest = buildRegistryManifest(baseApp);
+    expect(manifest.runtime.type).toBeUndefined();
+  });
+
+  test('names the app so the registry row and the install agree on one identity', () => {
+    const manifest = buildRegistryManifest(baseApp);
+    expect(manifest.name).toBe('test-app');
+    expect(manifest.description).toBe('x');
   });
 });

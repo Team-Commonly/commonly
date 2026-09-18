@@ -191,6 +191,23 @@ const normalizeRuntime = (value: any, details: any) => {
     }
   }
 
+  // Driver identity — the paired axis to `type`'s deployment shape, and the
+  // field `routes/registry/install.ts` copies into a runtimeType the caller
+  // omitted. It has to survive normalization or the install fallback is dead
+  // for every agent the boot seeder did not create (TASK-043): a published
+  // manifest could declare it and have this function quietly drop it.
+  // Free token rather than an enum — a new driver must not need a release
+  // here — but the three deployment-shape values are refused so the two axes
+  // cannot be swapped silently.
+  const runtimeType = normalizeString(value.runtimeType, { maxLength: 40 }).toLowerCase();
+  if (runtimeType) {
+    if (['standalone', 'commonly-hosted', 'hybrid'].includes(runtimeType)) {
+      addError(details, 'manifest.runtime.runtimeType', 'Must be a driver identity, not a deployment shape');
+    } else {
+      runtime.runtimeType = runtimeType;
+    }
+  }
+
   const connection = normalizeString(value.connection, { maxLength: 40 });
   if (connection) {
     if (!['mcp', 'rest', 'websocket'].includes(connection)) {

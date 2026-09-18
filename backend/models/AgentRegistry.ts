@@ -81,6 +81,16 @@ const ManifestRuntimeSchema = new Schema(
   {
     type: { type: String, enum: ['standalone', 'commonly-hosted', 'hybrid'], default: 'standalone' },
     connection: { type: String, enum: ['mcp', 'rest', 'websocket'], default: 'mcp' },
+    // Driver identity — a different axis from `type`'s deployment shape. This is
+    // the field `routes/registry/install.ts` reads to fill a runtimeType the
+    // caller omitted, and it has to be DECLARED here for that read to ever work:
+    // the subdocument is `strict: true`, so a manifest writing
+    // `runtime.runtimeType` had the field silently dropped on every persist
+    // (measured 2026-09-18 — `new AgentRegistry({manifest:{runtime:{type:'native',
+    // runtimeType:'native'}}})` comes back as `{type:'native',connection:'mcp'}`),
+    // which left native first-party installs with runtimeType null while a mocked
+    // fixture kept the fallback's test green (TASK-043).
+    runtimeType: { type: String },
     minMemory: String,
     ports: { type: Map, of: Number },
   },
