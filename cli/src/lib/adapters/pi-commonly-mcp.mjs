@@ -12,10 +12,12 @@
  */
 
 import { Type } from 'typebox';
-import { connectMcp, readServers, toPiResult } from './pi-mcp-client.mjs';
+import { connectMcp, takeServers, toPiResult } from './pi-mcp-client.mjs';
 
 export default async function commonlyMcpBridge(pi) {
-  const servers = readServers(process.env.COMMONLY_PI_MCP);
+  // Read once and remove: the list carries the seat token, and pi's bash tool
+  // inherits this process's env (see takeServers).
+  const servers = takeServers(process.env);
   const clients = [];
   for (const server of servers) {
     const client = connectMcp(server);
