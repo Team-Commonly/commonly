@@ -147,6 +147,48 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.config.get('heartbeat')).toEqual({ enabled: true });
   });
 
+  it('lets an instance admin who IS the installer write every row, because authority is a role', async () => {
+    // Wren 69565: installing the seat here is the narrower claim. An admin's
+    // reach is instance-wide whether or not they happen to have created this
+    // row, so the same admin must not get two different scopes depending on
+    // which of two rows they opened (Sam 69582 filed this as the follow-up).
+    const primary = installation({ installedBy: MEMBER });
+    const otherOwnersRow = installation({
+      podId: 'pod-2', installedBy: INSTALLER, config: new Map(),
+    });
+    setCallerRole('admin');
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: [{ userId: MEMBER }] }),
+    });
+    Pod.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { _id: 'pod-1', createdBy: 'someone-else', members: [{ userId: MEMBER }] },
+          { _id: 'pod-2', createdBy: 'someone-else', members: [{ userId: MEMBER }] },
+        ]),
+      }),
+    });
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary, otherOwnersRow]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({
+        instanceId: 'curator',
+        config: { environment: { version: 1, sandbox: { mode: 'workspace' } } },
+        displayName: 'Renamed',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.updatedPods).toBe(2);
+    expect(primary.save).toHaveBeenCalledTimes(1);
+    expect(otherOwnersRow.save).toHaveBeenCalledTimes(1);
+    expect(AgentProfile.updateMany).toHaveBeenCalledWith(
+      { agentId: 'openclaw:curator', podId: { $in: ['pod-1', 'pod-2'] } },
+      expect.objectContaining({ name: 'Renamed' }),
+    );
+  });
+
   it('lets an instance admin who is not the installer write config', async () => {
     const primary = installation();
     setCallerRole('admin');

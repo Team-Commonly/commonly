@@ -24,6 +24,17 @@ jest.mock('../../../models/AgentProfile', () => ({
   updateMany: jest.fn(),
 }));
 
+// The handler asks whether the caller is an instance admin on every PATCH, since
+// the scope it computes is decided by the role and not by which row the caller
+// installed (Wren 69565). These fixtures are installers and not admins.
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'user' }),
+    })),
+  })),
+}));
+
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');

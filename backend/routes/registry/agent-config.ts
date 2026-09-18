@@ -107,18 +107,20 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // seat's runtime token to a host of their choosing. Measured on 23e00668
     // (Vera 69500): a non-owner member PATCHed `config.environment` and got 200.
     const isInstaller = installation.installedBy?.toString?.() === userId.toString();
-    if (!isInstaller) {
-      // `req.user.role` is only populated on the API-token auth path, so fall
-      // back to the stored user when the token did not carry it.
-      const isInstanceAdmin = req.user?.role === 'admin'
-        || await isGlobalAdminUser(userId);
-      if (!isInstanceAdmin) {
-        return res.status(403).json({
-          error: 'Only the agent installer or an instance admin can change an installed agent',
-          code: 'installer_only',
-          fields: INSTALLER_GATED_FIELDS.filter((field) => field in req.body),
-        });
-      }
+    // `req.user.role` is only populated on the API-token auth path, so fall
+    // back to the stored user. Computed even when the caller IS the installer:
+    // the scope below is decided by the ROLE, not by which row they happen to
+    // have installed, and deriving it only on the non-installer path would
+    // scope the same admin's PATCH differently depending on how they
+    // authenticated.
+    const isInstanceAdmin = req.user?.role === 'admin'
+      || await isGlobalAdminUser(userId);
+    if (!isInstaller && !isInstanceAdmin) {
+      return res.status(403).json({
+        error: 'Only the agent installer or an instance admin can change an installed agent',
+        code: 'installer_only',
+        fields: INSTALLER_GATED_FIELDS.filter((field) => field in req.body),
+      });
     }
 
     const applyInstallationSettings = (targetInstallation: any) => {
@@ -188,14 +190,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       .map(([, entry]: any[]) => entry);
 
     // The fan-out reaches this agent's installations in OTHER pods, and those
-    // rows have their own installers. Being the installer here is not authority
-    // over someone else's row there, so an installer only ever writes the rows
-    // they installed. An instance admin (who passed the gate above without
-    // being this installation's installer) keeps the instance-wide reach.
+    // rows have their own installers. Installing the seat here is not authority
+    // over someone else's row there, so an installer who is not an admin only
+    // writes the rows they installed — while an INSTANCE ADMIN keeps the
+    // instance-wide reach whether or not they are also this row's installer:
+    // authority is a role, not a coincidence of which row they created
+    // (Wren 69565).
     const ownsInstallation = (entry: any) => entry?.installedBy?.toString?.() === userId.toString();
-    const installationsToUpdate: any[] = isInstaller
-      ? accessibleInstallations.filter(ownsInstallation)
-      : accessibleInstallations;
+    const installationsToUpdate: any[] = isInstanceAdmin
+      ? accessibleInstallations
+      : accessibleInstallations.filter(ownsInstallation);
     const writablePodIds = Array.from(new Set(
       installationsToUpdate
         .map((entry: any) => entry.podId?.toString?.() || '')
