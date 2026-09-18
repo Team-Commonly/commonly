@@ -79,8 +79,25 @@ const substitutePlaceholders = (value, ctx) => {
   return value.replace(PLACEHOLDER_RE, (whole, key) => (SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole));
 };
 
-const HTTP_TRANSPORTS = new Set(['http']);
-const STDIO_TRANSPORTS = new Set(['stdio']);
+/**
+ * The daemon's own predicate, applied verbatim: `auditDeclaredMcp` reads
+ * `server.transport || 'stdio'` and compares it as an exact string. It is
+ * deliberately not friendlier than the guard's — a normalized `'HTTP'` or a
+ * padded `' http '` is a shape the guard refuses as an unknown transport, and an
+ * adapter that accepted one would be running something the guard never judged
+ * (Vera, Connectors 69776). The schema admits `http`/`stdio`/`sse`
+ * (environment.js:236) and admits an ABSENT transport, which the guard reads as
+ * stdio; that is what this reads too.
+ */
+const transportOf = (server) => server.transport || 'stdio';
+
+const originOf = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Declared MCP servers from the environment spec, placeholders filled. Both
@@ -95,49 +112,67 @@ const STDIO_TRANSPORTS = new Set(['stdio']);
  * the result rides in COMMONLY_PI_MCP — which the bridge takes out of its own
  * environment before pi's bash tool can read it (see takeServers).
  *
- * WHICH shape an entry becomes is decided by `transport` — the same field, with
- * the same default, that the daemon's `auditDeclaredMcp` judges it by — and the
- * field that transport does not select is dropped unsent. Classifying by which
- * field is PRESENT instead is a bypass, not a shorthand: an entry declaring
- * `transport: 'http'` with the instance's own url passes the guard (its http
- * rule checks only the url origin, and `${COMMONLY_AGENT_TOKEN}` in the command
- * is one of the known placeholders), and a presence-classifier then ran that
- * command as stdio with the real token substituted. The guard's judgement and
- * the adapter's disagreed, and the adapter is what executes (Vera, Connectors
- * 69774). A transport pi cannot speak is refused here rather than
- * reinterpreted as one it can.
+ * WHICH shape an entry becomes is decided by `transport` — the same field, read
+ * with the same default and the same exact comparison the daemon's
+ * `auditDeclaredMcp` judges it by — and the field that transport does not select
+ * is dropped unsent. Classifying by which field is PRESENT instead is a bypass,
+ * not a shorthand: an entry declaring `transport: 'http'` with the instance's own
+ * url passes the guard (its http rule checks only the url origin, and
+ * `${COMMONLY_AGENT_TOKEN}` in the command is one of the known placeholders), and
+ * a presence-classifier then ran that command as stdio with the real token
+ * substituted. The guard's judgement and the adapter's disagreed, and the adapter
+ * is what executes (Vera, Connectors 69774).
+ *
+ * The http half also enforces the guard's own origin rule, so this adapter does
+ * not depend on a guard that may not be on the machine: `auditDeclaredMcp`
+ * admits a declared http server only when its url resolves to the INSTANCE's
+ * origin, because the seat token rides its headers. Everything else — an
+ * off-instance host, an unparseable url, an instance url we do not know — is
+ * refused here as well. A transport pi cannot speak (`sse`, which the schema and
+ * the guard both admit) is refused rather than reinterpreted as one it can.
  */
 export const resolveMcpServers = (mcpServers, ctx = {}) => {
   const carried = [];
   for (const server of mcpServers || []) {
     if (!server?.name || typeof server.name !== 'string') continue;
-    const declared = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : '';
-    if (declared && !HTTP_TRANSPORTS.has(declared) && !STDIO_TRANSPORTS.has(declared)) {
-      // eslint-disable-next-line no-console
-      console.warn(`[pi] declared MCP server '${server.name}' asks for transport '${declared}', which this adapter cannot speak — not starting it`);
-      continue;
-    }
-    const hasCommand = Array.isArray(server.command) && server.command.length > 0;
-    const hasUrl = typeof server.url === 'string' && server.url.length > 0;
-    // An undeclared transport falls back to the field that is present, so a
-    // hand-written local record that names only a url keeps working; when the
-    // transport IS declared it wins, and the other field is never carried.
-    const http = declared ? HTTP_TRANSPORTS.has(declared) : (!hasCommand && hasUrl);
-    if (http) {
-      if (!hasUrl) continue;
+    const transport = transportOf(server);
+    if (transport === 'http') {
+      if (typeof server.url !== 'string' || !server.url) continue;
+      const url = substitutePlaceholders(server.url, ctx);
+      const origin = originOf(url);
+      const instanceOrigin = originOf(ctx.instanceUrl);
+      if (!origin || !instanceOrigin || origin !== instanceOrigin) {
+        // eslint-disable-next-line no-console
+        console.warn(`[pi] declared MCP server '${server.name}' points at ${origin || '(unparseable)'}, not this instance (${instanceOrigin || 'unknown'}) — not starting it`);
+        continue;
+      }
       carried.push({
         name: server.name,
-        url: substitutePlaceholders(server.url, ctx),
+        url,
         headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
       });
       continue;
     }
-    if (!hasCommand) continue;
-    carried.push({
-      name: server.name,
-      command: server.command.map((a) => substitutePlaceholders(a, ctx)),
-      env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-    });
+    if (transport === 'stdio') {
+      if (!Array.isArray(server.command) || !server.command.length) {
+        // The url-only record that names no transport lands here: the guard reads
+        // an absent transport as stdio too, and refuses it for having no command,
+        // so the daemon never adopts it and this drop matches that judgement.
+        if (typeof server.url === 'string' && server.url) {
+          // eslint-disable-next-line no-console
+          console.warn(`[pi] declared MCP server '${server.name}' names no transport, so it is judged stdio, and has no command — not starting it`);
+        }
+        continue;
+      }
+      carried.push({
+        name: server.name,
+        command: server.command.map((a) => substitutePlaceholders(a, ctx)),
+        env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+      });
+      continue;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(`[pi] declared MCP server '${server.name}' asks for transport '${transport}', which this adapter cannot speak — not starting it`);
   }
   return carried;
 };

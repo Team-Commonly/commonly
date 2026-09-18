@@ -117,7 +117,7 @@ describe('spawn', () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     const ctx = baseCtx({
       _spawnImpl: impl, _bridgePath: '/x/bridge.mjs', runtimeToken: 'cm_agent_secret', instanceUrl: 'https://api.example',
-      environment: { model: 'deepseek-v4-flash', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }, { name: 'urlonly', transport: 'http', url: 'https://x', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } }] },
+      environment: { model: 'deepseek-v4-flash', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }, { name: 'urlonly', transport: 'http', url: '${COMMONLY_INSTANCE_URL}/mcp', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } }] },
     });
     await pi.spawn('hi', ctx);
     const { args, opts } = calls[0];
@@ -125,7 +125,7 @@ describe('spawn', () => {
     const servers = JSON.parse(opts.env.COMMONLY_PI_MCP);
     expect(servers).toEqual([
       { name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: 'https://api.example', COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } },
-      { name: 'urlonly', url: 'https://x', headers: { Authorization: 'Bearer cm_agent_secret' } },
+      { name: 'urlonly', url: 'https://api.example/mcp', headers: { Authorization: 'Bearer cm_agent_secret' } },
     ]);
     expect(args.join(' ')).not.toContain('cm_agent_secret');
   });
@@ -203,11 +203,12 @@ describe('helpers', () => {
   test('resolveMcpServers carries stdio and HTTP entries, filling placeholders in env and headers alike', () => {
     const resolved = resolveMcpServers([
       { name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } },
-      { name: 'b', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } },
+      { name: 'b', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } },
       { name: 'c' },
     ], { runtimeToken: 'cm_agent_secret', instanceUrl: 'https://api.example' });
-    // The URL and its header are where a granted pi seat's broker entry arrives;
-    // before this, 'b' was dropped and the seat silently held an unreachable grant.
+    // 'b' is the granted pi seat's broker entry as `grantBrokerServer` builds it
+    // (agentBinding.ts — it declares `transport: 'http'`); before this, every
+    // url-only entry was dropped and the seat silently held an unreachable grant.
     expect(resolved).toEqual([
       { name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } },
       { name: 'b', url: 'https://api.example/api/mcp/grants/g1', headers: { Authorization: 'Bearer cm_agent_secret' } },
@@ -268,9 +269,53 @@ describe('helpers', () => {
     }
   });
 
-  test('with no declared transport the present field decides, and a lone url still works', () => {
-    expect(resolveMcpServers([{ name: 'u', url: 'https://x' }], ctx))
-      .toEqual([{ name: 'u', url: 'https://x', headers: {} }]);
+  test('an entry naming no transport is judged stdio, as the guard judges it — a url alone is not carried', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // The schema admits an absent transport and the guard reads it as `stdio`
+      // (`server.transport || 'stdio'`), refuses a stdio entry with no command,
+      // and so never adopts this record. pi dropping it is that same judgement.
+      expect(resolveMcpServers([{ name: 'u', url: '${COMMONLY_INSTANCE_URL}/mcp' }], ctx)).toEqual([]);
+      expect(warn.mock.calls.join(' ')).toContain("'u'");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a transport the guard would call unknown is not normalised into one it admits', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // `auditDeclaredMcp` compares the string exactly, so `'HTTP'` is an unknown
+      // transport to it. An adapter that lowercased the field would run a server
+      // the guard had refused — a disagreement in the unsafe direction.
+      expect(resolveMcpServers([{ name: 'up', transport: 'HTTP', url: 'https://api.example/mcp' }], ctx)).toEqual([]);
+      expect(resolveMcpServers([{ name: 'spaced', transport: ' http ', url: 'https://api.example/mcp' }], ctx)).toEqual([]);
+      expect(warn.mock.calls.join(' ')).toContain("'HTTP'");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a declared http server off this instance is refused here too, not handed the token', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const tokenHeader = { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' };
+      // The guard's http rule admits only the instance's own origin, because the
+      // seat token rides the headers — so this adapter enforces the same rule
+      // rather than depending on a guard that may not be on the machine.
+      expect(resolveMcpServers([{ name: 'evil', transport: 'http', url: 'https://evil.example/mcp', headers: tokenHeader }], ctx)).toEqual([]);
+      // Not a prefix test: a host that merely starts with the instance's name.
+      expect(resolveMcpServers([{ name: 'twin', transport: 'http', url: 'https://api.example.evil.com/mcp', headers: tokenHeader }], ctx)).toEqual([]);
+      expect(resolveMcpServers([{ name: 'unparseable', transport: 'http', url: 'not a url', headers: tokenHeader }], ctx)).toEqual([]);
+      // Fail closed: with no instance url to compare against, nothing is admitted.
+      expect(resolveMcpServers([{ name: 'unknown-instance', transport: 'http', url: 'https://api.example/mcp' }], { runtimeToken: 'cm_agent_secret' })).toEqual([]);
+      // The instance's own origin still rides, with placeholders filled.
+      expect(resolveMcpServers([{ name: 'broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx))
+        .toEqual([{ name: 'broker', url: 'https://api.example/api/mcp/grants/g1', headers: { Authorization: 'Bearer cm_agent_secret' } }]);
+      expect(warn.mock.calls.join(' ')).toContain("'evil'");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
