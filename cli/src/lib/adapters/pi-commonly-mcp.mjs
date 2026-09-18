@@ -1,14 +1,19 @@
 /**
- * pi extension: Commonly's tools for a pi seat, over MCP stdio.
+ * pi extension: Commonly's tools for a pi seat, over MCP.
  *
  * Loaded by adapters/pi.js with `-e`. Reads COMMONLY_PI_MCP — a JSON list of
- * `{ name, command: [...], env: {...} }` — starts each server on stdio, asks
- * it for its tools, and registers every one with pi under its own name, so a
- * pi seat calls `commonly_post_message` exactly as a claude or codex seat
+ * `{ name, command: [...], env: {...} }` for stdio servers and
+ * `{ name, url, headers: {...} }` for Streamable HTTP ones — connects to each,
+ * asks it for its tools, and registers every one with pi under its own name, so
+ * a pi seat calls `commonly_post_message` exactly as a claude or codex seat
  * does. Tool calls are forwarded as MCP `tools/call`; results come back as
  * text. The client lives in pi-mcp-client.mjs (jest-tested); this file only
  * binds it to pi's `registerTool`. `typebox` resolves through pi's extension
  * loader, which aliases its bundled copy — it is not a CLI dependency.
+ *
+ * pi ships no MCP support of its own (its README: "No MCP. … build an
+ * extension that adds MCP support"), so this file is the whole transport story
+ * for a pi seat: a server that is not reachable from here is not reachable.
  */
 
 import { Type } from 'typebox';

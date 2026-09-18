@@ -117,13 +117,16 @@ describe('spawn', () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     const ctx = baseCtx({
       _spawnImpl: impl, _bridgePath: '/x/bridge.mjs', runtimeToken: 'cm_agent_secret', instanceUrl: 'https://api.example',
-      environment: { model: 'deepseek-v4-flash', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }, { name: 'urlonly', transport: 'http', url: 'https://x' }] },
+      environment: { model: 'deepseek-v4-flash', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }, { name: 'urlonly', transport: 'http', url: 'https://x', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } }] },
     });
     await pi.spawn('hi', ctx);
     const { args, opts } = calls[0];
     expect(args[args.indexOf('-e') + 1]).toBe('/x/bridge.mjs');
     const servers = JSON.parse(opts.env.COMMONLY_PI_MCP);
-    expect(servers).toEqual([{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: 'https://api.example', COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }]);
+    expect(servers).toEqual([
+      { name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: 'https://api.example', COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } },
+      { name: 'urlonly', url: 'https://x', headers: { Authorization: 'Bearer cm_agent_secret' } },
+    ]);
     expect(args.join(' ')).not.toContain('cm_agent_secret');
   });
 
@@ -168,8 +171,19 @@ describe('helpers', () => {
     expect(resolveProvider({})).toEqual({ name: 'litellm', baseUrl: 'https://litellm.commonly.me/v1', api: 'openai-completions', apiKeyEnv: 'COMMONLY_LITELLM_KEY' });
     expect(buildModelsJson(resolveProvider({}), 'm').providers.litellm.models[0].id).toBe('m');
   });
-  test('resolveMcpServers skips url-only entries and leaves unknown placeholders alone', () => {
-    expect(resolveMcpServers([{ name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } }, { name: 'b', url: 'u' }], {})).toEqual([{ name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } }]);
+  test('resolveMcpServers carries stdio and HTTP entries, filling placeholders in env and headers alike', () => {
+    const resolved = resolveMcpServers([
+      { name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } },
+      { name: 'b', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } },
+      { name: 'c' },
+    ], { runtimeToken: 'cm_agent_secret', instanceUrl: 'https://api.example' });
+    // The URL and its header are where a granted pi seat's broker entry arrives;
+    // before this, 'b' was dropped and the seat silently held an unreachable grant.
+    expect(resolved).toEqual([
+      { name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } },
+      { name: 'b', url: 'https://api.example/api/mcp/grants/g1', headers: { Authorization: 'Bearer cm_agent_secret' } },
+    ]);
+    expect(resolveMcpServers([{ name: 'c' }], {})).toEqual([]);
   });
 });
 

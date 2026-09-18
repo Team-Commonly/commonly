@@ -5,7 +5,50 @@
  */
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
+import { createServer } from 'http';
 import { connectMcp, toPiResult, readServers, takeServers } from '../src/lib/adapters/pi-mcp-client.mjs';
+
+// A fake MCP Streamable HTTP server: records every request it receives, answers
+// `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
+// and `tools/call` with JSON — so one test covers both response shapes the spec
+// allows and the session-id echo on the second and third requests.
+const startFakeHttp = async () => {
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      seen.push({ method: req.method, headers: req.headers, body: body ? JSON.parse(body) : null });
+      if (req.url.includes('status=500')) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        res.end('broker is down');
+        return;
+      }
+      if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+      const msg = body ? JSON.parse(body) : null;
+      if (!msg || msg.id === undefined) { res.writeHead(202); res.end(); return; }
+      const json = (payload) => { res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 'sess-1' }); res.end(JSON.stringify(payload)); };
+      if (msg.method === 'initialize') return json({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake-http' } } });
+      const sse = (payload) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`); };
+      if (msg.method === 'tools/list') return sse({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'commonly_echo', description: 'echo', inputSchema: { type: 'object', properties: {} } }] } });
+      if (msg.method === 'tools/call') {
+        if (msg.params.name !== 'commonly_echo') return json({ jsonrpc: '2.0', id: msg.id, error: { message: 'unknown tool ' + msg.params.name } });
+        return json({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'http:' + msg.params.arguments.text }] } });
+      }
+      return json({ jsonrpc: '2.0', id: msg.id, error: { message: 'unknown ' + msg.method } });
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/mcp`,
+    seen,
+    close: () => new Promise((resolve) => {
+      // Keep-alive sockets would otherwise hold `close` open forever.
+      server.closeAllConnections?.();
+      server.close(resolve);
+    }),
+  };
+};
 
 // A fake MCP server: one tool, echoes its arguments; errors on `boom`.
 const FAKE_SERVER = `
@@ -36,8 +79,10 @@ test('a request outstanding when the server dies rejects instead of hanging', as
   await expect(client.initialize()).rejects.toThrow(/exited \(3\)/);
 });
 
-test('readServers keeps only stdio entries and tolerates bad JSON', () => {
-  expect(readServers('[{"name":"a","command":["x"]},{"name":"b"},{"command":["y"]}]')).toEqual([{ name: 'a', command: ['x'] }]);
+test('readServers keeps stdio AND http entries and tolerates bad JSON', () => {
+  expect(readServers('[{"name":"a","command":["x"]},{"name":"b"},{"command":["y"]},{"name":"c","url":"https://api.example/mcp"}]'))
+    .toEqual([{ name: 'a', command: ['x'] }, { name: 'c', url: 'https://api.example/mcp' }]);
+  expect(readServers('[{"name":"d","url":""},{"name":"e","command":[]}]')).toEqual([]);
   expect(readServers('not json')).toEqual([]);
   expect(readServers(undefined)).toEqual([]);
 });
@@ -49,6 +94,67 @@ test("takeServers reads the server list and removes it from the env, so pi's bas
   expect('COMMONLY_PI_MCP' in env).toBe(false);
   expect(env.OTHER).toBe('kept');
   expect(JSON.stringify(env)).not.toContain('cm_agent_secret');
+});
+
+test('initialize → tools/list → tools/call over Streamable HTTP, with the declared bearer header and the negotiated session', async () => {
+  const fake = await startFakeHttp();
+  const client = connectMcp({
+    name: 'broker',
+    url: fake.url,
+    headers: { Authorization: 'Bearer cm_agent_secret' },
+  }, { timeoutMs: 5000 });
+  try {
+    const init = await client.initialize();
+    expect(init.serverInfo.name).toBe('fake-http');
+    expect((await client.listTools()).map((t) => t.name)).toEqual(['commonly_echo']);
+    expect(toPiResult(await client.callTool('commonly_echo', { text: 'hi' })))
+      .toEqual({ content: [{ type: 'text', text: 'http:hi' }], details: { isError: false } });
+    await expect(client.callTool('nope', {})).rejects.toThrow(/unknown tool nope/);
+
+    const posts = fake.seen.filter((r) => r.method === 'POST');
+    // initialize, notifications/initialized, tools/list, tools/call, tools/call
+    expect(posts).toHaveLength(5);
+    // Every request carries the declared header — this is the grant broker's
+    // Authorization, the whole reason a pi seat can reach the broker at all.
+    for (const req of posts) expect(req.headers.authorization).toBe('Bearer cm_agent_secret');
+    // Both response shapes are accepted, so the request advertises both.
+    expect(posts[0].headers.accept).toContain('text/event-stream');
+    // The session the server handed back rides on everything after initialize.
+    expect(posts[0].headers['mcp-session-id']).toBeUndefined();
+    expect(posts[2].headers['mcp-session-id']).toBe('sess-1');
+    expect(posts[2].headers['mcp-protocol-version']).toBe('2025-06-18');
+    // A notification has no id.
+    expect(posts[1].body.id).toBeUndefined();
+    expect(posts[0].body.params.clientInfo.name).toBe('commonly-pi-bridge');
+  } finally {
+    client.close();
+    await fake.close();
+  }
+});
+
+test('an HTTP failure is surfaced with its status, not swallowed as an empty tool list', async () => {
+  const fake = await startFakeHttp();
+  const client = connectMcp({ name: 'broken', url: `${fake.url}?status=500`, headers: {} }, { timeoutMs: 5000 });
+  try {
+    // The status AND the server's body, so this cannot pass off the fallback
+    // "returned no JSON-RPC answer" path — that would hide a dropped status check.
+    await expect(client.initialize()).rejects.toThrow(/^broken: initialize failed with HTTP 500: broker is down$/);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('a server that never answers times out instead of hanging the seat', async () => {
+  const fake = await startFakeHttp();
+  const client = connectMcp({ name: 'slow', url: fake.url }, {
+    timeoutMs: 50,
+    fetchImpl: () => new Promise(() => {}),
+  });
+  try {
+    await expect(client.initialize()).rejects.toThrow(/slow: timed out after 50ms|no fetch/);
+  } finally {
+    await fake.close();
+  }
 });
 
 // Presence guard, not a behaviour test: the bridge imports `typebox`, which resolves only

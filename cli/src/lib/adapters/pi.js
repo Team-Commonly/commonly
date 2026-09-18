@@ -79,14 +79,33 @@ const substitutePlaceholders = (value, ctx) => {
   return value.replace(PLACEHOLDER_RE, (whole, key) => (SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole));
 };
 
-/** stdio MCP servers from the environment spec, placeholders filled; url-only entries are skipped. */
+/**
+ * Declared MCP servers from the environment spec, placeholders filled. Both
+ * transports the spec admits are carried through: stdio (`command` + `env`) and
+ * Streamable HTTP (`url` + `headers`). An entry with neither is skipped — there
+ * is nothing to start.
+ *
+ * The HTTP half matters beyond a user-declared remote server: the grant broker
+ * is a Streamable HTTP server (`agentBinding.ts` grantBrokerServer), so before
+ * this pi dropped the one entry that carries a grant to a seat, silently.
+ * Filling the headers here reuses the same substitution as the stdio env, and
+ * the result rides in COMMONLY_PI_MCP — which the bridge takes out of its own
+ * environment before pi's bash tool can read it (see takeServers).
+ */
 export const resolveMcpServers = (mcpServers, ctx = {}) => (mcpServers || [])
-  .filter((server) => server?.name && Array.isArray(server.command) && server.command.length)
-  .map((server) => ({
-    name: server.name,
-    command: server.command.map((a) => substitutePlaceholders(a, ctx)),
-    env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-  }));
+  .filter((server) => server?.name
+    && ((Array.isArray(server.command) && server.command.length) || (typeof server.url === 'string' && server.url)))
+  .map((server) => (Array.isArray(server.command) && server.command.length
+    ? {
+      name: server.name,
+      command: server.command.map((a) => substitutePlaceholders(a, ctx)),
+      env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+    }
+    : {
+      name: server.name,
+      url: substitutePlaceholders(server.url, ctx),
+      headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+    }));
 
 /** The provider block for models.json: the env spec's `provider` over the LiteLLM default. */
 export const resolveProvider = (environment = {}) => {
