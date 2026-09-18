@@ -41,6 +41,10 @@ jest.mock('../../../controllers/podController', () => ({
 jest.mock('../../../services/dmService', () => ({
   canViewPod: jest.fn(async (userId, pod) => (pod.members || []).map(String).includes(String(userId))),
 }));
+jest.mock('../../../services/connectorEventService', () => ({
+  emitConnectorsChanged: jest.fn(),
+  emitConnectorsChangedFor: jest.fn(),
+}));
 
 const Pod = require('../../../models/Pod');
 const Integration = require('../../../models/Integration');
@@ -258,6 +262,16 @@ describe('GET /api/grants/:grantId', () => {
 });
 
 describe('POST /api/grants/:grantId/revoke', () => {
+  test('TASK-135: the revoke invalidates the granter\u2019s other clients', async () => {
+    const row = await RoomGrant.create(grant());
+    const res = await request(app).post(`/api/grants/${row.grantId}/revoke`).set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+
+    // eslint-disable-next-line global-require
+    const { emitConnectorsChanged } = require('../../../services/connectorEventService');
+    expect(emitConnectorsChanged).toHaveBeenCalledWith(OWNER, 'grant-revoked');
+  });
+
   test('records the authenticated caller as revokedBy', async () => {
     const row = await RoomGrant.create(grant());
     const res = await request(app).post(`/api/grants/${row.grantId}/revoke`).set('x-test-user', OWNER);

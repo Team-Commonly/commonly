@@ -24,6 +24,24 @@ jest.mock('axios', () => {
 
 const axios = jest.requireMock('axios').default;
 
+// The page listens for the server's user-scoped invalidation and for reconnect
+// (TASK-135). A fake socket lets a test deliver either without a real server.
+const mockSocketListeners: Record<string, Array<() => void>> = {};
+const mockSocket = {
+  on: jest.fn((event: string, cb: () => void) => {
+    mockSocketListeners[event] = [...(mockSocketListeners[event] || []), cb];
+  }),
+  off: jest.fn((event: string, cb: () => void) => {
+    mockSocketListeners[event] = (mockSocketListeners[event] || []).filter((fn) => fn !== cb);
+  }),
+};
+jest.mock('../../context/SocketContext', () => ({
+  useSocket: () => ({ socket: mockSocket, connected: true, joinPod: jest.fn(), leavePod: jest.fn() }),
+}));
+const fireSocket = async (event: string) => {
+  await act(async () => { (mockSocketListeners[event] || []).forEach((cb) => cb()); });
+};
+
 const authValue = {
   currentUser: { _id: 'u1', username: 'sam' },
   user: { _id: 'u1', username: 'sam' },
@@ -85,6 +103,7 @@ const renderPage = () => render(
 describe('V2ConnectorsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.keys(mockSocketListeners).forEach((key) => delete mockSocketListeners[key]);
     jest.spyOn(window, 'open').mockReturnValue(null);
     window.history.replaceState({}, '', '/v2/connectors');
   });
@@ -112,6 +131,30 @@ describe('V2ConnectorsPage', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('TASK-135: a connector change made in another client reaches a visible page', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByRole('button', { name: 'View Telegram' });
+
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length;
+    const before = reads();
+
+    await fireSocket('connectors_updated');
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  });
+
+  it('TASK-135: a reconnect re-reads, because an event fired while the socket was down is not replayed', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByRole('button', { name: 'View Telegram' });
+
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length;
+    const before = reads();
+
+    await fireSocket('connect');
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
   });
 
   it('renders the Signal row list and opens the pending channel in the selected aside', async () => {
