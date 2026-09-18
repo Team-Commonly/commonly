@@ -3,7 +3,7 @@
 // grant, the trail and its three counts from the broker's rows. Nothing here
 // draws a control the server does not enforce.
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2ConnectorTools from '../components/V2ConnectorTools';
 import { AuthContext } from '../../context/AuthContext';
@@ -77,6 +77,24 @@ const renderTools = (props = {}) => render(
 );
 
 beforeEach(() => { jest.clearAllMocks(); mockApi(); });
+
+test('TASK-131: a grant age advances in place, and a returning tab re-reads, without a reload', async () => {
+  jest.useFakeTimers();
+  try {
+    renderTools();
+    expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+
+    await act(async () => { jest.advanceTimersByTime(60 * 60_000); });
+    expect(screen.getByText('granted 2h ago')).toBeInTheDocument();
+
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
+    const before = reads();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  } finally {
+    jest.useRealTimers();
+  }
+});
 
 test('rows carry the states table: a live grant pulses when used in the last 10 minutes, a revoked one goes hollow', async () => {
   renderTools();
