@@ -145,6 +145,17 @@ export const sessionExists = async (sessionDir, sessionId) => {
   }
 };
 
+/** Fail closed: pi cannot enforce `environment.sandbox`, so a seat that declares one does not start. */
+export const assertNoSandboxDeclared = (environment = {}) => {
+  const sandbox = environment?.sandbox || {};
+  if (sandbox.trust === 'public') {
+    throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
+  }
+  if (sandbox.mode && sandbox.mode !== 'none') {
+    throw new Error(`pi adapter: sandbox.mode=${sandbox.mode} cannot be enforced by pi; remove it or use the claude/codex adapter`);
+  }
+};
+
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge,
 }) => [
@@ -214,6 +225,10 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
+    // pi has no enforced sandbox. claude.js and codex.js refuse a public-trust
+    // seat they cannot confine; so does this adapter, and it refuses any declared
+    // sandbox mode rather than run unconfined under a spec that promised one.
+    assertNoSandboxDeclared(ctx.environment);
     const provider = resolveProvider(ctx.environment);
     const model = ctx.environment?.model || DEFAULT_MODEL;
     const thinking = thinkingFor(ctx.environment?.effort);

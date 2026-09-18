@@ -4,7 +4,8 @@
  * mapping pi receives.
  */
 import { spawn } from 'child_process';
-import { connectMcp, toPiResult, readServers } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { readFileSync } from 'fs';
+import { connectMcp, toPiResult, readServers, takeServers } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 // A fake MCP server: one tool, echoes its arguments; errors on `boom`.
 const FAKE_SERVER = `
@@ -39,4 +40,22 @@ test('readServers keeps only stdio entries and tolerates bad JSON', () => {
   expect(readServers('[{"name":"a","command":["x"]},{"name":"b"},{"command":["y"]}]')).toEqual([{ name: 'a', command: ['x'] }]);
   expect(readServers('not json')).toEqual([]);
   expect(readServers(undefined)).toEqual([]);
+});
+
+test("takeServers reads the server list and removes it from the env, so pi's bash tool cannot print the seat token", () => {
+  const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
+  const env = { COMMONLY_PI_MCP: JSON.stringify(list), OTHER: 'kept' };
+  expect(takeServers(env)).toEqual(list);
+  expect('COMMONLY_PI_MCP' in env).toBe(false);
+  expect(env.OTHER).toBe('kept');
+  expect(JSON.stringify(env)).not.toContain('cm_agent_secret');
+});
+
+// Presence guard, not a behaviour test: the bridge imports `typebox`, which resolves only
+// inside pi's extension loader, so jest cannot load it. This pins that it takes (and so
+// deletes) the list rather than only reading it.
+test('the bridge takes the server list rather than reading it in place', () => {
+  const bridge = readFileSync(new URL('../src/lib/adapters/pi-commonly-mcp.mjs', import.meta.url), 'utf8');
+  expect(bridge).toContain('takeServers(process.env)');
+  expect(bridge).not.toMatch(/readServers\(process\.env/);
 });

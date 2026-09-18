@@ -172,3 +172,29 @@ describe('helpers', () => {
     expect(resolveMcpServers([{ name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } }, { name: 'b', url: 'u' }], {})).toEqual([{ name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } }]);
   });
 });
+
+describe('sandbox — fail closed: pi cannot enforce one', () => {
+  test('a public-trust seat is refused before pi starts', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'public', mode: 'workspace' } } })))
+      .rejects.toThrow(/public-trust seats are not supported/);
+    expect(calls).toHaveLength(0);
+  });
+  test('a declared sandbox mode is refused rather than silently left unenforced', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { mode: 'workspace' } } })))
+      .rejects.toThrow(/cannot be enforced by pi/);
+    expect(calls).toHaveLength(0);
+  });
+  test("sandbox.mode 'none' and an absent sandbox still run", async () => {
+    const a = makeSpawnImpl({ stdout: assistant('ran') });
+    expect((await pi.spawn('hi', baseCtx({ _spawnImpl: a.impl, environment: { sandbox: { mode: 'none' } } }))).text).toBe('ran');
+    const b = makeSpawnImpl({ stdout: assistant('ran') });
+    expect((await pi.spawn('hi', baseCtx({ _spawnImpl: b.impl }))).text).toBe('ran');
+  });
+  test('extensions the operator installed for their own pi never load into a seat', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+    await pi.spawn('hi', baseCtx({ _spawnImpl: impl }));
+    expect(calls[0].args).toContain('--no-extensions');
+  });
+});

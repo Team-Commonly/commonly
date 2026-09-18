@@ -78,6 +78,19 @@ export const toPiResult = (result) => {
   return { content: [{ type: 'text', text: result?.isError ? `error: ${text}` : text }], details: { isError: !!result?.isError } };
 };
 
+/**
+ * Read the server list and REMOVE it from the environment. The list carries each
+ * server's substituted env — the seat's bearer token among it — and pi's `bash`
+ * tool spawns with `{ ...process.env }` (pi's getShellEnv), so leaving it in place
+ * lets one `env` from the model print the token. The MCP children already hold
+ * their own env from spawn time; nothing else reads this variable.
+ */
+export const takeServers = (env = process.env) => {
+  const servers = readServers(env.COMMONLY_PI_MCP);
+  delete env.COMMONLY_PI_MCP;
+  return servers;
+};
+
 export const readServers = (raw) => {
   if (!raw) return [];
   try { return JSON.parse(raw).filter((s) => s?.name && Array.isArray(s.command) && s.command.length); } catch { return []; }
