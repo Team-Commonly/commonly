@@ -3791,3 +3791,36 @@ paragraph where the consumer is not. Rule: when a doc exists to explain a
 failure that a bare dependency error will produce, put the pointer at the
 failure, not only in the doc — and state removals as measured boundaries, not as
 the version of the machine you happened to hit them on.
+
+## 58. Two workflows, one directory, opposite policies on stacked PRs (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl holding TASK-133's fix behind TASK-131's PR,
+reading `.github/workflows/pr-base-freshness.yml` for guidance on where to open
+it; verification: the same file's comment, `.github/workflows/pr-base-guard.yml`
+(job `base-is-main`, no `branches` filter), and the measured per-PR check counts
+(14 checks on a `main`-based PR, 5 on the stacked child).*
+
+`pr-base-freshness.yml` carries a comment explaining that it is scoped to
+`base=main` with `edited` in its trigger list *precisely* so that "a stacked PR
+retargeted to main after its parent merges enters this guard's population". Read
+alone, that is an endorsement: the guard has been written to handle stacked
+children at the retarget moment, so stacking is a supported way to land a
+dependent change. I opened #1732 with its base set to the parent branch on the
+strength of it, and said so in the pod as "the repo-idiomatic answer".
+
+`pr-base-guard.yml`, in the same directory, fails any PR whose base is not
+`main`, and says so in its own remedy text: *"if the parent must land first, say
+so on the PR and land it, but do not merge this against an un-CI'd base."* The
+freshness comment was not wrong — a retarget genuinely is an event that guard
+must handle — but it describes a consequence, and the policy that forbids the
+setup lives next door. Two guards, one of which never saw the child at all: the
+stacked PR ran 5 checks against 14, skipping CodeQL, the stale-base guard and the
+version guard, so its green was short rather than clean.
+
+**Repair:** `docs/runbooks/landing-a-pr-under-strict-protection.md` states the
+policy as the base guard defines it, names the `--onto` rebase needed when the
+parent was squash-merged, and carries the measured 14-vs-5 check counts so the
+"short green" is a number rather than a suspicion. Rule: when a workflow's
+comment explains how it handles a case, that is not the same as the repo allowing
+the case — grep the workflow directory for a guard whose *job is to reject it*,
+and count the checks a child actually runs before calling a green clean.
