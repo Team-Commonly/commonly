@@ -152,11 +152,17 @@ describe('revive-native-installations', () => {
       expect(declaredExemptRuntime(null)).toBe('');
     });
 
-    it('the seed upsert keeps manifest.runtime.type and drops runtimeType; the script must not need the latter', async () => {
+    it('the seed upsert now carries runtimeType; the `type` fallback stays necessary for rows written before it', async () => {
       await seedRegistry('scout', { type: 'native', runtimeType: 'native' });
       const stored = await AgentRegistry.collection.findOne({ agentName: 'scout' });
+      // TASK-043 declared `runtimeType` on ManifestRuntimeSchema, so it persists
+      // where it used to be dropped — that is the field the boot seeder writes
+      // now. `type` still persists too: it is enum-invalid ('native' is not a
+      // deployment shape) but findOneAndUpdate does not run validators, so every
+      // row the old seeder wrote carries it and declaredExemptRuntime's `type`
+      // fallback is still load-bearing. Read order is asserted above.
+      expect(stored.manifest.runtime.runtimeType).toBe('native');
       expect(stored.manifest.runtime.type).toBe('native');
-      expect(stored.manifest.runtime.runtimeType).toBeUndefined();
     });
 
     it('dry run counts eligible pre-runtime rows, names the skipped ones, and writes nothing', async () => {
