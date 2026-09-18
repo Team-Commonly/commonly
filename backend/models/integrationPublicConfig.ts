@@ -65,6 +65,61 @@ export const toPublicIntegration = (
   return integration;
 };
 
+/**
+ * Routing state a connector keeps about its own chat: the external chat
+ * identity (`chatId`), the pod member every inbound live-relay message is
+ * AUTHORED as (`linkedUserId`), and the two tables that map an external
+ * message back into the pod (`relayMap`, the reply window; `messageBuffer`,
+ * the recent-lines digest).
+ *
+ * This is the connector owner's, not the pod's. GET /api/integrations/:podId
+ * answers every member of the pod, so a member of a shared pod could
+ * otherwise read where another member's replies land and who they are
+ * authored as. `chatTitle` is deliberately NOT here: a member may see which
+ * chat a connector is bound to.
+ */
+export const INTEGRATION_ROUTING_STATE_CONFIG_KEYS = [
+  'chatId',
+  'linkedUserId',
+  'messageBuffer',
+  'relayMap',
+] as const;
+
+/**
+ * `linked` is the derived read every viewer gets in place of `chatId`, because
+ * the browser must not branch on an id a pod member is no longer given. It is
+ * written on both paths: an owner who stopped receiving `chatId` would show a
+ * connected connector as unconnected.
+ */
+const withLinkedFlag = <T extends Record<string, unknown> | null | undefined>(integration: T): T => {
+  const config = integration?.config as Record<string, unknown> | undefined;
+  if (config && typeof config === 'object') {
+    config.linked = Boolean(config.chatId);
+  }
+  return integration;
+};
+
+/** The connector's creator, or an instance administrator: the row whole. */
+export const withRoutingState = <T extends Record<string, unknown> | null | undefined>(
+  integration: T,
+): T => withLinkedFlag(integration);
+
+/**
+ * A pod member who did not create this connector: `linked` and `chatTitle`
+ * instead of the routing state. Mutates the object it is handed, like
+ * toPublicIntegrationConfig, so it is applied to a JSON projection.
+ */
+export const withoutRoutingState = <T extends Record<string, unknown> | null | undefined>(
+  integration: T,
+): T => {
+  const projected = withLinkedFlag(integration);
+  const config = projected?.config as Record<string, unknown> | undefined;
+  if (config && typeof config === 'object') {
+    INTEGRATION_ROUTING_STATE_CONFIG_KEYS.forEach((key) => { delete config[key]; });
+  }
+  return projected;
+};
+
 // For an already-public Integration on a surface that has no reader for the
 // connect code: drops the code and its expiry together.
 export const withoutConnectCode = (

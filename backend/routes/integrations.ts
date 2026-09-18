@@ -31,7 +31,7 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
-const { withoutConnectCode } = require('../models/integrationPublicConfig');
+const { withRoutingState, withoutConnectCode, withoutRoutingState } = require('../models/integrationPublicConfig');
 import { Types } from 'mongoose';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
@@ -59,6 +59,12 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // A receipt proves this channel was shown the card. Owners may configure
   // gates, but cannot invent, retarget, or close receipts from a browser.
   'cards',
+  // Routing state is written by the bridges, never by a browser: relayMap is
+  // the reply window, messageBuffer the recent-lines digest a bridge reads to
+  // answer context, and webhookListenerEnabled a runtime switch the Discord
+  // gateway reads. A body that sets any of the three names a destination or
+  // starts a listener the caller was never granted.
+  'relayMap', 'messageBuffer', 'webhookListenerEnabled',
 ];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
@@ -336,7 +342,25 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     const DMService = require('../services/dmService');
     if (!await DMService.canViewPod(req.user?.id, pod)) return res.status(403).json({ message: 'Access denied' });
     const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username email').populate('platformIntegration');
-    return res.json(integrations);
+    // Routing state is the connector's, not the pod's: a member who did not
+    // create this connector sees that it is linked (config.linked) and to
+    // which chat (config.chatTitle), never the external chat id, the identity
+    // inbound messages are authored as, or the reply/digest tables. The
+    // connector's creator and an instance administrator see the row whole.
+    // canViewPod admits every pod member, so the projection is what keeps a
+    // shared pod's other connectors from being readable here.
+    const requester = await User.findById(req.user?.id) as { role?: string } | null;
+    const isAdmin = requester?.role === 'admin';
+    const requesterId = String(req.user?.id || '');
+    return res.json(integrations.map((integration: unknown) => {
+      // toJSON first: it is the transform that strips bearer credentials, and
+      // the projection below mutates what it returns.
+      const typed = integration as unknown as { toJSON?: () => Record<string, unknown> };
+      const row = typeof typed.toJSON === 'function' ? typed.toJSON() : (integration as unknown as Record<string, unknown>);
+      const creator = row.createdBy as { _id?: unknown } | string | undefined;
+      const creatorId = String((creator as { _id?: unknown })?._id ?? creator ?? '');
+      return (isAdmin || creatorId === requesterId) ? withRoutingState(row) : withoutRoutingState(row);
+    }));
   } catch (error) {
     console.error('Error fetching integrations:', error);
     res.status(500).json({ message: 'Server error' });
