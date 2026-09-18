@@ -258,6 +258,63 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  test('public workspace mode tolerates an HTTP MCP server beside the stdio one (grant broker)', async () => {
+    // The grant broker rides in `environment.mcp` as `{ transport: 'http', url }`
+    // with no `command`. The Seatbelt executable allow-list is derived from
+    // `command[0]`, and `isAbsolute(undefined)` throws ERR_INVALID_ARG_TYPE —
+    // measured 2026-09-18 on c4-smoke: every confined spawn died at argv
+    // construction with `The "path" argument must be of type string`.
+    const originalPlatform = process.platform;
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which'
+          ? { status: 0, stdout: '/usr/bin/true\n' }
+          : { status: 0, stdout: '' }
+      ));
+
+      await claude.spawn('hi', {
+        agentName: 'public-test',
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
+        environment: {
+          sandbox: { mode: 'workspace', trust: 'public' },
+          mcp: [
+            {
+              name: 'commonly',
+              transport: 'stdio',
+              command: [process.execPath, path.join(cwd, 'server.mjs')],
+            },
+            {
+              name: 'commonly-grant-broker',
+              transport: 'http',
+              url: 'https://api.example.test/api/mcp/grants/grant_x',
+              headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+            },
+          ],
+        },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+
+      expect(calls).toHaveLength(1);
+      const call = calls[0];
+      expect(call.cmd).toBe('/usr/bin/sandbox-exec');
+      const profile = call.args[1];
+      expect(profile).toContain(`(literal "${fs.realpathSync(process.execPath)}")`);
+      expect(call.args).toContain('mcp__commonly__*');
+      expect(call.args).toContain('mcp__commonly-grant-broker__*');
+      expect(call.args).toContain('--mcp-config');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with sandbox.mode=none refuses to spawn', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(claude.spawn('hi', {
