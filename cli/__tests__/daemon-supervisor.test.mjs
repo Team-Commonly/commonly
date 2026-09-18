@@ -105,16 +105,94 @@ describe('tick', () => {
     });
     await supervisor.tick();
     expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
-      environment: { model: 'opus' },
+      environment: expect.objectContaining({ model: 'opus' }),
     }));
   });
 
-  test('no declared model — no environment key invented', async () => {
+  // Inverted by TASK-048. This used to assert that a row with no declared
+  // environment produced a token record with no `environment` key at all, on
+  // the theory that the daemon should not invent one. That is exactly the
+  // defect: a seat installed server-side never runs `agent attach`, so nothing
+  // else ever adds the mcp[] declaration, and the spawned CLI then has no
+  // commonly_* tools and cannot post. The C4 run hit it on c4-smoke. The
+  // baseline is now applied to every record the daemon writes, for adapters
+  // that consume mcp[]; the sibling test below keeps the old intent for the
+  // adapter that has no consumption path.
+  test('a seat with no declared environment still gets the commonly MCP baseline (TASK-048)', async () => {
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
     });
     await supervisor.tick();
+    const record = saveToken.mock.calls[0][1];
+    expect(record.environment.mcp).toHaveLength(1);
+    expect(record.environment.mcp[0]).toEqual(expect.objectContaining({
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['npx', '-y', '@commonlyai/mcp@latest'],
+      env: {
+        COMMONLY_API_URL: '${COMMONLY_API_URL}',
+        COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+      },
+    }));
+  });
+
+  // The exact shape the C4 run hit: an install created server-side declares
+  // runtime.adapter/model/effort and no environment at all, so the daemon mints
+  // the token. Before this fix that record had no mcp[], and c4-smoke spawned
+  // with no commonly_* tools until the operator hand-added the entry.
+  test('the C4-2 row shape (wrapper + pi + model/effort, no environment) mints the baseline', async () => {
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: {
+          runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash', effort: 'high',
+        },
+      })],
+      resolveAdapter: async () => 'pi',
+    });
+    await supervisor.tick();
+    const record = saveToken.mock.calls[0][1];
+    expect(record.adapter).toBe('pi');
+    expect(record.environment).toEqual({
+      model: 'deepseek-v4-flash',
+      effort: 'high',
+      mcp: [expect.objectContaining({ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] })],
+    });
+  });
+
+  test('an adapter with no mcp consumption path still invents no environment', async () => {
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      resolveAdapter: async () => 'stub',
+    });
+    await supervisor.tick();
     expect(saveToken.mock.calls[0][1]).not.toHaveProperty('environment');
+  });
+
+  test('a declared environment with another mcp server gets the baseline appended', async () => {
+    const environment = {
+      model: 'opus',
+      mcp: [{ name: 'room-grants', transport: 'http', url: 'https://example.test/mcp' }],
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus' }, environment })],
+    });
+    await supervisor.tick();
+    const written = saveToken.mock.calls[0][1].environment;
+    // The grant broker is delivered as url-only http; a seat holding one still
+    // needs the kernel server, so presence of `mcp` is not the predicate.
+    expect(written.mcp.map((server) => server.name)).toEqual(['room-grants', 'commonly']);
+  });
+
+  test('a declared commonly entry is never duplicated or replaced', async () => {
+    const handSet = { name: 'commonly', command: ['node', '/opt/commonly/mcp-staging/src/index.js'] };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', model: 'opus' },
+        environment: { mcp: [handSet] },
+      })],
+    });
+    await supervisor.tick();
+    expect(saveToken.mock.calls[0][1].environment.mcp).toEqual([handSet]);
   });
 
   test('preserves full declared environment and runtime effort when minting', async () => {
@@ -167,7 +245,7 @@ describe('tick', () => {
     model = 'sonnet';
     await supervisor.tick();
     expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
-      environment: { model: 'sonnet' },
+      environment: expect.objectContaining({ model: 'sonnet' }),
     }));
     // Restart flows through the exit event (D6): kill now, respawn on exit.
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
@@ -212,7 +290,18 @@ describe('tick', () => {
 
     await supervisor.tick();
     expect(children).toHaveLength(1);
-    expect(saveToken).not.toHaveBeenCalled();
+    // This record already matched the row (codex + local-model), so the only
+    // thing the first write adds is the mcp baseline the local record was
+    // missing (TASK-048). The row's adapter and model still win, and the seat
+    // starts from that record — no stale local value survives.
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1]).toEqual(expect.objectContaining({
+      adapter: 'codex',
+      environment: expect.objectContaining({ model: 'local-model' }),
+    }));
+    expect(saveToken.mock.calls[0][1].environment.mcp)
+      .toEqual([expect.objectContaining({ name: 'commonly' })]);
+    saveToken.mockClear();
 
     // Adoption/reload is server-authoritative: the next process must consume
     // the row, never silently preserve stale local adapter/model values.
@@ -221,7 +310,7 @@ describe('tick', () => {
 
     expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
       adapter: 'claude',
-      environment: { model: 'server-model' },
+      environment: expect.objectContaining({ model: 'server-model' }),
     }));
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
   });

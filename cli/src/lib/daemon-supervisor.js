@@ -2,6 +2,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
 
+import { withDefaultMcpServer } from './default-environment.js';
+
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
  * `commonly daemon run`.
@@ -181,9 +183,14 @@ export const createDaemonSupervisor = ({
         adapterChanged = existing.adapter !== nextAdapter;
       }
       if (wanted) {
-        const nextEnvironment = wanted.declared
+        const merged = wanted.declared
           ? wanted.value
           : { ...(existing.environment || {}), ...wanted.value };
+        // A server-declared environment replaces the local one, so a seat whose
+        // declaration carries no mcp[] would come back tool-less. Re-apply the
+        // shipped default here and below, or the seat silently loses every
+        // commonly_* tool the next time the UI edits its model (TASK-048).
+        const nextEnvironment = withDefaultMcpServer(merged, nextAdapter);
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
@@ -200,7 +207,14 @@ export const createDaemonSupervisor = ({
         }
       }
       if (adapterChanged) {
-        saveToken(row.agentName, { ...existing, adapter: nextAdapter });
+        // An adapter that consumes mcp[] must not be started on a record that
+        // declares none, even when only the adapter itself changed.
+        const nextEnvironment = withDefaultMcpServer(existing.environment, nextAdapter);
+        saveToken(row.agentName, {
+          ...existing,
+          adapter: nextAdapter,
+          ...(nextEnvironment ? { environment: nextEnvironment } : {}),
+        });
         log('runtime adapter changed — restarting the seat to load it');
         return 'changed';
       }
@@ -246,6 +260,13 @@ export const createDaemonSupervisor = ({
       return false;
     }
     const environment = environmentFor(row);
+    // A seat installed server-side (no local `agent attach`) arrives with no
+    // mcp[] at all: without the default it spawns a CLI that has no commonly_*
+    // tools and cannot post. See lib/default-environment.js.
+    const recordEnvironment = withDefaultMcpServer(
+      environment ? environment.value : null,
+      adapter,
+    );
     saveToken(row.agentName, {
       agentName: row.agentName,
       instanceId: row.instanceId,
@@ -253,9 +274,9 @@ export const createDaemonSupervisor = ({
       instanceUrl: record.instanceUrl,
       podId: row.podIds?.[0] || null,
       adapter,
-      ...(environment ? { environment: environment.value } : {}),
-      ...(environment?.value ? (() => {
-        const workspacePath = workspacePathFor(environment.value);
+      ...(recordEnvironment ? { environment: recordEnvironment } : {}),
+      ...(recordEnvironment ? (() => {
+        const workspacePath = workspacePathFor(recordEnvironment);
         return workspacePath ? { workspacePath } : {};
       })() : {}),
     });
