@@ -307,7 +307,7 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
-  test('public trust with NO mode resolves to bwrap off darwin', async () => {
+  test('public trust with NO mode resolves to bwrap off darwin, with the same tool policy macOS gets', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
     try {
@@ -318,6 +318,7 @@ describe('claude adapter — ctx.environment', () => {
         env: { PATH: process.env.PATH },
         environment: { sandbox: { trust: 'public' } },
         _spawnImpl: impl,
+        _detectBwrap: () => ({ available: true, path: 'bwrap' }),
       });
       expect(calls).toHaveLength(1);
       expect(calls[0].cmd).toBe('bwrap');
@@ -326,6 +327,58 @@ describe('claude adapter — ctx.environment', () => {
       // The inner claude argv rides after `--`, inside the namespace.
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
       expect(inner[0]).toMatch(/claude$/);
+      // The jail bounds the filesystem, the policy bounds the tools — the
+      // Linux seat gets the same floor as the macOS one, not the half of it
+      // that happened to be on the other side of a branch (Vera 69578).
+      const settingSources = inner.indexOf('--setting-sources');
+      expect(settingSources).toBeGreaterThan(-1);
+      expect(inner[settingSources + 1]).toBe('');
+      expect(inner).toContain('--strict-mcp-config');
+      expect(inner).toContain('--no-chrome');
+      expect(inner).toEqual(expect.arrayContaining(['--permission-mode', 'dontAsk']));
+      expect(inner).toContain('--disallowedTools');
+      expect(inner.join(' ')).toContain('Read(./.env)');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
+  test('a public Linux seat whose host has no bwrap refuses to derive, rather than failing per spawn', async () => {
+    const originalPlatform = process.platform;
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      await expect(claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH },
+        environment: { sandbox: { trust: 'public' } },
+        _spawnImpl: impl,
+        _detectBwrap: () => ({ available: false, error: 'bwrap not found on PATH.' }),
+      })).rejects.toThrow(/require bwrap: bwrap not found/);
+      expect(calls).toHaveLength(0);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
+  test('a bwrap seat with no public trust gets the jail without the public tool policy', async () => {
+    const originalPlatform = process.platform;
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH },
+        environment: { sandbox: { mode: 'bwrap' } },
+        _spawnImpl: impl,
+        _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+      });
+      expect(calls).toHaveLength(1);
+      const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
+      expect(inner).not.toContain('--setting-sources');
+      expect(inner).not.toContain('--permission-mode');
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
     }

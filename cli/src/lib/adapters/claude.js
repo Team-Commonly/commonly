@@ -62,7 +62,7 @@ import { homedir, tmpdir } from 'os';
 import { delimiter, isAbsolute, join } from 'path';
 
 import { mountSkills } from '../environment.js';
-import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import {
   publicClaudeStateRoot,
@@ -414,6 +414,11 @@ const prepareArgv = async (innerArgv, ctx) => {
   const sandboxMode = resolvePublicSandboxMode(env.sandbox);
   const publicNativeSandbox = sandboxTrust === 'public'
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
+  // A public trust is ONE contract on both platforms: the jail bounds the
+  // filesystem and the policy bounds the tools. The bwrap branch below used to
+  // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
+  // the operator's own Claude settings inside the namespace (Vera 69578).
+  const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
   // A public trust MUST resolve to an enforced mode. Absent mode is resolved
   // above; anything else that lands here (the literal 'none', a typo, a
   // non-string) used to fall through to the bare `claude` spawn below — an
@@ -458,7 +463,20 @@ const prepareArgv = async (innerArgv, ctx) => {
     };
   }
 
-  if (allowedPatterns.length > 0) {
+  if (publicBwrapSandbox) {
+    // The mode is chosen here, so the mechanism is verified here: a missing
+    // bwrap must fail the seat's derivation with an actionable message, not
+    // every one of its spawns with a bare ENOENT (Wren 69586). On a non-Linux
+    // host this reports the macOS-only message, same as the wrapper would.
+    const bwrap = (ctx._detectBwrap || detectBwrap)();
+    if (!bwrap.available) {
+      throw new Error(`public Claude agents require bwrap: ${bwrap.error}`);
+    }
+    innerArgv = [
+      ...innerArgv,
+      ...buildPublicClaudePolicyArgs(allowedPatterns),
+    ];
+  } else if (allowedPatterns.length > 0) {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
   }
   if (sandboxMode === 'bwrap') {
@@ -469,7 +487,6 @@ const prepareArgv = async (innerArgv, ctx) => {
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
-
   return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 };
 
