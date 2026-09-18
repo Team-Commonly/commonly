@@ -271,7 +271,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const seatLabel = (podId: string | null, userId: string): string => {
     const pool = podId ? (seats[podId] || []) : Object.values(seats).flat();
     const seat = pool.find((row) => row.userId === userId) || Object.values(seats).flat().find((row) => row.userId === userId);
-    return seat ? (seat.displayName || seat.name) : t('tools.aSeat', { defaultValue: 'an agent' });
+    if (seat) return seat.displayName || seat.name;
+    // `seats` is the agent list, and a pod grant's audience is a snapshot of the
+    // room's members — so a human in it resolved to nothing and the row read
+    // "an agent, an agent, <seat>". Name the member instead of asserting an
+    // identity the server never claimed (TASK-050).
+    return memberName(userId) || t('tools.aSeat', { defaultValue: 'an agent' });
   };
   const grantPodId = (grant: ToolGrant): string | null => {
     if (grant.target.kind === 'pod') return grant.target.id;
