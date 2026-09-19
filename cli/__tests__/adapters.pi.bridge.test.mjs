@@ -6,7 +6,7 @@
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { createServer } from 'http';
-import { connectMcp, toPiResult, readServers, takeServers } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { connectMcp, toPiResult, readServers, takeServers, isGrantBrokerUrl } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 // A fake MCP Streamable HTTP server: records every request it receives, answers
 // `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
@@ -101,6 +101,35 @@ test('readServers keeps stdio AND http entries and tolerates bad JSON', () => {
   expect(readServers('[{"name":"d","url":""},{"name":"e","command":[]}]')).toEqual([]);
   expect(readServers('not json')).toEqual([]);
   expect(readServers(undefined)).toEqual([]);
+});
+
+// The refusal is keyed on the broker's PATH, because the name is whatever the
+// declaration says while the path is the broker's. This is the same predicate
+// pi.js applies before it hands the list over, so the last layer before a client
+// is started agrees with the first (TASK-063, wren's daemon-side ruling).
+test('a grant broker entry is dropped by readServers as well as by the adapter', () => {
+  expect(readServers(JSON.stringify([
+    { name: 'commonly-grant-broker', url: 'https://api.example/api/mcp/grants/g1' },
+    { name: 'commonly', url: 'https://api.example/api/mcp/grants/other' },
+    { name: 'remote', url: 'https://api.example/mcp' },
+    { name: 'sibling', url: 'https://api.example/api/mcp/grants-archive/x' },
+  ]))).toEqual([
+    { name: 'remote', url: 'https://api.example/mcp' },
+    { name: 'sibling', url: 'https://api.example/api/mcp/grants-archive/x' },
+  ]);
+});
+
+test('isGrantBrokerUrl matches the broker path and nothing that merely resembles it', () => {
+  expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/g1')).toBe(true);
+  expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/')).toBe(true);
+  expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/g1/calls')).toBe(true);
+  // The bare collection path is not a broker URL (the route needs a grant id),
+  // and a sibling segment is a different path entirely.
+  expect(isGrantBrokerUrl('https://api.example/api/mcp/grants')).toBe(false);
+  expect(isGrantBrokerUrl('https://api.example/api/mcp/grants-archive/x')).toBe(false);
+  expect(isGrantBrokerUrl('https://api.example/mcp')).toBe(false);
+  expect(isGrantBrokerUrl('not a url')).toBe(false);
+  expect(isGrantBrokerUrl(undefined)).toBe(false);
 });
 
 // The wire is built by resolveMcpServers, which now emits exactly one of

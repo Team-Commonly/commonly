@@ -39,6 +39,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { isGrantBrokerUrl } from './pi-mcp-client.mjs';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -138,6 +139,13 @@ const originOf = (value) => {
  * refused here as well. A transport pi cannot speak (`sse`, which the schema and
  * the guard both admit) is refused rather than reinterpreted as one it can.
  *
+ * The grant broker is refused outright, by PATH rather than by entry name: it is
+ * the one http entry that carries authority rather than data, and pi confines on
+ * no host. wren's ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
+ * the daemon-side half of the same refusal the server makes at the projection —
+ * this is the half that holds on deploy skew, when the row names no adapter for
+ * the server to key on, and in any backend older than the refusal.
+ *
  * The stdio half does NOT have that property and must not be read as if it did:
  * a declared stdio command is executed with no allowlist check, here and in both
  * sibling adapters, so it depends entirely on the guard — `auditDeclaredMcp`
@@ -157,6 +165,18 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
       if (!origin || !instanceOrigin || origin !== instanceOrigin) {
         // eslint-disable-next-line no-console
         console.warn(`[pi] declared MCP server '${server.name}' points at ${origin || '(unparseable)'}, not this instance (${instanceOrigin || 'unknown'}) — not starting it`);
+        continue;
+      }
+      // The grant broker is the one http entry that carries AUTHORITY rather
+      // than data: a granted seat acts on external systems as the granter. A pi
+      // seat cannot be confined on any host (see assertNoSandboxDeclared), so
+      // the reach is refused here as well as at the server's projection — this
+      // layer is what holds when the backend predates that refusal, when the
+      // row names no adapter for the server to key on, or when a deploy leaves
+      // the two on different clocks.
+      if (isGrantBrokerUrl(url)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[pi] refusing the grant broker '${server.name}': pi has no enforced sandbox, so this seat must not act with a granter's authority — move the seat to the claude or codex adapter, or remove the grant`);
         continue;
       }
       carried.push({

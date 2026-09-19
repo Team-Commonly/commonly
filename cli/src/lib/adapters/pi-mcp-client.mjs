@@ -19,6 +19,27 @@
 
 import { spawn } from 'node:child_process';
 
+/**
+ * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
+ * pi confines on no host — `pi.js assertNoSandboxDeclared` refuses a DECLARED
+ * sandbox and nothing ever derives one — so a grant broker must not reach a pi
+ * seat by ANY route: not the server's projection (the backend refuses it there
+ * too), and not an older backend that still projects it, which is this layer's
+ * job. Keyed on the PATH and not on the entry's `name`, because the name is
+ * whatever the declaration says while the path is the broker's. A url that does
+ * not parse is not this predicate's business — the origin rule in
+ * `pi.js resolveMcpServers` refuses those before they are carried.
+ */
+export const GRANT_BROKER_PATH = '/api/mcp/grants/';
+
+export const isGrantBrokerUrl = (url) => {
+  try {
+    return new URL(url).pathname.startsWith(GRANT_BROKER_PATH);
+  } catch {
+    return false;
+  }
+};
+
 const PROTOCOL_VERSION = '2024-11-05';
 const MAX_TEXT = 50 * 1024;
 
@@ -266,6 +287,12 @@ export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 
 
 export const readServers = (raw) => {
   if (!raw) return [];
-  try { return JSON.parse(raw).filter((s) => s?.name && (isStdioServer(s) || isHttpServer(s))); } catch { return []; }
+  try {
+    // The broker is dropped here as well as in pi.js: this is the last layer
+    // before a client is started, and the two filters have to agree or a server
+    // reaches the bridge as an entry the adapter would not have carried.
+    return JSON.parse(raw).filter((s) => s?.name
+      && (isStdioServer(s) || (isHttpServer(s) && !isGrantBrokerUrl(s.url))));
+  } catch { return []; }
 };
 
