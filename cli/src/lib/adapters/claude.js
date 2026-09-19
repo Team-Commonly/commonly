@@ -449,9 +449,12 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...buildPublicClaudePolicyArgs(allowedPatterns),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
+    // Only stdio servers have a `command`; an HTTP entry (the grant broker)
+    // carries a `url` instead, and `isAbsolute(undefined)` throws — every
+    // confined spawn of a seat with a broker grant died here (2026-09-18).
     const mcpExecutables = (env.mcp || [])
       .map((server) => server?.command?.[0])
-      .filter((command) => isAbsolute(command));
+      .filter((command) => typeof command === 'string' && isAbsolute(command));
     const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
       workspacePath: ctx.cwd,
       workspaceAccess: sandboxMode === 'read-only' ? 'read' : 'write',
