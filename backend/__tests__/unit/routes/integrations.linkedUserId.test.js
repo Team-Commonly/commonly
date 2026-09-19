@@ -23,6 +23,10 @@ jest.mock('../../../models/DiscordIntegration', () => function DiscordIntegratio
   this.save = jest.fn().mockResolvedValue(this);
 });
 jest.mock('../../../services/discordService', () => jest.fn());
+jest.mock('../../../services/connectorEventService', () => ({
+  emitConnectorsChanged: jest.fn(),
+  emitConnectorsChangedFor: jest.fn(),
+}));
 jest.mock('../../../models/Integration', () => {
   function Integration(data) {
     Object.assign(this, data);
@@ -38,6 +42,10 @@ jest.mock('../../../models/Integration', () => {
 const Integration = require('../../../models/Integration');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
+const {
+  emitConnectorsChanged,
+  emitConnectorsChangedFor,
+} = require('../../../services/connectorEventService');
 const integrationRoutes = require('../../../routes/integrations');
 
 const app = express();
@@ -97,6 +105,35 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update['config.liveRelay']).toBe(true);
     expect(update['config.linkedUserId']).toBe('user-1');
+  });
+
+  it('TASK-135: a PATCH invalidates this user\u2019s other Connectors clients', async () => {
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(200);
+    // The actor is the row's creator here, so one event covers both.
+    expect(emitConnectorsChangedFor).toHaveBeenCalledWith(expect.anything(), 'integration-updated');
+    expect(emitConnectorsChanged).not.toHaveBeenCalled();
+  });
+
+  it('TASK-135: a pod creator acting on someone else\u2019s connector invalidates the author too', async () => {
+    // canDeleteIntegration admits the pod's creator, who may not have created
+    // this connector — without the second emit that author's tabs stay stale.
+    Integration.findById.mockResolvedValue({ ...telegramIntegration(), createdBy: { toString: () => 'other-user' } });
+    Pod.findById.mockResolvedValue({ createdBy: { toString: () => 'user-1' } });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(200);
+    // The route passes the document's ObjectId; stringifying into the room name
+    // is the service's contract (pinned in connectorEventService.test.js).
+    const [authorId, reason] = emitConnectorsChanged.mock.calls[0];
+    expect(String(authorId)).toBe('other-user');
+    expect(reason).toBe('integration-updated');
   });
 
   it("derives linkedUserId when liveRelay arrives as the string 'true' (#1293)", async () => {
