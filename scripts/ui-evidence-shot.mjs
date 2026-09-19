@@ -24,7 +24,7 @@
  *   node scripts/ui-evidence-shot.mjs --route /v2/pods/team/<podId> --out /tmp/after.png \
  *     [--selector '.tools-trail'] \
  *     [--base-url http://localhost:3000] [--api http://localhost:5050] \
- *     [--width 390] [--height 900] \
+ *     [--width 390] [--height 900] [--click '<selector>'] \
  *     [--token <jwt>] [--email dev@commonly.local] [--password password123] [--wait 2500]
  *
  * `--width` is the whole point of a mobile pair: a 390 shot is a different
@@ -57,7 +57,7 @@ const parseArgs = (argv) => {
 
 const KNOWN_FLAGS = new Set([
   'route', 'out', 'base-url', 'api', 'email', 'password', 'wait', 'selector', 'width', 'height',
-  'token',
+  'token', 'click',
 ]);
 
 const args = parseArgs(process.argv.slice(2));
@@ -97,6 +97,12 @@ for (const [name, value] of [['width', viewportWidth], ['height', viewportHeight
   }
 }
 const selector = args.get('selector');
+// Some surfaces only exist after an interaction: the grant aside on /v2/connectors is rendered
+// by clicking the row's Manage button, so a shot named for it without the click captures the row
+// list and calls it the aside. A click that never lands is an ERROR (see the waitFor below), for
+// the same reason an unknown flag is: a capture that silently did something else is worse than no
+// capture.
+const clickSelector = args.get('click');
 const basePath = outPath.replace(/\.png$/, '');
 const textPath = `${basePath}.txt`;
 const selectorTextPath = selector ? `${basePath}.selector.txt` : null;
@@ -140,6 +146,14 @@ const main = async () => {
   await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle', timeout: 45000 });
   await page.waitForTimeout(waitMs);
 
+  if (clickSelector) {
+    const control = page.locator(clickSelector).first();
+    // Named in the throw, so a mistyped selector says which one it was.
+    await control.waitFor({ state: 'visible', timeout: 15000 });
+    await control.click();
+    await page.waitForTimeout(500);
+  }
+
   let selectorChars = null;
   if (selector) {
     const target = page.locator(selector).first();
@@ -163,7 +177,7 @@ const main = async () => {
   writeFileSync(textPath, text);
 
   const sha = createHash('sha1').update(text).digest('hex').slice(0, 12);
-  console.log(`${outPath} | viewport ${viewportWidth}x${viewportHeight}@2x | auth ${presetToken ? 'token' : 'login'} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | ${selector} ${selectorChars}ch`}`);
+  console.log(`${outPath} | viewport ${viewportWidth}x${viewportHeight}@2x | auth ${presetToken ? 'token' : 'login'}${clickSelector ? ` | click ${clickSelector}` : ''} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | selector ${selector} ${selectorChars}ch`}`);
   console.log(`  text: ${textPath}`);
   if (selector) console.log(`  selector text: ${selectorTextPath}`);
   console.log(`  non-2xx: ${badResponses.length ? [...new Set(badResponses)].join(' | ') : 'none'}`);
