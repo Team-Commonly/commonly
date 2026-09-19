@@ -30,6 +30,7 @@ const {
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
+const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -322,6 +323,25 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     }
 
     const installConfig = normalizeConfigMap(config) || {};
+    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
+    // backend writer of `config.environment` — the first is the agent-config
+    // PATCH — and it stores the body's config unchecked. Same rule, same
+    // refusal, same code, so a caller can branch on one thing.
+    //
+    // `installConfig` is checked because it is what will be stored
+    // (`AgentInstallation.install` below takes it as `config`);
+    // `normalizeConfigMap` is a passthrough for a plain object. It runs here,
+    // before any of the work between this line and the install call, because a
+    // refusal that arrives after the side effect is a report rather than a
+    // refusal.
+    const environmentErrors = validateEnvironmentMcpEntries(installConfig.environment);
+    if (environmentErrors.length) {
+      return res.status(400).json({
+        error: 'Invalid environment spec',
+        code: 'invalid_environment_spec',
+        fields: environmentErrors,
+      });
+    }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
       : {};

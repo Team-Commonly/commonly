@@ -124,11 +124,12 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       });
     }
 
-    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the only
-    // backend writer of `config.environment`, and that field is projected to
-    // the owner's daemon as the seat's declared spec — so an entry whose fields
-    // contradict its own transport is a stored instruction whose every reader
-    // answers differently. Refused here, before any write, rather than
+    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
+    // TWO backend writers of `config.environment` (the other is
+    // POST /api/registry/install, which checks the same thing), and that field
+    // is projected to the owner's daemon as the seat's declared spec — so an
+    // entry whose fields contradict its own transport is a stored instruction
+    // whose every reader answers differently. Refused here, before any write, rather than
     // reconciled on the read path: a record that says two things is not a
     // record a reader should have to arbitrate.
     //

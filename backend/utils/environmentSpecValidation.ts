@@ -7,10 +7,15 @@
  * daemon (backend/services/seatEnvironmentProjection.ts, consumed by
  * `GET /api/agent-binding/assigned`) and becomes the seat's DECLARED spec, so
  * an entry here is not inert prose: every adapter branches on its shape and
- * runs something because of it. `PATCH /api/registry/pods/:podId/agents/:name`
- * is the only backend writer of that field, and it merged `config` wholesale
- * with no shape check at all — so a body could store an entry whose fields
- * contradict its own transport, and the readers were left to resolve it.
+ * runs something because of it. There are TWO backend writers of that field —
+ * `PATCH /api/registry/pods/:podId/agents/:name` (which merged `config`
+ * wholesale) and `POST /api/registry/install` (which stores the body's config
+ * through `normalizeConfigMap`, a passthrough for a plain object) — and neither
+ * had a shape check, so a body could store an entry whose fields contradict its
+ * own transport and the readers were left to resolve it. Both now call this.
+ * The first draft of this file said the PATCH was the only writer; Vera found
+ * the second one in review (70201), which is why the claim is spelled out as a
+ * count rather than left as "the writer".
  *
  * They resolve it differently, which is the defect rather than a detail:
  * `pi-mcp-client.mjs` keeps "exactly one of command/url per entry" as an
