@@ -40,6 +40,8 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
+import { deliverSeatCredential } from '../mcp-credential-delivery.js';
+import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -68,12 +70,17 @@ const BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-commonly-m
 // Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
 // placeholders in the declared MCP env are the wrapper's per-(agent, pod)
 // runtime values, filled at spawn time.
-const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_TOKEN_FILE', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 const substitutePlaceholders = (value, ctx) => {
   if (typeof value !== 'string' || !value.includes('${COMMONLY_')) return value;
   const subs = {
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    // The PATH of this spawn's credential file. The bridge reads the file and
+    // hands the VALUE to the server on fd 3, so the token still never reaches a
+    // child's environment — but the payload that travels to the bridge carries a
+    // path rather than the secret (TASK-083).
+    COMMONLY_TOKEN_FILE: ctx.credentialFile || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
   };
@@ -198,7 +205,14 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
       carried.push({
         name: server.name,
         command: server.command.map((a) => substitutePlaceholders(a, ctx)),
-        env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+        // Rewritten before substitution, so our own server is handed the file
+        // (whose value the bridge pipes) instead of the token itself.
+        env: Object.fromEntries(Object.entries(
+          deliverSeatCredential(server, {
+            credentialFile: ctx.credentialFile,
+            label: 'pi',
+          }).env,
+        ).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
       });
       continue;
     }
@@ -384,27 +398,45 @@ export default {
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
     await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(provider, model), null, 2)}\n`, { mode: 0o600 });
 
-    const servers = resolveMcpServers(ctx.environment?.mcp, ctx);
-    const childEnv = {
-      ...baseEnv,
-      PI_CODING_AGENT_DIR: agentDir,
-      PI_SKIP_VERSION_CHECK: '1',
-    };
-    const args = buildArgs({
-      prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
-      bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
+    // One credential file per spawn, inside this seat's own 0700 home — pi has no
+    // enforced sandbox, so the seat's home is the narrowest place that is still
+    // readable by the bridge. The value the server receives still travels on fd 3
+    // (pi-mcp-client's fd channel); the file is where the launcher puts it.
+    const credential = writeCredentialFile(ctx.runtimeToken, {
+      agentName: ctx.agentName || 'agent',
+      root: join(home, 'credentials'),
     });
+    try {
+      const servers = resolveMcpServers(ctx.environment?.mcp, {
+        ...ctx,
+        credentialFile: credential?.path || null,
+      });
+      const childEnv = {
+        ...baseEnv,
+        PI_CODING_AGENT_DIR: agentDir,
+        PI_SKIP_VERSION_CHECK: '1',
+      };
+      const args = buildArgs({
+        prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
+        bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
+      });
 
-    const reply = await runPi({
-      args,
-      cwd: ctx.cwd,
-      env: childEnv,
-      payload: servers.length ? JSON.stringify(servers) : undefined,
-      timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
-      spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
-    });
-    // Empty text with a clean exit is a silent turn; the run loop treats it
-    // as NO_REPLY-shaped and re-delivers on its own rules.
-    return { text: reply.text, newSessionId: sessionId };
+      const reply = await runPi({
+        args,
+        cwd: ctx.cwd,
+        env: childEnv,
+        payload: servers.length ? JSON.stringify(servers) : undefined,
+        timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+      });
+      // Empty text with a clean exit is a silent turn; the run loop treats it
+      // as NO_REPLY-shaped and re-delivers on its own rules.
+      return { text: reply.text, newSessionId: sessionId };
+    } finally {
+      // Best effort: the bridge has already read what it needs by the time the
+      // turn ends, and a token file that outlives its turn is a token file that
+      // sits in a home for the next one.
+      removeCredentialFile(credential);
+    }
   },
 };
