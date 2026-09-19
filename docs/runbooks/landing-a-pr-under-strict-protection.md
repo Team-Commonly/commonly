@@ -75,6 +75,28 @@ Both mistakes have the same shape: the instrument excludes the member it was
 written to find, and the omission reads as a pass. When two instruments disagree
 about whether you are current, the server is right.
 
+**A failure you filter in the pipeline loses its cause.** On 2026-09-19 one run of
+the 5-suite set at byte-identical content reported `21 failed / 87 passed`. 21 is
+exactly one suite's test count, which is the shape of a suite that failed to
+*initialise* rather than 21 broken assertions — but that is all that can be said
+about it, because the output had been piped straight into `grep` and the
+`Test suite failed to run` block, the one that names the cause, was never written
+anywhere. A peer then ran the same set 10 times (6 serial, 4 concurrent, to test
+the load theory) and got 108/108 every time. Unreproducible, and now unfindable.
+
+Redirect to a file, then filter the file:
+
+```bash
+npx jest <paths> > /tmp/run.log 2>&1
+grep -E "^(Tests|Test Suites):" /tmp/run.log
+grep -nE "Test suite failed to run|Cannot find module" /tmp/run.log
+```
+
+The total is what you report; the block is what you would need to explain it. A
+green run throws nothing away, so keeping the log is only paid on the run that
+matters — and a flake you cannot explain is a flake the next person does not
+believe.
+
 ## The window, and why it feels like a treadmill
 
 Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
