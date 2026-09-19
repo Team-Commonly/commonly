@@ -2633,6 +2633,141 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   retarget. Reading the check *names* answers a question the check *count*
   cannot.
 
+### Addendum: what the six absent checks mean, and why one of them is unfalsifiable from a checkout
+
+@sprint-review, 2026-08-22. The table above establishes the counts and the
+membership; two consequences of it are worth stating outright rather than
+leaving to be re-derived.
+
+**A stacked PR is not differently checked, it is LESS checked, and the missing
+set is weighted toward analysis.** Four of the six extras are CodeQL's — the
+umbrella check plus `Analyze (actions)`, `(javascript-typescript)` and
+`(python)`. So until its base is `main`, a stacked PR gets **no static
+analysis at all**.
+
+**What that costs, measured rather than assumed (2026-08-25).** The first
+draft of this addendum said such a change "can be reviewed, gated, and merged
+having never been scanned." The merge half does not survive checking:
+
+    last 200 merged PRs with base != main ........ 0
+    18 most recent merged, carrying CodeQL ....... 18 / 18
+       incl. #1187 (commonly-mcp only), #1185 (scripts + dev.sh + docs),
+             #1189 (backend + cli)
+    open stacked PRs at time of writing .......... 2, both docs-only
+
+GitHub auto-retargets a stacked PR to `main` when its parent lands, and the
+retargeted head then draws the full main-based set. **That second clause is too
+strong, and #1251 is what caught it** — @sprint-review, 2026-08-26. Being *in*
+the main-based population and being *checked* by its full set are two claims,
+and this sentence ran them together. The two base-scoped guards list
+`opened, synchronize, reopened[, ready_for_review]`; retargeting fires `edited`,
+which is in neither list, so neither guard runs on the transition itself — only
+on the next push, if one comes. What the retarget reliably does is move the head
+into the population, not subject it to the checks. The CodeQL family is
+configured outside any `on:` block in this repo, so whether *it* fires on a
+retarget cannot be answered from a checkout either — this entry's own complaint,
+pointed back at the entry. The measurement above is unaffected: it samples
+CodeQL presence on merged heads, and that observation stands however the
+transition is triggered. Where the child merges into
+the parent branch instead, that merge is a `synchronize` on the parent's own
+main-based PR, so the combined content is analysed there before it reaches
+`main`. Nothing in the sampled window reached `main` unanalysed.
+
+So the harm is **not merge safety — it is a review-time verdict hazard**. A
+reviewer reads green on a stacked PR and cannot tell from the checks that
+nothing has been scanned yet. That is entry-worthy on its own: by the
+cheap/expensive split, a stale observation costs a paragraph, while an approval
+issued against an unanalysed head is the expensive kind, and the reviewer has
+no signal distinguishing the two. The retarget stays load-bearing for the
+auto-close hazard and for moving the verdict onto scanned ground; it is not
+what stands between unscanned code and `main`.
+
+Window, since a negative is only as good as its range: 200 merged PRs by
+`baseRefName`, 18 by check history, all open PRs as of 2026-08-25. `baseRefName`
+reports the **final** base, so a PR that was stacked and then retargeted is
+indistinguishable from one never stacked — which is why the CodeQL-presence
+sample is the load-bearing half here and the base count is not.
+
+**Not every absence is a stacking absence, and E2E is the one that fools you.**
+Two axes move the denominator independently — **paths** and **base** — and
+folding one into the other is how a count stops being portable. Three PRs
+measured 2026-08-25 separate them, because the middle one holds content
+constant and varies only the base:
+
+| PR | content | base | checks |
+|---|---|---|---|
+| #1170 | `backend/` | `main` | 11 |
+| #1122 | `docs/` | `main` | 10 |
+| #1132 | `docs/` | stacked | 4 |
+
+`#1170 → #1122` isolates the **paths** axis and moves exactly one check:
+`E2E Tests`. `playwright.yml` carries no `branches` filter on `pull_request` —
+the line above it says so outright, *"No branches filter: stacked PRs must get
+E2E too"* — so E2E is absent from a docs-only PR whether or not it is stacked.
+
+The docs-only case is the *weak* form of the paths axis, and reading it as the
+whole of it under-states the gap — @sprint-review, 2026-08-25. `playwright.yml`
+is gated on `frontend/** | backend/** | e2e/** | playwright.config.*`, so a
+stacked PR **carrying code** in `cli/`, `scripts/`, `k8s/`, `commonly-mcp/`,
+`packages/` or `_external/clawdbot` gets `Tests` + `Detect secrets` and
+**neither E2E nor static analysis**. That is the case this entry is really
+about. The two axes bite independently, confirmed on merged history: #1187
+(`commonly-mcp` only) and #1185 (`scripts`, `dev.sh`, `install.sh`, docs) each
+ran CodeQL and neither ran E2E; stack either and the remaining coverage is two
+checks.
+
+Worth naming why it is easy to miss: `playwright.yml`'s `pull_request` block
+carries the comment *"No branches filter: stacked PRs must get E2E too"*, which
+is true about the **base** dimension and is silently undone for a whole class of
+code by the `paths:` clause three lines below it. A comment asserting coverage
+that a sibling clause in the same `on:` block removes — in the file that
+documents the fix.
+
+`#1122 → #1132` isolates the **base** axis and moves six: the four CodeQL-family
+jobs plus the two base-scoped merge guards (`Source changed ⇒ version bumped`,
+`Stale-base merge guard`). The guards are correctly filtered rather than lost,
+so **what stacking actually costs you is the CodeQL family, entire and nothing
+else** — which is a sharper claim than a raw "seven missing", and a falsifiable
+one.
+
+@sprint-review first decomposed #1132's seven as "4 analysis, 1 E2E, 2 by-design
+guards" and put the E2E in the stacking gap, then retracted it and supplied the
+#1122 measurement that settles it. Worth recording because the misattribution
+was made by the person who found the CodeQL scoping in the first place: two
+absences render identically in the checks list, so an absence has to be traced
+to its filter before it is counted.
+
+**The scoping of those three cannot be checked from inside a checkout.** The
+entry above notes there is no `codeql.yml`; the sharper form is that the
+configuration lives *only* behind an API call:
+
+    gh api repos/<owner>/<repo>/code-scanning/default-setup
+      state: configured
+      languages: actions, javascript, javascript-typescript, python, typescript
+
+Every other check in this repo traces to a file with an `on:` block a reader
+can inspect and falsify. This one does not — so an agent computing "which
+checks should this PR have?" from `.github/workflows/` will confidently
+produce the wrong denominator, with the *security* jobs as the omission it has
+no way to see. The failure is silent and points the wrong way: the checks that
+are hardest to notice missing are the ones you would most want to notice.
+
+**One exclusion, stated so nobody "fixes" it later** — @sprint-review,
+2026-08-25. Counting `branches`-scoped `pull_request` workflows in
+`.github/workflows/` returns **three**, not two: `package-version-guard.yml`,
+`pr-base-freshness.yml`, and `release-safety.yml`. The third is
+`branches: [ v1.0.x ]` — a different release line, not a main-PR skip. It is
+absent from a `main`-based PR and from a stacked one alike, so it belongs
+**outside** this denominator entirely. Anyone recomputing the gap from the
+workflow files will find it and, without this note, will either count it as a
+fourth base-scoped guard or "correct" it to `main`.
+
+**Practical rule**, the mirror of the base-scoped-guard tell above: `Analyze
+(…)` jobs are a second certificate that a run happened against `main`. Their
+absence means the PR is stacked — and that nothing has scanned it yet. Read it
+as a fact about the *verdict you are about to issue*, not about what will reach
+`main`: the code will be scanned, later, on someone else's PR.
+
 ## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
 > Numbering follows entry 41's caveat: 39 and 40 are still reserved by #1122
