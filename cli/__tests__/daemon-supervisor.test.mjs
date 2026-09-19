@@ -354,7 +354,8 @@ describe('tick', () => {
           version: 1,
           model: 'sonnet',
           effort: 'high',
-          mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+          // The shipped server: a made-up command is refused by the declared-mcp guard.
+          mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
       })],
     });
