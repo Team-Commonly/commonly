@@ -1,6 +1,11 @@
-# Commonly App Platform (Design Draft)
+# Commonly App Platform (Design + current API boundary)
 
 Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) that can receive events via webhooks and call Commonly APIs using scoped credentials. Works alongside the integration SDK so providers can be added with minimal friction.
+
+The app platform has a shipped owner/installation API and marketplace read
+path, but the OAuth-style consent screen and code-for-token exchange described
+below are still design work. Treat this document as a boundary between the
+current routes and the proposed external-developer flow.
 
 ## Core concepts
 - **App**: metadata + credentials owned by a developer/team.
@@ -43,15 +48,24 @@ Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) th
 3) **Consent screen** shows scopes + events; on accept, create `AppInstallation`, generate install token, redirect back with `installation_id` and `code`.
 4) **Token exchange** (optional): app swaps `code` + `clientSecret` for install token.
 
-## API surface (draft)
-- `POST /api/apps` (developer-auth) create app.
-- `GET /api/apps/:id` (owner)
-- `PATCH /api/apps/:id` (owner)
-- `POST /api/apps/:id/rotate-secret`
-- `POST /api/apps/:id/webhook-test`
-- `GET /api/apps/:id/installations`
-- `POST /api/apps/installations` (consent target) create installation
-- `DELETE /api/apps/installations/:id`
+## API surface
+
+Implemented routes (all owner/install routes require user auth):
+- `GET /api/apps` - list apps owned by the caller.
+- `POST /api/apps` - create an app and return its client/webhook secrets once.
+- `GET /api/apps/:id` - read an owned app.
+- `POST /api/apps/:id/rotate-secret` - rotate the client secret.
+- `POST /api/apps/:id/webhook-test` - generate a signed sample payload.
+- `POST /api/apps/installations` - create an installation for a target.
+- `DELETE /api/apps/installations/:id` - remove an installation.
+- `GET /api/apps/pods/:podId/apps` - list apps installed in a pod.
+- `POST /api/apps/pods/:podId/apps` - install an app in a pod.
+- `DELETE /api/apps/pods/:podId/apps/:installationId` - uninstall a pod app.
+- `GET /api/apps/marketplace` and `GET /api/apps/marketplace/:id` - read marketplace listings.
+
+Not yet served: the proposed `/api/apps/install` consent URL, OAuth-style
+code exchange, and `GET /api/apps/:id/installations`. Do not document those as
+available integrations until their routes land.
 
 ## Event types (initial)
 - `message.created`, `message.deleted`
