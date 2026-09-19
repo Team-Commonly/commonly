@@ -10,12 +10,12 @@ Every file in `README.md`, `docs-site/` (including `docs.json`), and `docs/` get
 |---|---|---|---|---|
 | `README.md` | 1 | 0 | 1 | 0 |
 | `docs-site/` | 30 | 9 | 21 | 0 |
-| `docs/` | 195 | 104 | 48 | 43 |
-| **total** | **226** | **113** | **70** | **43** |
+| `docs/` | 195 | 107 | 48 | 40 |
+| **total** | **226** | **116** | **70** | **40** |
 
-Keeps split three ways: **13** current-state docs whose CLI commands and routes were checked against the consumer, **29** current-state docs with no CLI or route claim to check (prose, not fact-checked here), **71** records (ADRs, audits, dated plans, the AX log) kept as history, not as current-state claims.
+Keeps split three ways: **13** current-state docs whose CLI commands and routes were checked against the consumer, **29** current-state docs with no CLI or route claim to check (prose, not fact-checked here), **74** records (ADRs, audits, dated plans, the AX log) kept as history, not as current-state claims.
 
-Lines: keep 26,104 · rewrite 14,011 · delete 11,684.
+Lines: keep 26,537 · rewrite 14,011 · delete 11,251.
 
 ## What changed from the charter's numbers
 
@@ -26,19 +26,19 @@ The charter measured at `03597262`. I re-measured at `bd801882`, and four of its
 | `docs/` files mentioning moltbot/openclaw | 76 | **76** (86 with `clawdbot`) | `grep -rliE 'moltbot\|openclaw'`. The 10 extra `clawdbot`-only files are the same dead concept. |
 | `docs/` files on the dead `app-dev`/`api-dev` hostnames | 17 | **17** | |
 | `docs/` files mentioning Gemini | 26 | **33** case-insensitive, 22 capitalised | Neither regex gives 26. |
-| `docs/` files on the "old attach flow" | 21 | **21** for `agent attach` | Ruled daemon-first (finding 1): 8 rewrite, 2 delete, 11 records. |
+| `docs/` files on the "old attach flow" | 21 | **21** for `agent attach` | Ruled daemon-first (finding 1): 8 rewrite, 1 delete, 12 records. |
 | docs-site nav groups | 3 | **5** in the Docs tab, plus an API Reference tab | `docs-site/docs.json`. |
 | docs-site screenshots | "0 referenced, 7 unused" | **4 screenshots, all referenced** (5 refs) | The other 3 images are the logos and favicon, which `docs.json` references. The README draws on a separate `screenshots/` directory: 21 files, 4 referenced, 13 referenced nowhere. See **Images**. |
 
 ## Findings that change the plan
 
-1. **Attach: ruled daemon-first (Sam, 2026-09-19, card `6aaeeb09`).** The wash teaches `commonly daemon install` as the way in. `agent attach` stays documented as the manual path until a CLI PR drops it, because 0.1.58's `--help` still opens with it. The charter's "old attach flow" means the pre-daemon `nohup commonly agent run` loop and the stale flags and hostnames around it. Of the 21 `docs/` files that mention `agent attach`: 8 current-state docs re-tag to **rewrite to daemon-first**, 2 were already deletes, and 11 are records (4 ADRs, 3 dated plans, 4 audits). The records stay as history. `README.md` and `docs-site/agents/connect.mdx` also re-tag.
+1. **Attach: ruled daemon-first (Sam, 2026-09-19, card `6aaeeb09`).** The wash teaches `commonly daemon install` as the way in. `agent attach` stays documented as the manual path until a CLI PR drops it, because 0.1.58's `--help` still opens with it. The charter's "old attach flow" means the pre-daemon `nohup commonly agent run` loop and the stale flags and hostnames around it. Of the 21 `docs/` files that mention `agent attach`: 8 current-state docs re-tag to **rewrite to daemon-first**, 1 was already a delete, and 12 are records (4 ADRs, 3 dated plans, 4 audits, and the `codex-in-gateway-pod` runbook). The records stay as history. `README.md` and `docs-site/agents/connect.mdx` also re-tag.
 2. **openclaw is gone from the cluster but not from the CLI.** `kubectl get deploy -n commonly-dev` shows no `clawdbot-gateway` (backend, commonly-bot, frontend, litellm, redis, cloud-codex-cody only). `commonly dev clawdbot` still ships in 0.1.58 ("Bootstrap local OpenClaw gateway config"). Docs that describe the gateway get deleted. Docs that only name it get rewritten. The leftover CLI subcommand is a CLI follow-up, not a docs one.
 3. **Six CLI commands cited in the docs don't exist under the parent the docs name in 0.1.58.** Two need a parent fix, not a new command: `install` ships as `commonly daemon install` and `dev` ships as the top-level `commonly dev` (Kai's measurement). The other four exist nowhere: `agent update`, `agent sdk-path`, `agent rotate-token`, `pod join`. Every file citing any of the six is marked rewrite.
-4. **Routes: 337 distinct cited, 71 not served live.** I probed each cited route with its documented method, with no auth. The backend answers `Cannot <METHOD> <path>` only when no route matches, so a 401 or 400 means the route exists. 240 routes are live. 8 are webhook or billing routes, which I skipped rather than POST into production. 18 are bare mount roots or prefixes (`/api/agents/runtime/`), which aren't routes on their own. The dead list is at the bottom. The worst front-door case is `/api/docs`. The README and 8 docs-site pages cite it as *the* API reference, but no API reference is served there. `server.ts:231` mounts it in every env, `/api/docs` itself returns `Cannot GET`, and its only route, `/api/docs/backend`, returns 500 `Unable to load documentation` live (Vera's correction, re-probed 2026-09-19).
+4. **Routes: 337 distinct cited, 71 not served live.** I probed each cited route with its documented method, with no auth. The backend answers `Cannot <METHOD> <path>` only when no route matches, so a 401 or 400 means the route exists. 240 routes are live. 8 are webhook or billing routes, which I skipped rather than POST into production. 18 are bare mount roots or prefixes (`/api/agents/runtime/`), which aren't routes on their own. The dead list is at the bottom. The worst front-door case is `/api/docs`. The README and 8 docs-site pages cite it as *the* API reference, but no API reference is served there. `server.ts:231` mounts it in every env, `/api/docs` itself returns `Cannot GET`, and its only route, `/api/docs/backend`, returns 500 `Unable to load documentation` live (Vera's correction, re-probed 2026-09-19). Kai traced the 500 to a dead path constant in `docs.ts`: it reads `backend/docs/BACKEND.md`, but the file lives at `docs/development/BACKEND.md`. Fixing the path would serve an internal dev doc, which is still not an API reference. Whether Commonly publishes one is the paused CAP OpenAPI track (ADR-011) and is Sam's call. **No writer points at `/api/docs` until that exists.**
 5. **Gemini is still wired into the backend.** `llmService`, `vectorSearchService`, `podContextService`, and the provisioners still read `GEMINI_API_KEY`. The 33 docs that mention it get rewritten to say what the backend actually does now (LiteLLM-routed). They are not deleted as if the concept were gone.
 6. **docs-site has no page for what exists now.** Nothing covers connectors or grants (`/api/grants`, `/api/credentials` are live), the daemon or seats (`/api/machines`, `commonly daemon *`), or the pi, claude, and codex adapters. The nav restructure adds those pages. It's a separate PR from the rewrites below.
-7. **Deletes break inbound links.** The *why* column lists each delete target's inbound references outside the delete set, so the delete PR can fix them in the same diff. That includes one code comment (`backend/routes/registry/presets.ts` → `AGENT_CODING_CAPABILITY.md`) and one `docs/README.md` index that links to seven delete targets. The runtime reads `docs/skills/awesome-agent-skills-index.json`, so deletes must stay on `.md` files.
+7. **Deletes break inbound links.** The *why* column lists each delete target's inbound references outside the delete set, so the delete PR can fix them in the same diff. That includes one code comment (`backend/routes/registry/presets.ts` → `AGENT_CODING_CAPABILITY.md`) and one `docs/README.md` index that links to seven delete targets. The runtime reads `docs/skills/awesome-agent-skills-index.json`, so deletes must stay on `.md` files. The inbound search covers `.tsx` and `.sh` too. Two consumer-facing refs are an admin-UI string (`GlobalIntegrations.tsx:1050` → `CODEX_OAUTH_SETUP.md`) and a red smoke-test result (`scripts/smoke-test-demo.sh:466` → `demo-verification.md`), both caught by Wren. Separately, `scripts/test-discord.sh:44` points at `docs/design/DISCORD_INTEGRATION.md`, a path that has never existed. That link was already broken before this wash and isn't in any row.
 
 ## Owners
 
@@ -48,9 +48,9 @@ The owner sets don't overlap. Each writer touches only the rows that carry its n
 - **folio**: every `docs-site/` rewrite row, including `docs-site/docs.json` for the nav restructure. The new connector, grant, daemon and adapter pages that restructure adds are folio's too.
 - **quire**: every `docs/` rewrite row. Runbooks and integration guides go first.
 - **otto**: supervisor and verifier. Owns every delete row, which waits for this PR to merge, plus the 13 orphan screenshots. Clears writer PRs, and re-verifies keeps at each CLI publish.
-- **Sam**: ADR status lines. ADRs are records and don't get rewritten.
+- **Sam**: ADR status wording. ADRs are records and don't get rewritten. ADR-021 supersedes only ADR-010's Phase 2+ track (and the moltbot rows of CLAUDE.md's runtime table). The other ADRs that name openclaw lost a driver, not their decision.
 
-Work items by owner (rewrite + delete + ADR status lines): quire 48, otto 43, folio 21, Sam 7, quill 1.
+Work items by owner (rewrite + delete + ADR status lines): quire 48, otto 40, folio 21, quill 1, Sam 1.
 
 ## Method: how a verdict was reached
 
@@ -63,6 +63,8 @@ Work items by owner (rewrite + delete + ADR status lines): quire 48, otto 43, fo
 Relative links were checked in all 226 rows: 6 are broken, and the table lists them.
 
 ## Images
+
+This section sits outside the tally above, which counts docs only. The 8 page images get removed inside their page's rewrite PR; the 13 orphans go in otto's delete PR.
 
 The first cut of this inventory counted only `docs-site/images/`, and that missed the README's source. The README pulls its screenshots from the root `screenshots/` directory (21 files). Wren read every image that the docs surfaces show (#1781 review). The problem is in the pixels, not just a missing harness stamp: they show the retired concepts.
 
@@ -117,7 +119,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs-site/marketplace/publishing.mdx` (nav) | 45 | 2026-04-02 | folio | **rewrite** | openclaw 1x |  |
 | `docs-site/quickstart.mdx` (nav) | 82 | 2026-08-24 | folio | **rewrite** | cites /api/docs (no API reference served); no daemon or connector step |  |
 | `docs/AGENT_AVATARS.md` | 183 | 2026-07-02 | quire | **rewrite** | gemini 11x |  |
-| `docs/CODEX_OAUTH_SETUP.md` | 147 | 2026-07-03 | otto | **delete** | superseded by in-cluster device-auth (litellm codex-cli sidecar); gateway-era |  |
+| `docs/CODEX_OAUTH_SETUP.md` | 147 | 2026-07-03 | otto | **delete** | superseded by in-cluster device-auth (litellm codex-cli sidecar); gateway-era — inbound refs to fix: `frontend/src/components/admin/GlobalIntegrations.tsx` |  |
 | `docs/COMMONLY_SCOPE.md` | 745 | 2026-04-12 | quire | **rewrite** | openclaw 3x |  |
 | `docs/DEMO_QUICKSTART.md` | 339 | 2026-08-24 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; attach 2x |  |
 | `docs/LOCAL_CLAUDE_CODE_DEMO.md` | 166 | 2026-08-24 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 1 route(s) served live |  |
@@ -127,18 +129,18 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/SUMMARIZER_AND_AGENTS.md` | 357 | 2026-08-01 | quire | **rewrite** | openclaw 12x; clawdbot 1x; gemini 2x |  |
 | `docs/adr/ADR-001-installable-taxonomy.md` | 447 | 2026-09-11 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/adr/ADR-002-attachments-and-object-storage.md` | 366 | 2026-04-19 | Sam | **keep** | record, not a current-state claim: decision record |  |
-| `docs/adr/ADR-003-memory-as-kernel-primitive.md` | 337 | 2026-08-29 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
+| `docs/adr/ADR-003-memory-as-kernel-primitive.md` | 337 | 2026-08-29 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
 | `docs/adr/ADR-004-commonly-agent-protocol.md` | 354 | 2026-09-01 | Sam | **keep** | record, not a current-state claim: decision record |  |
-| `docs/adr/ADR-005-local-cli-wrapper-driver.md` | 330 | 2026-08-01 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
+| `docs/adr/ADR-005-local-cli-wrapper-driver.md` | 330 | 2026-08-01 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
 | `docs/adr/ADR-006-webhook-sdk-and-self-serve-install.md` | 262 | 2026-08-04 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/adr/ADR-007-ecosystem-integration-strategy.md` | 400 | 2026-08-29 | Sam | **keep** | record, not a current-state claim: decision record |  |
-| `docs/adr/ADR-008-agent-environment-primitive.md` | 248 | 2026-04-27 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
+| `docs/adr/ADR-008-agent-environment-primitive.md` | 248 | 2026-04-27 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
 | `docs/adr/ADR-009-test-tiers-and-ci-cd-to-gke.md` | 215 | 2026-04-30 | Sam | **keep** | record, not a current-state claim: decision record |  |
-| `docs/adr/ADR-010-commonly-mcp-server.md` | 320 | 2026-09-01 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
+| `docs/adr/ADR-010-commonly-mcp-server.md` | 320 | 2026-09-01 | Sam | **keep** | record, not a current-state claim: decision record — Phase 2+ track superseded by ADR-021 (the only ADR it supersedes); status wording is Sam's |  |
 | `docs/adr/ADR-011-shell-first-pre-gtm.md` | 127 | 2026-04-30 | Sam | **keep** | record, not a current-state claim: decision record |  |
-| `docs/adr/ADR-012-memory-propagation-and-injection.md` | 622 | 2026-08-05 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
-| `docs/adr/ADR-013-agent-file-production-and-skill-bundles.md` | 778 | 2026-08-04 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
-| `docs/adr/ADR-014-cloud-codex-runtime-and-shared-auth-surface.md` | 104 | 2026-06-09 | Sam | **keep** | record, not a current-state claim: decision record — add a "superseded by ADR-021" status line |  |
+| `docs/adr/ADR-012-memory-propagation-and-injection.md` | 622 | 2026-08-05 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
+| `docs/adr/ADR-013-agent-file-production-and-skill-bundles.md` | 778 | 2026-08-04 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
+| `docs/adr/ADR-014-cloud-codex-runtime-and-shared-auth-surface.md` | 104 | 2026-06-09 | Sam | **keep** | record, not a current-state claim: decision record — names the retired openclaw driver (ADR-021); decision stands; status wording is Sam's |  |
 | `docs/adr/ADR-015-spot-pool-for-stateless-workloads.md` | 177 | 2026-07-12 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/adr/ADR-016-pod-model-and-visibility.md` | 289 | 2026-08-05 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/adr/ADR-017-attention-routing.md` | 554 | 2026-09-11 | Sam | **keep** | record, not a current-state claim: decision record |  |
@@ -156,10 +158,10 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/adr/ADR-029-attention-delegate.md` | 83 | 2026-09-03 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/adr/ADR-030-agent-identity.md` | 101 | 2026-09-01 | Sam | **keep** | record, not a current-state claim: decision record |  |
 | `docs/agents/AGENT_AUTONOMY.md` | 222 | 2026-03-26 | quire | **rewrite** | autonomy model still real; mechanics described are gateway-era — clawdbot 4x |  |
-| `docs/agents/AGENT_CODING_CAPABILITY.md` | 105 | 2026-07-01 | otto | **delete** | describes acpx_run inside the retired gateway — inbound refs to fix: `README.md`, `backend/routes/registry/presets.ts`, `docs/agents/README.md` |  |
+| `docs/agents/AGENT_CODING_CAPABILITY.md` | 105 | 2026-07-01 | otto | **delete** | describes acpx_run inside the retired gateway — inbound refs to fix: `README.md`, `backend/routes/registry/presets.ts`, `docs/agents/README.md`, `docs/runbooks/codex-in-gateway-pod.md` |  |
 | `docs/agents/AGENT_RUNTIME.md` | 853 | 2026-07-22 | quire | **rewrite** | openclaw 46x; clawdbot 26x; gemini 2x |  |
 | `docs/agents/BUILDING_AN_AGENT.md` | 67 | 2026-04-12 | quire | **rewrite** | openclaw 2x; clawdbot 2x |  |
-| `docs/agents/CLAWDBOT.md` | 683 | 2026-06-29 | otto | **delete** | subject retired (ADR-021); no clawdbot-gateway deployment live — inbound refs to fix: `docs/agents/BUILDING_AN_AGENT.md`, `docs/agents/NATIVE_RUNTIME.md`, `docs/agents/README.md`, `docs/deployment/DEPLOYMENT.md`, `docs/development/local-credentials.md` |  |
+| `docs/agents/CLAWDBOT.md` | 683 | 2026-06-29 | otto | **delete** | subject retired (ADR-021); no clawdbot-gateway deployment live — inbound refs to fix: `docs/agents/BUILDING_AN_AGENT.md`, `docs/agents/NATIVE_RUNTIME.md`, `docs/agents/README.md`, `docs/deployment/DEPLOYMENT.md`, `docs/development/local-credentials.md`, `docs/runbooks/clawdbot-gateway-config-crashloop.md` |  |
 | `docs/agents/COMMONLY_MCP.md` | 163 | 2026-08-26 | quire | **rewrite** | openclaw 7x |  |
 | `docs/agents/CONNECTING_LOCAL_AGENTS.md` | 95 | 2026-07-05 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; attach 1x |  |
 | `docs/agents/LOCAL_CLI_WRAPPER.md` | 224 | 2026-08-29 | quire | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; deadhost 1x; gemini 2x; attach 2x |  |
@@ -197,7 +199,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/database/DATABASE.md` | 430 | 2026-02-01 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 1 route(s) served live |  |
 | `docs/database/POSTGRESQL_MIGRATION.md` | 195 | 2026-01-29 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/database/README.md` | 19 | 2026-01-22 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
-| `docs/demo-verification.md` | 275 | 2026-05-12 | otto | **delete** | May demo checklist on dead hostnames + gateway — inbound refs to fix: `docs/runbooks/local-ui-render-harness.md` |  |
+| `docs/demo-verification.md` | 275 | 2026-05-12 | otto | **delete** | May demo checklist on dead hostnames + gateway — inbound refs to fix: `docs/runbooks/local-ui-render-harness.md`, `scripts/recover-codex-auth.sh`, `scripts/smoke-test-demo.sh` |  |
 | `docs/deployment/DEPLOYMENT.md` | 646 | 2026-08-24 | quire | **rewrite** | openclaw 4x; clawdbot 14x; deadhost 2x; gemini 5x |  |
 | `docs/deployment/GCP_MIGRATION.md` | 441 | 2026-03-04 | otto | **delete** | one-time migration log (March); names retired gateway 29x |  |
 | `docs/deployment/GITHUB_DEPLOY_SETUP.md` | 277 | 2026-04-30 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
@@ -236,7 +238,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/discord/DISCORD.md` | 737 | 2026-02-01 | quire | **rewrite** | merge target for DISCORD_SETUP and DISCORD_DEPLOYMENT; 0 rot, 4 routes served live |  |
 | `docs/discord/DISCORD_APP_SETUP.md` | 77 | 2026-01-22 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/discord/DISCORD_DEPLOYMENT.md` | 416 | 2026-01-26 | quire | **rewrite** | merge the still-true parts into DISCORD.md |  |
-| `docs/discord/DISCORD_INTEGRATION.md` | 515 | 2026-01-29 | otto | **delete** | 11/16 cited routes not served live; DISCORD.md is the survivor — inbound refs to fix: `docs/discord/README.md` |  |
+| `docs/discord/DISCORD_INTEGRATION.md` | 515 | 2026-01-29 | otto | **delete** | 11/16 cited routes not served live; DISCORD.md is the survivor — inbound refs to fix: `docs/discord/README.md`, `scripts/test-discord.sh` |  |
 | `docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md` | 266 | 2026-01-29 | quire | **rewrite** | Gemini-era summarizer path; CLAUDE.md anchors it, so rewrite not delete — gemini 2x |  |
 | `docs/discord/DISCORD_INTEGRATION_PROGRESS.md` | 242 | 2026-01-29 | otto | **delete** | January progress log — inbound refs to fix: `docs/discord/README.md` |  |
 | `docs/discord/DISCORD_INTERACTION_STANDARDS.md` | 290 | 2026-01-22 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
@@ -261,16 +263,16 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/plans/2026-08-20-persona-v2-phased-rollout.md` | 128 | 2026-08-21 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/2026-08-22-typed-hire-fields-schema.md` | 223 | 2026-09-02 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/2026-08-25-in-pod-browser-view.md` | 147 | 2026-09-01 | otto | **keep** | record, not a current-state claim: dated plan |  |
-| `docs/plans/ADMIN_UI_GLOBAL_OAUTH.md` | 271 | 2026-02-06 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it |  |
-| `docs/plans/AGENT_INTEGRATION_TOKENS.md` | 750 | 2026-02-06 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it |  |
-| `docs/plans/IMPLEMENTATION_SUMMARY.md` | 438 | 2026-02-07 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it |  |
-| `docs/plans/PUBLIC_LAUNCH_V1.md` | 546 | 2026-02-06 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it — inbound refs to fix: `docs/README.md` — broken link(s): `../../backend/services/externalFeedService.js` |  |
-| `docs/plans/SOCIAL_FUN_FEATURES_SPEC.md` | 1256 | 2026-05-02 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it — inbound refs to fix: `docs/README.md` |  |
-| `docs/plans/SUMMARIZER_DEPRECATION_RUNBOOK.md` | 83 | 2026-02-06 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it |  |
+| `docs/plans/ADMIN_UI_GLOBAL_OAUTH.md` | 271 | 2026-02-06 | otto | **delete** | shipped: header reads "Status: Complete"; git keeps it |  |
+| `docs/plans/AGENT_INTEGRATION_TOKENS.md` | 750 | 2026-02-06 | otto | **delete** | abandoned: header reads "Status: Planning" since 2026-02-06, never scheduled; git keeps it |  |
+| `docs/plans/IMPLEMENTATION_SUMMARY.md` | 438 | 2026-02-07 | otto | **delete** | Feb status snapshot (Phase 1 complete, Phase 2 "in progress" as of 2026-02-07); git keeps it |  |
+| `docs/plans/PUBLIC_LAUNCH_V1.md` | 546 | 2026-02-06 | otto | **delete** | stale by its own header ("Parts of this document are now stale", 2026-02-06); git keeps it — inbound refs to fix: `docs/README.md` — broken link(s): `../../backend/services/externalFeedService.js` |  |
+| `docs/plans/SOCIAL_FUN_FEATURES_SPEC.md` | 1256 | 2026-05-02 | otto | **delete** | header reads "partially shipped, framing pre-dates ADR-011"; git keeps it — inbound refs to fix: `docs/README.md` |  |
+| `docs/plans/SUMMARIZER_DEPRECATION_RUNBOOK.md` | 83 | 2026-02-06 | otto | **keep** | record: header "Status: In Progress" and summaries.ts / schedulerService.ts still wire summarizerService, so the deprecation is live |  |
 | `docs/plans/adr-026-d7-fleet-migration.md` | 203 | 2026-09-12 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/agent-collaboration-surfaces.md` | 643 | 2026-08-22 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/api-token-show-once-2026-09-12.md` | 37 | 2026-09-12 | otto | **keep** | record, not a current-state claim: dated plan |  |
-| `docs/plans/cheeky-riding-waffle.md` | 330 | 2026-05-02 | otto | **delete** | Jan–Feb plan, shipped or abandoned; git keeps it |  |
+| `docs/plans/cheeky-riding-waffle.md` | 330 | 2026-05-02 | otto | **delete** | shipped: header reads "Status: implemented"; git keeps it |  |
 | `docs/plans/connector-as-installable-app.md` | 492 | 2026-09-04 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/connectors-page-signal-diff.md` | 87 | 2026-09-05 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/d8-phase-2-gate-surface.md` | 131 | 2026-09-05 | otto | **keep** | record, not a current-state claim: dated plan |  |
@@ -284,8 +286,8 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/plans/tools-catalogue-room-grants.md` | 265 | 2026-09-19 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/webhook-hardening-2026-09-12.md` | 76 | 2026-09-12 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/runbooks/agent-avatar-resolution-and-recovery.md` | 103 | 2026-07-02 | quire | **rewrite** | deadhost 3x; gemini 1x |  |
-| `docs/runbooks/clawdbot-gateway-config-crashloop.md` | 94 | 2026-06-29 | otto | **delete** | runbook for a deployment that no longer exists |  |
-| `docs/runbooks/codex-in-gateway-pod.md` | 256 | 2026-06-29 | otto | **delete** | runbook for a deployment that no longer exists — inbound refs to fix: `docs/adr/ADR-005-local-cli-wrapper-driver.md` |  |
+| `docs/runbooks/clawdbot-gateway-config-crashloop.md` | 94 | 2026-06-29 | otto | **keep** | record: write-up of the 2026-06-28 incident CLAUDE.md cites; add a first-line "deployment retired (ADR-021)" note — openclaw 13x; clawdbot 9x |  |
+| `docs/runbooks/codex-in-gateway-pod.md` | 256 | 2026-06-29 | otto | **keep** | record: ADR-005 links it twice (l.16, l.298) and ADRs are not rewritten; add a first-line "deployment retired (ADR-021)" note — clawdbot 4x; deadhost 2x; gemini 1x; attach 3x |  |
 | `docs/runbooks/connector-credentials-setup.md` | 391 | 2026-09-18 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 4 route(s) served live |  |
 | `docs/runbooks/cross-tool-operator-handoff.md` | 110 | 2026-09-07 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/runbooks/db-backup-restore.md` | 308 | 2026-07-11 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
@@ -302,7 +304,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/runbooks/reading-github-actions-state.md` | 343 | 2026-08-29 | quire | **rewrite** | clawdbot 2x |  |
 | `docs/security-patterns.md` | 147 | 2026-05-22 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/self-hosting/helm-reference.md` | 234 | 2026-04-05 | quire | **rewrite** | clawdbot 2x |  |
-| `docs/skills/AWESOME_AGENT_SKILLS.md` | 29 | 2026-02-01 | otto | **delete** | Feb link list; gateway-era — inbound refs to fix: `k8s/IMPLEMENTATION_STATUS.md`, `k8s/MIGRATION_SUMMARY.md`, `k8s/helm/commonly/templates/configmaps/backend-config.yaml` |  |
+| `docs/skills/AWESOME_AGENT_SKILLS.md` | 29 | 2026-02-01 | otto | **delete** | Feb link list; gateway-era. The k8s refs point at the Helm chart's own `configs/AWESOME_AGENT_SKILLS.md` copy, so the delete PR does not touch Helm — inbound refs to fix: `k8s/IMPLEMENTATION_STATUS.md`, `k8s/MIGRATION_SUMMARY.md`, `k8s/helm/commonly/templates/configmaps/backend-config.yaml` |  |
 | `docs/skills/SKILLS_CATALOG.md` | 106 | 2026-02-06 | quire | **rewrite** | skills are live (/api/skills mounted); catalog is gateway-era — openclaw 3x |  |
 | `docs/slack/README.md` | 39 | 2026-01-29 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 1 route(s) served live |  |
 | `docs/task_optimization/UNIFIED_DISCORD_API.md` | 239 | 2026-01-29 | otto | **delete** | completed January task note; folder has no other file |  |
