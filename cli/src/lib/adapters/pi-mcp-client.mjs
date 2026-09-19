@@ -18,12 +18,12 @@
  */
 
 import { spawn } from 'node:child_process';
+import { closeSync, readFileSync } from 'node:fs';
 import {
-  closeSync, readFileSync, existsSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+  MCP_PACKAGE, PIPE_READER_VERSION, describeMcpCommand, versionOlderThan,
+} from '../mcp-server-version.js';
 
-import { CREDENTIAL_FILE_VAR } from '../credential-file.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY } from '../credential-file.js';
 
 /**
  * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
@@ -129,7 +129,8 @@ export const connectMcp = (server, opts = {}) => (typeof server?.url === 'string
  * `COMMONLY_TOKEN_CHANNEL=env` in the entry's own env. Otherwise the token is
  * piped and the environment is left clean.
  */
-export const CREDENTIAL_KEY = 'COMMONLY_AGENT_TOKEN';
+export { CREDENTIAL_KEY, CREDENTIAL_FILE_VAR };
+
 export const CREDENTIAL_FD_VAR = 'COMMONLY_TOKEN_FD';
 export const CREDENTIAL_CHANNEL_VAR = 'COMMONLY_TOKEN_CHANNEL';
 export const CREDENTIAL_FD = 3;
@@ -178,74 +179,16 @@ export const buildChildEnv = (parentEnv, declaredEnv) => {
   return Object.assign(out, declaredEnv || {});
 };
 
-/** The `@commonlyai/mcp` release whose `loadConfig` reads the pipe channel. */
-export const PIPE_READER_VERSION = [0, 3, 11];
-
-const MCP_PACKAGE = '@commonlyai/mcp';
-
-const parseVersion = (spec) => {
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(spec || '').trim());
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-};
-
-const olderThanPipeReader = (version) => {
-  if (!version) return null;
-  for (let i = 0; i < 3; i += 1) {
-    if (version[i] !== PIPE_READER_VERSION[i]) return version[i] < PIPE_READER_VERSION[i];
-  }
-  return false;
-};
-
 /**
- * What an `@commonlyai/mcp` command would run, or null when the command cannot
- * be identified as that package at all.
- *
- * Two shapes matter: `npx [-y] @commonlyai/mcp@<spec>` (a spec is a version, or
- * `latest`/absent, which resolves to whatever is published — never treated as
- * old), and a local checkout, `node <path>/src/index.js`, which is what the
- * staging seats run; for that one the package.json beside it is the only honest
- * answer, and a package.json naming something else means this is not our server.
- *
- * `{ isCommonly: true, version: null }` means "our server, version unknown" —
- * an unpinned npx spec, whose whole point is that it tracks the published one.
- * `null` as the return value means "not identifiable as our server", which is a
- * different answer and takes a different branch: a stranger's server gets its
- * declaration honoured unchanged.
+ * The channel predicates live in `../mcp-server-version.js`, because the claude
+ * and codex adapters have to answer the same question and a second copy of it
+ * would drift silently in one of them.
  */
-export const describeMcpCommand = (command, { readTextFile = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null) } = {}) => {
-  if (!Array.isArray(command) || command.length === 0) return null;
-  const parts = command.map(String);
-  const pkgArg = parts.find((p) => p.includes(MCP_PACKAGE));
-  if (pkgArg) {
-    const at = pkgArg.lastIndexOf('@');
-    if (at <= pkgArg.indexOf(MCP_PACKAGE)) return { isCommonly: true, version: null };
-    return { isCommonly: true, version: parseVersion(pkgArg.slice(at + 1)) };
-  }
-  const scriptPath = parts.find((p) => p.endsWith('.js') || p.endsWith('.mjs'));
-  if (!scriptPath) return null;
-  // `src/index.js` → `../package.json`; also try one level further up, because a
-  // bin shim can live in `bin/` beside `src/`.
-  for (const candidate of [join(dirname(scriptPath), '..', 'package.json'), join(dirname(scriptPath), 'package.json')]) {
-    let raw;
-    try {
-      raw = readTextFile(candidate);
-    } catch {
-      raw = null;
-    }
-    if (!raw) continue;
-    try {
-      const pkg = JSON.parse(raw);
-      if (!pkg || typeof pkg !== 'object') continue;
-      if (pkg.name === MCP_PACKAGE) return { isCommonly: true, version: parseVersion(pkg.version) };
-      // A package.json that names another package settles it: not ours, so its
-      // declaration is none of this function's business.
-      return null;
-    } catch {
-      // A malformed package.json is not an answer; keep looking.
-    }
-  }
-  return null;
-};
+export {
+  MCP_PACKAGE, PIPE_READER_VERSION, FILE_READER_VERSION, parseVersion, describeMcpCommand,
+} from '../mcp-server-version.js';
+
+const olderThanPipeReader = (version) => versionOlderThan(version, PIPE_READER_VERSION);
 
 /**
  * Split a declared env map into the child's environment and the credential to

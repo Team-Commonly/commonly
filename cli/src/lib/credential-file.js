@@ -29,6 +29,13 @@ import { randomBytes } from 'node:crypto';
 /** The variable a child reads to find the credential. Never carries the token. */
 export const CREDENTIAL_FILE_VAR = 'COMMONLY_TOKEN_FILE';
 
+/**
+ * The variable that USED to carry the token itself, and still does for a server
+ * that cannot read anything else. Kept beside the file var so the two channels
+ * are named in one place rather than one per adapter.
+ */
+export const CREDENTIAL_KEY = 'COMMONLY_AGENT_TOKEN';
+
 /** Default root: inside the CLI's own state directory, not a world-readable /tmp. */
 export const credentialRoot = () => join(homedir(), '.commonly', 'credentials');
 
