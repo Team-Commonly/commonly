@@ -22,6 +22,22 @@
  * state of a daemon-provisioned seat, whose baseline is derived at the daemon
  * and is not visible from an AgentInstallation row. Refusing it here would
  * refuse the working path.
+ *
+ * Two further cases ARE host-independent, so they are decided here as well
+ * (Vera 69810):
+ *
+ *  - An adapter that confines on NO host. `pi` is the one that exists — its
+ *    `assertNoSandboxDeclared` (`cli/src/lib/adapters/pi.js`) throws only when
+ *    a sandbox is DECLARED, so a pi seat that declares nothing spawns
+ *    unconfined and nothing ever derives one. The adapter is then the deciding
+ *    fact, not the declaration.
+ *  - A declared public mode that no adapter implements. The write-time schema
+ *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
+ *    than any adapter enforces: `firejail`, `container` and `managed` appear
+ *    nowhere else in `cli/src`, so a seat declaring one fails every host the
+ *    same way. Both adapters implement {workspace, read-only}, and claude adds
+ *    `bwrap` for Linux — a wider set, not a narrower one, so the server cannot
+ *    refuse anything a host would have confined.
  */
 
 /**
@@ -34,6 +50,22 @@
 export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.freeze({
   internal: 'public',
 });
+
+/**
+ * Adapters that cannot confine a seat on any host — the adapter, not the
+ * declaration, is the host-independent fact. Exact match mirrors how the cli
+ * keys its adapter registry; an unrecognised adapter name is not pi, and a
+ * record carrying one cannot spawn a pi seat either.
+ */
+export const CONFINEMENTLESS_ADAPTERS: ReadonlySet<string> = new Set(['pi']);
+
+/**
+ * Every mode ANY of the enforcing adapters implements for a public seat:
+ * {workspace, read-only} in both claude and codex, plus `bwrap` (claude's
+ * Linux path). A declared mode outside this set confines nowhere, so the
+ * server can refuse it without resolving the host.
+ */
+export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(['workspace', 'read-only', 'bwrap']);
 
 /** One typed code, two emitters (server projection + daemon derive). */
 export const GRANT_BROKER_REFUSAL_CODE = 'grant_broker_unconfined';
@@ -63,8 +95,22 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
 /**
  * `null` means "not refused here" — either the declaration is confinable, or it
  * declares no sandbox block at all and the daemon decides.
+ *
+ * `runtime` is the seat's projected runtime (`config.runtime`), which is where
+ * the adapter is known. When the adapter is absent from the row the daemon
+ * detects it locally, so the daemon-side refusal covers that case.
  */
-export const grantBrokerRefusal = (environment: unknown): GrantBrokerRefusal | null => {
+export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
+  const adapter = (runtime as { adapter?: unknown } | null | undefined)?.adapter;
+  if (typeof adapter === 'string' && CONFINEMENTLESS_ADAPTERS.has(adapter)) {
+    return refusalFor(
+      'adapter_cannot_confine',
+      `the seat runs the '${adapter}' adapter, which confines on no host — a declared sandbox is refused`
+        + ' rather than enforced, and an absent one is never derived; move this seat to the claude or codex'
+        + ' adapter, or drop the grant broker from it',
+    );
+  }
+
   const source = environment as { sandbox?: unknown } | null | undefined;
   const sandbox = source?.sandbox;
   if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return null;
@@ -75,6 +121,14 @@ export const grantBrokerRefusal = (environment: unknown): GrantBrokerRefusal | n
       'sandbox_mode_none',
       "the declared sandbox.mode is 'none', which no host confines; declare a confining mode"
         + " (e.g. 'workspace') or drop the grant broker from this seat",
+    );
+  }
+  if (declared.mode !== undefined && declared.mode !== null && !PUBLIC_HOST_MODES.has(String(declared.mode))) {
+    return refusalFor(
+      'sandbox_mode_unenforceable',
+      `the declared sandbox.mode is '${String(declared.mode)}', which no adapter enforces on any host;`
+        + " declare one of 'workspace' / 'read-only' (or 'bwrap' on Linux)"
+        + ' or drop the grant broker from this seat',
     );
   }
   const trust = effectiveSandboxTrust(declared.trust);

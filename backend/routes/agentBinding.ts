@@ -150,7 +150,7 @@ const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
 type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
 type GrantTarget = { kind?: unknown; id?: unknown };
 type ActiveGrant = { grantId?: unknown; target?: GrantTarget; audience?: unknown[] };
-type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null };
+type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null; runtime?: unknown };
 
 const grantBrokerServer = (grantId: string, name: string): Record<string, unknown> => ({
   name,
@@ -227,7 +227,7 @@ const grantServersForIdentities = async (
         .map((server: Record<string, unknown>) => server?.name)
         .filter((name: unknown): name is string => typeof name === 'string'),
     );
-    const refusal = grantBrokerRefusal(assigned.environment);
+    const refusal = grantBrokerRefusal(assigned.environment, assigned.runtime);
     const servers: Record<string, unknown>[] = [];
     let refused = false;
     for (const grant of grants) {

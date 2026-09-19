@@ -7,6 +7,8 @@
 const {
   LEGACY_SANDBOX_TRUST,
   GRANT_BROKER_REFUSAL_CODE,
+  CONFINEMENTLESS_ADAPTERS,
+  PUBLIC_HOST_MODES,
   effectiveSandboxTrust,
   grantBrokerRefusal,
 } = require('../../../services/grantBrokerConfinement');
@@ -22,6 +24,14 @@ describe('grant broker confinement predicate', () => {
     expect(effectiveSandboxTrust('public')).toBe('public');
     expect(effectiveSandboxTrust(undefined)).toBeUndefined();
     expect(effectiveSandboxTrust('Internal')).toBe('Internal');
+  });
+
+  // The adapter and mode sets are the host-independent half of the enforcing
+  // layers' rule, so pin their membership: widening either one silently starts
+  // refusing seats a host would have confined.
+  it('pins the host-independent sets to what the adapters implement', () => {
+    expect([...CONFINEMENTLESS_ADAPTERS]).toEqual(['pi']);
+    expect([...PUBLIC_HOST_MODES].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
   });
 
   it.each([
@@ -69,5 +79,52 @@ describe('grant broker confinement predicate', () => {
     expect(grantBrokerRefusal({ sandbox: { mode: 'workspace' } }).detail).toContain('absent');
     expect(grantBrokerRefusal({ sandbox: { mode: 'workspace', trust: 'private' } }).detail)
       .toContain("'private'");
+  });
+
+  // The adapter is a host-independent fact: pi's assertNoSandboxDeclared
+  // (cli/src/lib/adapters/pi.js) throws only when a sandbox is DECLARED, so a
+  // pi seat that declares nothing spawns unconfined and nothing ever derives
+  // one. The adapter decides, which is why it is checked before the
+  // declaration — a pi seat is refused whether or not it declares a sandbox.
+  it.each([
+    ['a pi seat with no sandbox block', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
+    ['a pi seat declaring a confined mode', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, 'adapter_cannot_confine'],
+    ['a pi seat with no environment at all', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
+    ['a claude seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'claude' }, null],
+    ['a codex seat declaring a confined mode', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'codex' }, null],
+    ['a row that names no adapter — the daemon detects it locally', undefined, { model: 'gpt-5.4' }, null],
+    ['a row with no runtime at all', undefined, undefined, null],
+  ])('decides %s', (_label, environment, runtime, expected) => {
+    const refusal = grantBrokerRefusal(environment, runtime);
+    if (expected === null) {
+      expect(refusal).toBeNull();
+      return;
+    }
+    expect(refusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: expected });
+    // The remedy names the thing to change: the adapter, not the sandbox.
+    expect(refusal.detail).toContain('adapter');
+  });
+
+  // The write-time schema (environment.js ALLOWED_SANDBOX_MODES) accepts modes
+  // no adapter implements — firejail, container and managed appear nowhere else
+  // in cli/src — so a public seat declaring one confines on no host, on main's
+  // CLI or #1754's. `bwrap` is the exception that keeps this from being a
+  // second enforcement definition: claude implements it on Linux.
+  it.each([
+    ['a mode no adapter implements', { sandbox: { mode: 'firejail', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['another unenforced mode', { sandbox: { mode: 'container', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a managed mode', { sandbox: { mode: 'managed', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a typo of a real mode', { sandbox: { mode: 'workspaces', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a non-string mode', { sandbox: { mode: 42, trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a legacy internal trust beside an unenforced mode', { sandbox: { mode: 'firejail', trust: 'internal' } }, 'sandbox_mode_unenforceable'],
+    ['bwrap, which claude implements on Linux', { sandbox: { mode: 'bwrap', trust: 'public' } }, null],
+  ])('decides %s', (_label, environment, expected) => {
+    const refusal = grantBrokerRefusal(environment);
+    if (expected === null) {
+      expect(refusal).toBeNull();
+      return;
+    }
+    expect(refusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: expected });
+    expect(refusal.detail).toContain('sandbox.mode');
   });
 });

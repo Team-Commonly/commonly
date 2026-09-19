@@ -44,7 +44,7 @@ afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
  * the state a daemon-provisioned seat is in until the daemon writes its
  * baseline.
  */
-const seed = async (sandbox) => {
+const seed = async (sandbox, runtime = { runtimeType: 'wrapper', model: 'claude-opus-5' }) => {
   await Promise.all([
     User.deleteMany({}), AgentCredential.deleteMany({}), AgentInstallation.deleteMany({}),
     Machine.deleteMany({}), Pod.deleteMany({}), RoomGrant.deleteMany({}),
@@ -72,7 +72,7 @@ const seed = async (sandbox) => {
   await AgentInstallation.create({
     agentName: AGENT_NAME, instanceId: 'default', podId: pod._id,
     version: '1.0.0', status: 'active', installedBy: owner._id,
-    config: { runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' }, environment },
+    config: { runtime, environment },
   });
   await AgentCredential.create({
     tokenHash: hash(DAEMON), kind: 'daemon', ownerUserId: owner._id,
@@ -157,6 +157,32 @@ describe('GET /assigned — grant broker confinement', () => {
 
   it('leaves a public trust with no declared mode to the daemon, which derives it per host', async () => {
     await seed({ trust: 'public' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
+  });
+
+  // The adapter reaches the predicate from the ROW (`config.runtime.adapter`),
+  // so this case proves the wiring and not just the table. pi confines on no
+  // host: its assertNoSandboxDeclared throws only on a DECLARED sandbox, and
+  // nothing ever derives one, so a pi seat with a live grant must not be handed
+  // the broker — which is the pi half of TASK-063. Once #1764 lands, pi can
+  // speak the HTTP transport the broker uses, so this is what makes that
+  // reachable-but-confined rather than reachable-and-bare.
+  it('withholds the broker from a pi seat, which confines on no host', async () => {
+    await seed(undefined, { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(mcpNames(row)).toContain('commonly');
+    expect(row.grantBrokerRefusal).toMatchObject({
+      code: GRANT_BROKER_REFUSAL_CODE,
+      decidedBy: 'server',
+      reason: 'adapter_cannot_confine',
+    });
+  });
+
+  it('leaves a claude seat with no sandbox block to the daemon, adapter and all', async () => {
+    await seed(undefined, { runtimeType: 'wrapper', adapter: 'claude', model: 'claude-opus-5' });
     const row = await assigned();
     expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
     expect(row.grantBrokerRefusal).toBeUndefined();
