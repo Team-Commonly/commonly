@@ -2,6 +2,13 @@
 
 Commonly's Discord integration creates a seamless bridge between Discord servers and Commonly pods, enabling bidirectional communication, automated summaries, and intelligent community management.
 
+This is the canonical current guide for Discord setup and deployment. The
+current flow is Discord Gateway/webhook capture → buffered integration data →
+the summarizer service (LiteLLM when configured, otherwise the supported
+direct provider path) → a `discord.summary` agent event → Commonly Bot posting
+through the runtime API. The older setup/deployment docs retain deeper
+operator notes, but their route list must not override the endpoints below.
+
 ## 🌉 **Integration Overview**
 
 ### **Bidirectional Communication**
@@ -148,6 +155,20 @@ Bot messages from the Commonly Summarizer agent user (`commonly-bot`) render wit
 ```
 
 ## 🔧 **Setup & Configuration**
+
+### **Current setup and deployment path**
+
+1. Configure the Discord application and required backend secrets described
+   below, then install the bot for the target pod with
+   `GET /api/discord/install-link/:podId`.
+2. Deploy slash commands from `backend/` with `npm run discord:deploy`; use
+   `npm run discord:list` to inspect the registered commands.
+3. Configure Discord's interactions endpoint as
+   `https://<host>/api/discord/interactions` and verify the Commonly health
+   endpoint with `GET /api/discord/health`.
+4. For webhook delivery, use `POST /api/webhooks/discord` with Discord's
+   signature headers and webhook identifier; do not use an unauthenticated
+   test-webhook route.
 
 ### **Bot Installation**
 

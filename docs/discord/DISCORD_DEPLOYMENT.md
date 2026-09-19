@@ -2,6 +2,11 @@
 
 This guide covers the automated Discord command registration system that integrates with your deployment process.
 
+For the complete current setup and route contract, use
+[DISCORD.md](./DISCORD.md). This document keeps the deployment commands,
+health checks, retry guidance, and production checklist; the canonical guide
+owns the integration flow and served endpoint list.
+
 ## 🚀 **Overview**
 
 The Discord command system now:

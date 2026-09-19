@@ -197,23 +197,24 @@ If you encounter issues:
 3. Test the webhook manually in Discord
 4. Contact support with specific error messages
 
-## API Reference
+## Current API Reference
 
-### Integration Endpoints
-- `POST /api/discord/integration` - Create Discord integration
-- `GET /api/discord/integration/:id` - Get integration details
-- `PUT /api/discord/integration/:id` - Update integration
-- `DELETE /api/integrations/:id` - Delete integration
+The Discord-specific routes currently served by the backend are:
 
-### Webhook Endpoints
-- `POST /api/webhooks/discord` - Discord webhook receiver
-- `POST /api/discord/test-webhook` - Test webhook connection
+### Installation and management
+- `GET /api/discord/install-link/:podId` - Generate the Discord install link
+- `GET /api/discord/binding/:podId` - Read the pod's active Discord binding
+- `DELETE /api/discord/uninstall/:installationId` - Remove an installation
+- `GET /api/discord/channels/:guildId` - List channels visible to the bot
+- `GET /api/discord/callback` - Complete the OAuth callback
 
-### Slash Command Endpoints
-- `POST /api/discord/interactions` - Handle Discord slash command interactions
-- `POST /api/discord/register-commands/:integrationId` - Register slash commands for a guild
+### Webhook and slash-command delivery
+- `POST /api/webhooks/discord` - Receive signed Discord webhook events
+- `POST /api/discord/interactions` - Receive Discord slash-command interactions
+- `POST /api/discord/register-commands/:integrationId` - Register commands for one integration
+- `POST /api/discord/register-all` - Register commands for all integrations (admin)
+- `GET /api/discord/health` - Check command registration and integration health
 
-### Utility Endpoints
-- `GET /api/discord/channels/:integrationId` - Get available channels
-- `POST /api/discord/invite` - Generate bot invite link
-- `GET /api/discord/stats/:id` - Get integration statistics 
+Routes not listed here (including the former `/api/discord/integration`,
+`test-webhook`, `invite`, and `stats` examples) are not current Discord API
+routes and should not be used for setup or troubleshooting.
