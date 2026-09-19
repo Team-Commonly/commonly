@@ -246,6 +246,22 @@ export const validateEnvironmentSpec = (spec) => {
     }
   }
 
+  // A TRANSPORT DECIDES THE ENTRY, so the fields must agree with it (TASK-071,
+  // Vera's ruling 2026-09-19). This block is MIRRORED, not shared: the other
+  // writer-side check is the backend's, in
+  // backend/utils/environmentSpecValidation.ts, called from the
+  // `PATCH /api/registry/pods/:podId/agents/:name` handler that stores
+  // `config.environment` for the owner's daemon. The two cannot share code at
+  // runtime — this is a published ESM package, that is the CJS backend — so
+  // the wording here and there is kept parallel deliberately and the two must
+  // move together. This one refuses a hand-written `--environment <file>`; the
+  // backend's refuses a stored row.
+  //
+  // The shape rule is not decoration: every adapter branches on it
+  // (isStdioServer/isHttpServer in adapters/pi-mcp-client.mjs), and `command`
+  // is an argv ARRAY — `connectStdioMcp` destructures `const [cmd, ...args] =
+  // command`. An entry whose fields contradict its transport is a record whose
+  // reader has to pick a winner, and the readers do not agree on which.
   if (spec.mcp !== undefined) {
     if (!Array.isArray(spec.mcp)) {
       errors.push('mcp must be an array');
@@ -261,6 +277,31 @@ export const validateEnvironmentSpec = (spec) => {
         if (server.transport !== undefined
           && !['http', 'stdio', 'sse'].includes(server.transport)) {
           errors.push(`mcp[${i}].transport must be one of: http, stdio, sse`);
+          // The agreement rule below is defined in terms of a transport this
+          // entry does not have; judging it here would mean inventing the
+          // second definition that rule exists to avoid.
+          return;
+        }
+        const argv = Array.isArray(server.command) && server.command.length > 0
+          && server.command.every((part) => typeof part === 'string' && part.trim().length > 0);
+        const hasUrl = typeof server.url === 'string' && server.url.trim().length > 0;
+        if (server.transport === 'http' || server.transport === 'sse') {
+          if (!hasUrl) {
+            errors.push(`mcp[${i}].url is required when transport is ${server.transport}: a ${server.transport} server is reached by URL, and this entry declares no URL to reach`);
+          }
+          if (server.command !== undefined) {
+            errors.push(`mcp[${i}].command must not be set when transport is ${server.transport}: with a url and a command in one entry each reader picks a different winner, so the record does not say what runs`);
+          }
+        } else {
+          // stdio, or absent transport — the historical default.
+          if (!argv) {
+            errors.push(server.command === undefined
+              ? `mcp[${i}].command is required for a stdio entry (and for an entry that declares no transport): with no command and no url there is nothing to run`
+              : `mcp[${i}].command must be a non-empty array of strings (argv, e.g. ["npx", "-y", "@commonlyai/mcp@latest"]); a string command is not a command line any reader in this repo executes`);
+          }
+          if (hasUrl) {
+            errors.push(`mcp[${i}].url must not be set for a stdio entry (and for an entry that declares no transport): a url here is a second, contradictory way to reach the server`);
+          }
         }
       });
     }

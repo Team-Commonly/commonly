@@ -24,6 +24,7 @@ const {
   normalizeToolPolicy,
   normalizeContextPolicy,
 } = require('./tokens');
+const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 
 const agentConfigRouter = express.Router();
 
@@ -121,6 +122,28 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         code: 'installer_only',
         fields: INSTALLER_GATED_FIELDS.filter((field) => field in req.body),
       });
+    }
+
+    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the only
+    // backend writer of `config.environment`, and that field is projected to
+    // the owner's daemon as the seat's declared spec — so an entry whose fields
+    // contradict its own transport is a stored instruction whose every reader
+    // answers differently. Refused here, before any write, rather than
+    // reconciled on the read path: a record that says two things is not a
+    // record a reader should have to arbitrate.
+    //
+    // Deliberately only what THIS BODY declares. The merged result is not
+    // checked, so a row that already holds a malformed entry stays patchable
+    // for its other fields — refusing old records is not this rule's job.
+    if (config && typeof config === 'object' && config.environment !== undefined) {
+      const environmentErrors = validateEnvironmentMcpEntries(config.environment);
+      if (environmentErrors.length) {
+        return res.status(400).json({
+          error: 'Invalid environment spec',
+          code: 'invalid_environment_spec',
+          fields: environmentErrors,
+        });
+      }
     }
 
     const applyInstallationSettings = (targetInstallation: any) => {
