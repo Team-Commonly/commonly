@@ -156,7 +156,10 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   const live = screen.getByRole('button', { name: 'View GitHub in Launch pod' });
   expect(within(live).getByText('Launch pod')).toBeInTheDocument();
   expect(within(live).getByText('sam')).toBeInTheDocument();
-  expect(within(live).getByText('Scout may use it · every write asks first')).toBeInTheDocument();
+  // Direction A: the audience is the sentence; the write mode is the glyph (label) and rides the 390 kicker as words.
+  expect(within(live).getByText('Scout may use it')).toBeInTheDocument();
+  expect(within(live).getByRole('img', { name: /asks|write/ })).toBeInTheDocument();
+  expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
   expect(within(live).getByText(/granted 1h$/)).toBeInTheDocument();
   const liveDot = live.querySelector('.v2-connector-row__dot');
   expect(liveDot).toHaveClass('v2-connector-row__dot--live');
@@ -232,7 +235,8 @@ test('TASK-050: a human member in the audience is named, not called "an agent"',
   });
   renderTools();
   const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
-  expect(within(live).getByText('sam, Scout may use it · every write asks first')).toBeInTheDocument();
+  expect(within(live).getByText('sam, Scout may use it')).toBeInTheDocument();
+  expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
   expect(screen.queryByText(/an agent/)).not.toBeInTheDocument();
 
   fireEvent.click(live);

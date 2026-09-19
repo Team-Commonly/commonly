@@ -9847,20 +9847,25 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-connector-row__selection .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  /* Direction A at 390: no tooltips, so the mode word rides the kicker; the gear is
-     44px right-aligned; a row's word act is full width; rows keep one height. */
-  .v2-connector-row { min-height: 72px; }
-  .v2-connector-row__kicker-mode { display: inline; }
-  .v2-connector-row__mark { display: none; }
-  .v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px; grid-column: 2; grid-row: 1; justify-self: end; }
-  .v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon), .v2-root a.v2-connector-row__action { grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: center; min-height: 44px; }
-  .v2-root button.v2-connector-aside__icon { width: 44px; min-height: 44px; }
   .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
   .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
   /* Keep the not-enabled reason alongside its Ask affordance on phones. */
   .v2-connector-row:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail { display: none; }
   .v2-root button.v2-connector-row__action, .v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }
+  /* Direction A at 390 (after the rule above so it wins): no tooltips, so the mode
+     word rides the kicker; the gear is 44px in row 1 beside the name; a row's word
+     act is full width under the sentence; rows keep one height. */
+  .v2-connector-row { min-height: 72px; }
+  .v2-root button.v2-connector-row__selection { grid-row: 1; }
+  .v2-connector-row__kicker-mode { display: inline; }
+  .v2-connector-row__mark { display: none; }
+  .v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px; grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
+  .v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon), .v2-root a.v2-connector-row__action { display: inline-flex; grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: center; min-height: 44px; margin-top: 8px; }
+  /* The gear sits over the selection button's top-right; keep the kicker out from under it. */
+  .v2-connector-row:has(.v2-connector-row__action--icon) .v2-root button.v2-connector-row__selection,
+  .v2-root .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 52px; }
+  .v2-root button.v2-connector-aside__icon { width: 44px; min-height: 44px; }
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }

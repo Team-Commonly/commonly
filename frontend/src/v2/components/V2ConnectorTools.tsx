@@ -490,7 +490,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
           : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
-      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })} · ${asksFirst(grant)}`;
+      // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
+      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })}`;
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
@@ -506,7 +507,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <span>{label}</span>
           </span>
           <span className="v2-connector-row__details">
-            <span className="v2-connector-row__kicker">{kicker}</span>
+            <span className="v2-connector-row__kicker">
+              {kicker}
+              {!dead && <span className="v2-connector-row__kicker-mode"> · {asksFirst(grant)}</span>}
+            </span>
             <strong>
               {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
               {t('tools.grantedTo', { defaultValue: 'granted to' })} <b>{grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</b>

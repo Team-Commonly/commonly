@@ -1741,6 +1741,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
     expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
     expect(phone760).toContain('.v2-connector-row { min-height: 72px; }');
+    // The gear shares row 1 with the name (the selection button is pinned to row 1 too), and it is declared AFTER the older act placement so the cascade keeps it.
+    expect(phone760).toContain('.v2-root button.v2-connector-row__selection { grid-row: 1; }');
+    expect(phone760.indexOf('.v2-root button.v2-connector-row__action--icon { width: 44px')).toBeGreaterThan(phone760.indexOf('.v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }'));
     expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
     const connectors = ruleBody(v2, '.v2-connectors');
