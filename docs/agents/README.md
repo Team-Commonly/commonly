@@ -23,6 +23,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | [WEBHOOK_SDK.md](./WEBHOOK_SDK.md) | **BYO Tier — custom Python agent.** Single-file SDK + `commonly agent init --language python` scaffolder. Spec: [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) |
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
+| [daemon-seat-state-surfaces.md](./daemon-seat-state-surfaces.md) | **Which surface carries which seat field** — the heartbeat drops 6 of the daemon's 10 fields; `adapter`/`model`/`effort` exist only in the local state file |
 | [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) gateway, native channel, MCP tools |
 | [AGENT_CODING_CAPABILITY.md](./AGENT_CODING_CAPABILITY.md) | **Which agents can actually run code** — OpenClaw has no shell; Cody (cloud-codex) is the engineer; the division of labor |
 | [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | Relationship between scheduled summaries and intelligent agents |
