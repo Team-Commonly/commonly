@@ -24,7 +24,14 @@
  *   node scripts/ui-evidence-shot.mjs --route /v2/pods/team/<podId> --out /tmp/after.png \
  *     [--selector '.tools-trail'] \
  *     [--base-url http://localhost:3000] [--api http://localhost:5050] \
- *     [--email dev@commonly.local] [--password password123] [--wait 2500]
+ *     [--width 390] [--height 900] [--click '<selector>'] \
+ *     [--token <jwt>] [--email dev@commonly.local] [--password password123] [--wait 2500]
+ *
+ * `--width` is the whole point of a mobile pair: a 390 shot is a different
+ * layout, not a smaller copy of the 1440 one. This script did not have the flag
+ * and ignored it silently, so `--out ...-390.png` produced a 1440x900 capture
+ * under a 390 name (2026-09-19). It now also REFUSES a flag it does not know,
+ * and prints the viewport it used, so a capture can always name its own shape.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -48,11 +55,25 @@ const parseArgs = (argv) => {
   return out;
 };
 
+const KNOWN_FLAGS = new Set([
+  'route', 'out', 'base-url', 'api', 'email', 'password', 'wait', 'selector', 'width', 'height',
+  'token', 'click',
+]);
+
 const args = parseArgs(process.argv.slice(2));
+// A flag this script does not implement must not be silently dropped: passing
+// `--width 390` produced a 1440 capture named `-390.png`, and the reviewer had no
+// way to tell. Fail loudly instead, and name what is accepted.
+const unknownFlags = [...args.keys()].filter((key) => !KNOWN_FLAGS.has(key));
+if (unknownFlags.length > 0) {
+  console.error(`unknown flag(s): ${unknownFlags.map((f) => `--${f}`).join(', ')}`);
+  console.error(`known: ${[...KNOWN_FLAGS].map((f) => `--${f}`).join(', ')}`);
+  process.exit(2);
+}
 const route = args.get('route');
 const outPath = args.get('out');
 if (!route || !outPath) {
-  console.error('usage: node scripts/ui-evidence-shot.mjs --route <path> --out <file.png> [--base-url URL] [--api URL]');
+  console.error('usage: node scripts/ui-evidence-shot.mjs --route <path> --out <file.png> [--width 390] [--base-url URL] [--api URL]');
   process.exit(2);
 }
 
@@ -60,8 +81,28 @@ const baseUrl = (args.get('base-url') || process.env.UI_BASE_URL || 'http://loca
 const apiBase = (args.get('api') || process.env.UI_API_URL || 'http://localhost:5050').replace(/\/$/, '');
 const email = args.get('email') || process.env.UI_EMAIL || 'dev@commonly.local';
 const password = args.get('password') || process.env.UI_PASSWORD || 'password123';
+// A pair is captured run by run, and every run logged in again — which is a hard
+// ceiling, not a nuisance: `POST /api/auth/login` is limited to 20 attempts per
+// 15 minutes, so the fifth capture in a batch started returning 429 and the page
+// dumped "Failed to load chat room" instead of the surface under test (hit
+// 2026-09-19). Pass a token the caller already holds instead of logging in again.
+const presetToken = args.get('token') || process.env.UI_TOKEN || null;
 const waitMs = Number(args.get('wait') || 2500);
+const viewportWidth = Number(args.get('width') || 1440);
+const viewportHeight = Number(args.get('height') || 900);
+for (const [name, value] of [['width', viewportWidth], ['height', viewportHeight]]) {
+  if (!Number.isInteger(value) || value < 200 || value > 4000) {
+    console.error(`--${name} must be an integer between 200 and 4000, got ${args.get(name)}`);
+    process.exit(2);
+  }
+}
 const selector = args.get('selector');
+// Some surfaces only exist after an interaction: the grant aside on /v2/connectors is rendered
+// by clicking the row's Manage button, so a shot named for it without the click captures the row
+// list and calls it the aside. A click that never lands is an ERROR (see the waitFor below), for
+// the same reason an unknown flag is: a capture that silently did something else is worse than no
+// capture.
+const clickSelector = args.get('click');
 const basePath = outPath.replace(/\.png$/, '');
 const textPath = `${basePath}.txt`;
 const selectorTextPath = selector ? `${basePath}.selector.txt` : null;
@@ -82,9 +123,12 @@ const login = async () => {
 };
 
 const main = async () => {
-  const token = await login();
+  const token = presetToken || await login();
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const context = await browser.newContext({
+    viewport: { width: viewportWidth, height: viewportHeight },
+    deviceScaleFactor: 2,
+  });
   // The shell reads the JWT from localStorage; injecting it before the first
   // paint skips the login page (and its flake) entirely.
   await context.addInitScript((value) => {
@@ -101,6 +145,14 @@ const main = async () => {
 
   await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle', timeout: 45000 });
   await page.waitForTimeout(waitMs);
+
+  if (clickSelector) {
+    const control = page.locator(clickSelector).first();
+    // Named in the throw, so a mistyped selector says which one it was.
+    await control.waitFor({ state: 'visible', timeout: 15000 });
+    await control.click();
+    await page.waitForTimeout(500);
+  }
 
   let selectorChars = null;
   if (selector) {
@@ -125,7 +177,7 @@ const main = async () => {
   writeFileSync(textPath, text);
 
   const sha = createHash('sha1').update(text).digest('hex').slice(0, 12);
-  console.log(`${outPath} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | ${selector} ${selectorChars}ch`}`);
+  console.log(`${outPath} | viewport ${viewportWidth}x${viewportHeight}@2x | auth ${presetToken ? 'token' : 'login'}${clickSelector ? ` | click ${clickSelector}` : ''} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | selector ${selector} ${selectorChars}ch`}`);
   console.log(`  text: ${textPath}`);
   if (selector) console.log(`  selector text: ${selectorTextPath}`);
   console.log(`  non-2xx: ${badResponses.length ? [...new Set(badResponses)].join(' | ') : 'none'}`);
