@@ -578,8 +578,31 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
+  // The age as a unit-suffixed number from the timestamp ("23d", "5m", "just now"),
+  // and a verb line built from a key — the kicker's source of truth.
+  const shortAge = (date?: string | null): string => {
+    const timestamp = date ? new Date(date).getTime() : NaN;
+    if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
+    const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+    if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
+    if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
+    return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+  };
+  const ageLine = (verb: 'added' | 'started' | 'since' | 'paused' | 'slackAnswered', date?: string | null): string => {
+    const age = shortAge(date);
+    switch (verb) {
+      case 'added': return t('connectors.age.added', { defaultValue: 'added {{age}}', age });
+      case 'started': return t('connectors.age.started', { defaultValue: 'started {{age}}', age });
+      case 'since': return t('connectors.age.since', { defaultValue: 'since {{age}}', age });
+      case 'paused': return t('connectors.age.paused', { defaultValue: 'paused {{age}}', age });
+      default: return t('connectors.age.slackAnswered', { defaultValue: 'Slack answered {{age}}', age });
+    }
+  };
+
   const rowFor = (connector: Connector): ConnectorRow => {
-    const started = `started ${relativeTime(connector.createdAt, now)}`;
+    const started = ageLine('started', connector.createdAt);
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
     const title = connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type;
@@ -592,7 +615,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
-        when: `since ${relativeTime(connector.updatedAt || connector.createdAt, now)}`,
+        when: ageLine('since', connector.updatedAt || connector.createdAt),
       };
     }
 
@@ -608,7 +631,7 @@ const V2ConnectorsPage: React.FC = () => {
           dot: 'idle',
           line: t('connectors.notLinkedLine', { defaultValue: '{{title}} · not linked to a pod', title }),
           pulse: false,
-          when: `added ${relativeTime(connector.createdAt, now)}`,
+          when: ageLine('added', connector.createdAt),
         };
       }
       const relay = Boolean(connector.config?.liveRelay);
@@ -635,7 +658,7 @@ const V2ConnectorsPage: React.FC = () => {
         line: `${title} · linked to ${podNameById(activePodId, connector)}`,
         pulse: relay && Boolean(recent),
         secondary: true,
-        when: `added ${relativeTime(connector.createdAt, now)}`,
+        when: ageLine('added', connector.createdAt),
       };
     }
 
@@ -678,7 +701,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'pending',
         line: t('connectors.slackConfirmRow', { defaultValue: '{{workspace}} says {{user}} connected — is that you?', workspace, user }),
         pulse: true,
-        when: `Slack answered ${relativeTime(connector.updatedAt || connector.createdAt, now)}`,
+        when: ageLine('slackAnswered', connector.updatedAt || connector.createdAt),
       };
     }
 
@@ -737,8 +760,8 @@ const V2ConnectorsPage: React.FC = () => {
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };
     }
-    const since = `since ${relativeTime(installation.updatedAt, now)}`;
-    const started = `started ${relativeTime(installation.claimedAt || installation.updatedAt, now)}`;
+    const since = ageLine('since', installation.updatedAt);
+    const started = ageLine('started', installation.claimedAt || installation.updatedAt);
     const stale = claimIsStale(installation);
     if (installation.status === 'installing' || installation.status === 'activating') {
       return stale
@@ -802,7 +825,7 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'empty',
         line: `${t('connectors.pausedLine', { defaultValue: 'Paused by an administrator.' })}${reason}`,
         pulse: false,
-        when: `paused ${relativeTime(pause?.at || installation.updatedAt, now)}`,
+        when: ageLine('paused', pause?.at || installation.updatedAt),
       };
     }
     if (installation.status === 'stale') {
@@ -869,11 +892,13 @@ const V2ConnectorsPage: React.FC = () => {
 
   // Direction A rule 3: every row's kicker is `pod · verb age` in mono. The verb
   // stays ("added 23d", never "23d") so an age beside a state dot is not read as
-  // last-used; a connection with no pod says so.
+  // last-used; a connection with no pod says so. Both parts come from keys and
+  // the timestamp, never from rendered English (Vera, Connectors 70300).
   const kickerFor = (item: ListItem, row: ConnectorRow): string => {
     const podId = item.connector ? connectorPodId(item.connector) : null;
     const pod = podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
-    return `${pod} · ${row.when.replace(/ ago$/, '')}`;
+    // A row with no age (the not-enabled row's '—') carries only the pod.
+    return row.when === '—' ? pod : `${pod} · ${row.when}`;
   };
 
   const needsUser = (row: ConnectorRow): boolean => row.action !== null && !row.secondary && row.action !== 'connect';

@@ -1864,7 +1864,14 @@
     "notYetKicker": "not yet",
     "kickerAttention": "attention",
     "kickerMirror": "mirror",
-    "kickerOff": "relay off"
+    "kickerOff": "relay off",
+    "age": {
+      "added": "added {{age}}",
+      "started": "started {{age}}",
+      "since": "since {{age}}",
+      "paused": "paused {{age}}",
+      "slackAnswered": "Slack answered {{age}}"
+    }
   },
   "artifacts": {
     "title": "Artifacts",
@@ -1899,5 +1906,16 @@
     "empty": "Nothing shared yet. Attach a file in any pod and it lands here.",
     "emptyFiltered": "Nothing matches. Clear a filter or the search.",
     "loadFailed": "Could not load artifacts."
+  },
+  "tools": {
+    "grantedAge": "granted {{age}}"
+  },
+  "time": {
+    "age": {
+      "justNow": "just now",
+      "minutes": "{{n}}m",
+      "hours": "{{n}}h",
+      "days": "{{n}}d"
+    }
   }
 }

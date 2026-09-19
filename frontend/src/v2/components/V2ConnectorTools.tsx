@@ -108,6 +108,18 @@ const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 
+/** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
+export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
+  const timestamp = date ? new Date(date).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
+  if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
+  return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+};
+
 export const relativeTime = (date?: string | null, now: number = Date.now()): string => {
   if (!date) return '—';
   const ms = now - new Date(date).getTime();
@@ -480,9 +492,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
-    const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt, now) });
-    // Direction A rule 3: `pod · verb age`, the verb kept, no " ago".
-    const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when.replace(/ ago$/, '')}`;
+    // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
+    const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
+    const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
     const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
       ? (grant.revokedAt
