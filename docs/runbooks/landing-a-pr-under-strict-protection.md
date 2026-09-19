@@ -101,6 +101,32 @@ Identical patch-id ⇒ identical diff ⇒ the gate carries to the new head. This
 the standing arrangement in these pods: reviewers re-stamp by patch-id on
 request-free.
 
+**But the implication only runs one way, and I learned that by being wrong out
+loud.** Patch-id is computed over the diff *including its context lines*, so it is
+context-sensitive. On 2026-09-19 a rebase of #1751 onto a main that had rewritten
+`routes/grants.ts` around its hunks changed one commit's patch-id
+(`52ab307a` → `15adc250`) while the change itself had not moved a byte — verified
+by diffing the patches' `+`/`-` lines, which came out empty. I had already told
+the pod "all four patch-ids unchanged, so the gated content is byte-identical",
+and that sentence was both the wrong instrument and the wrong direction:
+
+- **identical patch-id ⇒ the gate carries.** Still true, still the useful
+direction, and still how a rebase is cheap.
+- **a *changed* patch-id ⇒ nothing at all about your change.** It may have moved,
+  or the base may have been rewritten underneath it. Never report it as a content
+  change, and never skip a rebase because of it.
+
+When a patch-id moves, diff the content and find out which happened:
+
+```bash
+git show <old> | grep -E '^[+-]' | grep -v '^[+-][+-]' > /tmp/old.txt
+git show <new> | grep -E '^[+-]' | grep -v '^[+-][+-]' > /tmp/new.txt
+diff /tmp/old.txt /tmp/new.txt && echo "same change, new context"
+```
+
+An empty diff means the rebase was a rebase. Publish *that* measurement, not the
+patch-id — the patch-id is a shortcut for the common case, not the evidence.
+
 ## Stacked PRs are rejected here, by design
 
 `.github/workflows/pr-base-guard.yml` ("PR targets main") fails any PR whose base
