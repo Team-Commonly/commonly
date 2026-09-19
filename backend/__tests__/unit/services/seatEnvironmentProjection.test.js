@@ -75,38 +75,43 @@ describe('projectSeatEnvironments', () => {
     await install(b._id, { config: { runtime: { adapter: 'pi' } } });
 
     const mine = await projectSeatEnvironments({ installedBy: a._id });
-    expect([...mine.keys()]).toEqual(['proj-seat\0default']);
-    expect(mine.get('proj-seat\0default').podIds.map(String).sort())
-      .toEqual([String(podOne), String(podTwo)].sort());
+    expect([...mine.keys()]).toEqual([seatEnvironmentKey('proj-seat', 'default')]);
+    const entry = mine.get(seatEnvironmentKey('proj-seat', 'default'));
+    expect(entry.podIds.map(String).sort()).toEqual([String(podOne), String(podTwo)].sort());
     // First declaration wins for the runtime, exactly as the daemon list has
     // always resolved a duplicated identity — no new ordering rule here.
-    expect(mine.get('proj-seat\0default').runtime).toEqual({ adapter: 'claude' });
+    expect(entry.runtime).toEqual({ adapter: 'claude' });
 
     const theirs = await projectSeatEnvironments({ installedBy: b._id });
-    expect(theirs.get('proj-seat\0default').runtime).toEqual({ adapter: 'pi' });
+    expect(theirs.get(seatEnvironmentKey('proj-seat', 'default')).runtime).toEqual({ adapter: 'pi' });
   });
 
-  test('matches a stored instanceId case-insensitively, because the schema lowercases only agentName', async () => {
+  test('an unscoped call projects every owner, and a scoped one never leaks another owner\'s seat', async () => {
+    const [a, b] = [await owner('b1'), await owner('b2')];
+    await install(a._id, { agentName: 'only-a' });
+    await install(b._id, { agentName: 'only-b' });
+    const all = await projectSeatEnvironments();
+    expect([...all.keys()].sort()).toEqual([
+      seatEnvironmentKey('only-a', 'default'), seatEnvironmentKey('only-b', 'default'),
+    ].sort());
+    expect([...(await projectSeatEnvironments({ installedBy: a._id })).keys()])
+      .toEqual([seatEnvironmentKey('only-a', 'default')]);
+  });
+
+  test('a stored instanceId is found through the shared key, which the schema does not lowercase', async () => {
+    // AgentInstallationSchema lowercases agentName but NOT instanceId, so the
+    // seat stored as `Quill` is only findable because the key normalises both
+    // sides. A raw template string would miss it and the read would silently
+    // fall through to "nothing withheld".
     const a = await owner('c');
     await install(a._id, { agentName: 'Proj-Seat', instanceId: 'Quill' });
-    const found = await projectSeatEnvironments({ installedBy: a._id, agentNames: ['proj-seat'], instanceId: 'quill' });
-    expect([...found.keys()]).toEqual(['proj-seat\0quill']);
-    expect(await projectSeatEnvironments({ agentNames: ['proj-seat'], instanceId: 'other' })).toEqual(new Map());
-    // The row itself is stored lowercased for agentName and untouched for
-    // instanceId — the shape the normalisation above exists to absorb.
+    const projected = await projectSeatEnvironments({ installedBy: a._id });
+    expect(projected.get(seatEnvironmentKey('proj-seat', 'quill'))).toBeDefined();
+    expect(projected.get(seatEnvironmentKey('PROJ-SEAT', 'quill'))).toBeDefined();
+    expect(projected.get(seatEnvironmentKey('proj-seat', 'other'))).toBeUndefined();
     const stored = await AgentInstallation.findOne({}).lean();
     expect(stored.agentName).toBe('proj-seat');
     expect(stored.instanceId).toBe('Quill');
-  });
-
-  test('an empty identity scope yields nothing rather than the whole collection', async () => {
-    const a = await owner('d');
-    await install(a._id);
-    expect(await projectSeatEnvironments({ agentNames: [] })).toEqual(new Map());
-    expect(await projectSeatEnvironments({ agentNames: ['   '] })).toEqual(new Map());
-    // An unscoped call is the daemon-wide projection, and it is the caller's
-    // explicit choice — the write path always passes one of the two scopes.
-    expect((await projectSeatEnvironments({})).size).toBe(1);
   });
 
   test('projects the environment through the placeholder allow-list', async () => {
@@ -131,7 +136,8 @@ describe('projectSeatEnvironments', () => {
         },
       },
     });
-    const entry = (await projectSeatEnvironments({ installedBy: a._id })).get('proj-seat\0default');
+    const entry = (await projectSeatEnvironments({ installedBy: a._id }))
+      .get(seatEnvironmentKey('proj-seat', 'default'));
     expect(entry.environment.sandbox).toEqual({
       mode: 'workspace', trust: 'internal', network: { policy: 'restricted' },
     });

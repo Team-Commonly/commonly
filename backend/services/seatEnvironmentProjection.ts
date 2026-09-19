@@ -127,12 +127,14 @@ export type SeatEnvironmentEntry = {
 };
 
 export type SeatEnvironmentQuery = {
-  /** Daemon-projection scope: one owner's active installations. */
+  /**
+   * Daemon-projection scope: one owner's active installations. The only scope
+   * either caller uses — `/assigned` resolves through the machine's owner, and
+   * the grant read mirrors it. An identity-wide scan was deliberately dropped
+   * (Vera 69881): for a seat with no machine binding it returned whichever row
+   * Mongo happened to order first, which is a guess dressed as a verdict.
+   */
   installedBy?: unknown;
-  /** Identity scope: the seat's agent name(s), compared after normalisation. */
-  agentNames?: string[];
-  /** Identity scope: the seat's instance id, compared after normalisation. */
-  instanceId?: unknown;
 };
 
 /**
@@ -154,23 +156,16 @@ export const seatEnvironmentKey = (agentName: unknown, instanceId: unknown): str
 export const projectSeatEnvironments = async (
   query: SeatEnvironmentQuery = {},
 ): Promise<Map<string, SeatEnvironmentEntry>> => {
-  const names = (query.agentNames || []).map(normalizeIdentityPart).filter(Boolean);
-  if (query.agentNames && !names.length) return new Map();
   const filter: Record<string, unknown> = { status: 'active' };
   if (query.installedBy) filter.installedBy = query.installedBy;
-  if (names.length) filter.agentName = { $in: names };
   const installs = await AgentInstallation.find(filter)
     .select('agentName instanceId podId config')
     .lean();
-  const wantedInstance = query.instanceId === undefined
-    ? null
-    : normalizeIdentityPart(query.instanceId) || 'default';
   const byIdentity = new Map<string, SeatEnvironmentEntry>();
   for (const install of installs) {
     const agentName = normalizeIdentityPart(install.agentName);
     const instanceId = normalizeIdentityPart(install.instanceId) || 'default';
-    if (wantedInstance !== null && instanceId !== wantedInstance) continue;
-    const key = `${agentName}\0${instanceId}`;
+    const key = seatEnvironmentKey(agentName, instanceId);
     const entry = byIdentity.get(key) || {
       agentName, instanceId, podIds: [], runtime: null, environment: null,
     };
