@@ -29,22 +29,29 @@ export class HttpError extends Error {
 /**
  * Read the runtime credential.
  *
- * TWO CHANNELS, in this order (TASK-078, ruled 2026-09-19 — "take the token out
- * of the environment"):
+ * THREE CHANNELS, resolved in this order by what the parent declares (TASK-078,
+ * ruled 2026-09-19 — "take the token out of the environment" — extended the
+ * same day to a file, so claude and codex can use it too):
  *
  *   1. `COMMONLY_TOKEN_FD` names an inherited pipe holding the credential. This
- *      is the channel the daemon now uses: the token is never in this process's
+ *      is the channel the pi adapter uses: the token is never in this process's
  *      environment, so a same-user reader cannot get it from
  *      `/proc/<pid>/environ` or `ps eww <pid>` — which is exactly how the old
  *      channel leaked it.
- *   2. `COMMONLY_AGENT_TOKEN` in the environment. Kept because the channel is a
+ *   2. `COMMONLY_TOKEN_FILE` names a file holding the credential, written 0600
+ *      for one spawn. This is the channel claude and codex use, because neither
+ *      of them can be handed a pipe we opened: claude expands `${VAR}` from its
+ *      own environment, and codex forwards declared variables from its own. A
+ *      path is not a secret, so the token stays out of both of their
+ *      environments even though it reaches the grandchild.
+ *   3. `COMMONLY_AGENT_TOKEN` in the environment. Kept because the channel is a
  *      property of the PARENT, not of this package: an older daemon, another
  *      driver, or a hand-run server still passes it this way, and refusing the
  *      old channel would turn a security fix into an outage.
  *
- * The declared fd is authoritative when present. A read that fails does NOT
- * fall back to the environment: silently using the weaker channel after being
- * told to use the stronger one is the class of bug this exists to remove.
+ * A declared source is authoritative. A read that fails does NOT fall through
+ * to the next one: silently using the weaker channel after being told to use
+ * the stronger one is the class of bug this exists to remove.
  *
  * The fd is read to EOF and deliberately never closed — on macOS a `closeSync`
  * after a failed read aborts the process (`kqueue.c`), and the descriptor goes
@@ -52,24 +59,43 @@ export class HttpError extends Error {
  */
 export const readToken = (env = process.env, { readImpl = readFileSync } = {}) => {
   const declaredFd = env.COMMONLY_TOKEN_FD;
-  if (declaredFd === undefined || String(declaredFd).trim() === '') {
-    return env.COMMONLY_AGENT_TOKEN;
+  const declaredFile = env.COMMONLY_TOKEN_FILE;
+  const blank = (value) => value === undefined || String(value).trim() === '';
+
+  if (!blank(declaredFd)) {
+    const fd = Number.parseInt(String(declaredFd).trim(), 10);
+    if (!Number.isInteger(fd) || fd < 0 || String(fd) !== String(declaredFd).trim()) {
+      throw new Error(`COMMONLY_TOKEN_FD must be a file descriptor number, got '${declaredFd}'`);
+    }
+    let raw;
+    try {
+      raw = readImpl(fd, 'utf8');
+    } catch (err) {
+      throw new Error(`COMMONLY_TOKEN_FD=${fd} was declared but the credential could not be read from it: ${err.message}`);
+    }
+    const token = String(raw ?? '').trim();
+    if (!token) {
+      throw new Error(`COMMONLY_TOKEN_FD=${fd} carried an empty credential`);
+    }
+    return token;
   }
-  const fd = Number.parseInt(String(declaredFd).trim(), 10);
-  if (!Number.isInteger(fd) || fd < 0 || String(fd) !== String(declaredFd).trim()) {
-    throw new Error(`COMMONLY_TOKEN_FD must be a file descriptor number, got '${declaredFd}'`);
+
+  if (!blank(declaredFile)) {
+    const tokenPath = String(declaredFile).trim();
+    let raw;
+    try {
+      raw = readImpl(tokenPath, 'utf8');
+    } catch (err) {
+      throw new Error(`COMMONLY_TOKEN_FILE=${tokenPath} was declared but the credential could not be read from it: ${err.message}`);
+    }
+    const token = String(raw ?? '').trim();
+    if (!token) {
+      throw new Error(`COMMONLY_TOKEN_FILE=${tokenPath} carried an empty credential`);
+    }
+    return token;
   }
-  let raw;
-  try {
-    raw = readImpl(fd, 'utf8');
-  } catch (err) {
-    throw new Error(`COMMONLY_TOKEN_FD=${fd} was declared but the credential could not be read from it: ${err.message}`);
-  }
-  const token = String(raw ?? '').trim();
-  if (!token) {
-    throw new Error(`COMMONLY_TOKEN_FD=${fd} carried an empty credential`);
-  }
-  return token;
+
+  return env.COMMONLY_AGENT_TOKEN;
 };
 
 /**
@@ -87,7 +113,7 @@ export const loadConfig = (env = process.env, opts = {}) => {
     throw new Error('COMMONLY_API_URL is required (e.g. https://api.commonly.me)');
   }
   if (!token) {
-    throw new Error('No runtime token: either COMMONLY_AGENT_TOKEN must be set, or COMMONLY_TOKEN_FD must name a pipe carrying one (cm_agent_* runtime token)');
+    throw new Error('No runtime token: COMMONLY_TOKEN_FD must name a pipe, COMMONLY_TOKEN_FILE must name a file, or COMMONLY_AGENT_TOKEN must be set (cm_agent_* runtime token)');
   }
   if (!token.startsWith('cm_agent_')) {
     throw new Error('The runtime token must be a cm_agent_* token, whichever channel delivered it');
