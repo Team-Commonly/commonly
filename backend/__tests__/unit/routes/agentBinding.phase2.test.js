@@ -347,14 +347,86 @@ describe('daemon work list', () => {
     expect(seenByA.body.agents).toHaveLength(1);
     const [agent] = seenByA.body.agents;
     expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(secondPod._id)]));
-    // Which installation's runtime and environment win is NOT pinned here and
-    // must not be: the projection takes the first non-empty value per field over
-    // an UNORDERED find (agentBinding.ts:394/418-419), so any single order is an
-    // accident of document order, and runtime and environment can even come from
-    // different installations. Pinned instead is the part that is a contract:
-    // the projection is one of the declared values, never a merge or an invention.
-    expect(['claude-opus-5', 'second-model']).toContain(agent.runtime.model);
-    expect([undefined, 'gpt-5.4', 'second-install-model']).toContain(agent.environment?.model);
+    // The pair comes from the OLDEST installation that declares either half
+    // (TASK-019 ruling, option i). The base fixture is created first, so BOTH
+    // halves are its values and the second installation's are never used —
+    // under the previous per-field fill the runtime could have come from one
+    // row and the environment from the other.
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'claude-opus-5' }));
+    expect(agent.environment?.model).toBe('gpt-5.4');
+    const projected = JSON.stringify(agent);
+    expect(projected).not.toContain('second-model');
+    expect(projected).not.toContain('second-install-model');
+  });
+
+  // The half the source installation is SILENT about stays empty: a later
+  // installation's environment must not be grafted onto an older runtime. This
+  // is only visible when the two halves live on different rows.
+  it('never fills a silent half from a sibling installation', async () => {
+    await AgentInstallation.deleteMany({});
+    const runtimeOnly = await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'oldest-runtime-model' } },
+    });
+    const envOnlyPod = await Pod.create({
+      name: 'env-only-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    const envOnly = await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: envOnlyPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { environment: { version: 1, model: 'later-install-model' } },
+    });
+    // The fixture is what the test assumes it is: the runtime-only row is older.
+    expect(String(runtimeOnly._id) < String(envOnly._id)).toBe(true);
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'oldest-runtime-model' }));
+    expect(agent.environment).toBeUndefined();
+    expect(JSON.stringify(agent)).not.toContain('later-install-model');
+    // podIds is still the union across the identity's installations.
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(envOnlyPod._id)]));
+  });
+
+  // The ordering clause is witnessable at this tier after all, and this is the
+  // shape that does it (Vera, on the fold at 59d99388): in-memory Mongo returns
+  // documents in INSERTION order, so a fixture inserted in `_id` order cannot
+  // tell a sorted find from an unsorted one. Creating the ObjectIds explicitly
+  // and inserting the NEWER row FIRST makes insertion order and `_id` order
+  // disagree, so only the find's `.sort({ _id: 1 })` can pick the older pair.
+  it('takes the pair from the oldest _id even when that row was inserted last', async () => {
+    await AgentInstallation.deleteMany({});
+    const older = new mongoose.Types.ObjectId();
+    const newer = new mongoose.Types.ObjectId();
+    // The fixture is what the test assumes it is, asserted rather than assumed.
+    expect(String(older) < String(newer)).toBe(true);
+    const newerPod = await Pod.create({
+      name: 'inserted-first-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    await AgentInstallation.create({
+      _id: newer, agentName: 'wren-test', instanceId: 'default', podId: newerPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'inserted-first-model' } },
+    });
+    await AgentInstallation.create({
+      _id: older, agentName: 'wren-test', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'oldest-by-id-model' } },
+    });
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'oldest-by-id-model' }));
+    expect(JSON.stringify(agent)).not.toContain('inserted-first-model');
+    // The union is unaffected by which installation wins.
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(newerPod._id)]));
   });
 
   it('warns when an embedded MCP placeholder is dropped', async () => {

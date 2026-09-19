@@ -78,12 +78,35 @@ describe('projectSeatEnvironments', () => {
     expect([...mine.keys()]).toEqual([seatEnvironmentKey('proj-seat', 'default')]);
     const entry = mine.get(seatEnvironmentKey('proj-seat', 'default'));
     expect(entry.podIds.map(String).sort()).toEqual([String(podOne), String(podTwo)].sort());
-    // First declaration wins for the runtime, exactly as the daemon list has
-    // always resolved a duplicated identity — no new ordering rule here.
+    // The pair comes from the OLDEST active declaration (`_id` ascending),
+    // which for a duplicated identity is a rule rather than the stored order.
     expect(entry.runtime).toEqual({ adapter: 'claude' });
 
     const theirs = await projectSeatEnvironments({ installedBy: b._id });
     expect(theirs.get(seatEnvironmentKey('proj-seat', 'default')).runtime).toEqual({ adapter: 'pi' });
+  });
+
+  test('an empty declaration cannot shadow a newer row that delivers', async () => {
+    // The predicate is the raw key, so a row whose environment the allow-list
+    // reduces to NOTHING still counts as the source and the newer row's real
+    // environment is never read. "Declares" has to mean "delivers" for the
+    // oldest-wins rule to pick the row that actually describes the seat.
+    const a = await owner('empty');
+    const silent = await install(a._id, {
+      config: { environment: { not_a_declared_field: 'dropped by the allow-list' } },
+    });
+    const real = await install(a._id, {
+      config: { environment: { version: 1, model: 'the-real-model' } },
+    });
+    // The fixture is what the test assumes: the silent row is the older one.
+    expect(String(silent._id) < String(real._id)).toBe(true);
+    const entry = (await projectSeatEnvironments({ installedBy: a._id }))
+      .get(seatEnvironmentKey('proj-seat', 'default'));
+    expect(entry.environment).toEqual({ version: 1, model: 'the-real-model' });
+    expect(JSON.stringify(entry)).not.toContain('not_a_declared_field');
+    // podIds is the union either way: skipping a row as a SOURCE does not
+    // remove it from the identity's placements.
+    expect(entry.podIds).toEqual(expect.arrayContaining([String(silent.podId), String(real.podId)]));
   });
 
   test('an unscoped call projects every owner, and a scoped one never leaks another owner\'s seat', async () => {
