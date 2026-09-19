@@ -28,7 +28,7 @@ The charter measured at `03597262`. I re-measured at `bd801882`, and four of its
 | `docs/` files mentioning Gemini | 26 | **33** case-insensitive, 22 capitalised | Neither regex gives 26. |
 | `docs/` files on the "old attach flow" | 21 | **21** for `agent attach` | But see finding 1: the shipped CLI still teaches this flow. |
 | docs-site nav groups | 3 | **5** in the Docs tab, plus an API Reference tab | `docs-site/docs.json`. |
-| docs-site screenshots | "0 referenced, 7 unused" | **4 screenshots, all referenced** (5 refs) | The other 3 images are the logos and favicon, which `docs.json` references. None of the 4 screenshots came from the harness, so all 4 get replaced in the last phase. |
+| docs-site screenshots | "0 referenced, 7 unused" | **4 screenshots, all referenced** (5 refs) | The other 3 images are the logos and favicon, which `docs.json` references. The README draws on a separate `screenshots/` directory: 21 files, 4 referenced, 13 referenced nowhere. See **Images**. |
 
 ## Findings that change the plan
 
@@ -58,6 +58,26 @@ Work items by owner (rewrite + delete + ADR status lines): luna-3 44, otto 43, l
 - **delete:** the subject itself is gone (retired gateway, never-shipped integrations, pre-ADR strategy drafts superseded by the ADR series, Jan–Feb plans that shipped or were abandoned). Git keeps the history.
 
 Relative links were checked in all 225 files: 6 are broken, and the table lists them.
+
+## Images
+
+The first cut of this inventory counted only `docs-site/images/`, and that missed the README's source. The README pulls its screenshots from the root `screenshots/` directory (21 files). Wren read every image that the docs surfaces show (#1781 review). The problem is in the pixels, not just a missing harness stamp: they show the retired concepts.
+
+| image | referenced by | what it shows (wren) | verdict |
+|---|---|---|---|
+| `screenshots/real-engineering.png` | `README.md` | a Theo/Nova/Cody room | **delete** now; replace from the harness last |
+| `screenshots/your-team.png` | `README.md` | OPENCLAW badges on 12 of 15 cards, plus a "+ Hire an agent" button | **delete** now; replace from the harness last |
+| `screenshots/agent-identity.png` | `README.md` | Theo tagged OPENCLAW | **delete** now; replace from the harness last |
+| `screenshots/real-artifacts.png` | `README.md` | not singled out by wren; not a harness capture | **delete** with the README rewrite; replace from the harness last |
+| `docs-site/images/home-landing.png` | `introduction.mdx` | hero reads "One memory for Codex" | **delete** now; replace from the harness last |
+| `docs-site/images/agents.png` | `concepts/agents.mdx` | OPENCLAW badges | **delete** now; replace from the harness last |
+| `docs-site/images/dev-team-chat.png` | `introduction.mdx`, `concepts/pods.mdx` | a Theo/Nova/Cody room | **delete** now; replace from the harness last |
+| `docs-site/images/pods-browse.png` | `introduction.mdx` | not a harness capture | **delete** with the intro rewrite; replace from the harness last |
+| 13 others in `screenshots/` (`agent-dm`, `current`, `demo-poster.jpg`, `feed`, `feed-fresh`, `landing`, `login`, `pod-chat`, `pod-chat-fresh`, `pods`, `task-board`, `team-pods`, `team-pods-fresh`) | nothing (`git grep` finds no reference anywhere in the repo) | — | **delete** |
+| `docs-site/logo/*`, `docs-site/favicon.png`, `frontend/src/assets/commonly-logo.png` | `docs.json`, `README.md` | brand marks | **keep** |
+| `docs/design/evidence/*.png` | the PRs and design notes that cite them | harness evidence | **keep** as records |
+
+The rule this adds: an image that shows a retired concept is removed in the same rewrite PR that touches its page. That page ships without a picture until the harness phase. A stale screenshot teaches the wrong product faster than any paragraph can, and "screenshots last" governs when new pixels get added. It is not a reason to keep old ones up. Image deletes belong to the page's writer (quill for README and intro/concepts); the 13 unreferenced files go in otto's delete PR.
 
 ## Full inventory
 
