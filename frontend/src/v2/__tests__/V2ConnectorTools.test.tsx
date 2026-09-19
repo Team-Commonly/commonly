@@ -211,6 +211,28 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
   expect(axios.get).toHaveBeenCalledWith('/api/grants/grant_live/calls', expect.objectContaining({ headers: expect.any(Object) }));
 });
 
+test('TASK-050: a human member in the audience is named, not called "an agent"', async () => {
+  // A pod grant's audience is a snapshot of the room's members, so a human id
+  // is in it; `seats` holds agents only, and the label for anything else said
+  // "an agent" — two humans read as "an agent, an agent, Scout".
+  const withPeople = { ...grantLive, effectiveAudience: ['u1', 'a1'] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [withPeople] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.resolve({ data: {} });
+  });
+  renderTools();
+  const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+  expect(within(live).getByText('sam, Scout may use it · every write asks first')).toBeInTheDocument();
+  expect(screen.queryByText(/an agent/)).not.toBeInTheDocument();
+
+  fireEvent.click(live);
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(aside).getByText('agents allowed').nextElementSibling).toHaveTextContent('sam, Scout');
+});
+
 test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant offers no Revoke', async () => {
   renderTools();
   fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
