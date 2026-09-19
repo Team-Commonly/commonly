@@ -6,7 +6,7 @@
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { createServer } from 'http';
-import { connectMcp, toPiResult, readServers, takeServers, isGrantBrokerUrl, GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { connectMcp, toPiResult, readServers, isGrantBrokerUrl, GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 // A fake MCP Streamable HTTP server: records every request it receives, answers
 // `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
@@ -158,13 +158,76 @@ test('readServers drops an entry that carries both a command and a url', () => {
   expect(readServers(both)).toEqual([]);
 });
 
-test("takeServers reads the server list and unsets it here, so a child spawned with {...process.env} no longer inherits it", () => {
+// The secret channel is fd 3, so the tests that matter have to use a REAL child
+// with a real inherited pipe: whether a descriptor survives into the process, and
+// whether a read consumes it, are properties of the kernel and of Node's stdio
+// setup, not of a function signature. `mode: 'take'` runs the shipped reader;
+// `mode: 'drain'` reads the same descriptor twice WITHOUT closing it, which is
+// the shape that shows the read itself is what removes the secret.
+const CLIENT_MODULE = new URL('../src/lib/adapters/pi-mcp-client.mjs', import.meta.url).href;
+
+const runSecretsProbe = (payload, mode = 'take', extraEnv = null) => new Promise((resolve, reject) => {
+  const script = `
+    import { takeServers } from ${JSON.stringify(CLIENT_MODULE)};
+    import { readFileSync } from 'node:fs';
+    const mode = ${JSON.stringify(mode)};
+    const out = {};
+    if (mode === 'take') {
+      out.servers = takeServers(3);
+    } else {
+      out.first = readFileSync(3, 'utf8');
+      try { out.second = readFileSync(3, 'utf8'); } catch (e) { out.second = 'ERR:' + e.code; }
+    }
+    process.stdout.write(JSON.stringify(out));
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+    stdio: payload === undefined ? ['ignore', 'pipe', 'pipe', 'ignore'] : ['ignore', 'pipe', 'pipe', 'pipe'],
+    // Explicit, not inherited: a `process.env` mutation inside a jest test does
+    // not reach a spawned child (measured — the first version of the
+    // environment test below passed even against a reader that consulted
+    // `process.env.COMMONLY_PI_MCP`, i.e. it could not fail for its own reason).
+    ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
+  });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stderr.on('data', (chunk) => { err += chunk; });
+  if (payload !== undefined) child.stdio[3].end(payload);
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (code !== 0) { reject(new Error(`probe exited ${code}: ${err || out}`)); return; }
+    resolve(JSON.parse(out));
+  });
+});
+
+test('takeServers reads the list off an inherited fd 3 pipe — the channel the child env is not', async () => {
   const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
-  const env = { COMMONLY_PI_MCP: JSON.stringify(list), OTHER: 'kept' };
-  expect(takeServers(env)).toEqual(list);
-  expect('COMMONLY_PI_MCP' in env).toBe(false);
-  expect(env.OTHER).toBe('kept');
-  expect(JSON.stringify(env)).not.toContain('cm_agent_secret');
+  const { servers } = await runSecretsProbe(JSON.stringify(list));
+  expect(servers).toEqual(list);
+});
+
+test('the READ consumes the pipe: a second read of the same descriptor returns no secret', async () => {
+  const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
+  const { first, second } = await runSecretsProbe(JSON.stringify(list), 'drain');
+  expect(JSON.parse(first)).toEqual(list);
+  // Measured: the descriptor is at EOF, so the second read yields '' (a partial
+  // read is what would leave the remainder readable).
+  expect(second).not.toContain('cm_agent_secret');
+});
+
+test('with no fd 3 at all the bridge gets no servers instead of throwing', async () => {
+  // Node opens that entry as an ignored descriptor, so the read fails with ENXIO.
+  // The reader must swallow it AND not close it: closing an ignored descriptor
+  // aborts the process on macOS (see takeServers), which would crash the seat.
+  const { servers } = await runSecretsProbe(undefined);
+  expect(servers).toEqual([]);
+});
+
+test('the environment channel is gone: COMMONLY_PI_MCP in the env is ignored', async () => {
+  const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
+  // Given to the child explicitly, so the child really does hold the variable.
+  const { servers } = await runSecretsProbe(undefined, 'take', { COMMONLY_PI_MCP: JSON.stringify(list) });
+  expect(servers).toEqual([]);
 });
 
 test('initialize → tools/list → tools/call over Streamable HTTP, with the declared bearer header and the negotiated session', async () => {
@@ -290,10 +353,13 @@ test('a server that never answers times out instead of hanging the seat', async 
 });
 
 // Presence guard, not a behaviour test: the bridge imports `typebox`, which resolves only
-// inside pi's extension loader, so jest cannot load it. This pins that it takes (and so
-// deletes) the list rather than only reading it.
-test('the bridge takes the server list rather than reading it in place', () => {
+// inside pi's extension loader, so jest cannot load it. This pins that it reads the list
+// off the fd-3 channel — and that it does not read `process.env`, which is the leak this
+// channel replaced.
+test('the bridge takes the server list off its inherited pipe, not out of its environment', () => {
   const bridge = readFileSync(new URL('../src/lib/adapters/pi-commonly-mcp.mjs', import.meta.url), 'utf8');
-  expect(bridge).toContain('takeServers(process.env)');
+  expect(bridge).toContain('takeServers()');
+  expect(bridge).not.toMatch(/takeServers\(process\.env/);
   expect(bridge).not.toMatch(/readServers\(process\.env/);
+  expect(bridge).not.toContain('COMMONLY_PI_MCP');
 });

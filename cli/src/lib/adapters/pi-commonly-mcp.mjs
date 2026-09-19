@@ -1,8 +1,9 @@
 /**
  * pi extension: Commonly's tools for a pi seat, over MCP.
  *
- * Loaded by adapters/pi.js with `-e`. Reads COMMONLY_PI_MCP — a JSON list of
- * `{ name, command: [...], env: {...} }` for stdio servers and
+ * Loaded by adapters/pi.js with `-e`. Reads fd 3 — a pipe the adapter writes the
+ * JSON into and ends at spawn, never the environment (see takeServers) — a JSON
+ * list of `{ name, command: [...], env: {...} }` for stdio servers and
  * `{ name, url, headers: {...} }` for Streamable HTTP ones — connects to each,
  * asks it for its tools, and registers every one with pi under its own name, so
  * a pi seat calls `commonly_post_message` exactly as a claude or codex seat
@@ -20,9 +21,16 @@ import { Type } from 'typebox';
 import { connectMcp, takeServers, toPiResult } from './pi-mcp-client.mjs';
 
 export default async function commonlyMcpBridge(pi) {
-  // Read once and remove: the list carries the seat token, and pi's bash tool
-  // inherits this process's env (see takeServers).
-  const servers = takeServers(process.env);
+  // Read once and consume: the read drains the pipe, so the list (which carries
+  // the seat token) does not survive anywhere in this process that a child could
+  // reach — not the environment, which is why it does not arrive that way.
+  const servers = takeServers();
+  // The adapter loads this extension only when it has a list to hand over, so an
+  // empty read means the channel itself failed. Say so: the symptom otherwise is
+  // a seat that silently has no commonly_* tools at all.
+  if (!servers.length) {
+    process.stderr.write('[commonly-pi-bridge] no server list on fd 3 — this seat has no commonly_* tools\n');
+  }
   const clients = [];
   for (const server of servers) {
     const client = connectMcp(server);

@@ -18,6 +18,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { closeSync, readFileSync } from 'node:fs';
 
 /**
  * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
@@ -166,14 +167,10 @@ const parseMessages = (text, contentType) => {
  *
  * `headers` is where a declared `Authorization` arrives, already substituted
  * with the seat's runtime token by the adapter. The token therefore rides in an
- * HTTP header built from the JSON list the bridge takes out of its own
- * environment (see takeServers) and never on argv. NOT on argv is the whole of
- * that guarantee: deleting the variable from the bridge's own process scrubs
- * Node's copy, not the kernel's, so a same-user child of this process can still
- * read the parent's environment (`ps eww $PPID`, `/proc/$PPID/environ`) and find
- * both the token and the server list. Treat this as "not in argv" and not as a
- * secrecy boundary; the fix is to hand the list over a 0600 file the bridge
- * unlinks on load (row filed against the bridge's env channel, Vera, Connectors).
+ * HTTP header built from the JSON list the bridge reads off its own fd 3 (see
+ * takeServers) — never on argv, and never in this process's environment, which a
+ * same-user child of this process can read back whole (`ps eww $PPID`,
+ * `/proc/$PPID/environ`) no matter what this process deletes from its own copy.
  */
 export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.fetch, timeoutMs = 60_000 } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error(`${name}: no fetch implementation for the HTTP MCP transport`);
@@ -278,23 +275,58 @@ export const toPiResult = (result) => {
 };
 
 /**
- * Read the server list and REMOVE it from the environment. The list carries every
- * server's substituted secrets — a stdio server's env and an HTTP server's
- * `Authorization` header, the seat's bearer token among them — and pi's `bash`
- * tool spawns with `{ ...process.env }` (pi's getShellEnv), so leaving it in place
- * lets one `env` from the model print the token. The clients already hold what
- * they need from spawn time; nothing else reads this variable.
+ * Read the server list off the inherited pipe on `fd` and CONSUME it.
  *
- * What this does NOT do is hide the value from a process that reads the parent's
- * environment directly: `delete` removes the key from this process's own copy,
- * while the kernel keeps the copy this process was started with, so
- * `ps eww $PPID` on macOS and `/proc/$PPID/environ` on Linux still show it to a
- * same-user child. This closes the accidental vector, not a determined one.
+ * The list carries every server's substituted secrets — a stdio server's env and
+ * an HTTP server's `Authorization` header, the seat's bearer token among them —
+ * and pi's `bash` tool spawns with `{ ...process.env }` (pi's getShellEnv), so it
+ * has to arrive by a channel pi's children do not inherit and must not outlive
+ * the read. It arrives here as fd 3: a pipe the adapter writes the JSON into and
+ * ends at spawn (pi.js runPi). This reads it to EOF and closes the descriptor.
+ *
+ * WHY NOT THE ENVIRONMENT, which is what this replaced: deleting the variable
+ * scrubbed Node's copy only, while the kernel keeps the environment this process
+ * was STARTED with, so a same-user child still read the token back with
+ * `ps eww $PPID` on macOS and `/proc/$PPID/environ` on Linux. Unsetting it at
+ * spawn cannot help either, because this runs inside the pi process that holds
+ * it. WHY NOT a 0600 file the bridge unlinks on load: the mode protects nothing
+ * against a same-user reader, and that shape needs both the unlink and a close
+ * to leave no window, since `/proc/<pid>/fd` on Linux still reaches an unlinked
+ * inode. A pipe has neither a path nor a stored copy.
+ *
+ * THE READ IS WHAT REMOVES THE SECRET, not the close: a pipe is consumed, so a
+ * second reader gets nothing. Measured against pi 0.84.1 — after a read to EOF
+ * a second read of the same descriptor returned zero bytes, while a 5-byte
+ * partial read left the remainder readable. Closing afterwards is hygiene.
+ *
+ * Two further measurements this rests on, both against pi 0.84.1: pi does not
+ * close inherited descriptors before loading extensions, so fd 3 is still open
+ * here (this runs at extension load, before the first model turn — and before
+ * any bash tool can run); and pi's own spawns (`dist/core/tools/bash.js`,
+ * `dist/core/exec.js`) pass a THREE-element stdio list, so a shell tool child
+ * does not inherit fd 3 at all.
+ *
+ * An unreadable descriptor yields no servers rather than throwing: a seat whose
+ * bridge cannot read its list should run without Commonly tools, not fail to
+ * start. The bridge logs that empty result (pi-commonly-mcp.mjs).
+ *
+ * The descriptor is closed only after a successful read, and that is not
+ * tidiness: on macOS, `closeSync` on the descriptor Node opens for an `'ignore'`
+ * stdio entry aborts the process — measured 2026-09-19, Node 20 — with
+ * `Assertion failed: (errno == EINTR), function uv__io_poll, file kqueue.c`,
+ * where the read itself had already failed harmlessly with `ENXIO`. A close in
+ * `finally` therefore turns "no channel" into a SIGABRT in the seat.
  */
-export const takeServers = (env = process.env) => {
-  const servers = readServers(env.COMMONLY_PI_MCP);
-  delete env.COMMONLY_PI_MCP;
-  return servers;
+export const takeServers = (fd = 3) => {
+  let raw = null;
+  try {
+    raw = readFileSync(fd, 'utf8');
+  } catch {
+    // Nothing to close: the read failed, so this was not a descriptor we consumed.
+    return [];
+  }
+  try { closeSync(fd); } catch { /* already closed */ }
+  return readServers(raw);
 };
 
 /**
