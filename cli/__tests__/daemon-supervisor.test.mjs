@@ -101,6 +101,43 @@ describe('tick', () => {
     ]);
   });
 
+  // TASK-019: the server's /assigned row carries podIds as the UNION of the
+  // pods this seat's owner installed it into, and a token record can hold one
+  // pod, so the daemon reduces the union. What is pinned here is the REDUCER
+  // (`podIds?.[0]`, or null when the server declares none) and not which pod
+  // the server put first: that ordering is the projection's business
+  // (backend/routes/agentBinding.ts:394, whose find carries no sort), so this
+  // is a witness for whichever change makes the projection deterministic
+  // rather than a lock on today's accident.
+  // The union is deliberately OUT OF ORDER. In an alphabetical fixture
+  // `podIds[0]` and `[...podIds].sort()[0]` agree, so a client-side sort would
+  // pass while making a second ordering decision the daemon has no business
+  // making (VERA, 2026-09-18: the sort mutation survived until this fixture
+  // was reordered). The daemon takes the first element it is given.
+  test('binds the local record to the first pod of the server-side union, not the smallest id (TASK-019)', async () => {
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ podIds: ['pod-b', 'pod-a', 'pod-c'] })],
+    });
+    await supervisor.tick();
+    expect(saveToken.mock.calls[0][1].podId).toBe('pod-b');
+  });
+
+  // The other half of the same reduction, and the half nothing exercised
+  // until now: the only fixture in this file declares exactly one pod. A seat
+  // the server declares no pod for must bind null rather than inherit a pod
+  // from anywhere — `row.podIds?.[0] || null` is the whole decision — and both
+  // shapes of "declares none" are covered here on purpose: an empty union and
+  // a row with no podIds field at all.
+  test('binds null when the server declares no pod for the seat', async () => {
+    for (const podIds of [[], undefined]) {
+      const { supervisor, saveToken } = makeHarness({
+        rows: () => [boundRow({ podIds })],
+      });
+      await supervisor.tick();
+      expect(saveToken.mock.calls[0][1]).toHaveProperty('podId', null);
+    }
+  });
+
   test('a declared model lands in the token record environment', async () => {
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus' } })],
