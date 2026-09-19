@@ -9,6 +9,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
+import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -164,11 +165,19 @@ const grantBrokerServer = (grantId: string, name: string): Record<string, unknow
  * effect on the next daemon poll without rewriting every AgentInstallation.
  * Pod grants additionally require the seat to remain a member of the target
  * pod (the grant's audience is a mint-time snapshot).
+ *
+ * The grant is external reach, so it is only injected into an environment that
+ * can confine it: a seat whose declaration no host would confine gets NO
+ * broker servers and a typed refusal instead (TASK-063 — fail closed rather
+ * than hand a seat a capability it cannot be held to). The refusal is a
+ * top-level field on the assignment row, never inside `environment`, because
+ * that object is spec-validated and handed to the adapter as-is.
  */
+type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
 const grantServersForIdentities = async (
   identities: AssignedIdentity[],
   entries: Map<string, AssignmentEntry>,
-): Promise<Map<string, Record<string, unknown>[]>> => {
+): Promise<Map<string, IdentityGrantProjection>> => {
   const identityIds = identities
     .map((identity) => String(identity._id || ''))
     .filter(Boolean);
@@ -198,7 +207,7 @@ const grantServersForIdentities = async (
     ]),
   );
 
-  const output = new Map<string, Record<string, unknown>[]>();
+  const output = new Map<string, IdentityGrantProjection>();
   for (const identityId of identityIds) {
     const entry = identities
       .find((identity) => String(identity._id || '') === identityId);
@@ -218,7 +227,9 @@ const grantServersForIdentities = async (
         .map((server: Record<string, unknown>) => server?.name)
         .filter((name: unknown): name is string => typeof name === 'string'),
     );
+    const refusal = grantBrokerRefusal(assigned.environment);
     const servers: Record<string, unknown>[] = [];
+    let refused = false;
     for (const grant of grants) {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
       const target = grant.target || {};
@@ -229,13 +240,21 @@ const grantServersForIdentities = async (
         && installedPods.has(targetId)
         && podMembers.get(targetId)?.has(identityId);
       if (!grantId || !inAudience || (!seatTarget && !podTarget)) continue;
+      if (refusal) {
+        // The grant is live and applies to this seat; the seat cannot be held
+        // to it, so it is withheld rather than projected unenforced.
+        refused = true;
+        continue;
+      }
 
       let serverName = GRANT_BROKER_ID;
       if (usedNames.has(serverName)) serverName = `${GRANT_BROKER_ID}-${grantId}`;
       usedNames.add(serverName);
       servers.push(grantBrokerServer(grantId, serverName));
     }
-    if (servers.length) output.set(identityId, servers);
+    if (servers.length || refused) {
+      output.set(identityId, { servers, refusal: refused ? refusal : null });
+    }
   }
   return output;
 };
@@ -438,7 +457,8 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       // user's) never appears in this daemon's work list.
       if (!entry) return [];
       const agentId = String(identity._id || '');
-      const brokerServers = grantServers.get(agentId) || [];
+      const grantProjection = grantServers.get(agentId);
+      const brokerServers = grantProjection?.servers || [];
       const environment = entry.environment
         ? {
           ...entry.environment,
@@ -460,6 +480,10 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         podIds: entry.podIds,
         runtime: entry.runtime,
         ...(environment ? { environment } : {}),
+        // Why a live grant is not on this row, for the daemon that would
+        // otherwise have to guess: server-side refusals only (a daemon-side
+        // refusal is a separate reporting channel, TASK-063).
+        ...(grantProjection?.refusal ? { grantBrokerRefusal: grantProjection.refusal } : {}),
       }];
     });
     return res.json({ agents });
