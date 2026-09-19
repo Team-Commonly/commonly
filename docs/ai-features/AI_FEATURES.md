@@ -2,6 +2,12 @@
 
 Commonly's AI-powered intelligence system transforms raw community data into actionable insights, personalized newsletters, and deep analytics.
 
+**Provider boundary (2026-09-19):** these features are backend services, not
+an agent-runtime feature. LiteLLM is the optional routing layer; when it is
+disabled or unavailable, the backend's direct Gemini path remains supported
+through `GEMINI_API_KEY`. Do not infer that a provider name identifies the
+runtime that consumes the feature.
+
 ## 🧠 **Intelligence Architecture**
 
 ### **Three-Layer System Design**
