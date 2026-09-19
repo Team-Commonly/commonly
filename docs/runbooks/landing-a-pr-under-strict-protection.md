@@ -97,6 +97,17 @@ green run throws nothing away, so keeping the log is only paid on the run that
 matters — and a flake you cannot explain is a flake the next person does not
 believe.
 
+**And green re-runs bound a flake, they do not identify it.** The same incident's
+follow-up: a peer re-ran the set 10 times and got 108/108 every time, and the
+first reading of that — mine — was that the cause was dead. It is not. At the
+observed rate, about 1 failure in 8 runs, four clean runs happen **59%** of the
+time (`(7/8)^4`) and ten clean runs **26%** (`(7/8)^10`) even if the flake is
+fully causal. "0 in 10" sounds like exoneration and is compatible with the thing
+it was meant to rule out.
+
+Counting green runs bounds the rate (roughly `3/n` at 95%); it never tells you
+*why*. Report re-run counts as a bound, not as a verdict.
+
 ## The window, and why it feels like a treadmill
 
 Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
