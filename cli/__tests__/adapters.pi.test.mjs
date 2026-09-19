@@ -257,9 +257,13 @@ describe('helpers', () => {
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // The same path under a name that means nothing to the predicate.
       expect(resolveMcpServers([{ name: 'commonly', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/other', headers: tokenHeader }], ctx)).toEqual([]);
-      // Both refusals state the reason the server gives (wren 69829), so the log
-      // line and the grant read can be read side by side.
-      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(2);
+      // And the uppercased spelling of that path, which the express route serves
+      // from the same handler — the spelling a case-sensitive predicate let
+      // through with the real token attached (Vera 69839).
+      expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/API/MCP/GRANTS/g1', headers: tokenHeader }], ctx)).toEqual([]);
+      // All three refusals state the reason the server gives (wren 69829), so the
+      // log line and the grant read can be read side by side.
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(3);
       // CONTROL: the name alone refuses nothing. An entry CALLED
       // `commonly-grant-broker` on a path that is not the broker's is carried,
       // so this cannot decay into a name match.

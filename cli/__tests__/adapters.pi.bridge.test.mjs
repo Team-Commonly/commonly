@@ -111,6 +111,7 @@ test('a grant broker entry is dropped by readServers as well as by the adapter',
   expect(readServers(JSON.stringify([
     { name: 'commonly-grant-broker', url: 'https://api.example/api/mcp/grants/g1' },
     { name: 'commonly', url: 'https://api.example/api/mcp/grants/other' },
+    { name: 'uppercased', url: 'https://api.example/API/MCP/GRANTS/g1' },
     { name: 'remote', url: 'https://api.example/mcp' },
     { name: 'sibling', url: 'https://api.example/api/mcp/grants-archive/x' },
   ]))).toEqual([
@@ -123,10 +124,16 @@ test('isGrantBrokerUrl matches the broker path and nothing that merely resembles
   expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/g1')).toBe(true);
   expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/')).toBe(true);
   expect(isGrantBrokerUrl('https://api.example/api/mcp/grants/g1/calls')).toBe(true);
+  // The route this mirrors is served case-insensitively (express's default), so
+  // the uppercased spelling reaches the broker on the live API and must be
+  // refused here too (Vera 69839).
+  expect(isGrantBrokerUrl('https://api.example/API/MCP/GRANTS/g1')).toBe(true);
+  expect(isGrantBrokerUrl('https://api.example/Api/Mcp/Grants/g1')).toBe(true);
   // The bare collection path is not a broker URL (the route needs a grant id),
-  // and a sibling segment is a different path entirely.
+  // and a sibling segment is a different path entirely — in any case.
   expect(isGrantBrokerUrl('https://api.example/api/mcp/grants')).toBe(false);
   expect(isGrantBrokerUrl('https://api.example/api/mcp/grants-archive/x')).toBe(false);
+  expect(isGrantBrokerUrl('https://api.example/API/MCP/GRANTS-ARCHIVE/x')).toBe(false);
   expect(isGrantBrokerUrl('https://api.example/mcp')).toBe(false);
   expect(isGrantBrokerUrl('not a url')).toBe(false);
   expect(isGrantBrokerUrl(undefined)).toBe(false);

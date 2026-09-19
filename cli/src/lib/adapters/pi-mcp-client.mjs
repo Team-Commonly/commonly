@@ -44,9 +44,24 @@ export const GRANT_BROKER_PATH = '/api/mcp/grants/';
  */
 export const GRANT_BROKER_REFUSAL = 'grant_broker_unconfined: adapter_cannot_confine';
 
+/**
+ * Is this url the instance's grant broker? Path-keyed, and the comparison is
+ * case-INSENSITIVE because the route it mirrors is: express matches paths
+ * case-insensitively unless `caseSensitive` is set, so the live API answers
+ * `/API/MCP/GRANTS/x` from the same handler as `/api/mcp/grants/x` (measured
+ * 2026-09-19: POST both → 401, POST `/api/nothing/x` → 404, i.e. the control is
+ * what distinguishes a matched route from a missing one). A case-sensitive
+ * predicate therefore refuses the spelled-canonically broker and hands pi the
+ * uppercased spelling of it — the real runtime token included. Vera measured
+ * exactly that against the running instance (69839).
+ *
+ * Case is the only spelling the router forgives: `%67rants`, `//`, `./` and
+ * `GRANTS%2F` all 404 on the live API, and a trailing slash is already inside
+ * the prefix.
+ */
 export const isGrantBrokerUrl = (url) => {
   try {
-    return new URL(url).pathname.startsWith(GRANT_BROKER_PATH);
+    return new URL(url).pathname.toLowerCase().startsWith(GRANT_BROKER_PATH);
   } catch {
     return false;
   }
