@@ -121,6 +121,13 @@ const resolveGranters = async (connectionIds: string[]): Promise<Map<string, str
  *
  *  - `seat`          the seat's environment was resolved and judged; `null`
  *                    means checked and not refused.
+ *  - `not_installed` the seat resolved to a governing owner, but that owner
+ *                    has no installation of THIS identity and instance, so the
+ *                    projection carries no row for the seat: nothing is
+ *                    delivered to it and there is nothing to judge. Covers
+ *                    both an owner with no installations and an owner whose
+ *                    installations are all for other seats — what makes the
+ *                    arm true is that THIS seat has no row (Vera 69890).
  *  - `unbound`       the seat could not be resolved to a governing
  *                    installation — it names no machine, or no identity to
  *                    bind — so NOTHING was judged. Deliberately not resolved
@@ -132,7 +139,7 @@ const resolveGranters = async (connectionIds: string[]): Promise<Map<string, str
  *                    applies it per seat, so there is no single verdict to
  *                    report here.
  */
-export type GrantBrokerRefusalScope = 'seat' | 'unbound' | 'not_evaluated';
+export type GrantBrokerRefusalScope = 'seat' | 'not_installed' | 'unbound' | 'not_evaluated';
 
 export interface GrantBrokerConfinement {
   refusal: GrantBrokerRefusal | null;
@@ -187,10 +194,14 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
       entries.set(cacheKey, byIdentity.get(key) || null);
     }
     const entry = entries.get(cacheKey);
-    confinements.set(grant.grantId, {
-      refusal: entry ? grantBrokerRefusal(entry.environment, entry.runtime) : null,
-      scope: 'seat',
-    });
+    // No entry means the owner's projection holds no row for this seat at all,
+    // so the daemon is handed nothing and the broker reaches nobody. Reporting
+    // that as `seat` + null would say "judged, not refused" about a seat that
+    // was never delivered — the same two-meanings conflation the scope field
+    // exists to prevent (Vera 69890).
+    confinements.set(grant.grantId, entry
+      ? { refusal: grantBrokerRefusal(entry.environment, entry.runtime), scope: 'seat' }
+      : { refusal: null, scope: 'not_installed' });
   }
   return confinements;
 };

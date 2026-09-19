@@ -84,9 +84,10 @@ const trailRow = (over = {}) => ({
 // `grantBrokerRefusal` + its scope are the TASK-063 addition: the read now says
 // whether the daemon-facing projection would withhold the broker from this
 // seat. The scope is part of the contract on purpose — it says WHAT was judged
-// (`seat` / `unbound` / `not_evaluated`), so a null refusal cannot mean both
-// "checked, fine" and "never looked" (Vera 69881). A DAEMON-side refusal still
-// reaches no surface, so the pair says nothing about liveness either.
+// (`seat` / `not_installed` / `unbound` / `not_evaluated`), so a null refusal
+// cannot mean both "checked, fine" and "never looked" (Vera 69881, 69890). A
+// DAEMON-side refusal still reaches no surface, so the pair says nothing about
+// liveness either.
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
   'expiresAt', 'revokedAt', 'revokedBy', 'parentGrantId', 'rootGrantId', 'createdAt', 'grantedBy',
   'grantBrokerRefusal', 'grantBrokerRefusalScope'];
@@ -425,15 +426,48 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
   });
 
-  test("a bound seat its owner has not installed resolves, and resolves to nothing withheld", async () => {
-    // The machine's owner has no installation for this identity, so the daemon
-    // is handed no row for the seat at all. That is a VERDICT from an
-    // authoritative scope, not an unresolved seat: it must not read as
-    // 'unbound', or every such seat would look unpolled.
+  test('a bound seat with no installation under its owner is reported as not installed', async () => {
+    // INVERTED DELIBERATELY (Vera 69890). This test previously asserted
+    // `seat` + null here, reading as "judged, the broker reaches it". It is a
+    // verdict from an authoritative scope but not a verdict about a REFUSAL:
+    // the owner's projection holds no row for this seat, so the daemon is
+    // handed nothing and nothing was ever judged.
     const { row } = await seedSeatGrant({ adapter: 'pi', machineOwner: new mongoose.Types.ObjectId() });
     const res = await read(row.grantId);
     expect(res.body.grantBrokerRefusal).toBeNull();
-    expect(res.body.grantBrokerRefusalScope).toBe('seat');
+    expect(res.body.grantBrokerRefusalScope).toBe('not_installed');
+
+    // CONTROL: the same fixture whose owner DID install the seat is judged, so
+    // the arm above is about this seat having no row rather than about
+    // resolution failing or a missing installation on the branch.
+    const installed = await seedSeatGrant({ adapter: 'pi' });
+    const judged = await read(installed.row.grantId);
+    expect(judged.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(judged.body.grantBrokerRefusalScope).toBe('seat');
+  });
+
+  test('an owner installed for OTHER seats still leaves this one not installed', async () => {
+    // The second shape of the same arm: the owner has active installations, so
+    // the scope resolves and the projection is non-empty — but none of them is
+    // this identity + instance. What makes `not_installed` true is that THIS
+    // seat has no row, not that the owner has no rows.
+    const { row, machineId } = await seedSeatGrant({ adapter: 'pi' });
+    const stranger = await User.create({
+      username: `o${Math.random().toString(36).slice(2, 8)}`, email: 'o@x.com', password: 'x'.repeat(12),
+    });
+    await AgentInstallation.create({
+      agentName: `${AGENT}-elsewhere`, instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', installedBy: stranger._id,
+      config: {
+        runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+        environment: { version: 1, sandbox: { mode: 'workspace', trust: 'public' } },
+      },
+    });
+    await Machine.updateOne({ machineId }, { $set: { ownerUserId: stranger._id } });
+
+    const res = await read(row.grantId);
+    expect(res.body.grantBrokerRefusal).toBeNull();
+    expect(res.body.grantBrokerRefusalScope).toBe('not_installed');
   });
 
   test('the pod grant list carries the same refusal, from the same projection', async () => {
