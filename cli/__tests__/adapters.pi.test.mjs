@@ -14,6 +14,7 @@ import { EventEmitter } from 'events';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMock, spawn: jest.fn() }));
@@ -183,7 +184,7 @@ describe('spawn', () => {
       expect(calls[0].opts.env.COMMONLY_PI_MCP).toBeUndefined();
       expect(calls[0].args).not.toContain('-e');
       expect(JSON.stringify(calls[0].opts.env)).not.toContain('cm_agent_secret');
-      expect(warn.mock.calls.join(' ')).toContain('grant broker');
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
@@ -256,7 +257,9 @@ describe('helpers', () => {
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // The same path under a name that means nothing to the predicate.
       expect(resolveMcpServers([{ name: 'commonly', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/other', headers: tokenHeader }], ctx)).toEqual([]);
-      expect(warn.mock.calls.join(' ')).toContain('grant broker');
+      // Both refusals state the reason the server gives (wren 69829), so the log
+      // line and the grant read can be read side by side.
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(2);
       // CONTROL: the name alone refuses nothing. An entry CALLED
       // `commonly-grant-broker` on a path that is not the broker's is carried,
       // so this cannot decay into a name match.

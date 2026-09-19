@@ -32,6 +32,18 @@ import { spawn } from 'node:child_process';
  */
 export const GRANT_BROKER_PATH = '/api/mcp/grants/';
 
+/**
+ * The reason string BOTH halves of this refusal use, verbatim from the server's
+ * typed refusal (`backend/services/grantBrokerConfinement.ts`: code
+ * `grant_broker_unconfined`, reason `adapter_cannot_confine`). wren's ruling
+ * (69829): "Same reason string on both halves" — so a daemon log line and the
+ * server's `grantBrokerRefusal` field can be read side by side, and neither
+ * layer grows a vocabulary the other one does not have. Mirrored rather than
+ * imported: this package does not depend on the backend, so the literal is
+ * pinned by a test instead.
+ */
+export const GRANT_BROKER_REFUSAL = 'grant_broker_unconfined: adapter_cannot_confine';
+
 export const isGrantBrokerUrl = (url) => {
   try {
     return new URL(url).pathname.startsWith(GRANT_BROKER_PATH);
@@ -288,9 +300,10 @@ export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 
 export const readServers = (raw) => {
   if (!raw) return [];
   try {
-    // The broker is dropped here as well as in pi.js: this is the last layer
-    // before a client is started, and the two filters have to agree or a server
-    // reaches the bridge as an entry the adapter would not have carried.
+    // The broker is dropped here as well as in pi.js (same reason string, see
+    // GRANT_BROKER_REFUSAL): this is the last layer before a client is started,
+    // and the two filters have to agree or a server reaches the bridge as an
+    // entry the adapter would not have carried.
     return JSON.parse(raw).filter((s) => s?.name
       && (isStdioServer(s) || (isHttpServer(s) && !isGrantBrokerUrl(s.url))));
   } catch { return []; }

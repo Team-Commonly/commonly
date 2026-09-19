@@ -39,7 +39,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { isGrantBrokerUrl } from './pi-mcp-client.mjs';
+import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -176,7 +176,7 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
       // the two on different clocks.
       if (isGrantBrokerUrl(url)) {
         // eslint-disable-next-line no-console
-        console.warn(`[pi] refusing the grant broker '${server.name}': pi has no enforced sandbox, so this seat must not act with a granter's authority — move the seat to the claude or codex adapter, or remove the grant`);
+        console.warn(`[pi] ${GRANT_BROKER_REFUSAL} — refusing the grant broker '${server.name}': pi has no enforced sandbox, so this seat must not act with a granter's authority — move the seat to the claude or codex adapter, or remove the grant`);
         continue;
       }
       carried.push({

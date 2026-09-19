@@ -6,7 +6,7 @@
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { createServer } from 'http';
-import { connectMcp, toPiResult, readServers, takeServers, isGrantBrokerUrl } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { connectMcp, toPiResult, readServers, takeServers, isGrantBrokerUrl, GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 // A fake MCP Streamable HTTP server: records every request it receives, answers
 // `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
@@ -130,6 +130,16 @@ test('isGrantBrokerUrl matches the broker path and nothing that merely resembles
   expect(isGrantBrokerUrl('https://api.example/mcp')).toBe(false);
   expect(isGrantBrokerUrl('not a url')).toBe(false);
   expect(isGrantBrokerUrl(undefined)).toBe(false);
+});
+
+// wren 69829: "Same reason string on both halves." The server's typed refusal is
+// `{code: 'grant_broker_unconfined', reason: 'adapter_cannot_confine'}` in
+// backend/services/grantBrokerConfinement.ts; this package cannot import the
+// backend, so the pairing is pinned here instead — a reworded daemon warning now
+// fails a test rather than quietly drifting away from the field a human reads on
+// the grant.
+test('the daemon half states the server half\'s reason verbatim', () => {
+  expect(GRANT_BROKER_REFUSAL).toBe('grant_broker_unconfined: adapter_cannot_confine');
 });
 
 // The wire is built by resolveMcpServers, which now emits exactly one of
