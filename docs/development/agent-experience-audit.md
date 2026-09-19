@@ -3791,3 +3791,164 @@ paragraph where the consumer is not. Rule: when a doc exists to explain a
 failure that a bare dependency error will produce, put the pointer at the
 failure, not only in the doc — and state removals as measured boundaries, not as
 the version of the machine you happened to hit them on.
+
+## 58. Two workflows, one directory, opposite policies on stacked PRs (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl holding TASK-133's fix behind TASK-131's PR,
+reading `.github/workflows/pr-base-freshness.yml` for guidance on where to open
+it; verification: the same file's comment, `.github/workflows/pr-base-guard.yml`
+(job `base-is-main`, no `branches` filter), and the measured per-PR check counts
+(14 checks on a `main`-based PR, 5 on the stacked child).*
+
+`pr-base-freshness.yml` carries a comment explaining that it is scoped to
+`base=main` with `edited` in its trigger list *precisely* so that "a stacked PR
+retargeted to main after its parent merges enters this guard's population". Read
+alone, that is an endorsement: the guard has been written to handle stacked
+children at the retarget moment, so stacking is a supported way to land a
+dependent change. I opened #1732 with its base set to the parent branch on the
+strength of it, and said so in the pod as "the repo-idiomatic answer".
+
+`pr-base-guard.yml`, in the same directory, fails any PR whose base is not
+`main`, and says so in its own remedy text: *"if the parent must land first, say
+so on the PR and land it, but do not merge this against an un-CI'd base."* The
+freshness comment was not wrong — a retarget genuinely is an event that guard
+must handle — but it describes a consequence, and the policy that forbids the
+setup lives next door. Two guards, one of which never saw the child at all: the
+stacked PR ran 5 checks against 14, skipping CodeQL, the stale-base guard and the
+version guard, so its green was short rather than clean.
+
+**Repair:** `docs/runbooks/landing-a-pr-under-strict-protection.md` states the
+policy as the base guard defines it, names the `--onto` rebase needed when the
+parent was squash-merged, and carries the measured 14-vs-5 check counts so the
+"short green" is a number rather than a suspicion. Rule: when a workflow's
+comment explains how it handles a case, that is not the same as the repo allowing
+the case — grep the workflow directory for a guard whose *job is to reject it*,
+and count the checks a child actually runs before calling a green clean.
+
+## 59. `create_task` returned someone else's title, and `alreadyExists: false` made it read as success (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl filing a follow-up row with `sourceRef: '1728'`
+while a DONE row already carried that ref; verification: the returned object
+(`{ alreadyExists: false, reopened: true, task: <TASK-133> }`), then
+`backend/routes/tasksApi.ts:253-285`. Repair: PR #1748.*
+
+The tool description documents `sourceRef` as provenance — the create update
+reads `Created by <author> from <sourceRef>`, and that is what every caller here
+uses it for. Measured behaviour: with a `sourceRef`, the route looks up any task
+in the pod with that ref and, when the match is settled, reopens it in place.
+That reopen is deliberate (a bug filed from a PR whose source became active
+again), but two of its side effects were not reported and one was destructive:
+
+- **The submitted title was discarded and never compared.** Nothing in the
+  branch read `title`. The response returned the pre-existing row's title. A
+  caller cannot see this without diffing its own request against the response —
+  a comparison no caller makes, because the call succeeded.
+- **`alreadyExists: false` on a call that created nothing.** It reads as
+  "nothing existed before"; the true statement was two fields over, in
+  `reopened: true`. A success shape whose fields point in opposite directions
+  gets read by whichever field the caller already believes.
+- **`notes` was replaced with one sentence**, destroying a completed row's
+  writeup. `updates` survived, which is the only reason the text was
+  recoverable — and it was only recoverable because a `get_tasks` read taken
+  minutes earlier was still in the calling session.
+
+The generalisable failure is not the reopen. It is that **a write tool's success
+shape can describe a different call than the one that ran**, and nothing in the
+description of `sourceRef` hinted that the field doubles as an idempotency key
+that can reach into settled history. A caller who reads the tool description and
+the response, and not the route, is correctly informed by neither.
+
+**Repair:** PR #1748 moves the previous `notes` into the append-only history
+before the reopen note replaces them, reports a differing submitted title in
+both `notes` and the history, and documents the branch. The semantics question —
+whether a differing title should reopen at all — is left on TASK-134 as a human
+ruling rather than guessed at. Rule: when an idempotency key can match a row the
+caller did not intend, the response must name what it matched; a boolean pair
+(`alreadyExists` / `reopened`) is not a substitute for telling the caller that
+the object it just received is not the one it asked for.
+
+## 60. `pending` is an offer to every peer, not a holding state (2026-09-19, sprint-impl / sprint-review)
+
+*Origin observation: sprint-impl holding TASK-134 and TASK-135 across ~17 hours
+of lease renewals, then releasing them; sprint-review reading the resulting
+kernel wake from outside. Verification: the two rows' `updates` histories, the
+kernel's unclaimed-work wake text, and PRs #1748 / #1751, both gated green
+before the release.*
+
+Both rows were finished: their PRs were open, gated and awaiting only a human
+merge press. Holding them `claimed` meant renewing every thirty minutes, and
+each renewal returned the row's whole history — roughly 23k characters, twice
+per cycle — to do nothing. Releasing felt like the honest state for work its
+owner was no longer touching.
+
+The release is what broke it. The kernel immediately relisted both as unclaimed
+work and woke the pod with *"lapsed from sprint-impl — check their work before
+starting"*. That wake does not go to the owner; it goes to **every agent
+installed in the pod**. From outside, the row says a task is pending and
+unowned, and says nothing about a gated PR sitting one press from landing. The
+review seat had to read both PRs and post into the pod that the rows were not
+abandoned, specifically so no peer restarted finished work. A misleading status
+does not merely cost its owner a wake — it invites a peer to duplicate work that
+is already complete, and the row gives that peer nothing to catch the mistake
+with.
+
+The false model is that `pending` is neutral: a shelf to leave something on
+while the world catches up. It is not a shelf. `pending` with no owner is the
+one state the kernel actively advertises to everyone as available work, so for a
+finished-but-unmerged row it is *less* accurate than `done`. The convention
+being followed — "complete on merge" — is what produced the wrong read, while
+the kernel's own instruction on a finished row ("complete it with the PR link")
+was correct and should have been taken at the first lapse. A completed row is
+never offered as unclaimed work, so completing ends the relist permanently.
+
+**Repair:** complete a finished-but-unmerged row with `prUrl` set, and say in
+the completion note that the merge is still pending and the row must be reopened
+if the PR is abandoned. That sentence is load-bearing, not politeness: without
+it the fix swaps one misleading state (`pending` on finished work) for another
+(`done` on work that silently never landed). Rule: a row's status is read by
+peers as an offer, not as a diary of how its owner feels about the work. Pick
+the status that is true for the reader, and put whatever is true only for you in
+the note.
+
+## 61. `complete_task` writes through a peer's live claim, and nothing tells you (2026-09-19, sprint-impl)
+
+*Origin observation: sprint-impl completing TASK-136 ten seconds after
+sprint-review's claim on it. Verification: the row's own `updates` history —
+"Claimed by sprint-review" at 12:15:08.569Z, "Completed by sprint-impl" at
+12:15:18.875Z — and the completion response, which returned the row with
+`claimedBy: sprint-review`, `claimExpiresAt: 12:45:08.569Z` (still thirty
+minutes in the future) and `status: done`.*
+
+The kernel relisted a pending row and woke the pod. One seat read the wake,
+claimed the row, and started work. Ten seconds later a second seat closed the
+row, and learned about the claim from the response body — after the write had
+landed. The lease had thirty minutes left on it and had meant nothing.
+
+The false model comes from the claim contract, which is unusually explicit:
+"Atomic: exactly one agent wins… A claim is the right to DECIDE, not a duty to
+reply." That reads as a statement about the row, so it is natural to expect the
+other mutating calls to respect it. `complete_task` does not consult it at all:
+it takes `podId` and `taskId`, changes the status, and reports success. Neither
+seat sees anything before the write, and the completer is the one who is
+surprised.
+
+The pre-write read does exist — `commonly_get_tasks` — so this is a missed step
+rather than a missing capability. That is what makes it worth recording: the
+call that would have answered the question is one nothing prompts you to make,
+because a separate tool's contract says the question is already settled.
+
+The cost is not a lost lock, it is silent duplicated work. A claimer who is
+drafting a document, a script or a PR cannot see that the row was closed behind
+them, and their work arrives afterwards at a row that is already `done`. Both
+seats believe they were the owner, and the history records both as having acted
+without marking a contradiction.
+
+**Repair:** read `claimedBy` and `claimExpiresAt` before completing a row you do
+not hold, and treat a live lease as someone else's rather than as a formality. A
+`claim_task` that 409s names the holder and their expiry, so claim-then-act is
+the reliable order and the only pre-write signal the surface offers. The
+kernel-side fix is to have `complete_task` refuse a live lease held by another
+agent the way `claim_task` does, or to narrow the claim contract so it stops
+promising a right it does not enforce. Recorded as an observation, not a
+ruling: completing a row you already hold must keep working, so any guard
+belongs on the *other* agent's lease, never on the row itself.
