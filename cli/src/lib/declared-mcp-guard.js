@@ -11,9 +11,15 @@
  * the daemon's own layer, which must hold even if the server is wrong again.
  *
  * Two rules, both fail-closed:
- *   stdio — the command must be the shipped commonly MCP server
- *           (`npx -y @commonlyai/mcp@<tag>`) or a command the operator
- *           already installed by hand in the local token record.
+ *   stdio — the ENTRY must be the shipped commonly MCP server — command
+ *           `npx -y @commonlyai/mcp@<tag>`, env limited to the two canonical
+ *           placeholders, no args/cwd — or equal, as a whole entry, to one
+ *           the operator already installed by hand in the local token record.
+ *           Command alone is not enough: the shipped command with
+ *           `NODE_OPTIONS=--import=data:…` executes code, with
+ *           `npm_config_registry` fetches the package from an attacker, and
+ *           with a literal `COMMONLY_API_URL=https://attacker…` posts the
+ *           token there (sprint-review, Sharpen 69526/69534).
  *   http  — the url, with ONLY the two instance placeholders resolved and
  *           nothing else expanded, must parse to the instance's own origin
  *           (scheme + host + port). The grant broker declares
@@ -40,8 +46,32 @@ export const isShippedCommonlyMcpCommand = (command) => (
   && SHIPPED_PACKAGE.test(command[2])
 );
 
-const sameCommand = (a, b) => Array.isArray(a) && Array.isArray(b)
-  && a.length === b.length && a.every((part, i) => part === b[i]);
+const CANONICAL_STDIO_ENV = {
+  COMMONLY_API_URL: '${COMMONLY_API_URL}',
+  COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+};
+
+// The execution-relevant shape of a stdio entry: everything that decides what
+// runs and with what. `name` and `transport` are identity, not execution.
+const executionShape = (server) => JSON.stringify({
+  command: Array.isArray(server.command) ? server.command : null,
+  args: Array.isArray(server.args) && server.args.length ? server.args : null,
+  cwd: typeof server.cwd === 'string' ? server.cwd : null,
+  env: server.env && typeof server.env === 'object'
+    ? Object.fromEntries(Object.entries(server.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    : null,
+});
+
+// The shipped server exactly: its command, only its own env keys at their
+// canonical placeholder values, nothing else that changes what executes.
+export const isShippedCommonlyMcpEntry = (server) => {
+  if (!server || typeof server !== 'object') return false;
+  if (!isShippedCommonlyMcpCommand(server.command)) return false;
+  if (Array.isArray(server.args) && server.args.length) return false;
+  if (server.cwd !== undefined) return false;
+  const env = server.env && typeof server.env === 'object' ? server.env : {};
+  return Object.entries(env).every(([key, value]) => CANONICAL_STDIO_ENV[key] === value);
+};
 
 // True when a string still contains `${` after the known placeholders are
 // removed — a `${VAR}`, `${VAR:-default}` or any other expansion the CLI
@@ -79,7 +109,7 @@ const originOf = (url, instanceUrl) => {
  * offending server, naming it, so the daemon log says exactly what was kept
  * off the machine.
  */
-export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioCommands = [] } = {}) => {
+export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioEntries = [] } = {}) => {
   const refusals = [];
   const servers = environment && typeof environment === 'object' && Array.isArray(environment.mcp)
     ? environment.mcp : [];
@@ -103,9 +133,13 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioCommand
       return;
     }
     if (transport === 'stdio') {
-      if (isShippedCommonlyMcpCommand(server.command)) return;
-      if (allowedStdioCommands.some((allowed) => sameCommand(allowed, server.command))) return;
-      refusals.push(`'${name}': declared stdio command ${JSON.stringify(server.command)} is neither the shipped commonly MCP server nor a command installed on this machine`);
+      if (isShippedCommonlyMcpEntry(server)) return;
+      const shape = executionShape(server);
+      if (allowedStdioEntries.some((allowed) => executionShape(allowed) === shape)) return;
+      const why = isShippedCommonlyMcpCommand(server.command)
+        ? `carries env/args/cwd beyond the shipped server's own (${Object.keys(server.env || {}).filter((k) => CANONICAL_STDIO_ENV[k] !== server.env[k]).join(', ') || 'args/cwd'})`
+        : `command ${JSON.stringify(server.command)} is not the shipped commonly MCP server`;
+      refusals.push(`'${name}': declared stdio entry ${why}, and no entry installed on this machine matches it as a whole`);
       return;
     }
     if (transport === 'http' || transport === 'sse') {
@@ -120,11 +154,10 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioCommand
   return { ok: refusals.length === 0, refusals };
 };
 
-/** The stdio commands an operator has already placed in a local token record. */
-export const installedStdioCommands = (record) => (
+/** The stdio entries an operator has already placed in a local token record. */
+export const installedStdioEntries = (record) => (
   Array.isArray(record?.environment?.mcp)
     ? record.environment.mcp
       .filter((s) => s && typeof s === 'object' && (s.transport || 'stdio') === 'stdio' && Array.isArray(s.command))
-      .map((s) => s.command)
     : []
 );

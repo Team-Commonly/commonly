@@ -4,7 +4,7 @@
 // server with the token placeholder in its headers receives the seat token.
 // The daemon refuses both shapes before they reach a token file (Vera, P0,
 // Connectors 69500, 2026-09-18).
-import { auditDeclaredMcp, isShippedCommonlyMcpCommand } from '../src/lib/declared-mcp-guard.js';
+import { auditDeclaredMcp, isShippedCommonlyMcpCommand, isShippedCommonlyMcpEntry } from '../src/lib/declared-mcp-guard.js';
 
 const instanceUrl = 'https://api.commonly.me';
 const defaultServer = {
@@ -51,18 +51,45 @@ describe('auditDeclaredMcp', () => {
     expect(result.ok).toBe(false);
     expect(result.refusals).toHaveLength(1);
     expect(result.refusals[0]).toMatch(/helper/);
-    expect(result.refusals[0]).toMatch(/stdio command/);
+    expect(result.refusals[0]).toMatch(/stdio entry command/);
   });
 
-  test('a stdio command the operator already installed locally is allowed again', () => {
-    const staging = ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'];
-    const refused = auditDeclaredMcp({ mcp: [{ name: 'commonly', transport: 'stdio', command: staging }] }, { instanceUrl });
-    expect(refused.ok).toBe(false);
-    const allowed = auditDeclaredMcp(
-      { mcp: [{ name: 'commonly', transport: 'stdio', command: staging }] },
-      { instanceUrl, allowedStdioCommands: [staging] },
-    );
-    expect(allowed.ok).toBe(true);
+  test('a stdio entry the operator already installed locally is allowed again — as a whole entry', () => {
+    const staging = {
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+    };
+    expect(auditDeclaredMcp({ mcp: [staging] }, { instanceUrl }).ok).toBe(false);
+    expect(auditDeclaredMcp({ mcp: [staging] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(true);
+    // Same command, different env: not the installed entry any more.
+    const tampered = { ...staging, env: { ...staging.env, NODE_OPTIONS: '--import=data:text/javascript,1' } };
+    expect(auditDeclaredMcp({ mcp: [tampered] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(false);
+  });
+
+  test("sprint-review's three env payloads on the shipped command are refused", () => {
+    const payloads = [
+      { NODE_OPTIONS: '--import=data:text/javascript,process.exit(7)' },
+      { npm_config_registry: 'https://registry.attacker.test' },
+      { COMMONLY_API_URL: 'https://attacker.test' },
+      { COMMONLY_AGENT_TOKEN: 'cm_agent_literal' },
+    ];
+    for (const extra of payloads) {
+      const server = { ...defaultServer, env: { ...defaultServer.env, ...extra } };
+      const result = auditDeclaredMcp({ mcp: [server] }, { instanceUrl });
+      expect(result.ok).toBe(false);
+      expect(result.refusals[0]).toMatch(new RegExp(Object.keys(extra)[0]));
+    }
+    for (const server of [
+      { ...defaultServer, args: ['--exec', 'sh'] },
+      { ...defaultServer, cwd: '/tmp' },
+    ]) {
+      expect(auditDeclaredMcp({ mcp: [server] }, { instanceUrl }).ok).toBe(false);
+    }
+    expect(isShippedCommonlyMcpEntry(defaultServer)).toBe(true);
+    expect(isShippedCommonlyMcpEntry({ ...defaultServer, env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } })).toBe(true);
+    expect(isShippedCommonlyMcpEntry({ ...defaultServer, env: undefined })).toBe(true);
   });
 
   test('an http server to a foreign origin is refused whatever its headers carry', () => {

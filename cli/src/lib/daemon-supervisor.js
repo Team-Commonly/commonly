@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
-import { auditDeclaredMcp, installedStdioCommands } from './declared-mcp-guard.js';
+import { auditDeclaredMcp, installedStdioEntries } from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
 
@@ -158,7 +158,7 @@ export const createDaemonSupervisor = ({
   const admitDeclared = (row, environment, existing) => {
     const audit = auditDeclaredMcp(environment, {
       instanceUrl: existing?.instanceUrl || record.instanceUrl,
-      allowedStdioCommands: installedStdioCommands(existing),
+      allowedStdioEntries: installedStdioEntries(existing),
     });
     if (audit.ok) return true;
     log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);

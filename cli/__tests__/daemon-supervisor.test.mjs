@@ -180,7 +180,7 @@ describe('tick', () => {
   test('a declared environment with another mcp server gets the baseline appended', async () => {
     const environment = {
       model: 'opus',
-      mcp: [{ name: 'room-grants', transport: 'http', url: 'https://example.test/mcp' }],
+      mcp: [{ name: 'room-grants', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1' }],
     };
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus' }, environment })],
@@ -193,12 +193,20 @@ describe('tick', () => {
   });
 
   test('a declared commonly entry is never duplicated or replaced', async () => {
+    // A hand-set command is admitted only because the operator already
+    // installed that exact entry in the local token record (the guard's
+    // allow-list); the point under test is that the baseline is not appended
+    // beside it or swapped in for it.
     const handSet = { name: 'commonly', command: ['node', '/opt/commonly/mcp-staging/src/index.js'] };
+    const tokens = {
+      'wren-test': { agentName: 'wren-test', instanceUrl: 'https://api.commonly.me', environment: { model: 'opus', mcp: [handSet] } },
+    };
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({
-        runtime: { runtimeType: 'wrapper', model: 'opus' },
-        environment: { mcp: [handSet] },
+        runtime: { runtimeType: 'wrapper', model: 'sonnet' },
+        environment: { model: 'sonnet', mcp: [handSet] },
       })],
+      tokens,
     });
     await supervisor.tick();
     expect(saveToken.mock.calls[0][1].environment.mcp).toEqual([handSet]);
