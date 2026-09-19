@@ -445,19 +445,27 @@ describe('attentionItemService', () => {
 
   it('sweeps open handoffs whose task is already done, and leaves the others (dry run counts, apply writes)', async () => {
     const chainLean = (v) => ({ sort: () => ({ lean: async () => v }), lean: async () => v, select: () => ({ lean: async () => v }) });
+    // Source keys carry `task._id || task.taskId`: an ObjectId-shaped key and a
+    // `TASK-134`-style key both occur, and the latter must never reach `_id`.
+    const DONE = '66f000000000000000000001';
+    const OPEN = '66f000000000000000000002';
+    const GONE = '66f000000000000000000003';
     mockFind.mockReturnValue(chainLean([
-      { _id: 'a1', source: { type: 'task', id: 'task-done:u1' }, status: 'open' },
-      { _id: 'a2', source: { type: 'task', id: 'task-open:u2' }, status: 'open' },
-      { _id: 'a3', source: { type: 'task', id: 'task-done:u3' }, status: 'open' },
-      { _id: 'a4', source: { type: 'task', id: 'task-gone:u4' }, status: 'open' },
+      { _id: 'a1', source: { type: 'task', id: `${DONE}:u1` }, status: 'open' },
+      { _id: 'a2', source: { type: 'task', id: `${OPEN}:u2` }, status: 'open' },
+      { _id: 'a3', source: { type: 'task', id: 'TASK-134:u3' }, status: 'open' },
+      { _id: 'a4', source: { type: 'task', id: `${GONE}:u4` }, status: 'open' },
     ]));
     mockTaskFind.mockReturnValue(chainLean([
-      { _id: { toString: () => 'task-done' }, status: 'done' },
-      { _id: { toString: () => 'task-open' }, status: 'pending' },
+      { _id: { toString: () => DONE }, status: 'done' },
+      { _id: { toString: () => OPEN }, status: 'pending' },
+      { _id: { toString: () => '66f000000000000000000009' }, taskId: 'TASK-134', status: 'done' },
     ]));
     const dry = await AttentionItemService.sweepDoneTaskHandoffs();
     expect(dry).toEqual({ scanned: 4, eligible: 2, resolved: 0, missing: 1, apply: false });
     expect(mockUpdateMany).not.toHaveBeenCalled();
+    const [selector] = mockTaskFind.mock.calls[0];
+    expect(selector).toEqual({ $or: [{ _id: { $in: [DONE, OPEN, GONE] } }, { taskId: { $in: ['TASK-134'] } }] });
     mockUpdateMany.mockResolvedValue({ modifiedCount: 2 });
     const applied = await AttentionItemService.sweepDoneTaskHandoffs({ apply: true });
     expect(applied).toEqual({ scanned: 4, eligible: 2, resolved: 2, missing: 1, apply: true });

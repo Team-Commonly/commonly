@@ -362,9 +362,22 @@ export const resolveTaskAttention = async (task: any): Promise<void> => {
 export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean } = {}) => {
   const rows = await AttentionItem.find({ kind: 'handoff', 'source.type': 'task', status: 'open' })
     .sort({ createdAt: 1 }).lean();
-  const taskIds = [...new Set(rows.map((row: any) => String(row.source?.id || '').split(':')[0]).filter(Boolean))];
-  const tasks = taskIds.length ? await Task.find({ _id: { $in: taskIds } }).select('status').lean() : [];
-  const statusById = new Map(tasks.map((task: any) => [String(task._id), task.status]));
+  // The source key's prefix is `task._id || task.taskId`, so a row may carry a
+  // `TASK-134`-style key. Feeding that to `_id` throws a CastError and would
+  // abort the whole run; look each shape up by its own field.
+  const keys: string[] = [...new Set<string>((rows as any[]).map((row: any) => String(row.source?.id || '').split(':')[0]).filter(Boolean))];
+  const objectIds = keys.filter((key) => /^[0-9a-f]{24}$/i.test(key));
+  const taskKeys = keys.filter((key) => !/^[0-9a-f]{24}$/i.test(key));
+  const clauses = [
+    ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+    ...(taskKeys.length ? [{ taskId: { $in: taskKeys } }] : []),
+  ];
+  const tasks = clauses.length ? await Task.find({ $or: clauses }).select('status taskId').lean() : [];
+  const statusById = new Map<string, string>();
+  for (const task of tasks as any[]) {
+    statusById.set(String(task._id), task.status);
+    if (task.taskId) statusById.set(String(task.taskId), task.status);
+  }
   const eligibleIds: unknown[] = [];
   let missing = 0;
   for (const row of rows as any[]) {
