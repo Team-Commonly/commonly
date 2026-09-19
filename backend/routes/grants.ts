@@ -6,6 +6,7 @@ import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
+import Machine from '../models/Machine';
 import type { IRoomGrant } from '../models/RoomGrant';
 import {
   assertGrantUsable,
@@ -17,6 +18,9 @@ import {
 } from '../services/roomGrantService';
 import type { RoomGrantCreateInput } from '../services/roomGrantService';
 import { resolveBrokerFor } from '../services/installable/toolInstallables';
+import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
+import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -24,6 +28,8 @@ const auth = require('../middleware/auth');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DMService = require('../services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -64,7 +70,12 @@ interface AuthenticatedRequest extends express.Request {
 type GrantRow = Pick<IRoomGrant, 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
-const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: string | null) => ({
+const projectGrant = (
+  grant: GrantRow,
+  currentMembers: string[],
+  grantedBy: string | null,
+  grantBrokerRefusal: GrantBrokerRefusal | null = null,
+) => ({
   grantId: grant.grantId,
   installationId: grant.installationId,
   target: { kind: grant.target.kind, id: grant.target.id },
@@ -79,6 +90,13 @@ const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: stri
   rootGrantId: grant.rootGrantId ?? null,
   createdAt: grant.createdAt,
   grantedBy,
+  // Why a live grant is not reaching the seat, decided by the same projection
+  // that injects it (TASK-063). `server` scope is the honest limit: a refusal
+  // the DAEMON made is not reported here yet — the heartbeat carries four
+  // fields and Mongoose drops what the Machine schema does not declare — so
+  // this field says nothing about whether the broker reached the seat.
+  grantBrokerRefusal,
+  grantBrokerRefusalScope: 'server',
 });
 
 /** `grantedBy` is the Connection's owner (plan §9); one lookup per connection. */
@@ -90,6 +108,56 @@ const resolveGranters = async (connectionIds: string[]): Promise<Map<string, str
     granters.set(connectionId, owner || null);
   }));
   return granters;
+};
+
+/**
+ * Would the daemon's own projection withhold the broker from these grants?
+ *
+ * The seat's environment is resolved through `projectSeatEnvironments` — the
+ * same function `/assigned` builds the daemon work list from — so the read
+ * cannot drift from what the daemon is told. The scope is the seat's own
+ * machine owner when the binding is known (that is the scope `/assigned`
+ * uses), falling back to the identity's active installations for an unbound
+ * seat, which no daemon is polling yet.
+ */
+const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantBrokerRefusal>> => {
+  const refusals = new Map<string, GrantBrokerRefusal>();
+  const seatGrants = grants.filter((grant) => grant.target.kind === 'seat'
+    && typeof grant.target.id === 'string' && Types.ObjectId.isValid(grant.target.id));
+  if (!seatGrants.length) return refusals;
+  const seats = await User.find({ _id: { $in: seatGrants.map((grant) => grant.target.id) } })
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId')
+    .lean();
+  const seatsById = new Map(seats.map((seat: any) => [String(seat._id), seat]));
+  const machineIds = Array.from(new Set(seats
+    .map((seat: any) => seat?.botMetadata?.machineId)
+    .filter((id: unknown): id is string => typeof id === 'string' && Boolean(id))));
+  const machines = machineIds.length
+    ? await Machine.find({ machineId: { $in: machineIds } }).select('machineId ownerUserId').lean()
+    : [];
+  const ownersByMachine = new Map(machines.map((machine: any) => [String(machine.machineId), machine.ownerUserId]));
+  const entries = new Map<string, any>();
+  for (const grant of seatGrants) {
+    const seat: any = seatsById.get(String(grant.target.id));
+    const meta = seat?.botMetadata || {};
+    const agentName = typeof meta.agentName === 'string' ? meta.agentName.trim().toLowerCase() : '';
+    if (!agentName) continue;
+    const owner = typeof meta.machineId === 'string' ? ownersByMachine.get(meta.machineId) : undefined;
+    const cacheKey = `${seatEnvironmentKey(agentName, meta.instanceId)}\0${owner ? String(owner) : ''}`;
+    if (!entries.has(cacheKey)) {
+      // eslint-disable-next-line no-await-in-loop
+      const byIdentity = await projectSeatEnvironments({
+        agentNames: [agentName],
+        ...(owner ? { installedBy: owner } : {}),
+      });
+      entries.set(cacheKey, byIdentity.get(seatEnvironmentKey(agentName, meta.instanceId)) || null);
+    }
+    const entry = entries.get(cacheKey);
+    if (!entry) continue;
+    const refusal = grantBrokerRefusal(entry.environment, entry.runtime);
+    if (refusal) refusals.set(grant.grantId, refusal);
+  }
+  return refusals;
 };
 
 const loadPod = async (podId: string) => (Types.ObjectId.isValid(podId)
@@ -360,7 +428,8 @@ router.get('/:grantId', grantRateLimit, dualAuth, async (req: AuthenticatedReque
     const gate = await gateGrantRead(grant, req);
     if ('status' in gate) return res.status(gate.status).json({ error: gate.error });
     const currentMembers = grant.target.kind === 'seat' ? grant.audience : gate.members;
-    return res.json(projectGrant(grant, currentMembers, gate.granter));
+    const refusals = await seatGrantRefusals([grant]);
+    return res.json(projectGrant(grant, currentMembers, gate.granter, refusals.get(grant.grantId) || null));
   } catch (error) {
     return handleError(res, error);
   }
@@ -388,13 +457,17 @@ podGrantsRouter.get('/:podId/grants', grantRateLimit, auth, async (req: Authenti
         ...(members.length ? [{ 'target.kind': 'seat', 'target.id': { $in: members } }] : []),
       ],
     }).sort({ createdAt: -1 }).lean();
-    const granters = await resolveGranters(grants.map((grant) => grant.connectionId));
+    const [granters, refusals] = await Promise.all([
+      resolveGranters(grants.map((grant) => grant.connectionId)),
+      seatGrantRefusals(grants),
+    ]);
     return res.json({
       podId,
       grants: grants.map((grant) => projectGrant(
         grant,
         grant.target.kind === 'seat' ? grant.audience : members,
         granters.get(grant.connectionId) ?? null,
+        refusals.get(grant.grantId) || null,
       )),
     });
   } catch (error) {

@@ -10,6 +10,11 @@ import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import {
+  GRANT_BROKER_AUTHORIZATION,
+  projectSeatEnvironments,
+  seatEnvironmentKey,
+} from '../services/seatEnvironmentProjection';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -43,109 +48,6 @@ const bindingRateLimit = rateLimit({
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
-// The daemon needs the driver-neutral ADR-008 shape, but its bearer must not
-// become a read-all projection of an installation's opaque config. Keep this
-// allow-list aligned with environment.js and discard future/accidental keys at
-// the server boundary. MCP env values are declarations (usually placeholders);
-// provider secrets remain out-of-band per ADR-008. Only exact placeholder
-// values that the local adapters resolve are retained; literal MCP env values
-// must never cross the daemon-token boundary. Command and URL fields remain
-// declarative inputs and are intentionally outside this env-value filter.
-const MCP_PLACEHOLDERS = new Set([
-  '${COMMONLY_AGENT_TOKEN}',
-  '${COMMONLY_API_URL}',
-  '${COMMONLY_INSTANCE_URL}',
-]);
-
-const GRANT_BROKER_AUTHORIZATION = 'Bearer ${COMMONLY_AGENT_TOKEN}';
-
-const projectMcpEnv = (raw: unknown, serverName: string): Record<string, string> | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const projected: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === 'string' && MCP_PLACEHOLDERS.has(value)) {
-      projected[key] = value;
-    } else if (typeof value === 'string' && value.includes('${COMMONLY_')) {
-      // Adapters resolve placeholders embedded in command/URL-like values,
-      // but env projections deliberately accept only a placeholder by itself.
-      // Warn without logging the value so an operator can repair the spec.
-      console.warn('[agent-binding] dropped MCP env placeholder declaration', {
-        server: serverName,
-        key,
-      });
-    }
-  }
-  return Object.keys(projected).length ? projected : null;
-};
-
-// HTTP MCP servers authenticate with a declarative header rather than a
-// process environment variable. Keep the same placeholder-only boundary as
-// MCP env so an installation cannot smuggle a bearer or arbitrary header into
-// the daemon work list. The broker projection below creates this exact shape
-// for each active grant.
-const projectMcpHeaders = (raw: unknown, serverName: string): Record<string, string> | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const projected: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (key === 'Authorization' && value === GRANT_BROKER_AUTHORIZATION) {
-      projected[key] = value;
-    } else if (typeof value === 'string' && value.includes('${COMMONLY_')) {
-      console.warn('[agent-binding] dropped MCP header placeholder declaration', {
-        server: serverName,
-        key,
-      });
-    }
-  }
-  return Object.keys(projected).length ? projected : null;
-};
-
-const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const source = raw as Record<string, any>;
-  const projected: Record<string, any> = {};
-  const pick = (value: unknown, keys: string[]) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const picked: Record<string, unknown> = {};
-    for (const key of keys) {
-      if ((value as Record<string, unknown>)[key] !== undefined) {
-        picked[key] = (value as Record<string, unknown>)[key];
-      }
-    }
-    return Object.keys(picked).length ? picked : null;
-  };
-  for (const key of ['version', 'model', 'effort']) {
-    if (source[key] !== undefined) projected[key] = source[key];
-  }
-  const workspace = pick(source.workspace, ['path', 'seed']);
-  if (workspace) projected.workspace = workspace;
-  const sandbox = pick(source.sandbox, ['mode', 'trust']);
-  if (sandbox) projected.sandbox = sandbox;
-  const network = pick(source.sandbox?.network, ['policy', 'allow-hosts']);
-  if (network) projected.sandbox = { ...(projected.sandbox || {}), network };
-  const filesystem = pick(source.sandbox?.filesystem, ['read-outside', 'write-outside']);
-  if (filesystem) projected.sandbox = { ...(projected.sandbox || {}), filesystem };
-  const skills = pick(source.skills, ['claude', 'commonly']);
-  if (skills) projected.skills = skills;
-  if (Array.isArray(source.mcp)) {
-    const mcp = source.mcp
-      .filter((server: any) => server && typeof server === 'object' && !Array.isArray(server))
-      .map((server: Record<string, any>) => {
-        const entry: Record<string, unknown> = {};
-        for (const key of ['name', 'transport', 'url', 'command']) {
-          if (server[key] !== undefined) entry[key] = server[key];
-        }
-        const serverName = typeof server.name === 'string' ? server.name : 'unknown';
-        const env = projectMcpEnv(server.env, serverName);
-        if (env) entry.env = env;
-        const headers = projectMcpHeaders(server.headers, serverName);
-        if (headers) entry.headers = headers;
-        return entry;
-      })
-      .filter((server: Record<string, unknown>) => Object.keys(server).length);
-    if (mcp.length) projected.mcp = mcp;
-  }
-  return Object.keys(projected).length ? projected : null;
-};
 
 type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
 type GrantTarget = { kind?: unknown; id?: unknown };
@@ -408,36 +310,10 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
   try {
     const machine = req.machine!;
     if (!machine.machineId) return res.status(400).json({ message: 'Daemon credential carries no machineId' });
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AgentInstallation } = require('../models/AgentRegistry');
-    const installs = await AgentInstallation.find({ installedBy: machine.ownerUserId, status: 'active' })
-      .select('agentName instanceId podId config').lean();
-    if (!installs.length) return res.json({ agents: [] });
-
-    const byIdentity = new Map<string, {
-      agentName: string;
-      instanceId: string;
-      podIds: string[];
-      runtime: unknown;
-      environment: Record<string, unknown> | null;
-    }>();
-    for (const install of installs) {
-      const agentName = normalize(install.agentName);
-      const instanceId = normalize(install.instanceId) || 'default';
-      const key = `${agentName} ${instanceId}`;
-      // AgentInstallation.config is a Mongoose Map; lean() yields a plain
-      // object, but stay defensive about both shapes.
-      const config = install.config instanceof Map
-        ? Object.fromEntries(install.config)
-        : (install.config || {});
-      const entry = byIdentity.get(key) || {
-        agentName, instanceId, podIds: [], runtime: null, environment: null,
-      };
-      if (install.podId) entry.podIds.push(String(install.podId));
-      if (!entry.runtime && config.runtime) entry.runtime = config.runtime;
-      if (!entry.environment && config.environment) entry.environment = projectEnvironment(config.environment);
-      byIdentity.set(key, entry);
-    }
+    // The projection is shared with the grant read (TASK-063): one definition
+    // of what a seat receives, so the read cannot disagree with the daemon.
+    const byIdentity = await projectSeatEnvironments({ installedBy: machine.ownerUserId });
+    if (!byIdentity.size) return res.json({ agents: [] });
 
     const identities = await User.find({
       isBot: true,
@@ -451,7 +327,7 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
 
     const agents = identities.flatMap((identity: AssignedIdentity) => {
       const meta = identity.botMetadata || {};
-      const key = `${normalize(meta.agentName)} ${normalize(meta.instanceId) || 'default'}`;
+      const key = seatEnvironmentKey(meta.agentName, meta.instanceId);
       const entry = byIdentity.get(key);
       // An identity outside the owner's installation set (shared, or another
       // user's) never appears in this daemon's work list.
