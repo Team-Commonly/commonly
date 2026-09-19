@@ -25,6 +25,7 @@ const {
   heartbeatDaemonMachine,
   registerDaemonMachine,
   unregisterDaemonMachine,
+  formatSeatLine,
 } = await import('../src/commands/daemon.js');
 
 const daemonRecord = {
@@ -198,5 +199,43 @@ describe('daemon machine calls', () => {
     await unregisterDaemonMachine({ client, record: daemonRecord, remove });
 
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+});
+
+// TASK-072: the status line is the only place a local seat's identity and its flap
+// counter can be read, and it showed neither. `restarts` is written, persisted and
+// served, so a seat that had been crash-looping printed exactly like a healthy one.
+describe('formatSeatLine', () => {
+  test('names the seat\'s instance and its restart count', () => {
+    const line = formatSeatLine({
+      agentName: 'quill',
+      instanceId: 'quill-seo-writer',
+      state: 'running',
+      adapter: 'pi',
+      model: 'gpt-5.6-luna',
+      effort: 'xhigh',
+      pid: 12814,
+      restarts: 3,
+      lastTurnAt: '2026-09-19T19:06:46.349Z',
+    });
+    // The instance is the identity the platform routes by: a seat attached to the
+    // wrong one is otherwise indistinguishable from a correctly attached seat.
+    expect(line).toContain('instance=quill-seo-writer');
+    expect(line).toContain('restarts=3');
+  });
+
+  test('prints restarts=0 rather than omitting a healthy counter', () => {
+    const line = formatSeatLine({
+      agentName: 'c4-smoke', instanceId: 'default', state: 'running', restarts: 0,
+    });
+    // A field shown only when non-zero cannot be told apart from a field that was
+    // never recorded, which is the whole complaint behind this task.
+    expect(line).toContain('restarts=0');
+  });
+
+  test('a state file written before the field existed reads as unknown, not as zero', () => {
+    const line = formatSeatLine({ agentName: 'old-seat', state: 'running' });
+    expect(line).toContain('instance=-');
+    expect(line).toContain('restarts=-');
   });
 });
