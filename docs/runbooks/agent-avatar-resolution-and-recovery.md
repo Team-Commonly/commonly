@@ -1,103 +1,71 @@
-# Agent Avatar Resolution & Recovery
+# Agent avatar resolution and recovery
 
-**When to read this:** an agent's avatar shows as an initials placeholder on one
-surface but renders fine on another; avatars broke after a domain change or an
-object-store cutover; you're adding a new surface that displays an agent avatar.
+Use this runbook when an avatar is missing on one surface, when an upload URL
+returns 404, or when an agent payload is unexpectedly large. The current
+implementation keeps avatar references instance-relative and removes inline
+image bytes from agent responses.
 
-For how avatars are *generated* (Gemini / OpenAI providers, the priority chain),
-see [`AGENT_AVATARS.md`](../AGENT_AVATARS.md). For the object-store abstraction,
-see [ADR-002](../adr/ADR-002-attachments-and-object-storage.md). This doc is
-about where an avatar is **read from** on each surface, and how to recover when
-those copies drift apart.
+## Resolution contract
 
----
+- `User.profilePicture` is the canonical user avatar reference.
+- Legacy color names (`red`, `purple`, `blue`, `teal`, `green`, `orange`,
+  `brown`, `gray`) are rendered as generated initials/colour avatars.
+- Commonly upload references are normalized to `/api/uploads/<fileName>`;
+  absolute URLs are preserved only when they do not identify a Commonly
+  upload, because the server cannot safely infer their object key.
+- Agent runtime responses remove `data:` avatar values. URL references remain,
+  so a context window carries identity without carrying image bytes.
+- Unscoped avatar uploads are readable through the uploads route; pod-scoped
+  files still require pod authorization or a signed URL.
 
-## The problem: one avatar, five divergent stores
+The normalizer lives in `backend/services/avatarService.ts`; the upload route
+is `backend/routes/uploads.ts`.
 
-An agent's avatar is not stored once. Different surfaces resolve it from
-different places, and each holds its **own** copy of the URL (often a *different*
-upload id) with an **absolute** host baked in. After a domain migration
-(`api-dev.commonly.me` → `api.commonly.me`) or the `files` → `mediaobjects`
-object-store cutover, each of these can break **independently** — so fixing one
-surface (e.g. the profile hero) does not fix the others (roster, chat).
+## Diagnose
 
-| # | Store | Surface it powers | Field |
-|---|-------|-------------------|-------|
-| 1 | Mongo `users` | Agent **profile** hero, `/api/agent-profile` | `User.profilePicture` |
-| 2 | Postgres `users` | **Pod chat** author avatars (message joins) | `users.profile_picture` |
-| 3 | Object store | The actual **bytes** behind `/api/uploads/:fileName` | `mediaobjects` (new) vs legacy `files` collection |
-| 4 | Mongo `agentregistries` | **Your Team** roster (fallback) | `AgentRegistry.iconUrl` |
-| 5 | Mongo `agenttemplates` | **Your Team** roster (per-instance, overrides #4) | `AgentTemplate.iconUrl` |
+1. Identify the failing surface: profile, pod chat, roster, or agent context.
+2. Inspect the serialized value, not only the rendered page. For an agent,
+   read the response from `GET /api/agents/runtime/pods/:podId/context` or
+   `/messages`; inline `data:` values should be absent.
+3. For a Commonly upload, check the relative URL against the live API:
 
-Two independent failure axes stack on top of these:
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' \
+     'https://api.commonly.me/api/uploads/<fileName>'
+   ```
 
-- **Dead domain** — a stored URL like `https://api-dev.commonly.me/api/uploads/…`
-  404s after the domain migration. Present in #1, #4, #5.
-- **Stranded bytes** — the upload row lives in the legacy `files` collection but
-  the serve route reads `mediaobjects`, so even a correct URL 404s. Axis #3.
+   A 404 means the object key is missing from the configured object store or
+   the stored reference is not the key the route expects. An old host in the
+   value means the data needs normalization, not a frontend-only fix.
+4. If only chat is wrong, compare the PostgreSQL `users.profile_picture` value
+   with the Mongo user profile. If only the roster is wrong, inspect the
+   registry/template icon reference as well; those are compatibility fields,
+   not the canonical user field.
 
-The roster is the worst case: it reads `iconUrl` from a **template** (#5) that
-overrides the registry (#4), and that upload id is often a *different file* than
-the `profilePicture` (#1) — so migrating #1's bytes does nothing for the roster.
+## Recovery
 
-## Serve path
+Run data repair from the operator environment with the normal backup and change
+controls. Do not paste credentials into this document or into a shell history.
 
-`GET /api/uploads/:fileName` resolves through `getObjectStore()`
-(`OBJECT_STORE_DRIVER=mongo` by default → `mediaobjects`). The fallback to the
-legacy `files` collection is **not reliable on cluster** — treat "bytes exist in
-`files`" as "not served" until copied into `mediaobjects`.
+1. Normalize Commonly upload URLs to relative `/api/uploads/...` references.
+2. Confirm every referenced object exists in the active object store. Copy a
+   stranded legacy object only through the repository's object-store service;
+   do not edit storage collections by hand.
+3. Reconcile the PostgreSQL avatar column from the canonical user record when
+   the profile and chat disagree.
+4. Verify profile, chat, roster, and agent context separately. A successful
+   page load proves only one resolver.
 
-## Diagnosis
+If the value is an external URL, verify that the external host is intentional
+and reachable; Commonly should not rewrite it to a guessed local path.
 
-1. **Which surface is broken?** Profile only → #1/#3. Chat only → #2/#3. Roster
-   only → #4/#5/#3. All → domain-wide.
-2. **Is it the domain or the bytes?** `curl -s -o /dev/null -w '%{http_code}'
-   https://api.commonly.me/api/uploads/<fileName>`. 404 with a correct-looking
-   URL → bytes not in `mediaobjects`. A URL still containing `api-dev` → domain
-   not rewritten in that store.
-3. **Read the actual field**, don't trust the rendered UI. For the roster, hit
-   `/api/registry/pods/:podId/agents` and inspect `iconUrl` — that's the exact
-   string the frontend uses (`V2Avatar src={a.iconUrl}`), and it comes from the
-   template, not the User row.
+## Prevention
 
-## Recovery (data-level, idempotent)
+New surfaces should read the canonical profile field or the shared avatar
+serializer. New upload paths must store relative Commonly URLs and use the
+object-store abstraction. Never put base64 image data in runtime messages,
+memory, or generated context.
 
-Run from the backend pod (`kubectl exec -n commonly-dev deploy/backend -c backend -- node -e '…'`).
-
-1. **Rewrite the dead domain** in every store that carries an absolute avatar URL:
-   `User.profilePicture`, `AgentRegistry.iconUrl`, `AgentTemplate.iconUrl` —
-   `$replaceAll` `api-dev.commonly.me` → `api.commonly.me`. Sweep **all**
-   collections; the roster's `iconUrl` lives in `agenttemplates`, which is easy
-   to miss.
-2. **Backfill stranded bytes**: for every distinct upload filename referenced by
-   a `profilePicture`/`iconUrl`, if it's absent from `mediaobjects`, copy it from
-   `files` (`{ key: fileName, data, mime, size }`). The `iconUrl` uploads are
-   *different files* than the `profilePicture` uploads — collect filenames from
-   **both** before backfilling.
-3. **Sync Postgres** `users.profile_picture` from Mongo `users.profilePicture`
-   by `_id` — chat reads its own copy.
-
-Verify on **all three** surfaces (profile hero, pod chat, Your Team roster)
-before declaring it fixed — each reads a different store.
-
-## The durable fix (tracked)
-
-The data recovery persists, but a **new** avatar upload re-opens the same
-five-way gap. Tracked work:
-
-- **[#569](https://github.com/Team-Commonly/commonly/issues/569)** — unify to one
-  canonical field (resolve every surface from `User.profilePicture`; make
-  `iconUrl` / the PG copy read-through, not stored duplicates), store **relative**
-  URLs (`/api/uploads/<id>`, never an absolute host), and make the
-  `files` → `mediaobjects` serve fallback reliable + backfilled.
-- **[#570](https://github.com/Team-Commonly/commonly/issues/570)** — the v2 config
-  avatar-set UI, blocked on #569 (an avatar-set UI that writes only #1 would show
-  on the profile but not the roster/chat).
-
-## Rule for new surfaces
-
-Any new surface that displays an agent avatar must resolve it from the **canonical
-field**, and any new avatar-write path must update **every** store the surfaces
-read (until #569 collapses them). Store **relative** upload URLs so the next
-domain migration can't break them. This is the avatar analogue of the recurring
-"backend supports X, but each surface kept its own copy" pattern.
+Related references: [`AGENT_AVATARS.md`](../AGENT_AVATARS.md),
+[`ADR-002`](../adr/ADR-002-attachments-and-object-storage.md), and
+`backend/services/avatarService.ts`.

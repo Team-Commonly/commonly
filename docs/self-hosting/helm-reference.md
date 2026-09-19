@@ -1,234 +1,46 @@
-# Helm Values Reference for Self-Hosters
+# Helm values for self-hosting
 
-This guide explains the key values you need to change when deploying Commonly on
-your own infrastructure. The default `values.yaml` contains Commonly's hosted
-deployment settings — self-hosters must override these.
+The chart under `k8s/helm/commonly/` is a deployment template, not a portable
+set of hosted secrets. Self-hosters should supply an environment overlay and
+replace every hosted image, hostname, storage class, and secret provider.
 
-## Quick Start
+## Install shape
 
 ```bash
-# Install with your own overrides
-helm install commonly . \
-  -f values.yaml \
-  -f values-myorg.yaml   # your overrides file
+helm upgrade --install commonly ./k8s/helm/commonly \
+  --namespace commonly --create-namespace \
+  -f ./k8s/helm/commonly/values.yaml \
+  -f ./values-self-hosted.yaml
 ```
 
-Create `values-myorg.yaml` with the fields described below.
-
----
-
-## Required Overrides
-
-### Container Images
-
-The default `values.yaml` references Commonly's private GCR registry
-(`gcr.io/YOUR_GCP_PROJECT_ID/...`). You must build and push images to your
-own registry, or use the public images when available.
-
-```yaml
-backend:
-  image:
-    repository: your-registry/commonly-backend
-    tag: "latest"
-
-frontend:
-  image:
-    repository: your-registry/commonly-frontend
-    tag: "latest"
-
-agents:
-  clawdbot:
-    image:
-      repository: your-registry/clawdbot-gateway
-      tag: "latest"
-```
-
-### Ingress Hosts
-
-```yaml
-ingress:
-  hosts:
-    frontend:
-      host: app.yourdomain.com
-    backend:
-      host: api.yourdomain.com
-    litellm:
-      host: litellm.yourdomain.com   # optional, only if running LiteLLM
-```
-
-### Database
-
-**Option A: Use in-cluster MongoDB and PostgreSQL** (simplest for dev/demo)
-
-```yaml
-mongodb:
-  enabled: true
-  persistence:
-    storageClass: standard   # change to your cluster's storage class
-    size: 20Gi
-
-postgresql:
-  enabled: true
-  persistence:
-    storageClass: standard
-    size: 20Gi
-```
-
-**Option B: Use external managed databases** (recommended for production)
-
-```yaml
-mongodb:
-  enabled: false   # use MONGO_URI secret instead
-
-postgresql:
-  enabled: false   # use PG_* env vars instead
-
-backend:
-  env:
-    pgHost: "your-postgres-host.example.com"
-    pgPort: "5432"
-    pgDatabase: "commonly"
-    pgUser: "commonly_user"
-    pgSslEnabled: "true"
-```
-
-### URLs
-
-```yaml
-backend:
-  env:
-    frontendUrl: "https://app.yourdomain.com"
-    backendUrl: "https://api.yourdomain.com"
-```
-
----
+Inspect the chart's current schema with `helm show values` and `helm template`;
+do not copy fields from an old release. At minimum, set backend/frontend image
+repositories, public frontend/API URLs, storage classes, ingress/TLS, and
+Mongo/PostgreSQL/Redis connection settings.
 
 ## Secrets
 
-Commonly requires several secrets. The default setup uses GCP Secret Manager via
-External Secrets Operator (ESO). For self-hosting, you can either:
+Use External Secrets or a Kubernetes Secret manager. Provide JWT signing
+material, database credentials/URLs, object-store credentials, and only the
+provider keys for features you enable. Keep secret values out of values files
+that are committed to git.
 
-**Option A: Disable ESO and use plain Kubernetes Secrets**
+## Scheduling
 
-```yaml
-externalSecrets:
-  enabled: false
-```
+Remove hosted-cluster node selectors/tolerations unless the self-hosted cluster
+has matching labels and taints. Keep stateful/session-sensitive workloads on a
+stable pool. Spot placement is an optional optimization for stateless web
+workloads; see [`ADR-015`](../adr/ADR-015-spot-pool-for-stateless-workloads.md).
 
-Then create secrets manually:
+## Verify
 
 ```bash
-kubectl create secret generic api-keys \
-  --from-literal=jwt-secret="$(openssl rand -hex 32)" \
-  --from-literal=mongo-uri="mongodb://user:pass@host:27017/commonly?authSource=admin" \
-  -n commonly
-
-kubectl create secret generic database-credentials \
-  --from-literal=postgres-password="your-pg-password" \
-  -n commonly
+helm template commonly ./k8s/helm/commonly -f values-self-hosted.yaml \
+  | kubectl apply --dry-run=server -f -
+kubectl get pods,ingress -n commonly
+curl -fsS https://api.example.com/api/health
 ```
 
-**Option B: Use GCP Secret Manager (ESO)**
-
-```yaml
-externalSecrets:
-  enabled: true
-  secretStore:
-    projectId: your-gcp-project-id        # change this
-    clusterLocation: us-central1           # change to your region
-    clusterName: your-cluster-name         # change this
-```
-
-Required secrets in GCP SM (or whichever secret store you configure):
-| Secret name | Description |
-|---|---|
-| `jwt-secret` | JWT signing key (generate with `openssl rand -hex 32`) |
-| `mongo-uri` | Full MongoDB connection string |
-| `postgres-password` | PostgreSQL password |
-| `anthropic-api-key` | For Claude-powered agents (optional) |
-| `openai-api-key` | For OpenAI-powered agents (optional) |
-| `openrouter-api-key` | For OpenRouter fallback (optional) |
-
----
-
-## Node Selectors and Tolerations
-
-The default `values-dev.yaml` uses GKE-specific node pool targeting
-(`pool: dev`). Remove or replace these for your cluster:
-
-```yaml
-backend:
-  nodeSelector: {}    # remove GKE-specific selectors
-  tolerations: []     # remove GKE-specific tolerations
-
-frontend:
-  nodeSelector: {}
-  tolerations: []
-```
-
----
-
-## TLS
-
-TLS is disabled by default. Enable it after setting up cert-manager:
-
-```yaml
-ingress:
-  tls:
-    enabled: true
-    # cert-manager will auto-provision certs if configured
-```
-
----
-
-## Minimal Self-Hosted values-myorg.yaml Example
-
-```yaml
-backend:
-  image:
-    repository: your-registry/commonly-backend
-    tag: "latest"
-  env:
-    frontendUrl: "https://app.yourdomain.com"
-    backendUrl: "https://api.yourdomain.com"
-  nodeSelector: {}
-  tolerations: []
-
-frontend:
-  image:
-    repository: your-registry/commonly-frontend
-    tag: "latest"
-  nodeSelector: {}
-  tolerations: []
-
-mongodb:
-  enabled: true
-  persistence:
-    storageClass: standard
-    size: 20Gi
-
-postgresql:
-  enabled: true
-  persistence:
-    storageClass: standard
-    size: 20Gi
-
-redis:
-  nodeSelector: {}
-  tolerations: []
-
-externalSecrets:
-  enabled: false   # use kubectl create secret instead
-
-ingress:
-  hosts:
-    frontend:
-      host: app.yourdomain.com
-    backend:
-      host: api.yourdomain.com
-  tls:
-    enabled: false   # set true once cert-manager is ready
-
-litellm:
-  enabled: false   # enable only if you need LLM proxy routing
-```
+Then test login, pod chat, uploads, websocket delivery, and the agent runtime
+against the self-hosted hostname. A readiness probe alone is not an end-to-end
+deployment check.

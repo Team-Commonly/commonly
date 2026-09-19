@@ -1,95 +1,49 @@
-# External Integration Contract (Draft)
+# External integration contract
 
-> Goal: make every external chat integration (Discord, WhatsApp, Telegram, Slack, etc.) plug‑and‑play, testable, and contributor‑friendly for open source.
+Providers translate an external service into Commonly's integration pipeline.
+The contract is implemented by the provider registry and the shared SDK under
+`packages/integration-sdk/`.
 
-## Principles
-- **Single lifecycle**: connect → verify → ingest → summarize → post.
-- **Small surface**: minimal required methods; shared helpers for the rest.
-- **Deterministic tests**: contract tests ensure any provider meets the same guarantees.
-- **Security first**: signature/verify-token checks required; clear error paths.
+## Provider responsibilities
 
-## Provider interface (proposed)
-Create one provider per platform implementing these methods:
+Each provider validates configuration, exposes webhook handlers where needed,
+normalizes inbound events, and reports health. A normalized message contains:
 
-- `validateConfig(config)` → `Promise<void | Error>`
-  - Ensures required fields (tokens/IDs/URLs) are present and well‑formed.
-- `getWebhookHandlers()` → `{ verify: (req,res), events: (req,res) }`
-  - `verify` handles GET challenge (e.g., WhatsApp `hub.challenge`, Discord ping).
-  - `events` handles POST event/webhook delivery, returns 200/204 after enqueue.
-- `ingestEvent(payload)` → `Promise<NormalizedMessage[]>`
-  - Parse provider payload into normalized messages (see schema below).
-- `syncRecent({ since })` → `Promise<NormalizedMessage[]>`
-  - Pull recent history via provider REST API for scheduled/manual syncs.
-  - Poll-only providers (X/Instagram) may implement only `syncRecent` + `health`, with empty webhook handlers.
-- `health()` → `Promise<{ ok: boolean, details?: any }>`
-  - Lightweight check (token validity, minimal API call, or cached status).
-- `register?()` (optional) → `Promise<void>`
-  - For providers needing command/endpoint registration (e.g., Discord slash commands).
+```ts
+{
+  source, externalId, threadId?, authorId, authorName,
+  content, timestamp, attachments?, metadata?
+}
+```
 
-## Normalized data shapes
-- **NormalizedMessage**
-  - `source`: `'discord' | 'whatsapp' | 'telegram' | 'slack' | ...'`
-  - `externalId`: string (provider message ID)
-  - `threadId?`: string
-  - `authorId`: string
-  - `authorName`: string
-  - `content`: string
-  - `timestamp`: ISO string
-  - `attachments?`: `{ type: 'image'|'file'|'link', url: string, title?: string }[]`
-  - `metadata?`: provider-specific small fields (e.g., channelId, chatId)
-
-- **NormalizedSummaryInput**
-  - `messages: NormalizedMessage[]`
-  - `context: { source, channelId/chatId, window: { start, end } }`
+Providers should be deterministic and idempotent for a repeated
+`externalId`/delivery ID. They must not write directly to pod tables or bypass
+the integration buffer.
 
 ## Runtime flow
-1) **Configure**: `validateConfig` on save; store in `Integration.config`.
-2) **Webhook verify**: provider `verify` responds to challenge/verify-token.
-3) **Inbound events**: `events` → `ingestEvent` → enqueue messages into buffer.
-4) **Sync job**: scheduler summarizes buffered messages; `syncRecent` is reserved for backfill or manual runs.
-5) **Summarize**: feed normalized messages to summarizer; persist the result as pod memory (`PodAsset`) and enqueue an agent event for external runtimes (e.g., Commonly Bot) to post into pods.
-6) **Health**: `/api/<provider>/health` delegates to `health()`.
 
-## Pod memory & agent context
+```text
+configure → validate → receive/verify → normalize → buffer
+  → summarize or dispatch → store pod asset/message → optional outbound send
+```
 
-Integration summaries are not just messages:
-- Summaries should be persisted as indexed pod memory via `PodAsset` (for example `type='integration-summary'`).
-- `GET /api/pods/:id/context` reads these pod assets to assemble agent-friendly context.
-- In LLM skill mode, the pod context endpoint may synthesize markdown skills from recent summaries and assets, and store them as `PodAsset(type='skill')`.
+The generic routes are:
 
-## Operational note (public endpoints)
-- Webhook and interactions endpoints must be publicly reachable. If you front them with Cloudflare Tunnel, ensure the hostname is added to tunnel **ingress** (DNS-only changes can still return Cloudflare 404s and fail provider verification).
+- `GET /api/integrations/catalog`
+- `POST /api/integrations` and `PATCH /api/integrations/:id`
+- `POST /api/integrations/ingest` for scoped external provider services
+- `GET /api/integrations/:podId` and provider-specific message/stats routes
 
-## Registry & factory (backend)
-- `integrationRegistry.register(type, providerFactory)`
-- `const provider = integrationRegistry.get(integration.type, integration.config)`
-- Keeps routing logic out of routes/controllers; enables easy extension.
+Webhook routes remain provider-specific because signature and challenge formats
+differ. They must be public, rate-limited, replay-safe, and explicit about
+which integration they address.
 
-## External provider services (planned)
-For externalized providers, a standalone service receives platform webhooks and forwards normalized
-events to the Commonly context layer. The platform should expose an ingest endpoint (for example
-`POST /api/integrations/ingest`) that accepts `{ provider, integrationId, event }` or normalized
-messages and appends them to the integration buffer for summarization.
+## Security and tests
 
-## Security requirements
-- Webhook signature/verify-token checks mandatory; reject on mismatch.
-- Rate-limit webhook routes; strip PII beyond what’s needed for summaries.
-- Store secrets encrypted (reuse existing config patterns).
+Validate required fields before a draft becomes connected. Keep provider
+secrets in secret-backed configuration. Use fixtures for verify, invalid
+signature, duplicate delivery, malformed payload, and normalized output. The
+shared SDK contract tests should run for every provider implementation.
 
-## Testing contract
-- Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:
-  - validates `ingestEvent` produces required fields
-  - ensures `validateConfig` rejects missing required keys
-  - ensures webhook verify handler returns 200 + challenge when token matches
-- Providers supply fixtures in `backend/__fixtures__/integrations/<provider>/`.
-
-## Directory conventions (docs & code)
-- Docs per provider: `docs/<provider>/` (e.g., `docs/discord`, `docs/whatsapp`).
-- Shared guidance: `docs/integrations/` (this folder).
-- Backend code (proposed): `backend/integrations/<provider>/` for provider-specific services, plus `backend/integrations/registry.js` for the factory.
-
-## Next steps to implement
-1. Add `integrationRegistry` + contract tests scaffold.
-2. Extract Discord into a provider implementing this contract.
-3. Implement WhatsApp provider against the contract.
-4. (Optional) Add Telegram provider to validate multi-provider design.
+See `backend/integrations/manifests.ts`, `backend/integrations/index.ts`, and
+`backend/__tests__/service/two-way-integration-e2e.test.js`.

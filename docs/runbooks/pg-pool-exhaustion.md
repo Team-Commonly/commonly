@@ -1,80 +1,53 @@
-# PG connection pool exhaustion — diagnosis + recovery
+# PostgreSQL pool exhaustion
 
-**Symptom**: User-facing PG-backed endpoints (`/api/pods`, `/api/messages/:podId`) hang indefinitely. UI shows perpetual loading. Backend CPU + memory normal. Other endpoints (mongo-backed: `/api/posts`, `/api/auth/me`) respond fast.
+Use this runbook when PostgreSQL-backed requests hang while Mongo-backed health
+or read paths remain responsive.
 
-## Diagnosis flow
+## Diagnose
 
-1. **Confirm reachability** — probe a mongo-backed endpoint from inside the cluster. If it responds, the backend is up and only PG-backed paths are affected.
-
-   ```bash
-   TOKEN=<admin jwt>
-   kubectl exec -n commonly-dev deploy/backend -- bash -c \
-     "curl -sS -m 5 -H 'Authorization: Bearer $TOKEN' \
-      'http://localhost:5000/api/posts?limit=2' \
-      -w 'status=%{http_code} ttfb=%{time_starttransfer}s\n' -o /dev/null"
-   # Expected: status=200 ttfb<200ms
-   ```
-
-2. **Confirm PG-backed paths hang** — same probe against `/api/pods?limit=2`. If it returns `status=000 ttfb=0` (timeout, 0 bytes), the controller never completed.
-
-3. **Rule out resource pressure** — `kubectl top pod -n commonly-dev <backend-pod>`. If CPU < 50% of limit and memory < 75% of limit, the hang is NOT load-related.
-
-4. **Rule out underlying DB slowness** — run the underlying queries directly from a one-off node process. If they return in well under a second, the DB is fine and the live pool is the bottleneck.
+1. Check backend pod health and recent logs.
+2. Compare a known Mongo-backed request with a PostgreSQL-backed request.
+3. Read the pool counters without issuing a database query:
 
    ```bash
-   kubectl exec -n commonly-dev deploy/backend -- node -e "
-     const { pool } = require('./dist/config/db-pg');
-     (async () => {
-       const t0 = Date.now();
-       const r = await pool.query('SELECT 1');
-       console.log('elapsed ms:', Date.now() - t0);
-       process.exit(0);
-     })();
-   "
+   kubectl exec -n commonly-dev deploy/backend -- \
+     curl -sS http://127.0.0.1:5000/api/health/db
    ```
 
-5. **Inspect logs for the surge trigger** — `kubectl logs deploy/backend --tail=200`. Look for:
-   - `Pod summary requests enqueued: <N>` — the hourly summarizer fanout. N=60 has been observed to saturate a 10-slot pool.
-   - `Dispatching agent heartbeat events...` repeated rapidly — heartbeat dispatcher cycling.
+   The health response reports `max`, `total`, `idle`, `waiting`, and
+   `connectionTimeoutMillis`. Saturation is the dangerous shape: waiters are
+   present and idle connections are zero.
+4. Inspect `kubectl top pod` and backend logs for a concurrent fan-out or a
+   slow query. Do not increase the pool before checking the database and node
+   connection limits.
+
+The pool is configured in `backend/config/db-pg.ts`. It has a bounded acquire
+timeout, so a full pool should fail with an actionable error rather than leave
+Express handlers waiting forever.
 
 ## Immediate recovery
 
-```bash
-kubectl rollout restart deploy/backend -n commonly-dev
-kubectl rollout status deploy/backend -n commonly-dev --timeout=120s
-```
-
-~20s downtime. Frees all PG connections instantly. Re-probe `/api/pods` should return in <1s.
-
-## Why this happens
-
-`pg.Pool` defaults are `max=10` and `connectionTimeoutMillis=0` (wait forever). On any traffic surge — most commonly the hourly summarizer fanning out N events that each query PG — the 10 slots saturate and every subsequent `pool.query()` waits forever on connection acquire. UI shows perpetual loading with no diagnostic signal because Express never times out the awaiting handler.
-
-## Structural fix
-
-Applied 2026-05-26 in PR #455 (`backend/config/db-pg.ts`):
-
-- `max: 50` (default; tunable via `PG_POOL_MAX`).
-- `connectionTimeoutMillis: 5000` (default; tunable via `PG_POOL_CONNECT_TIMEOUT_MS`).
-
-With this, an exhausted pool fails fast as a 5xx instead of hanging — user sees an error, on-call sees an alert, response is actionable.
-
-## Follow-ups shipped in #459 (2026-05-31)
-
-Both items below were "still TODO" after #455; PR #459 shipped them:
-
-- **Summarizer fanout chunked** — `SchedulerService.dispatchPodSummaryRequests` now enqueues in batches of `SUMMARIZER_FANOUT_BATCH_SIZE` (default 10) with a `SUMMARIZER_FANOUT_BATCH_PAUSE_MS` gap (default 500ms) between batches, instead of a bare `Promise.all` over all installations. For 60 pods that spreads the burst across ~3s so the consumer side never claims all pool slots at once.
-- **`/api/health/db` probe added** — returns `{ pg: { max, total, idle, waiting, connectionTimeoutMillis } }` with NO `SELECT` round-trip (safe to scrape every 10s). Returns **503 only when `waiting > 0 AND idle === 0`** (true saturation); transient `waiting > 0 / idle > 0` returns 200 to avoid alert noise. Code: `backend/routes/health.ts`.
-
-Probe it:
+If the pool is wedged and the database is healthy, restart only the backend
+deployment and watch it complete:
 
 ```bash
-kubectl exec -n commonly-dev deploy/backend -- curl -sS http://localhost:5000/api/health/db
-# → {"pg":{"status":"ok","max":50,"total":N,"idle":N,"waiting":0,...}}
+kubectl rollout restart deployment/backend -n commonly-dev
+kubectl rollout status deployment/backend -n commonly-dev --timeout=120s
 ```
 
-## Related
+Re-run `/api/health/db`, then exercise the affected request with a bounded
+client timeout. If the pool saturates again, stop restarting and capture the
+fan-out, query, and connection counters for the owning code path.
 
-- Incident issue: [#454](https://github.com/Team-Commonly/commonly/issues/454)
-- Fix PRs: [#455](https://github.com/Team-Commonly/commonly/pull/455) (pool ceiling), [#459](https://github.com/Team-Commonly/commonly/pull/459) (fanout chunk + health probe)
-- Code: `backend/config/db-pg.ts` (pool config), `backend/controllers/podController.ts:199-227` (getAllPods PG call site), `backend/services/schedulerService.ts` (`dispatchPodSummaryRequests` — the chunked surge source), `backend/routes/health.ts` (`/api/health/db`)
+## Prevention
+
+- Keep scheduled fan-out bounded and chunked.
+- Release clients and transactions on every success and error path.
+- Keep query timeouts and pool acquire timeouts finite.
+- Size the pool below the database's connection budget, leaving room for
+  migrations and operator access.
+- Alert on sustained `waiting > 0` with `idle === 0`, not on one transient
+  waiter.
+
+Validate pool changes with the backend service tests and a production-shaped
+load test before rollout.

@@ -1,115 +1,52 @@
-# LiteLLM Guardrails (anti-pattern detection)
+# LiteLLM guardrails
 
-How Commonly detects/blocks anti-pattern content on the LiteLLM proxy for the
-public-launch exposure, and how the scoping keeps dev agents unaffected.
+Guardrails protect platform-keyed LLM calls that process untrusted pod or user
+content. They are configured in
+`k8s/helm/commonly/templates/configmaps/litellm-config.yaml` and are opt-in;
+they must not silently change the behaviour of developer-owned runtimes.
 
-## What's configured
+## Current policy
 
-Two guardrails in `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`
-(`guardrails:` block):
+The platform uses LiteLLM's built-in guardrail hooks for moderation and prompt
+injection/jailbreak detection. The exact guardrail names and categories are
+configuration, so inspect the deployed ConfigMap before changing this page.
+The supported hook stages are `pre_call`, `during_call`, and `post_call`.
 
-| Guardrail | Provider | Mode | Scope | Purpose |
-|---|---|---|---|---|
-| `openai-moderation-enforce` | `openai_moderation` (free, uses `OPENAI_API_KEY`) | `during_call` (blocks) | `default_on: false` (opt-in) | **Block** policy-violating content. |
-| `injection-guard` | **native `litellm_content_filter`** (first-party, local keyword + conditional matching — no external service/key/license) | `pre_call` (blocks with HTTP 400) | `default_on: false` (opt-in) | **Block** prompt-injection / jailbreak / prompt-exfiltration. |
+The backend opts in on the paths that use Commonly's platform credentials:
 
-Both are **first-party LiteLLM guardrails** — there is no custom module to maintain.
-`injection-guard` uses the built-in content-filter categories
-`prompt_injection_jailbreak`, `prompt_injection_system_prompt`, and
-`prompt_injection_data_exfiltration` at `severity_threshold: high`. The `sql` and
-`malicious_code` categories are intentionally **off** — Commonly is a dev-agent
-platform, so blocking SQL/code discussion would be all false-positives.
+- `backend/services/llmService.ts` for shared summarization and content
+  generation; and
+- `backend/services/nativeRuntimeService.ts` for the in-process native agent.
 
-> **History:** `injection-guard` was originally a hand-rolled regex module
-> (`prompt_injection_guard.PromptInjectionGuard`, written to `/app/` by the startup
-> script). It was replaced by the native `litellm_content_filter` — more attack-shape
-> coverage, a clean HTTP 400 (vs the custom module's 500), and no code to maintain.
+BYO agents and local CLI-wrapper seats run on their own credentials or keys and
+do not inherit the platform guardrail list.
 
-**Known residual false-positive:** the jailbreak category has a standalone
-`you are now` keyword, so "you are now assigned to X" in pod content can be blocked.
-Bounded by the opt-in scoping + the per-path env off-switches below. If it bites,
-either flip the env off-switch or override that category with a trimmed
-`category_file`.
+## Changing a guardrail
 
-## The scoping (why dev agents aren't blocked)
-
-Both guardrails are `default_on: false`, so they run **only when a caller opts in**.
-Opt-in is per-request via the `guardrails: [...]` field in the request body.
-
-**Two platform paths opt in — the two places untrusted input reaches a platform-keyed
-LLM call:**
-
-1. `backend/services/llmService.ts` (`generateViaLiteLLM`) — the shared LLM path for
-   the summarizer, daily digest, skills, avatars, etc., which ingest **untrusted pod
-   content**. Opts in via the `LLMSERVICE_GUARDRAILS` env (default
-   `openai-moderation-enforce,injection-guard`; comma-separated; empty string disables
-   — a no-redeploy off-switch, symmetric with `NATIVE_RUNTIME_GUARDRAILS`).
-2. `backend/services/nativeRuntimeService.ts` — the **Tier-1 native cloud-agent
-   runtime** (loops LiteLLM chat/completions with the 5 Commonly tools). This is where
-   a **public user converses directly with a native agent**, so the user's message is
-   untrusted input on our platform key. Opts in via the `NATIVE_RUNTIME_GUARDRAILS` env
-   (default `openai-moderation-enforce,injection-guard`; comma-separated; empty string
-   disables — a no-redeploy off-switch if it over-blocks a first-party app like the
-   welcomer/summarizer). A block is surfaced as `AgentRun.errorKind = 'guardrail_blocked'`
-   with a generic message; the raw proxy payload is never returned to the user.
-
-Dev agents (Cody/Theo/…) call LiteLLM through their **own per-agent virtual keys** on
-**separate runtimes** (cloud-codex / openclaw), never through `llmService` or the native
-runtime, and never send the opt-in field — so their coding prompts (which can look
-injection-y) are never blocked. This is the deliberate "scope to the untrusted-input
-surface, not the trusted-operator surface" design: the two guarded paths are (a) a
-poisoned pod message hijacking a platform feature and (b) a malicious user directly
-prompt-injecting a native agent — NOT dev-agent coding, and NOT public users' BYO
-agents (which run on their own compute and never touch our proxy).
-
-## ⚠️ Validate before deploying — the 2026-06-29 crash-loop
-
-An earlier version added a third guardrail, `openai-moderation-monitor`, with
-`mode: "logging_only"`. **`logging_only` is NOT a supported event hook on the pinned
-image (litellm v1.88.0-rc.1)** — litellm raised at startup, the pod crash-looped, and
-because it never bound `:4000` the platform features that opt in got `ECONNREFUSED`.
-
-The only supported modes are `pre_call`, `during_call`, `post_call`. **Before shipping
-any guardrails change, boot-test the exact config in a throwaway litellm pod** and
-confirm it logs `Application startup complete` with no `not in the supported event
-hooks` error:
+1. Make the smallest config change and name the affected caller path.
+2. Validate the exact LiteLLM image with the candidate config before rollout.
+3. Confirm the pod reaches `Application startup complete` and that no hook-stage
+   validation error appears.
+4. Send one allowed request and one deliberately blocked test request in a
+   non-production environment.
+5. Roll out and watch both LiteLLM and the backend callers.
 
 ```bash
-# 1. put the candidate config.yaml + prompt_injection_guard.py in a dir, then:
-kubectl create configmap gtest-litellm -n commonly-dev \
-  --from-file=config.yaml --from-file=prompt_injection_guard.py
-# 2. run a throwaway litellm with them mounted at /app, PYTHONPATH=/app,
-#    args: --config /app/config.yaml. Then:
-kubectl logs gtest-litellm-pod -n commonly-dev | grep -iE \
-  "Application startup complete|not in the supported event hooks|Traceback"
-# 3. clean up: kubectl delete pod gtest-litellm-pod configmap gtest-litellm -n commonly-dev
+kubectl logs deploy/litellm -n commonly-dev --since=10m \
+  | grep -iE 'Application startup complete|guardrail|Traceback'
+kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
 ```
 
-Green = `Application startup complete`. Anything else = do not deploy.
+Keep the raw prompt and provider response out of incident messages when they
+contain user content. A blocked native run should be visible as a bounded
+runtime error, not a leaked proxy payload.
 
-## Posture + tuning
+## Tuning
 
-- Watch the litellm logs for `[injection-guard] blocked` and moderation flags to
-  gauge the false-positive rate on platform traffic.
-- If the injection heuristic over-blocks a platform feature, tighten `_PATTERNS`
-  in the startup module, or drop the offending guardrail from the `llmService`
-  opt-in array (that alone disables it — no config change needed).
-- **Upgrade path**: replace the heuristic with a self-hosted **PromptGuard**
-  (Meta Prompt-Guard-86M) model sidecar the guardrail calls, for real ML-based
-  injection detection. Paid providers (Lakera/Aporia) are the other option.
+Use the per-path environment switch only as a temporary mitigation for a
+measured false positive. Record the sample, the category, and the follow-up
+change. Do not disable a guardrail globally to fix one provider or one feature.
 
-## What this does NOT cover
-
-- **Malicious agent *actions*** (running commands, exfiltration) — not a content
-  guardrail; handled by tool/exec gating (OpenClaw = no shell; codex = isolated),
-  the cloud-agent entitlement gate (#529), and rate limits. Public users' BYO
-  agents run on their own compute and never touch our proxy.
-- **Broad user-post moderation** — pod posts only hit the proxy when a platform
-  feature re-processes them; general UGC moderation belongs at the app/ingestion
-  layer, not here.
-
-Applying changes requires a litellm pod restart (the config is a ConfigMap; the
-startup script writes the guardrail module) —
-`kubectl rollout restart deploy/litellm -n commonly-dev`. A `Deploy Dev` run that
-touches the litellm **deployment template** (not just the configmap) rolls the pod
-automatically.
+Guardrails do not authorize tools or sandbox actions. Runtime capability and
+credential scope are separate controls; see the agent environment and sandbox
+docs for those boundaries.

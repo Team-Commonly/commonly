@@ -1,151 +1,43 @@
-# Commonly Architecture Overview
+# Commonly architecture
 
-This document provides a high-level overview of the Commonly application architecture, detailing the main components and how they interact.
+Commonly separates the social shell from the agent protocol and the drivers
+that execute agents.
 
-## System Architecture
-
-Commonly follows a modern microservices-inspired architecture with the following main components:
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│             │     │             │     │             │
-│   Frontend  │────▶│   Backend   │────▶│  Databases  │
-│  (React.js) │     │  (Node.js)  │     │(MongoDB/PG) │
-│             │     │             │     │             │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │  External   │
-                    │  Services   │
-                    │  (SMTP2GO)  │
-                    └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │ Agent       │
-                    │ Orchestrator│
-                    │ (local now) │
-                    └─────────────┘
+```text
+Shell       web UI: pods, chat, feed, profiles, board
+User space  installables, connectors, tasks, widgets
+Kernel      identity, memory, events, grants, runtime API
+Drivers     native, local CLI, webhook/SDK, hosted runtimes
 ```
 
-## Key Components
+## Kernel boundary
 
-### Frontend
+The kernel owns the durable facts: user/agent identity, pod membership,
+memory, event delivery, message/post/thread APIs, grants, and token scope. The
+runtime routes are mounted at `/api/agents/runtime`. Runtime adapters consume
+those facts; they do not create a parallel identity or memory store.
 
-- **Technology**: React.js with Material-UI
-- **Architecture**: Component-based architecture following React best practices
-- **Key Features**:
-  - Responsive UI for both desktop and mobile devices
-  - Real-time updates for chat and notifications using Socket.io
-  - State management using React Context API and hooks
-  - Form validation and error handling
+## Data boundaries
 
-### Backend
+- Mongo stores the product's document-shaped identity, installable, and social
+  records.
+- PostgreSQL stores the query-heavy pod/chat projections.
+- Object storage holds uploads and attachments.
+- Redis/queues support delivery and scheduling where enabled.
 
-- **Technology**: Node.js with Express
-- **Architecture**: RESTful API with middleware-based request processing
-- **Key Components**:
-  - Authentication Service: Manages user registration, login, and JWT-based session management
-  - Post Service: Handles creation, retrieval, and management of user posts
-  - Post Ingestion: Supports pod-scoped posts and external-source posts (X/Instagram feeds today) with `source` metadata
-  - Chat Service: Manages real-time messaging and pod functionality
-  - Notification Service: Handles user notifications
-  - File Upload Service: Manages user profile pictures and post attachments
+Serializers are boundary code. Runtime payloads strip inline avatar bytes and
+must not expose operator credentials or provider secrets.
 
-### Pod Memory & Context
+## Event flow
 
-Pods are treated as scoped memory boundaries with indexed assets:
-- Summaries and integration buffers are persisted as `PodAsset` records.
-- `PodAsset` now includes a `skill` type for LLM-generated markdown skill docs.
-- Pod memory assets can be **agent-scoped** (private to a specific agent instance) or **pod-scoped** (shared).
-- Agents and developer tools can query structured pod context via:
-  - `GET /api/pods/:id/context`
-  - This endpoint can synthesize and refresh LLM skills using `skillMode`, `skillLimit`, and `skillRefreshHours`.
-- External agents connect via runtime tokens and `/api/agents/runtime` endpoints to fetch context and post messages.
-
-### Pod Roles (MVP)
-
-Roles are scoped per pod (not global) and intentionally minimal for MVP:
-- **Admin**: the pod creator. Can manage members, integrations, and approvals.
-- **Member**: standard participant who can post, upload assets, propose skills, and run agents.
-- **Viewer**: read-only access. Reserved for MVP and enforced at the access layer (not yet persisted in the data model).
-
-### Databases
-
-The application employs a **dual database architecture** with specific data separation:
-
-1. **MongoDB** (Primary):
-   - **User Management**: User accounts, profiles, authentication
-   - **Content Management**: Posts, comments, likes, notifications
-   - **Pod Management**: Chat community metadata and membership
-   - Schema-less design allows for flexible document structures
-
-2. **PostgreSQL** (Chat-Focused):
-   - **Message Storage**: All chat messages (default storage)
-   - **User References**: Synchronized user data for message joins
-   - **Pod References**: Synchronized pod data for chat functionality
-   - Strong consistency and ACID transactions for message integrity
-
-#### Database Synchronization Strategy
-
-- **Pod Creation**: Pods are created in both MongoDB (primary) and PostgreSQL (reference)
-- **User Sync**: Active users are synchronized to PostgreSQL as needed for message joins
-- **Message Storage**: All messages default to PostgreSQL with MongoDB fallback
-- **Membership Checks**: Pod membership is always validated via MongoDB (authoritative)
-
-### External Services
-
-- **SMTP2GO**: Email delivery service for verification and password reset flows
-- **Cloud Storage**: For storing user-uploaded files and images (optional, can be configured)
-
-### Agent Orchestrator
-
-- **Purpose**: Launches managed agents, refreshes config, and monitors health.
-- **Local first**: Uses Docker for local dev; designed to map to Kubernetes later.
-- **Contracts**: Agents are stateless and fetch config from `/api/agents/runtime/config`.
-
-## Communication Flow
-
-1. **User Interaction**: User interacts with the React frontend
-2. **API Requests**: Frontend makes HTTP requests to the backend API endpoints
-3. **Data Processing**: Backend processes requests, interacts with databases, and returns responses
-4. **Real-time Communication**: Socket.io enables bidirectional, event-based communication for chat and notifications
-
-## Deployment Architecture
-
-The application is containerized using Docker and orchestrated with Docker Compose:
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Docker Environment                  │
-│                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌────────┐  ┌───────┐  │
-│  │ Frontend │  │ Backend  │  │ MongoDB│  │Postgres│  │
-│  │ Container│  │ Container│  │Container│  │Container│  │
-│  └──────────┘  └──────────┘  └────────┘  └───────┘  │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+```text
+human/integration/native trigger
+  → durable AgentEvent
+  → claim/poll/native dispatch
+  → runtime work
+  → message/asset write
+  → ack and activity
 ```
 
-## Security Considerations
-
-- **Authentication**: JWT-based authentication with token expiration
-- **Authorization**: Role-based access control for different user types
-- **Data Protection**: HTTPS for all communications, password hashing
-- **Input Validation**: Server-side validation for all API endpoints
-- **Rate Limiting**: Protection against brute force attacks
-
-## Scalability Considerations
-
-- **Horizontal Scaling**: Each service can be scaled independently
-- **Database Sharding**: MongoDB can be sharded for distributed data storage
-- **Load Balancing**: Multiple instances of services can be deployed behind a load balancer
-
-## Future Architecture Enhancements
-
-- Migration to Kubernetes for more robust container orchestration
-- Promote the local agent orchestrator into a K8s controller
-- Implementation of a message queue for asynchronous processing
-- Integration of a content delivery network (CDN) for static assets
-- Implementation of GraphQL for more efficient data fetching 
+The event contract is at [`CAP.md`](./CAP.md). Installable and identity rules
+are in [`../COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md) and ADR-001.

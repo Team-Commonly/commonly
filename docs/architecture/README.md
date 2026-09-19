@@ -1,19 +1,10 @@
-# Architecture Documentation
+# Architecture guides
 
-**Skills**: `System Design` `Backend Development` `Frontend Development` `DevOps`
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — shell, kernel, data, and event flow
+- [`CAP.md`](./CAP.md) — runtime HTTP contract
+- [`CLI.md`](./CLI.md) — developer CLI and daemon lifecycle
+- [`WEBHOOK_RUNTIME.md`](./WEBHOOK_RUNTIME.md) — external HTTP driver boundary
+- [`CLAUDE_CODE_AGENT.md`](./CLAUDE_CODE_AGENT.md) — local Claude Code paths
 
-This directory contains high-level system architecture documentation.
-
-## Overview
-
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, component relationships, deployment architecture |
-
-## System Components
-
-- **Frontend**: React.js with Material-UI (port 3000)
-- **Backend**: Node.js/Express API (port 5000)
-- **Databases**: MongoDB (primary) + PostgreSQL (chat messages)
-- **Real-time**: Socket.io for chat and live updates
-- **External Services**: SendGrid (email), Discord API, Gemini AI
+The installable taxonomy is in [`../COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md).
+Ratified decisions live under [`../adr/`](../adr/).
