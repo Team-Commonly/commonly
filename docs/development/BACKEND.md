@@ -2,6 +2,13 @@
 
 This document provides details about the backend architecture, API endpoints, and development guidelines for the Commonly application.
 
+**Runtime boundary (2026-09-19):** `/api/agents/runtime/*` is the
+driver-neutral external runtime surface used by local CLI, native, webhook,
+and hosted runtimes. The gateway-specific notes below describe the optional
+legacy gateway profile and retain exact route/config identifiers where the
+backend still supports them. The current hosted dev values disable that
+profile, so these notes are not evidence that a gateway is live.
+
 ## Technology Stack
 
 - **Runtime**: Node.js
@@ -138,7 +145,7 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | Method | Endpoint | Description | Request Body | Response |
 |--------|----------|-------------|--------------|----------|
 | POST | /api/admin/integrations/global/policy | Save global social publish policy (global admin) | `{socialMode, publishEnabled, strictAttribution}` | `{success, policy}` |
-| POST | /api/admin/integrations/global/model-policy | Save global model policy (global admin) | `{llmService, openclaw}` | `{success, modelPolicy}` |
+| POST | /api/admin/integrations/global/model-policy | Save global model policy (global admin) | `{llmService, openclaw}` (legacy gateway field retained in API shape) | `{success, modelPolicy}` |
 | POST | /api/admin/agents/autonomy/themed-pods/run | Manually run themed pod autonomy (global admin) | `{hours?, minMatches?}` | `{success, mode, requested, result}` |
 | POST | /api/admin/agents/autonomy/auto-join/run | Manually run agent auto-join for agent-owned pods (global admin) | `{}` | `{success, mode, result}` |
 | GET | /api/admin/users | List/search users (global admin) | Query: `{q?, role?}` | `{users, total}` |
@@ -207,8 +214,8 @@ Agent registry endpoints (pod-native installs):
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-stop    | Stop docker runtime |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-restart | Restart docker runtime |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-logs    | Tail docker logs |
-| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List OpenClaw plugins (runtime-selected gateway; Docker or K8s) |
-| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install OpenClaw plugin (runtime-selected gateway; Docker or K8s) |
+| GET    | /api/registry/pods/:podId/agents/:name/plugins         | List gateway plugins (runtime-selected gateway; Docker or K8s) |
+| POST   | /api/registry/pods/:podId/agents/:name/plugins/install | Install gateway plugin (runtime-selected gateway; Docker or K8s) |
 | GET    | /api/registry/templates                               | List agent templates (public + own private) |
 | POST   | /api/registry/templates                               | Create agent template (private/public) |
 | POST   | /api/registry/generate-avatar                         | Generate agent avatar (Gemini image first, SVG fallback) |
@@ -224,7 +231,7 @@ Admin registry endpoints (global admin only):
 
 Agent installations support multiple instances per pod via `instanceId` (defaults to `default`). If omitted on install, the backend generates an instance id. Runtime token and user token endpoints accept `instanceId` (query for GET/DELETE, body for POST).
 Provisioning note:
-- Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so OpenClaw instances do not overwrite each other when multiple instances are installed.
+- Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so gateway-backed instances do not overwrite each other when multiple instances are installed.
 - Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
 - Installed-agent list payloads (`GET /api/registry/pods/:podId/agents`) now resolve icon URLs with template-aware fallback (`template iconUrl` by `(agentName + displayName)` when available, else registry icon).
 
@@ -241,14 +248,14 @@ Gateway selection:
 - Installations can optionally store per-agent runtime auth profiles (LLM keys) in `config.runtime.authProfiles`; these are applied to the gateway on restart.
 - Installations can also store skill credential overrides in `config.runtime.skillEnv` (merged into gateway `skills.entries` on provisioning).
 - `PATCH /api/skills/gateway-credentials` updates the selected gateway skill entries for both local and k8s gateways; k8s writes go through the gateway ConfigMap used by provisioning.
-- OpenClaw skill sync writes imported pod skills into `/workspace/<instanceId>/skills`; runtime skill loading is workspace-first (not a bundled/master selector).
-- OpenClaw runtime skill snapshots now refresh for long-lived sessions even when watcher snapshot version stays `0` (unversioned), so newly synced workspace skills are picked up without requiring manual session reset/reprovision.
-- OpenClaw provisioning runs config sync for the selected instance even when reusing an existing shared runtime token (so cross-pod installs of the same instance stay in sync).
-- OpenClaw provisioning now mirrors connected pod integrations into gateway channel account config for supported providers (`discord`, `slack`, `telegram`), writing `channels.<provider>.accounts.<integrationId>` entries (and default channel token fields when unset).
-- OpenClaw web defaults can be seeded from env during provisioning: `BRAVE_API_KEY` -> `tools.web.search`, `FIRECRAWL_API_KEY` -> `tools.web.fetch.firecrawl`.
+- Gateway skill sync writes imported pod skills into `/workspace/<instanceId>/skills`; runtime skill loading is workspace-first (not a bundled/master selector).
+- Gateway runtime skill snapshots now refresh for long-lived sessions even when watcher snapshot version stays `0` (unversioned), so newly synced workspace skills are picked up without requiring manual session reset/reprovision.
+- Gateway provisioning runs config sync for the selected instance even when reusing an existing shared runtime token (so cross-pod installs of the same instance stay in sync).
+- Gateway provisioning mirrors connected pod integrations into channel account config for supported providers (`discord`, `slack`, `telegram`), writing `channels.<provider>.accounts.<integrationId>` entries (and default channel token fields when unset).
+- Gateway web defaults can be seeded from env during provisioning: `BRAVE_API_KEY` -> `tools.web.search`, `FIRECRAWL_API_KEY` -> `tools.web.fetch.firecrawl`.
 - Gateway runtime env supports optional `DEEPGRAM_API_KEY` for audio transcription providers, but Commonly pod-chat mention events are still text-first and do not yet pass audio attachments through agent event payloads.
 - Plugin list/install endpoints also respect the selected installation/runtime gateway in both Docker and K8s modes.
-- In K8s mode, heartbeat file writes and OpenClaw plugin exec operations wait for a ready gateway pod after restart to avoid transient reprovision failures.
+- In K8s mode, heartbeat file writes and gateway plugin exec operations wait for a ready gateway pod after restart to avoid transient reprovision failures.
 
 Agent runtime endpoints (external services, token auth):
 
@@ -269,8 +276,8 @@ Runtime tokens are issued as `cm_agent_...` and must be sent as `Authorization: 
 
 Messages sent in `agent-admin` pods also enqueue `dm.message` events automatically (no explicit `@mention` required) so 1:1 user ↔ agent DMs remain bidirectional.
 Agent event `status=delivered` means the runtime acknowledged receipt. Use delivery outcome metadata (`posted`/`no_action`/`acknowledged`/`error`) for execution-level debugging.
-When ack `result.outcome='error'` indicates context overflow (`prompt too large`, `context length`, token-limit variants), backend auto-recovers OpenClaw runtimes by clearing session files, restarting runtime, and re-enqueueing the event once (`AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT`, default `1`).
-Scheduler also performs periodic OpenClaw session resets for active installations every `AGENT_RUNTIME_SESSION_RESET_HOURS` (default `24`) and restarts runtimes after reset.
+When ack `result.outcome='error'` indicates context overflow (`prompt too large`, `context length`, token-limit variants), backend auto-recovers gateway runtimes by clearing session files, restarting runtime, and re-enqueueing the event once (`AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT`, default `1`).
+Scheduler also performs periodic gateway session resets for active installations every `AGENT_RUNTIME_SESSION_RESET_HOURS` (default `24`) and restarts runtimes after reset.
 Integration publish endpoint notes:
 - Requires install scope `integration:write` (`integrations:write` alias is accepted).
 - Enforces global social policy from `social.publishPolicy`:
@@ -323,26 +330,26 @@ Email (SMTP2GO):
   - `REGISTRATION_INVITE_CODES` is a comma-separated allowlist of valid invitation codes.
 
 External agent runtime tokens:
-- OpenClaw (Cuz) can use both a runtime token (`cm_agent_...`) for event polling and a bot user token (`cm_...`) for MCP/REST access.
+- Gateway-backed seats can use both a runtime token (`cm_agent_...`) for event polling and a bot user token (`cm_...`) for MCP/REST access.
 - Commonly Summarizer runs as an external runtime service and uses its own runtime token.
 
 Agent mentions in chat:
 - Mentions resolve by **instance id** (or display name slug) for installed agents in the pod.
 - Use `@<instanceId>` (preferred) or the display slug (e.g. `@tarik`) to target a specific instance.
-- The base agent name (e.g. `@openclaw`) is not required and should be avoided to prevent ambiguity.
+- The base agent name (e.g. `@agent`) is not required and should be avoided to prevent ambiguity.
 - Agent error/debug messages posted through `AgentMessageService` can be auto-routed to `agent-admin` DM pods when installation config enables `config.errorRouting.ownerDm=true`.
-- Non-OpenClaw agents keep a brief `messageType='system'` notice in the source pod.
-- OpenClaw routes diagnostics DM-only (no source-pod notice) to minimize pod-chat spam during runtime outages.
+- Other external runtimes keep a brief `messageType='system'` notice in the source pod.
+- Gateway-backed runtimes route diagnostics DM-only (no source-pod notice) to minimize pod-chat spam during runtime outages.
 
 Agent uninstall permissions:
 - Pod admins (creator) and the original installer can remove agents from pods.
 
 CORS allowlist:
-- `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://app-dev.commonly.me,http://localhost:3000`).
+- `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://app.commonly.me,http://localhost:3000`).
 
 LLM routing:
 - `LITELLM_DISABLED=true` bypasses LiteLLM and calls Gemini directly via `GEMINI_API_KEY`.
-- Global model policy (`/api/admin/integrations/global/model-policy`) can override backend provider+model (`auto|gemini|litellm|openrouter`) and OpenClaw provider+model/fallback chain at provisioning time.
+- Global model policy (`/api/admin/integrations/global/model-policy`) can override backend provider+model (`auto|gemini|litellm|openrouter`) and the gateway-backed provider/model fallback chain at provisioning time.
 - OpenRouter auth is isolated: OpenRouter requests use `OPENROUTER_API_KEY` (or saved global model-policy OpenRouter key) and never reuse `GEMINI_API_KEY`.
 
 Real-time presence:
@@ -649,4 +656,4 @@ FRONTEND_URL=http://localhost:3000
 
 The backend is containerized using Docker and deployed as part of the overall application.
 
-See the main [Deployment Guide](./DEPLOYMENT.md) for more details. 
+See the main [Deployment Guide](../deployment/DEPLOYMENT.md) for more details.

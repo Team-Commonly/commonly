@@ -5,21 +5,26 @@ In Commonly it serves two roles:
 
 _last_updated: 2026-06-08_
 
-1. **Agent gateway** — all OpenClaw (dev + community) agent LLM calls route through it, including Codex OAuth traffic and OpenRouter traffic
+1. **Agent gateway** — legacy gateway agent LLM calls route through it, including Codex OAuth traffic and OpenRouter traffic
 2. **Backend gateway** — `llmService.js` uses it for summarization, digest, and embedding calls
+
+The agent-gateway path is an optional legacy profile. The current hosted dev
+values disable `agents.clawdbot`; the backend and supported runtime adapters
+still use LiteLLM for the routes described below. Keep the gateway commands in
+this document scoped to an operator who explicitly enables that profile.
 
 ## Current routing (2026-05-02)
 
 - **`CODEX_BYPASS_LITELLM=false`** on backend (`values-dev backend.env.codexBypassLitellm: "false"`). The previous bypass workaround for `BerriAI/litellm#25429` is retired — `acpx_run` is being deprecated under ADR-005, so we no longer maintain the chatgpt.com-direct path.
 - **`codex-auth-rotator` sidecar enabled** (`values-dev litellm.codexAuthRotator.enabled: true`). Swaps `/chatgpt-auth/auth.json` between accounts on 429 events from LiteLLM's custom callback OR every 10 min. Three Codex accounts loaded — init container picks first valid in order `[1, 3, 2]`; rotator rotates among them on rate limit.
-- **OpenRouter routes through LiteLLM** with per-agent virtual keys in `openrouter:default.{key,apiKey}`. Profiles must include `type: 'api_key'` + `provider: 'openrouter'` (see `docs/agents/AGENT_RUNTIME.md` "Routing Invariants" — auth profiles must declare type, otherwise OpenClaw falls through to env-var which sends the wrong key and 401s).
+- **OpenRouter routes through LiteLLM** with per-agent virtual keys in `openrouter:default.{key,apiKey}`. Profiles must include `type: 'api_key'` + `provider: 'openrouter'` (see `docs/agents/AGENT_RUNTIME.md` "Routing Invariants" — auth profiles must declare type, otherwise the legacy gateway falls through to env-var which sends the wrong key and 401s).
 
 ---
 
 ## Architecture (GKE / commonly-dev)
 
 ```
-OpenClaw gateway  ──►  LiteLLM :4000  ──►  chatgpt/ (Codex OAuth)
+Legacy gateway (when enabled) ──►  LiteLLM :4000  ──►  chatgpt/ (Codex OAuth)
 Backend services  ──►  LiteLLM :4000  ──►  Gemini / OpenRouter / OpenAI
 ```
 
@@ -168,7 +173,7 @@ the endpoint the caller uses:
 
 | Caller | LiteLLM endpoint | Model alias | `litellm_params.model` |
 |---|---|---|---|
-| OpenClaw dev agents | `/chat/completions` | `gpt-5.4*`, `openai-codex/gpt-5.4*` | `chatgpt/responses/gpt-5.4*` (**prefixed**) |
+| Legacy gateway agents | `/chat/completions` | `gpt-5.4*`, `openai-codex/gpt-5.4*` | `chatgpt/responses/gpt-5.4*` (**prefixed**) |
 | codex CLI / cloud-codex (`wire_api="responses"`) | `/v1/responses` | `codex-cli/gpt-5.4` | `chatgpt/gpt-5.4` (**unprefixed**) |
 
 - On `/chat/completions`, the `responses/` prefix is **load-bearing**: plain `chatgpt/gpt-5.4*`
