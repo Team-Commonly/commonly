@@ -9,6 +9,7 @@ import {
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
 } from '../src/lib/daemon-supervisor.js';
+import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 
 const record = {
   machineDbId: '507f1f77bcf86cd799439011',
@@ -140,7 +141,7 @@ describe('tick', () => {
   // runtime.adapter/model/effort and no environment at all, so the daemon mints
   // the token. Before this fix that record had no mcp[], and c4-smoke spawned
   // with no commonly_* tools until the operator hand-added the entry.
-  test('the C4-2 row shape (wrapper + pi + model/effort, no environment) mints the baseline', async () => {
+  test('the C4-2 row shape (wrapper + pi + model/effort, no environment) mints the mcp half only', async () => {
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({
         runtime: {
@@ -152,11 +153,18 @@ describe('tick', () => {
     await supervisor.tick();
     const record = saveToken.mock.calls[0][1];
     expect(record.adapter).toBe('pi');
+    // The kernel MCP server (TASK-048), and NO sandbox: pi fails closed on a
+    // declared sandbox (#1727), so the both-halves assertion that used to sit
+    // here pinned a record whose own adapter refuses to start — the seat would
+    // have died on every spawn with 'public-trust seats are not supported'.
+    // The sandbox half is asserted for claude in 'the baseline a seat nobody
+    // authored gets' below, which is where the enforcing adapters are covered.
     expect(record.environment).toEqual({
       model: 'deepseek-v4-flash',
       effort: 'high',
       mcp: [expect.objectContaining({ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] })],
     });
+    expect(() => assertNoSandboxDeclared(record.environment)).not.toThrow();
   });
 
   test('an adapter with no mcp consumption path still invents no environment', async () => {
@@ -402,6 +410,128 @@ describe('tick', () => {
     await supervisor.tick();
     expect(saveToken).not.toHaveBeenCalled();
   });
+
+// TASK-052 / C4-6: an undeclared sandbox is an unconfined seat. The
+// self-serve install ships no environment at all, the daemon projected it
+// verbatim, and the seat spawned with no OS-level confinement — the socket
+// `sandbox.mode` defaults to is 'none'. The default here is the same one the
+// c4 smoke room was hand-confined with.
+describe('the baseline a seat nobody authored gets', () => {
+  const DEFAULT_SANDBOX = { trust: 'public' };
+  const shippedCommonly = {
+    name: 'commonly',
+    transport: 'stdio',
+    command: ['npx', '-y', '@commonlyai/mcp@latest'],
+  };
+
+  test('a fresh self-serve seat is minted confined, not only tooled', async () => {
+    const { supervisor, saveToken, children } = makeHarness({ rows: () => [boundRow()] });
+    await supervisor.tick();
+    const { environment } = saveToken.mock.calls[0][1];
+    expect(environment.sandbox).toEqual(DEFAULT_SANDBOX);
+    expect(environment.mcp).toEqual([expect.objectContaining({ name: 'commonly' })]);
+    expect(children).toHaveLength(1);
+  });
+
+  test('a declared environment that names no sandbox gains the default', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        runtimeToken: 'cm_agent_old',
+        adapter: 'claude',
+        environment: { model: 'opus', mcp: [shippedCommonly] },
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', model: 'opus' },
+        environment: { version: 1, mcp: [shippedCommonly] },
+      })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1].environment).toEqual({
+      version: 1,
+      mcp: [shippedCommonly],
+      model: 'opus',
+      sandbox: DEFAULT_SANDBOX,
+    });
+  });
+
+  test('a declared environment that already confines the seat is left alone', async () => {
+    // The live c4-smoke shape: hand-confined, both MCP servers present.
+    const declared = {
+      version: 1,
+      sandbox: { trust: 'public' },
+      mcp: [
+        { ...shippedCommonly, env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } },
+        {
+          name: 'commonly-grant-broker',
+          transport: 'http',
+          url: '${COMMONLY_API_URL}/api/mcp/grants/grant_4df79b67',
+          headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+        },
+      ],
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
+        environment: declared,
+      })],
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1].environment)
+      .toEqual({ ...declared, model: 'claude-opus-5' });
+    // Idempotent: the second tick rewrites nothing, so the seat is not
+    // restarted on the tick after it was provisioned.
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+  });
+
+  test('a locally authored environment keeps its own sandbox choice', async () => {
+    // The operator's record is theirs: a private-pod seat with no sandbox is
+    // allowed (that is what `agent attach` permits), so the daemon must not
+    // silently confine it. Nothing here is authored by the server.
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        runtimeToken: 'cm_agent_old',
+        adapter: 'claude',
+        environment: { model: 'opus', mcp: [shippedCommonly] },
+      },
+    };
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(1);
+    expect(tokens['wren-test'].environment.sandbox).toBeUndefined();
+  });
+
+  test('a local record with no environment at all is confined too', async () => {
+    // A record past the mcp heal still carries no environment: nobody has
+    // authored anything, so it is in the same position as a fresh mint.
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test', runtimeToken: 'cm_agent_old', adapter: 'claude',
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1].environment).toEqual({
+      mcp: [expect.objectContaining({ name: 'commonly' })],
+      sandbox: DEFAULT_SANDBOX,
+    });
+  });
+});
 
   test('an existing token file skips the mint entirely', async () => {
     const { supervisor, client, children } = makeHarness({

@@ -57,6 +57,7 @@ import {
   resolve as pathResolve,
 } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -439,8 +440,23 @@ export default {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
       });
-      const publicSandboxMode = ctx.environment?.sandbox?.trust === 'public'
-        ? ctx.environment?.sandbox?.mode || 'unset'
+      // A derived record stores `trust: 'public'` and no mode (the block is
+      // platform-independent; see cli/src/lib/default-environment.js). Codex's
+      // mode only selects read vs write access — its permission profiles run on
+      // both macOS and Linux — so the derived default is `workspace`, and an
+      // explicit mode in the record still wins. Before this, a mode-less public
+      // record threw `got unset` and no codex seat spawned at all.
+      if (isLegacySandboxTrust(ctx.environment?.sandbox)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[codex] sandbox.trust=internal is no longer accepted: it reads as '
+          + 'confinement and engaged none. Resolving this seat as trust=public '
+          + '(Wren 69585).',
+        );
+      }
+      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+      const publicSandboxMode = sandbox?.trust === 'public'
+        ? sandbox?.mode ?? 'workspace'
         : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,

@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
 
-import { withDefaultMcpServer } from './default-environment.js';
+import { seatBaseline } from './default-environment.js';
 
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
@@ -190,7 +190,15 @@ export const createDaemonSupervisor = ({
         // declaration carries no mcp[] would come back tool-less. Re-apply the
         // shipped default here and below, or the seat silently loses every
         // commonly_* tool the next time the UI edits its model (TASK-048).
-        const nextEnvironment = withDefaultMcpServer(merged, nextAdapter);
+        //
+        // A DECLARED environment also gets the sandbox default when it names
+        // none: the declaration is not the operator's, and `sandbox.mode`
+        // defaults to 'none' in the adapters, so an omitted block is an
+        // unconfined seat (TASK-052). A local record with no environment at
+        // all is in the same position — nobody has authored anything.
+        const nextEnvironment = seatBaseline(merged, nextAdapter, {
+          sandbox: wanted.declared || !existing.environment,
+        });
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
@@ -209,7 +217,9 @@ export const createDaemonSupervisor = ({
       if (adapterChanged) {
         // An adapter that consumes mcp[] must not be started on a record that
         // declares none, even when only the adapter itself changed.
-        const nextEnvironment = withDefaultMcpServer(existing.environment, nextAdapter);
+        const nextEnvironment = seatBaseline(existing.environment, nextAdapter, {
+          sandbox: !existing.environment,
+        });
         saveToken(row.agentName, {
           ...existing,
           adapter: nextAdapter,
@@ -226,7 +236,9 @@ export const createDaemonSupervisor = ({
         // stays tool-less for as long as it runs. Heal it here, and only when
         // the environment actually changed — otherwise every tick rewrites the
         // file and restarts the seat forever.
-        const nextEnvironment = withDefaultMcpServer(existing.environment, existing.adapter);
+        const nextEnvironment = seatBaseline(existing.environment, existing.adapter, {
+          sandbox: !existing.environment,
+        });
         if (!isDeepStrictEqual(existing.environment || null, nextEnvironment || null)) {
           saveToken(row.agentName, { ...existing, environment: nextEnvironment });
           log('record predates the commonly MCP baseline — restarting the seat to load it');
@@ -277,10 +289,13 @@ export const createDaemonSupervisor = ({
     const environment = environmentFor(row);
     // A seat installed server-side (no local `agent attach`) arrives with no
     // mcp[] at all: without the default it spawns a CLI that has no commonly_*
-    // tools and cannot post. See lib/default-environment.js.
-    const recordEnvironment = withDefaultMcpServer(
+    // tools and cannot post. See lib/default-environment.js. Nothing here is
+    // operator-authored, so this seat also gets the sandbox default — the
+    // self-serve install's seat used to be born unconfined (TASK-052).
+    const recordEnvironment = seatBaseline(
       environment ? environment.value : null,
       adapter,
+      { sandbox: true },
     );
     saveToken(row.agentName, {
       agentName: row.agentName,
