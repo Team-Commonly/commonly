@@ -34,6 +34,24 @@ import {
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
 
+// One supervised seat, as `commonly daemon status --verbose` names it. Two of these
+// fields are worth reading closely: the seat's `instanceId` (the identity the
+// platform routes by, so a seat attached to the wrong instance is otherwise
+// invisible) and the supervisor's `restarts` flap counter — which is written,
+// persisted and served, and was shown by no surface at all, so a seat that had
+// been crash-looping looked exactly like a healthy one (TASK-072, 2026-09-19).
+//
+// `restarts` distinguishes 0 from absent on purpose: a state file written by an
+// older daemon has no such field, and printing 0 for it would claim a reading the
+// file does not carry.
+export const formatSeatLine = (seat = {}) => {
+  const model = seat.model || 'default model';
+  const effort = seat.effort ? `/${seat.effort}` : '';
+  const error = seat.lastError ? ` error=${seat.lastError}` : '';
+  const restarts = seat.restarts === undefined || seat.restarts === null ? '-' : seat.restarts;
+  return `  ${seat.agentName}: ${seat.state} instance=${seat.instanceId || '-'} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} restarts=${restarts} lastTurn=${seat.lastTurnAt || 'never'}${error}`;
+};
+
 const requireDaemonRecord = () => {
   const record = loadDaemonRecord();
   if (!record) {
@@ -397,12 +415,7 @@ Examples:
             console.log('Local supervisor state: no supervised seats.');
           } else {
             console.log('Local supervised seats:');
-            for (const seat of local.seats) {
-              const model = seat.model || 'default model';
-              const effort = seat.effort ? `/${seat.effort}` : '';
-              const error = seat.lastError ? ` error=${seat.lastError}` : '';
-              console.log(`  ${seat.agentName}: ${seat.state} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} lastTurn=${seat.lastTurnAt || 'never'}${error}`);
-            }
+            for (const seat of local.seats) console.log(formatSeatLine(seat));
           }
         }
       } catch (error) {
