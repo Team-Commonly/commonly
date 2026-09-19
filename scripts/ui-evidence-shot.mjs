@@ -25,51 +25,39 @@
  *     [--selector '.tools-trail'] \
  *     [--base-url http://localhost:3000] [--api http://localhost:5050] \
  *     [--width 390] [--height 900] [--click '<selector>'] \
- *     [--token <jwt>] [--email dev@commonly.local] [--password password123] [--wait 2500]
+ *     [--email dev@commonly.local] [--password password123] [--wait 2500]
+ *
+ * Auth: pass a token the caller already holds in the environment as UI_TOKEN
+ * (`UI_TOKEN=<jwt> node scripts/ui-evidence-shot.mjs …`). `--token <jwt>` works,
+ * but it puts the seat's JWT in the process table and in shell history, so it is
+ * the fallback rather than the recommendation; with neither, the script logs in.
  *
  * `--width` is the whole point of a mobile pair: a 390 shot is a different
  * layout, not a smaller copy of the 1440 one. This script did not have the flag
  * and ignored it silently, so `--out ...-390.png` produced a 1440x900 capture
  * under a 390 name (2026-09-19). It now also REFUSES a flag it does not know,
- * and prints the viewport it used, so a capture can always name its own shape.
+ * refuses a value that belongs to no flag (arg parsing lives in
+ * ./lib/ui-evidence-args.js), and prints the viewport it used, so a capture can
+ * always name its own shape.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { chromium } from 'playwright';
+import uiEvidenceArgs from './lib/ui-evidence-args.js';
 
-const parseArgs = (argv) => {
-  const out = new Map();
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
-    const [key, inline] = arg.slice(2).split('=');
-    if (inline !== undefined) {
-      out.set(key, inline);
-    } else if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
-      out.set(key, argv[i + 1]);
-      i += 1;
-    } else {
-      out.set(key, 'true');
-    }
-  }
-  return out;
-};
+const { KNOWN_FLAGS, parseArgs, refusalFor } = uiEvidenceArgs;
 
-const KNOWN_FLAGS = new Set([
-  'route', 'out', 'base-url', 'api', 'email', 'password', 'wait', 'selector', 'width', 'height',
-  'token', 'click',
-]);
-
-const args = parseArgs(process.argv.slice(2));
-// A flag this script does not implement must not be silently dropped: passing
-// `--width 390` produced a 1440 capture named `-390.png`, and the reviewer had no
-// way to tell. Fail loudly instead, and name what is accepted.
-const unknownFlags = [...args.keys()].filter((key) => !KNOWN_FLAGS.has(key));
-if (unknownFlags.length > 0) {
-  console.error(`unknown flag(s): ${unknownFlags.map((f) => `--${f}`).join(', ')}`);
-  console.error(`known: ${[...KNOWN_FLAGS].map((f) => `--${f}`).join(', ')}`);
+const parsed = parseArgs(process.argv.slice(2));
+// A flag this script does not implement, or a value no flag asked for, must not be
+// silently dropped: `--width 390` produced a 1440 capture named `-390.png`, and
+// `--width 390 400` ran with 390 without mentioning the 400. Fail loudly instead,
+// and name both what was not understood and what is accepted. Nothing above this
+// line needs a browser, so bad input exits without one.
+const refusal = refusalFor(parsed);
+if (refusal) {
+  console.error(refusal);
   process.exit(2);
 }
+const args = parsed.values;
 const route = args.get('route');
 const outPath = args.get('out');
 if (!route || !outPath) {
@@ -123,6 +111,10 @@ const login = async () => {
 };
 
 const main = async () => {
+  // Imported here, after validation: a usage error must not need a browser, and
+  // `node scripts/ui-evidence-shot.mjs --widht 390` should say so whether or not
+  // Playwright is installed.
+  const { chromium } = await import('playwright');
   const token = presetToken || await login();
   const browser = await chromium.launch();
   const context = await browser.newContext({
