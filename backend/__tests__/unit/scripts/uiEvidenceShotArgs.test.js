@@ -102,4 +102,37 @@ describe('ui-evidence-shot argument contract', () => {
     expect(both).toMatch(/unknown flag\(s\): --widht/);
     expect(both).toMatch(/empty value\(s\): --widht=/);
   });
+
+  // TASK-081, the last of the class and the only one that invented a value:
+  // a flag followed by nothing was replaced by the string 'true'.
+
+  test('a known flag with no value is refused, and named', () => {
+    // `--route $UNSET --out a.png`: the parser read route='true' and the harness
+    // navigated to /true, under a file name that named the intended page.
+    const message = refusal(['--route', '--out', '/tmp/a.png']);
+    expect(message).toMatch(/flag\(s\) with no value: --route/);
+    // The trailing case, where there is no next flag to blame.
+    expect(refusal(['--route'])).toMatch(/flag\(s\) with no value: --route/);
+    // Refused, not repaired: the value it used to invent is still what the map
+    // holds, so a caller cannot be told two stories about the same run.
+    expect(parseArgs(['--route', '--out', '/tmp/a.png']).values.get('route')).toBe('true');
+  });
+
+  test('a bare UNKNOWN flag is reported as unknown as well as bare', () => {
+    // Same pairing as an empty value: the caller gets both mistakes, not one.
+    const message = refusal(['--widht']);
+    expect(message).toMatch(/unknown flag\(s\): --widht/);
+    expect(message).toMatch(/flag\(s\) with no value: --widht/);
+  });
+
+  test('a flag whose value follows it is not bare, and a single-dash value is a value', () => {
+    expect(parseArgs(['--width', '390', '--out', '/tmp/a.png']).bare).toEqual([]);
+    // The lookahead treats only `--`-prefixed tokens as flags, so `-1` is a
+    // VALUE here, not a bare flag. Pinned because it is the boundary of the new
+    // refusal, and I asserted the opposite before running it.
+    expect(parseArgs(['--wait', '-1']).bare).toEqual([]);
+    expect(parseArgs(['--wait', '-1']).values.get('wait')).toBe('-1');
+    // A second long flag is what makes the first one bare.
+    expect(parseArgs(['--wait', '--out', '/tmp/a.png']).bare).toEqual(['wait']);
+  });
 });

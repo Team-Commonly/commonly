@@ -20,7 +20,12 @@
  *   the right name;
  * - a repeated flag kept only its last value, and a flag given nothing (`--selector=`,
  *   the shape an unset shell variable takes) was treated as absent - the capture
- *   then scoped nothing or fell back to a default, and said so to no one.
+ *   then scoped nothing or fell back to a default, and said so to no one;
+ * - a flag followed by nothing at all was REPLACED by the string `true`
+ *   (`--route $UNSET`), which is the same mistake with a worse ending: every other
+ *   path here drops or truncates a value, this one invented one, and the capture
+ *   went to a route literally named `true` under a file name that named the
+ *   intended page (TASK-081, Vera 70182).
  *
  * `refusalFor` returns the whole message, or null. The caller prints it and exits 2.
  */
@@ -36,6 +41,7 @@ const parseArgs = (argv) => {
   const stray = [];
   const repeated = [];
   const empty = [];
+  const bare = [];
   const take = (key, value) => {
     if (values.has(key)) repeated.push(key);
     values.set(key, value);
@@ -63,16 +69,21 @@ const parseArgs = (argv) => {
       take(raw, argv[i + 1]);
       i += 1;
     } else {
+      // No value follows. Every flag this harness implements takes one, so a bare
+      // flag is an unset variable or a forgotten argument - never a switch. It is
+      // still recorded in `values`, so an unknown bare flag is reported as unknown
+      // AND bare rather than only bare.
+      bare.push(raw);
       take(raw, 'true');
     }
   }
   return {
-    values, stray, repeated, empty,
+    values, stray, repeated, empty, bare,
   };
 };
 
 const refusalFor = ({
-  values, stray, repeated = [], empty = [],
+  values, stray, repeated = [], empty = [], bare = [],
 }) => {
   const lines = [];
   const unknown = [...values.keys()].filter((key) => !KNOWN_FLAGS.has(key));
@@ -85,6 +96,9 @@ const refusalFor = ({
   }
   if (empty.length > 0) {
     lines.push(`empty value(s): ${empty.map((f) => `--${f}=`).join(', ')} — an empty value is not the same as a missing flag, and is usually an unset variable`);
+  }
+  if (bare.length > 0) {
+    lines.push(`flag(s) with no value: ${bare.map((f) => `--${f}`).join(', ')} — every flag here takes a value, so a flag followed by nothing (or by the next flag) is an unset variable or a forgotten argument, not a switch. There is no boolean flag to pass bare.`);
   }
   if (lines.length === 0) return null;
   lines.push(`known: ${[...KNOWN_FLAGS].map((f) => `--${f}`).join(', ')}`);
