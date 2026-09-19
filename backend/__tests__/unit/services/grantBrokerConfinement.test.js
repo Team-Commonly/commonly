@@ -10,6 +10,7 @@ const {
   CONFINEMENTLESS_ADAPTERS,
   PUBLIC_HOST_MODES,
   effectiveSandboxTrust,
+  normalizeAdapter,
   grantBrokerRefusal,
 } = require('../../../services/grantBrokerConfinement');
 
@@ -94,6 +95,13 @@ describe('grant broker confinement predicate', () => {
     ['a codex seat declaring a confined mode', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'codex' }, null],
     ['a row that names no adapter — the daemon detects it locally', undefined, { model: 'gpt-5.4' }, null],
     ['a row with no runtime at all', undefined, undefined, null],
+    // The daemon normalises the declared adapter before it spawns
+    // (`daemon-supervisor.js` does `trim().toLowerCase()`), so these names still
+    // reach pi; comparing the raw value let both past the refusal (Vera 69817).
+    ['an upper-case adapter name', undefined, { adapter: 'PI' }, 'adapter_cannot_confine'],
+    ['a padded adapter name', undefined, { adapter: ' pi ' }, 'adapter_cannot_confine'],
+    ['a padded upper-case adapter name', undefined, { adapter: 'PI ' }, 'adapter_cannot_confine'],
+    ['a normalised name that is not pi', undefined, { adapter: ' claude ' }, null],
   ])('decides %s', (_label, environment, runtime, expected) => {
     const refusal = grantBrokerRefusal(environment, runtime);
     if (expected === null) {
@@ -116,6 +124,13 @@ describe('grant broker confinement predicate', () => {
     ['a managed mode', { sandbox: { mode: 'managed', trust: 'public' } }, 'sandbox_mode_unenforceable'],
     ['a typo of a real mode', { sandbox: { mode: 'workspaces', trust: 'public' } }, 'sandbox_mode_unenforceable'],
     ['a non-string mode', { sandbox: { mode: 42, trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    // `String(['bwrap'])` is 'bwrap', so the array passed a string-coerced
+    // membership test while every adapter's `===` comparison rejected it — the
+    // seat confined nowhere (Vera 69817).
+    ['an array whose stringification is a real mode', { sandbox: { mode: ['bwrap'], trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['an object mode', { sandbox: { mode: { toString: () => 'workspace' }, trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a boolean mode', { sandbox: { mode: true, trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['an empty-string mode', { sandbox: { mode: '', trust: 'public' } }, 'sandbox_mode_unenforceable'],
     ['a legacy internal trust beside an unenforced mode', { sandbox: { mode: 'firejail', trust: 'internal' } }, 'sandbox_mode_unenforceable'],
     ['bwrap, which claude implements on Linux', { sandbox: { mode: 'bwrap', trust: 'public' } }, null],
   ])('decides %s', (_label, environment, expected) => {
@@ -126,5 +141,18 @@ describe('grant broker confinement predicate', () => {
     }
     expect(refusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: expected });
     expect(refusal.detail).toContain('sandbox.mode');
+  });
+
+  // The adapter name is only meaningful after the daemon's normalisation, so
+  // pin the normalisation itself rather than the membership test alone.
+  it('normalises an adapter name the way the daemon does', () => {
+    expect(normalizeAdapter('PI')).toBe('pi');
+    expect(normalizeAdapter(' pi ')).toBe('pi');
+    expect(normalizeAdapter('Claude')).toBe('claude');
+    expect(normalizeAdapter('')).toBeNull();
+    expect(normalizeAdapter('   ')).toBeNull();
+    expect(normalizeAdapter(42)).toBeNull();
+    expect(normalizeAdapter(null)).toBeNull();
+    expect(normalizeAdapter(undefined)).toBeNull();
   });
 });

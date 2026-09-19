@@ -30,14 +30,19 @@
  *    `assertNoSandboxDeclared` (`cli/src/lib/adapters/pi.js`) throws only when
  *    a sandbox is DECLARED, so a pi seat that declares nothing spawns
  *    unconfined and nothing ever derives one. The adapter is then the deciding
- *    fact, not the declaration.
+ *    fact, not the declaration. The name is normalised the way the daemon
+ *    normalises it before spawning (`trim().toLowerCase()`, see
+ *    `normalizeAdapter`), because `'PI'` reaches the pi adapter too.
  *  - A declared public mode that no adapter implements. The write-time schema
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
  *    nowhere else in `cli/src`, so a seat declaring one fails every host the
  *    same way. Both adapters implement {workspace, read-only}, and claude adds
  *    `bwrap` for Linux — a wider set, not a narrower one, so the server cannot
- *    refuse anything a host would have confined.
+ *    refuse anything a host would have confined. A mode that is not a string
+ *    belongs here too: every adapter compares it with `===` against a string,
+ *    so `['bwrap']` confines nothing even though it stringifies to a mode that
+ *    does.
  */
 
 /**
@@ -58,6 +63,20 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
  * record carrying one cannot spawn a pi seat either.
  */
 export const CONFINEMENTLESS_ADAPTERS: ReadonlySet<string> = new Set(['pi']);
+
+/**
+ * The daemon normalises a declared adapter before it spawns a seat —
+ * `cli/src/lib/daemon-supervisor.js` (`ensureToken`, and the spawn path) does
+ * `adapter.trim().toLowerCase()` on the way through — so `'PI'` and `' pi '`
+ * reach the pi adapter as well. Comparing the raw value here would let both
+ * past the refusal while the seat still spawns pi, which is exactly the case
+ * this predicate exists to catch. Mirroring the daemon's normalisation is the
+ * stricter direction for a refusal: a name neither layer recognises is not one
+ * the daemon can spawn either.
+ */
+export const normalizeAdapter = (adapter: unknown): string | null => (
+  typeof adapter === 'string' && adapter.trim() ? adapter.trim().toLowerCase() : null
+);
 
 /**
  * Every mode ANY of the enforcing adapters implements for a public seat:
@@ -101,8 +120,8 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  * detects it locally, so the daemon-side refusal covers that case.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  const adapter = (runtime as { adapter?: unknown } | null | undefined)?.adapter;
-  if (typeof adapter === 'string' && CONFINEMENTLESS_ADAPTERS.has(adapter)) {
+  const adapter = normalizeAdapter((runtime as { adapter?: unknown } | null | undefined)?.adapter);
+  if (adapter && CONFINEMENTLESS_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
       `the seat runs the '${adapter}' adapter, which confines on no host — a declared sandbox is refused`
@@ -123,10 +142,12 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
         + " (e.g. 'workspace') or drop the grant broker from this seat",
     );
   }
-  if (declared.mode !== undefined && declared.mode !== null && !PUBLIC_HOST_MODES.has(String(declared.mode))) {
+  const mode = declared.mode;
+  if (mode !== undefined && mode !== null && (typeof mode !== 'string' || !PUBLIC_HOST_MODES.has(mode))) {
+    const shown = typeof mode === 'string' ? `'${mode}'` : (JSON.stringify(mode) ?? String(mode));
     return refusalFor(
       'sandbox_mode_unenforceable',
-      `the declared sandbox.mode is '${String(declared.mode)}', which no adapter enforces on any host;`
+      `the declared sandbox.mode is ${shown}, which no adapter enforces on any host;`
         + " declare one of 'workspace' / 'read-only' (or 'bwrap' on Linux)"
         + ' or drop the grant broker from this seat',
     );
