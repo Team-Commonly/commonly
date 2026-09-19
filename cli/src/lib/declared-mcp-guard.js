@@ -127,6 +127,22 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioEntries
     }
     const name = typeof server.name === 'string' && server.name ? server.name : `mcp[${index}]`;
     const transport = server.transport || 'stdio';
+    // One shape per entry. The adapters classified by which field was present,
+    // so `{transport:'http', url:<instance>, command:['sh','-c',…]}` passed an
+    // origin check here and ran as stdio there with the token substituted
+    // (#1764 fixes the adapters; the guard refuses the shape outright).
+    if (server.command !== undefined && server.url !== undefined) {
+      refusals.push(`'${name}': declares both a command and a url; one entry is one transport`);
+      return;
+    }
+    if (transport === 'stdio' && server.url !== undefined) {
+      refusals.push(`'${name}': stdio entry carries a url`);
+      return;
+    }
+    if ((transport === 'http' || transport === 'sse') && server.command !== undefined) {
+      refusals.push(`'${name}': ${transport} entry carries a command`);
+      return;
+    }
     const foreign = stringsOf(server).find(hasForeignExpansion);
     if (foreign !== undefined) {
       refusals.push(`'${name}': ${JSON.stringify(foreign)} contains an expansion other than the instance placeholders; the CLI would resolve it from this machine's environment`);
