@@ -34,8 +34,8 @@ The charter measured at `03597262`. I re-measured at `bd801882`, and four of its
 
 1. **`agent attach` is still the shipped CLI's own quick start.** `commonly --help` at 0.1.58 opens with `commonly agent attach claude --pod <podId> --name my-claude`, and `attach` is a registered subcommand. So the "old attach flow" is not dead at the consumer. I did **not** count an `agent attach` mention as rot. A doc that teaches attach is teaching what the CLI teaches. If the wash is meant to retire attach in favour of daemon adoption, the CLI's help text has to change first (a CLI PR and a publish). Otherwise every rewritten doc will contradict `--help`. **This needs a ruling before the README and quickstart rewrites land.**
 2. **openclaw is gone from the cluster but not from the CLI.** `kubectl get deploy -n commonly-dev` shows no `clawdbot-gateway` (backend, commonly-bot, frontend, litellm, redis, cloud-codex-cody only). `commonly dev clawdbot` still ships in 0.1.58 ("Bootstrap local OpenClaw gateway config"). Docs that describe the gateway get deleted. Docs that only name it get rewritten. The leftover CLI subcommand is a CLI follow-up, not a docs one.
-3. **Six CLI commands cited in the docs don't exist in 0.1.58:** `agent install`, `agent update`, `agent sdk-path`, `agent rotate-token`, `agent dev`, `pod join`. Every file citing one of them is marked rewrite.
-4. **Routes: 337 distinct cited, 71 not served live.** I probed each cited route with its documented method, with no auth. The backend answers `Cannot <METHOD> <path>` only when no route matches, so a 401 or 400 means the route exists. 240 routes are live. 8 are webhook or billing routes, which I skipped rather than POST into production. 18 are bare mount roots or prefixes (`/api/agents/runtime/`), which aren't routes on their own. The dead list is at the bottom. The worst front-door case is `/api/docs` (dev-only Swagger, not served live). The README and 8 docs-site pages cite it as *the* API reference.
+3. **Six CLI commands cited in the docs don't exist under the parent the docs name in 0.1.58.** Two need a parent fix, not a new command: `install` ships as `commonly daemon install` and `dev` ships as the top-level `commonly dev` (Kai's measurement). The other four exist nowhere: `agent update`, `agent sdk-path`, `agent rotate-token`, `pod join`. Every file citing any of the six is marked rewrite.
+4. **Routes: 337 distinct cited, 71 not served live.** I probed each cited route with its documented method, with no auth. The backend answers `Cannot <METHOD> <path>` only when no route matches, so a 401 or 400 means the route exists. 240 routes are live. 8 are webhook or billing routes, which I skipped rather than POST into production. 18 are bare mount roots or prefixes (`/api/agents/runtime/`), which aren't routes on their own. The dead list is at the bottom. The worst front-door case is `/api/docs`. The README and 8 docs-site pages cite it as *the* API reference, but no API reference is served there. `server.ts:231` mounts it in every env, `/api/docs` itself returns `Cannot GET`, and its only route, `/api/docs/backend`, returns 500 `Unable to load documentation` live (Vera's correction, re-probed 2026-09-19).
 5. **Gemini is still wired into the backend.** `llmService`, `vectorSearchService`, `podContextService`, and the provisioners still read `GEMINI_API_KEY`. The 33 docs that mention it get rewritten to say what the backend actually does now (LiteLLM-routed). They are not deleted as if the concept were gone.
 6. **docs-site has no page for what exists now.** Nothing covers connectors or grants (`/api/grants`, `/api/credentials` are live), the daemon or seats (`/api/machines`, `commonly daemon *`), or the pi, claude, and codex adapters. The nav restructure adds those pages. It's a separate PR from the rewrites below.
 7. **Deletes break inbound links.** The *why* column lists each delete target's inbound references outside the delete set, so the delete PR can fix them in the same diff. That includes one code comment (`backend/routes/registry/presets.ts` → `AGENT_CODING_CAPABILITY.md`) and one `docs/README.md` index that links to seven delete targets. The runtime reads `docs/skills/awesome-agent-skills-index.json`, so deletes must stay on `.md` files.
@@ -83,7 +83,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 
 | path | lines | last touched | owner | verdict | why |
 |---|---|---|---|---|---|
-| `README.md` | 395 | 2026-08-24 | quill | **rewrite** | cites dev-only /api/docs as the API reference; top half already assigned — openclaw 19x; gemini 2x; attach 1x |
+| `README.md` | 395 | 2026-08-24 | quill | **rewrite** | cites /api/docs as the API reference, but none is served there; top half already assigned — openclaw 19x; gemini 2x; attach 1x |
 | `docs-site/agents/authentication.mdx` (nav) | 68 | 2026-04-02 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |
 | `docs-site/agents/connect.mdx` (nav) | 118 | 2026-08-30 | luna-2 | **rewrite** | openclaw 2x; attach 1x |
 | `docs-site/agents/events.mdx` (nav) | 220 | 2026-09-01 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 1 route(s) served live |
@@ -91,13 +91,13 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs-site/agents/overview.mdx` (nav) | 65 | 2026-07-04 | luna-2 | **rewrite** | cites POST /api/pods/:id/messages + /api/v1/pods/:id/memory, neither served live — openclaw 1x; 2/11 cited routes not served live |
 | `docs-site/agents/runtime-protocol.mdx` (nav) | 160 | 2026-09-01 | luna-2 | **rewrite** | openclaw 1x |
 | `docs-site/agents/tools.mdx` (nav) | 75 | 2026-04-02 | luna-2 | **rewrite** | openclaw 1x |
-| `docs-site/api-reference/agents.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
-| `docs-site/api-reference/authentication.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
-| `docs-site/api-reference/events.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
-| `docs-site/api-reference/introduction.mdx` (nav) | 57 | 2026-07-04 | luna-2 | **rewrite** | cites dev-only /api/docs as the reference |
-| `docs-site/api-reference/messages.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
-| `docs-site/api-reference/pods.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
-| `docs-site/api-reference/tasks.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at dev-only /api/docs (not served live) and the v1.0.x branch spec |
+| `docs-site/api-reference/agents.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
+| `docs-site/api-reference/authentication.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
+| `docs-site/api-reference/events.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
+| `docs-site/api-reference/introduction.mdx` (nav) | 57 | 2026-07-04 | luna-2 | **rewrite** | cites /api/docs as the reference; no API reference is served there |
+| `docs-site/api-reference/messages.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
+| `docs-site/api-reference/pods.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
+| `docs-site/api-reference/tasks.mdx` (nav) | 10 | 2026-04-02 | luna-2 | **rewrite** | stub: points at /api/docs, where no API reference is served (only route /backend 500s live), and at the v1.0.x branch spec |
 | `docs-site/concepts/agents.mdx` (nav) | 101 | 2026-07-04 | quill | **rewrite** | openclaw 1x |
 | `docs-site/concepts/pods.mdx` (nav) | 86 | 2026-08-21 | quill | **rewrite** | cites POST /api/v1/pods/:id/memory/:file, not served live — 1/3 cited routes not served live |
 | `docs-site/concepts/task-board.mdx` (nav) | 81 | 2026-08-21 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |
@@ -112,7 +112,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs-site/marketplace/manifest.mdx` (nav) | 57 | 2026-04-02 | luna-2 | **rewrite** | openclaw 2x |
 | `docs-site/marketplace/overview.mdx` (nav) | 46 | 2026-04-02 | luna-2 | **rewrite** | openclaw 1x |
 | `docs-site/marketplace/publishing.mdx` (nav) | 45 | 2026-04-02 | luna-2 | **rewrite** | openclaw 1x |
-| `docs-site/quickstart.mdx` (nav) | 82 | 2026-08-24 | quill | **rewrite** | cites dev-only /api/docs; no daemon or connector step |
+| `docs-site/quickstart.mdx` (nav) | 82 | 2026-08-24 | quill | **rewrite** | cites /api/docs (no API reference served); no daemon or connector step |
 | `docs/AGENT_AVATARS.md` | 183 | 2026-07-02 | luna-3 | **rewrite** | gemini 11x |
 | `docs/CODEX_OAUTH_SETUP.md` | 147 | 2026-07-03 | otto | **delete** | superseded by in-cluster device-auth (litellm codex-cli sidecar); gateway-era |
 | `docs/COMMONLY_SCOPE.md` | 745 | 2026-04-12 | luna-3 | **rewrite** | openclaw 3x |
