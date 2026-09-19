@@ -6,6 +6,7 @@ import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
+import Machine from '../models/Machine';
 import type { IRoomGrant } from '../models/RoomGrant';
 import {
   assertGrantUsable,
@@ -17,6 +18,9 @@ import {
 } from '../services/roomGrantService';
 import type { RoomGrantCreateInput } from '../services/roomGrantService';
 import { resolveBrokerFor } from '../services/installable/toolInstallables';
+import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
+import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -24,6 +28,8 @@ const auth = require('../middleware/auth');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const DMService = require('../services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -64,7 +70,12 @@ interface AuthenticatedRequest extends express.Request {
 type GrantRow = Pick<IRoomGrant, 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
-const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: string | null) => ({
+const projectGrant = (
+  grant: GrantRow,
+  currentMembers: string[],
+  grantedBy: string | null,
+  confinement: GrantBrokerConfinement = NOT_EVALUATED,
+) => ({
   grantId: grant.grantId,
   installationId: grant.installationId,
   target: { kind: grant.target.kind, id: grant.target.id },
@@ -79,6 +90,15 @@ const projectGrant = (grant: GrantRow, currentMembers: string[], grantedBy: stri
   rootGrantId: grant.rootGrantId ?? null,
   createdAt: grant.createdAt,
   grantedBy,
+  // Why a live grant is not reaching the seat, decided by the same projection
+  // that injects it (TASK-063). `scope` says what was JUDGED here, and a null
+  // refusal therefore cannot mean two things: see GrantBrokerRefusalScope. The
+  // honest limit is unchanged — a refusal the DAEMON made is not reported here
+  // yet (the heartbeat carries four fields and Mongoose drops what the Machine
+  // schema does not declare), so this pair says nothing about whether the
+  // broker actually reached the seat.
+  grantBrokerRefusal: confinement.refusal,
+  grantBrokerRefusalScope: confinement.scope,
 });
 
 /** `grantedBy` is the Connection's owner (plan §9); one lookup per connection. */
@@ -90,6 +110,100 @@ const resolveGranters = async (connectionIds: string[]): Promise<Map<string, str
     granters.set(connectionId, owner || null);
   }));
   return granters;
+};
+
+/**
+ * What the read can say about the broker reaching a grant's seat.
+ *
+ * `scope` names what was JUDGED, never which layer decided — the deciding
+ * layer is inside the refusal itself (`decidedBy`). The distinction is the
+ * whole point of the field: a `null` refusal must not carry two meanings.
+ *
+ *  - `seat`          the seat's environment was resolved and judged; `null`
+ *                    means checked and not refused.
+ *  - `not_installed` the seat resolved to a governing owner, but that owner
+ *                    has no installation of THIS identity and instance, so the
+ *                    projection carries no row for the seat: nothing is
+ *                    delivered to it and there is nothing to judge. Covers
+ *                    both an owner with no installations and an owner whose
+ *                    installations are all for other seats — what makes the
+ *                    arm true is that THIS seat has no row (Vera 69890).
+ *  - `unbound`       the seat could not be resolved to a governing
+ *                    installation — it names no machine, or no identity to
+ *                    bind — so NOTHING was judged. Deliberately not resolved
+ *                    through the identity's installations: that is an ordering
+ *                    guess, and for an unbound seat no daemon is polling it
+ *                    anyway (Vera 69881).
+ *  - `not_evaluated` the grant names a pod, not a seat. The refusal is a
+ *                    property of each seat that redeems it and the projection
+ *                    applies it per seat, so there is no single verdict to
+ *                    report here.
+ */
+export type GrantBrokerRefusalScope = 'seat' | 'not_installed' | 'unbound' | 'not_evaluated';
+
+export interface GrantBrokerConfinement {
+  refusal: GrantBrokerRefusal | null;
+  scope: GrantBrokerRefusalScope;
+}
+
+const NOT_EVALUATED: GrantBrokerConfinement = { refusal: null, scope: 'not_evaluated' };
+
+/**
+ * Would the daemon's own projection withhold the broker from these grants?
+ *
+ * The seat's environment is resolved through `projectSeatEnvironments` — the
+ * same function `/assigned` builds the daemon work list from — through the
+ * seat's own machine owner, which is the scope `/assigned` uses. Every grant
+ * gets a verdict, including the ones that could not be judged.
+ */
+const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantBrokerConfinement>> => {
+  const confinements = new Map<string, GrantBrokerConfinement>();
+  const seatGrants = grants.filter((grant) => grant.target.kind === 'seat'
+    && typeof grant.target.id === 'string' && Types.ObjectId.isValid(grant.target.id));
+  const judged = new Set(seatGrants.map((grant) => grant.grantId));
+  for (const grant of grants) {
+    if (!judged.has(grant.grantId)) confinements.set(grant.grantId, NOT_EVALUATED);
+  }
+  if (!seatGrants.length) return confinements;
+  const seats = await User.find({ _id: { $in: seatGrants.map((grant) => grant.target.id) } })
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId')
+    .lean();
+  const seatsById = new Map(seats.map((seat: any) => [String(seat._id), seat]));
+  const machineIds = Array.from(new Set(seats
+    .map((seat: any) => seat?.botMetadata?.machineId)
+    .filter((id: unknown): id is string => typeof id === 'string' && Boolean(id))));
+  const machines = machineIds.length
+    ? await Machine.find({ machineId: { $in: machineIds } }).select('machineId ownerUserId').lean()
+    : [];
+  const ownersByMachine = new Map(machines.map((machine: any) => [String(machine.machineId), machine.ownerUserId]));
+  const entries = new Map<string, any>();
+  for (const grant of seatGrants) {
+    const seat: any = seatsById.get(String(grant.target.id));
+    const meta = seat?.botMetadata || {};
+    const identity = typeof meta.agentName === 'string' ? meta.agentName.trim() : '';
+    const owner = typeof meta.machineId === 'string' ? ownersByMachine.get(meta.machineId) : undefined;
+    if (!identity || !owner) {
+      confinements.set(grant.grantId, { refusal: null, scope: 'unbound' });
+      continue;
+    }
+    const key = seatEnvironmentKey(identity, meta.instanceId);
+    const cacheKey = `${key}\0${String(owner)}`;
+    if (!entries.has(cacheKey)) {
+      // eslint-disable-next-line no-await-in-loop
+      const byIdentity = await projectSeatEnvironments({ installedBy: owner });
+      entries.set(cacheKey, byIdentity.get(key) || null);
+    }
+    const entry = entries.get(cacheKey);
+    // No entry means the owner's projection holds no row for this seat at all,
+    // so the daemon is handed nothing and the broker reaches nobody. Reporting
+    // that as `seat` + null would say "judged, not refused" about a seat that
+    // was never delivered — the same two-meanings conflation the scope field
+    // exists to prevent (Vera 69890).
+    confinements.set(grant.grantId, entry
+      ? { refusal: grantBrokerRefusal(entry.environment, entry.runtime), scope: 'seat' }
+      : { refusal: null, scope: 'not_installed' });
+  }
+  return confinements;
 };
 
 const loadPod = async (podId: string) => (Types.ObjectId.isValid(podId)
@@ -360,7 +474,8 @@ router.get('/:grantId', grantRateLimit, dualAuth, async (req: AuthenticatedReque
     const gate = await gateGrantRead(grant, req);
     if ('status' in gate) return res.status(gate.status).json({ error: gate.error });
     const currentMembers = grant.target.kind === 'seat' ? grant.audience : gate.members;
-    return res.json(projectGrant(grant, currentMembers, gate.granter));
+    const confinements = await seatGrantRefusals([grant]);
+    return res.json(projectGrant(grant, currentMembers, gate.granter, confinements.get(grant.grantId)));
   } catch (error) {
     return handleError(res, error);
   }
@@ -388,13 +503,17 @@ podGrantsRouter.get('/:podId/grants', grantRateLimit, auth, async (req: Authenti
         ...(members.length ? [{ 'target.kind': 'seat', 'target.id': { $in: members } }] : []),
       ],
     }).sort({ createdAt: -1 }).lean();
-    const granters = await resolveGranters(grants.map((grant) => grant.connectionId));
+    const [granters, confinements] = await Promise.all([
+      resolveGranters(grants.map((grant) => grant.connectionId)),
+      seatGrantRefusals(grants),
+    ]);
     return res.json({
       podId,
       grants: grants.map((grant) => projectGrant(
         grant,
         grant.target.kind === 'seat' ? grant.audience : members,
         granters.get(grant.connectionId) ?? null,
+        confinements.get(grant.grantId),
       )),
     });
   } catch (error) {
