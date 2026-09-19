@@ -11,6 +11,7 @@
  */
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import { Writable } from 'stream';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -29,6 +30,12 @@ const fakeChild = ({ stdout = '', stderr = '', code = 0 } = {}) => {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
+  // fd 3 as the adapter uses it: a writable pipe. `proc.fd3Payload` is therefore
+  // exactly what the bridge would read inside the child.
+  proc.fd3Payload = '';
+  const fd3 = new Writable({ write(chunk, _enc, done) { proc.fd3Payload += chunk.toString(); done(); } });
+  fd3.on('error', () => {});
+  proc.stdio = [null, proc.stdout, proc.stderr, fd3];
   proc.kill = jest.fn();
   setTimeout(() => {
     if (stdout) proc.stdout.emit('data', Buffer.from(stdout));
@@ -39,7 +46,7 @@ const fakeChild = ({ stdout = '', stderr = '', code = 0 } = {}) => {
 };
 const makeSpawnImpl = (out) => {
   const calls = [];
-  const impl = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return fakeChild(out); };
+  const impl = (cmd, args, opts) => { const proc = fakeChild(out); calls.push({ cmd, args, opts, proc }); return proc; };
   return { impl, calls };
 };
 
@@ -114,21 +121,39 @@ describe('spawn', () => {
     expect(promptArg).toContain('=== Fresh session ===');
   });
 
-  test('declared MCP servers ride into the bridge env with placeholders filled, and the token stays out of argv', async () => {
+  test('declared MCP servers ride into the bridge over fd 3 with placeholders filled, and the token stays out of argv AND out of the child env', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     const ctx = baseCtx({
       _spawnImpl: impl, _bridgePath: '/x/bridge.mjs', runtimeToken: 'cm_agent_secret', instanceUrl: 'https://api.example',
       environment: { model: 'deepseek-v4-flash', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }, { name: 'urlonly', transport: 'http', url: '${COMMONLY_INSTANCE_URL}/mcp', headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' } }] },
     });
     await pi.spawn('hi', ctx);
-    const { args, opts } = calls[0];
+    const { args, opts, proc } = calls[0];
     expect(args[args.indexOf('-e') + 1]).toBe('/x/bridge.mjs');
-    const servers = JSON.parse(opts.env.COMMONLY_PI_MCP);
+    // The 4th stdio entry is the secret channel: a pipe, not the environment.
+    expect(opts.stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe']);
+    const servers = JSON.parse(proc.fd3Payload);
     expect(servers).toEqual([
       { name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: 'https://api.example', COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } },
       { name: 'urlonly', url: 'https://api.example/mcp', headers: { Authorization: 'Bearer cm_agent_secret' } },
     ]);
+    // The defect this replaces was that the list sat in the child's environment,
+    // where the kernel keeps a copy the bridge cannot delete.
+    expect(opts.env.COMMONLY_PI_MCP).toBeUndefined();
+    expect(JSON.stringify(opts.env)).not.toContain('cm_agent_secret');
     expect(args.join(' ')).not.toContain('cm_agent_secret');
+  });
+
+  test('a spawn seam with no fd 3 pipe fails loudly, rather than leaving the bridge with nothing to read', async () => {
+    const proc = fakeChild({ stdout: assistant('ok') });
+    delete proc.stdio;
+    await expect(pi.spawn('hi', baseCtx({
+      _spawnImpl: () => proc,
+      _bridgePath: '/x/bridge.mjs',
+      runtimeToken: 'cm_agent_secret',
+      instanceUrl: 'https://api.example',
+      environment: { mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] },
+    }))).rejects.toThrow(/no fd 3 pipe/);
   });
 
   test('an entry declaring an http transport never reaches the bridge as a spawnable command', async () => {
@@ -148,7 +173,7 @@ describe('spawn', () => {
         }],
       },
     }));
-    const servers = JSON.parse(calls[0].opts.env.COMMONLY_PI_MCP);
+    const servers = JSON.parse(calls[0].proc.fd3Payload);
     expect(servers).toEqual([{
       name: 'remote',
       url: 'https://api.example/mcp',
@@ -182,6 +207,9 @@ describe('spawn', () => {
       // the token never reaches the child, because there is nothing to carry.
       expect(calls).toHaveLength(1);
       expect(calls[0].opts.env.COMMONLY_PI_MCP).toBeUndefined();
+      // No list means no fd 3 either: the pipe exists only when there is a secret.
+      expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+      expect(calls[0].proc.fd3Payload).toBe('');
       expect(calls[0].args).not.toContain('-e');
       expect(JSON.stringify(calls[0].opts.env)).not.toContain('cm_agent_secret');
       expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(1);

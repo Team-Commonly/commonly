@@ -110,15 +110,13 @@ const originOf = (value) => {
  * is a Streamable HTTP server (`agentBinding.ts` grantBrokerServer), so before
  * this pi dropped the one entry that carries a grant to a seat, silently.
  * Filling the headers here reuses the same substitution as the stdio env, and
- * the result rides in COMMONLY_PI_MCP — which the bridge removes from its own
- * process environment at load (see takeServers). That closes the direct vector
- * (pi's `bash` spawns with `{ ...process.env }`, so a bare `env` used to print
- * the token); it is not a secrecy boundary, because deleting the variable
- * scrubs Node's copy and not the kernel's — a same-user child of the bridge can
- * still read this process's environment via `ps eww` / `/proc/$PPID/environ`.
- * The durable fix is to hand the list over a 0600 file the bridge unlinks on
- * load, which is a row against this env channel, not against this PR (Vera,
- * Connectors).
+ * the result is written into pi's fd 3 at spawn — a pipe the bridge reads to EOF
+ * and closes (see takeServers), never the child's environment and never argv. The
+ * environment is not usable for this: the kernel keeps the copy the process was
+ * started with, so a same-user child could read the token back with
+ * `ps eww $PPID` / `/proc/$PPID/environ` even after the bridge deleted its own
+ * copy — which is what the previous channel did, and the row this closes
+ * (Vera, Connectors).
  *
  * WHICH shape an entry becomes is decided by `transport` — the same field, read
  * with the same default and the same exact comparison the daemon's
@@ -314,11 +312,24 @@ export const extractReply = (stdout) => {
   return { text, sawAssistant, errors };
 };
 
-const runPi = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runPi = ({ args, cwd, env, payload, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   let stdout = '';
   let stderr = '';
   let timedOut = false;
-  const proc = spawnImpl('pi', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // fd 3 carries the MCP server list, so the 4th pipe exists exactly when there
+  // is a list to hand over. The bridge reads it at extension load (takeServers).
+  const withList = typeof payload === 'string';
+  const proc = spawnImpl('pi', args, { cwd, env, stdio: withList ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'] });
+  if (withList) {
+    const channel = proc.stdio && proc.stdio[3];
+    // A missing pipe is an invariant break, not a degraded mode: the bridge would
+    // read EBADF and the seat would silently have no commonly_* tools.
+    if (!channel) { reject(new Error('pi adapter: no fd 3 pipe to carry the MCP server list')); return; }
+    // The child may exit before draining; that surfaces on 'close', so a write
+    // error here must not become an unhandled error event.
+    channel.on('error', () => {});
+    channel.end(payload);
+  }
   const timer = setTimeout(() => { timedOut = true; proc.kill('SIGTERM'); }, timeoutMs);
   proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
   proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -378,7 +389,6 @@ export default {
       ...baseEnv,
       PI_CODING_AGENT_DIR: agentDir,
       PI_SKIP_VERSION_CHECK: '1',
-      ...(servers.length ? { COMMONLY_PI_MCP: JSON.stringify(servers) } : {}),
     };
     const args = buildArgs({
       prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
@@ -389,6 +399,7 @@ export default {
       args,
       cwd: ctx.cwd,
       env: childEnv,
+      payload: servers.length ? JSON.stringify(servers) : undefined,
       timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
       spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
     });

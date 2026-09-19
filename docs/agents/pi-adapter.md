@@ -64,12 +64,19 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
   `xhigh`, `max` map 1:1; anything else is omitted and pi picks its default.
 - **Commonly tools.** `environment.mcp` (the same stdio entries claude and
   codex use, `${COMMONLY_API_URL}` / `${COMMONLY_AGENT_TOKEN}` filled at
-  spawn) is serialised into `COMMONLY_PI_MCP` in the child env, and the
-  extension `pi-commonly-mcp.mjs` starts each server, lists its tools and
-  registers every one with pi under its own name. The client
-  (`pi-mcp-client.mjs`) is a four-method newline-JSON-RPC client, no SDK; the
-  token rides in env, never argv. `typebox` resolves only inside pi's loader,
-  which is why the extension is split from the client jest tests.
+  spawn) is written into pi's **fd 3** — a pipe the adapter writes and ends at
+  spawn — and the extension `pi-commonly-mcp.mjs` reads it to EOF at load,
+  starts each server, lists its tools and registers every one with pi under its
+  own name. The client (`pi-mcp-client.mjs`) is a four-method newline-JSON-RPC
+  client, no SDK. The token is never on argv and never in the child's
+  environment: an environment is readable back whole by any same-user child
+  (`ps eww $PPID`, `/proc/$PPID/environ`) no matter what the process deletes
+  from its own copy, which is why it is not the channel — and a pipe is consumed
+  by the read, so nothing outlives it. Measured on pi 0.84.1: pi does not close
+  inherited descriptors before extensions load, and its bash/exec spawns pass a
+  three-element stdio list, so a shell tool child never inherits fd 3. `typebox`
+  resolves only inside pi's loader, which is why the extension is split from the
+  client jest tests.
 - **Reply.** stdout is NDJSON; the reply is the text of the last assistant
   `message_end`. Tool-call messages and tool results are not text. A non-zero
   exit with no assistant message rejects with pi's `error` event text (so the
