@@ -13,6 +13,7 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import { existsSync } from 'fs';
 import {
   lstat,
   mkdtemp,
@@ -22,7 +23,7 @@ import {
   writeFile,
 } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -599,27 +600,38 @@ describe('codex adapter — spawn()', () => {
   });
 
   test('cleans up the per-spawn temp dir even when spawn rejects', async () => {
-    // Count `commonly-codex-*` dirs in $TMPDIR before and after a failing
-    // spawn. The adapter's `finally` block must rm the dir on every exit
-    // path, including turn.failed rejections — without it, a long-running
-    // run loop accumulates orphan dirs in $TMPDIR.
-    const fs = await import('fs/promises');
-    const countLeftovers = async () => {
-      const entries = await fs.readdir(tmpdir());
-      return entries.filter((n) => n.startsWith('commonly-codex-')).length;
-    };
-    const before = await countLeftovers();
-
+    // The adapter mkdtemps a per-spawn dir and passes `-o <dir>/last-message.txt`
+    // (codex.js:442-443); its `finally` must rm that dir on every exit path,
+    // including a turn.failed rejection, or a long-running run loop accumulates
+    // orphans in $TMPDIR.
+    //
+    // Assert on the PATH THE ADAPTER BUILT, taken from the argv it handed the
+    // spawn seam, rather than counting `commonly-codex-*` entries in the shared
+    // $TMPDIR. That count is process-global: any other jest worker spawning the
+    // adapter between the two reads moves it, and this file's own
+    // `commonly-codex-operator-home-*` dirs match the prefix. Measured
+    // 2026-09-19 (TASK-073): red in 3 of 15 full-suite runs, 0 of 10 runs of this
+    // file alone — and the cli suite is the only required CI check.
+    let spawnDir = null;
     const { impl } = makeSpawnImpl({
       stdoutChunks: ['{"type":"turn.failed","error":{"message":"boom"}}\n'],
       code: 0,
     });
+    const implWatchingDir = (cmd, args, opts) => {
+      // Control: the dir must exist at the moment the adapter spawns, and this
+      // test must be watching the dir the adapter actually made — otherwise the
+      // assertion below would pass on an adapter that creates nothing.
+      spawnDir = dirname(findOutputFile(args));
+      expect(existsSync(spawnDir)).toBe(true);
+      return impl(cmd, args, opts);
+    };
+
     await expect(
-      codex.spawn('x', { sessionId: null, _spawnImpl: impl }),
+      codex.spawn('x', { sessionId: null, _spawnImpl: implWatchingDir }),
     ).rejects.toThrow(/turn failed/);
 
-    const after = await countLeftovers();
-    expect(after).toBe(before);
+    expect(spawnDir).toMatch(/commonly-codex-/);
+    expect(await lstat(spawnDir).catch(() => null)).toBeNull();
   });
 });
 
