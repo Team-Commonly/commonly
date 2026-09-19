@@ -119,6 +119,23 @@ v26 on `PATH`); the **backend and vite** are the two that need Node 20.
 screenshot — a `diff` of two `.txt` files is quotable in a PR body, and a 403 or a console error
 names itself instead of looking like a layout bug.
 
+### Flags the script enforces, and the two traps behind them
+
+| flag | why it exists |
+| --- | --- |
+| `--width`, `--height` | a 390 shot is a **different layout**, not a smaller copy. Both default to 1440×900, and every run prints `viewport <w>x<h>@2x` so a capture names its own shape. |
+| `--token <jwt>` | `POST /api/auth/login` is rate-limited to **20 attempts per 15 minutes**. A pair is captured run by run, so a five-shot batch starts returning 429 and the page dumps `Failed to load chat room. Please try again.` — which reads like a broken revision, not a spent login budget. Pass a token the caller already holds and the script skips the login entirely (`auth token` vs `auth login` in the run line). |
+| — | **an unknown flag is refused (exit 2), not ignored.** That is the defect this table was written for: the script had no `--width` at all, so `--width 390 --out x-390.png` wrote a silent 1440×900 capture under a `-390` name and the reviewer had no way to tell (2026-09-19). Check the run line: `viewport` and `auth` are printed on every capture for exactly this reason. |
+
+**A pair that is byte-identical is not automatically a null result.** Before calling a pair
+vacuous, look for the element rather than the pixel: a `display: none` value still exists in the
+DOM, so `document.body.innerText` (rendering-aware) drops it while `textContent` does not. On
+`/v2/connectors` at 390 the audience line is hidden for live rows by `frontend/src/v2/v2.css`
+(``.v2-connector-row__detail { display: none }`` under the phone breakpoint), so the `#1757` pair
+is the *same PNG* at 390 while a DOM probe still reads the changed string — the fix is not lost on
+mobile, it is simply not painted there. **Measure that, then say it, instead of shipping the
+identical pair as evidence.**
+
 Route shapes that cost time to rederive:
 
 - `/v2/pods/<podType>/<podId>` — `<podType>` is the **real** pod type (`team`, `agent-room`, …),
