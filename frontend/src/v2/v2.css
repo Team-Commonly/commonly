@@ -5694,6 +5694,7 @@ body.modern-ui.v2-canvas {
 .v2-byo__hint {
   font-size: 12px;
   color: var(--v2-text-tertiary);
+  margin: 0;
 }
 .v2-byo__error {
   padding: 10px 12px;

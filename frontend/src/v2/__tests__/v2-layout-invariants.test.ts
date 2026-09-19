@@ -145,6 +145,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const appsManagement = read('../../components/AppsManagement.tsx');
   const podModel = read('../../../../backend/models/Pod.ts');
 
+  test('BYO hints do not add paragraph margins to flex gaps', () => {
+    expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
+  });
+
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.
