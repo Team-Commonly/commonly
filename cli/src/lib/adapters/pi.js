@@ -39,6 +39,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -79,14 +80,135 @@ const substitutePlaceholders = (value, ctx) => {
   return value.replace(PLACEHOLDER_RE, (whole, key) => (SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole));
 };
 
-/** stdio MCP servers from the environment spec, placeholders filled; url-only entries are skipped. */
-export const resolveMcpServers = (mcpServers, ctx = {}) => (mcpServers || [])
-  .filter((server) => server?.name && Array.isArray(server.command) && server.command.length)
-  .map((server) => ({
-    name: server.name,
-    command: server.command.map((a) => substitutePlaceholders(a, ctx)),
-    env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-  }));
+/**
+ * The daemon's own predicate, applied verbatim: `auditDeclaredMcp` reads
+ * `server.transport || 'stdio'` and compares it as an exact string. It is
+ * deliberately not friendlier than the guard's — a normalized `'HTTP'` or a
+ * padded `' http '` is a shape the guard refuses as an unknown transport, and an
+ * adapter that accepted one would be running something the guard never judged
+ * (Vera, Connectors 69776). The schema admits `http`/`stdio`/`sse`
+ * (environment.js:236) and admits an ABSENT transport, which the guard reads as
+ * stdio; that is what this reads too.
+ */
+const transportOf = (server) => server.transport || 'stdio';
+
+const originOf = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Declared MCP servers from the environment spec, placeholders filled. Both
+ * transports the spec admits are carried through: stdio (`command` + `env`) and
+ * Streamable HTTP (`url` + `headers`). An entry with neither is skipped — there
+ * is nothing to start.
+ *
+ * The HTTP half matters beyond a user-declared remote server: the grant broker
+ * is a Streamable HTTP server (`agentBinding.ts` grantBrokerServer), so before
+ * this pi dropped the one entry that carries a grant to a seat, silently.
+ * Filling the headers here reuses the same substitution as the stdio env, and
+ * the result rides in COMMONLY_PI_MCP — which the bridge removes from its own
+ * process environment at load (see takeServers). That closes the direct vector
+ * (pi's `bash` spawns with `{ ...process.env }`, so a bare `env` used to print
+ * the token); it is not a secrecy boundary, because deleting the variable
+ * scrubs Node's copy and not the kernel's — a same-user child of the bridge can
+ * still read this process's environment via `ps eww` / `/proc/$PPID/environ`.
+ * The durable fix is to hand the list over a 0600 file the bridge unlinks on
+ * load, which is a row against this env channel, not against this PR (Vera,
+ * Connectors).
+ *
+ * WHICH shape an entry becomes is decided by `transport` — the same field, read
+ * with the same default and the same exact comparison the daemon's
+ * `auditDeclaredMcp` judges it by — and the field that transport does not select
+ * is dropped unsent. Classifying by which field is PRESENT instead is a bypass,
+ * not a shorthand: an entry declaring `transport: 'http'` with the instance's own
+ * url passes the guard (its http rule checks only the url origin, and
+ * `${COMMONLY_AGENT_TOKEN}` in the command is one of the known placeholders), and
+ * a presence-classifier then ran that command as stdio with the real token
+ * substituted. The guard's judgement and the adapter's disagreed, and the adapter
+ * is what executes (Vera, Connectors 69774).
+ *
+ * The http half also enforces the guard's own origin rule, so the HTTP half does
+ * not depend on a guard that may not be on the machine: `auditDeclaredMcp`
+ * admits a declared http server only when its url resolves to the INSTANCE's
+ * origin, because the seat token rides its headers. Everything else — an
+ * off-instance host, an unparseable url, an instance url we do not know — is
+ * refused here as well. A transport pi cannot speak (`sse`, which the schema and
+ * the guard both admit) is refused rather than reinterpreted as one it can.
+ *
+ * The grant broker is refused outright, by PATH rather than by entry name: it is
+ * the one http entry that carries authority rather than data, and pi confines on
+ * no host. wren's ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
+ * the daemon-side half of the same refusal the server makes at the projection —
+ * this is the half that holds on deploy skew, when the row names no adapter for
+ * the server to key on, and in any backend older than the refusal.
+ *
+ * The stdio half does NOT have that property and must not be read as if it did:
+ * a declared stdio command is executed with no allowlist check, here and in both
+ * sibling adapters, so it depends entirely on the guard — `auditDeclaredMcp`
+ * admits only the shipped commonly MCP server or a command already present in the
+ * local record, and that rule exists nowhere else (Vera, 69778; TASK-069).
+ */
+export const resolveMcpServers = (mcpServers, ctx = {}) => {
+  const carried = [];
+  for (const server of mcpServers || []) {
+    if (!server?.name || typeof server.name !== 'string') continue;
+    const transport = transportOf(server);
+    if (transport === 'http') {
+      if (typeof server.url !== 'string' || !server.url) continue;
+      const url = substitutePlaceholders(server.url, ctx);
+      const origin = originOf(url);
+      const instanceOrigin = originOf(ctx.instanceUrl);
+      if (!origin || !instanceOrigin || origin !== instanceOrigin) {
+        // eslint-disable-next-line no-console
+        console.warn(`[pi] declared MCP server '${server.name}' points at ${origin || '(unparseable)'}, not this instance (${instanceOrigin || 'unknown'}) — not starting it`);
+        continue;
+      }
+      // The grant broker is the one http entry that carries AUTHORITY rather
+      // than data: a granted seat acts on external systems as the granter. A pi
+      // seat cannot be confined on any host (see assertNoSandboxDeclared), so
+      // the reach is refused here as well as at the server's projection — this
+      // layer is what holds when the backend predates that refusal, when the
+      // row names no adapter for the server to key on, or when a deploy leaves
+      // the two on different clocks.
+      if (isGrantBrokerUrl(url)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[pi] ${GRANT_BROKER_REFUSAL} — refusing the grant broker '${server.name}': pi has no enforced sandbox, so this seat must not act with a granter's authority — move the seat to the claude or codex adapter, or remove the grant`);
+        continue;
+      }
+      carried.push({
+        name: server.name,
+        url,
+        headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+      });
+      continue;
+    }
+    if (transport === 'stdio') {
+      if (!Array.isArray(server.command) || !server.command.length) {
+        // The url-only record that names no transport lands here: the guard reads
+        // an absent transport as stdio too, and refuses it for having no command,
+        // so the daemon never adopts it and this drop matches that judgement.
+        if (typeof server.url === 'string' && server.url) {
+          // eslint-disable-next-line no-console
+          console.warn(`[pi] declared MCP server '${server.name}' names no transport, so it is judged stdio, and has no command — not starting it`);
+        }
+        continue;
+      }
+      carried.push({
+        name: server.name,
+        command: server.command.map((a) => substitutePlaceholders(a, ctx)),
+        env: Object.fromEntries(Object.entries(server.env || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+      });
+      continue;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(`[pi] declared MCP server '${server.name}' asks for transport '${transport}', which this adapter cannot speak — not starting it`);
+  }
+  return carried;
+};
 
 /** The provider block for models.json: the env spec's `provider` over the LiteLLM default. */
 export const resolveProvider = (environment = {}) => {

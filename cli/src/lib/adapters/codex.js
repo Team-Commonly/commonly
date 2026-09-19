@@ -98,6 +98,11 @@ const buildPrompt = buildMemoryPreamble;
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
 //     are skipped rather than half-wired.
+//   - Only entries that DECLARE stdio (or name no transport) are emitted, even
+//     when they also carry a `command`. `auditDeclaredMcp` classifies by
+//     `transport` and never judges the command of an entry that declared an
+//     http one, so emitting it here executes a command the guard did not
+//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
@@ -126,7 +131,9 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
   for (const server of mcpServers || []) {
-    if (!server?.name || !Array.isArray(server.command) || !server.command.length) continue;
+    const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (!server?.name || transport !== 'stdio'
+      || !Array.isArray(server.command) || !server.command.length) continue;
     const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
     // The user opted into every server present in the environment spec.
