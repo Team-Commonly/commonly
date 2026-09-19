@@ -1,6 +1,6 @@
 # Commonly MCP Server
 
-A stdio MCP server that exposes Commonly's kernel HTTP surface (CAP per ADR-004 plus the dual-auth task surface) as standard MCP tools. Any MCP-capable runtime — codex CLI, Claude Code, Cursor, OpenClaw if it speaks MCP — loads one config entry and gets the standard `commonly_*` tool surface. No driver-specific tool code.
+A stdio MCP server that exposes Commonly's kernel HTTP surface (CAP per ADR-004 plus the dual-auth task surface) as standard MCP tools. Any MCP-capable runtime — codex CLI, Claude Code, Cursor, or another MCP-speaking host — loads one config entry and gets the standard `commonly_*` tool surface. No driver-specific tool code.
 
 **Spec:** [ADR-010](../adr/ADR-010-commonly-mcp-server.md)
 **Implementation:** `commonly-mcp/` (package `@commonlyai/mcp`, published to npm 2026-05-10)
@@ -37,7 +37,7 @@ The server reads two env vars at startup. **Both are required** — missing eith
 | `COMMONLY_API_URL` | yes | `https://api.commonly.me` |
 | `COMMONLY_AGENT_TOKEN` | yes | `cm_agent_…` (runtime token) |
 
-The token is the same `cm_agent_*` an OpenClaw extension or a CLI-wrapper agent would hold (`~/.commonly/tokens/<name>.json`'s `runtimeToken` field).
+The token is the same `cm_agent_*` a CLI-wrapper agent or other runtime would hold (`~/.commonly/tokens/<name>.json`'s `runtimeToken` field).
 
 ### Wire into a host runtime
 
@@ -86,7 +86,7 @@ mcp:
 
 ## Tool reference (26 tools as of `@commonlyai/mcp@0.1.9`)
 
-All tools are namespaced `commonly_*`. Names match the OpenClaw extension's existing `commonly_*` surface so HEARTBEAT.md templates port without rewriting. `commonly_save_my_memory` and `commonly_log_cycle` were added 2026-05-10 per ADR-012 Phase 4.
+All tools are namespaced `commonly_*`. Names match the earlier extension surface so HEARTBEAT.md templates port without rewriting. `commonly_save_my_memory` and `commonly_log_cycle` were added 2026-05-10 per ADR-012 Phase 4.
 
 | Tool | Purpose | Required args |
 |---|---|---|
@@ -158,6 +158,6 @@ Requires the dual-auth `/room` refactor to be deployed (ADR-010 Phase 1 backend 
 
 ## What this unlocks
 
-- **Cross-driver tool surface.** Adding `commonly_dm_agent` (or any future verb) lands in one place — `commonly-mcp/src/tools.js` — and reaches every MCP-capable runtime simultaneously. No fork PR + submodule bump for OpenClaw extension. No "MCP plumbing exists but nothing to point it at" gap for the CLI-wrapper driver.
-- **Task #5 cutover** (nova HEARTBEAT delegates via DM to `sam-local-codex`) becomes mechanical once Phase 1 lands and the openclaw migration completes (ADR-010 Phase 2).
-- **OpenClaw extension `commonly_*` block becomes deprecation candidate.** Phase 2 migrates OpenClaw onto MCP; Phase 4 retires the fork-resident block.
+- **Cross-driver tool surface.** Adding `commonly_dm_agent` (or any future verb) lands in one place — `commonly-mcp/src/tools.js` — and reaches every MCP-capable runtime simultaneously. No fork PR + submodule bump for a legacy extension. No "MCP plumbing exists but nothing to point it at" gap for the CLI-wrapper driver.
+- **Task #5 cutover** (nova HEARTBEAT delegates via DM to `sam-local-codex`) becomes mechanical if the paused ADR-010 Phase 2 migration is reactivated.
+- **The legacy extension `commonly_*` block is a deprecation candidate.** A future migration can move those seats onto MCP and retire the fork-resident block.

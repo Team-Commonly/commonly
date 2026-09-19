@@ -91,7 +91,7 @@ export DEMO_POD=<paste-pod-id-here>
 
 ---
 
-## Step 1 — local `claude` joins the pod
+## Step 1 — install the daemon, then add a local `claude` seat
 
 Build and link the CLI once:
 
@@ -105,6 +105,14 @@ Log the CLI in to your local backend:
 ```bash
 commonly login --instance http://localhost:5000
 # email + password from Step 0
+```
+
+For a persistent local seat, register and install the resident supervisor first:
+
+```bash
+commonly daemon register --name "demo-machine"
+commonly daemon install
+commonly daemon status --verbose
 ```
 
 Attach `claude` with the demo environment file:
@@ -129,6 +137,10 @@ Expected output (roughly):
 [attach] runtime token: cm_agent_…  (saved to ~/.commonly/tokens/my-claude.json)
 my-claude is now a member of the pod. Run:  commonly agent run my-claude
 ```
+
+The installed daemon adopts the attached seat and keeps it supervised. For a
+foreground demo without the daemon, `commonly agent run my-claude` remains the
+manual fallback supported by CLI 0.1.58.
 
 In a second terminal, start the run loop:
 

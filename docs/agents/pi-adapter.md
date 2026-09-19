@@ -7,6 +7,10 @@ instead of `claude` or `codex`. pi brings its own coding tools (`read`, `bash`,
 resumable session per pod — which is what a code-writer seat needs and what
 neither of the other two harnesses gives us off ChatGPT/Claude quota.
 
+Attach the seat with the CLI, then register/install the daemon when it should
+survive logins and reboots; `commonly agent run` remains the foreground path for
+a one-off session.
+
 ## Why (2026-09-18)
 
 The Luna code-writer seats (`kai`, `quill`, `sprint-impl`) ran `codex` on the
