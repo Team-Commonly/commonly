@@ -149,9 +149,15 @@ export const seatEnvironmentKey = (agentName: unknown, instanceId: unknown): str
 /**
  * Project active installations into `identity key → what the daemon receives`.
  *
- * First declaration wins for a duplicated identity, exactly as the daemon list
- * has always resolved it; no ordering is imposed here, so the behaviour is the
- * stored order rather than a new rule.
+ * The runtime+environment PAIR comes from the OLDEST active installation
+ * (`_id` ascending) that declares EITHER half (TASK-019 ruling, option i). The
+ * two halves describe one seat, so a half the source installation is silent
+ * about stays empty rather than being filled in from a sibling row; and the
+ * winner is a rule rather than a reading, because an unordered find made it
+ * whichever document Mongo happened to return first.
+ *
+ * `podIds` stays a union across the identity's installations — that is per
+ * identity, not per source row.
  */
 export const projectSeatEnvironments = async (
   query: SeatEnvironmentQuery = {},
@@ -160,8 +166,10 @@ export const projectSeatEnvironments = async (
   if (query.installedBy) filter.installedBy = query.installedBy;
   const installs = await AgentInstallation.find(filter)
     .select('agentName instanceId podId config')
+    .sort({ _id: 1 })
     .lean();
   const byIdentity = new Map<string, SeatEnvironmentEntry>();
+  const sourced = new Set<string>();
   for (const install of installs) {
     const agentName = normalizeIdentityPart(install.agentName);
     const instanceId = normalizeIdentityPart(install.instanceId) || 'default';
@@ -175,8 +183,11 @@ export const projectSeatEnvironments = async (
     const config = install.config instanceof Map
       ? Object.fromEntries(install.config)
       : (install.config || {});
-    if (!entry.runtime && config.runtime) entry.runtime = config.runtime;
-    if (!entry.environment && config.environment) entry.environment = projectEnvironment(config.environment);
+    if (!sourced.has(key) && (config.runtime || config.environment)) {
+      entry.runtime = config.runtime || null;
+      entry.environment = config.environment ? projectEnvironment(config.environment) : null;
+      sourced.add(key);
+    }
     byIdentity.set(key, entry);
   }
   return byIdentity;
