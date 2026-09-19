@@ -73,4 +73,33 @@ describe('ui-evidence-shot argument contract', () => {
     expect(refusal(argv)).toBeNull();
     expect(parseArgs(argv).stray).toEqual([]);
   });
+
+  // The three below are TASK-080, all found after the first two refusals landed:
+  // the parser still ACCEPTED each of them and then did something other than what
+  // was asked, which is the class rule 27 names.
+
+  test('a value may contain \'=\', and is not cut at the second one', () => {
+    // `split('=')` truncated here: `/v2/x?a=1&b=2` arrived as `/v2/x?a`, so the
+    // capture was of a different page under a file name that named this one.
+    const { values } = parseArgs(['--route=/v2/x?a=1&b=2', '--out=/tmp/a.png']);
+    expect(values.get('route')).toBe('/v2/x?a=1&b=2');
+    expect(refusal(['--route=/v2/x?a=1&b=2', '--out=/tmp/a.png'])).toBeNull();
+  });
+
+  test('a repeated flag is refused, and named', () => {
+    // Only the last survived, silently, in either spelling of the same flag.
+    expect(refusal(['--width', '390', '--width', '900'])).toMatch(/repeated flag\(s\): --width/);
+    expect(refusal(['--width', '390', '--width=900'])).toMatch(/repeated flag\(s\): --width/);
+  });
+
+  test('a flag given an empty value is refused, and named', () => {
+    // `--selector= "$SEL"` with SEL unset: '' is falsy, so the script silently took
+    // the full-page path while the caller believed the capture was scoped.
+    const message = refusal(['--route', '/v2/connectors', '--out', '/tmp/a.png', '--selector=']);
+    expect(message).toMatch(/empty value\(s\): --selector=/);
+    // An unknown flag given an empty value is reported as both.
+    const both = refusal(['--widht=']);
+    expect(both).toMatch(/unknown flag\(s\): --widht/);
+    expect(both).toMatch(/empty value\(s\): --widht=/);
+  });
 });
