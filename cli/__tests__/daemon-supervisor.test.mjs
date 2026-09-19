@@ -497,6 +497,93 @@ describe('tick', () => {
     expect(children).toHaveLength(1);
   });
 
+  // TASK-063, the daemon half of wren's refuse-not-derive ruling. The broker is
+  // withheld at the DERIVE, because the derived environment is what the record
+  // holds and what `agent run` spawns from — and because this is the layer that
+  // knows the host, resolved the adapter locally, and sees records the server's
+  // projection never reaches.
+  const brokerEntry = {
+    name: 'commonly-grant-broker',
+    transport: 'http',
+    url: '${COMMONLY_API_URL}/api/mcp/grants/grant_4df79b67-0f7f-481f-8cd6-9cd90b946bb7',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+  };
+  const kernelEntry = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] };
+
+  test('a local record with no sandbox loses the broker, entry-level, and still starts', async () => {
+    const logs = [];
+    const { supervisor, children, saveToken, tokens } = makeHarness({
+      rows: () => [boundRow()],
+      log: (line) => logs.push(line),
+      tokens: {
+        'wren-test': {
+          agentName: 'wren-test',
+          instanceUrl: record.instanceUrl,
+          adapter: 'claude',
+          environment: { model: 'claude-opus-5', mcp: [kernelEntry, brokerEntry] },
+        },
+      },
+    });
+    await supervisor.tick();
+
+    const written = tokens['wren-test'].environment;
+    expect(written.mcp.map((entry) => entry.name)).toEqual(['commonly']);
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    // Entry-level: the broker goes and the SEAT stays — it was never promised
+    // confinement, so refusing the seat would be #1727's case, not this one.
+    expect(children).toHaveLength(1);
+    expect(logs.join('\n')).toContain('grant_broker_unconfined (sandbox_absent)');
+    expect(logs.join('\n')).toContain('commonly-grant-broker');
+    expect(logs.join('\n')).toContain('declares no sandbox block');
+  });
+
+  // The control, and it is what keeps the refusal from touching the working
+  // seat: a public trust resolves a mode on THIS host, so the broker rides and
+  // the record is not rewritten at all (identity is the dirty check).
+  test('a confined local record keeps its broker and is not rewritten', async () => {
+    const logs = [];
+    const existing = {
+      agentName: 'wren-test',
+      instanceUrl: record.instanceUrl,
+      adapter: 'claude',
+      environment: {
+        model: 'claude-opus-5',
+        sandbox: { mode: 'workspace', trust: 'public' },
+        mcp: [kernelEntry, brokerEntry],
+      },
+    };
+    const { supervisor, children, saveToken, tokens } = makeHarness({
+      rows: () => [boundRow()],
+      log: (line) => logs.push(line),
+      tokens: { 'wren-test': existing },
+    });
+    await supervisor.tick();
+
+    expect(tokens['wren-test'].environment.mcp.map((entry) => entry.name)).toEqual(['commonly', 'commonly-grant-broker']);
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(logs.join('\n')).not.toContain('grant_broker_unconfined');
+    expect(children).toHaveLength(1);
+  });
+
+  test('a pi seat whose row declares the broker starts without it', async () => {
+    const logs = [];
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' },
+        environment: { mcp: [kernelEntry, brokerEntry] },
+      })],
+      resolveAdapter: async () => 'pi',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: expect.objectContaining({ mcp: [kernelEntry] }),
+    }));
+    expect(children).toHaveLength(1);
+    expect(logs.join('\n')).toContain('grant_broker_unconfined (adapter_cannot_confine)');
+  });
+
   test('a row without a model never strips a hand-set environment', async () => {
     const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
     const { supervisor, saveToken } = makeHarness({

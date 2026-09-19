@@ -4,6 +4,7 @@ import { isAbsolute, resolve as pathResolve } from 'node:path';
 import { auditDeclaredMcp, installedStdioEntries } from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
+import { withholdGrantBroker } from './grant-broker-guard.js';
 
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
@@ -172,6 +173,27 @@ export const createDaemonSupervisor = ({
   // Returns 'ready' | 'changed' (record updated — the seat must restart to
   // load it) | false.
   const ensureToken = async (row) => {
+    // One derive for this seat, so the broker refusal cannot be applied at three
+    // of four sites: `seatBaseline` is where an environment becomes the one the
+    // seat RUNS under, and `withholdGrantBroker` asks the same question the
+    // server asks (`can this seat confine a granter's authority?`) for the cases
+    // the server cannot see — a row naming no adapter, a backend older than the
+    // refusal, a record written by hand. Entry-level per wren 69829: the broker
+    // entry is withheld and the seat still starts, because it was never promised
+    // confinement. `record.instanceUrl` is what makes the injected url
+    // identifiable at all — the record holds the UNRESOLVED
+    // `${COMMONLY_API_URL}/api/mcp/grants/<id>` placeholder.
+    const derive = (environment, adapter, options) => withholdGrantBroker(
+      seatBaseline(environment, adapter, options),
+      adapter,
+      {
+        instanceUrl: record.instanceUrl,
+        onRefuse: (refusal, names) => log(
+          `[${row.agentName}] ${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
+        ),
+      },
+    );
+
     const existing = loadToken(row.agentName);
     if (existing) {
       // A model changed in the UI reaches the seat here: update the record,
@@ -214,7 +236,7 @@ export const createDaemonSupervisor = ({
         // defaults to 'none' in the adapters, so an omitted block is an
         // unconfined seat (TASK-052). A local record with no environment at
         // all is in the same position — nobody has authored anything.
-        const nextEnvironment = seatBaseline(merged, nextAdapter, {
+        const nextEnvironment = derive(merged, nextAdapter, {
           sandbox: wanted.declared || !existing.environment,
         });
         const workspacePath = workspacePathFor(nextEnvironment);
@@ -235,7 +257,7 @@ export const createDaemonSupervisor = ({
       if (adapterChanged) {
         // An adapter that consumes mcp[] must not be started on a record that
         // declares none, even when only the adapter itself changed.
-        const nextEnvironment = seatBaseline(existing.environment, nextAdapter, {
+        const nextEnvironment = derive(existing.environment, nextAdapter, {
           sandbox: !existing.environment,
         });
         saveToken(row.agentName, {
@@ -254,7 +276,7 @@ export const createDaemonSupervisor = ({
         // stays tool-less for as long as it runs. Heal it here, and only when
         // the environment actually changed — otherwise every tick rewrites the
         // file and restarts the seat forever.
-        const nextEnvironment = seatBaseline(existing.environment, existing.adapter, {
+        const nextEnvironment = derive(existing.environment, existing.adapter, {
           sandbox: !existing.environment,
         });
         if (!isDeepStrictEqual(existing.environment || null, nextEnvironment || null)) {
@@ -312,7 +334,7 @@ export const createDaemonSupervisor = ({
     // tools and cannot post. See lib/default-environment.js. Nothing here is
     // operator-authored, so this seat also gets the sandbox default — the
     // self-serve install's seat used to be born unconfined (TASK-052).
-    const recordEnvironment = seatBaseline(
+    const recordEnvironment = derive(
       environment ? environment.value : null,
       adapter,
       { sandbox: true },
