@@ -560,6 +560,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     } catch (triggerErr) {
       console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
     }
+    // A done task needs no human: close its outstanding handoff cards. The
+    // PATCH gate already does this on a status change; this route wrote
+    // `done` without it, and 11 of 12 open handoffs on 2026-09-19 pointed at
+    // tasks completed here.
+    await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
     return res.json({ task });

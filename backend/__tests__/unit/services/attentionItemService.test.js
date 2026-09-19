@@ -8,6 +8,8 @@ const mockUserFind = jest.fn();
 
 jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, updateMany: mockUpdateMany, find: mockFind, exists: mockExists }));
 jest.mock('../../../models/Pod', () => ({ findById: mockPodFindById, find: mockPodFind }));
+const mockTaskFind = jest.fn();
+jest.mock('../../../models/Task', () => ({ find: mockTaskFind }));
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
 const mockMongoMessageFindById = jest.fn();
@@ -439,6 +441,30 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne.mock.calls.at(-1)[1]).toEqual({
       $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }),
     });
+  });
+
+  it('sweeps open handoffs whose task is already done, and leaves the others (dry run counts, apply writes)', async () => {
+    const chainLean = (v) => ({ sort: () => ({ lean: async () => v }), lean: async () => v, select: () => ({ lean: async () => v }) });
+    mockFind.mockReturnValue(chainLean([
+      { _id: 'a1', source: { type: 'task', id: 'task-done:u1' }, status: 'open' },
+      { _id: 'a2', source: { type: 'task', id: 'task-open:u2' }, status: 'open' },
+      { _id: 'a3', source: { type: 'task', id: 'task-done:u3' }, status: 'open' },
+      { _id: 'a4', source: { type: 'task', id: 'task-gone:u4' }, status: 'open' },
+    ]));
+    mockTaskFind.mockReturnValue(chainLean([
+      { _id: { toString: () => 'task-done' }, status: 'done' },
+      { _id: { toString: () => 'task-open' }, status: 'pending' },
+    ]));
+    const dry = await AttentionItemService.sweepDoneTaskHandoffs();
+    expect(dry).toEqual({ scanned: 4, eligible: 2, resolved: 0, missing: 1, apply: false });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 2 });
+    const applied = await AttentionItemService.sweepDoneTaskHandoffs({ apply: true });
+    expect(applied).toEqual({ scanned: 4, eligible: 2, resolved: 2, missing: 1, apply: true });
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { _id: { $in: ['a1', 'a3'] }, kind: 'handoff', status: 'open' },
+      { $set: expect.objectContaining({ status: 'resolved' }) },
+    );
   });
 
   it('resolves every outstanding fact for a task once the task no longer needs a human', async () => {
