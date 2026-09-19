@@ -3,7 +3,9 @@
  */
 
 import { jest } from '@jest/globals';
-import { loadConfig, request, HttpError } from '../src/client.js';
+import {
+  loadConfig, readToken, request, HttpError,
+} from '../src/client.js';
 
 describe('loadConfig', () => {
   it('parses a valid env', () => {
@@ -107,5 +109,49 @@ describe('request', () => {
     expect(caught).toBeInstanceOf(HttpError);
     expect(caught.status).toBe(403);
     expect(caught.body).toContain('Cloudflare');
+  });
+});
+
+describe('readToken: the pipe channel (TASK-078)', () => {
+  it('reads the credential off the declared fd, and trims the newline', () => {
+    const env = { COMMONLY_TOKEN_FD: '3', COMMONLY_AGENT_TOKEN: 'cm_agent_from_env' };
+    const token = readToken(env, { readImpl: (fd) => {
+      expect(fd).toBe(3);
+      return 'cm_agent_from_pipe\n';
+    } });
+    expect(token).toBe('cm_agent_from_pipe');
+  });
+
+  it('refuses to fall back to the environment when the pipe is declared but unreadable', () => {
+    // The declared fd is authoritative. Silently using the weaker channel after
+    // being told to use the stronger one is the bug this removes.
+    const env = { COMMONLY_TOKEN_FD: '3', COMMONLY_AGENT_TOKEN: 'cm_agent_from_env' };
+    expect(() => readToken(env, { readImpl: () => { throw Object.assign(new Error('ENXIO'), { code: 'ENXIO' }); } }))
+      .toThrow(/COMMONLY_TOKEN_FD=3/);
+  });
+
+  it('refuses an empty pipe rather than treating it as no credential', () => {
+    expect(() => readToken({ COMMONLY_TOKEN_FD: '4' }, { readImpl: () => '' }))
+      .toThrow(/empty credential/);
+  });
+
+  it('refuses an fd that is not a number', () => {
+    expect(() => readToken({ COMMONLY_TOKEN_FD: 'three' }, { readImpl: () => 'x' }))
+      .toThrow(/file descriptor number/);
+  });
+
+  it('falls back to the environment when no fd is declared at all', () => {
+    // An older daemon, another driver, or a hand-run server still passes it this
+    // way, and the channel belongs to the parent rather than to this package.
+    expect(readToken({ COMMONLY_AGENT_TOKEN: 'cm_agent_from_env' })).toBe('cm_agent_from_env');
+    expect(readToken({ COMMONLY_TOKEN_FD: '  ' })).toBeUndefined();
+  });
+
+  it('loadConfig accepts the credential from the pipe', () => {
+    const cfg = loadConfig(
+      { COMMONLY_API_URL: 'https://api.commonly.me', COMMONLY_TOKEN_FD: '3' },
+      { readImpl: () => 'cm_agent_piped' },
+    );
+    expect(cfg.token).toBe('cm_agent_piped');
   });
 });

@@ -18,7 +18,10 @@
  */
 
 import { spawn } from 'node:child_process';
-import { closeSync, readFileSync } from 'node:fs';
+import {
+  closeSync, readFileSync, existsSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
 
 /**
  * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
@@ -86,10 +89,172 @@ export const connectMcp = (server, opts = {}) => (typeof server?.url === 'string
   ? connectHttpMcp(server, opts)
   : connectStdioMcp(server, opts));
 
+/**
+ * The credential channel (TASK-078, ruled 2026-09-19: "take the token out of
+ * the environment", inherited pipe).
+ *
+ * `connectStdioMcp` spawns each declared stdio server with
+ * `{...process.env, ...env}`, and the default declaration puts the seat's
+ * runtime token in that `env` map. So the token sat in the MCP child's
+ * environment, where any same-user process could read it back with
+ * `ps eww <pid>` or `/proc/<pid>/environ` — including, on a shared host, a
+ * process the seat is not allowed to talk to.
+ *
+ * Now the token rides an inherited pipe on fd 3 and the child's environment
+ * carries only a pointer to it (`COMMONLY_TOKEN_FD=3`) — not a secret. The
+ * child end of that pipe is read to EOF.
+ *
+ * THE PIPE IS ONLY AVAILABLE WHERE WE SPAWN. This is the pi path; claude and
+ * codex let their own CLI start the server (claude expands `${VAR}` in its own
+ * process env, codex rides `mcp_servers.*.env_vars`), so a pipe opened here
+ * never reaches that grandchild. Those two still hand the token over in their
+ * runtime's environment, which is a separate, still-open half of the same row.
+ *
+ * THE OLD SERVER STILL WORKS. `@commonlyai/mcp` only learned to read the pipe in
+ * 0.3.11, and a seat may pin an older one — the sprint seats run a staging
+ * checkout of 0.3.4 — so a declaration whose command names an older
+ * `@commonlyai/mcp` keeps the environment variable AS WELL, with a warning that
+ * names the pin. An operator can also opt out explicitly with
+ * `COMMONLY_TOKEN_CHANNEL=env` in the entry's own env. Otherwise the token is
+ * piped and the environment is left clean.
+ */
+export const CREDENTIAL_KEY = 'COMMONLY_AGENT_TOKEN';
+export const CREDENTIAL_FD_VAR = 'COMMONLY_TOKEN_FD';
+export const CREDENTIAL_CHANNEL_VAR = 'COMMONLY_TOKEN_CHANNEL';
+export const CREDENTIAL_FD = 3;
+
+/** The `@commonlyai/mcp` release whose `loadConfig` reads the pipe channel. */
+export const PIPE_READER_VERSION = [0, 3, 11];
+
+const MCP_PACKAGE = '@commonlyai/mcp';
+
+const parseVersion = (spec) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(spec || '').trim());
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+};
+
+const olderThanPipeReader = (version) => {
+  if (!version) return null;
+  for (let i = 0; i < 3; i += 1) {
+    if (version[i] !== PIPE_READER_VERSION[i]) return version[i] < PIPE_READER_VERSION[i];
+  }
+  return false;
+};
+
+/**
+ * What an `@commonlyai/mcp` command would run, or null when the command cannot
+ * be identified as that package at all.
+ *
+ * Two shapes matter: `npx [-y] @commonlyai/mcp@<spec>` (a spec is a version, or
+ * `latest`/absent, which resolves to whatever is published — never treated as
+ * old), and a local checkout, `node <path>/src/index.js`, which is what the
+ * staging seats run; for that one the package.json beside it is the only honest
+ * answer, and a package.json naming something else means this is not our server.
+ *
+ * `{ isCommonly: true, version: null }` means "our server, version unknown" —
+ * an unpinned npx spec, whose whole point is that it tracks the published one.
+ * `null` as the return value means "not identifiable as our server", which is a
+ * different answer and takes a different branch: a stranger's server gets its
+ * declaration honoured unchanged.
+ */
+export const describeMcpCommand = (command, { readTextFile = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null) } = {}) => {
+  if (!Array.isArray(command) || command.length === 0) return null;
+  const parts = command.map(String);
+  const pkgArg = parts.find((p) => p.includes(MCP_PACKAGE));
+  if (pkgArg) {
+    const at = pkgArg.lastIndexOf('@');
+    if (at <= pkgArg.indexOf(MCP_PACKAGE)) return { isCommonly: true, version: null };
+    return { isCommonly: true, version: parseVersion(pkgArg.slice(at + 1)) };
+  }
+  const scriptPath = parts.find((p) => p.endsWith('.js') || p.endsWith('.mjs'));
+  if (!scriptPath) return null;
+  // `src/index.js` → `../package.json`; also try one level further up, because a
+  // bin shim can live in `bin/` beside `src/`.
+  for (const candidate of [join(dirname(scriptPath), '..', 'package.json'), join(dirname(scriptPath), 'package.json')]) {
+    let raw;
+    try {
+      raw = readTextFile(candidate);
+    } catch {
+      raw = null;
+    }
+    if (!raw) continue;
+    try {
+      const pkg = JSON.parse(raw);
+      if (!pkg || typeof pkg !== 'object') continue;
+      if (pkg.name === MCP_PACKAGE) return { isCommonly: true, version: parseVersion(pkg.version) };
+      // A package.json that names another package settles it: not ours, so its
+      // declaration is none of this function's business.
+      return null;
+    } catch {
+      // A malformed package.json is not an answer; keep looking.
+    }
+  }
+  return null;
+};
+
+/**
+ * Split a declared env map into the child's environment and the credential to
+ * hand over the pipe.
+ *
+ * Returns `{ env, credential, keepInEnv }`. `keepInEnv` is true only when the
+ * server cannot read the pipe — it predates the reader, it is somebody else's
+ * server, or the declaration opted out explicitly. Everything else gets the
+ * pointer variable and no secret.
+ */
+export const splitCredential = (env, command, { onWarn = (m) => process.stderr.write(`${m}\n`) } = {}) => {
+  const declared = { ...(env || {}) };
+  const credential = declared[CREDENTIAL_KEY];
+  const requested = String(declared[CREDENTIAL_CHANNEL_VAR] || '').trim().toLowerCase();
+  delete declared[CREDENTIAL_CHANNEL_VAR];
+  if (!credential) {
+    delete declared[CREDENTIAL_KEY];
+    return { env: declared, credential: null, keepInEnv: false };
+  }
+  if (requested === 'env') {
+    return { env: declared, credential: null, keepInEnv: true };
+  }
+  const server = describeMcpCommand(command);
+  if (!server) {
+    // Not identifiable as @commonlyai/mcp. A declaration that put this key in a
+    // stranger's environment asked for it to be there, and that server has no
+    // reason to know about a pipe; changing its contract is not this change's
+    // business.
+    return { env: declared, credential: null, keepInEnv: true };
+  }
+  if (server.version && olderThanPipeReader(server.version) === true) {
+    onWarn(`[pi-mcp-client] ${command[0]} runs ${MCP_PACKAGE} ${server.version.join('.')}, which predates the pipe channel (0.3.11): keeping the token in the child environment. Unpin it, or set ${CREDENTIAL_CHANNEL_VAR}=env to say so on purpose.`);
+    return { env: declared, credential: null, keepInEnv: true };
+  }
+  delete declared[CREDENTIAL_KEY];
+  declared[CREDENTIAL_FD_VAR] = String(CREDENTIAL_FD);
+  return { env: declared, credential, keepInEnv: false };
+};
+
 /** A minimal MCP stdio client: initialize, tools/list, tools/call. */
-export const connectStdioMcp = ({ name, command, env }, { spawnImpl = spawn, timeoutMs = 60_000 } = {}) => {
+export const connectStdioMcp = ({
+  name, command, env,
+}, {
+  spawnImpl = spawn, timeoutMs = 60_000, onWarn,
+} = {}) => {
   const [cmd, ...args] = command;
-  const proc = spawnImpl(cmd, args, { env: { ...process.env, ...(env || {}) }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const { env: declaredEnv, credential, keepInEnv } = splitCredential(env, command, onWarn ? { onWarn } : {});
+  // The inherited environment is stripped of the key unless an old server has to
+  // read it there: the daemon's own environment is not a channel into a child,
+  // and `...process.env` used to make it one.
+  const childEnv = { ...process.env, ...declaredEnv };
+  if (!keepInEnv) delete childEnv[CREDENTIAL_KEY];
+  const stdio = credential ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'];
+  const proc = spawnImpl(cmd, args, { env: childEnv, stdio });
+  if (credential) {
+    const channel = proc.stdio && proc.stdio[CREDENTIAL_FD];
+    if (!channel) {
+      // Fail loudly rather than fall back: the environment it would fall back to
+      // is the thing this change exists to empty.
+      throw new Error(`${name}: no fd ${CREDENTIAL_FD} pipe to carry the runtime token`);
+    }
+    channel.on('error', () => {});
+    channel.end(credential);
+  }
   const pending = new Map();
   let nextId = 1;
   let buffer = '';
