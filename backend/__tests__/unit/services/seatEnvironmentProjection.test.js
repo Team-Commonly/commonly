@@ -78,8 +78,8 @@ describe('projectSeatEnvironments', () => {
     expect([...mine.keys()]).toEqual([seatEnvironmentKey('proj-seat', 'default')]);
     const entry = mine.get(seatEnvironmentKey('proj-seat', 'default'));
     expect(entry.podIds.map(String).sort()).toEqual([String(podOne), String(podTwo)].sort());
-    // First declaration wins for the runtime, exactly as the daemon list has
-    // always resolved a duplicated identity — no new ordering rule here.
+    // The pair comes from the OLDEST active declaration (`_id` ascending),
+    // which for a duplicated identity is a rule rather than the stored order.
     expect(entry.runtime).toEqual({ adapter: 'claude' });
 
     const theirs = await projectSeatEnvironments({ installedBy: b._id });
