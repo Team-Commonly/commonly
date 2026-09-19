@@ -740,6 +740,53 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
   });
 
+  test('agent profile Phase B uses ink actions, the halo, and the type ladder', () => {
+    const primary = ruleBody(aprofile, '.v2-aprofile__btn--primary');
+    expect(primary).toContain('background: var(--v2-ink)');
+    expect(primary).toContain('border-color: var(--v2-ink)');
+    expect(primary).not.toContain('var(--v2-accent)');
+    expect(ruleBody(aprofile, '.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
+    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
+    const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
+    expect(footerPrimary).toContain('var(--v2-ink)');
+    expect(footerPrimary).not.toContain('var(--v2-accent)');
+    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
+
+    const profileFocusRules = aprofile.split('}').filter((block) => {
+      const brace = block.indexOf('{');
+      if (brace === -1) return false;
+      const selector = block.slice(0, brace);
+      return selector.includes('.v2-aprofile') && selector.includes(':focus-visible');
+    });
+    expect(profileFocusRules.length).toBeGreaterThan(0);
+    for (const block of profileFocusRules) expect(block.slice(block.indexOf('{'))).not.toContain('outline: 2px');
+    const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
+    expect(avatarFocus).toContain('outline: none');
+    expect(avatarFocus).toContain('box-shadow: var(--v2-focus-ring)');
+
+    expect(aprofile.match(/font-size:\s*13px/g) || []).toHaveLength(0);
+    for (const selector of ['.v2-aprofile__empty-title', '.v2-aprofile__name', '.v2-aprofile__stat-num']) {
+      expect(ruleBody(aprofile, selector)).toContain('font-weight: 700');
+    }
+    expect(aprofile).not.toContain('font-weight: 850');
+  });
+
+  test('agent profile enumerated rows use transparent borders and background-only hover', () => {
+    for (const selector of ['.v2-aprofile__pod', '.v2-aprofile__memnote']) {
+      const row = ruleBody(aprofile, selector);
+      expect(row).toContain('border: 1px solid transparent');
+      expect(row).toContain('border-radius: var(--v2-radius)');
+      expect(row).toContain('padding: 12px 14px');
+      const hover = ruleBody(aprofile, `${selector}:hover`);
+      const declarations = hover.slice(hover.indexOf('{') + 1)
+        .split(';').map((declaration) => declaration.trim()).filter(Boolean);
+      expect(declarations.length).toBeGreaterThan(0);
+      for (const declaration of declarations) expect(declaration).toMatch(/^background/);
+    }
+    expect(aprofile).not.toContain('.v2-aprofile__pod:first-child');
+    expect(aprofile).not.toContain('.v2-aprofile__memnote:first-child');
+  });
+
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
     // The rail is 76px wide; its language menu is a wider floating popover.
     // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the
