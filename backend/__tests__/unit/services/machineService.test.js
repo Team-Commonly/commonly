@@ -7,6 +7,22 @@ let AgentCredential;
 let User;
 let machineService;
 
+// The real payload a daemon sends per seat, from
+// cli/src/lib/daemon-supervisor.js:73-85 agentStates(): ten fields, six of which
+// the server does not store.
+const fullSeatReport = {
+  agentName: 'Kai',
+  instanceId: 'default',
+  state: 'running',
+  restarts: 1,
+  adapter: 'claude',
+  model: 'sonnet',
+  effort: 'high',
+  pid: 4242,
+  lastTurnAt: '2026-09-18T19:00:00.000Z',
+  lastError: null,
+};
+
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
@@ -86,6 +102,43 @@ describe('ADR-026 machine lifecycle service', () => {
     // An explicit empty array IS a report: nothing is supervised any more.
     const cleared = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), []);
     expect(cleared.agentStates).toEqual([]);
+  });
+
+  it('keeps only the four stored seat fields when a daemon reports its full payload', () => {
+    // FILTER 1 of 2. This pins the rebuild in normalizeAgentStates
+    // (backend/services/machineService.ts:28-47). Do not move this assertion up
+    // to recordMachineHeartbeat or serializeMachine: the schema drops the same
+    // six paths, so under a spread here neither of those surfaces changes, and
+    // this layer is the only one that can fail. Filter 2 is the next test.
+    const normalized = machineService.normalizeAgentStates([fullSeatReport]);
+
+    expect(normalized).toEqual([
+      {
+        agentName: 'kai', instanceId: 'default', state: 'running', restarts: 1,
+      },
+    ]);
+  });
+
+  it('drops undeclared seat paths at the schema too, without normalizeAgentStates', async () => {
+    // FILTER 2 of 2. Writes the ten-field entry straight through the model, so
+    // filter 1 never runs. Machine.ts declares four paths and sets no `strict`
+    // option, so Mongoose's default strips the rest (the subdoc has `_id: false`).
+    // Without this test, adding a declared `adapter` path or `strict: false`
+    // passes the whole suite, because filter 1 removes the field first.
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Schema Mac' });
+
+    await Machine.updateOne(
+      { _id: machine.id },
+      { $set: { agentStates: [fullSeatReport] } },
+    );
+
+    const raw = await mongoose.connection
+      .collection('machines')
+      .findOne({ _id: new mongoose.Types.ObjectId(machine.id) });
+    expect(Object.keys(raw.agentStates[0]).sort()).toEqual(
+      ['agentName', 'instanceId', 'restarts', 'state'],
+    );
   });
 
   it('returns only the credential-bound machine for daemon status', async () => {
