@@ -119,6 +119,31 @@ v26 on `PATH`); the **backend and vite** are the two that need Node 20.
 screenshot — a `diff` of two `.txt` files is quotable in a PR body, and a 403 or a console error
 names itself instead of looking like a layout bug.
 
+### Flags the script enforces, and the two traps behind them
+
+| flag | why it exists |
+| --- | --- |
+| `--width`, `--height` | a 390 shot is a **different layout**, not a smaller copy. Both default to 1440×900, and every run prints `viewport <w>x<h>@2x` so a capture names its own shape. |
+| `--click '<selector>'` | some surfaces only exist after an interaction. The grant aside on `/v2/connectors` is rendered by clicking the row's **Manage**, so a shot named for the aside without the click captures the row list and calls it the aside. The click waits for the control to be visible and **throws with the selector named** if it never appears — same rule as an unknown flag: a capture that silently did something else is worse than no capture. |
+| `--token <jwt>` | `POST /api/auth/login` is rate-limited to **20 attempts per 15 minutes**. A pair is captured run by run, so a five-shot batch starts returning 429 and the page dumps `Failed to load chat room. Please try again.` — which reads like a broken revision, not a spent login budget. Pass a token the caller already holds and the script skips the login entirely (`auth token` vs `auth login` in the run line). |
+| — | **an unknown flag is refused (exit 2), not ignored.** That is the defect this table was written for: the script had no `--width` at all, so `--width 390 --out x-390.png` wrote a silent 1440×900 capture under a `-390` name and the reviewer had no way to tell (2026-09-19). Check the run line: `viewport` and `auth` are printed on every capture for exactly this reason. |
+
+**Check the `non-2xx` line for `/@fs/...woff2` 403s before comparing two revisions.** A worktree
+whose `frontend/node_modules` is a **symlink** makes vite refuse to serve `/@fs/` font files, and
+the page then renders in a fallback typeface — so the `before` and `after` PNGs differ in a way that
+has nothing to do with the change under test (hit 2026-09-19; the fonts are not optional here, the
+shell ships `@fontsource` faces). `cp -al` the real `node_modules` into every worktree that serves a
+frontend; one symlinked tree against one copied tree is exactly the shape that hides it.
+
+**A pair that is byte-identical is not automatically a null result.** Before calling a pair
+vacuous, look for the element rather than the pixel: a `display: none` value still exists in the
+DOM, so `document.body.innerText` (rendering-aware) drops it while `textContent` does not. On
+`/v2/connectors` at 390 the audience line is hidden for live rows by `frontend/src/v2/v2.css`
+(``.v2-connector-row__detail { display: none }`` under the phone breakpoint), so the `#1757` pair
+is the *same PNG* at 390 while a DOM probe still reads the changed string — the fix is not lost on
+mobile, it is simply not painted there. **Measure that, then say it, instead of shipping the
+identical pair as evidence.**
+
 Route shapes that cost time to rederive:
 
 - `/v2/pods/<podType>/<podId>` — `<podType>` is the **real** pod type (`team`, `agent-room`, …),
