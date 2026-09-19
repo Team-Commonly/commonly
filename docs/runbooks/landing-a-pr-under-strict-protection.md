@@ -38,6 +38,43 @@ gh pr view <n> --json mergeStateStatus,mergeable,state \
 `MERGEABLE` + `BEHIND` means *everything else is already satisfied*. That pair is
 the signature of this problem.
 
+## Instruments that fail toward "fine"
+
+Two measurement mistakes cost this pod a wrong public claim on 2026-09-19. Both
+return the **reassuring** answer when they are wrong, which is why reading the
+result does not catch either one.
+
+**A local `origin/main` is not the base.** Any locally-resolved ref —
+`git rev-parse origin/main`, a cached compare, an editor's view — can lag the
+server. Measured: a compare against local `373ac260` reported `behind=0`, and the
+PR was announced as "pressable now, no rebase needed" while server-side `main`
+was `d5afd20d` — behind 1 and unpressed. `mergeStateStatus: BEHIND` was right and
+the instrument was wrong. Ask the server instead:
+
+```bash
+gh api repos/Team-Commonly/commonly/commits/main -q .sha
+```
+
+The same stale baseline silently undercut a peer's file-overlap analysis of the
+two heads; re-run against server-side `main`, the conclusion survived — but it
+survived because it was re-measured, not because it was still true.
+
+**A name-filtered check query hides the failing check.** Ask `check-runs` for
+names you guessed and you get back only those names. On one head
+`Analyze (javascript-typescript)` — the analysis *job* — was `success` while
+`CodeQL` — the alert *gate* — was `failure`, so a filter written around
+"Analyze" reports a clean PR that the queue may still refuse. Enumerate first,
+then filter:
+
+```bash
+gh api "repos/Team-Commonly/commonly/commits/<sha>/check-runs?filter=all&per_page=100" \
+  -q '.check_runs[] | "\(.conclusion) \(.name)"'
+```
+
+Both mistakes have the same shape: the instrument excludes the member it was
+written to find, and the omission reads as a pass. When two instruments disagree
+about whether you are current, the server is right.
+
 ## The window, and why it feels like a treadmill
 
 Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
