@@ -69,6 +69,18 @@ describe('identifying the broker this daemon injects', () => {
     expect(isOurGrantBroker(broker({ url: '//api/mcp/grants/g1' }), opts)).toBe(true);
   });
 
+  // A schemeless url read BOTH ways (vera, 70372 corrected a draft that claimed
+  // collapse alone covered this). Collapsing reads the first as the PATH
+  // `/api.commonly.me/api/...` and misses it; URL semantics say the string names
+  // THIS instance, so it is also resolved against the bound instance — otherwise
+  // a hand-written record could smuggle our broker in with that spelling and a
+  // miss is fail-open. A FOREIGN host gets no such reading.
+  test('a protocol-relative url naming this instance is our broker, a foreign host is not', () => {
+    expect(isOurGrantBroker(broker({ url: '//api.commonly.me/api/mcp/grants/g1' }), opts)).toBe(true);
+    expect(isOurGrantBroker(broker({ url: '//evil.example/api/mcp/grants/g1' }), opts)).toBe(false);
+    expect(isOurGrantBroker(broker({ url: '//api.commonly.me/api/mcp/grants/g1' }), {})).toBe(false);
+  });
+
   // The normalizations are one-directional — a miss may become a match — so
   // this is the assertion that they cannot become a different origin's match.
   test('no spelling of the instance widens the ORIGIN check', () => {
