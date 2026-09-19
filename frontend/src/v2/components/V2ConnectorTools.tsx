@@ -144,12 +144,18 @@ const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now: numbe
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
 );
-/** Outcome marks: a category, so a glyph; the word stays in the log line and the title. */
+/** Outcome marks: a category, so a glyph; the word stays in the log line and the title.
+ *
+ * The `superseded` mark is a shield with a SHORT BAR, not the shield-and-check it
+ * first shipped with (wren, 69819): the resolution it stands for may be an
+ * approval, a decline or an expiry, and the row beside it carries the verdict —
+ * a check read as "approved" next to a sibling that says `refused`. The bar says
+ * settled without saying how. */
 const OutcomeGlyph: React.FC<{ outcome: ToolOutcome }> = ({ outcome }) => {
   if (outcome === 'ok') return <G><path d="M20 6 9 17l-5-5" /></G>;
   if (outcome === 'refused') return <G><path d="M18 6 6 18M6 6l12 12" /></G>;
   if (outcome === 'pending_approval') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M12 8v5M12 16h.01" /></G>;
-  if (outcome === 'superseded') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
+  if (outcome === 'superseded') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M9 12h6" /></G>;
   return <G><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></G>;
 };
 /** Mode marks: eye for read, pen for write, shield for write that asks first. */

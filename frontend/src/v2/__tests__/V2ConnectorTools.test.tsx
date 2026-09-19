@@ -195,6 +195,17 @@ test('the aside reads the grant and the trail: agents, allow-list under its mode
   // still say 3 while the trail lists its 4 rows, and only the genuinely open
   // one is counted as awaiting a person.
   expect(lines.map((line) => line.textContent).filter((text) => text.includes('awaiting a person'))).toHaveLength(1);
+  // Wren 69819: `answered` covers a resolution that was declined or expired as
+  // well as one that ran, so its mark must say SETTLED without saying approved —
+  // the sibling row beside it is the one that carries the verdict. Shield plus a
+  // short bar; the shield-and-check it shipped with read as "approved" next to a
+  // row that says `refused`.
+  const answeredLine = lines.find((line) => line.textContent?.includes('answered'));
+  expect(answeredLine?.querySelectorAll('svg path')).toHaveLength(2);
+  expect(Array.from(answeredLine?.querySelectorAll('svg path') || []).map((path) => path.getAttribute('d'))).toEqual([
+    'M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z',
+    'M9 12h6',
+  ]);
   // The arguments never reach the page: only the digest does, and it is not rendered.
   expect(aside.textContent).not.toContain('a'.repeat(64));
   expect(axios.get).toHaveBeenCalledWith('/api/grants/grant_live/calls', expect.objectContaining({ headers: expect.any(Object) }));
