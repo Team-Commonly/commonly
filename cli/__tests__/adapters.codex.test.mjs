@@ -13,7 +13,7 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import {
   lstat,
   mkdtemp,
@@ -65,10 +65,15 @@ const findOutputFile = (args) => {
   return idx === -1 ? null : args[idx + 1];
 };
 
-const makeSpawnImpl = ({ stdoutChunks = [], stderr = '', code = 0, outputContents = null } = {}) => {
+const makeSpawnImpl = ({
+  stdoutChunks = [], stderr = '', code = 0, outputContents = null, onCall = null,
+} = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
     calls.push({ cmd, args, opts });
+    // Runs DURING the spawn, which is the only moment a per-spawn file exists:
+    // the adapter's finally removes it before spawn() resolves, deliberately.
+    if (onCall) onCall(args, opts);
     return fakeChild({
       stdoutChunks,
       stderr,
@@ -173,9 +178,16 @@ describe('codex adapter — spawn()', () => {
     // adapter used to silently ignore environment.mcp, so a codex agent had
     // no commonly_* tools and fell back to posting via the operator's CLI
     // profile (misattributing its words to the human).
+    const atSpawn = {};
     const { impl, calls } = makeSpawnImpl({
       stdoutChunks: ['{"type":"turn.completed"}\n'],
       outputContents: 'ok',
+      onCall: (args) => {
+        const path = args.join(' ').match(/COMMONLY_TOKEN_FILE = "([^"]+)"/)?.[1];
+        atSpawn.credentialPath = path || null;
+        atSpawn.contents = path ? readFileSync(path, 'utf8') : null;
+        atSpawn.mode = path ? statSync(path).mode & 0o777 : null;
+      },
     });
 
     await codex.spawn('hi', {
@@ -204,15 +216,27 @@ describe('codex adapter — spawn()', () => {
     const cFlags = args
       .map((a, i) => (a === '-c' ? args[i + 1] : null))
       .filter(Boolean);
+    // The credential rides as a PATH in `env`, so there is no `env_vars` entry
+    // and no token in codex's environment (TASK-083). Before this, this exact
+    // argv carried `env_vars=["COMMONLY_AGENT_TOKEN"]`, which is how the value
+    // reached codex and from there every MCP child it spawned — measured on a
+    // live codex seat, three children carrying a 73-char token.
     expect(cFlags).toEqual([
       'mcp_servers.commonly.command="npx"',
       'mcp_servers.commonly.default_tools_approval_mode="approve"',
       'mcp_servers.commonly.args=["-y","@commonlyai/mcp@latest"]',
-      'mcp_servers.commonly.env={COMMONLY_API_URL = "https://api.example.test"}',
-      'mcp_servers.commonly.env_vars=["COMMONLY_AGENT_TOKEN"]',
+      expect.stringContaining('mcp_servers.commonly.env={COMMONLY_API_URL = "https://api.example.test", COMMONLY_TOKEN_FILE = "'),
     ]);
+    expect(cFlags.find((f) => f.includes('env_vars'))).toBeUndefined();
     expect(args.join(' ')).not.toContain('cm_agent_secret');
-    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    // The path handed over is real, holds this spawn's credential, and lives
+    // inside the per-spawn directory codex itself reads and writes.
+    expect(atSpawn.contents).toBe('cm_agent_secret');
+    expect(atSpawn.mode).toBe(0o600);
+    expect(atSpawn.credentialPath.startsWith(dirname(findOutputFile(args)))).toBe(true);
+    // And it is gone once the turn is over — no credential left in $TMPDIR.
+    expect(existsSync(atSpawn.credentialPath)).toBe(false);
     // Overrides must precede the prompt (last arg) and not disturb -o pairing.
     expect(findOutputFile(args)).toBeTruthy();
     expect(args[args.length - 1])
@@ -659,4 +683,82 @@ afterAll(async () => {
       }
     }
   } catch { /* ignore */ }
+});
+
+describe('codex: the carve-out for a reference the file channel cannot carry (TASK-083)', () => {
+  const spawnCapturingWarnings = async (mcp) => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"turn.completed"}\n'],
+      outputContents: 'ok',
+    });
+    let warned = [];
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await codex.spawn('hi', {
+        sessionId: null,
+        _spawnImpl: impl,
+        runtimeToken: 'cm_agent_secret',
+        instanceUrl: 'https://api.example.test',
+        environment: { mcp },
+      });
+    } finally {
+      warned = warn.mock.calls.map((c) => c.join(' '));
+      warn.mockRestore();
+    }
+    const args = calls[0].args;
+    const flags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    return { flags, args, env: calls[0].opts.env, warned };
+  };
+
+  test('a token wanted as a command argument refuses the entry instead of publishing it', async () => {
+    // Substitution happens before the entry is emitted, so `cm_agent_*` really
+    // did land in `mcp_servers.<name>.args` on the -c command line — measured
+    // before the guard was written. An argv token is readable by every same-user
+    // process, and there is no env_vars route for a command argument, so the
+    // entry is skipped whole and the reason is said out loud.
+    const { flags, args, env, warned } = await spawnCapturingWarnings([{
+      name: 'legacy',
+      transport: 'stdio',
+      command: ['legacy-bin', '--token', '${COMMONLY_AGENT_TOKEN}'],
+    }]);
+    expect(flags.filter((f) => f.startsWith('mcp_servers.legacy'))).toEqual([]);
+    expect(args.join(' ')).not.toContain('cm_agent_secret');
+    expect(env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    expect(warned.join('\n')).toMatch(/wants the seat credential as a command argument/);
+  });
+
+  test('an env value that merely contains the token is forwarded too', async () => {
+    const { flags, env, warned } = await spawnCapturingWarnings([{
+      name: 'legacy',
+      transport: 'stdio',
+      command: ['legacy-bin'],
+      env: { HEADER: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+    }]);
+    expect(flags.find((f) => f.includes('env_vars'))).toContain('HEADER');
+    expect(env.HEADER).toBe('Bearer cm_agent_secret');
+    expect(warned.join('\n')).toMatch(/needs COMMONLY_AGENT_TOKEN as a literal/);
+  });
+
+  test('the default declaration in the same spawn still takes the file channel', async () => {
+    const { flags, env } = await spawnCapturingWarnings([
+      {
+        name: 'commonly',
+        transport: 'stdio',
+        command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+      },
+      {
+        name: 'legacy',
+        transport: 'stdio',
+        command: ['legacy-bin', '--token', '${COMMONLY_AGENT_TOKEN}'],
+      },
+    ]);
+    const commonlyEnv = flags.find((f) => f.startsWith('mcp_servers.commonly.env='));
+    expect(commonlyEnv).toContain('COMMONLY_TOKEN_FILE');
+    expect(commonlyEnv).not.toContain('COMMONLY_AGENT_TOKEN');
+    // Our own entry takes the file channel even beside an entry that was
+    // refused, and because that entry was refused nothing needs the value
+    // forwarded — so this spawn carries no token at all.
+    expect(env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+  });
 });
