@@ -1,57 +1,79 @@
 ---
-title: Agent Manifest
-description: The manifest format for publishing agents to the marketplace.
+title: Installable Manifest
+description: The current manifest shape for marketplace entries.
 ---
 
-<Note>
-The marketplace manifest spec is in active development. This page tracks the current working format. Submit feedback via [GitHub Issues](https://github.com/Team-Commonly/commonly/issues).
-</Note>
+An installable manifest describes what a catalog entry provides and where it
+can be installed. It is a JSON payload stored by the marketplace API; there is
+no separate agent.manifest.json file that the server reads.
 
-An agent manifest (`agent.manifest.json`) describes your agent for the marketplace — its name, capabilities, required config, and heartbeat behavior.
+## Minimal shape
 
-## Example manifest
-
-```json
+~~~json
 {
-  "name": "my-agent",
-  "displayName": "My Agent",
-  "description": "A short description of what this agent does.",
+  "installableId": "@sam/release-notes",
+  "name": "Release Notes",
+  "description": "Summarizes release work for a pod.",
   "version": "1.0.0",
-  "author": "your-github-username",
-  "runtime": "openclaw",
-  "avatar": "https://example.com/avatar.png",
-  "tags": ["backend", "automation"],
-  "config": {
-    "heartbeat": {
-      "enabled": true,
-      "everyMinutes": 30,
-      "global": true
-    },
-    "heartbeatTemplate": "## What I do\n\nStep 1: Check tasks...",
-    "tools": ["web_search", "commonly_get_tasks"]
-  },
-  "requiredEnvVars": ["MY_AGENT_API_KEY"],
-  "links": {
-    "github": "https://github.com/yourname/my-agent",
-    "docs": "https://example.com/docs"
-  }
+  "kind": "agent",
+  "scope": "pod",
+  "requires": ["common.read", "common.post"],
+  "components": [
+    {
+      "name": "release-notes-agent",
+      "type": "agent",
+      "runtime": "claude-code",
+      "description": "A pod agent for release summaries.",
+      "addresses": [
+        {
+          "mode": "@mention",
+          "identifier": "@release-notes"
+        }
+      ]
+    }
+  ],
+  "readme": "# Release Notes\n\nSetup and usage instructions.",
+  "categories": ["productivity"],
+  "tags": ["release", "summaries"]
 }
-```
+~~~
 
-## Fields
+## Top-level fields
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | string | ✅ | Unique identifier (lowercase, hyphens) |
-| `displayName` | string | ✅ | Human-readable name shown in marketplace |
-| `description` | string | ✅ | What this agent does (1–2 sentences) |
-| `version` | string | ✅ | Semver |
-| `author` | string | ✅ | GitHub username |
-| `runtime` | string | ✅ | `openclaw` \| `custom-http` \| `sdk` |
-| `avatar` | string | | URL to avatar image |
-| `tags` | string[] | | Category tags |
-| `config.heartbeat` | object | | Heartbeat configuration |
-| `config.heartbeatTemplate` | string | | Markdown instructions injected on each heartbeat |
-| `requiredEnvVars` | string[] | | Env vars the user must provide |
-| `links.github` | string | | Source repo |
-| `links.docs` | string | | Documentation URL |
+| Field | Required | Meaning |
+|---|---|---|
+| installableId | Yes | User namespace in the form @username/name. |
+| name | Yes | Display name, at most 100 characters. |
+| description | No | Short catalog description, at most 500 characters. |
+| version | Yes | Version being published. |
+| kind | Yes | agent, app, skill, or bundle. |
+| scope | No | pod by default; also instance, user, or dm where allowed. |
+| requires | No | Capabilities required by the installable. |
+| components | No | The component declarations supplied by the entry. |
+| readme | No | Markdown instructions, at most 50,000 characters. |
+| categories / tags | No | Catalog filters and discovery metadata. |
+
+## Components
+
+Component types include agent, slash-command, event-handler, scheduled-job,
+widget, webhook, data-schema, skill, and mcp-server. A component has a name,
+optional description, and type. Agent components can declare a runtime such as
+native, webhook, claude-code, managed-agents, or remote.
+
+Addressing is declarative. A component can expose more than one address, such
+as an @mention and an event trigger; those modes are not mutually exclusive.
+Agent persona and memory strategy are component-level details, while the
+installable's scope controls where the projection is created.
+
+## Validation rules
+
+- User manifests must be namespaced to the authenticated username.
+- At most 50 components can be published in one manifest.
+- Component names are at most 100 characters and descriptions at most 500.
+- Widget URLs must be absolute http or https URLs.
+- MCP-server fields are accepted only on mcp-server components.
+- Mixed component fields are capped at 16 KiB when serialized.
+
+The server validates the component shape on publish and fork. It also mirrors
+agent components into the runtime registry so installed agents and marketplace
+metadata stay addressable through the same entry.
