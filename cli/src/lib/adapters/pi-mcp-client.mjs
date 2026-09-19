@@ -23,6 +23,8 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { CREDENTIAL_FILE_VAR } from '../credential-file.js';
+
 /**
  * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
  * pi confines on no host — `pi.js assertNoSandboxDeclared` refuses a DECLARED
@@ -104,15 +106,24 @@ export const connectMcp = (server, opts = {}) => (typeof server?.url === 'string
  * carries only a pointer to it (`COMMONLY_TOKEN_FD=3`) — not a secret. The
  * child end of that pipe is read to EOF.
  *
+ * WHERE THE TOKEN COMES FROM. The launcher writes a per-spawn 0600 file and the
+ * declaration names it with `${COMMONLY_TOKEN_FILE}` — a PATH, not a secret — so
+ * the runtime's own environment never holds the token (TASK-082/083). A
+ * declaration that instead carries the literal token in `COMMONLY_AGENT_TOKEN`
+ * still works: that is the older channel, and it is the operator's to declare.
+ * Whichever named the credential, the child gets it on the pipe and its own
+ * environment is left clean.
+ *
  * THE PIPE IS ONLY AVAILABLE WHERE WE SPAWN. This is the pi path; claude and
  * codex let their own CLI start the server (claude expands `${VAR}` in its own
- * process env, codex rides `mcp_servers.*.env_vars`), so a pipe opened here
- * never reaches that grandchild. Those two still hand the token over in their
- * runtime's environment, which is a separate, still-open half of the same row.
+ * process env, codex writes a plain `mcp_servers.*.env` entry), so a pipe opened
+ * here never reaches that grandchild. Those two deliver the PATH instead, which
+ * is what let the token leave their runtime environments too.
  *
  * THE OLD SERVER STILL WORKS. `@commonlyai/mcp` only learned to read the pipe in
- * 0.3.11, and a seat may pin an older one — the sprint seats run a staging
- * checkout of 0.3.4 — so a declaration whose command names an older
+ * 0.3.11, and a seat may pin an older one — the five staging seats ran a checkout
+ * of 0.3.7 when this was measured (2026-09-19; the doc here said 0.3.4, which was
+ * true two weeks earlier) — so a declaration whose command names an older
  * `@commonlyai/mcp` keeps the environment variable AS WELL, with a warning that
  * names the pin. An operator can also opt out explicitly with
  * `COMMONLY_TOKEN_CHANNEL=env` in the entry's own env. Otherwise the token is
@@ -122,6 +133,50 @@ export const CREDENTIAL_KEY = 'COMMONLY_AGENT_TOKEN';
 export const CREDENTIAL_FD_VAR = 'COMMONLY_TOKEN_FD';
 export const CREDENTIAL_CHANNEL_VAR = 'COMMONLY_TOKEN_CHANNEL';
 export const CREDENTIAL_FD = 3;
+
+/**
+ * The only variables a spawned MCP server inherits from us.
+ *
+ * This list is DERIVED, not guessed: each entry exists because a real child
+ * failed without it, and a child that only fails at spawn is the worst failure
+ * shape there is (TASK-083). `PATH` runs the command (and, for a seat, carries
+ * the seat-launch shim directory prepended, so it must be passed through rather
+ * than canonicalised); `HOME` is where `npx` keeps the cache it fetches
+ * `@commonlyai/mcp` into, which a cold start needs; `TMPDIR` was measured in a
+ * live child on macOS, where /var/folders is not /tmp; the proxy and CA names
+ * are absent on this machine, so an operator behind a proxy or a private CA is
+ * the case that cannot be exercised here — including them unset costs nothing,
+ * and without them that operator's cold `npx` would fail in a way that reads as
+ * this change regressing.
+ *
+ * Deliberately NOT a prefix match: a variable named `COMMONLY_*` is ours to hand
+ * over explicitly, and a variable named like a secret is exactly what an
+ * allowlist exists to drop.
+ */
+export const CHILD_ENV_ALLOWLIST = Object.freeze([
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'NO_PROXY',
+  'NODE_EXTRA_CA_CERTS',
+]);
+
+/**
+ * The environment a spawned MCP server gets: the allowlist above, then whatever
+ * the entry itself declared, and nothing else. The daemon's environment is not a
+ * channel into a child — `...process.env` used to make it one, which is how a
+ * third-party server came to hold our seat token and the model key.
+ */
+export const buildChildEnv = (parentEnv, declaredEnv) => {
+  const out = {};
+  for (const key of CHILD_ENV_ALLOWLIST) {
+    const value = parentEnv ? parentEnv[key] : undefined;
+    if (value !== undefined) out[key] = value;
+  }
+  return Object.assign(out, declaredEnv || {});
+};
 
 /** The `@commonlyai/mcp` release whose `loadConfig` reads the pipe channel. */
 export const PIPE_READER_VERSION = [0, 3, 11];
@@ -201,16 +256,44 @@ export const describeMcpCommand = (command, { readTextFile = (p) => (existsSync(
  * server, or the declaration opted out explicitly. Everything else gets the
  * pointer variable and no secret.
  */
-export const splitCredential = (env, command, { onWarn = (m) => process.stderr.write(`${m}\n`) } = {}) => {
+export const splitCredential = (env, command, {
+  onWarn = (m) => process.stderr.write(`${m}\n`),
+  readCredentialFile = (path) => readFileSync(path, 'utf8'),
+} = {}) => {
   const declared = { ...(env || {}) };
-  const credential = declared[CREDENTIAL_KEY];
+  const declaredFile = declared[CREDENTIAL_FILE_VAR];
   const requested = String(declared[CREDENTIAL_CHANNEL_VAR] || '').trim().toLowerCase();
   delete declared[CREDENTIAL_CHANNEL_VAR];
+  let credential = null;
+  let fromFile = false;
+  // A declaration that names a file is using the launcher channel, and that is
+  // the one to honour: if it ALSO carries a literal token, the literal is the
+  // leftover of an older declaration, and preferring it would keep the secret in
+  // the very place this exists to empty.
+  if (declaredFile !== undefined && String(declaredFile).trim() !== '') {
+    // The launcher channel: the declaration names a path, and the credential is
+    // read here so the child never needs the file (or the token) at all.
+    const path = String(declaredFile).trim();
+    let raw;
+    try {
+      raw = readCredentialFile(path);
+    } catch (err) {
+      throw new Error(`the declared credential file could not be read: ${path}: ${err.message}`);
+    }
+    credential = String(raw ?? '').trim();
+    if (!credential) throw new Error(`the declared credential file carried nothing: ${path}`);
+    fromFile = true;
+  } else if (declared[CREDENTIAL_KEY]) {
+    credential = declared[CREDENTIAL_KEY];
+  }
   if (!credential) {
     delete declared[CREDENTIAL_KEY];
+    delete declared[CREDENTIAL_FILE_VAR];
     return { env: declared, credential: null, keepInEnv: false };
   }
   if (requested === 'env') {
+    declared[CREDENTIAL_KEY] = credential;
+    delete declared[CREDENTIAL_FILE_VAR];
     return { env: declared, credential: null, keepInEnv: true };
   }
   const server = describeMcpCommand(command);
@@ -223,25 +306,32 @@ export const splitCredential = (env, command, { onWarn = (m) => process.stderr.w
   }
   if (server.version && olderThanPipeReader(server.version) === true) {
     onWarn(`[pi-mcp-client] ${command[0]} runs ${MCP_PACKAGE} ${server.version.join('.')}, which predates the pipe channel (0.3.11): keeping the token in the child environment. Unpin it, or set ${CREDENTIAL_CHANNEL_VAR}=env to say so on purpose.`);
+    declared[CREDENTIAL_KEY] = credential;
+    delete declared[CREDENTIAL_FILE_VAR];
     return { env: declared, credential: null, keepInEnv: true };
   }
   delete declared[CREDENTIAL_KEY];
+  // The pipe carries the credential, so the child needs neither the token nor the
+  // path: one declared channel, and it is the fd.
+  delete declared[CREDENTIAL_FILE_VAR];
   declared[CREDENTIAL_FD_VAR] = String(CREDENTIAL_FD);
-  return { env: declared, credential, keepInEnv: false };
+  return { env: declared, credential, keepInEnv: false, fromFile };
 };
 
 /** A minimal MCP stdio client: initialize, tools/list, tools/call. */
 export const connectStdioMcp = ({
   name, command, env,
 }, {
-  spawnImpl = spawn, timeoutMs = 60_000, onWarn,
+  spawnImpl = spawn, timeoutMs = 60_000, onWarn, parentEnv = process.env, readCredentialFile,
 } = {}) => {
   const [cmd, ...args] = command;
-  const { env: declaredEnv, credential, keepInEnv } = splitCredential(env, command, onWarn ? { onWarn } : {});
-  // The inherited environment is stripped of the key unless an old server has to
-  // read it there: the daemon's own environment is not a channel into a child,
-  // and `...process.env` used to make it one.
-  const childEnv = { ...process.env, ...declaredEnv };
+  const opts = onWarn ? { onWarn } : {};
+  if (readCredentialFile) opts.readCredentialFile = readCredentialFile;
+  const { env: declaredEnv, credential, keepInEnv } = splitCredential(env, command, opts);
+  // The child gets an ALLOWLIST plus its own declaration — never the daemon's
+  // environment. `...process.env` is what let a third-party MCP server inherit
+  // both the seat token and the model key (TASK-083).
+  const childEnv = buildChildEnv(parentEnv, declaredEnv);
   if (!keepInEnv) delete childEnv[CREDENTIAL_KEY];
   const stdio = credential ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'];
   const proc = spawnImpl(cmd, args, { env: childEnv, stdio });
