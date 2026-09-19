@@ -41,6 +41,24 @@
  * only when it is OUR broker: our origin, or a relative/placeholder-prefixed
  * path. A foreign server that happens to live under `/api/mcp/grants/` is not
  * our grant and is left alone.
+ *
+ * AND A MISS HERE IS FAIL-OPEN, so the path is NORMALIZED before it is judged.
+ * Measured (vera, 70369): a bound instance spelled `https://api.commonly.me/`
+ * turns `"${COMMONLY_API_URL}/api/mcp/grants/g1"` into
+ * `https://api.commonly.me//api/mcp/grants/g1`, whose pathname starts `//api/`
+ * and matches nothing — the entry goes unrecognised and the broker RIDES into a
+ * seat this daemon just decided it cannot confine. Reachable: `agent.js` takes
+ * `instanceUrl` from `COMMONLY_API_URL` with a bare `.trim()`, while `config.js`
+ * is what strips the slash.
+ *
+ * The enforcement is ONE mechanism: duplicate slashes are collapsed before the
+ * path predicate sees them. It covers the doubled slash whichever side produced
+ * it — the join, a hand-written record, a protocol-relative spelling — where
+ * stripping the instance's trailing slash covers only the first, and a mutation
+ * showed the two were redundant here (removing the strip reddened nothing).
+ * Collapsing can only turn a miss into a match, and a match here means WITHHOLD,
+ * so it moves in the safe direction; origin equality is still required first, so
+ * a foreign server cannot be drawn in by its spelling.
  */
 import { isGrantBrokerUrl } from './adapters/pi-mcp-client.mjs';
 import { ADAPTERS_WITH_DEFAULT_SANDBOX } from './default-environment.js';
@@ -69,6 +87,25 @@ const effectiveTrust = (trust) => (
     : trust
 );
 
+/**
+ * A bound instance is only trimmed here (`agent.js` does the same). Any
+ * trailing slash it carries is deliberately left alone: the doubled slash it
+ * would manufacture is answered by `collapseSlashes` below, one mechanism for
+ * every spelling rather than two that a mutation cannot tell apart.
+ */
+const resolveInstance = (instanceUrl) => (
+  typeof instanceUrl === 'string' ? instanceUrl.trim() : ''
+);
+
+/**
+ * `//api/mcp/grants/g1` and `/api/mcp/grants/g1` are the same path written two
+ * ways, and only one of them is ours to withhold — the absolute branch needs it
+ * for a doubled slash after the origin, the relative branch for a
+ * protocol-relative spelling. Collapsing is one-directional (a miss becomes a
+ * match) and never widens the ORIGIN check above it.
+ */
+const collapseSlashes = (path) => path.replace(/\/{2,}/g, '/');
+
 const parseUrl = (value) => {
   try {
     return new URL(value);
@@ -89,29 +126,33 @@ export const isOurGrantBroker = (server, { instanceUrl } = {}) => {
   const url = server?.url;
   if (typeof url !== 'string' || url === '') return false;
 
+  const base = resolveInstance(instanceUrl);
   let resolvedUrl = url;
   for (const placeholder of URL_PLACEHOLDERS) {
     if (!resolvedUrl.includes(placeholder)) continue;
     // A placeholder we cannot resolve is not ours to judge; an entry that is
     // only a placeholder has no origin to compare and no path to match.
-    if (typeof instanceUrl !== 'string' || instanceUrl === '') return false;
-    resolvedUrl = resolvedUrl.split(placeholder).join(instanceUrl);
+    if (base === '') return false;
+    resolvedUrl = resolvedUrl.split(placeholder).join(base);
   }
 
   const parsed = parseUrl(resolvedUrl);
-  if (parsed) {
-    const ours = instanceUrl ? parseUrl(instanceUrl) : null;
-    return Boolean(ours) && parsed.origin === ours.origin && isGrantBrokerUrl(parsed.href);
-  }
+  const ours = base === '' ? null : parseUrl(base);
 
-  // A url with no scheme at all cannot be compared by origin: treat only the
-  // relative spelling as ours, anchored so its path can be judged like any other.
-  // An unparseable value that is not a plain relative path — an unknown
-  // `${...}` expansion, a malformed string — is not an entry this daemon can
-  // identify as the broker it injects, and the injected spelling is one of the
-  // two placeholders handled above.
-  if (url.startsWith('/')) return isGrantBrokerUrl(`${PARSE_ANCHOR}${resolvedUrl}`);
-  return false;
+  // One matcher for both spellings. An absolute url counts only on OUR origin
+  // (a foreign server is not our grant however its path reads); a url with no
+  // scheme at all cannot be compared by origin, so only the relative spelling
+  // is treated as ours, anchored so its path can be judged like any other. An
+  // unparseable value that is neither — an unknown `${...}` expansion, a
+  // malformed string — is not an entry this daemon can identify as the broker
+  // it injects, and the injected spelling is one of the two handled above.
+  const target = parsed
+    ? (ours && parsed.origin === ours.origin
+      ? parsed.origin + collapseSlashes(parsed.pathname) + parsed.search
+      : null)
+    : (resolvedUrl.startsWith('/') ? PARSE_ANCHOR + collapseSlashes(resolvedUrl) : null);
+
+  return target === null ? false : isGrantBrokerUrl(target);
 };
 
 /** True when the environment declares our grant broker at all. */

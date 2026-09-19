@@ -49,6 +49,35 @@ describe('identifying the broker this daemon injects', () => {
     expect(isOurGrantBroker(broker({ url: 'https://evil.example/api/mcp/grants/g1' }), { instanceUrl: INSTANCE })).toBe(false);
   });
 
+  // vera 70369, the fail-open this predicate shipped with for one round: a
+  // bound instance ending in a slash concatenates into
+  // `https://api.commonly.me//api/mcp/grants/g1`, whose pathname starts `//api/`
+  // and matches nothing — and a broker that is not recognised is a broker that
+  // RIDES into a seat this daemon just decided it cannot confine. Reachable:
+  // `agent.js` takes COMMONLY_API_URL with a bare `.trim()`.
+  test.each([
+    ['the clean instance', 'https://api.commonly.me'],
+    ['a trailing slash', 'https://api.commonly.me/'],
+    ['two trailing slashes', 'https://api.commonly.me//'],
+    ['trailing whitespace after the slash', 'https://api.commonly.me/  '],
+  ])('matches the injected placeholder however the instance is spelled: %s', (_label, instanceUrl) => {
+    expect(isOurGrantBroker(broker(), { instanceUrl })).toBe(true);
+  });
+
+  test('a doubled slash inside the stored url is the same broker', () => {
+    expect(isOurGrantBroker(broker({ url: `${INSTANCE}//api/mcp/grants/g1` }), opts)).toBe(true);
+    expect(isOurGrantBroker(broker({ url: '//api/mcp/grants/g1' }), opts)).toBe(true);
+  });
+
+  // The normalizations are one-directional — a miss may become a match — so
+  // this is the assertion that they cannot become a different origin's match.
+  test('no spelling of the instance widens the ORIGIN check', () => {
+    for (const instanceUrl of [INSTANCE, `${INSTANCE}/`, `${INSTANCE}//`]) {
+      expect(isOurGrantBroker(broker({ url: 'https://evil.example//api/mcp/grants/g1' }), { instanceUrl })).toBe(false);
+      expect(isOurGrantBroker(broker({ url: '${COMMONLY_API_URL}/api/mcp/grants/g1#frag' }), { instanceUrl })).toBe(true);
+    }
+  });
+
   test('does not match a non-broker entry, a missing url, or an unknown expansion', () => {
     expect(isOurGrantBroker(kernel, opts)).toBe(false);
     expect(isOurGrantBroker({ name: 'x', url: undefined }, opts)).toBe(false);
