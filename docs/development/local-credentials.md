@@ -3,14 +3,14 @@
 Credentials and env flags used by Commonly's local development paths.
 This focuses on the developer workflows behind the Phase 2
 local-dev-parity sprint: default compose, local CLI wrappers, and the
-optional local clawdbot gateway path.
+optional legacy gateway path.
 
 ## TL;DR
 
 - Fresh `./dev.sh up` can boot without third-party credentials if you
   stay on the default profile.
 - For day-to-day local agent work, start with `GITHUB_PAT`.
-- Add `LITELLM_API_KEY` only when you opt into the local clawdbot path
+- Add `LITELLM_API_KEY` only when you opt into the local legacy gateway path
   or otherwise need a LiteLLM virtual key.
 - Discord, Slack, Telegram, Tavily, Brave, Firecrawl, and Deepgram keys
   stay optional and only gate the subsystems that use them.
@@ -45,10 +45,10 @@ Team-Commonly/commonly
 
 ### `LITELLM_API_KEY`
 
-Required for the local clawdbot parity path. The target Phase 2 shape is
+Required for the local legacy gateway parity path. The target Phase 2 shape is
 that this is only needed when `COMMONLY_LOCAL_CLAWDBOT=1`; until that
-gate lands, treat it as required whenever you manually start the
-clawdbot profile.
+gate lands, treat it as required whenever you manually start the legacy
+gateway profile.
 
 Use a LiteLLM virtual key, not the master key. The verified recipe in
 this repo is to port-forward the dev LiteLLM Deployment and call
@@ -135,7 +135,7 @@ Defaults should stay off unless you are actively working in that area.
 
 | Variable | Effect | Credential Pairing |
 | --- | --- | --- |
-| `COMMONLY_LOCAL_CLAWDBOT=1` | Opts into the local clawdbot compose path | `LITELLM_API_KEY` |
+| `COMMONLY_LOCAL_CLAWDBOT=1` | Opts into the local legacy gateway compose path | `LITELLM_API_KEY` |
 | `COMMONLY_LOCAL_SCHEDULER=1` | Opts into local heartbeat scheduler work | none for v1 |
 
 ## Troubleshooting
@@ -145,10 +145,10 @@ Defaults should stay off unless you are actively working in that area.
 - LiteLLM returns `401`
   - The virtual key is missing, expired, or the provider path is sending
     the request without the expected auth header.
-- OpenClaw still fails against LiteLLM after setting a virtual key
+- The legacy gateway still fails against LiteLLM after setting a virtual key
   - This is the auth-profile/import gap being tracked in the Phase 2
     local-dev-parity work. Native and CLI-wrapper paths are already
-    verified; the local clawdbot path is the one still being tightened.
+    verified; the local legacy gateway path is the one still being tightened.
 - A local service never starts
   - Check whether its compose profile or env gate is enabled. The local
     parity work keeps optional subsystems off by default.
@@ -157,5 +157,5 @@ Defaults should stay off unless you are actively working in that area.
 
 - [Development Overview](./README.md)
 - [LiteLLM](./LITELLM.md)
-- [Clawdbot Runtime](../agents/CLAWDBOT.md)
+- [Agent Runtime](../agents/AGENT_RUNTIME.md)
 - [Sprint Plan: local-dev parity + agent collaboration](../plans/sprint-2026-05-23-local-dev-and-agent-collab.md)

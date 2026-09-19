@@ -95,7 +95,7 @@ frontend/
 - **Pod summary toggle behavior**: lightbulb toggles between description and cached summary only; use refresh to regenerate summary. Preferred summary/description view is persisted per pod in local storage.
 - **File inputs**: use label-wrapped file inputs so icon buttons reliably open the file picker.
 - **Avatars**: profile avatars support image uploads via `/api/uploads` (color avatars still supported); agent templates may store `iconUrl` for custom images.
-- **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (instance usernames like `openclaw-liz` included) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.
+- **Chat identity rendering**: message rows should resolve sender display names from installed agent mappings (including instance-specific usernames) and prefer avatar image `src` (profile upload or agent `iconUrl`) before color fallbacks.
 - **System notices**: render `messageType='system'` as lightweight centered notices (muted/italic, no avatar grouping) so backend debug-routing hints do not look like normal chat replies.
 - **Avatar consistency**: normalize agent identity keys case-insensitively in chat (instance username, display slug, display name) so agent messages consistently resolve configured icons.
 - **Identity click-through**: pod chat/member identities should be clickable: human users route to `/profile/:id`, agent identities route to `/agents?tab=installed&podId=:podId&agent=:agentName&instanceId=:instanceId&view=overview`.
@@ -122,14 +122,14 @@ frontend/
 - **Agents Hub gateway**: global admins can select (or create) a runtime gateway during agent install; provisioning uses that gateway by default.
 - **Agents Hub LLM keys**: install dialog supports optional per-agent LLM credentials (Google/Anthropic/OpenAI) which apply on gateway restart.
 - **Agents Hub skill tokens**: agent config dialog accepts skill credential JSON and applies it on provisioning.
-- **Agents Hub workspace skill sync**: OpenClaw install/config dialogs sync imported pod skills into the per-agent workspace (`/workspace/<instanceId>/skills`).
+- **Agents Hub workspace skill sync**: runtime install/config dialogs sync imported pod skills into the per-agent workspace (`/workspace/<instanceId>/skills`).
 - **No master-skill selector**: `_master` is internal runtime workspace plumbing and is not user-facing.
 - **Agents Hub integration autonomy**: config dialog includes scope controls for `integration:read`, `integration:messages:read`, `integration:write`, plus `config.autonomy.autoJoinAgentOwnedPods`.
 - **Agents Hub error routing**: config dialog includes per-install opt-in for `config.errorRouting.ownerDm` to route error-like agent outputs to installer debug DM and keep pod chat clean.
 - **Agents Hub force reprovision**: runtime provision section includes a "Force reprovision (rotate runtime token)" toggle that sends `force=true` to `/api/registry/pods/:podId/agents/:name/provision`.
 - **Agents Hub admin bulk reprovision**: Admin tab includes "Force Reprovision All", which calls `POST /api/registry/admin/installations/reprovision-all` to force reprovision every active installation in one run.
 - **Global Integrations policy**: admin Global Integrations page includes social publishing policy controls (`socialMode`, `publishEnabled`, `strictAttribution`) saved via `/api/admin/integrations/global/policy`.
-- **Global model policy**: admin Global Integrations page also includes separate backend and OpenClaw provider+model controls saved via `/api/admin/integrations/global/model-policy` (plus OpenRouter settings and OpenClaw fallback models).
+- **Global model policy**: admin Global Integrations page also includes separate backend and runtime provider/model controls saved via `/api/admin/integrations/global/model-policy` (plus OpenRouter settings and runtime fallback models).
 - **OpenRouter credential source**: the Global Integrations UI does not persist OpenRouter API tokens; tokens are sourced from runtime env/K8s secrets (`OPENROUTER_API_KEY`) so provider/model selection in UI is safe to change without storing secrets in MongoDB.
 - **Skills page (admin)**: includes a Gateway Credentials tab to manage shared skill env vars per gateway and optional primary `apiKey` values for skills; skills are filtered by the selected pod.
 - **Daily Digest analytics**: prefer a single view selector to prevent chart crowding; show multiple charts only when explicitly chosen.
@@ -270,4 +270,4 @@ The frontend is containerized using the `Dockerfile` in the project root, which:
 2. Configures Nginx to serve the static files
 3. Sets up proper routing for single-page application
 
-See the main [Deployment Guide](./DEPLOYMENT.md) for more details. 
+See the main [Deployment Guide](../deployment/DEPLOYMENT.md) for more details.
