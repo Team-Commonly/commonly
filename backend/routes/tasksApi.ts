@@ -435,6 +435,71 @@ function deriveLeaseState(
   return new Date(task.claimedAt).getTime() < now.getTime() - TASK_CLAIM_LEASE_MS ? 'lapsed' : 'held';
 }
 
+// The write-side counterpart to `deriveLeaseState`, for the two routes that change
+// a row's FIELDS or its terminal state. Returns the holder when a DIFFERENT seat
+// holds a live lease, else null.
+//
+// Deliberately not "must be claimable". `claimableConditions` has no branch for
+// `status: 'done'`, so a guard built on it would refuse every retitle or
+// after-the-fact prUrl on a finished row; and refusing on a LAPSED lease would
+// strand work behind a dead seat, which is the objection that kept this out of the
+// kernel until 2026-09-19 (AX entry 61: `complete` wrote through a peer's live
+// claim and reported `done` beside their unexpired `claimedBy`). `held` already
+// means only "someone holds a live lease", and comparing the caller keeps the
+// holder able to write its own row — the same relation the CAS draws with branch 2.
+const liveLeaseHolder = (
+  task: { status?: string; claimedAt?: Date | string | null; claimExpiresAt?: Date | string | null; claimedBy?: string | null },
+  now: Date,
+  claimKey: string,
+): { claimedBy: string; claimExpiresAt: Date | null } | null => {
+  if (deriveLeaseState(task, now) !== 'held') return null;
+  const holder = task.claimedBy || null;
+  if (!holder || holder === claimKey) return null;
+  // A claim that predates leases carries a null `claimExpiresAt` and derives its
+  // expiry from `claimedAt` (CAS branch 4). Report that instant rather than a bare
+  // null, or a refused writer is told to retry never.
+  const expiry = task.claimExpiresAt
+    ? new Date(task.claimExpiresAt)
+    : task.claimedAt
+      ? new Date(new Date(task.claimedAt).getTime() + TASK_CLAIM_LEASE_MS)
+      : null;
+  return { claimedBy: holder, claimExpiresAt: expiry };
+};
+
+// Seats hold leases; people do not, so only a seat is ever refused. Both auth paths
+// in `agentRuntimeAuth` set `req.agentUser`, the bot user row also arrives as
+// `req.user.isBot` (which is what `resolveAgentInstanceId` reads), and a human JWT
+// sets neither — so either signal means "a seat is calling".
+const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot);
+
+// The refusal both conflicting write paths share, so the two cannot drift into
+// disagreeing about what a live lease is, and so the body has one shape: the fields
+// `claim` already returns on a lost race, which is what tells a refused writer who
+// holds the row and when it frees. Returns null when the write may proceed.
+const leaseRefusalForWrite = async (
+  podId: string,
+  taskId: string,
+  req: AuthReq,
+  userId: unknown,
+): Promise<Record<string, unknown> | null> => {
+  if (!isSeatCaller(req)) return null;
+  const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
+  const current = await Task.findOne({
+    podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+    taskId,
+  }).select('status claimedBy claimedAt claimExpiresAt').lean() as {
+    status?: string; claimedBy?: string | null; claimedAt?: Date | null; claimExpiresAt?: Date | null;
+  } | null;
+  const holder = current ? liveLeaseHolder(current, new Date(), claimKey) : null;
+  if (!holder) return null;
+  return {
+    error: 'Task is claimed by another seat',
+    status: current?.status || 'claimed',
+    claimedBy: holder.claimedBy,
+    claimExpiresAt: holder.claimExpiresAt,
+  };
+};
+
 router.post('/:podId/:taskId/claim', rateLimit({
   windowMs: 60_000,
   // Higher than task-create's 20: a claimant renews by re-claiming, and a
@@ -524,6 +589,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     const author = await resolveAuthor(req);
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    // AX entry 61 (2026-09-19): the write below filters on `status` alone, so this
+    // route reported `done` through a peer's live lease. A seat must stand down; a
+    // person never is.
+    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+    if (refusal) return res.status(409).json(refusal);
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const now = new Date();
     const update = { $set: { status: 'done', completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
@@ -791,6 +861,13 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     }
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    // Same guard as /complete. PATCH is the wider hole of the two: it is how the
+    // board editor and the openclaw `commonly_update_task` retitle or reassign a
+    // row. The note-append route above is deliberately NOT gated — a note on
+    // someone else's row is the coordination a claim exists to enable, and posting
+    // one is also how a holder renews.
+    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+    if (refusal) return res.status(409).json(refusal);
     const author = await resolveAuthor(req);
     const changeParts: string[] = [];
     if (fieldUpdates.assignee !== undefined) changeParts.push(`reassigned to ${fieldUpdates.assignee || 'unassigned'}`);
