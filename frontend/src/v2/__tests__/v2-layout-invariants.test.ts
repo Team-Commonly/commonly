@@ -1723,13 +1723,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(v2).toContain(`--v2-platform-${pf}-soft`);
       expect(ds).toContain(`--c-platform-${pf}-soft`);
     }
-    expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-connector-row__dot--live')).toContain('var(--v2-ink)');
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
-    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px 120px');
-    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 100px');
+    // Direction A (2026-09-19): three tracks — the age moved into the kicker.
+    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
+    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr)');
+    // Rule 3: the kicker is mono 11; rule 1: the mark is 16px and the mode word is hidden until 760; rule 2: the gear is 32 (44 on the phone).
+    expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('font-size: 11px');
+    expect(ruleBody(v2, '.v2-connector-row__kicker-mode')).toContain('display: none');
+    expect(ruleBody(v2, '.v2-connector-row__mark')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-root button.v2-connector-row__action--icon')).toContain('width: 32px');
+    const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
+    expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
+    expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
+    expect(phone760).toContain('.v2-connector-row { min-height: 72px; }');
     expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
     const connectors = ruleBody(v2, '.v2-connectors');
@@ -1748,7 +1759,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connector-gate__pod')).not.toContain('nowrap');
     expect(ruleBody(v2, '.v2-connector-row__details strong')).toContain('overflow-wrap: anywhere');
     expect(ruleBody(v2, '.v2-connector-gate__pod')).toContain('overflow-wrap: anywhere');
-    expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
+    // The state dot is a mark: ink filled / hollow / grey, never cobalt, never a status colour.
+    expect(ruleBody(v2, '.v2-connector-row__dot--live')).toContain('var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-connector-row__dot--live')).not.toContain('var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-connector-row__dot--pending')).toContain('transparent');
     expect(ruleBody(v2, '.v2-connector-row__dot--idle')).toContain('var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('width: 4px');
     expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('var(--v2-ink)');

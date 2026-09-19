@@ -1858,7 +1858,13 @@
     "createPod": "Create a pod",
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",
-    "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
+    "footnote": "You get a one-time code to send to the bot. More platforms are on the way.",
+    "add": "Add",
+    "noPod": "no pod",
+    "notYetKicker": "not yet",
+    "kickerAttention": "attention",
+    "kickerMirror": "mirror",
+    "kickerOff": "relay off"
   },
   "artifacts": {
     "title": "Artifacts",

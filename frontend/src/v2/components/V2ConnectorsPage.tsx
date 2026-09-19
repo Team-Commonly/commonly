@@ -11,6 +11,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools from './V2ConnectorTools';
 
 interface ConnectorGate {
@@ -100,6 +101,10 @@ interface ConnectorRow {
   detail: string;
   dot: 'live' | 'idle' | 'pending' | 'empty' | 'not-yet';
   line: string;
+  // Direction A: relay mode is a category, so it is a mark on the row. `label`
+  // is the sentence (title + aria-label); `word` is what the 390 kicker shows,
+  // where tooltips do not exist.
+  mark?: { name: MarkName; label: string; word: string };
   muted?: boolean;
   notEnabled?: boolean;
   pulse: boolean;
@@ -609,14 +614,23 @@ const V2ConnectorsPage: React.FC = () => {
       const relay = Boolean(connector.config?.liveRelay);
       const mirror = connector.config?.relayAllAgentMessages === true;
       const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
+      const markName: MarkName = relay ? (mirror ? 'mirror' : 'attention') : 'off';
+      const markLabel = relay
+        ? (mirror
+          ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
+          : t('connectors.rowAttention', { defaultValue: 'attention · escalations reach the channel' }))
+        : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' });
       return {
         action: (isTelegram || isSlack) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
-        detail: relay
-          ? (mirror
-            ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-            : t('connectors.rowAttention', { defaultValue: 'attention · escalations reach the channel' }))
-          : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' }),
+        detail: '',
+        mark: {
+          name: markName,
+          label: markLabel,
+          word: relay
+            ? (mirror ? t('connectors.kickerMirror', { defaultValue: 'mirror' }) : t('connectors.kickerAttention', { defaultValue: 'attention' }))
+            : t('connectors.kickerOff', { defaultValue: 'relay off' }),
+        },
         dot: relay ? 'live' : 'idle',
         line: `${title} · linked to ${podNameById(activePodId, connector)}`,
         pulse: relay && Boolean(recent),
@@ -713,7 +727,7 @@ const V2ConnectorsPage: React.FC = () => {
         // The row action opens the pod picker; the form's Connect button is
         // the actual install action. Distinct labels keep the two-step flow
         // legible to a stranger.
-        actionLabel: t('connectors.choosePod', { defaultValue: 'Choose a pod' }),
+        actionLabel: t('connectors.add', { defaultValue: 'Add' }),
         detail: entry.installableId === 'telegram'
           ? t('connectors.availableTelegram', { defaultValue: 'one message' })
           : t('connectors.availableSlack', { defaultValue: 'one click in your workspace' }),
@@ -853,6 +867,15 @@ const V2ConnectorsPage: React.FC = () => {
 
   const itemType = (item: ListItem): string => (item.kind === 'catalog' ? item.entry.installableId : item.connector.type);
 
+  // Direction A rule 3: every row's kicker is `pod · verb age` in mono. The verb
+  // stays ("added 23d", never "23d") so an age beside a state dot is not read as
+  // last-used; a connection with no pod says so.
+  const kickerFor = (item: ListItem, row: ConnectorRow): string => {
+    const podId = item.connector ? connectorPodId(item.connector) : null;
+    const pod = podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
+    return `${pod} · ${row.when.replace(/ ago$/, '')}`;
+  };
+
   const needsUser = (row: ConnectorRow): boolean => row.action !== null && !row.secondary && row.action !== 'connect';
   const selectedItem = items.find((item) => item.key === selectedKey)
     || items.find((item) => needsUser(rowForItem(item)))
@@ -912,16 +935,37 @@ const V2ConnectorsPage: React.FC = () => {
             <span>{label}</span>
           </span>
           <span className="v2-connector-row__details">
+            <span className="v2-connector-row__kicker">
+              {kickerFor(item, row)}
+              {row.mark && <span className="v2-connector-row__kicker-mode"> · {row.mark.word}</span>}
+            </span>
             <strong>{row.line}</strong>
-            <span className="v2-connector-row__detail">{row.detail}</span>
+            {row.mark ? (
+              <span className="v2-connector-row__detail">
+                <span className="v2-connector-row__mark" title={row.mark.label} role="img" aria-label={row.mark.label}><MarkGlyph name={row.mark.name} /></span>
+              </span>
+            ) : (
+              <span className="v2-connector-row__detail">{row.detail}</span>
+            )}
           </span>
-          <span className="v2-connector-row__when">{row.when}</span>
         </button>
-        {row.action && (
+        {row.action === 'manage' && (
+          // Direction A rule 2: Manage is housekeeping beside the row's word, so it is the gear.
+          <button
+            type="button"
+            className="v2-connector-row__action v2-connector-row__action--secondary v2-connector-row__action--icon"
+            title={row.actionLabel}
+            aria-label={row.actionLabel}
+            onClick={() => { void runAction(item, 'manage'); }}
+          >
+            <ActGlyph name="manage" />
+          </button>
+        )}
+        {row.action && row.action !== 'manage' && (
           <button
             type="button"
             className={`v2-connector-row__action${row.secondary ? ' v2-connector-row__action--secondary' : ''}`}
-            disabled={busy && row.action !== 'manage'}
+            disabled={busy}
             onClick={() => { void runAction(item, row.action as ConnectorAction); }}
           >
             {busy && row.action === 'authorize'
@@ -1313,9 +1357,9 @@ const V2ConnectorsPage: React.FC = () => {
                   <span>{UNAVAILABLE_PLATFORM_LABELS.join(' · ')}</span>
                 </span>
                 <span className="v2-connector-row__details">
+                  <span className="v2-connector-row__kicker">{t('connectors.notYetKicker', { defaultValue: 'not yet' })}</span>
                   <strong>{t('connectors.notYetLine', { defaultValue: 'Not yet. Tell us which channel you need and we build it next.' })}</strong>
                 </span>
-                <span className="v2-connector-row__when">—</span>
                 <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
                   {t('connectors.ask', { defaultValue: 'Ask' })}
                 </a>
