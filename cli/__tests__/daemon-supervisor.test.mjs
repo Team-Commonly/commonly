@@ -328,6 +328,54 @@ describe('tick', () => {
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  test('the heartbeat reports the record the seat boots from, not the row runtime, when the two disagree (TASK-065)', async () => {
+    // A row that declares BOTH fields to different values is legal, and until
+    // this test it had no witness: every other fixture in this file re-aligns
+    // the record with the row (the tick writes the record first), so the spawn
+    // path's environment-first precedence and the status path's runtime-first
+    // fallback could not be told apart. `environmentFor` gives a declared
+    // environment precedence and only fills what it omits, so the record — and
+    // therefore the report — carries the environment's values.
+    const { supervisor, tokens } = makeHarness({
+      rows: () => [boundRow({
+        runtime: {
+          runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'low',
+        },
+        environment: {
+          version: 1,
+          model: 'sonnet',
+          effort: 'high',
+          mcp: [{ name: 'commonly', command: ['npx', 'commonly-mcp'] }],
+        },
+      })],
+    });
+    await supervisor.tick();
+    expect(tokens['wren-test'].environment).toEqual(
+      expect.objectContaining({ model: 'sonnet', effort: 'high' }),
+    );
+    expect(supervisor.agentStates()).toEqual([
+      expect.objectContaining({ adapter: 'claude', model: 'sonnet', effort: 'high' }),
+    ]);
+  });
+
+  test('a refused adapter change is reported as the adapter that kept running (TASK-065)', async () => {
+    // ensureToken refuses to hand a requested adapter to a local record when
+    // this machine cannot run it, and leaves the running seat alone — so the
+    // status must name what kept running, not what was asked for.
+    const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } })],
+      tokens,
+      resolveAdapter: async () => 'codex',
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(0);
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(supervisor.agentStates()).toEqual([
+      expect.objectContaining({ adapter: 'codex' }),
+    ]);
+  });
+
   test('a declared adapter that resolves to a fallback is rejected without spawning', async () => {
     const tokens = { 'wren-test': { agentName: 'wren-test', adapter: 'codex' } };
     const { supervisor, children, saveToken } = makeHarness({

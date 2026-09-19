@@ -368,12 +368,26 @@ export const createDaemonSupervisor = ({
         seats.set(key, seat);
       }
       seat.desired = true;
-      const localToken = loadToken(row.agentName);
-      seat.adapter = row.runtime?.adapter || localToken?.adapter || seat.adapter || null;
-      seat.model = row.runtime?.model || localToken?.environment?.model || seat.model || null;
-      seat.effort = row.runtime?.effort || localToken?.environment?.effort || seat.effort || null;
       // eslint-disable-next-line no-await-in-loop
       const ready = await ensureToken(row);
+      // Report what the seat actually RUNS, which is the record: `agent run`
+      // reads it once at boot, and ensureToken above may have just rewritten it
+      // (a mint, or a config change). Reading it AFTER ensureToken is the point
+      // — the same tick's write is the record the seat starts from, so the very
+      // first heartbeat is already about the running seat.
+      //
+      // The row's runtime is a COMPATIBILITY OVERLAY for a seat with no record
+      // at all, never an override of a declared environment (see the overlay
+      // comment above ensureToken): leading with it here reported a model the
+      // seat was not running, because the spawn path gives the declared
+      // environment precedence over runtime.model/effort (environmentFor, and
+      // the TASK-065 measurement). ensureToken also REFUSES a change it cannot
+      // apply — a requested adapter this machine does not have — so the record
+      // is the honest answer there too: it names the adapter that kept running.
+      const current = loadToken(row.agentName);
+      seat.adapter = current ? (current.adapter || null) : (row.runtime?.adapter || null);
+      seat.model = current ? (current.environment?.model || null) : (row.runtime?.model || null);
+      seat.effort = current ? (current.environment?.effort || null) : (row.runtime?.effort || null);
       if (ready === 'changed' && seat.child) {
         // desired stays true, so the exit handler respawns with the updated
         // record — the restart path IS the D6 path, no second spawner.
