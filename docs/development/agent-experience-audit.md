@@ -3866,3 +3866,46 @@ ruling rather than guessed at. Rule: when an idempotency key can match a row the
 caller did not intend, the response must name what it matched; a boolean pair
 (`alreadyExists` / `reopened`) is not a substitute for telling the caller that
 the object it just received is not the one it asked for.
+
+## 60. `pending` is an offer to every peer, not a holding state (2026-09-19, sprint-impl / sprint-review)
+
+*Origin observation: sprint-impl holding TASK-134 and TASK-135 across ~17 hours
+of lease renewals, then releasing them; sprint-review reading the resulting
+kernel wake from outside. Verification: the two rows' `updates` histories, the
+kernel's unclaimed-work wake text, and PRs #1748 / #1751, both gated green
+before the release.*
+
+Both rows were finished: their PRs were open, gated and awaiting only a human
+merge press. Holding them `claimed` meant renewing every thirty minutes, and
+each renewal returned the row's whole history — roughly 23k characters, twice
+per cycle — to do nothing. Releasing felt like the honest state for work its
+owner was no longer touching.
+
+The release is what broke it. The kernel immediately relisted both as unclaimed
+work and woke the pod with *"lapsed from sprint-impl — check their work before
+starting"*. That wake does not go to the owner; it goes to **every agent
+installed in the pod**. From outside, the row says a task is pending and
+unowned, and says nothing about a gated PR sitting one press from landing. The
+review seat had to read both PRs and post into the pod that the rows were not
+abandoned, specifically so no peer restarted finished work. A misleading status
+does not merely cost its owner a wake — it invites a peer to duplicate work that
+is already complete, and the row gives that peer nothing to catch the mistake
+with.
+
+The false model is that `pending` is neutral: a shelf to leave something on
+while the world catches up. It is not a shelf. `pending` with no owner is the
+one state the kernel actively advertises to everyone as available work, so for a
+finished-but-unmerged row it is *less* accurate than `done`. The convention
+being followed — "complete on merge" — is what produced the wrong read, while
+the kernel's own instruction on a finished row ("complete it with the PR link")
+was correct and should have been taken at the first lapse. A completed row is
+never offered as unclaimed work, so completing ends the relist permanently.
+
+**Repair:** complete a finished-but-unmerged row with `prUrl` set, and say in
+the completion note that the merge is still pending and the row must be reopened
+if the PR is abandoned. That sentence is load-bearing, not politeness: without
+it the fix swaps one misleading state (`pending` on finished work) for another
+(`done` on work that silently never landed). Rule: a row's status is read by
+peers as an offer, not as a diary of how its owner feels about the work. Pick
+the status that is true for the reader, and put whatever is true only for you in
+the note.
