@@ -11,6 +11,7 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
+const Task = require('../models/Task');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
@@ -351,6 +352,51 @@ export const resolveTaskAttention = async (task: any): Promise<void> => {
   }
 };
 
+/**
+ * One-shot repair for handoff cards whose task finished without telling the
+ * attention store (the complete route never called resolveTaskAttention until
+ * 2026-09-19). Reads each open handoff's task by the id prefix of its source
+ * key; resolves only those whose task is `done`. A task that no longer exists
+ * is counted as missing and left alone. Dry run unless `apply`.
+ */
+export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean } = {}) => {
+  const rows = await AttentionItem.find({ kind: 'handoff', 'source.type': 'task', status: 'open' })
+    .sort({ createdAt: 1 }).lean();
+  // The source key's prefix is `task._id || task.taskId`, so a row may carry a
+  // `TASK-134`-style key. Feeding that to `_id` throws a CastError and would
+  // abort the whole run; look each shape up by its own field.
+  const keys: string[] = [...new Set<string>((rows as any[]).map((row: any) => String(row.source?.id || '').split(':')[0]).filter(Boolean))];
+  const objectIds = keys.filter((key) => /^[0-9a-f]{24}$/i.test(key));
+  const taskKeys = keys.filter((key) => !/^[0-9a-f]{24}$/i.test(key));
+  const clauses = [
+    ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+    ...(taskKeys.length ? [{ taskId: { $in: taskKeys } }] : []),
+  ];
+  const tasks = clauses.length ? await Task.find({ $or: clauses }).select('status taskId').lean() : [];
+  const statusById = new Map<string, string>();
+  for (const task of tasks as any[]) {
+    statusById.set(String(task._id), task.status);
+    if (task.taskId) statusById.set(String(task.taskId), task.status);
+  }
+  const eligibleIds: unknown[] = [];
+  let missing = 0;
+  for (const row of rows as any[]) {
+    const taskId = String(row.source?.id || '').split(':')[0];
+    const status = statusById.get(taskId);
+    if (status === undefined) { missing += 1; continue; }
+    if (status === 'done') eligibleIds.push(row._id);
+  }
+  let resolved = 0;
+  if (apply && eligibleIds.length) {
+    const result = await AttentionItem.updateMany(
+      { _id: { $in: eligibleIds }, kind: 'handoff', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date() } },
+    );
+    resolved = Number(result.modifiedCount || 0);
+  }
+  return { scanned: rows.length, eligible: eligibleIds.length, resolved, missing, apply };
+};
+
 export const resolve = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
   const id = sourceKey(sourceType, sourceId);
   if (!id) return;
@@ -529,6 +575,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };

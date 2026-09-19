@@ -23,6 +23,7 @@
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
     "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
+    "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",
     "sweep:leftover-runtime-tokens": "ts-node scripts/sweep-leftover-runtime-tokens.ts",
     "revive:native-installations": "ts-node scripts/revive-native-installations.ts",
     "set:agent-descriptions": "ts-node scripts/set-agent-descriptions.ts",

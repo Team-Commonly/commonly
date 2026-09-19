@@ -126,6 +126,19 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     expect(mockResolveTaskAttention).toHaveBeenCalledWith(task);
   });
 
+  test('POST /complete resolves the task\'s outstanding handoffs, like a PATCH out of blocked does', async () => {
+    // Measured 2026-09-19: 11 of 12 open handoff cards pointed at tasks already
+    // `done` — every one completed through this route, which never told the
+    // attention store. Only the PATCH gate did.
+    const task = { _id: 'task-1', taskId: 'TASK-001', status: 'done', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+    const res = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-001/complete`)
+      .send({ prUrl: 'https://github.com/Team-Commonly/commonly/pull/1' });
+    expect(res.status).toBe(200);
+    expect(mockResolveTaskAttention).toHaveBeenCalledWith(expect.objectContaining({ _id: 'task-1' }));
+  });
+
   test('rejects unknown statuses with the vocabulary in the error', async () => {
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
