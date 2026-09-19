@@ -109,8 +109,15 @@ const originOf = (value) => {
  * is a Streamable HTTP server (`agentBinding.ts` grantBrokerServer), so before
  * this pi dropped the one entry that carries a grant to a seat, silently.
  * Filling the headers here reuses the same substitution as the stdio env, and
- * the result rides in COMMONLY_PI_MCP — which the bridge takes out of its own
- * environment before pi's bash tool can read it (see takeServers).
+ * the result rides in COMMONLY_PI_MCP — which the bridge removes from its own
+ * process environment at load (see takeServers). That closes the direct vector
+ * (pi's `bash` spawns with `{ ...process.env }`, so a bare `env` used to print
+ * the token); it is not a secrecy boundary, because deleting the variable
+ * scrubs Node's copy and not the kernel's — a same-user child of the bridge can
+ * still read this process's environment via `ps eww` / `/proc/$PPID/environ`.
+ * The durable fix is to hand the list over a 0600 file the bridge unlinks on
+ * load, which is a row against this env channel, not against this PR (Vera,
+ * Connectors).
  *
  * WHICH shape an entry becomes is decided by `transport` — the same field, read
  * with the same default and the same exact comparison the daemon's
@@ -123,13 +130,19 @@ const originOf = (value) => {
  * substituted. The guard's judgement and the adapter's disagreed, and the adapter
  * is what executes (Vera, Connectors 69774).
  *
- * The http half also enforces the guard's own origin rule, so this adapter does
+ * The http half also enforces the guard's own origin rule, so the HTTP half does
  * not depend on a guard that may not be on the machine: `auditDeclaredMcp`
  * admits a declared http server only when its url resolves to the INSTANCE's
  * origin, because the seat token rides its headers. Everything else — an
  * off-instance host, an unparseable url, an instance url we do not know — is
  * refused here as well. A transport pi cannot speak (`sse`, which the schema and
  * the guard both admit) is refused rather than reinterpreted as one it can.
+ *
+ * The stdio half does NOT have that property and must not be read as if it did:
+ * a declared stdio command is executed with no allowlist check, here and in both
+ * sibling adapters, so it depends entirely on the guard — `auditDeclaredMcp`
+ * admits only the shipped commonly MCP server or a command already present in the
+ * local record, and that rule exists nowhere else (Vera, 69778; TASK-069).
  */
 export const resolveMcpServers = (mcpServers, ctx = {}) => {
   const carried = [];

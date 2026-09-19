@@ -117,10 +117,15 @@ const parseMessages = (text, contentType) => {
  * A minimal MCP Streamable HTTP client: initialize, tools/list, tools/call.
  *
  * `headers` is where a declared `Authorization` arrives, already substituted
- * with the seat's runtime token by the adapter. The token therefore rides in
- * an HTTP header built from the JSON list the bridge takes out of its own
- * environment (see takeServers) — never on argv, and never left where pi's
- * bash tool could print it.
+ * with the seat's runtime token by the adapter. The token therefore rides in an
+ * HTTP header built from the JSON list the bridge takes out of its own
+ * environment (see takeServers) and never on argv. NOT on argv is the whole of
+ * that guarantee: deleting the variable from the bridge's own process scrubs
+ * Node's copy, not the kernel's, so a same-user child of this process can still
+ * read the parent's environment (`ps eww $PPID`, `/proc/$PPID/environ`) and find
+ * both the token and the server list. Treat this as "not in argv" and not as a
+ * secrecy boundary; the fix is to hand the list over a 0600 file the bridge
+ * unlinks on load (row filed against the bridge's env channel, Vera, Connectors).
  */
 export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.fetch, timeoutMs = 60_000 } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error(`${name}: no fetch implementation for the HTTP MCP transport`);
@@ -128,13 +133,18 @@ export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.
   let nextId = 1;
   let sessionId = null;
   let protocolVersion = PROTOCOL_VERSION;
+  let negotiated = false;
   const requestHeaders = () => ({
     'content-type': 'application/json',
     // Both, per the spec: a server may answer with JSON or with an event stream.
     accept: 'application/json, text/event-stream',
     ...declared,
     ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
-    ...(sessionId ? { 'mcp-protocol-version': protocolVersion } : {}),
+    // The version header follows NEGOTIATION, not the session. Our own broker is
+    // stateless (`mcpGrants.ts` sets `sessionIdGenerator: undefined`), so it
+    // never mints a session id — gating this on one meant the only broker we
+    // have never received the version it negotiated (Vera, Connectors).
+    ...(negotiated ? { 'mcp-protocol-version': protocolVersion } : {}),
   });
   const post = async (payload) => {
     const controller = new AbortController();
@@ -153,6 +163,11 @@ export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.
         headers: requestHeaders(),
         body: JSON.stringify(payload),
         signal: controller.signal,
+        // These requests carry the seat token in a header. A redirect is
+        // allowed to point at another origin, and whether undici strips an
+        // Authorization header when it follows one is not something a seat may
+        // rely on — so no redirect is followed at all.
+        redirect: 'error',
       }), expired]);
       const text = await res.text();
       const header = res.headers?.get?.('mcp-session-id');
@@ -191,6 +206,7 @@ export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.
     });
     // The server's answer is authoritative; echo what it negotiated from here on.
     if (result && typeof result.protocolVersion === 'string') protocolVersion = result.protocolVersion;
+    negotiated = true;
     await notify('notifications/initialized');
     return result;
   };
@@ -199,7 +215,7 @@ export const connectHttpMcp = ({ name, url, headers }, { fetchImpl = globalThis.
   const close = () => {
     if (!sessionId) return;
     try {
-      const pending = fetchImpl(url, { method: 'DELETE', headers: requestHeaders() });
+      const pending = fetchImpl(url, { method: 'DELETE', headers: requestHeaders(), redirect: 'error' });
       if (pending && typeof pending.catch === 'function') pending.catch(() => {});
     } catch { /* best effort: the session expires on its own */ }
   };
@@ -220,6 +236,12 @@ export const toPiResult = (result) => {
  * tool spawns with `{ ...process.env }` (pi's getShellEnv), so leaving it in place
  * lets one `env` from the model print the token. The clients already hold what
  * they need from spawn time; nothing else reads this variable.
+ *
+ * What this does NOT do is hide the value from a process that reads the parent's
+ * environment directly: `delete` removes the key from this process's own copy,
+ * while the kernel keeps the copy this process was started with, so
+ * `ps eww $PPID` on macOS and `/proc/$PPID/environ` on Linux still show it to a
+ * same-user child. This closes the accidental vector, not a determined one.
  */
 export const takeServers = (env = process.env) => {
   const servers = readServers(env.COMMONLY_PI_MCP);

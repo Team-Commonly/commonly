@@ -12,13 +12,20 @@ import { connectMcp, toPiResult, readServers, takeServers } from '../src/lib/ada
 // `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
 // and `tools/call` with JSON — so one test covers both response shapes the spec
 // allows and the session-id echo on the second and third requests.
-const startFakeHttp = async () => {
+const startFakeHttp = async ({ sessionId = 'sess-1', laterSessionId = null, redirectTo = null } = {}) => {
   const seen = [];
+  let answers = 0;
   const server = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
       seen.push({ method: req.method, headers: req.headers, body: body ? JSON.parse(body) : null });
+      if (redirectTo) {
+        // The cross-origin hop a token-bearing request must never make.
+        res.writeHead(302, { location: redirectTo });
+        res.end();
+        return;
+      }
       if (req.url.includes('status=500')) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         res.end('broker is down');
@@ -27,9 +34,17 @@ const startFakeHttp = async () => {
       if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
       const msg = body ? JSON.parse(body) : null;
       if (!msg || msg.id === undefined) { res.writeHead(202); res.end(); return; }
-      const json = (payload) => { res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 'sess-1' }); res.end(JSON.stringify(payload)); };
+      // No session header at all when `sessionId` is null: our own broker is
+      // stateless (`mcpGrants.ts` — `sessionIdGenerator: undefined`), so this is
+      // the only shape production ever returns. `laterSessionId` makes a server
+      // change its mind mid-conversation, which a client must not adopt.
+      const sidFor = () => {
+        const sid = answers++ === 0 ? sessionId : (laterSessionId === null ? sessionId : laterSessionId);
+        return sid ? { 'mcp-session-id': sid } : {};
+      };
+      const json = (payload) => { res.writeHead(200, { 'content-type': 'application/json', ...sidFor() }); res.end(JSON.stringify(payload)); };
       if (msg.method === 'initialize') return json({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake-http' } } });
-      const sse = (payload) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`); };
+      const sse = (payload) => { res.writeHead(200, { 'content-type': 'text/event-stream', ...sidFor() }); res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`); };
       if (msg.method === 'tools/list') return sse({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'commonly_echo', description: 'echo', inputSchema: { type: 'object', properties: {} } }] } });
       if (msg.method === 'tools/call') {
         if (msg.params.name !== 'commonly_echo') return json({ jsonrpc: '2.0', id: msg.id, error: { message: 'unknown tool ' + msg.params.name } });
@@ -41,6 +56,7 @@ const startFakeHttp = async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}/mcp`,
+    port: server.address().port,
     seen,
     close: () => new Promise((resolve) => {
       // Keep-alive sockets would otherwise hold `close` open forever.
@@ -96,7 +112,7 @@ test('readServers drops an entry that carries both a command and a url', () => {
   expect(readServers(both)).toEqual([]);
 });
 
-test("takeServers reads the server list and removes it from the env, so pi's bash tool cannot print the seat token", () => {
+test("takeServers reads the server list and unsets it here, so a child spawned with {...process.env} no longer inherits it", () => {
   const list = [{ name: 'commonly', command: ['node', 'srv.js'], env: { COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } }];
   const env = { COMMONLY_PI_MCP: JSON.stringify(list), OTHER: 'kept' };
   expect(takeServers(env)).toEqual(list);
@@ -138,6 +154,67 @@ test('initialize → tools/list → tools/call over Streamable HTTP, with the de
   } finally {
     client.close();
     await fake.close();
+  }
+});
+
+test('a stateless broker — no session id at all — still receives the negotiated protocol version', async () => {
+  // This is the only shape our own broker returns (`mcpGrants.ts` sets
+  // `sessionIdGenerator: undefined`), so it is the path production exercises.
+  const fake = await startFakeHttp({ sessionId: null });
+  const client = connectMcp({ name: 'stateless', url: fake.url, headers: { Authorization: 'Bearer cm_agent_secret' } }, { timeoutMs: 5000 });
+  try {
+    await client.initialize();
+    expect(client.sessionId()).toBeNull();
+    expect((await client.listTools()).map((t) => t.name)).toEqual(['commonly_echo']);
+    expect(toPiResult(await client.callTool('commonly_echo', { text: 'hi' })))
+      .toEqual({ content: [{ type: 'text', text: 'http:hi' }], details: { isError: false } });
+
+    const posts = fake.seen.filter((r) => r.method === 'POST');
+    // Nothing to echo: the server never minted a session, so no request claims one.
+    for (const req of posts) expect(req.headers['mcp-session-id']).toBeUndefined();
+    // The version header follows NEGOTIATION, not the session. initialize cannot
+    // carry it (nothing is negotiated yet); everything after the answer must,
+    // even though there is no session id beside it.
+    expect(posts[0].headers['mcp-protocol-version']).toBeUndefined();
+    for (const req of posts.slice(1)) expect(req.headers['mcp-protocol-version']).toBe('2025-06-18');
+  } finally {
+    client.close();
+    await fake.close();
+  }
+});
+
+test('a session id the server repeats later does not replace the one it established first', async () => {
+  const fake = await startFakeHttp({ sessionId: 'sess-1', laterSessionId: 'sess-2' });
+  const client = connectMcp({ name: 'drifting', url: fake.url, headers: {} }, { timeoutMs: 5000 });
+  try {
+    await client.initialize();
+    await client.listTools();
+    await client.callTool('commonly_echo', { text: 'hi' });
+    const posts = fake.seen.filter((r) => r.method === 'POST');
+    expect(posts[0].headers['mcp-session-id']).toBeUndefined();
+    // The id established by initialize wins; a later response does not overwrite it.
+    expect(client.sessionId()).toBe('sess-1');
+    for (const req of posts.slice(1)) expect(req.headers['mcp-session-id']).toBe('sess-1');
+    expect(fake.seen.some((r) => r.headers['mcp-session-id'] === 'sess-2')).toBe(false);
+  } finally {
+    client.close();
+    await fake.close();
+  }
+});
+
+test('a redirect is not followed, so the bearer header never reaches another origin', async () => {
+  const elsewhere = await startFakeHttp();
+  const fake = await startFakeHttp({ redirectTo: `http://127.0.0.1:${elsewhere.port}/mcp` });
+  const client = connectMcp({ name: 'hopped', url: fake.url, headers: { Authorization: 'Bearer cm_agent_secret' } }, { timeoutMs: 5000 });
+  try {
+    await expect(client.initialize()).rejects.toThrow(/hopped: initialize failed/);
+    // The claim is about where the token went, so it is asserted there: the
+    // origin the redirect pointed at saw nothing at all.
+    expect(elsewhere.seen).toEqual([]);
+    expect(fake.seen[0].headers.authorization).toBe('Bearer cm_agent_secret');
+  } finally {
+    await fake.close();
+    await elsewhere.close();
   }
 });
 
