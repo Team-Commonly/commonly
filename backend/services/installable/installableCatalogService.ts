@@ -18,6 +18,36 @@ type ProviderManifest = {
   readiness?: () => ProviderReadiness;
 };
 
+type LocalizedInstallable = {
+  description?: unknown;
+  descriptions?: unknown;
+  source?: string;
+};
+
+/**
+ * Project the locale map without choosing a language on the server. The page's
+ * in-app language is authoritative; `description` remains the canonical
+ * English fallback. Marketplace rows are never translated or persisted here.
+ */
+const projectDescriptions = (installable: LocalizedInstallable | null | undefined): Record<string, string> => {
+  const canonical = typeof installable?.description === 'string' ? installable.description : '';
+  if (installable?.source && installable.source !== 'builtin') return { en: canonical };
+
+  const raw = installable?.descriptions;
+  const entries = raw instanceof Map
+    ? Array.from(raw.entries())
+    : raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? Object.entries(raw as Record<string, unknown>)
+      : [];
+  const projected = Object.fromEntries(entries.filter(([key, value]) => (
+    typeof key === 'string' && key.trim().length > 0
+    && typeof value === 'string' && value.trim().length > 0
+  ))) as Record<string, string>;
+  // Keep the canonical field authoritative if both fields contain English.
+  projected.en = canonical || projected.en || '';
+  return projected;
+};
+
 const providerInstallableIds = (): string[] => Object.values(manifests as Record<string, ProviderManifest>)
   .filter((manifest) => typeof manifest.readiness === 'function')
   .map((manifest) => manifest.id);
@@ -101,7 +131,8 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       installableId: row.installableId,
       list: 'tools',
       label: row.name || row.installableId,
-      description: row.description || '',
+      description: typeof row.description === 'string' ? row.description : '',
+      descriptions: projectDescriptions(row),
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },
@@ -154,7 +185,8 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
         installableId,
         list: 'channels',
         label: installable?.name || installableId,
-        description: installable?.description || '',
+        description: typeof installable?.description === 'string' ? installable.description : '',
+        descriptions: projectDescriptions(installable),
         available: readiness.available,
         ...(readiness.reason ? { unavailableReason: readiness.reason } : {}),
         installation: publicInstallation(installation),
@@ -166,6 +198,11 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
   };
 };
 
-module.exports = { catalogFor, providerReadiness, publicIntegration };
+module.exports = {
+  catalogFor,
+  providerReadiness,
+  publicIntegration,
+  projectDescriptions,
+};
 
 export {};

@@ -95,6 +95,18 @@ describe('installable connector routes', () => {
     expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111');
   });
 
+  it('does not let the browser Accept-Language header choose the catalog locale', async () => {
+    catalogService.catalogFor.mockResolvedValue({ installables: [] });
+
+    const res = await request(app)
+      .get('/api/installables')
+      .set(auth)
+      .set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
+
+    expect(res.status).toBe(200);
+    expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111');
+  });
+
   it('refuses an unavailable provider before reading a pod or claiming a parent', async () => {
     catalogService.providerReadiness.mockReturnValue({ available: false, reason: 'not_configured' });
 

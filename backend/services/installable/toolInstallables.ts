@@ -68,10 +68,17 @@ const githubToolNames = (): string[] => toolDefinitions()
   .filter((definition) => definition.connectionType === 'github-app')
   .map((definition) => definition.name);
 
+const GITHUB_DESCRIPTION = 'Issues and pull requests in the repository the GitHub App is installed on, called through Commonly\'s broker on a room grant.';
+const GITHUB_DESCRIPTIONS = {
+  en: GITHUB_DESCRIPTION,
+  'zh-CN': '装有 GitHub App 的那个仓库里的 issue 和 pull request，由 Commonly 的代理按 Pod 授权代为调用。',
+};
+
 export const buildGithubToolInstallable = () => ({
   installableId: 'github',
   name: 'GitHub',
-  description: 'Issues and pull requests in the repository the GitHub App is installed on, called through Commonly\'s broker on a room grant.',
+  description: GITHUB_DESCRIPTION,
+  descriptions: GITHUB_DESCRIPTIONS,
   version: '1.0.0',
   kind: 'app',
   source: 'builtin',

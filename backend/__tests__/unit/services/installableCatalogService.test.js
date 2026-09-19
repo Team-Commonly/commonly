@@ -34,6 +34,10 @@ const githubTool = () => ({
   installableId: 'github',
   name: 'GitHub',
   description: 'Issues and pull requests.',
+  descriptions: {
+    en: 'Issues and pull requests.',
+    'zh-CN': '问题和代码审查请求。',
+  },
   components: [{ name: 'commonly-grant-broker', type: 'mcp-server', enabledTools: ['github.list_issues', 'github.create_issue'] }],
 });
 
@@ -129,6 +133,58 @@ describe('installable catalog service', () => {
     expect(Integration.find).not.toHaveBeenCalled();
   });
 
+  it('projects the complete first-party description map and keeps canonical English', async () => {
+    mockInstallables([
+      {
+        installableId: 'telegram',
+        name: 'Telegram',
+        source: 'builtin',
+        description: 'One Telegram chat, one pod.',
+        descriptions: {
+          en: 'One Telegram chat, one pod.',
+          'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+        },
+      },
+      {
+        installableId: 'slack',
+        name: 'Slack',
+        source: 'builtin',
+        description: 'Your Slack DM, every pod you\'re in.',
+        descriptions: { en: 'Your Slack DM, every pod you\'re in.' },
+      },
+    ]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.find((entry) => entry.installableId === 'telegram')).toEqual(expect.objectContaining({
+      description: 'One Telegram chat, one pod.',
+      descriptions: {
+        en: 'One Telegram chat, one pod.',
+        'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+      },
+    }));
+    expect(catalog.installables.find((entry) => entry.installableId === 'slack')).toEqual(expect.objectContaining({
+      description: 'Your Slack DM, every pod you\'re in.',
+      descriptions: { en: 'Your Slack DM, every pod you\'re in.' },
+    }));
+  });
+
+  it('never translates a non-builtin row even when it carries a locale map', async () => {
+    mockInstallables([], [{
+      ...githubTool(),
+      source: 'marketplace',
+      descriptions: { en: 'Marketplace English', 'zh-CN': '不应投影' },
+    }]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([]));
+
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.find((entry) => entry.list === 'tools')).toEqual(expect.objectContaining({
+      description: 'Issues and pull requests.',
+      descriptions: { en: 'Issues and pull requests.' },
+    }));
+  });
+
   it('the catalogue returns the GitHub tool Installable with its tools, broker and the caller\'s connections, on the tools list', async () => {
     process.env.GITHUB_APP_ID = 'app-1';
     process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
@@ -152,6 +208,10 @@ describe('installable catalog service', () => {
       list: 'tools',
       label: 'GitHub',
       description: 'Issues and pull requests.',
+      descriptions: {
+        en: 'Issues and pull requests.',
+        'zh-CN': '问题和代码审查请求。',
+      },
       available: true,
       broker: { id: 'commonly-grant-broker' },
       tools: [
@@ -162,6 +222,7 @@ describe('installable catalog service', () => {
       installation: null,
       integration: null,
     });
+
     expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: { $in: ['github-app'] }, createdBy: userId, status: 'connected', revokedAt: null,
     }));

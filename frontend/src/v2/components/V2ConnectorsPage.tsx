@@ -11,6 +11,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { localizeInstallableDescription } from '../utils/localizeInstallableDescription';
 import V2ConnectorTools from './V2ConnectorTools';
 
 interface ConnectorGate {
@@ -66,6 +67,7 @@ interface CatalogEntry {
   list?: 'channels' | 'tools';
   label?: string;
   description?: string;
+  descriptions?: Record<string, string>;
   available: boolean;
   unavailableReason?: string;
   installation: CatalogInstallation | null;
@@ -718,7 +720,7 @@ const V2ConnectorsPage: React.FC = () => {
           ? t('connectors.availableTelegram', { defaultValue: 'one message' })
           : t('connectors.availableSlack', { defaultValue: 'one click in your workspace' }),
         dot: 'empty',
-        line: entry.description || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
+        line: localizeInstallableDescription(entry) || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
         pulse: false,
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };

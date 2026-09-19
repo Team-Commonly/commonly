@@ -65,4 +65,17 @@ describe('installable connector manifest readiness', () => {
     expect(manifests.telegram.catalog.description).toBe('One Telegram chat, one pod.');
     expect(manifests.telegram.catalog.description).not.toMatch(/ingest|summar/i);
   });
+
+  it('ships the first-party locale copy beside each canonical catalog description', () => {
+    expect(manifests.telegram.catalog.descriptions).toEqual({
+      en: 'One Telegram chat, one pod.',
+      'zh-CN': '一个 Telegram 聊天，一个 Pod。',
+    });
+    expect(manifests.slack.catalog.descriptions).toEqual({
+      en: 'Your Slack DM, every pod you\'re in.',
+      'zh-CN': '你的 Slack 私信，你所在的每个 Pod。',
+    });
+    expect(manifests.discord.catalog.descriptions['zh-CN']).toBe('接入 Discord 频道动态，发布 Pod 摘要。');
+    expect(manifests.groupme.catalog.descriptions['zh-CN']).toBe('缓存 GroupMe 消息，汇总进 Pod。');
+  });
 });

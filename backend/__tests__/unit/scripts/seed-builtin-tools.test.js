@@ -35,6 +35,7 @@ describe('seed-builtin-tools', () => {
     const rows = await Installable.find({ installableId: 'github' }).lean();
     expect(rows).toHaveLength(1);
     expect(rows[0].source).toBe('builtin');
+    expect(rows[0].descriptions['zh-CN']).toBe('装有 GitHub App 的那个仓库里的 issue 和 pull request，由 Commonly 的代理按 Pod 授权代为调用。');
     expect(rows[0].components[0].enabledTools).toEqual(buildGithubToolInstallable().components[0].enabledTools);
   });
 
