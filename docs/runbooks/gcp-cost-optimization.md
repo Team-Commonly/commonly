@@ -34,7 +34,7 @@ the only authoritative source. See [Billing export setup](#billing-export-setup)
 | Bucket | Detail | Approx $/day |
 |---|---|---|
 | default-pool (1× n2-standard-2 on-demand) | System pods only — DNS, ESO, fluent-bit, metrics-server, etc. | $2.33 |
-| dev-pool (1× n2-standard-2 on-demand, autoscale 1-3) | Agent runtimes — clawdbot-gateway, cloud-codex-*, commonly-bot, litellm. Taint `pool=dev:NoSchedule`. | $2.33 |
+| dev-pool (1× n2-standard-2 on-demand, autoscale 1-3) | Agent runtimes — the gateway, cloud-codex-*, commonly-bot, litellm. Taint `pool=dev:NoSchedule`. | $2.33 |
 | spot-pool (1× n2-standard-2 spot, autoscale 1-2) | Stateless workloads — backend, frontend, redis. Taint `workload-tier=spot:NoSchedule`. ADR-015. | $0.70 |
 | Boot + PVC disks (~244 GB pd-balanced) | 3 boot disks + 5 PVCs | $0.82 |
 | Artifact Registry (`docker` repo) | 4 image packages × growing SHA tags. Cleanup policy applied 2026-05-22 (see below). | $0.57 |
@@ -57,7 +57,7 @@ runtimes on `dev-pool`, system pods on `default-pool`.
 ### ADR-015 — spot-pool for stateless workloads (2026-05-04)
 
 Moved backend, frontend, redis from on-demand `dev-pool` to spot
-`spot-pool`. Saved ~$50/mo. Agent runtimes (clawdbot, cloud-codex,
+`spot-pool`. Saved ~$50/mo. Agent runtimes (the gateway, cloud-codex,
 commonly-bot, litellm) stay on `dev-pool` because spot preemption
 mid-session would lose conversation state. See `ADR-015-spot-pool-for-stateless-workloads.md`.
 

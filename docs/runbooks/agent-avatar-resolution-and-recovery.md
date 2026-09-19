@@ -4,7 +4,7 @@
 surface but renders fine on another; avatars broke after a domain change or an
 object-store cutover; you're adding a new surface that displays an agent avatar.
 
-For how avatars are *generated* (Gemini / OpenAI providers, the priority chain),
+For how avatars are *generated* (the configured image providers and priority chain),
 see [`AGENT_AVATARS.md`](../AGENT_AVATARS.md). For the object-store abstraction,
 see [ADR-002](../adr/ADR-002-attachments-and-object-storage.md). This doc is
 about where an avatar is **read from** on each surface, and how to recover when
@@ -16,14 +16,14 @@ those copies drift apart.
 
 An agent's avatar is not stored once. Different surfaces resolve it from
 different places, and each holds its **own** copy of the URL (often a *different*
-upload id) with an **absolute** host baked in. After a domain migration
-(`api-dev.commonly.me` → `api.commonly.me`) or the `files` → `mediaobjects`
-object-store cutover, each of these can break **independently** — so fixing one
+upload id) with an **absolute** host baked in. After a domain migration or the
+`files` → `mediaobjects` object-store cutover, each of these can break
+**independently** — so fixing one
 surface (e.g. the profile hero) does not fix the others (roster, chat).
 
 | # | Store | Surface it powers | Field |
 |---|-------|-------------------|-------|
-| 1 | Mongo `users` | Agent **profile** hero, `/api/agent-profile` | `User.profilePicture` |
+| 1 | Mongo `users` | Agent **profile** hero, `/api/agent-profile/:agentName/:instanceId?` | `User.profilePicture` |
 | 2 | Postgres `users` | **Pod chat** author avatars (message joins) | `users.profile_picture` |
 | 3 | Object store | The actual **bytes** behind `/api/uploads/:fileName` | `mediaobjects` (new) vs legacy `files` collection |
 | 4 | Mongo `agentregistries` | **Your Team** roster (fallback) | `AgentRegistry.iconUrl` |
@@ -31,8 +31,8 @@ surface (e.g. the profile hero) does not fix the others (roster, chat).
 
 Two independent failure axes stack on top of these:
 
-- **Dead domain** — a stored URL like `https://api-dev.commonly.me/api/uploads/…`
-  404s after the domain migration. Present in #1, #4, #5.
+- **Retired host** — a stored URL pointing at the former API host 404s after a
+  domain migration. Present in #1, #4, #5.
 - **Stranded bytes** — the upload row lives in the legacy `files` collection but
   the serve route reads `mediaobjects`, so even a correct URL 404s. Axis #3.
 
@@ -53,8 +53,8 @@ legacy `files` collection is **not reliable on cluster** — treat "bytes exist 
    only → #4/#5/#3. All → domain-wide.
 2. **Is it the domain or the bytes?** `curl -s -o /dev/null -w '%{http_code}'
    https://api.commonly.me/api/uploads/<fileName>`. 404 with a correct-looking
-   URL → bytes not in `mediaobjects`. A URL still containing `api-dev` → domain
-   not rewritten in that store.
+   URL → bytes not in `mediaobjects`. A URL still containing a retired API host
+   → the domain was not normalized in that store.
 3. **Read the actual field**, don't trust the rendered UI. For the roster, hit
    `/api/registry/pods/:podId/agents` and inspect `iconUrl` — that's the exact
    string the frontend uses (`V2Avatar src={a.iconUrl}`), and it comes from the
@@ -64,11 +64,12 @@ legacy `files` collection is **not reliable on cluster** — treat "bytes exist 
 
 Run from the backend pod (`kubectl exec -n commonly-dev deploy/backend -c backend -- node -e '…'`).
 
-1. **Rewrite the dead domain** in every store that carries an absolute avatar URL:
-   `User.profilePicture`, `AgentRegistry.iconUrl`, `AgentTemplate.iconUrl` —
-   `$replaceAll` `api-dev.commonly.me` → `api.commonly.me`. Sweep **all**
-   collections; the roster's `iconUrl` lives in `agenttemplates`, which is easy
-   to miss.
+1. **Normalize the retired host** in every store that carries an absolute avatar
+   URL: `User.profilePicture`, `AgentRegistry.iconUrl`, and
+   `AgentTemplate.iconUrl`. Rewrite those values to the current API host, then
+   store relative `/api/uploads/<fileName>` references for new writes. Sweep
+   **all** collections; the roster's `iconUrl` lives in `agenttemplates`, which
+   is easy to miss.
 2. **Backfill stranded bytes**: for every distinct upload filename referenced by
    a `profilePicture`/`iconUrl`, if it's absent from `mediaobjects`, copy it from
    `files` (`{ key: fileName, data, mime, size }`). The `iconUrl` uploads are
