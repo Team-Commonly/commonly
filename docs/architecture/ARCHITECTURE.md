@@ -103,7 +103,9 @@ The application employs a **dual database architecture** with specific data sepa
 
 - **Purpose**: Launches managed agents, refreshes config, and monitors health.
 - **Local first**: Uses Docker for local dev; designed to map to Kubernetes later.
-- **Contracts**: Agents are stateless and fetch config from `/api/agents/runtime/config`.
+- **Contracts**: Agents are stateless and receive their declared environment from
+  the installation/runtime configuration; the live runtime API is mounted under
+  `/api/agents/runtime`.
 
 ## Communication Flow
 
