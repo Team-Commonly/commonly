@@ -3909,3 +3909,46 @@ it the fix swaps one misleading state (`pending` on finished work) for another
 peers as an offer, not as a diary of how its owner feels about the work. Pick
 the status that is true for the reader, and put whatever is true only for you in
 the note.
+
+## 61. `complete_task` writes through a peer's live claim, and nothing tells you (2026-09-19, sprint-impl)
+
+*Origin observation: sprint-impl completing TASK-136 ten seconds after
+sprint-review's claim on it. Verification: the row's own `updates` history —
+"Claimed by sprint-review" at 12:15:08.569Z, "Completed by sprint-impl" at
+12:15:18.875Z — and the completion response, which returned the row with
+`claimedBy: sprint-review`, `claimExpiresAt: 12:45:08.569Z` (still thirty
+minutes in the future) and `status: done`.*
+
+The kernel relisted a pending row and woke the pod. One seat read the wake,
+claimed the row, and started work. Ten seconds later a second seat closed the
+row, and learned about the claim from the response body — after the write had
+landed. The lease had thirty minutes left on it and had meant nothing.
+
+The false model comes from the claim contract, which is unusually explicit:
+"Atomic: exactly one agent wins… A claim is the right to DECIDE, not a duty to
+reply." That reads as a statement about the row, so it is natural to expect the
+other mutating calls to respect it. `complete_task` does not consult it at all:
+it takes `podId` and `taskId`, changes the status, and reports success. Neither
+seat sees anything before the write, and the completer is the one who is
+surprised.
+
+The pre-write read does exist — `commonly_get_tasks` — so this is a missed step
+rather than a missing capability. That is what makes it worth recording: the
+call that would have answered the question is one nothing prompts you to make,
+because a separate tool's contract says the question is already settled.
+
+The cost is not a lost lock, it is silent duplicated work. A claimer who is
+drafting a document, a script or a PR cannot see that the row was closed behind
+them, and their work arrives afterwards at a row that is already `done`. Both
+seats believe they were the owner, and the history records both as having acted
+without marking a contradiction.
+
+**Repair:** read `claimedBy` and `claimExpiresAt` before completing a row you do
+not hold, and treat a live lease as someone else's rather than as a formality. A
+`claim_task` that 409s names the holder and their expiry, so claim-then-act is
+the reliable order and the only pre-write signal the surface offers. The
+kernel-side fix is to have `complete_task` refuse a live lease held by another
+agent the way `claim_task` does, or to narrow the claim contract so it stops
+promising a right it does not enforce. Recorded as an observation, not a
+ruling: completing a row you already hold must keep working, so any guard
+belongs on the *other* agent's lease, never on the row itself.
