@@ -4,6 +4,11 @@
 a read of the tree at that commit. The one thing measured by RUNNING the
 supervisor is the spawn/report disagreement in Trap 3, via a throwaway probe.
 
+**Re-anchored 2026-09-19 at main `cbc3fe38`:** #1761 merged as `c9eb7eb8`, so Trap
+3's citation moved from `daemon-supervisor.js:357-359` (that range is now the adopt
+loop) to `:408–410`, and its corollary is no longer conditional. Nothing else in
+the field map was re-measured — the rest is still a read of `ac544d5c`.
+
 A local daemon reports each supervised seat as **ten fields**
 (`cli/src/lib/daemon-supervisor.js:73-85`):
 
@@ -116,15 +121,18 @@ adapter.
 
 **Report what spawns.** The fix inverts the status path to read the record
 `ensureToken` just wrote, using `row.runtime` only for a seat with no record at
-all — *an unmerged PR at the time of writing (#1761, TASK-065)*. Until it lands,
-main `ac544d5c` still has the inverted order at `daemon-supervisor.js:357-359`.
+all — *an unmerged PR at the time of writing (#1761, TASK-065)*. It landed as
+`c9eb7eb8`: the record-first trio is `daemon-supervisor.js:408–410` on
+`cbc3fe38`, and the citation this trap carried when it was written (`:357-359`)
+now falls inside the adopt loop, so the line range moved with the code rather
+than the behaviour changing again.
 
 Corollary for a `null`: a record with no `adapter` cannot start at all — `agent run`
 does `getAdapter(record.adapter)` and exits 1 on an unknown name
 (`agent.js:2453-2456`) — so `adapter=unknown` is honest rather than a missing
-value. **On main that corollary is only half true:** `:357` still takes
-`row.runtime?.adapter` first, so a seat whose *record* has no adapter can report
-the row's adapter instead. Scope this half to "once #1761 lands".
+value. The status path now agrees with it: `:408–410` reads the record first and
+falls back to `row.runtime?.…` only when there is no record at all, so a seat
+whose *record* has no adapter reports `unknown` rather than the row's adapter.
 
 ## When you change a seat field
 
