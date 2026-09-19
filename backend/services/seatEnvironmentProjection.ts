@@ -183,9 +183,14 @@ export const projectSeatEnvironments = async (
     const config = install.config instanceof Map
       ? Object.fromEntries(install.config)
       : (install.config || {});
-    if (!sourced.has(key) && (config.runtime || config.environment)) {
-      entry.runtime = config.runtime || null;
-      entry.environment = config.environment ? projectEnvironment(config.environment) : null;
+    const runtime = config.runtime || null;
+    // "Declares" means DELIVERS. A raw `environment: {}`, or one the allow-list
+    // reduces to nothing, is silent — treating it as a declaration let an older
+    // empty row shadow a newer row's real pair (Vera, on 268370c1).
+    const environment = config.environment ? projectEnvironment(config.environment) : null;
+    if (!sourced.has(key) && (runtime || environment)) {
+      entry.runtime = runtime;
+      entry.environment = environment;
       sourced.add(key);
     }
     byIdentity.set(key, entry);
