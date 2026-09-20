@@ -24,7 +24,6 @@
 const {
   CONTROL_VAR, envEntries, classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport,
 } = require('../../../../scripts/lib/credential-env-read');
-
 describe('seat credential delivery env reading', () => {
   test('an empty read is UNREADABLE, never a withheld token', () => {
     // The measured shape: `ps eww` for a sandboxed child returns header + argv only.
@@ -110,6 +109,32 @@ describe('seat credential delivery env reading', () => {
     expect(classifySelfReport({ FOO: 'cm_agent_y' }).verdict).toBe('token_present');
   });
 
+  test('route 2 prints where it ran, and checks its label against that chain', () => {
+    // The verdict is about *some* process: `--seat` is a label the reporter never
+    // verifies, so the line carries pid/ppid + the parent argv chain (wren 70593)
+    // and the label is checked against that chain rather than asserted.
+    const chain = [
+      { pid: 500, ppid: 499, args: 'node scripts/verify-seat-credential-delivery.mjs --seat kai --self-report' },
+      { pid: 499, ppid: 300, args: '/bin/bash -c node scripts/verify-seat-credential-delivery.mjs --seat kai' },
+      { pid: 300, ppid: 100, args: 'pi' },
+      { pid: 100, ppid: 1, args: '/opt/homebrew/bin/node /opt/homebrew/bin/commonly agent run kai' },
+    ];
+    const line = describeSelfReport({ seat: 'kai', adapter: 'pi', env: { PATH: '/bin' }, ancestry: chain });
+    expect(line).toMatch(/pid=500 ppid=499/);
+    expect(line).toMatch(/300 pi <- 100 \/opt\/homebrew\/bin\/node/);
+    // The invocation's own argv contains `--seat kai`; matching that would confirm
+    // the label with the label, so the match must land on the supervisor instead.
+    expect(line).toMatch(/seat label "kai" appears in ancestor pid 100/);
+    expect(line).not.toMatch(/appears in ancestor pid 499/);
+    // And a label nothing in the chain carries is reported as unverified.
+    const wrong = describeSelfReport({ seat: 'otto', adapter: 'claude', env: { PATH: '/bin' }, ancestry: chain });
+    expect(wrong).toMatch(/seat label "otto" does NOT appear in any ancestor argv/);
+    // No chain (a copy-pasted verdict) still reports the verdict, without a claim
+    // about where it was made.
+    const bare = describeSelfReport({ seat: 'kai', env: { PATH: '/bin' } });
+    expect(bare).not.toMatch(/started under/);
+  });
+
   test('route 2 finds the credential under any name, and says which one', () => {
     const named = classifySelfReport({ PATH: '/bin', COMMONLY_AGENT_TOKEN: 'cm_agent_x' });
     expect(named.verdict).toBe('token_present');
@@ -135,6 +160,11 @@ describe('seat credential delivery env reading', () => {
     expect(withheld.status).toBe(0);
     expect(withheld.stdout).toMatch(/route 2 \(self-report\) — token withheld/);
     expect(withheld.stdout).toMatch(/test-seat/);
+    // The chain is read from the real process tree, so this asserts the reader
+    // itself: the child's parent is this test process.
+    expect(withheld.stdout).toMatch(new RegExp(`ppid=${process.pid}\\b`));
+    expect(withheld.stdout).toMatch(/started under:/);
+    expect(withheld.stdout).toMatch(/seat label "test-seat" does NOT appear in any ancestor argv/);
     const present = spawnSync(process.execPath, [script, '--seat', 'test-seat', '--self-report'], {
       env: { ...base, COMMONLY_AGENT_TOKEN: 'cm_agent_leaked' }, encoding: 'utf8',
     });

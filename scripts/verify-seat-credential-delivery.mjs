@@ -29,6 +29,12 @@
  *   node scripts/verify-seat-credential-delivery.mjs --all           # route 1: every seat supervisor
  *   node scripts/verify-seat-credential-delivery.mjs --seat otto     # route 1: one seat
  *   node scripts/verify-seat-credential-delivery.mjs --seat otto --self-report   # route 2, labelled with the seat you ran it in
+ *
+ * Route 2 prints pid, ppid and the parent argv chain, because a self-report is
+ * evidence about *some* process and `--seat` is a label the reporter never
+ * verifies (wren 70593): the chain is what lets a reader see that the probe sat
+ * under the adapter child rather than under the supervisor, and the label is then
+ * checked against the chain instead of asserted.
  *   node scripts/verify-seat-credential-delivery.mjs --self-test     # classifier fixtures, no process tree
  *
  * `--self-report` is route 2 (wren 70567/70575): run it from inside the seat's own
@@ -117,6 +123,27 @@ function envOf(pid) {
   try { return ps(['eww', '-p', String(pid)]); } catch { return ''; }
 }
 
+/**
+ * The caller's own ancestry, as argv rather than as a claim: entry 0 is this
+ * process. `ps -o ppid=,args=` prints argv without the environment, so this read
+ * is unaffected by the per-process env-read behaviour described above.
+ */
+function ancestryOf(pid, limit = 6) {
+  const chain = [];
+  let cur = Number(pid);
+  for (let i = 0; i < limit && cur > 1; i += 1) {
+    let out = '';
+    try {
+      out = execFileSync('ps', ['-o', 'ppid=,args=', '-p', String(cur)], { encoding: 'utf8' }).trim();
+    } catch { break; }
+    const m = out.match(/^(\d+)\s+([\s\S]*)$/);
+    if (!m) break;
+    chain.push({ pid: cur, ppid: Number(m[1]), args: m[2].replace(/\s+/g, ' ').trim() });
+    cur = Number(m[1]);
+  }
+  return chain;
+}
+
 function adapterOf(seat) {
   const file = path.join(os.homedir(), '.commonly', 'tokens', `${seat}.json`);
   if (!existsSync(file)) return '?';
@@ -153,7 +180,12 @@ function main() {
       process.exit(2);
     }
     const seat = args.seat || 'this seat';
-    console.log(describeSelfReport({ seat, adapter: args.seat ? adapterOf(args.seat) : '?', env: process.env }));
+    console.log(describeSelfReport({
+      seat,
+      adapter: args.seat ? adapterOf(args.seat) : '?',
+      env: process.env,
+      ancestry: ancestryOf(process.pid),
+    }));
     process.exit(classifySelfReport(process.env).verdict === 'token_present' ? 1 : 0);
   }
 

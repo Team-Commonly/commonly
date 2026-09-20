@@ -157,16 +157,57 @@ function describeVerdict({ seat, adapter, pid, startedAt, raw, opts = {} }) {
   return `${who}: route 1 — token withheld (read proven live by ${opts.controlVar || CONTROL_VAR}${r.filePresent ? '; declared file variable present' : '; declared file variable NOT present'})`;
 }
 
-/** One line for a seat reporting its own environment (route 2). */
-function describeSelfReport({ seat, adapter, env, opts = {} }) {
+/** One line for a seat reporting its own environment (route 2).
+ *
+ * `ancestry` (from the walker's `ps -o ppid=,args=`) is what makes a route-2 line
+ * worth something: the verdict is about *some* process, and `--seat` is a label the
+ * reporter never verifies. Printing pid, ppid and the argv chain lets a reader see
+ * whether the probe sat under the adapter child or somewhere else entirely
+ * (wren 70593). The seat label is then checked against the chain rather than
+ * asserted.
+ */
+function describeSelfReport({ seat, adapter, env, ancestry = [], opts = {} }) {
   const r = classifySelfReport(env, opts);
   const who = `${seat}${adapter ? ` (${adapter})` : ''}`;
   const where = r.credentialValueVars.length ? ` under ${r.credentialValueVars.join(', ')}` : '';
   const context = `${r.totalVars} vars; control ${opts.controlVar || CONTROL_VAR} ${r.controlPresent ? 'present' : 'absent'}; declared file variable ${r.filePresent ? 'present' : 'absent'}`;
-  if (r.verdict === 'token_present') {
-    return `${who}: route 2 (self-report) — TOKEN PRESENT${where} — withholding did not reach this process (${context})`;
-  }
-  return `${who}: route 2 (self-report) — token withheld, no ${TOKEN_PREFIX}* value in any variable (${context})`;
+  const place = describeAncestry({ seat, ancestry });
+  const verdict = r.verdict === 'token_present'
+    ? `${who}: route 2 (self-report) — TOKEN PRESENT${where} — withholding did not reach this process (${context})`
+    : `${who}: route 2 (self-report) — token withheld, no ${TOKEN_PREFIX}* value in any variable (${context})`;
+  return place ? `${verdict}\n${place}` : verdict;
+}
+
+/** Where a route-2 report was made, and whether its label matches that place. */
+function describeAncestry({ seat, ancestry = [] }) {
+  if (!ancestry.length) return '';
+  const self = ancestry[0];
+  const chain = ancestry
+    .map((a) => `${a.pid}${a.username ? ` ${a.username}` : ''} ${shorten(a.args)}`)
+    .join(' <- ');
+  const owner = ancestry.find((a) => a.pid !== self.pid
+    && !isInvocation(a.args)
+    && a.args && seat && a.args.includes(seat));
+  const label = !seat || seat === 'this seat'
+    ? 'seat label: none given'
+    : owner
+      ? `seat label "${seat}" appears in ancestor pid ${owner.pid} (${shorten(owner.args, 60)})`
+      : `seat label "${seat}" does NOT appear in any ancestor argv — the label is unverified`;
+  return `  pid=${self.pid} ppid=${self.ppid} started under: ${chain}\n  ${label}`;
+}
+
+/**
+ * True for the ancestors that merely ran this script. Without it, a labelled run
+ * matches its own command line — `--seat kai` sitting in the argv — and the label
+ * check confirms itself, which is the vacuous shape the check exists to avoid.
+ */
+function isInvocation(args) {
+  return typeof args === 'string' && args.includes('verify-seat-credential-delivery.mjs');
+}
+
+function shorten(text, max = 110) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 module.exports = {
@@ -179,4 +220,5 @@ module.exports = {
   classifySelfReport,
   describeVerdict,
   describeSelfReport,
+  describeAncestry,
 };

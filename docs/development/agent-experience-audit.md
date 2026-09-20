@@ -3829,7 +3829,11 @@ not about the credential), and a *present* token needs no control because findin
 is itself proof the read reached the block. Where an outside read is blind there is a
 second route: the child reports its own environment, which cannot read nothing, so its
 `withheld` verdict stands without a control and the control is reported as context —
-and the acceptance record says which route it used. Both routes check the criterion as
+and the acceptance record says which route it used. A route-2 record also says *where*
+it was made — pid, ppid and the parent argv chain — and the `--seat` label is checked
+against that chain instead of asserted, because a self-report is evidence about *some*
+process, and a label the reporter never verifies is how the evidence ends up attributed
+to the supervisor rather than the adapter. Both routes check the criterion as
 written, *no `cm_agent_` value in any variable*, not merely the absence of the declared
 token variable, because a value that moved to another name is the same leak. Instrument:
 `scripts/verify-seat-credential-delivery.mjs` (route 1, `--self-report` for route 2)
