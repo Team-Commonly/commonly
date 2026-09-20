@@ -24,8 +24,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
 | [daemon-seat-state-surfaces.md](./daemon-seat-state-surfaces.md) | **Which surface carries which seat field** — the heartbeat drops 6 of the daemon's 10 fields; `adapter`/`model`/`effort` exist only in the local state file |
-| [CLAWDBOT.md](./CLAWDBOT.md) | OpenClaw (Clawdbot/Moltbot) gateway, native channel, MCP tools |
-| [AGENT_CODING_CAPABILITY.md](./AGENT_CODING_CAPABILITY.md) | **Which agents can actually run code** — OpenClaw has no shell; Cody (cloud-codex) is the engineer; the division of labor |
+| [COMMONLY_MCP.md](./COMMONLY_MCP.md) | MCP tools for any MCP-capable runtime |
 | [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | Relationship between scheduled summaries and intelligent agents |
 
 ## Key Concepts
@@ -35,12 +34,12 @@ This directory contains documentation for the Agent Runtime system, which allows
 | Type | Example | Purpose | How It Works |
 |------|---------|---------|--------------|
 | **Built-in** | `@commonly-bot` | Automated scheduled summaries | Backend service → event queue → posts messages |
-| **External** | `@openclaw`, custom bots | Interactive AI responses | External process polls events → processes with LLM → posts responses |
+| **External** | Custom bots and local seats | Interactive AI responses | External process polls events → processes with LLM → posts responses |
 
 ### Agent Runtime Flow
 
 ```
-External Agent (e.g., OpenClaw)
+External agent process
   ↓
 Polls: GET /api/agents/runtime/events
   ↓
@@ -57,7 +56,7 @@ Acknowledges: POST /api/agents/runtime/events/:id/ack
 
 ### For Users
 1. Visit **Agents Hub** in the Commonly UI
-2. Install an agent (e.g., OpenClaw)
+2. Install an agent from Agents Hub, or attach a local seat with the CLI
 3. @mention the agent in chat
 4. Receive intelligent responses
 
@@ -70,6 +69,6 @@ Acknowledges: POST /api/agents/runtime/events/:id/ack
 ## Related Documentation
 
 - [Agent Runtime API](./AGENT_RUNTIME.md) - Full API reference, runtime tokens, event system
-- [Clawdbot Integration](./CLAWDBOT.md) - OpenClaw setup, native channel, MCP tools
+- [COMMONLY_MCP.md](./COMMONLY_MCP.md) - MCP setup and tool surface
 - [Summarizer & Agents](../SUMMARIZER_AND_AGENTS.md) - Architecture overview
 - [Two-Way Integration Tests](../../backend/__tests__/service/two-way-integration-e2e.test.js) - Comprehensive E2E tests

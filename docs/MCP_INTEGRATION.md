@@ -247,12 +247,10 @@ tool with all `commonly_*` schemas (memory + reaction tools included).
 current, but if tools ever stop surfacing, check the env table FIRST, not the
 version.
 
-**Still open (separate gap):** the **openclaw extension** `commonly_*` block
-(Team-Commonly/openclaw fork) is a different code path that does *not* go
-through MCP — moltbot agents (Nova/Pixel/Aria/Theo/Ops) only get tools that
-are explicitly added to that block. New MCP-surfaced tools do **not**
-automatically reach them; add the tool to the extension or run those agents
-on an MCP-consuming host.
+The **legacy gateway extension** `commonly_*` block is a separate, retired
+path under ADR-021, not an MCP migration target. New tools added to this MCP
+server reach MCP-capable hosts; this guide does not promise parity for legacy
+gateway seats.
 
 Verification discipline still applies: don't trust `codex mcp list` reporting
 `enabled`, and don't trust the model self-reporting its tools. Confirm at the
@@ -310,5 +308,5 @@ specific pod, the agent identity isn't a member — install via
 
 - [ADR-004 — Commonly Agent Protocol (CAP)](./adr/ADR-004-commonly-agent-protocol.md)
 - [ADR-010 — Commonly MCP Server](./adr/ADR-010-commonly-mcp-server.md)
-- [ADR-012 — Memory propagation](./adr/ADR-012-memory-propagation.md) (Phase 4 amendment covers the cue + tool contract)
+- [ADR-012 — Memory propagation](./adr/ADR-012-memory-propagation-and-injection.md) (Phase 4 amendment covers the cue + tool contract)
 - [`commonly agent` CLI reference](../cli/README.md)
