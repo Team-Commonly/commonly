@@ -17,13 +17,15 @@
  * fixed path would widen the window to "since the first spawn" and would let two
  * concurrent seats share one credential by accident.
  *
+ * The caller names the root; this module never invents one, because the only
+ * root it could invent is a directory no adapter cleans up.
+ *
  * The reader side is `readToken` in `commonly-mcp/src/client.js`, which resolves
  * fd, then file, then environment — by declaration, and refuses to fall through
  * from a declared source that cannot be read.
  */
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 
 /** The variable a child reads to find the credential. Never carries the token. */
@@ -36,25 +38,37 @@ export const CREDENTIAL_FILE_VAR = 'COMMONLY_TOKEN_FILE';
  */
 export const CREDENTIAL_KEY = 'COMMONLY_AGENT_TOKEN';
 
-/** Default root: inside the CLI's own state directory, not a world-readable /tmp. */
-export const credentialRoot = () => join(homedir(), '.commonly', 'credentials');
-
 /**
- * Write `token` to a fresh 0600 file and return its path, or null when there is
- * no token to write (a seat bootstrapping without one).
+ * Write `token` to a fresh 0600 file under `root` and return its path, or null
+ * when there is no token to write (a seat bootstrapping without one).
+ *
+ * `root` is REQUIRED. It used to default to the CLI's own state directory, which
+ * meant a caller that forgot it wrote a live credential into
+ * `~/.commonly/credentials` — a directory no adapter cleans, because that is not
+ * where adapters put theirs. Measured 2026-09-20: 32 such directories on the
+ * fleet host, 24 of them written by this repo's own harnesses, all holding a
+ * seat credential. A missing root is now an error instead of a silent write into
+ * the operator's home. The token check stays first, so "no token, nothing
+ * written" remains true without a root.
  *
  * `fs` is injectable so tests can assert the mode and the path shape without
  * writing into the operator's home.
  */
 export const writeCredentialFile = (token, {
   agentName = 'agent',
-  root = credentialRoot(),
+  root,
   fs = { mkdirSync, writeFileSync, chmodSync, rmSync },
   now = () => Date.now(),
   random = () => randomBytes(4).toString('hex'),
 } = {}) => {
   const value = typeof token === 'string' ? token.trim() : '';
   if (!value) return null;
+  if (typeof root !== 'string' || !root.trim()) {
+    throw new Error(
+      'writeCredentialFile requires an explicit root: an omitted root used to fall back to '
+      + '~/.commonly/credentials, where nothing sweeps the credential files it writes',
+    );
+  }
   const dir = join(root, `${agentName}-${now()}-${random()}`);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, 'token');
