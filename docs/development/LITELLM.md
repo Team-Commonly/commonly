@@ -29,7 +29,7 @@ Backend services  ──►  LiteLLM :4000  ──►  Gemini / OpenRouter / Ope
 ```
 
 - **Service**: `litellm.commonly-dev.svc.cluster.local:4000`
-- **Dashboard**: `https://litellm-dev.commonly.me/ui` (login with `LITELLM_MASTER_KEY`)
+- **Dashboard**: `https://litellm.commonly.me/ui` (login with `LITELLM_MASTER_KEY`)
 - **Health probe**: `GET /health/readiness` (no auth required)
 - **Spend logs**: stored in Aiven PostgreSQL (`LiteLLM_SpendLogs` table)
 - **Image**: `ghcr.io/berriai/litellm:main-stable`
@@ -422,7 +422,7 @@ req.write(body);req.end();"
 
 ### Using the LiteLLM Dashboard (UI)
 
-URL: `https://litellm-dev.commonly.me/ui`
+URL: `https://litellm.commonly.me/ui`
 Login: username `admin`, password = value of `LITELLM_MASTER_KEY`
 
 ```bash

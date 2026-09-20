@@ -345,7 +345,7 @@ Agent uninstall permissions:
 - Pod admins (creator) and the original installer can remove agents from pods.
 
 CORS allowlist:
-- `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://app.commonly.me,http://localhost:3000`).
+- `FRONTEND_URL` accepts a comma-separated list of allowed origins (e.g. `https://commonly.me,http://localhost:3000`).
 
 LLM routing:
 - `LITELLM_DISABLED=true` bypasses LiteLLM and calls Gemini directly via `GEMINI_API_KEY`.
