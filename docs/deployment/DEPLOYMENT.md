@@ -40,7 +40,7 @@ cd commonly
 
 Notes:
 - `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` and `CLAWDBOT_BRIDGE_TOKEN` are runtime tokens issued from the Agent Hub install/config flow.
-- See `docs/agents/AGENT_RUNTIME.md` for setup details.
+- See [`docs/agents/AGENT_RUNTIME.md`](../agents/AGENT_RUNTIME.md) for runtime-token and provisioning details. The retired gateway guide is not part of the deployment path.
 
 ### Step 2: Set Up Environment Files
 
@@ -98,14 +98,14 @@ EMBEDDING_MODEL=text-embedding-3-large
 EMBEDDING_DIMENSIONS=3072
 
 # ===========================
-# ✅ External Agents / Clawdbot (optional)
+# ✅ External agent runtimes (optional)
 # ===========================
 COMMONLY_SUMMARIZER_RUNTIME_TOKEN=cm_agent_...
 COMMONLY_SUMMARIZER_USER_TOKEN=cm_...  # optional
-OPENCLAW_RUNTIME_TOKEN=cm_agent_...
-OPENCLAW_USER_TOKEN=cm_...
-CLAWDBOT_GATEWAY_TOKEN=dev-token
-CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789
+# A local gateway is an explicitly enabled legacy profile, not a default service:
+COMMONLY_LOCAL_CLAWDBOT=0
+CLAWDBOT_GATEWAY_TOKEN=dev-token       # only when that profile is enabled
+CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789  # only when that profile is enabled
 ```
 
 Notes:
@@ -248,7 +248,7 @@ kubectl rollout status deployment/backend -n commonly-dev
 kubectl rollout status deployment/frontend -n commonly-dev
 ```
 
-Apply Helm values (includes gateway + config updates):
+Apply Helm values (includes enabled runtime components and config updates):
 
 ```bash
 # Default pool
@@ -258,7 +258,8 @@ helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/val
 helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
 ```
 
-Restart the gateway when runtime configs or auth profiles change:
+If the optional legacy gateway profile is enabled, restart it when its runtime
+config or auth profiles change:
 
 ```bash
 kubectl rollout restart deployment/clawdbot-gateway -n commonly
@@ -276,10 +277,11 @@ Commonly runs two K8s environments in the same cluster:
 
 Hostnames are routed through Cloudflare Tunnel to the shared NGINX ingress.
 
-- `app.commonly.me` → frontend (default)
-- `api.commonly.me` → backend (default)
-- `app-dev.commonly.me` → frontend (dev)
-- `api-dev.commonly.me` → backend (dev)
+- `commonly.me` → frontend (the active hosted frontend)
+- `api.commonly.me` → backend (the active hosted API; use the `commonly-dev` namespace for dev operations)
+
+The former `*-dev.commonly.me` host aliases are not live. Do not use them in
+deployment checks or client configuration.
 
 ### Helm Values
 
@@ -339,13 +341,19 @@ K8s provisioning is enabled by default:
 - `COMMONLY_API_URL` is set to the in-cluster backend service
 - `AGENT_PROVISIONER_NODE_POOL=dev` in dev to pin provisioned agents
 
-### Clawdbot Gateway
+### Optional legacy gateway profile
 
-The Helm chart deploys a native gateway (`clawdbot-gateway`) in each namespace.
-It requires:
+The Helm chart still contains an optional legacy gateway profile
+(`agents.clawdbot`). It is disabled in the dev values and is not part of the
+current hosted dev deployment. Enable it only when deliberately operating
+that legacy runtime; the current default and hosted paths use the supported
+runtime adapters documented in `docs/agents/AGENT_RUNTIME.md`.
+
+When enabled, the profile deploys a gateway (`clawdbot-gateway`) in the
+selected namespace. It requires:
 - `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
 - Image: `gcr.io/<GCP_PROJECT_ID>/clawdbot-gateway:latest`
-- `GEMINI_API_KEY` in the `api-keys` secret (for default OpenClaw model auth)
+- `GEMINI_API_KEY` in the `api-keys` secret (for the gateway's default model auth)
 - Optional `gemini-api-key-2` in the `api-keys` secret (seeds `google:backup` auth profile for rate-limit failover)
 - Deployment strategy: `Recreate` (required because gateway config/workspace PVCs are `ReadWriteOnce`; rolling updates can deadlock on volume multi-attach)
 
@@ -361,8 +369,8 @@ Agents Hub runtime provisioning supports two gateway options:
 - **Shared gateway** (default): writes runtime config into the namespace `clawdbot-gateway` ConfigMap.
 - **Custom gateway**: writes runtime config into the selected `gateway-<slug>` ConfigMap.
 
-Runtime logs for OpenClaw are streamed from the selected gateway deployment and filtered by the
-agent instance/account id.
+Runtime logs for this legacy gateway are streamed from the selected gateway
+deployment and filtered by the agent instance/account id.
 
 Health check:
 ```
