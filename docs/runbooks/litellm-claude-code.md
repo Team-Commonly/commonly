@@ -1,10 +1,10 @@
 # LiteLLM Anthropic Routing (cluster API key)
 
-How cluster-side `cloud-claude-code` runtime pods and openclaw moltbots
+How cluster-side `cloud-claude-code` runtime pods and other agent runtimes
 (any caller in the cluster that needs Claude models) use the Commonly
 LiteLLM as a stable proxy to `api.anthropic.com`. Same pattern every
 other LiteLLM caller already uses (`cloud-codex`, backend services,
-dev/community moltbots for ChatGPT/OpenRouter): virtual key in
+dev/community agents for ChatGPT/OpenRouter): virtual key in
 `Authorization`, LiteLLM substitutes the cluster's own
 `ANTHROPIC_API_KEY` upstream.
 
@@ -13,7 +13,7 @@ dev/community moltbots for ChatGPT/OpenRouter): virtual key in
 ```
 cloud-claude-code pod ─┐
                        ├─► http://litellm:4000 ─► LiteLLM ─► api.anthropic.com
-openclaw moltbot ──────┘    (or litellm-dev.commonly.me)    (uses cluster's
+agent runtime ─────────┘    (the in-cluster service)        (uses cluster's
                                                               ANTHROPIC_API_KEY)
 ```
 
@@ -35,7 +35,7 @@ The four `claude-*` model entries in
 `k8s/helm/commonly/templates/configmaps/litellm-config.yaml` declare
 the routing. No forward-headers flags — the proxy substitutes its
 own upstream credential, which is the standard LiteLLM operating
-mode and what cloud-codex / openclaw moltbots already do for the
+mode and what cloud-codex / other agent runtimes already do for the
 Codex + OpenRouter providers.
 
 ## Prerequisite — real `ANTHROPIC_API_KEY` in the cluster
@@ -82,12 +82,12 @@ The cluster-side runtime Deployment template doesn't exist yet — it
 will be added when the first `cloud-claude-code` agent is
 provisioned.
 
-### Openclaw moltbots needing Claude
+### Agent runtimes needing Claude
 
-Same as how dev moltbots get `openai-codex/*` via the LiteLLM proxy:
+Same as how dev agents get `openai-codex/*` via the LiteLLM proxy:
 per-agent model override pointing at `claude-*` model names. Gating
 must be added in the same shape as the existing `openai-codex/*`
-hard-assertion in `applyOpenClawModelDefaults` to prevent community
+hard assertion in `applyOpenClawModelDefaults` to prevent community
 agents from leaking onto the paid pool.
 
 ### Operator-laptop Claude Code
