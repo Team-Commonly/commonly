@@ -13,6 +13,15 @@
 // `AgentCredential.parentId` + `revokeCascade` + the auth check at
 // middleware/agentRuntimeAuth.ts) already expresses exactly this.
 //
+// The lifetime contract (Wren, 2026-09-20, after Vera 70738): renewal EXTENDS
+// THE SAME value rather than rotating it, so the TTL bounds the ABANDONED
+// credential, not a stolen one. Once the supervisor stops renewing — spawn
+// ends, crash, SIGKILL — any holder of the value is 401 within one TTL. While
+// the supervisor is still renewing, a copy taken off-host is as alive as the
+// spawn, and its ceiling is the spawn's end + one TTL, with `maxExpiresAt`
+// (mint + 24h) as the absolute limit. "15 minutes" is never the exposure window
+// for a stolen value; it is how long an abandoned one outlives its spawn.
+//
 // Two invariants a reader should not have to re-derive from the tests:
 //   1. A child cannot mint another child. Otherwise a leaked file can be
 //      extended indefinitely and the TTL bounds nothing.
@@ -33,9 +42,14 @@ const { hash, randomSecret } = require('../utils/secret') as {
  *  a spawn credential, and it is the check that makes invariant 1 above true. */
 export const SPAWN_SCOPE = 'spawn';
 
-export const SPAWN_TTL_DEFAULT_SECONDS = 12 * 60 * 60;
+// 15 minutes is the renewal TTL: it is what an abandoned credential outlives
+// its spawn by, and it is why the default is short rather than long.
+export const SPAWN_TTL_DEFAULT_SECONDS = 15 * 60;
 export const SPAWN_TTL_MAX_SECONDS = 24 * 60 * 60;
 export const SPAWN_TTL_MIN_SECONDS = 60;
+// The absolute ceiling, measured from the mint: no amount of renewal moves a
+// child past it, so a supervisor that never stops renewing still dies at 24h.
+export const SPAWN_ABSOLUTE_LIFETIME_SECONDS = 24 * 60 * 60;
 
 export const MAX_SPAWN_ID_LENGTH = 128;
 
@@ -64,9 +78,14 @@ export type MintSpawnCredentialResult =
       token: string;
       credentialId: Types.ObjectId;
       expiresAt: Date;
+      maxExpiresAt: Date;
       spawnId: string;
     }
   | { ok: false; code: 'child_cannot_mint' | 'invalid_spawn_id' | 'invalid_ttl' };
+
+export type RenewSpawnCredentialResult =
+  | { ok: true; expiresAt: Date; extended: boolean }
+  | { ok: false; code: 'not_found' | 'not_renewable' | 'invalid_ttl' };
 
 /** Clamp a requested lifetime into the accepted band. Returns null for input
  *  that is present but not a usable number, so the caller can refuse rather
@@ -156,7 +175,9 @@ export async function mintSpawnCredential(
   if (ttlSeconds === null) return { ok: false, code: 'invalid_ttl' };
 
   const token = `cm_agent_${randomSecret(32)}`;
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+  const now = Date.now();
+  const expiresAt = new Date(now + ttlSeconds * 1000);
+  const maxExpiresAt = new Date(now + SPAWN_ABSOLUTE_LIFETIME_SECONDS * 1000);
 
   const child = await AgentCredential.create({
     tokenHash: hash(token),
@@ -168,6 +189,7 @@ export async function mintSpawnCredential(
     label: `spawn:${spawnId}`,
     scopes: [SPAWN_SCOPE],
     expiresAt,
+    maxExpiresAt,
   });
 
   return {
@@ -175,8 +197,58 @@ export async function mintSpawnCredential(
     token,
     credentialId: (child as { _id: Types.ObjectId })._id,
     expiresAt,
+    maxExpiresAt,
     spawnId,
   };
+}
+
+/**
+ * Extend a live child's expiry — the same value, not a new one (Wren's ruling:
+ * rotation cannot reach the http entries the adapter writes into the per-spawn
+ * mcp-config, and `readToken` is read once at boot, so a rotating value would
+ * either die mid-spawn or have to be carried somewhere that is not rotated).
+ *
+ * A renewal is a lease extension, never a resurrection: an already-expired or
+ * revoked child is refused, because letting a late renewal revive it would make
+ * the TTL advisory and the (v) acceptance untrue. Past `maxExpiresAt` the call
+ * still succeeds but extends nothing, which is the signal for the caller to
+ * stop renewing.
+ */
+export async function renewSpawnCredential({
+  credentialId,
+  seatCredentialId,
+  ttlSeconds,
+}: {
+  credentialId: Types.ObjectId | string;
+  seatCredentialId: Types.ObjectId | string;
+  ttlSeconds?: unknown;
+}): Promise<RenewSpawnCredentialResult> {
+  const ttl = clampSpawnTtlSeconds(ttlSeconds);
+  if (ttl === null) return { ok: false, code: 'invalid_ttl' };
+
+  const row = await AgentCredential.findOne({
+    _id: credentialId,
+    parentId: seatCredentialId,
+    scopes: SPAWN_SCOPE,
+  }).select('_id status expiresAt maxExpiresAt').lean() as {
+    _id: Types.ObjectId;
+    status?: string;
+    expiresAt?: Date | null;
+    maxExpiresAt?: Date | null;
+  } | null;
+  if (!row) return { ok: false, code: 'not_found' };
+
+  const now = Date.now();
+  const currentExpiry = row.expiresAt ? new Date(row.expiresAt).getTime() : 0;
+  if (row.status !== 'active' || currentExpiry <= now) return { ok: false, code: 'not_renewable' };
+
+  const ceiling = row.maxExpiresAt ? new Date(row.maxExpiresAt).getTime() : now;
+  const proposed = Math.min(now + ttl * 1000, ceiling);
+  if (proposed <= currentExpiry) return { ok: true, expiresAt: new Date(currentExpiry), extended: false };
+
+  const expiresAt = new Date(proposed);
+  await AgentCredential.updateOne({ _id: row._id, status: 'active' }, { $set: { expiresAt } });
+  return { ok: true, expiresAt, extended: true };
 }
 
 /**
@@ -230,11 +302,13 @@ module.exports = {
   SPAWN_TTL_DEFAULT_SECONDS,
   SPAWN_TTL_MAX_SECONDS,
   SPAWN_TTL_MIN_SECONDS,
+  SPAWN_ABSOLUTE_LIFETIME_SECONDS,
   MAX_SPAWN_ID_LENGTH,
   clampSpawnTtlSeconds,
   isSpawnCredential,
   resolveSeatCredential,
   mintSpawnCredential,
+  renewSpawnCredential,
   revokeSpawnCredential,
   revokeOrphanSpawnCredentials,
 };

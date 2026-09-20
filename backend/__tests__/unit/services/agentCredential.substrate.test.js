@@ -240,7 +240,7 @@ describe('per-spawn child credentials (TASK-094)', () => {
     expect((await runAuth(raw)).nexted).toBe(true);
   });
 
-  it('a child past its expiry is rejected without anyone revoking it', async () => {
+  it('a child past its expiry is rejected without anyone revoking it, and the row is still active — the (v) crash case', async () => {
     const { seat } = await makeSeat();
     const child = await mint(seat, 'spawn-expired');
     await AgentCredential.updateOne(
@@ -253,6 +253,48 @@ describe('per-spawn child credentials (TASK-094)', () => {
     expect(nexted).toBe(false);
     expect(res.statusCode).toBe(401);
     expect(res.body.message).toBe('Session token expired');
+    // The strong half: a killed supervisor never revokes, so the 401 has to
+    // come from the expiry alone. If this row were 'revoked', the test above
+    // would pass for the wrong reason.
+    const row = await AgentCredential.findById(child.credentialId).lean();
+    expect(row.status).toBe('active');
+    expect(new Date(row.expiresAt).getTime()).toBeLessThan(Date.now());
+  });
+
+  it('a spawn row may not name a human: an agentUserId that is not a bot is rejected', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const human = await User.create({
+      username: `human-${Math.random().toString(36).slice(2, 8)}`,
+      email: `${Math.random().toString(36).slice(2, 8)}@example.test`,
+      password: 'x'.repeat(12),
+      isBot: false,
+    });
+    const raw = `cm_agent_${'h'.repeat(32)}`;
+    await AgentCredential.create({
+      tokenHash: hash(raw), kind: 'runtime', ownerUserId: owner, agentUserId: human._id, scopes: ['spawn'],
+    });
+
+    const { res, nexted } = await runAuth(raw);
+
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('a spawn row whose agentUserId points at nobody is rejected', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const raw = `cm_agent_${'m'.repeat(32)}`;
+    await AgentCredential.create({
+      tokenHash: hash(raw),
+      kind: 'runtime',
+      ownerUserId: owner,
+      agentUserId: new mongoose.Types.ObjectId(),
+      scopes: ['spawn'],
+    });
+
+    const { res, nexted } = await runAuth(raw);
+
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(401);
   });
 
   it('a child of a revoked seat dies with the seat, which is the cascade the window was missing', async () => {

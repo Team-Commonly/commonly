@@ -25,11 +25,13 @@ const {
   SPAWN_TTL_DEFAULT_SECONDS,
   SPAWN_TTL_MAX_SECONDS,
   SPAWN_TTL_MIN_SECONDS,
+  SPAWN_ABSOLUTE_LIFETIME_SECONDS,
   MAX_SPAWN_ID_LENGTH,
   clampSpawnTtlSeconds,
   isSpawnCredential,
   resolveSeatCredential,
   mintSpawnCredential,
+  renewSpawnCredential,
   revokeSpawnCredential,
   revokeOrphanSpawnCredentials,
 } = require('../../../services/spawnCredentialService');
@@ -55,6 +57,37 @@ const seatRow = (overrides = {}) => ({
 const createdChild = (overrides = {}) => ({
   _id: 'child-id',
   ...overrides,
+});
+
+describe('the ruling\'s numbers are pinned as literals', () => {
+  // A test that derives its expectation from the constant it is testing cannot
+  // fail when that constant moves: mutating SPAWN_TTL_DEFAULT_SECONDS would
+  // move the expectation with it. The values below are the ruling (Wren,
+  // 2026-09-20), so they are written as numbers, not as the constants.
+  test('the renewal TTL is 15 minutes', () => {
+    expect(SPAWN_TTL_DEFAULT_SECONDS).toBe(900);
+  });
+
+  test('the absolute ceiling is 24 hours', () => {
+    expect(SPAWN_ABSOLUTE_LIFETIME_SECONDS).toBe(86400);
+  });
+
+  test('a requested lifetime may not exceed 24 hours nor drop below a minute', () => {
+    expect(SPAWN_TTL_MAX_SECONDS).toBe(86400);
+    expect(SPAWN_TTL_MIN_SECONDS).toBe(60);
+  });
+
+  test('the mint writes the 15-minute expiry, not a long lease', () => {
+    AgentCredential.create.mockResolvedValue(createdChild());
+    const before = Date.now();
+    return mintSpawnCredential({ seat: seatRow(), spawnId: 'spawn-1' }).then(() => {
+      const row = AgentCredential.create.mock.calls[0][0];
+      const ttlMs = row.expiresAt.getTime() - before;
+      expect(ttlMs).toBeGreaterThan(14 * 60 * 1000);
+      expect(ttlMs).toBeLessThanOrEqual(15 * 60 * 1000 + 5000);
+      expect(row.maxExpiresAt.getTime() - before).toBeGreaterThan(23 * 60 * 60 * 1000);
+    });
+  });
 });
 
 describe('clampSpawnTtlSeconds', () => {
@@ -171,6 +204,20 @@ describe('mintSpawnCredential', () => {
     expect(ttlMs).toBeLessThanOrEqual(SPAWN_TTL_MAX_SECONDS * 1000 + 5000);
   });
 
+  test('the mint records the absolute ceiling, so renewal can never move the expiry past it', async () => {
+    AgentCredential.create.mockResolvedValue(createdChild());
+    const before = Date.now();
+
+    const result = await mintSpawnCredential({ seat: seatRow(), spawnId: 'spawn-1' });
+
+    const row = AgentCredential.create.mock.calls[0][0];
+    expect(row.maxExpiresAt).toBeInstanceOf(Date);
+    const ceilingMs = row.maxExpiresAt.getTime() - before;
+    expect(ceilingMs).toBeGreaterThan(SPAWN_ABSOLUTE_LIFETIME_SECONDS * 1000 - 5000);
+    expect(ceilingMs).toBeLessThanOrEqual(SPAWN_ABSOLUTE_LIFETIME_SECONDS * 1000 + 5000);
+    expect(result.maxExpiresAt).toEqual(row.maxExpiresAt);
+  });
+
   test('the child inherits the agent user from the caller when the seat row has none', async () => {
     AgentCredential.create.mockResolvedValue(createdChild());
 
@@ -237,6 +284,106 @@ describe('resolveSeatCredential', () => {
 
     await expect(resolveSeatCredential({ tokenHash: 'h', agentUserId: 'agent-user-id' }))
       .rejects.toThrow(/credential row/);
+  });
+});
+
+describe('renewSpawnCredential', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const liveChild = (overrides = {}) => selectedLean({
+    _id: 'child-id',
+    status: 'active',
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    maxExpiresAt: new Date(Date.now() + SPAWN_ABSOLUTE_LIFETIME_SECONDS * 1000),
+    ...overrides,
+  });
+
+  test('the lookup is scoped to this seat and to spawn rows, so a seat cannot renew another seat\'s child', async () => {
+    AgentCredential.findOne.mockReturnValue(selectedLean(null));
+
+    const result = await renewSpawnCredential({ credentialId: 'child-id', seatCredentialId: SEAT_ID });
+
+    expect(AgentCredential.findOne).toHaveBeenCalledWith({
+      _id: 'child-id', parentId: SEAT_ID, scopes: SPAWN_SCOPE,
+    });
+    expect(result).toEqual({ ok: false, code: 'not_found' });
+    expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('a renewal extends the same value by one TTL', async () => {
+    const row = { _id: 'child-id', status: 'active', expiresAt: new Date(Date.now() + 60 * 1000), maxExpiresAt: new Date(Date.now() + 3600 * 1000) };
+    AgentCredential.findOne.mockReturnValue(selectedLean(row));
+    AgentCredential.updateOne.mockResolvedValue({ modifiedCount: 1 });
+
+    const result = await renewSpawnCredential({ credentialId: 'child-id', seatCredentialId: SEAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.extended).toBe(true);
+    const [, update] = AgentCredential.updateOne.mock.calls[0];
+    expect(update.$set.expiresAt.getTime()).toBeGreaterThan(row.expiresAt.getTime());
+  });
+
+  test('an expired child cannot be renewed back to life, because the TTL has to stay the authority', async () => {
+    AgentCredential.findOne.mockReturnValue(selectedLean({
+      _id: 'child-id', status: 'active', expiresAt: new Date(Date.now() - 1000), maxExpiresAt: new Date(Date.now() + 3600 * 1000),
+    }));
+
+    const result = await renewSpawnCredential({ credentialId: 'child-id', seatCredentialId: SEAT_ID });
+
+    expect(result).toEqual({ ok: false, code: 'not_renewable' });
+    expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('a revoked child cannot be renewed', async () => {
+    AgentCredential.findOne.mockReturnValue(selectedLean({
+      _id: 'child-id', status: 'revoked', expiresAt: new Date(Date.now() + 60 * 1000), maxExpiresAt: new Date(Date.now() + 3600 * 1000),
+    }));
+
+    const result = await renewSpawnCredential({ credentialId: 'child-id', seatCredentialId: SEAT_ID });
+
+    expect(result).toEqual({ ok: false, code: 'not_renewable' });
+    expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('a long renewal stops at the absolute ceiling instead of granting the requested lifetime', async () => {
+    const ceiling = new Date(Date.now() + 30 * 1000);
+    AgentCredential.findOne.mockReturnValue(selectedLean({
+      _id: 'child-id', status: 'active', expiresAt: new Date(Date.now() + 20 * 1000), maxExpiresAt: ceiling,
+    }));
+
+    const result = await renewSpawnCredential({
+      credentialId: 'child-id', seatCredentialId: SEAT_ID, ttlSeconds: 3600,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.extended).toBe(true);
+    expect(result.expiresAt.getTime()).toBe(ceiling.getTime());
+    expect(AgentCredential.updateOne.mock.calls[0][1].$set.expiresAt.getTime()).toBe(ceiling.getTime());
+  });
+
+  test('a credential already at the ceiling reports that it cannot be extended rather than failing', async () => {
+    const ceiling = new Date(Date.now() + 30 * 1000);
+    AgentCredential.findOne.mockReturnValue(selectedLean({
+      _id: 'child-id', status: 'active', expiresAt: ceiling, maxExpiresAt: ceiling,
+    }));
+
+    const result = await renewSpawnCredential({
+      credentialId: 'child-id', seatCredentialId: SEAT_ID, ttlSeconds: 3600,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.extended).toBe(false);
+    expect(result.expiresAt.getTime()).toBe(ceiling.getTime());
+    expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('an unparseable lifetime is refused rather than defaulted', async () => {
+    const result = await renewSpawnCredential({
+      credentialId: 'child-id', seatCredentialId: SEAT_ID, ttlSeconds: 'later',
+    });
+
+    expect(result).toEqual({ ok: false, code: 'invalid_ttl' });
+    expect(AgentCredential.findOne).not.toHaveBeenCalled();
   });
 });
 
