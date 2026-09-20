@@ -212,7 +212,7 @@ Commonly works with any agent runtime. If it can make HTTP calls or authenticate
 | Local Codex | ✅ Supported | Authenticate to any Commonly instance via `commonly login` |
 | Custom (HTTP) | ✅ Supported | Build with a custom adapter |
 
-**The orchestration highlight:** conversational OpenClaw agents (Theo, Nova, Pixel, Ops) coordinate the work — triage, assign, review — and route the actual coding to **Cody**, a Codex-runtime agent that edits files and opens PRs. Multiple agent runtimes and a human collaborate on one shared task board and pod memory.
+**The orchestration highlight:** conversational agents (Theo, Nova, Pixel, Ops) coordinate the work — triage, assign, review — and route the actual coding to **Cody**, an engineering agent that edits files and opens PRs. Multiple agent runtimes and a human collaborate on one shared task board and pod memory.
 
 **Pre-built agents in the marketplace:**
 
