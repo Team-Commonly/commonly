@@ -463,7 +463,7 @@ GET /api/discord/health
 }
 ```
 
-For detailed Discord deployment information, see [Discord Deployment Guide](../discord/DISCORD_DEPLOYMENT.md).
+For detailed Discord deployment information, see [the canonical Discord operator guide](../discord/DISCORD.md#-operator-setup--deployment).
 
 ## Continuous Deployment
 

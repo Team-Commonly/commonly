@@ -13,15 +13,14 @@ External service stub lives at `external/commonly-provider-services/discord-serv
 |----------|-------------|
 | [DISCORD.md](./DISCORD.md) | Main integration overview - slash commands, architecture, bot setup |
 | [DISCORD_APP_SETUP.md](./DISCORD_APP_SETUP.md) | Step-by-step guide to create Discord application and bot |
-| [DISCORD_SETUP.md](./DISCORD_SETUP.md) | User guide for setting up Discord integration |
-| [DISCORD_DEPLOYMENT.md](./DISCORD_DEPLOYMENT.md) | Automated command registration and deployment |
+| [DISCORD.md](./DISCORD.md#-operator-setup--deployment) | Canonical setup, route contract, command registration, and deployment guide |
 | [DISCORD_INTEGRATION_ARCHITECTURE.md](./DISCORD_INTEGRATION_ARCHITECTURE.md) | Technical architecture - API polling, unified sync |
 | [DISCORD_INTERACTION_STANDARDS.md](./DISCORD_INTERACTION_STANDARDS.md) | Discord API standards compliance |
 | [REGISTER_DISCORD_COMMANDS.md](./REGISTER_DISCORD_COMMANDS.md) | Guide for registering slash commands |
 
 ## Quick Start
 
-1. **New to Discord Integration?** Start with [DISCORD_SETUP.md](./DISCORD_SETUP.md)
+1. **New to Discord Integration?** Start with [DISCORD.md](./DISCORD.md#-setup--configuration)
 2. **Setting up the bot?** See [DISCORD_APP_SETUP.md](./DISCORD_APP_SETUP.md)
-3. **Deploying commands?** Check [DISCORD_DEPLOYMENT.md](./DISCORD_DEPLOYMENT.md)
+3. **Deploying commands?** Check [DISCORD.md](./DISCORD.md#-operator-setup--deployment)
 4. **Understanding architecture?** Read [DISCORD_INTEGRATION_ARCHITECTURE.md](./DISCORD_INTEGRATION_ARCHITECTURE.md)
