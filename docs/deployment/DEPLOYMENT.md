@@ -277,9 +277,7 @@ Commonly runs two K8s environments in the same cluster:
 
 Hostnames are routed through Cloudflare Tunnel to the shared NGINX ingress.
 
-- `app.commonly.me` → frontend (default)
-- `api.commonly.me` → backend (default)
-- `app.commonly.me` → frontend (the active hosted frontend)
+- `commonly.me` → frontend (the active hosted frontend)
 - `api.commonly.me` → backend (the active hosted API; use the `commonly-dev` namespace for dev operations)
 
 The former `*-dev.commonly.me` host aliases are not live. Do not use them in
