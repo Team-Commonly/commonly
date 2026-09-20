@@ -24,7 +24,7 @@ The charter measured at `03597262`. I re-measured at `bd801882`, and four of its
 | claim | charter | measured | note |
 |---|---|---|---|
 | `docs/` files mentioning moltbot/openclaw | 76 | **76** (86 with `clawdbot`) | `grep -rliE 'moltbot\|openclaw'`. The 10 extra `clawdbot`-only files are the same dead concept. |
-| `docs/` files on the dead `app-dev`/`api-dev` hostnames | 17 | **17** | |
+| `docs/` files on the dead `app-dev`/`api-dev` hostnames | 17 | **17** | The pattern was too narrow. Two more hosts answer with a bare nginx 404: `litellm-dev.commonly.me` (LITELLM.md ×2, litellm-claude-code.md ×1) and `app.commonly.me` (CAP.md ×2, inside a `commonly login --instance` command — the sharpest case — and DEPLOYMENT.md ×1). Live: `commonly.me` (frontend), `api.commonly.me` (API). Counted at the inventory's own measurement point, `bd801882`. Fixed in #1785 (merged) and #1787/#1791/#1788. The remaining hits are records (`domain-migration-commonly-me.md`, `retention-traction-onboarding-2026-07.md`), which describe the migration and stay as written. |
 | `docs/` files mentioning Gemini | 26 | **33** case-insensitive, 22 capitalised | Neither regex gives 26. |
 | `docs/` files on the "old attach flow" | 21 | **21** for `agent attach` | Ruled daemon-first (finding 1): 8 rewrite, 1 delete, 12 records. |
 | docs-site nav groups | 3 | **5** in the Docs tab, plus an API Reference tab | `docs-site/docs.json`. |
@@ -47,7 +47,7 @@ The owner sets don't overlap. Each writer touches only the rows that carry its n
 - **quill**: `README.md` only.
 - **folio**: every `docs-site/` rewrite row, including `docs-site/docs.json` for the nav restructure. The new connector, grant, daemon and adapter pages that restructure adds are folio's too.
 - **quire**: every `docs/` rewrite row. Runbooks and integration guides go first.
-- **otto**: supervisor and verifier. Owns every delete row, which waits for this PR to merge, plus the 13 orphan screenshots. Clears writer PRs, and re-verifies keeps at each CLI publish.
+- **otto**: supervisor and verifier. Owns every delete row, which waits for this PR to merge, plus the orphan screenshots (17 of them; see Images). Clears writer PRs, and re-verifies keeps at each CLI publish.
 - **Sam**: ADR status wording. ADRs are records and don't get rewritten. ADR-021 supersedes only ADR-010's Phase 2+ track (and the moltbot rows of CLAUDE.md's runtime table). The other ADRs that name openclaw lost a driver, not their decision.
 
 Work items by owner (rewrite + delete + ADR status lines): quire 48, otto 40, folio 21, quill 1, Sam 1.
@@ -64,7 +64,7 @@ Relative links were checked in all 226 rows: 6 are broken, and the table lists t
 
 ## Images
 
-This section sits outside the tally above, which counts docs only. The 8 page images get removed inside their page's rewrite PR; the 13 orphans go in otto's delete PR.
+This section sits outside the tally above, which counts docs only. The 8 page images get removed inside their page's rewrite PR; the orphans went in #1803 (merged).
 
 The first cut of this inventory counted only `docs-site/images/`, and that missed the README's source. The README pulls its screenshots from the root `screenshots/` directory (21 files). Wren read every image that the docs surfaces show (#1781 review). The problem is in the pixels, not just a missing harness stamp: they show the retired concepts.
 
@@ -78,9 +78,11 @@ The first cut of this inventory counted only `docs-site/images/`, and that misse
 | `docs-site/images/agents.png` | `concepts/agents.mdx` | OPENCLAW badges | **delete** now; replace from the harness last |
 | `docs-site/images/dev-team-chat.png` | `introduction.mdx`, `concepts/pods.mdx` | a Theo/Nova/Cody room | **delete** now; replace from the harness last |
 | `docs-site/images/pods-browse.png` | `introduction.mdx` | not a harness capture | **delete** with the intro rewrite; replace from the harness last |
-| 13 others in `screenshots/` (`agent-dm`, `current`, `demo-poster.jpg`, `feed`, `feed-fresh`, `landing`, `login`, `pod-chat`, `pod-chat-fresh`, `pods`, `task-board`, `team-pods`, `team-pods-fresh`) | nothing (`git grep` finds no reference anywhere in the repo) | — | **delete** |
+| 17 others in `screenshots/` (`agent-dm`, `agents`, `current`, `demo-poster.jpg`, `dev-team-chat`, `feed`, `feed-fresh`, `home-landing`, `landing`, `login`, `pod-chat`, `pod-chat-fresh`, `pods`, `pods-browse`, `task-board`, `team-pods`, `team-pods-fresh`) | nothing (path-qualified `git grep` finds no reference anywhere in the repo) | — | **delete** (#1803) |
 | `docs-site/logo/*`, `docs-site/favicon.png`, `frontend/src/assets/commonly-logo.png` | `docs.json`, `README.md` | brand marks | **keep** |
 | `docs/design/evidence/*.png` | the PRs and design notes that cite them | harness evidence | **keep** as records |
+
+Corrected 2026-09-20: this section first said 13 orphans. Four more — `agents`, `dev-team-chat`, `home-landing`, `pods-browse` — share a basename with the `docs-site/images/` copies, and a basename grep credited them with the `.mdx` pages' references; those pages reference `/images/…`, the docs-site files. **Path-qualify every reference check**: the same trap inflated a link sweep from 0 real hits to 37, because several surviving files are also named `README.md`.
 
 The rule this adds: an image that shows a retired concept is removed in the same rewrite PR that touches its page. That page ships without a picture until the harness phase. A stale screenshot teaches the wrong product faster than any paragraph can, and "screenshots last" governs when new pixels get added. It is not a reason to keep old ones up. Image deletes belong to the page's writer (quill for the README, folio for docs-site), and the table's image column carries them; the 13 unreferenced files go in otto's delete PR.
 
