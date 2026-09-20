@@ -47,10 +47,14 @@
  * `--self-test` exercises the verdict rule on fixtures so the trap is caught on
  * a machine where nothing is spawned, and exits non-zero if the rule regresses.
  *
- * Exit code: route 1 — 0 when every read produced a verdict, 1 when any read was
- * UNREADABLE (i.e. this host cannot answer the question for that process);
- * route 2 — 0 when the token is withheld, 1 when it is present; 2 on a bad
- * invocation.
+ * Exit codes — 2 on a bad invocation.
+ * Route 1: 0 when every read produced a verdict, 1 when any read was UNREADABLE
+ * (this host cannot answer the question for that process).
+ * Route 2: 0 when the token is withheld AND the report is placed (the `--seat` label
+ * is the seat argument of an ancestor, i.e. `commonly agent run <seat>`); 1 when this
+ * run cannot answer — the label is unverified, matches only as text, or no label was
+ * given; 3 when the token is present. A withheld verdict about a process nobody
+ * located is a non-answer, not a pass (wren 70600).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -60,7 +64,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport } = require('./lib/credential-env-read.js');
+const {
+  classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport, isPlaced, selfReportExit,
+} = require('./lib/credential-env-read.js');
 
 const KNOWN_FLAGS = new Set(['--all', '--seat', '--cli-pkg', '--self-test', '--self-report']);
 
@@ -179,14 +185,22 @@ function main() {
       console.error('refusing: --self-report reports THIS process and cannot be combined with --all');
       process.exit(2);
     }
-    const seat = args.seat || 'this seat';
+    const seat = args.seat || null;
+    const ancestry = ancestryOf(process.pid);
     console.log(describeSelfReport({
-      seat,
-      adapter: args.seat ? adapterOf(args.seat) : '?',
+      seat: seat || 'this seat',
+      adapter: seat ? adapterOf(seat) : '?',
       env: process.env,
-      ancestry: ancestryOf(process.pid),
+      ancestry,
     }));
-    process.exit(classifySelfReport(process.env).verdict === 'token_present' ? 1 : 0);
+    // Route 2 only answers when it is placed: a withheld verdict about a process
+    // nobody located is the same shape of non-answer as route 1's blind read, so it
+    // exits non-zero and says why (wren 70600).
+    const code = selfReportExit({ verdict: classifySelfReport(process.env).verdict, placed: isPlaced({ seat, ancestry }) });
+    if (code === 1) {
+      console.log('  UNPLACED: this report cannot say which seat it came from — re-run with --seat <name> from inside that seat (exit 1).');
+    }
+    process.exit(code);
   }
 
   let installTime = 0;

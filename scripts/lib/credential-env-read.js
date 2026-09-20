@@ -196,30 +196,52 @@ function describeSelfReport({ seat, adapter, env, ancestry = [], opts = {} }) {
 function seatEvidence(args, seat) {
   if (typeof args !== 'string' || !seat) return null;
   const tokens = args.split(/\s+/).filter(Boolean);
-  for (let i = 2; i < tokens.length; i += 1) {
-    if (tokens[i] === seat && tokens[i - 1] === 'run' && tokens[i - 2] === 'agent') return 'seat-argument';
+  for (let i = 3; i < tokens.length; i += 1) {
+    const cli = tokens[i - 3];
+    const sequence = tokens[i] === seat && tokens[i - 1] === 'run'
+      && tokens[i - 2] === 'agent' && (cli === 'commonly' || cli.endsWith('/commonly'));
+    if (!sequence) continue;
+    // The same four tokens can sit inside a prompt: a claude seat's ancestor is
+    // `claude -p <whole prompt>`, so pod text that quotes the launcher is enough to
+    // fake this shape. A prompt-bearing argv is therefore never the launcher
+    // (wren 70599), however convincing its tokens look. The trade-off is a false
+    // negative for a launcher that itself uses `exec` in its argv — the safe
+    // direction, since it delays a pass rather than fabricating one.
+    return /(^|\s)(-p|--print|exec)(\s|$)/.test(args) ? 'prompt-lookalike' : 'seat-argument';
   }
   return tokens.includes(seat) ? 'token' : null;
 }
 
-/** Where a route-2 report was made, and whether its label matches that place. */
-function describeAncestry({ seat, ancestry = [] }) {
-  if (!ancestry.length) return '';
+/**
+ * Where this report came from, as a strength rather than a yes/no.
+ * `seat-argument` is the launcher's own invocation and the only confirmation;
+ * everything else is reported for what it is.
+ */
+function placementOf({ seat, ancestry = [] }) {
+  if (!ancestry.length) return { strength: 'unknown' };
   const self = ancestry[0];
-  const chain = ancestry
-    .map((a) => `${a.pid}${a.username ? ` ${a.username}` : ''} ${shorten(a.args)}`)
-    .join(' <- ');
   const candidates = ancestry.filter((a) => a.pid !== self.pid && !isInvocation(a.args));
-  const strong = candidates.find((a) => seatEvidence(a.args, seat) === 'seat-argument');
-  const weak = candidates.find((a) => seatEvidence(a.args, seat) === 'token');
-  const label = !seat || seat === 'this seat'
-    ? 'seat label: none given'
-    : strong
-      ? `seat label "${seat}" is the seat argument of ancestor pid ${strong.pid} (${shorten(strong.args, 70)})`
-      : weak
-        ? `seat label "${seat}" appears only as a standalone token in ancestor pid ${weak.pid} (${shorten(weak.args, 70)}) — not the seat argument, so the label is NOT confirmed`
-        : `seat label "${seat}" does NOT appear in any ancestor argv — the label is unverified`;
-  return `  pid=${self.pid} ppid=${self.ppid} started under: ${chain}\n  ${label}`;
+  for (const strength of ['seat-argument', 'prompt-lookalike', 'token']) {
+    const hit = candidates.find((a) => seatEvidence(a.args, seat) === strength);
+    if (hit) return { strength, pid: hit.pid, args: hit.args };
+  }
+  return { strength: seat ? 'none' : 'unlabelled' };
+}
+
+/** True only for the launcher's own invocation: `commonly agent run <seat>`. */
+function isPlaced({ seat, ancestry = [] }) {
+  return placementOf({ seat, ancestry }).strength === 'seat-argument';
+}
+
+/**
+ * Route 2's exit code, in one place so the CLI and its test agree.
+ * 3 = the credential is present (a finding), 1 = this run cannot answer (the label
+ * is unverified, matched only as text, or the report carries no label), 0 = withheld
+ * and placed.
+ */
+function selfReportExit({ verdict, placed }) {
+  if (verdict === 'token_present') return 3;
+  return placed ? 0 : 1;
 }
 
 /**
@@ -229,6 +251,27 @@ function describeAncestry({ seat, ancestry = [] }) {
  */
 function isInvocation(args) {
   return typeof args === 'string' && args.includes('verify-seat-credential-delivery.mjs');
+}
+
+/**
+ * Where a route-2 report was made, and whether its label matches that place: the
+ * pid/ppid + argv chain, then the label verdict. A weak match says so and says it is
+ * not a confirmation, rather than being rendered as one.
+ */
+function describeAncestry({ seat, ancestry = [] }) {
+  if (!ancestry.length) return '';
+  const self = ancestry[0];
+  const chain = ancestry
+    .map((a) => `${a.pid}${a.username ? ` ${a.username}` : ''} ${shorten(a.args)}`)
+    .join(' <- ');
+  const p = placementOf({ seat, ancestry });
+  let label;
+  if (!seat) label = 'seat label: none given';
+  else if (p.strength === 'seat-argument') label = `seat label "${seat}" is the seat argument of ancestor pid ${p.pid} (${shorten(p.args, 70)})`;
+  else if (p.strength === 'prompt-lookalike') label = `seat label "${seat}" appears as \`commonly agent run ${seat}\` inside a PROMPT-BEARING argv (pid ${p.pid}) — that is a prompt quote, not the launcher, so the label is NOT confirmed`;
+  else if (p.strength === 'token') label = `seat label "${seat}" appears only as a standalone token in ancestor pid ${p.pid} (${shorten(p.args, 70)}) — not the seat argument, so the label is NOT confirmed`;
+  else label = `seat label "${seat}" does NOT appear in any ancestor argv — the label is unverified`;
+  return `  pid=${self.pid} ppid=${self.ppid} started under: ${chain}\n  ${label}`;
 }
 
 function shorten(text, max = 110) {
@@ -248,4 +291,7 @@ module.exports = {
   describeSelfReport,
   describeAncestry,
   seatEvidence,
+  placementOf,
+  isPlaced,
+  selfReportExit,
 };

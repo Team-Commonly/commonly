@@ -3834,12 +3834,18 @@ it was made — pid, ppid and the parent argv chain — and the `--seat` label i
 against that chain instead of asserted, because a self-report is evidence about *some*
 process, and a label the reporter never verifies is how the evidence ends up attributed
 to the supervisor rather than the adapter. The match has to be the launcher's own
-argument shape (`agent run <seat>`), and that is not pedantry: a substring match confirms
+argument shape (`commonly agent run <seat>`, and not inside a prompt-bearing argv —
+a claude ancestor is `claude -p <whole prompt>`, so pod text that quotes the launcher
+can fake the tokens), and that is not pedantry: a substring match confirms
 labels that are wrong — `--seat commonly`, `--seat run` and `--seat node` each "appear"
 in the supervisor's own command line — and a standalone token is not the seat either,
 since `pi` matches the pi adapter binary. A weak match is reported as *not confirmed*
-rather than as a pass, which is the same rule one level up: an instrument that cannot
-distinguish looks the same as one that can. Both routes check the criterion as
+rather than as a pass, and the run exits non-zero when it cannot place itself: a withheld
+verdict about a process nobody located is the same shape of non-answer as a blind read,
+so `--self-report` exits 1 unless the label is the launcher's own seat argument, and 3
+when the credential is present — a finding stays distinguishable from a non-answer. That
+is the same rule one level up: an instrument that cannot distinguish looks the same as
+one that can. Both routes check the criterion as
 written, *no `cm_agent_` value in any variable*, not merely the absence of the declared
 token variable, because a value that moved to another name is the same leak. Instrument:
 `scripts/verify-seat-credential-delivery.mjs` (route 1, `--self-report` for route 2)

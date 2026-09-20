@@ -23,7 +23,7 @@
 
 const {
   CONTROL_VAR, envEntries, classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport,
-  describeAncestry,
+  describeAncestry, isPlaced, selfReportExit,
 } = require('../../../../scripts/lib/credential-env-read');
 describe('seat credential delivery env reading', () => {
   test('an empty read is UNREADABLE, never a withheld token', () => {
@@ -132,6 +132,32 @@ describe('seat credential delivery env reading', () => {
     const wrong = describeSelfReport({ seat: 'otto', adapter: 'claude', env: { PATH: '/bin' }, ancestry: chain });
     expect(wrong).toMatch(/seat label "otto" does NOT appear in any ancestor argv/);
 
+    expect(isPlaced({ seat: 'kai', ancestry: chain })).toBe(true);
+
+    // wren 70599: a claude seat's ancestor is `claude -p <whole prompt>`, pod text
+    // included, so a label naming any seat the prompt mentions looks present. The
+    // prompt is not the launcher, and the four-token shape can be quoted inside it.
+    const promptAncestry = (promptTail) => [
+      { pid: 10, ppid: 9, args: 'node scripts/verify-seat-credential-delivery.mjs --seat kai --self-report' },
+      { pid: 9, ppid: 8, args: `claude -p You are kai in pod 6a8f6dc7. ${promptTail}` },
+    ];
+    const mentioned = describeAncestry({ seat: 'kai', ancestry: promptAncestry('Nobody typed your @name.') });
+    expect(mentioned).not.toMatch(/is the seat argument/);
+    expect(mentioned).toMatch(/standalone token in ancestor pid 9/);
+    expect(isPlaced({ seat: 'kai', ancestry: promptAncestry('x') })).toBe(false);
+    // Pod text quoting the launcher verbatim — the tokens line up, and only the
+    // prompt-bearing check keeps this from confirming.
+    const quoted = promptAncestry('the CLI is started by commonly agent run kai at boot');
+    expect(describeAncestry({ seat: 'kai', ancestry: quoted })).toMatch(/PROMPT-BEARING argv \(pid 9\)/);
+    expect(describeAncestry({ seat: 'kai', ancestry: quoted })).not.toMatch(/is the seat argument/);
+    expect(isPlaced({ seat: 'kai', ancestry: quoted })).toBe(false);
+    // The more usual quoting style breaks the token sequence anyway; both are
+    // reported as not confirmed rather than as a pass.
+    const ticked = promptAncestry('the CLI runs `commonly agent run kai` at boot');
+    expect(describeAncestry({ seat: 'kai', ancestry: ticked })).not.toMatch(/is the seat argument/);
+    expect(describeAncestry({ seat: 'kai', ancestry: ticked })).toMatch(/NOT confirmed/);
+    expect(isPlaced({ seat: 'kai', ancestry: ticked })).toBe(false);
+
     // vera 70596, reproduced live: `args.includes(seat)` confirms labels that are
     // wrong - `--seat commonly`, `--seat run`, `--seat node` all matched the
     // supervisor's own command line by substring. A name inside a path is not the
@@ -179,6 +205,15 @@ describe('seat credential delivery env reading', () => {
     expect(classifySelfReport({ PATH: '/bin', COMMONLY_TOKEN_FILE: '/tmp/spawn-1/credential' }).verdict).toBe('token_withheld');
   });
 
+  test('route 2 exits non-zero when it cannot place the report (wren 70600)', () => {
+    // A withheld verdict about a process nobody located is the same shape of
+    // non-answer as route 1's blind read, so it must not exit 0.
+    expect(selfReportExit({ verdict: 'token_withheld', placed: true })).toBe(0);
+    expect(selfReportExit({ verdict: 'token_withheld', placed: false })).toBe(1);
+    expect(selfReportExit({ verdict: 'token_present', placed: false })).toBe(3);
+    expect(selfReportExit({ verdict: 'token_present', placed: true })).toBe(3);
+  });
+
   test('the --self-report route is wired end to end, with the env passed explicitly', () => {
     // Route 2 is the route for seats whose child route 1 cannot read, so the flag
     // itself is part of the instrument. The child's env is passed explicitly:
@@ -190,7 +225,10 @@ describe('seat credential delivery env reading', () => {
     const withheld = spawnSync(process.execPath, [script, '--seat', 'test-seat', '--self-report'], {
       env: { ...base, COMMONLY_TOKEN_FILE: '/tmp/spawn-1/credential' }, encoding: 'utf8',
     });
-    expect(withheld.status).toBe(0);
+    // This test process is not a `commonly agent run` launcher, so the report is
+    // UNPLACED and the exit code is 1, not 0 — the case wren held the PR on.
+    expect(withheld.status).toBe(1);
+    expect(withheld.stdout).toMatch(/UNPLACED/);
     expect(withheld.stdout).toMatch(/route 2 \(self-report\) — token withheld/);
     expect(withheld.stdout).toMatch(/test-seat/);
     // The chain is read from the real process tree, so this asserts the reader
@@ -201,7 +239,7 @@ describe('seat credential delivery env reading', () => {
     const present = spawnSync(process.execPath, [script, '--seat', 'test-seat', '--self-report'], {
       env: { ...base, COMMONLY_AGENT_TOKEN: 'cm_agent_leaked' }, encoding: 'utf8',
     });
-    expect(present.status).toBe(1);
+    expect(present.status).toBe(3);
     expect(present.stdout).toMatch(/TOKEN PRESENT under COMMONLY_AGENT_TOKEN/);
     expect(present.stdout).not.toMatch(/cm_agent_leaked/);
   });
