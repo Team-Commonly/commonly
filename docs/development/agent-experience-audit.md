@@ -3826,8 +3826,14 @@ anyone notices.
 `withheld` requires a variable that must be present (`PATH` by default) in the same
 output, an empty read is reported as `UNREADABLE` (a statement about the instrument,
 not about the credential), and a *present* token needs no control because finding it
-is itself proof the read reached the block. Instrument:
-`scripts/verify-seat-credential-delivery.mjs` with `scripts/lib/credential-env-read.js`,
-unit-tested in `backend/__tests__/unit/scripts/credentialEnvRead.test.js`; its
-`--self-test` exits non-zero if the rule regresses. Rule: before a negative verdict
-about a process, prove the read was live — or say the instrument was blind.
+is itself proof the read reached the block. Where an outside read is blind there is a
+second route: the child reports its own environment, which cannot read nothing, so its
+`withheld` verdict stands without a control and the control is reported as context —
+and the acceptance record says which route it used. Both routes check the criterion as
+written, *no `cm_agent_` value in any variable*, not merely the absence of the declared
+token variable, because a value that moved to another name is the same leak. Instrument:
+`scripts/verify-seat-credential-delivery.mjs` (route 1, `--self-report` for route 2)
+with `scripts/lib/credential-env-read.js`, unit-tested in
+`backend/__tests__/unit/scripts/credentialEnvRead.test.js`; its `--self-test` exits
+non-zero if the rule regresses. Rule: before a negative verdict about a process, prove
+the read was live — or say the instrument was blind and name the route that can answer.

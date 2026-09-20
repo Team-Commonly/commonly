@@ -25,17 +25,26 @@
  * its unit test.
  *
  * Usage:
- *   node scripts/verify-seat-credential-delivery.mjs                 # seats spawned after this cli install
- *   node scripts/verify-seat-credential-delivery.mjs --all           # every seat supervisor
- *   node scripts/verify-seat-credential-delivery.mjs --seat otto     # one seat
+ *   node scripts/verify-seat-credential-delivery.mjs                 # route 1: seats spawned after this cli install
+ *   node scripts/verify-seat-credential-delivery.mjs --all           # route 1: every seat supervisor
+ *   node scripts/verify-seat-credential-delivery.mjs --seat otto     # route 1: one seat
+ *   node scripts/verify-seat-credential-delivery.mjs --seat otto --self-report   # route 2, labelled with the seat you ran it in
  *   node scripts/verify-seat-credential-delivery.mjs --self-test     # classifier fixtures, no process tree
+ *
+ * `--self-report` is route 2 (wren 70567/70575): run it from inside the seat's own
+ * sandbox and it reports that process's own environment. It is the route that works
+ * where route 1 is blind, and the acceptance record must name which route it used —
+ * "route 1" is a read proven live by a control variable, "route 2" is the child
+ * reporting itself. Route 2's withheld verdict is not gated on the control, because
+ * a process reading itself cannot read nothing.
  *
  * `--self-test` exercises the verdict rule on fixtures so the trap is caught on
  * a machine where nothing is spawned, and exits non-zero if the rule regresses.
  *
- * Exit code: 0 when every read produced a verdict, 1 when any read was
- * UNREADABLE (i.e. this host cannot answer the question for that process), 2 on
- * a bad invocation.
+ * Exit code: route 1 — 0 when every read produced a verdict, 1 when any read was
+ * UNREADABLE (i.e. this host cannot answer the question for that process);
+ * route 2 — 0 when the token is withheld, 1 when it is present; 2 on a bad
+ * invocation.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -45,17 +54,18 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { classifyEnvRead, describeVerdict } = require('./lib/credential-env-read.js');
+const { classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport } = require('./lib/credential-env-read.js');
 
-const KNOWN_FLAGS = new Set(['--all', '--seat', '--cli-pkg', '--self-test']);
+const KNOWN_FLAGS = new Set(['--all', '--seat', '--cli-pkg', '--self-test', '--self-report']);
 
 function parseArgs(argv) {
-  const out = { all: false, seat: null, cliPkg: '/opt/homebrew/lib/node_modules/@commonlyai/cli', selfTest: false, unknown: [] };
+  const out = { all: false, seat: null, cliPkg: '/opt/homebrew/lib/node_modules/@commonlyai/cli', selfTest: false, selfReport: false, unknown: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     if (!KNOWN_FLAGS.has(flag)) { out.unknown.push(flag); continue; }
     if (flag === '--all') out.all = true;
     else if (flag === '--self-test') out.selfTest = true;
+    else if (flag === '--self-report') out.selfReport = true;
     else {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) { out.unknown.push(`${flag} (missing value)`); continue; }
@@ -137,6 +147,15 @@ function main() {
     process.exit(2);
   }
   if (args.selfTest) process.exit(selfTest());
+  if (args.selfReport) {
+    if (args.all) {
+      console.error('refusing: --self-report reports THIS process and cannot be combined with --all');
+      process.exit(2);
+    }
+    const seat = args.seat || 'this seat';
+    console.log(describeSelfReport({ seat, adapter: args.seat ? adapterOf(args.seat) : '?', env: process.env }));
+    process.exit(classifySelfReport(process.env).verdict === 'token_present' ? 1 : 0);
+  }
 
   let installTime = 0;
   try { installTime = Math.round(statSync(args.cliPkg).mtimeMs / 1000); } catch { installTime = 0; }
@@ -162,7 +181,7 @@ function main() {
     }
   }
   if (unreadable) {
-    console.log(`\n${unreadable} read(s) UNREADABLE: this host cannot answer for those processes (sandboxed environment). Not evidence of withholding.`);
+    console.log(`\n${unreadable} read(s) UNREADABLE: the read returned no environment for those processes, so this route cannot answer for them. Not evidence of withholding — use --self-report from inside that seat.`);
     process.exit(1);
   }
   process.exit(0);

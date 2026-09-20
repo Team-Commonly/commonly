@@ -12,10 +12,17 @@
  * check as written returned the desired answer on an empty read. An empty read
  * must therefore be `unreadable`, and only a read proven live by a control
  * variable may ever produce `token_withheld`.
+ *
+ * Route 2 (the child reporting its own environment, `--self-report`) shares the
+ * parser and the verdict words but not the gate: a process reading itself cannot
+ * read nothing, so its withheld verdict stands without a control and the control is
+ * reported as context. Both routes test the criterion as written - no `cm_agent_`
+ * value under ANY variable name - so these tests cover a credential that moved to a
+ * name the check was not keyed on.
  */
 
 const {
-  CONTROL_VAR, envEntries, classifyEnvRead, describeVerdict,
+  CONTROL_VAR, envEntries, classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport,
 } = require('../../../../scripts/lib/credential-env-read');
 
 describe('seat credential delivery env reading', () => {
@@ -72,5 +79,67 @@ describe('seat credential delivery env reading', () => {
     expect(entries.has('PATH')).toBe(true);
     expect(entries.get('PATH')).toBe('/bin');
     expect(entries.has('2FAKE')).toBe(false);
+  });
+
+  test('route 1 flags a credential under an unexpected variable name too', () => {
+    // The criterion is "no cm_agent_ value in any child environment", not "the
+    // declared token variable is absent" - a value that moved to another name is
+    // the same leak, and a check keyed on one name would report withheld.
+    const r = classifyEnvRead('PATH=/bin COMMONLY_AGENT_SESSION=cm_agent_abc');
+    expect(r.verdict).toBe('token_present');
+    expect(r.credentialValueVars).toEqual(['COMMONLY_AGENT_SESSION']);
+    expect(classifyEnvRead('PATH=/bin').credentialValueVars).toEqual([]);
+  });
+
+  test('route 2 (self-report) does not gate a withheld verdict on the control', () => {
+    // A process reading itself cannot read nothing, so the control is context
+    // here, not a gate - the route-1 rule would call this unreadable.
+    const r = classifySelfReport({ COMMONLY_TOKEN_FILE: '/tmp/spawn-1/credential', HOME: '/Users/x' });
+    expect(r.verdict).toBe('token_withheld');
+    expect(r.controlPresent).toBe(false);
+    expect(r.filePresent).toBe(true);
+    expect(describeSelfReport({ seat: 'kai', adapter: 'pi', env: r && { COMMONLY_TOKEN_FILE: '/x' } })).toMatch(/route 2 \(self-report\) — token withheld/);
+  });
+
+  test('route 2 reports a present credential even with no control variable', () => {
+    // The mutation ledger found this one: without it, gating route 2's verdict on
+    // the control variable SURVIVED, because a withheld fixture answers the same
+    // either way. The direction that matters is a credential that IS there and a
+    // control that is not - it must be reported, not explained away.
+    expect(classifySelfReport({ COMMONLY_AGENT_TOKEN: 'cm_agent_x' }).verdict).toBe('token_present');
+    expect(classifySelfReport({ FOO: 'cm_agent_y' }).verdict).toBe('token_present');
+  });
+
+  test('route 2 finds the credential under any name, and says which one', () => {
+    const named = classifySelfReport({ PATH: '/bin', COMMONLY_AGENT_TOKEN: 'cm_agent_x' });
+    expect(named.verdict).toBe('token_present');
+    expect(named.credentialValueVars).toEqual(['COMMONLY_AGENT_TOKEN']);
+    const renamed = classifySelfReport({ PATH: '/bin', FOO: 'cm_agent_y' });
+    expect(renamed.verdict).toBe('token_present');
+    expect(describeSelfReport({ seat: 'otto', adapter: 'claude', env: { PATH: '/bin', FOO: 'cm_agent_y' } })).toMatch(/under FOO/);
+    // The declared file variable names a path, not a secret: it must not fail the check.
+    expect(classifySelfReport({ PATH: '/bin', COMMONLY_TOKEN_FILE: '/tmp/spawn-1/credential' }).verdict).toBe('token_withheld');
+  });
+
+  test('the --self-report route is wired end to end, with the env passed explicitly', () => {
+    // Route 2 is the route for seats whose child route 1 cannot read, so the flag
+    // itself is part of the instrument. The child's env is passed explicitly:
+    // mutating process.env here would not reach a spawned child.
+    const { spawnSync } = require('child_process');
+    const path = require('path');
+    const script = path.join(__dirname, '../../../../scripts/verify-seat-credential-delivery.mjs');
+    const base = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR };
+    const withheld = spawnSync(process.execPath, [script, '--seat', 'test-seat', '--self-report'], {
+      env: { ...base, COMMONLY_TOKEN_FILE: '/tmp/spawn-1/credential' }, encoding: 'utf8',
+    });
+    expect(withheld.status).toBe(0);
+    expect(withheld.stdout).toMatch(/route 2 \(self-report\) — token withheld/);
+    expect(withheld.stdout).toMatch(/test-seat/);
+    const present = spawnSync(process.execPath, [script, '--seat', 'test-seat', '--self-report'], {
+      env: { ...base, COMMONLY_AGENT_TOKEN: 'cm_agent_leaked' }, encoding: 'utf8',
+    });
+    expect(present.status).toBe(1);
+    expect(present.stdout).toMatch(/TOKEN PRESENT under COMMONLY_AGENT_TOKEN/);
+    expect(present.stdout).not.toMatch(/cm_agent_leaked/);
   });
 });
