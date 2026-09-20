@@ -128,7 +128,8 @@ beforeEach(() => {
 
 test('TASK-135: a grant change made in another client reaches a visible list', async () => {
   renderTools();
-  expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+  // Direction A rule 3 (main ba3306f5): the kicker reads `pod · granted 1h`; the word "ago" is gone.
+  expect(await screen.findByText(/granted 1h$/)).toBeInTheDocument();
 
   const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
   const before = reads();
@@ -139,7 +140,7 @@ test('TASK-135: a grant change made in another client reaches a visible list', a
 
 test('TASK-135: a reconnect re-reads, because an event fired while the socket was down is not replayed', async () => {
   renderTools();
-  expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+  expect(await screen.findByText(/granted 1h$/)).toBeInTheDocument();
 
   const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
   const before = reads();
