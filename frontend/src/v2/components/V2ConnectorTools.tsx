@@ -17,6 +17,7 @@ import { useRelativeNow } from '../hooks/useRelativeNow';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
+import { ActGlyph } from '../icons/glyphs';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -106,6 +107,18 @@ interface GithubAppIntegrationResponse {
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
+
+/** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
+export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
+  const timestamp = date ? new Date(date).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
+  if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
+  return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+};
 
 export const relativeTime = (date?: string | null, now: number = Date.now()): string => {
   if (!date) return '—';
@@ -479,7 +492,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
-    const when = t('tools.grantedWhen', { defaultValue: 'granted {{rel}}', rel: relativeTime(grant.createdAt, now) });
+    // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
+    const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
+    const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
     const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
       ? (grant.revokedAt
@@ -487,7 +502,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
           : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
-      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })} · ${asksFirst(grant)}`;
+      // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
+      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })}`;
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
@@ -503,6 +519,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <span>{label}</span>
           </span>
           <span className="v2-connector-row__details">
+            <span className="v2-connector-row__kicker">
+              {kicker}
+              {!dead && <span className="v2-connector-row__kicker-mode"> · {asksFirst(grant)}</span>}
+            </span>
             <strong>
               {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
               {t('tools.grantedTo', { defaultValue: 'granted to' })} <b>{grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</b>
@@ -513,7 +533,6 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               {line2}
             </span>
           </span>
-          <span className="v2-connector-row__when">{when}</span>
         </button>
         {dead && entry && isGranter(grant) ? (
           // Grant again is the granter's too (Wren 67920): the mint 403s anyone but the Connection's owner.
@@ -521,8 +540,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             {t('tools.grantAgain', { defaultValue: 'Grant again' })}
           </button>
         ) : (
-          <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => { setSelectedId(grant.grantId); setDraft(null); setConfirmRevoke(null); }}>
-            {t('tools.manage', { defaultValue: 'Manage' })}
+          // Direction A rule 2: Manage is housekeeping beside the row's word, so it is the gear.
+          <button
+            type="button"
+            className="v2-connector-row__action v2-connector-row__action--secondary v2-connector-row__action--icon"
+            title={t('tools.manage', { defaultValue: 'Manage' })}
+            aria-label={t('tools.manage', { defaultValue: 'Manage' })}
+            onClick={() => { setSelectedId(grant.grantId); setDraft(null); setConfirmRevoke(null); }}
+          >
+            <ActGlyph name="manage" />
           </button>
         )}
       </article>
@@ -540,6 +566,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <span>{entry.label}</span>
         </span>
         <span className="v2-connector-row__details">
+          <span className="v2-connector-row__kicker">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
           <strong>{entry.description}</strong>
           <span className="v2-connector-row__detail">
             {!entry.available
@@ -549,7 +576,6 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
                 : t('tools.readOrWrite', { defaultValue: 'read, or read and write' })}
           </span>
         </span>
-        <span className="v2-connector-row__when">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
         {!entry.available && (
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
             {t('tools.ask', { defaultValue: 'Ask' })}
@@ -768,8 +794,15 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
                   {t('tools.changeAccess', { defaultValue: 'Change access' })}
                 </button>
               )}
-              <button type="button" className="v2-connector-aside__secondary" onClick={() => setConfirmRevoke(grant.grantId)}>
-                {t('tools.revoke', { defaultValue: 'Revoke' })}
+              {/* Direction A rule 2: Revoke is the non-deciding act beside Change access, so it is the ✕ (the Deny precedent); it still asks to confirm. */}
+              <button
+                type="button"
+                className="v2-connector-aside__secondary v2-connector-aside__icon"
+                title={t('tools.revoke', { defaultValue: 'Revoke' })}
+                aria-label={t('tools.revoke', { defaultValue: 'Revoke' })}
+                onClick={() => setConfirmRevoke(grant.grantId)}
+              >
+                <ActGlyph name="deny" />
               </button>
             </div>
           ))}

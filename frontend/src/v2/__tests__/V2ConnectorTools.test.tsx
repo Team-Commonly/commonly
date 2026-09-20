@@ -108,10 +108,10 @@ test('TASK-131: a grant age advances in place, and a returning tab re-reads, wit
   jest.useFakeTimers();
   try {
     renderTools();
-    expect(await screen.findByText('granted 1h ago')).toBeInTheDocument();
+    expect(await screen.findByText(/granted 1h$/)).toBeInTheDocument();
 
     await act(async () => { jest.advanceTimersByTime(60 * 60_000); });
-    expect(screen.getByText('granted 2h ago')).toBeInTheDocument();
+    expect(screen.getByText(/granted 2h$/)).toBeInTheDocument();
 
     const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/pods/p1/grants').length;
     const before = reads();
@@ -156,8 +156,11 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   const live = screen.getByRole('button', { name: 'View GitHub in Launch pod' });
   expect(within(live).getByText('Launch pod')).toBeInTheDocument();
   expect(within(live).getByText('sam')).toBeInTheDocument();
-  expect(within(live).getByText('Scout may use it · every write asks first')).toBeInTheDocument();
-  expect(within(live).getByText('granted 1h ago')).toBeInTheDocument();
+  // Direction A: the audience is the sentence; the write mode is the glyph (label) and rides the 390 kicker as words.
+  expect(within(live).getByText('Scout may use it')).toBeInTheDocument();
+  expect(within(live).getByRole('img', { name: /asks|write/ })).toBeInTheDocument();
+  expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
+  expect(within(live).getByText(/granted 1h$/)).toBeInTheDocument();
   const liveDot = live.querySelector('.v2-connector-row__dot');
   expect(liveDot).toHaveClass('v2-connector-row__dot--live');
   await waitFor(() => expect(liveDot).toHaveClass('v2-connector-row__dot--pulse'));
@@ -169,6 +172,13 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   expect(screen.queryByText('not granted')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(2);
+  // Direction A: Manage is the gear (word in title + aria-label), and the age rides the kicker.
+  for (const manage of screen.getAllByRole('button', { name: 'Manage' })) {
+    expect(manage).toHaveClass('v2-connector-row__action--icon');
+    expect(manage.textContent).toBe('');
+  }
+  expect(document.querySelector('.v2-connector-row__when')).toBeNull();
+  expect(document.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/ · granted /);
 });
 
 test('the aside reads the grant and the trail: agents, allow-list under its mode, what asks first, three counts, outcomes as words', async () => {
@@ -225,7 +235,8 @@ test('TASK-050: a human member in the audience is named, not called "an agent"',
   });
   renderTools();
   const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
-  expect(within(live).getByText('sam, Scout may use it · every write asks first')).toBeInTheDocument();
+  expect(within(live).getByText('sam, Scout may use it')).toBeInTheDocument();
+  expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
   expect(screen.queryByText(/an agent/)).not.toBeInTheDocument();
 
   fireEvent.click(live);

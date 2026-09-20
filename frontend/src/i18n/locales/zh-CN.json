@@ -1850,7 +1850,20 @@
     "createPod": "创建 Pod",
     "creating": "创建中…",
     "createTelegram": "新建 Telegram 连接器",
-    "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
+    "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。",
+    "add": "添加",
+    "noPod": "无 Pod",
+    "notYetKicker": "暂未支持",
+    "kickerAttention": "提醒",
+    "kickerMirror": "镜像",
+    "kickerOff": "中继已关",
+    "age": {
+      "added": "{{age}}前添加",
+      "started": "{{age}}前开始",
+      "since": "{{age}}前起",
+      "paused": "{{age}}前暂停",
+      "slackAnswered": "Slack 于{{age}}前回应"
+    }
   },
   "artifacts": {
     "title": "产物",
@@ -1885,5 +1898,16 @@
     "empty": "还没有共享内容。在任意 Pod 里附加文件，就会出现在这里。",
     "emptyFiltered": "没有匹配项。清除筛选或搜索。",
     "loadFailed": "无法加载产物。"
+  },
+  "tools": {
+    "grantedAge": "{{age}}前授予"
+  },
+  "time": {
+    "age": {
+      "justNow": "刚刚",
+      "minutes": "{{n}}分钟",
+      "hours": "{{n}}小时",
+      "days": "{{n}}天"
+    }
   }
 }

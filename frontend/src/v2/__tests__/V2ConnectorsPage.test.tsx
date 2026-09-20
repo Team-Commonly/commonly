@@ -91,6 +91,24 @@ describe('V2ConnectorsPage', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  it('Direction A: a linked row carries a mono kicker, a relay mark with its sentence in the label, and Manage as the gear', async () => {
+    mockGets([connectors[1]]);
+    renderPage();
+    const manage = await screen.findByRole('button', { name: 'Manage' });
+    expect(manage).toHaveClass('v2-connector-row__action--icon');
+    expect(manage).toHaveAttribute('title', 'Manage');
+    expect(manage.textContent).toBe('');
+    expect(manage.querySelector('svg')).not.toBeNull();
+    const row = manage.closest('.v2-connector-row');
+    expect(row?.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/ · added /);
+    const mark = row?.querySelector('.v2-connector-row__mark');
+    expect(mark).not.toBeNull();
+    expect(mark).toHaveAttribute('role', 'img');
+    expect(mark?.getAttribute('aria-label')).toMatch(/attention|every agent line|relay off/);
+    expect(row?.querySelector('.v2-connector-row__kicker-mode')?.textContent).toMatch(/attention|mirror|relay off/);
+    expect(row?.querySelector('.v2-connector-row__when')).toBeNull();
+  });
+
   it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
     // Fake the clock so the minute tick is deterministic. The fixture's age
     // only moves if the page re-renders it, which is the defect being pinned.
@@ -100,10 +118,10 @@ describe('V2ConnectorsPage', () => {
       mockGets([{ ...connectors[1], createdAt: fiveMinutesAgo, updatedAt: fiveMinutesAgo }]);
       renderPage();
 
-      await screen.findByText('added 5m ago');
+      await screen.findByText(/added 5m$/);
 
       await act(async () => { jest.advanceTimersByTime(2 * 60_000); });
-      expect(screen.getByText('added 7m ago')).toBeInTheDocument();
+      expect(screen.getByText(/added 7m$/)).toBeInTheDocument();
 
       const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length;
       const before = reads();
@@ -499,7 +517,7 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('GitHub')).toBeNull();
       expect(screen.queryByText('Issues and pull requests.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
-      expect(screen.getAllByRole('button', { name: 'Choose a pod' })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
     });
 
     it('renders an unavailable provider with Ask and an available one with Choose a pod', async () => {
@@ -513,7 +531,7 @@ describe('V2ConnectorsPage', () => {
       expect(await screen.findByText('Not enabled on this instance.')).toBeInTheDocument();
       expect(screen.getByText('ask your operator')).toBeInTheDocument();
       expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
-      expect(screen.getByText('not connected')).toBeInTheDocument();
+      expect(screen.getByText(/not connected/)).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
       const ask = screen.getAllByRole('link', { name: 'Ask' }).find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
       expect(ask).toBeDefined();
@@ -521,7 +539,7 @@ describe('V2ConnectorsPage', () => {
       expect(ask).toHaveClass('v2-connector-row__action--secondary');
       expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
       expect(ask.closest('.v2-connector-row')?.querySelector('.v2-connector-row__detail')).toHaveTextContent('ask your operator');
-      const choosePod = screen.getAllByRole('button', { name: 'Choose a pod' });
+      const choosePod = screen.getAllByRole('button', { name: 'Add' });
       expect(choosePod).toHaveLength(1);
       fireEvent.click(choosePod[0]);
       expect(screen.getByRole('button', { name: 'Telegram' })).toHaveClass('v2-connectors__provider--selected');
@@ -538,7 +556,7 @@ describe('V2ConnectorsPage', () => {
       mockCatalog([entry()]);
       renderPage();
 
-      const choosePod = await screen.findByRole('button', { name: 'Choose a pod' });
+      const choosePod = await screen.findByRole('button', { name: 'Add' });
       expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
 
       fireEvent.click(choosePod);
@@ -666,7 +684,7 @@ describe('V2ConnectorsPage', () => {
       renderPage();
 
       expect((await screen.findAllByText('Paused by an administrator. Spam report under review.')).length).toBeGreaterThan(0);
-      expect(screen.getByText('paused 2m ago')).toBeInTheDocument();
+      expect(screen.getByText(/paused 2m$/)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
       expect(screen.queryByRole('checkbox', { name: 'Relay' })).toBeNull();
