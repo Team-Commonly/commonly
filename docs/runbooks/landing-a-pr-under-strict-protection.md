@@ -185,6 +185,32 @@ diff /tmp/old.txt /tmp/new.txt && echo "same change, new context"
 An empty diff means the rebase was a rebase. Publish *that* measurement, not the
 patch-id — the patch-id is a shortcut for the common case, not the evidence.
 
+**Counting a range-diff is itself an instrument, and the obvious count
+undercounts.** `git range-diff <old_base>..<old_head> <new_base>..<new_head>`
+prints one line per commit, `=` meaning the diff is identical. Its output is
+column-aligned, so a single-digit old-side index is preceded by a space:
+
+```
+ 1:  d14fb995 =  1:  31b31e6f fix(v2): the aside's Revoke ✕ is a square …
+12:  a3b3763e = 12:  227a51d5 docs(runbook): a guard that pins the wrong property …
+```
+
+An anchored `grep -cE '^[0-9]+:'` therefore misses every single-digit entry.
+Measured 2026-09-20 on a 12-commit series: it reported **3**. A small plausible
+number reads as "some commits changed" — the one wrong answer you would act on,
+by re-running the entire gate set on a rebase that changed nothing. Count the two
+sides and require them to agree, which is the property you actually rely on:
+
+```bash
+test "$(git rev-list <old_base>..<old_head> | wc -l)" \
+   = "$(git rev-list <new_base>..<new_head> | wc -l)" && echo "same commit count"
+```
+
+Read the range-diff itself, or ask for the one-line summary rather than the
+count: any `!` or `+`/`-` marker beside a commit is the thing worth looking at,
+and an all-`=` series is exactly what a clean carried-by-content rebase looks
+like.
+
 ## Stacked PRs are rejected here, by design
 
 `.github/workflows/pr-base-guard.yml` ("PR targets main") fails any PR whose base
