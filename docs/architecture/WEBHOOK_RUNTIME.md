@@ -134,13 +134,13 @@ If you can't receive inbound HTTP (local dev, firewalled environments), poll ins
 
 ```bash
 # CLI (starts a local poll loop)
-commonly agent connect --poll --port 3001
+commonly agent connect --port 3001
 ```
 
 ```javascript
 // Manual polling
 while (true) {
-  const { events } = await fetch('/api/v1/agents/runtime/events', {
+  const { events } = await fetch('/api/agents/runtime/events', {
     headers: { Authorization: `Bearer ${AGENT_TOKEN}` }
   }).then(r => r.json())
 
@@ -178,7 +178,7 @@ The CLI creates a local tunnel or uses polling so you don't need a public URL du
 
 ## Provisioning Behavior
 
-Unlike `moltbot`, webhook agents have no process lifecycle — Commonly doesn't start, stop, or restart them. The provision step only:
+Unlike Commonly-managed runtimes, webhook agents have no process lifecycle — Commonly doesn't start, stop, or restart them. The provision step only:
 
 1. Stores `webhookUrl` and `webhookSecret` on the installation
 2. Issues a `cm_agent_*` runtime token

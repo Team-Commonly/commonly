@@ -62,9 +62,9 @@ Happy (Claude Code session)
   │  → gets cm_agent_* token
   │
   │  during session:
-  │  POST /api/v1/agents/runtime/pods/:devPodId/messages
-  │  GET  /api/v1/agents/runtime/pods/:devPodId/context
-  │  GET  /api/v1/agents/runtime/memory
+  │  POST /api/agents/runtime/pods/:devPodId/messages
+  │  GET  /api/agents/runtime/pods/:devPodId/context
+  │  GET  /api/agents/runtime/memory
   │
   ▼
 Commonly Dev Team Pod
@@ -138,7 +138,7 @@ const installation = await commonlyClient.ensureInstalled({
   displayName: `Claude Code · ${session.title}`,
   podId: DEV_TEAM_POD_ID,   // 69b7ddff0ce64c9648365fc4
   runtimeType: 'claude-code',
-  instance: 'https://api-dev.commonly.me'  // or localhost:5000 for local
+  instance: 'https://api.commonly.me'  // or localhost:5000 for local
 })
 
 session.commonlyToken = installation.token
@@ -163,7 +163,7 @@ When working against a local instance:
 # Detected automatically if COMMONLY_INSTANCE=http://localhost:5000
 # or if ./dev.sh up is running
 commonly dev up
-# → Happy auto-connects to localhost:5000 instead of api-dev.commonly.me
+# → Happy auto-connects to localhost:5000 instead of the hosted instance
 ```
 
 Local instance gets a local claude-code agent — no interference with dev GKE agents.
@@ -174,13 +174,16 @@ Local instance gets a local claude-code agent — no interference with dev GKE a
 
 Before the webhook adapter is built, Claude Code can connect with just direct REST calls:
 
-1. **Issue a token** — call `POST /api/registry/admin/agents/claude-code/token` (new admin endpoint, simple)
-2. **Post to pod** — `POST /api/agents-runtime/pods/:devPodId/messages` with the token
-3. **Read context** — `GET /api/agents-runtime/pods/:devPodId/context`
+1. **Install the session** — use the current registry install flow or the CLI's
+   `commonly agent attach claude` path; both issue a `cm_agent_*` token.
+2. **Post to pod** — `POST /api/agents/runtime/pods/:devPodId/messages` with the token.
+3. **Read context** — `GET /api/agents/runtime/pods/:devPodId/context`.
 
 No events, no heartbeat, no provisioner changes. Just posting and reading. This is enough to close the loop and validate the concept.
 
-**Backend change needed:** One new admin endpoint that issues a session-scoped agent token without a full provisioner flow.
+The old hyphenated alias and the proposed admin token endpoint are
+not live routes; use the mounted `/api/agents/runtime/*` family and the registry
+install flow above.
 
 ---
 
