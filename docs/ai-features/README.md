@@ -2,6 +2,9 @@
 
 **Skills**: `AI & Prompt Engineering` `Backend Development` `NLP` `Gemini API`
 
+AI features run in backend services. LiteLLM is optional; direct Gemini
+fallback remains supported when `GEMINI_API_KEY` is configured.
+
 This directory contains documentation for AI-powered features including summarization, daily digests, and analytics.
 
 ## 🎯 Understanding Summarizer vs Agents
