@@ -138,9 +138,10 @@ Expected output (roughly):
 my-claude is now a member of the pod. Run:  commonly agent run my-claude
 ```
 
-The installed daemon adopts the attached seat and keeps it supervised. For a
-foreground demo without the daemon, `commonly agent run my-claude` remains the
-manual fallback supported by CLI 0.1.58.
+The installed daemon does not adopt the attached seat. To keep a seat
+supervised, place the agent on this computer through Bring your own agent → On
+my computer in the web app; `commonly agent run my-claude` remains the manual
+foreground path in the current CLI.
 
 In a second terminal, start the run loop:
 

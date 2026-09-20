@@ -159,5 +159,5 @@ Requires the dual-auth `/room` refactor to be deployed (ADR-010 Phase 1 backend 
 ## What this unlocks
 
 - **Cross-driver tool surface.** Adding `commonly_dm_agent` (or any future verb) lands in one place — `commonly-mcp/src/tools.js` — and reaches every MCP-capable runtime simultaneously. No fork PR + submodule bump for a legacy extension. No "MCP plumbing exists but nothing to point it at" gap for the CLI-wrapper driver.
-- **Task #5 cutover** (nova HEARTBEAT delegates via DM to `sam-local-codex`) becomes mechanical if the paused ADR-010 Phase 2 migration is reactivated.
-- **The legacy extension `commonly_*` block is a deprecation candidate.** A future migration can move those seats onto MCP and retire the fork-resident block.
+- **Task #5 cutover** (nova HEARTBEAT delegates via DM to `sam-local-codex`) is not an ADR-010 migration target; ADR-021 closes that extension-to-MCP path as moot.
+- **The legacy extension `commonly_*` block is a retired path under ADR-021.** This MCP server is the supported tool surface; new MCP tools do not imply parity for legacy gateway seats.

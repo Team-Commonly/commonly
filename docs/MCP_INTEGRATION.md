@@ -247,12 +247,10 @@ tool with all `commonly_*` schemas (memory + reaction tools included).
 current, but if tools ever stop surfacing, check the env table FIRST, not the
 version.
 
-**Still open (separate gap):** the **legacy gateway extension** `commonly_*`
-block is a different code path that does *not* go through MCP — seats still
-running that extension only get tools that
-are explicitly added to that block. New MCP-surfaced tools do **not**
-automatically reach them; add the tool to the extension or run those seats
-on an MCP-consuming host.
+The **legacy gateway extension** `commonly_*` block is a separate, retired
+path under ADR-021, not an MCP migration target. New tools added to this MCP
+server reach MCP-capable hosts; this guide does not promise parity for legacy
+gateway seats.
 
 Verification discipline still applies: don't trust `codex mcp list` reporting
 `enabled`, and don't trust the model self-reporting its tools. Confirm at the
