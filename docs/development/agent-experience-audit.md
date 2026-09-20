@@ -3791,3 +3791,65 @@ paragraph where the consumer is not. Rule: when a doc exists to explain a
 failure that a bare dependency error will produce, put the pointer at the
 failure, not only in the doc — and state removals as measured boundaries, not as
 the version of the machine you happened to hit them on.
+
+## 58. An acceptance that reads nothing reports success (2026-09-20, kai)
+
+*Origin observation: the deferred post-deploy acceptance for the credential-delivery
+change (#1801); verification: `ps eww` on this box, 2026-09-20 — the same command
+returned 8606 bytes with `PATH=` present for a live codex adapter child and 2166
+bytes for its MCP child, 1.2–1.7 KB for `/opt/homebrew/bin/node` and
+`/usr/bin/python3`, and argv only for `/bin/sleep` (75 bytes), `/bin/bash -c` (70),
+`/usr/bin/tail` (88), the `npm exec` shim (96) and the live pi adapter child (86) —
+including a `sleep` spawned *by* the readable `python3`, so the spawner is not the
+discriminator. `sudo` changed none of it.*
+
+The acceptance for #1801 is "read the spawned adapter child's environment and
+confirm the runtime token is not in it". `ps eww` returns no environment at all for
+some processes — and it does not say so — so the check as written could not
+distinguish "the token was withheld" from "the instrument saw nothing", and it
+reported the former, which is the answer everyone wanted. The failure has no
+signature in its own output: an empty read and a withheld token look identical, and
+the empty read is the one that looks like success. Other processes on the same
+command read in full, so the instrument was not obviously broken — only blind for
+the process the claim happened to be about. **The cause is not established**: an
+earlier draft of this entry blamed the seatbelt sandbox the adapters use, and a
+codex adapter child reading in full on the same host — with nothing under
+`sandbox-exec` in its tree — contradicts that. What is measured is that the read is
+per process, and that the blind case is silent.
+
+Nothing about this is macOS-specific: any negative assertion (`absent`, `empty`,
+`unchanged`, `no leak`) over a read that can silently return nothing has the same
+failure mode, and the more the negative is the desired result, the less likely
+anyone notices.
+
+**Repair:** every env-reading acceptance positive-controls its read — a verdict of
+`withheld` requires a variable that must be present (`PATH` by default) in the same
+output, an empty read is reported as `UNREADABLE` (a statement about the instrument,
+not about the credential), and a *present* token needs no control because finding it
+is itself proof the read reached the block. Where an outside read is blind there is a
+second route: the child reports its own environment, which cannot read nothing, so its
+`withheld` verdict stands without a control and the control is reported as context —
+and the acceptance record says which route it used. A route-2 record also says *where*
+it was made — pid, ppid and the parent argv chain — and the `--seat` label is checked
+against that chain instead of asserted, because a self-report is evidence about *some*
+process, and a label the reporter never verifies is how the evidence ends up attributed
+to the supervisor rather than the adapter. The match has to be the launcher's own
+argument shape (`commonly agent run <seat>`, and not inside a prompt-bearing argv —
+a claude ancestor is `claude -p <whole prompt>`, so pod text that quotes the launcher
+can fake the tokens), and that is not pedantry: a substring match confirms
+labels that are wrong — `--seat commonly`, `--seat run` and `--seat node` each "appear"
+in the supervisor's own command line — and a standalone token is not the seat either,
+since `pi` matches the pi adapter binary. A weak match is reported as *not confirmed*
+rather than as a pass, and the run exits non-zero when it cannot place itself: a withheld
+verdict about a process nobody located is the same shape of non-answer as a blind read,
+so `--self-report` exits 1 unless the label is the launcher's own seat argument, and 3
+when the credential is present — a finding stays distinguishable from a non-answer. That
+is the same rule one level up: an instrument that cannot distinguish looks the same as
+one that can. Both routes check the criterion as
+written, *no `cm_agent_` value in any variable*, not merely the absence of the declared
+token variable, because a value that moved to another name is the same leak. Instrument:
+`scripts/verify-seat-credential-delivery.mjs` (route 1, `--self-report` for route 2)
+with `scripts/lib/credential-env-read.js`, unit-tested in
+`backend/__tests__/unit/scripts/credentialEnvRead.test.js`; its `--self-test` exits
+non-zero if the rule regresses. Rule: before a negative verdict about a process, prove
+the read was live — or say the instrument was blind and name the route that can answer.
