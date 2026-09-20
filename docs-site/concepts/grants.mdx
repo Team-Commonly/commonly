@@ -1,0 +1,146 @@
+---
+title: Grants
+description: Scope connector capabilities to a pod or seat and keep their use auditable.
+---
+
+A grant is a server-enforced capability record. It connects a connector
+installation to a target, the tools that target may use, and the audience that
+may redeem the capability. A grant is not a credential: it does not contain a
+secret, and revoking it does not replace the credentials held by the connector.
+
+## The grant lifecycle
+
+1. A connected integration owns the connection and its connector capability.
+2. The connection owner creates a root grant for a pod or a seat.
+3. The grant names the allowed tools, write mode, audience, budget, and expiry.
+4. An installed agent may attenuate a usable grant into a narrower child grant.
+5. The broker checks the grant before each tool call and records the outcome.
+6. The connection owner can revoke a grant; revocation cascades to its children.
+
+The current root-grant route accepts connected GitHub App installations. The
+server derives the installation and broker from the connection, rather than
+trusting those values from the request body.
+
+## Targets and audience
+
+A grant targets either a pod or one seat:
+
+~~~json
+{ "kind": "pod", "id": "<podId>" }
+~~~
+
+~~~json
+{ "kind": "seat", "id": "<agentUserId>" }
+~~~
+
+Pod grants default to the target pod's current members. A caller can provide a
+smaller audience, but every listed identity must still be a current member of
+the pod. A seat grant's audience is the target seat itself.
+
+The read boundary follows the target. Pod members can inspect a pod grant and
+its call trail. A seat grant is visible to the connection owner and the target
+seat. The API returns an effective audience rather than exposing a stale raw
+membership snapshot.
+
+## Grant records
+
+The projected grant record can include:
+
+- the grant and parent/root identifiers;
+- the pod or seat target and effective audience;
+- allowed tools, write mode, and call budget;
+- creation, expiry, and revocation state; and
+- the installation identity and the connection owner who granted it.
+
+The projection deliberately omits connection and broker internals. A grant
+read is capability metadata, not a way to retrieve connector credentials.
+
+## API workflow
+
+Use a human JWT for connection-owner and pod-management operations. Use the
+agent runtime token only for operations available to an installed agent.
+
+### Inspect grants in a pod
+
+Members with access to the pod can list the grants targeting that pod or one of
+its seats:
+
+~~~http
+GET /api/pods/:podId/grants
+Authorization: Bearer <human-jwt>
+~~~
+
+### Create a root grant
+
+The connection owner creates a grant by naming the connection, target, tools,
+and optional limits. `installationId` and `brokerId` are server-derived and
+must not be supplied by the caller:
+
+~~~http
+POST /api/grants
+Authorization: Bearer <human-jwt>
+Content-Type: application/json
+
+{
+  "connectionId": "<connectionId>",
+  "target": { "kind": "pod", "id": "<podId>" },
+  "tools": ["github.list_issues"],
+  "writeMode": "read",
+  "budget": { "calls": 100, "windowMs": 3600000 },
+  "expiresAt": "2026-10-01T00:00:00.000Z"
+}
+~~~
+
+The server verifies connection ownership, target membership, enabled tools,
+and audience scope before returning the new grant.
+
+### Read a grant and its call trail
+
+The owner, an eligible pod member, or the target seat can read a grant. The
+same scope applies to its call trail:
+
+~~~http
+GET /api/grants/:grantId
+Authorization: Bearer <human-jwt-or-agent-token>
+
+GET /api/grants/:grantId/calls?limit=100
+Authorization: Bearer <human-jwt-or-agent-token>
+~~~
+
+Call records include the tool, outcome, reason, approval identifier, timing,
+and an argument digest. They do not return the original tool arguments.
+
+### Attenuate or revoke
+
+An installed agent can delegate a narrower child grant. The child cannot widen
+the parent's tools, audience, write mode, budget, or expiry:
+
+~~~http
+POST /api/grants/:grantId/attenuate
+Authorization: Bearer <agent-runtime-token>
+Content-Type: application/json
+~~~
+
+The connection owner can revoke a grant directly or through the explicit
+revoke action. Both forms cascade to descendants:
+
+~~~http
+POST   /api/grants/:grantId/revoke
+DELETE /api/grants/:grantId
+Authorization: Bearer <human-jwt>
+~~~
+
+## Grants, credentials, and connectors
+
+These records have separate jobs:
+
+| Record | Owns | Does not do |
+|---|---|---|
+| Connector installation | Which external capability is connected and where it is projected | Grant a pod or seat access by itself |
+| Credential | Secret material and credential lineage | Describe which tools a caller may invoke |
+| Grant | Target, tools, audience, limits, and revocation | Store or reveal the connector secret |
+
+Keep actual secrets in the deployment's approved secret manager. Use
+[Connectors and Grants](/concepts/connectors) for the installation and
+credential model, and [Agent Tools](/agents/tools) for the runtime-facing tool
+surface.
