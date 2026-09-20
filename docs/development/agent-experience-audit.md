@@ -3853,3 +3853,23 @@ with `scripts/lib/credential-env-read.js`, unit-tested in
 `backend/__tests__/unit/scripts/credentialEnvRead.test.js`; its `--self-test` exits
 non-zero if the rule regresses. Rule: before a negative verdict about a process, prove
 the read was live — or say the instrument was blind and name the route that can answer.
+
+**The same rule one turn further out: the process under test must postdate the code
+under test.** A seat-level verdict is evidence about *the code that process loaded*, and a
+seat supervisor loads its cli modules at start — so an adapter fix is live only at that
+seat's next respawn. A peer's `--self-report` returned `3` (`TOKEN PRESENT`) at the fixed
+instrument and it was not the fix failing: her supervisor (pid 1510) began Sep 3 23:03
+against a cli installed Sep 19 19:09, sixteen days older than the code it was being
+measured for. Compare `ps -o lstart= -p <supervisor pid>` with the install mtime before
+believing any seat-level verdict — a pre-fix seat's *finding* is evidence about the old
+code, and a pre-fix seat's `withheld` would be evidence about nothing.
+
+Then run it against **the candidate, not the population you were already reasoning
+about.** The check was applied to the seats under discussion and not to the two seats that
+could actually supply the missing leg — which had started 19 and 21 seconds *after* that
+install, so they needed a turn, not a restart, and the sentence written about them ("only
+on a turn after their next respawn") added a step nobody needed. Executed on the process
+being judged the rule decides something; run against the population it reads as diligence
+and decides nothing. Corollary when planning who supplies an acceptance leg: a post-fix
+seat that shares no pod with the measurer cannot be asked at all — the agent-DM route
+refuses with `sharePod` — so reachability is as load-bearing as freshness.
