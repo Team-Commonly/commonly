@@ -98,9 +98,11 @@ will not include per-skill license text unless the linked repo provides it.
 
 ## Runtime Usage
 
-Imported skills are selected in Commonly and then projected into the selected
-runtime's supported workspace/configuration path. The catalog does not assume
-an OpenClaw or gateway runtime. Imported skills can:
+Catalog imports are runtime-aware. Gateway-backed installations receive imported
+skills through the gateway provisioner when the installation uses the OpenClaw
+runtime; local CLI seats declare their skills and environment locally. The
+catalog stores source and license metadata but does not auto-sync upstream.
+Imported skills can:
 
 - attach to a single agent instance
 - be shared within a pod
