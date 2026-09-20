@@ -108,6 +108,31 @@ it was meant to rule out.
 Counting green runs bounds the rate (roughly `3/n` at 95%); it never tells you
 *why*. Report re-run counts as a bound, not as a verdict.
 
+**A guard that pins the wrong property is green while the defect is live.** On
+2026-09-20 a one-line CSS fix for a button measuring 32×36 composed the right
+selector and asserted the wrong property. The test checked that the rule
+contained `height: 32px` and — worse — that it did **not** contain `min-height`,
+because the author read the conflict as "the icon rule's `min-height: 32px` never
+applied". The other rule's `min-height: 36px` was still in force, `min-height`
+beats `height`, and the box stayed 36 tall through a green suite. The assertion
+would also have **failed the correct fix** as a regression, since the correct fix
+is the `min-height` the test forbade. A browser gate found it in one measurement
+(computed `min-height: 36px`).
+
+A presence assertion proves what a rule *says*, never what the cascade *does*.
+Two consequences for how to write one:
+
+- Never assert the **absence** of a property when the fix is an override. The
+  absence is the defect's signature, not the fix's.
+- When the thing being overridden is a floor or ceiling — `min-height`,
+  `max-width` — the assertion has to name that property. A `height`/`width`
+  declaration reads like a fix in review and changes nothing at runtime.
+
+The countermeasure is not a cleverer assertion: there is no layout engine in
+jsdom, so the property that decides the box is the one you cannot observe. It is
+the real-browser gate on the changed surface — which is exactly why a layout
+change needs one, and why "the tests pass" is not a claim about pixels.
+
 ## The window, and why it feels like a treadmill
 
 Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
