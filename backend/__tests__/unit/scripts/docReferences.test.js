@@ -100,22 +100,27 @@ describe('code does not point at docs that are not there', () => {
     expect(extractDocReferences(
       '      "sourceUrl": "https://github.com/openclaw/skills/tree/main/skills/thesethrose/servicenow-docs/SKILL.md"',
     )).toEqual([]);
+    // Both extraction fixtures are assembled from parts, like the absent-path
+    // control below. The extractor only sees a fixture that is a real
+    // `docs/<name>.md`, and this suite scans its own text — so a written-down
+    // fixture is a live pointer into the docs room's inventory, and a fold there
+    // stranding it is not something the fixture's own purpose can predict. That
+    // happened twice (the shorter-named Discord design doc, then the setup
+    // guide) before the fix was applied to the class instead of the instance:
+    // `join('/')` builds the identical string at runtime while leaving no
+    // contiguous pointer in this file for the scan to follow. The forms under
+    // test are unchanged — non-root-relative, root-relative, and the URL tail
+    // that has to stay excluded even with a real path behind it.
+    const setupGuide = ['docs', 'discord', 'DISCORD_SETUP.md'].join('/');
+    const designDoc = ['docs', 'discord', 'DISCORD_INTEGRATION_ARCHITECTURE.md'].join('/');
     expect(extractDocReferences(
-      'echo "   Setup Guide: docs/discord/DISCORD_SETUP.md"',
-    )).toEqual(['docs/discord/DISCORD_SETUP.md']);
-    // Root-relative, the form CLAUDE.md writes its pointers in — and the same
-    // URL tail must stay excluded with a real path behind it. The fixture is
-    // the front door's own line, so it names what that line names (the
-    // architecture doc); it is also a real dependency, because this suite scans
-    // itself and would report the fixture as a dead pointer. A fixture that
-    // must exist is therefore coupled to the docs inventory — when the
-    // inventory retired the shorter-named Discord design doc it stranded this
-    // line, and nothing in the fixture's own purpose could have predicted that.
+      `echo "   Setup Guide: ${setupGuide}"`,
+    )).toEqual([setupGuide]);
     expect(extractDocReferences(
-      '- **Discord Integration**: `/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md`',
-    )).toEqual(['docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md']);
+      `- **Discord Integration**: \`/${designDoc}\``,
+    )).toEqual([designDoc]);
     expect(extractDocReferences(
-      '  "sourceUrl": "https://example.test/org/repo/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md"',
+      `  "sourceUrl": "https://example.test/org/repo/${designDoc}"`,
     )).toEqual([]);
   });
 
