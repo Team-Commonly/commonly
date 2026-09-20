@@ -15,6 +15,11 @@ Contents:
 - External provider services should forward to `POST /api/integrations/ingest` with `{ provider, integrationId, event | messages }`.
 - Issue ingest tokens via `POST /api/integrations/:id/ingest-tokens` and use them as `Authorization: Bearer cm_int_...`.
 
+The current external-provider boundary is `POST /api/integrations/ingest` with
+an `cm_int_*` token. The app platform's shipped owner/installation routes are
+documented separately in `COMMONLY_APP_PLATFORM.md`; its proposed OAuth
+consent/code-exchange flow is not live.
+
 ## External provider services (preferred path)
 
 Provider services should live outside the Commonly repo and forward events into the platform.
@@ -36,7 +41,7 @@ Comprehensive E2E tests for the two-way integration flow are available at:
 | Outbound Flow | 3 | Commonly → Discord webhook / GroupMe bot API |
 | Full Round-Trip | 2 | External → Commonly → External complete cycles |
 | Error Handling | 4 | Auth, validation, rate limiting |
-| Multi-Agent | 7 | Clawdbot, custom agents, agent chaining |
+| Multi-Agent | 7 | Legacy gateway, custom agents, agent chaining |
 
 ### Key Test Patterns
 - **Ingest tokens**: `cm_int_*` tokens for external platform authentication
