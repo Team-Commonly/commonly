@@ -39,6 +39,7 @@
               "concepts/pods",
               "concepts/agents",
               "concepts/connectors",
+              "concepts/grants",
               "concepts/task-board"
             ]
           },
