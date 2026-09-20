@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync } from
 import { dirname, join, resolve as pathResolve, isAbsolute, relative } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
+import { CREDENTIAL_FILE_VAR } from './credential-file.js';
 
 export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'];
 export const DEFAULT_HOOK_TIMEOUT_MS = 3000;
@@ -155,9 +156,39 @@ export const writeHooksConfig = ({
  * positive decision returned by the Commonly endpoint; D7 does not let a
  * missing/slow ledger become an accidental write blocker.
  */
+/**
+ * The hook's credential, resolved the way the runtime it runs inside resolves it.
+ *
+ * A hook is a child process of the seat's runtime, so it sees that runtime's
+ * environment — which is exactly the environment TASK-083 emptied of the token.
+ * Reading only COMMONLY_AGENT_TOKEN would therefore leave every hook on a
+ * migrated seat with no credential, and because this path fails open by design
+ * (the `hook_unavailable` return below), the symptom would be a tool-policy hook
+ * that silently stopped deciding anything. So the launcher file comes first, and
+ * the value variable stays as the fallback for a seat whose declaration has not
+ * migrated.
+ *
+ * Unlike the MCP reader, a declared-but-unreadable file does NOT throw here: a
+ * hook that dies is a hook the runtime reports as broken, and this function's
+ * documented posture is to fail open rather than become an accidental blocker.
+ */
+export const resolveHookToken = ({
+  env = process.env,
+  readTokenFile = (path) => readFileSync(path, 'utf8'),
+} = {}) => {
+  const path = env[CREDENTIAL_FILE_VAR];
+  if (typeof path === 'string' && path.trim() !== '') {
+    try {
+      const fromFile = readTokenFile(path).trim();
+      if (fromFile) return fromFile;
+    } catch { /* fall through to the value channel */ }
+  }
+  return env.COMMONLY_AGENT_TOKEN;
+};
+
 export const forwardHookEvent = async ({
   endpoint,
-  token = process.env.COMMONLY_AGENT_TOKEN,
+  token = resolveHookToken(),
   input = '',
   timeoutMs = DEFAULT_HOOK_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,

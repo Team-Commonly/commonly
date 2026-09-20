@@ -56,6 +56,8 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
+import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 
@@ -107,7 +109,7 @@ const buildPrompt = buildMemoryPreamble;
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
 //     out of argv is an independent defense.
-const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_TOKEN_FILE', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 
 const substitutePlaceholders = (value, ctx) => {
@@ -115,6 +117,10 @@ const substitutePlaceholders = (value, ctx) => {
   if (!value.includes('${COMMONLY_')) return value;
   const subs = {
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    // The path, not the token: a declared server that can open a file reads the
+    // credential from there, and the PATH is not a secret, so it may ride in the
+    // argv override below (TASK-083).
+    COMMONLY_TOKEN_FILE: ctx.credentialFile || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
   };
@@ -131,10 +137,43 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
   for (const server of mcpServers || []) {
+    // A declared credential is rewritten to the file channel before anything is
+    // substituted, so for our server the token is not token-bearing at all: it
+    // lands in `env={...}` as a path and never reaches `env_vars`, which is the
+    // one path by which the value ends up in codex's own environment and from
+    // there in every MCP child it spawns (TASK-083, measured on a live codex
+    // seat before the change).
+    const declaredEnv = deliverSeatCredential(server, {
+      credentialFile: ctx.credentialFile,
+      label: 'codex',
+    }).env;
     const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
     if (!server?.name || transport !== 'stdio'
       || !Array.isArray(server.command) || !server.command.length) continue;
     const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
+    // The doc block above promises bearer tokens never ride in argv, and this is
+    // the place that had to hold it: an env value that carries the token is
+    // diverted to env_vars, but a COMMAND ARGUMENT has no such route — codex
+    // substitutes it literally, and a command line is readable by every
+    // same-user process. So an entry that needs the token in its argv is
+    // refused whole (skipped, with the reason) rather than half-wired: emitting
+    // its other flags would leave a server the guard approved and the seat
+    // cannot use, and emitting this one would publish the secret. Measured
+    // before writing this: substitution did put `cm_agent_*` into
+    // `mcp_servers.<name>.args` on the -c command line (TASK-083).
+    const carriesTokenInArgv = (value) => !!ctx.runtimeToken
+      && typeof value === 'string'
+      && value.includes(ctx.runtimeToken);
+    if (carriesTokenInArgv(command) || rest.some(carriesTokenInArgv)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[codex] MCP server ${server.name} wants the seat credential as a command `
+        + 'argument, where codex substitutes a literal and every same-user process '
+        + 'can read it. Skipping that entry: declare the credential on the entry\'s '
+        + 'env, where it rides as a file path instead of a value.',
+      );
+      continue;
+    }
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
     // The user opted into every server present in the environment spec.
     // Public permission profiles + approval_policy=never otherwise auto-deny
@@ -151,7 +190,7 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     }
     const envEntries = [];
     const envVars = [];
-    for (const [key, rawValue] of Object.entries(server.env || {})) {
+    for (const [key, rawValue] of Object.entries(declaredEnv)) {
       const value = substitutePlaceholders(rawValue, ctx);
       const carriesRuntimeToken = !!ctx.runtimeToken
         && typeof value === 'string'
@@ -174,6 +213,19 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     if (envVars.length) {
       flags.push('-c', `mcp_servers.${server.name}.env_vars=[${envVars.map(toml).join(',')}]`);
     }
+  }
+  if (Object.keys(forwardedEnv).length > 0) {
+    // The value is forwarded only for a declaration that needs the token as a
+    // LITERAL somewhere a file path is not a value — command args, or a string
+    // that merely contains it. That is the measured carve-out (TASK-082), and it
+    // is not silent: this is the seat whose environment still carries a secret.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[codex] this declaration needs ${CREDENTIAL_KEY} as a literal (command args, or a `
+      + 'value that contains it), so the token is forwarded to codex for this spawn '
+      + "and every MCP child inherits it. Put the credential on the entry's env to "
+      + 'get the file channel.',
+    );
   }
   return { flags, forwardedEnv };
 };
@@ -441,11 +493,20 @@ export default {
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.
     const dir = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
     const outputFile = join(dir, 'last-message.txt');
+    // Written into the per-spawn directory this adapter already creates and
+    // removes: codex reads and writes inside it for --output-last-message, so a
+    // child it spawns can reach a file there, which is the one property this
+    // file has to have. Outside it the path is an unreadable promise.
+    const credential = writeCredentialFile(ctx.runtimeToken, {
+      agentName: ctx.agentName || 'agent',
+      root: dir,
+    });
 
     try {
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
+        credentialFile: credential?.path || null,
       });
       // A derived record stores `trust: 'public'` and no mode (the block is
       // platform-independent; see cli/src/lib/default-environment.js). Codex's
@@ -475,6 +536,15 @@ export default {
         effort: ctx.environment?.effort,
       });
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // Derived from the process environment, so the bootstrap export has to be
+      // taken back out: the declaration above moved our server onto the file,
+      // and a value left here is a value codex's own children inherit. Kept only
+      // when the substitution genuinely needed it (`forwardedEnv` names that
+      // carve-out, and the warning above it is emitted for the same spawn).
+      withholdRuntimeCredential(childEnv, {
+        credentialFile: credential?.path || null,
+        keepsValue: mcp.forwardedEnv[CREDENTIAL_KEY] !== undefined,
+      });
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
       }

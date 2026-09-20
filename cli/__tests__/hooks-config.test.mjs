@@ -8,6 +8,7 @@ import {
   mergeHooksConfig,
   writeHooksConfig,
   forwardHookEvent,
+  resolveHookToken,
   sanitizeHookPayload,
 } from '../src/lib/hooks-config.js';
 
@@ -81,5 +82,43 @@ describe('hooks config writer', () => {
       tool_input: { file_path: '../outside.txt', paths: ['/tmp/outside.txt'] },
     }, { cwd: process.cwd() });
     expect(payload.paths).toBeUndefined();
+  });
+});
+
+describe('the hook credential follows the runtime it runs inside (TASK-083)', () => {
+  test('the launcher file wins over the value variable', () => {
+    // A hook is a child of the seat's runtime, and that is the environment
+    // TASK-083 emptied of the token — so a hook still reading only the value
+    // would find nothing and fail open, silently unenforcing the tool policy.
+    const token = resolveHookToken({
+      env: { COMMONLY_TOKEN_FILE: '/run/seat/token', COMMONLY_AGENT_TOKEN: 'cm_agent_stale' },
+      readTokenFile: (path) => (path === '/run/seat/token' ? 'cm_agent_live\n' : ''),
+    });
+    expect(token).toBe('cm_agent_live');
+  });
+
+  test('an unreadable file falls back to the value rather than breaking the hook', () => {
+    const token = resolveHookToken({
+      env: { COMMONLY_TOKEN_FILE: '/gone/token', COMMONLY_AGENT_TOKEN: 'cm_agent_env' },
+      readTokenFile: () => { throw new Error('ENOENT'); },
+    });
+    expect(token).toBe('cm_agent_env');
+  });
+
+  test('an empty file falls back too, and a blank declaration is not consulted at all', () => {
+    expect(resolveHookToken({
+      env: { COMMONLY_TOKEN_FILE: '/empty', COMMONLY_AGENT_TOKEN: 'cm_agent_env' },
+      readTokenFile: () => '   \n',
+    })).toBe('cm_agent_env');
+    let consulted = 0;
+    expect(resolveHookToken({
+      env: { COMMONLY_TOKEN_FILE: '   ', COMMONLY_AGENT_TOKEN: 'cm_agent_env' },
+      readTokenFile: () => { consulted += 1; return 'x'; },
+    })).toBe('cm_agent_env');
+    expect(consulted).toBe(0);
+  });
+
+  test('a seat that declares nothing keeps the pre-existing behaviour', () => {
+    expect(resolveHookToken({ env: { COMMONLY_AGENT_TOKEN: 'cm_agent_only' } })).toBe('cm_agent_only');
   });
 });

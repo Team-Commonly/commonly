@@ -72,6 +72,8 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // See codex.js for the rationale on bumping the default + env override.
@@ -176,7 +178,7 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) => {
   const source = input || process.env;
   const output = state ? {} : { ...source };
   if (state) {
@@ -190,7 +192,16 @@ const buildClaudeEnv = (input, state, expansionEnv = {}) => {
     output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
   }
   Object.assign(output, expansionEnv);
-  return output;
+  // `source` is usually the process environment, which is where the documented
+  // bootstrap export lives — so the value has to be taken out here rather than
+  // merely left out of the declaration rewrite. It survives only when THIS
+  // spawn's declaration still references it (claude substitutes args, url and
+  // headers literally, and `buildMcpExpansionEnv` reports that by carrying the
+  // key); the file path goes in either way so a hook child can name it.
+  return withholdRuntimeCredential(output, {
+    credentialFile,
+    keepsValue: expansionEnv[CREDENTIAL_KEY] !== undefined,
+  });
 };
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
@@ -270,9 +281,21 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 // readable to any co-confined child allowed to read that config directory.
 //
 // Recognised placeholders:
-//   ${COMMONLY_AGENT_TOKEN}   — the per-(agent, pod) cm_agent_* runtime token
+//   ${COMMONLY_TOKEN_FILE}    — the PATH of this spawn's credential file
 //   ${COMMONLY_API_URL}       — the instance URL the agent is attached to
 //   ${COMMONLY_INSTANCE_URL}  — alias for COMMONLY_API_URL (clearer in context)
+//
+// The credential itself is deliberately NOT among these values (TASK-083). It
+// used to be, and that put the bearer token in claude's environment, where every
+// MCP child and every hook inherited it — measured on a live seat: the pi seat's
+// MCP child carried COMMONLY_AGENT_TOKEN and COMMONLY_LITELLM_KEY. What the
+// child gets instead is a path to a 0600 file that only this spawn can name,
+// written into the SAME per-spawn directory claude is already handed for
+// --mcp-config. That directory is not a coincidence: it is the one path outside
+// the workspace that the Seatbelt profile admits (sandbox/seatbelt.js admits
+// `subpath(mcpConfigDir)` and nothing under ~/.commonly but the seat's own
+// statePath), so a credential file placed anywhere else is unreadable by the
+// very child it is written for.
 //
 // Only values actually referenced by this MCP declaration are added to the
 // child environment. Unknown placeholders remain in JSON so Claude's parser
@@ -280,9 +303,19 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 const buildMcpExpansionEnv = (mcpConfig, ctx) => {
   const serialized = JSON.stringify(mcpConfig);
   const values = {
-    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    [CREDENTIAL_FILE_VAR]: ctx.credentialFile || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
+    // Whether THIS one is exposed is decided by the loop below, not here: it is
+    // added only when the value is non-empty AND the declaration still references
+    // it — and `serialized` is the config AFTER the credential rewrite, which is
+    // what moves the default declaration off this value and onto the file. A
+    // reference the rewrite cannot move (args, url, headers, or a string that
+    // merely contains the placeholder) keeps the value for that spawn, because
+    // claude substitutes those literally and there is no file channel for them.
+    // That is the measured carve-out, and createMcpConfig warns when it applies
+    // so the seat still carrying the value is named rather than assumed fixed.
+    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
   };
   const output = {};
   for (const [key, value] of Object.entries(values)) {
@@ -291,7 +324,7 @@ const buildMcpExpansionEnv = (mcpConfig, ctx) => {
   return output;
 };
 
-const buildMcpConfig = (mcpServers) => {
+const buildMcpConfig = (mcpServers, ctx = {}) => {
   // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
@@ -303,7 +336,15 @@ const buildMcpConfig = (mcpServers) => {
       entry.command = command;
       if (args.length) entry.args = args;
     }
-    if (server.env) entry.env = { ...server.env };
+    // A declared credential is rewritten to the file channel here, in the
+    // config claude actually reads, so the value never has to exist in the
+    // runtime's environment at all (TASK-083).
+    if (server.env) {
+      entry.env = deliverSeatCredential(server, {
+        credentialFile: ctx.credentialFile,
+        label: 'claude',
+      }).env;
+    }
     if (server.headers) entry.headers = { ...server.headers };
     mcpServersMap[server.name] = entry;
   }
@@ -318,9 +359,15 @@ const buildMcpConfig = (mcpServers) => {
 const createMcpConfig = async (mcpServers, ctx = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
-  const config = buildMcpConfig(mcpServers);
+  let credential = null;
   try {
     await chmod(dir, 0o700);
+    // Written BEFORE the config, because the config may only reference it. It
+    // lives inside `dir` so the spawn's existing finally removes it with the
+    // config — no second lifecycle to get wrong — and so it is inside the one
+    // non-workspace path the Seatbelt profile admits.
+    credential = writeCredentialFile(ctx.runtimeToken, { agentName: ctx.agentName || 'agent', root: dir });
+    const config = buildMcpConfig(mcpServers, { ...ctx, credentialFile: credential?.path || null });
     await writeFile(
       file,
       JSON.stringify(config, null, 2),
@@ -329,11 +376,20 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     // writeFile's mode only applies when creating. Pin the final mode too so
     // this stays correct if the implementation ever starts reusing the path.
     await chmod(file, 0o600);
-    return {
-      dir,
-      file,
-      expansionEnv: buildMcpExpansionEnv(config, ctx),
-    };
+    const expansionEnv = buildMcpExpansionEnv(config, {
+      ...ctx,
+      credentialFile: credential?.path || null,
+    });
+    if (expansionEnv[CREDENTIAL_KEY]) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[claude] this declaration references ${CREDENTIAL_KEY} in a field claude `
+        + 'substitutes literally (args, url, headers, or a larger string), so the '
+        + "value stays in claude's environment for this spawn and every MCP child "
+        + `inherits it. Put the credential on the entry's env to get the file channel.`,
+      );
+    }
+    return { dir, file, credential, expansionEnv };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -610,6 +666,7 @@ export default {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
+          agentName: ctx.agentName,
         });
       }
       const spawnCtx = {
@@ -621,6 +678,7 @@ export default {
           ctx.env,
           publicClaudeState,
           mcpConfig?.expansionEnv,
+          mcpConfig?.credential?.path || null,
         ),
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
@@ -654,6 +712,7 @@ export default {
             ctx.env,
             publicClaudeState,
             mcpConfig?.expansionEnv,
+            mcpConfig?.credential?.path || null,
           ),
         });
         const stdout = await runClaude({

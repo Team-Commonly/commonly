@@ -90,6 +90,14 @@ describe('auditDeclaredMcp', () => {
     expect(isShippedCommonlyMcpEntry(defaultServer)).toBe(true);
     expect(isShippedCommonlyMcpEntry({ ...defaultServer, env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } })).toBe(true);
     expect(isShippedCommonlyMcpEntry({ ...defaultServer, env: undefined })).toBe(true);
+    // The shipped entry stays EXACTLY canonical — only the url placeholders and
+    // the token variable — and that is deliberate for TASK-083: the adapters
+    // rewrite the credential to the launcher file per spawn, so a record that
+    // named the file directly would be a record an older CLI could not serve.
+    expect(isShippedCommonlyMcpEntry({
+      ...defaultServer,
+      env: { COMMONLY_TOKEN_FILE: '${COMMONLY_TOKEN_FILE}' },
+    })).toBe(false);
   });
 
   test('an http server to a foreign origin is refused whatever its headers carry', () => {

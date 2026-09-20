@@ -46,6 +46,7 @@ import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
   forwardHookEvent,
+  resolveHookToken,
   writeHooksConfig,
 } from '../lib/hooks-config.js';
 import {
@@ -2863,7 +2864,14 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       const record = loadAgentToken(name);
       const podId = opts.pod || record?.podId;
       const instanceUrl = record?.instanceUrl || process.env.COMMONLY_API_URL || resolveInstanceUrl(undefined);
-      const token = process.env.COMMONLY_AGENT_TOKEN;
+      // Read the credential the way the runtime that spawned this hook carries
+      // it: the launcher FILE first, the value variable second. Reading the bare
+      // variable is what this did, and `resolveHookToken` therefore existed,
+      // was tested, and never ran on a real hook — so on a seat whose MCP
+      // declaration moved to the file, the token was absent, `forwardHookEvent`
+      // returned `hook_unavailable`, and the hook silently stopped deciding
+      // anything (the fail-open posture makes that a silence, not an error).
+      const token = resolveHookToken({ env: process.env });
       const chunks = [];
       if (!process.stdin.isTTY) {
         for await (const chunk of process.stdin) chunks.push(chunk);

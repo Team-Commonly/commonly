@@ -11,6 +11,7 @@
  */
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync, statSync, readdirSync } from 'fs';
 import { Writable } from 'stream';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -133,15 +134,51 @@ describe('spawn', () => {
     // The 4th stdio entry is the secret channel: a pipe, not the environment.
     expect(opts.stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe']);
     const servers = JSON.parse(proc.fd3Payload);
-    expect(servers).toEqual([
-      { name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_API_URL: 'https://api.example', COMMONLY_AGENT_TOKEN: 'cm_agent_secret' } },
-      { name: 'urlonly', url: 'https://api.example/mcp', headers: { Authorization: 'Bearer cm_agent_secret' } },
-    ]);
+    // The stdio entry is handed a PATH, not the value (TASK-083): the bridge
+    // reads that file and puts the credential on the child's fd 3, so neither the
+    // payload nor any environment carries the token. The http entry keeps the
+    // value — a bearer header is substituted literally and has no file channel.
+    const credentialPath = servers[0].env.COMMONLY_TOKEN_FILE;
+    expect(credentialPath).toMatch(/\/credentials\/.+\/token$/);
+    expect(servers[0].env).toEqual({ COMMONLY_API_URL: 'https://api.example', COMMONLY_TOKEN_FILE: credentialPath });
+    expect(servers[1]).toEqual({
+      name: 'urlonly', url: 'https://api.example/mcp', headers: { Authorization: 'Bearer cm_agent_secret' },
+    });
+    // ...and the file is gone once the turn is over, so it cannot become the next
+    // turn's credential.
+    expect(existsSync(credentialPath)).toBe(false);
     // The defect this replaces was that the list sat in the child's environment,
     // where the kernel keeps a copy the bridge cannot delete.
     expect(opts.env.COMMONLY_PI_MCP).toBeUndefined();
     expect(JSON.stringify(opts.env)).not.toContain('cm_agent_secret');
     expect(args.join(' ')).not.toContain('cm_agent_secret');
+  });
+
+  test("a launcher-exported credential is taken out of pi's own environment, and its path is put in", async () => {
+    // The shape that made this necessary: `agent run` exports COMMONLY_AGENT_TOKEN
+    // for bootstrap, so `ctx.env` carries it, and `baseEnv` is `ctx.env ||
+    // process.env` — the value reached pi itself, and pi's `bash` tool spawns
+    // children with `{ ...process.env }`. The bridge already needed no value
+    // (its servers arrive on fd 3), so the environment is not a channel here at
+    // all; the PATH is, because a hook child resolves its credential from it.
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+    const launcherToken = 'cm_agent_'.padEnd(73, 'L');
+    await pi.spawn('hi', baseCtx({
+      _spawnImpl: impl,
+      _bridgePath: '/x/bridge.mjs',
+      runtimeToken: 'cm_agent_secret',
+      instanceUrl: 'https://api.example',
+      env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: 'sk-test', COMMONLY_AGENT_TOKEN: launcherToken },
+      environment: { mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }] },
+    }));
+    const { opts } = calls[0];
+    expect(opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    expect(JSON.stringify(opts.env)).not.toContain(launcherToken);
+    expect(JSON.stringify(opts.env)).not.toContain('cm_agent_secret');
+    expect(opts.env.COMMONLY_TOKEN_FILE).toMatch(/\/credentials\/.+\/token$/);
+    // The provider key is not the seat credential and stays: pi calls the model
+    // with it, and the acceptance names it separately for that reason.
+    expect(opts.env.COMMONLY_LITELLM_KEY).toBe('sk-test');
   });
 
   test('a spawn seam with no fd 3 pipe fails loudly, rather than leaving the bridge with nothing to read', async () => {
@@ -436,5 +473,58 @@ describe('sandbox — fail closed: pi cannot enforce one', () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     await pi.spawn('hi', baseCtx({ _spawnImpl: impl }));
     expect(calls[0].args).toContain('--no-extensions');
+  });
+});
+
+describe('pi: the launcher writes the credential, the bridge pipes it (TASK-083)', () => {
+  test('the file holds this spawn token at 0600 while the turn runs, in the seat home', async () => {
+    // Witnessed DURING the spawn: the adapter's finally removes the file before
+    // spawn() resolves, deliberately, so an after-the-fact read can only ever
+    // prove absence. The seat's home is reachable from the child env the adapter
+    // itself sets (PI_CODING_AGENT_DIR), so this uses supported seams only.
+    const atSpawn = {};
+    const impl = (cmd, args, opts) => {
+      // join() collapses the .. — this is the seat's real home, not a path that
+      // merely shares a prefix with it.
+      const seatHome = join(opts.env.PI_CODING_AGENT_DIR, '..');
+      const credentialsDir = join(seatHome, 'credentials');
+      const [entry] = existsSync(credentialsDir) ? readdirSync(credentialsDir) : [];
+      atSpawn.dir = credentialsDir;
+      atSpawn.seatHome = seatHome;
+      atSpawn.path = entry ? join(credentialsDir, entry, 'token') : null;
+      atSpawn.contents = atSpawn.path && existsSync(atSpawn.path)
+        ? readFileSync(atSpawn.path, 'utf8') : null;
+      atSpawn.mode = atSpawn.path && existsSync(atSpawn.path)
+        ? statSync(atSpawn.path).mode & 0o777 : null;
+      atSpawn.dirMode = existsSync(credentialsDir) ? statSync(credentialsDir).mode & 0o777 : null;
+      return fakeChild({ stdout: assistant('ok') });
+    };
+    await pi.spawn('hi', baseCtx({
+      _spawnImpl: impl,
+      runtimeToken: 'cm_agent_secret',
+      instanceUrl: 'https://api.example',
+      environment: {
+        model: 'deepseek-v4-flash',
+        mcp: [{
+          name: 'commonly',
+          transport: 'stdio',
+          command: ['npx', '-y', '@commonlyai/mcp@latest'],
+          env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+        }],
+      },
+    }));
+    expect(atSpawn.contents).toBe('cm_agent_secret');
+    expect(atSpawn.mode).toBe(0o600);
+    expect(atSpawn.dirMode).toBe(0o700);
+    expect(atSpawn.path.startsWith(atSpawn.dir + '/')).toBe(true);
+    expect(atSpawn.dir.startsWith(atSpawn.seatHome + '/')).toBe(true);
+  });
+
+  test('a declaration that needs no credential gets no file and no rewrite', async () => {
+    const resolved = resolveMcpServers(
+      [{ name: 'a', transport: 'stdio', command: ['x'], env: { K: 'v' } }],
+      { credentialFile: '/tmp/whatever/token' },
+    );
+    expect(resolved).toEqual([{ name: 'a', command: ['x'], env: { K: 'v' } }]);
   });
 });
