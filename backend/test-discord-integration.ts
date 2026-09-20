@@ -233,7 +233,7 @@ async function runTests() {
     console.log(
       "⚠️  Please update TEST_CONFIG with your actual values before running tests.",
     );
-    console.log("   See docs/TEST_DISCORD_BOT.md for setup instructions.\n");
+    console.log("   See docs/discord/DISCORD_SETUP.md for setup instructions.\n");
     return;
   }
 
