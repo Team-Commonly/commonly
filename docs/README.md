@@ -39,7 +39,7 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 - [Summarizer & Agents](./SUMMARIZER_AND_AGENTS.md) - Understanding the relationship between scheduled summaries and intelligent agents
 
 ### Discord Integration
-- [Discord Setup](./discord/DISCORD_SETUP.md)
+- [Discord Integration](./discord/DISCORD.md#-setup--configuration)
 - [Discord App Setup](./discord/DISCORD_APP_SETUP.md)
 - [Discord Commands](./discord/REGISTER_DISCORD_COMMANDS.md)
 

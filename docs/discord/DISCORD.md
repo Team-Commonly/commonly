@@ -260,6 +260,126 @@ GET /api/discord/health
 }
 ```
 
+## 🧭 **Operator Setup & Deployment**
+
+This section consolidates the former setup and deployment guides. The routes
+below were checked against `backend/routes/discord.ts`,
+`backend/routes/webhooks/discord.ts`, and their mounts in `backend/server.ts`.
+
+### Prerequisites and application credentials
+
+You need:
+
+- A Discord application and bot created in the [Discord Developer Portal](https://discord.com/developers/applications).
+- Permission to add the bot to the target server and manage the target channel.
+- `DISCORD_CLIENT_ID`, `DISCORD_BOT_TOKEN`, and `DISCORD_PUBLIC_KEY` in the
+  backend environment. Keep the token and public key out of git and rotate the
+  token if it is exposed.
+- `BACKEND_URL` and `FRONTEND_URL` when the OAuth callback is not using the
+  local defaults. The command-registration scripts also need `MONGODB_URI` for
+  integration-scoped operations.
+
+The bot uses the `bot` and `applications.commands` OAuth scopes. The Commonly
+install link supplies the required channel permissions; do not copy an old
+hand-built invite URL with a different permission set. The running Discord
+client requests the `Guilds`, `GuildMessages`, and `GuildWebhooks` intents.
+
+### Install a Discord integration
+
+Use the **Discord** integration action from a pod. The supported flow is:
+
+1. Commonly requests `GET /api/discord/install-link/:podId` and opens the
+   returned Discord OAuth URL.
+2. Authorize the bot for the target server. Discord returns to
+   `GET /api/discord/callback`, which sends the user back to the Commonly
+   callback page with the pod and guild identifiers.
+3. The callback page calls `GET /api/discord/channels/:guildId`; choose the
+   channel to bind to the pod.
+4. Commonly creates the integration through its integrations flow and creates
+   the channel webhook with the bot token. Operators do not need to paste a
+   webhook URL into the setup form.
+5. Configure Discord's interactions endpoint as
+   `https://<host>/api/discord/interactions`. Discord's signed POST must reach
+   the backend directly; `DISCORD_PUBLIC_KEY` is used for verification.
+
+For an existing binding, `GET /api/discord/binding/:podId` reads the active
+record. To remove one, use `DELETE /api/discord/uninstall/:installationId`.
+Both management routes require an authenticated pod owner or administrator.
+
+### Served route contract
+
+These are the Discord routes currently served by Commonly:
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/discord/install-link/:podId` | Generate the Discord install URL. |
+| `GET` | `/api/discord/binding/:podId` | Read a pod's active binding. |
+| `DELETE` | `/api/discord/uninstall/:installationId` | Remove an installation. |
+| `GET` | `/api/discord/channels/:guildId` | List channels visible to the bot. |
+| `GET` | `/api/discord/callback` | Complete OAuth and redirect to the frontend. |
+| `POST` | `/api/webhooks/discord` | Receive Discord webhook deliveries and verify their signatures. |
+| `POST` | `/api/discord/interactions` | Receive signed slash-command interactions. |
+| `POST` | `/api/discord/register-commands/:integrationId` | Register commands for one integration. |
+| `POST` | `/api/discord/register-all` | Register commands for all integrations; admin-only. |
+| `GET` | `/api/discord/health` | Check global command registration and health. |
+
+The former `/api/discord/integration`, `/api/discord/test-webhook`,
+`/api/discord/invite`, and `/api/discord/stats` examples are not served
+routes. The old `channels/:integrationId` spelling is also not the route
+contract; channels are addressed by guild ID. Do not use those paths for setup
+or troubleshooting.
+
+### Command registration
+
+Run the global command deployer explicitly from `backend/`:
+
+```bash
+cd backend
+npm run discord:deploy   # register the five global slash commands
+npm run discord:verify   # verify the global command set
+```
+
+The deployer requires `DISCORD_CLIENT_ID` and `DISCORD_BOT_TOKEN`, retries a
+failed Discord API request up to three times with a five-second delay, and
+prints a registration report. It is not an automatic container-start hook.
+
+For database-backed, integration-scoped registration and inspection:
+
+```bash
+cd backend
+npm run discord:list      # list active Discord integrations
+npm run discord:register  # register commands for the selected integration(s)
+```
+
+Those two scripts require `MONGODB_URI`. An authenticated administrator can
+also call `POST /api/discord/register-all`; an integration owner or admin can
+call `POST /api/discord/register-commands/:integrationId`.
+
+### Health checks and recovery
+
+`GET /api/discord/health` reports `healthy`, `degraded`, `no_credentials`, or
+`error`, along with registered and missing global commands. A `degraded`
+result means registration is incomplete; run `npm run discord:deploy` and then
+`npm run discord:verify`, and inspect the deployer's error report. Common
+failures are missing credentials, an invalid bot token, missing bot permissions,
+an unreachable interactions URL, or a `DISCORD_PUBLIC_KEY` that does not match
+the application in the Developer Portal.
+
+For interactions verification failures, check the exact
+`/api/discord/interactions` URL, tunnel ingress, firewall/Access rules, public
+reachability, and the raw-body signature path. For webhook delivery failures,
+check the webhook identifier and Discord signature headers sent to
+`POST /api/webhooks/discord`; do not substitute an unauthenticated test route.
+
+### Security checklist
+
+- Never commit `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, or webhook URLs.
+- Grant only the bot permissions required for viewing the channel, sending
+  messages, reading history, and managing the Commonly-created webhook.
+- Rotate a bot token or webhook URL immediately if it is exposed.
+- Keep command registration and uninstall operations behind their existing
+  authenticated/admin routes.
+
 ## 🤖 **Bot Architecture**
 
 ### **Command Handling**
@@ -706,37 +826,27 @@ const smartNotifications = {
 ## 🔧 **Development & Testing**
 
 ### **Local Development Setup**
+
+Use the backend scripts documented in **Command registration** above. There
+are no separate `discord:setup-dev`, `discord:deploy-dev`,
+`discord:test-commands`, or `discord:watch-webhooks` npm scripts.
+
 ```bash
-# Set up Discord development environment
-npm run discord:setup-dev
-
-# Deploy commands to test server
-npm run discord:deploy-dev
-
-# Test command interactions
-npm run discord:test-commands
-
-# Monitor webhook activity
-npm run discord:watch-webhooks
+# From backend/
+npm run discord:deploy
+npm run discord:verify
 ```
 
 ### **Integration Testing**
-```javascript
-// Test Discord command functionality
-describe('Discord Integration', () => {
-  test('should handle /commonly-summary command', async () => {
-    const interaction = createMockInteraction('commonly-summary');
-    const result = await handleDiscordInteraction(interaction);
-    
-    expect(result.type).toBe(4); // CHANNEL_MESSAGE_WITH_SOURCE
-    expect(result.data.content).toContain('📊');
-  });
-  
-  test('should verify Discord signatures', () => {
-    const mockRequest = createMockRequest();
-    expect(verifySignature(mockRequest)).toBe(true);
-  });
-});
+Run the focused backend suites from the repository root:
+
+```bash
+cd backend
+npm test -- --runInBand \
+  __tests__/unit/services/discordService.test.js \
+  __tests__/unit/services/discordCommandService.test.js \
+  __tests__/unit/routes/discord.management-auth.test.js \
+  __tests__/unit/routes/discord.webhook.hardening.test.js
 ```
 
 ## 🔮 **Future Enhancements**
