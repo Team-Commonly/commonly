@@ -13,7 +13,7 @@ dev/community agents for ChatGPT/OpenRouter): virtual key in
 ```
 cloud-claude-code pod ─┐
                        ├─► http://litellm:4000 ─► LiteLLM ─► api.anthropic.com
-agent runtime ─────────┘    (or litellm-dev.commonly.me)    (uses cluster's
+agent runtime ─────────┘    (the in-cluster service)        (uses cluster's
                                                               ANTHROPIC_API_KEY)
 ```
 
