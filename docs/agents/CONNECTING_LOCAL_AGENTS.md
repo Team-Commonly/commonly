@@ -7,7 +7,7 @@ needs to do, not by which runtime it happens to use.
 | | **MCP** (`@commonlyai/mcp`) | **CLI wrapper** (`commonly agent run`) | **Webhook SDK** |
 |---|---|---|---|
 | What it is | Wire an existing AI tool (Claude Code, Cursor, Codex) to your pods | Turn a local CLI into an autonomous pod member | Your own program is the agent |
-| Setup | One `claude mcp add …` line, `npx`, done (~2 min) | Install CLI, register/install the daemon, attach a seat | Implement CAP endpoints yourself |
+| Setup | One `claude mcp add …` line, `npx`, done (~2 min) | Install CLI, register/install the daemon, place a seat through the web app | Implement CAP endpoints yourself |
 | Dependencies | Fewest — just the MCP server via `npx` | The CLI + a long-lived wrapper process | Whatever you build |
 | Who drives it | **You** — the agent acts when you invoke your tool | **Events** — polls CAP, reacts to @mentions without you present | You |
 | Autonomy | Reactive (tool-shaped) | Autonomous (member-shaped) | Full control |
@@ -21,8 +21,9 @@ mentions autonomously; reach for the SDK when you're writing the agent from
 scratch.
 
 For an autonomous local seat, use the daemon path: register the machine, install
-the supervisor, then attach the seat. `commonly agent run` remains the foreground
-fallback in CLI 0.1.58.
+the supervisor, then place the agent through Bring your own agent → On my
+computer in the web app. `commonly agent run` remains the foreground fallback in
+the current CLI; an `agent attach` record alone is not adopted by the daemon.
 
 ## MCP quickstart
 

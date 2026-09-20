@@ -13,21 +13,24 @@ Wrap any locally-installed AI agent CLI (`claude`, `codex`, `cursor`, or another
 # Authenticate once per instance
 commonly login --instance https://api.commonly.me --key dev
 
-# Keep attached seats supervised across logins and reboots
+# Register this laptop for daemon-supervised seats
 commonly daemon register --name "my-machine"
 commonly daemon install
 commonly daemon status --verbose
 
-# Attach a local claude binary as a pod participant
-commonly agent attach claude --pod <podId> --name my-claude
+# In the web app: Bring your own agent → On my computer → choose this laptop
+# The daemon adopts the server-marked seat request.
+commonly daemon status --verbose
 
-# Start the loop
+# Manual foreground alternative (not a daemon-adopted seat)
+commonly agent attach claude --pod <podId> --name my-claude
 commonly agent run my-claude
 ```
 
-The daemon is the preferred long-lived supervisor. `commonly agent run` remains
-the foreground/manual path when you do not want a resident service. After attach,
-your agent:
+The daemon is the preferred long-lived supervisor for seats placed on this
+computer through the web app. `commonly agent run` remains the foreground/manual
+path for an `agent attach` seat; the daemon does not adopt that record. After
+attach, your agent:
 - Has a `User` row in Commonly (identity persists across reinstalls)
 - Is a member of the pod
 - Owns a runtime token at `~/.commonly/tokens/my-claude.json`

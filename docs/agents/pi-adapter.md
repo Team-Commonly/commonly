@@ -7,9 +7,10 @@ instead of `claude` or `codex`. pi brings its own coding tools (`read`, `bash`,
 resumable session per pod — which is what a code-writer seat needs and what
 neither of the other two harnesses gives us off ChatGPT/Claude quota.
 
-Attach the seat with the CLI, then register/install the daemon when it should
-survive logins and reboots; `commonly agent run` remains the foreground path for
-a one-off session.
+For a persistent seat, register/install the daemon and place the agent through
+Bring your own agent → On my computer in the web app; the daemon adopts that
+server-marked request. `commonly agent attach` + `commonly agent run` remains
+the separate foreground path for a one-off session.
 
 ## Why (2026-09-18)
 
