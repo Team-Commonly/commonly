@@ -17,7 +17,13 @@
  * link checker: prose inside `docs/` is the docs room's inventory to keep, and
  * this suite has to stay green while that wash runs. A docs-like tail inside a
  * URL (`…/skills/servicenow-docs/SKILL.md`) is not a repo path, and the
- * boundary in DOC_REF is what excludes it.
+ * boundary in DOC_REF is what excludes it. Two forms stay out and are named
+ * here rather than left to be discovered: the URL tail above, and a
+ * parent-relative `../docs/….md`, which the lookbehind rejects at both of its
+ * possible start positions. The first is excluded on purpose; the second is a
+ * blind spot with zero instances in the scanned dirs (measured 2026-09-20), and
+ * it stays out because its target depends on the referencing file's directory,
+ * which this scan does not model.
  *
  * Widened the same day, on the class's own remainder: the first sweep scanned
  * code only and its boundary rejected a leading slash, so the two dead pointers
@@ -111,6 +117,27 @@ describe('code does not point at docs that are not there', () => {
     expect(extractDocReferences(
       '  "sourceUrl": "https://example.test/org/repo/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md"',
     )).toEqual([]);
+  });
+
+  // The scan names `CLAUDE.md`; `AGENTS.md` is covered only because git mode
+  // 120000 makes it the same file. That is a convention, and the coverage above
+  // depends on it — so assert the convention rather than describing it.
+  //
+  // Both ways it can break are asserted, because either one takes `AGENTS.md`
+  // out of scope and this is the only test that notices:
+  //   - replaced by a real copy  -> not a symlink at all
+  //   - retargeted (`ln -s README.md`) -> still a symlink, now pointing
+  //     somewhere the scan does not follow. `isSymbolicLink()` alone passes
+  //     here, which is a test that agrees with its own title and not with the
+  //     tree.
+  it('AGENTS.md is a symlink to the scanned file, not a second copy', () => {
+    const link = path.join(REPO_ROOT, 'AGENTS.md');
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    // `lstat`/`readlink` deliberately, not `realpath`: the question is what the
+    // link declares, and the target is resolved against the link's own
+    // directory so a relative target is read the way the filesystem reads it.
+    const target = path.resolve(path.dirname(link), fs.readlinkSync(link));
+    expect(SCANNED_ROOT_FILES.map((file) => path.join(REPO_ROOT, file))).toContain(target);
   });
 
   it('covers the front-door file agents are told to follow', () => {
