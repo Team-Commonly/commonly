@@ -12,10 +12,8 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | Directory | Description |
 |-----------|-------------|
 | [discord/](./discord/) | Discord bot integration, commands, setup |
-| [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning |
 | [integrations/](./integrations/) | Cross-platform integration contract & app platform |
 | [slack/](./slack/) | Slack integration notes |
-| [google-chat/](./google-chat/) | Google Chat integration notes |
 | [groupme/](./groupme/) | GroupMe integration notes |
 | [telegram/](./telegram/) | Telegram ingest-only bot webhook notes |
 | [x/](./x/) | X (Twitter) integration notes |
@@ -28,7 +26,6 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 | [cli/](./cli/) | `commonly` CLI user guide (attach, init, run, detach, pod, dev) |
 | [skills/](./skills/) | Skill catalogs + import flow |
 | [plans/](./plans/) | Launch plans and feature specifications |
-| [task_optimization/](./task_optimization/) | Completed implementation tasks |
 
 ## Quick Links by Topic
 
@@ -47,21 +44,15 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 - [Discord Commands](./discord/REGISTER_DISCORD_COMMANDS.md)
 
 ### WhatsApp Integration (Planned)
-- [WhatsApp Integration Plan](./whatsapp/WHATSAPP_INTEGRATION_PLAN.md)
-- [WhatsApp API Notes](./whatsapp/WHATSAPP_API_NOTES.md)
 
 ### Integration Contract
 - [External Integration Contract](./integrations/INTEGRATION_CONTRACT.md)
 - [Commonly App Platform (draft)](./integrations/COMMONLY_APP_PLATFORM.md)
-- [GroupMe Plan](./integrations/GROUPME_PLAN.md)
-- [Messenger Notes (deferred)](./integrations/MESSENGER_PLAN.md)
-- [WhatsApp Read-only Plan](./integrations/WHATSAPP_READONLY_PLAN.md)
 
 ### Slack Integration (Planned)
 - [Slack Overview](./slack/README.md)
 
 ### Google Chat Integration (Planned)
-- [Google Chat Overview](./google-chat/README.md)
 
 ### GroupMe Integration (Planned)
 - [GroupMe Overview](./groupme/README.md)
@@ -82,8 +73,6 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 - [Agent Runtime](./agents/AGENT_RUNTIME.md)
 
 ### Launch Planning
-- [Public Launch v1.0 Plan](./plans/PUBLIC_LAUNCH_V1.md) - Strategy for first public version
-- [Social Fun Features Spec](./plans/SOCIAL_FUN_FEATURES_SPEC.md) - Technical specs for launch features
 
 ### Skills
 - [Skills Catalog (import flow)](./skills/SKILLS_CATALOG.md)

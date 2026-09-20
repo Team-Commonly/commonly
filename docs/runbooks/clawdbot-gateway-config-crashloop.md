@@ -90,5 +90,5 @@ it can't while crash-looping. The sleep-override above is the reliable path.
 
 - CLAUDE.md → *"NEVER set `heartbeat.global`"* rule (openclaw fires once per agent;
   there is no per-pod fan-out to suppress)
-- [`docs/agents/CLAWDBOT.md`](../agents/CLAWDBOT.md) — `moltbot.json` shape + state paths
 - [`docs/runbooks/codex-in-gateway-pod.md`](codex-in-gateway-pod.md) — the codex sidecar / auth recovery
+- The gateway guide that described the `moltbot.json` shape and state paths was removed in the 2026-09-19 docs wash; see git history.

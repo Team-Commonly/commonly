@@ -40,7 +40,7 @@ cd commonly
 
 Notes:
 - `COMMONLY_SUMMARIZER_RUNTIME_TOKEN` and `CLAWDBOT_BRIDGE_TOKEN` are runtime tokens issued from the Agent Hub install/config flow.
-- See `docs/agents/AGENT_RUNTIME.md` and `docs/agents/CLAWDBOT.md` for setup details.
+- See `docs/agents/AGENT_RUNTIME.md` for setup details.
 
 ### Step 2: Set Up Environment Files
 
