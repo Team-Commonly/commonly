@@ -23,6 +23,7 @@
 
 const {
   CONTROL_VAR, envEntries, classifyEnvRead, classifySelfReport, describeVerdict, describeSelfReport,
+  describeAncestry,
 } = require('../../../../scripts/lib/credential-env-read');
 describe('seat credential delivery env reading', () => {
   test('an empty read is UNREADABLE, never a withheld token', () => {
@@ -123,12 +124,44 @@ describe('seat credential delivery env reading', () => {
     expect(line).toMatch(/pid=500 ppid=499/);
     expect(line).toMatch(/300 pi <- 100 \/opt\/homebrew\/bin\/node/);
     // The invocation's own argv contains `--seat kai`; matching that would confirm
-    // the label with the label, so the match must land on the supervisor instead.
-    expect(line).toMatch(/seat label "kai" appears in ancestor pid 100/);
-    expect(line).not.toMatch(/appears in ancestor pid 499/);
+    // the label with the label, so the match must land on the supervisor instead,
+    // and only in the shape the launcher itself uses: `agent run <seat>`.
+    expect(line).toMatch(/seat label "kai" is the seat argument of ancestor pid 100/);
+    expect(line).not.toMatch(/pid 499/);
     // And a label nothing in the chain carries is reported as unverified.
     const wrong = describeSelfReport({ seat: 'otto', adapter: 'claude', env: { PATH: '/bin' }, ancestry: chain });
     expect(wrong).toMatch(/seat label "otto" does NOT appear in any ancestor argv/);
+
+    // vera 70596, reproduced live: `args.includes(seat)` confirms labels that are
+    // wrong - `--seat commonly`, `--seat run`, `--seat node` all matched the
+    // supervisor's own command line by substring. A name inside a path is not the
+    // seat, and a standalone token is not the seat either.
+    const path = [
+      { pid: 10, ppid: 9, args: 'node scripts/verify-seat-credential-delivery.mjs --seat agents --self-report' },
+      { pid: 9, ppid: 8, args: '/bin/zsh -c cd /Users/xcjsam/agents/kai/commonly && node scripts/x.mjs' },
+    ];
+    const inPath = describeAncestry({ seat: 'agents', ancestry: path });
+    expect(inPath).not.toMatch(/is the seat argument/);
+    expect(inPath).not.toMatch(/standalone token/);
+    expect(inPath).toMatch(/does NOT appear in any ancestor argv/);
+    // The invocation's own argv always contains `--seat <seat>`. If the exclusion
+    // is dropped, that argv becomes the token candidate and the line attributes the
+    // report to the bash that launched the probe instead of to a real ancestor.
+    const invocationOnly = [
+      { pid: 10, ppid: 9, args: 'node scripts/verify-seat-credential-delivery.mjs --seat kai --self-report' },
+      { pid: 9, ppid: 8, args: '/bin/bash -c node scripts/verify-seat-credential-delivery.mjs --seat kai' },
+    ];
+    const noRealAncestor = describeAncestry({ seat: 'kai', ancestry: invocationOnly });
+    expect(noRealAncestor).toMatch(/does NOT appear in any ancestor argv/);
+    expect(noRealAncestor).not.toMatch(/standalone token/);
+    const binary = [
+      { pid: 10, ppid: 9, args: 'node scripts/verify-seat-credential-delivery.mjs --seat pi --self-report' },
+      { pid: 9, ppid: 8, args: 'pi' },
+    ];
+    const tokenOnly = describeAncestry({ seat: 'pi', ancestry: binary });
+    expect(tokenOnly).toMatch(/appears only as a standalone token in ancestor pid 9 \(pi\)/);
+    expect(tokenOnly).toMatch(/NOT confirmed/);
+    expect(tokenOnly).not.toMatch(/is the seat argument/);
     // No chain (a copy-pasted verdict) still reports the verdict, without a claim
     // about where it was made.
     const bare = describeSelfReport({ seat: 'kai', env: { PATH: '/bin' } });

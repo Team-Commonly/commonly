@@ -178,6 +178,30 @@ function describeSelfReport({ seat, adapter, env, ancestry = [], opts = {} }) {
   return place ? `${verdict}\n${place}` : verdict;
 }
 
+/**
+ * How strongly an ancestor's argv names this seat.
+ *
+ * `args.includes(seat)` — the first draft — confirms labels that are wrong: run
+ * `--seat commonly`, `--seat run` or `--seat node` and the supervisor's own command
+ * line (`…/bin/node …/bin/commonly agent run kai`) matches all three by substring
+ * (vera 70596, reproduced). A standalone-token match is better and still not the
+ * seat: `pi` matches the pi adapter binary, which is named after the adapter, not
+ * after the seat. So the only confirmation is the seat-argument shape the launcher
+ * itself uses — `agent run <seat>` — and anything weaker is reported as exactly
+ * that instead of as a pass. A name inside a path never matches, because a path is
+ * one whitespace-delimited token.
+ *
+ * @returns {'seat-argument'|'token'|null}
+ */
+function seatEvidence(args, seat) {
+  if (typeof args !== 'string' || !seat) return null;
+  const tokens = args.split(/\s+/).filter(Boolean);
+  for (let i = 2; i < tokens.length; i += 1) {
+    if (tokens[i] === seat && tokens[i - 1] === 'run' && tokens[i - 2] === 'agent') return 'seat-argument';
+  }
+  return tokens.includes(seat) ? 'token' : null;
+}
+
 /** Where a route-2 report was made, and whether its label matches that place. */
 function describeAncestry({ seat, ancestry = [] }) {
   if (!ancestry.length) return '';
@@ -185,14 +209,16 @@ function describeAncestry({ seat, ancestry = [] }) {
   const chain = ancestry
     .map((a) => `${a.pid}${a.username ? ` ${a.username}` : ''} ${shorten(a.args)}`)
     .join(' <- ');
-  const owner = ancestry.find((a) => a.pid !== self.pid
-    && !isInvocation(a.args)
-    && a.args && seat && a.args.includes(seat));
+  const candidates = ancestry.filter((a) => a.pid !== self.pid && !isInvocation(a.args));
+  const strong = candidates.find((a) => seatEvidence(a.args, seat) === 'seat-argument');
+  const weak = candidates.find((a) => seatEvidence(a.args, seat) === 'token');
   const label = !seat || seat === 'this seat'
     ? 'seat label: none given'
-    : owner
-      ? `seat label "${seat}" appears in ancestor pid ${owner.pid} (${shorten(owner.args, 60)})`
-      : `seat label "${seat}" does NOT appear in any ancestor argv — the label is unverified`;
+    : strong
+      ? `seat label "${seat}" is the seat argument of ancestor pid ${strong.pid} (${shorten(strong.args, 70)})`
+      : weak
+        ? `seat label "${seat}" appears only as a standalone token in ancestor pid ${weak.pid} (${shorten(weak.args, 70)}) — not the seat argument, so the label is NOT confirmed`
+        : `seat label "${seat}" does NOT appear in any ancestor argv — the label is unverified`;
   return `  pid=${self.pid} ppid=${self.ppid} started under: ${chain}\n  ${label}`;
 }
 
@@ -221,4 +247,5 @@ module.exports = {
   describeVerdict,
   describeSelfReport,
   describeAncestry,
+  seatEvidence,
 };
