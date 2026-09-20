@@ -28,7 +28,7 @@ The charter measured at `03597262`. I re-measured at `bd801882`, and four of its
 | `docs/` files mentioning Gemini | 26 | **33** case-insensitive, 22 capitalised | Neither regex gives 26. |
 | `docs/` files on the "old attach flow" | 21 | **21** for `agent attach` | Ruled daemon-first (finding 1): 8 rewrite, 1 delete, 12 records. |
 | docs-site nav groups | 3 | **5** in the Docs tab, plus an API Reference tab | `docs-site/docs.json`. |
-| docs-site screenshots | "0 referenced, 7 unused" | **4 screenshots, all referenced** (5 refs) | The other 3 images are the logos and favicon, which `docs.json` references. The README draws on a separate `screenshots/` directory: 21 files, 4 referenced, 13 referenced nowhere. See **Images**. |
+| docs-site screenshots | "0 referenced, 7 unused" | **4 screenshots, all referenced** (5 refs) | The other 3 images are the logos and favicon, which `docs.json` references. The README drew on a separate `screenshots/` directory: 21 files, 4 referenced, 13 referenced nowhere — all 21 are now deleted. See **Images**. |
 
 ## Findings that change the plan
 
@@ -66,14 +66,11 @@ Relative links were checked in all 226 rows: 6 are broken, and the table lists t
 
 This section sits outside the tally above, which counts docs only. The 8 page images get removed inside their page's rewrite PR; the orphans went in #1803 (merged).
 
-The first cut of this inventory counted only `docs-site/images/`, and that missed the README's source. The README pulls its screenshots from the root `screenshots/` directory (21 files). Wren read every image that the docs surfaces show (#1781 review). The problem is in the pixels, not just a missing harness stamp: they show the retired concepts.
+The first cut of this inventory counted only `docs-site/images/`, and that missed the README's source. The README pulled its screenshots from the root `screenshots/` directory (21 files); with the 17 orphans gone in #1803 and the last 4 gone here, that directory no longer exists. Wren read every image that the docs surfaces show (#1781 review). The problem is in the pixels, not just a missing harness stamp: they show the retired concepts.
 
 | image | referenced by | what it shows (wren) | verdict |
 |---|---|---|---|
-| `screenshots/real-engineering.png` | `README.md` | a Theo/Nova/Cody room | **delete** now; replace from the harness last |
-| `screenshots/your-team.png` | `README.md` | OPENCLAW badges on 12 of 15 cards, plus a "+ Hire an agent" button | **delete** now; replace from the harness last |
-| `screenshots/agent-identity.png` | `README.md` | Theo tagged OPENCLAW | **delete** now; replace from the harness last |
-| `screenshots/real-artifacts.png` | `README.md` | not singled out by wren; not a harness capture | **delete** with the README rewrite; replace from the harness last |
+| the 4 README screenshots (`real-engineering`, `your-team`, `agent-identity`, `real-artifacts`) | nothing since #1817 dropped them from `README.md` | OPENCLAW badges on 12 of 15 cards of `your-team`, Theo tagged OPENCLAW in `agent-identity`, Theo/Nova/Cody rooms; `real-artifacts` not a harness capture | **deleted**; replace from the harness last |
 | `docs-site/images/home-landing.png` | `introduction.mdx` | hero reads "One memory for Codex" | **delete** now; replace from the harness last |
 | `docs-site/images/agents.png` | `concepts/agents.mdx` | OPENCLAW badges | **delete** now; replace from the harness last |
 | `docs-site/images/dev-team-chat.png` | `introduction.mdx`, `concepts/pods.mdx` | a Theo/Nova/Cody room | **delete** now; replace from the harness last |
@@ -90,7 +87,7 @@ The rule this adds: an image that shows a retired concept is removed in the same
 
 | path | lines | last touched | owner | verdict | why | image (wren) |
 |---|---|---|---|---|---|---|
-| `README.md` | 395 | 2026-08-24 | quill | **rewrite** | cites /api/docs as the API reference, but none is served there; top half already assigned — openclaw 19x; gemini 2x; attach 1x | real-engineering, your-team, agent-identity (OPENCLAW badges, Theo/Nova/Cody rooms); real-artifacts not harness — delete all 4 |
+| `README.md` | 395 | 2026-08-24 | quill | **rewrite** | cites /api/docs as the API reference, but none is served there; top half already assigned — openclaw 19x; gemini 2x; attach 1x | real-engineering, your-team, agent-identity (OPENCLAW badges, Theo/Nova/Cody rooms); real-artifacts not harness — all 4 deleted |
 | `docs-site/agents/authentication.mdx` (nav) | 68 | 2026-04-02 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs-site/agents/connect.mdx` (nav) | 118 | 2026-08-30 | folio | **rewrite** | rewrite to daemon-first: teaches `agent attach` as the way in; openclaw 2x; attach 1x |  |
 | `docs-site/agents/events.mdx` (nav) | 220 | 2026-09-01 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 1 route(s) served live |  |
