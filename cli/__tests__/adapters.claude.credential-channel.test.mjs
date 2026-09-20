@@ -32,6 +32,20 @@ const claude = (await import('../src/lib/adapters/claude.js')).default;
 
 const TOKEN = 'cm_agent_'.padEnd(73, 'x');
 
+/**
+ * The value the LAUNCHER exported for bootstrap — a different token from the one
+ * this spawn mints, so an assertion can tell which of the two it found.
+ *
+ * It is planted in the spawn environment rather than inherited from the runner:
+ * these tests passed in a runner without `COMMONLY_AGENT_TOKEN` and failed in one
+ * with it, which means the leak they were written to prevent was decided by the
+ * runner (Vera, 70455). An explicit value makes the assertion the same one
+ * everywhere, and makes it stronger — the value has to be absent, not merely
+ * coincidentally unset.
+ */
+const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
+const spawnEnv = () => ({ ...process.env, COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN });
+
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
@@ -87,6 +101,7 @@ const spawnWith = async (mcp, extra = {}) => {
     instanceUrl: 'https://api.commonly.me',
     agentName: 'kai-test',
     environment: { mcp },
+    env: spawnEnv(),
     _spawnImpl: impl,
     ...extra,
   });
@@ -106,7 +121,11 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
 
   test("claude's own environment never carries the value, and does carry the path", async () => {
     const call = await spawnWith(declaration({ COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' }));
+    // The launcher's bootstrap export is in the spawn environment (spawnEnv) and
+    // must still be gone from the runtime's — the declaration rewrite alone never
+    // removed it.
     expect(call.tokenInEnv).toBeUndefined();
+    expect(call.env.COMMONLY_TOKEN_FILE).toBe(call.resolvedFile);
     expect(typeof call.env.COMMONLY_TOKEN_FILE).toBe('string');
     expect(call.env.COMMONLY_TOKEN_FILE).toMatch(/^\//);
   });
@@ -133,10 +152,20 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
     expect(first.resolvedFile).not.toBe(second.resolvedFile);
   });
 
-  test('a declaration that asks for no credential is untouched', async () => {
+  test('a declaration that asks for no credential is untouched, and the path is still there for a hook', async () => {
     const call = await spawnWith(declaration({ COMMONLY_API_URL: '${COMMONLY_API_URL}' }));
+    // The DECLARATION is what must stay untouched: no entry asked for the
+    // credential, so none was rewritten.
     expect(call.declared).toEqual({ COMMONLY_API_URL: '${COMMONLY_API_URL}' });
-    expect(call.env.COMMONLY_TOKEN_FILE).toBeUndefined();
+    // The runtime environment is a different surface with a different rule: the
+    // PATH goes in for every spawn that minted a file, because a hook child
+    // resolves its credential from it, and the VALUE never does. The location
+    // rule is the same one the credential file itself obeys — the per-spawn
+    // --mcp-config directory — because that is the one path a confined seat may
+    // read (sandbox/seatbelt.js).
+    expect(call.env.COMMONLY_TOKEN_FILE).toMatch(/\/token$/);
+    expect(call.env.COMMONLY_TOKEN_FILE.startsWith(path.dirname(call.configPath))).toBe(true);
+    expect(call.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
   });
 
   test("another vendor's server keeps its declaration when no credential is declared", async () => {
@@ -180,6 +209,7 @@ describe('claude: the carve-out for a reference the rewrite cannot move (TASK-08
         runtimeToken: TOKEN,
         instanceUrl: 'https://api.commonly.me',
         environment: { mcp },
+        env: spawnEnv(),
         _spawnImpl: impl,
       });
     } finally {
@@ -204,6 +234,10 @@ describe('claude: the carve-out for a reference the rewrite cannot move (TASK-08
     }]);
     expect(call.tokenInEnv).toBe(TOKEN);
     expect(call.config.mcpServers['github-grant'].headers.Authorization).toBe('Bearer ${COMMONLY_AGENT_TOKEN}');
+    // The value kept is THIS spawn's credential, not whatever the launcher
+    // exported: those are different strings, so the carve-out cannot pass by
+    // inheriting the bootstrap variable.
+    expect(call.tokenInEnv).not.toBe(LAUNCHER_TOKEN);
     expect(warned.join('\n')).toMatch(/Put the credential on the entry's env to get the file channel/);
   });
 

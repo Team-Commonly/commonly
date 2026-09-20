@@ -73,7 +73,7 @@ import {
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
-import { deliverSeatCredential } from '../mcp-credential-delivery.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // See codex.js for the rationale on bumping the default + env override.
@@ -178,7 +178,7 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) => {
   const source = input || process.env;
   const output = state ? {} : { ...source };
   if (state) {
@@ -192,7 +192,16 @@ const buildClaudeEnv = (input, state, expansionEnv = {}) => {
     output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
   }
   Object.assign(output, expansionEnv);
-  return output;
+  // `source` is usually the process environment, which is where the documented
+  // bootstrap export lives — so the value has to be taken out here rather than
+  // merely left out of the declaration rewrite. It survives only when THIS
+  // spawn's declaration still references it (claude substitutes args, url and
+  // headers literally, and `buildMcpExpansionEnv` reports that by carrying the
+  // key); the file path goes in either way so a hook child can name it.
+  return withholdRuntimeCredential(output, {
+    credentialFile,
+    keepsValue: expansionEnv[CREDENTIAL_KEY] !== undefined,
+  });
 };
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
@@ -669,6 +678,7 @@ export default {
           ctx.env,
           publicClaudeState,
           mcpConfig?.expansionEnv,
+          mcpConfig?.credential?.path || null,
         ),
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
@@ -702,6 +712,7 @@ export default {
             ctx.env,
             publicClaudeState,
             mcpConfig?.expansionEnv,
+            mcpConfig?.credential?.path || null,
           ),
         });
         const stdout = await runClaude({

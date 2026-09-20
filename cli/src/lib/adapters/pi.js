@@ -40,7 +40,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
-import { deliverSeatCredential } from '../mcp-credential-delivery.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
@@ -416,6 +416,16 @@ export default {
         PI_CODING_AGENT_DIR: agentDir,
         PI_SKIP_VERSION_CHECK: '1',
       };
+      // `baseEnv` is normally the process environment, which carries the
+      // bootstrap export. Nothing below this process needs the value: the bridge
+      // is handed the servers, their resolved values included, over fd 3. It has
+      // to come out rather than merely stop being added, because pi's `bash`
+      // tool spawns children with `{ ...process.env }`, so a copy here is a copy
+      // in the seat's shell — and the file path goes in, so a hook resolves its
+      // credential without the value.
+      withholdRuntimeCredential(childEnv, {
+        credentialFile: credential?.path || null,
+      });
       const args = buildArgs({
         prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
         bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,

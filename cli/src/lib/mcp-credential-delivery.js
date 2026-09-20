@@ -26,6 +26,31 @@ import {
 /** What a declaration should say to receive the credential as a path. */
 export const CREDENTIAL_FILE_PLACEHOLDER = '${COMMONLY_TOKEN_FILE}';
 
+/**
+ * What a runtime's OWN environment may carry, once the declarations are settled.
+ *
+ * The rewrite above decides what a CHILD is told. It does not decide what the
+ * runtime process itself carries, and that is a separate leak with the same
+ * symptom: the credential is exported for bootstrap (`agent run`, the daemon),
+ * so an adapter that derives its runtime environment from `process.env` hands
+ * the value back to the runtime — and to every MCP child, hook and shell below
+ * it — however the declaration was rewritten. Measured (Vera, 70455): four tests
+ * that pass in a runner without the variable fail with it set, and the value
+ * they saw was the runner's own.
+ *
+ * So the PATH of this spawn's file goes in (a path is not a secret, and a hook
+ * process resolves its credential from it — see `hooks-config.resolveHookToken`)
+ * and the VALUE comes out, unless a carve-out genuinely needs the value here:
+ * a field the adapter substitutes LITERALLY has no file channel, so `keepsValue`
+ * is passed in by the adapter rather than inferred, and the spawn that keeps a
+ * secret says so in its own warning.
+ */
+export const withholdRuntimeCredential = (env, { credentialFile = null, keepsValue = false } = {}) => {
+  if (credentialFile) env[CREDENTIAL_FILE_VAR] = credentialFile;
+  if (!keepsValue) delete env[CREDENTIAL_KEY];
+  return env;
+};
+
 /** What a declaration says when it asks for the seat credential (the old shape). */
 export const CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 

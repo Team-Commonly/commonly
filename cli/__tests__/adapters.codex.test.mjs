@@ -33,6 +33,16 @@ await jest.unstable_mockModule('child_process', () => ({
 
 const codex = (await import('../src/lib/adapters/codex.js')).default;
 
+/**
+ * The value the LAUNCHER exported for bootstrap, planted explicitly rather than
+ * inherited from the runner. Three tests in this file assert the runtime's
+ * environment carries no credential; they passed in a runner without
+ * `COMMONLY_AGENT_TOKEN` and failed in one with it, so the property they were
+ * checking was decided by whoever ran the suite (Vera, 70455).
+ */
+const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
+const spawnEnv = () => ({ ...process.env, COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN });
+
 // Fake child process with optional pre-canned stdout chunks, stderr, exit code.
 // Set `writeOutputFile: <text>` to simulate codex writing the
 // --output-last-message file before exiting (the production codepath reads
@@ -193,6 +203,7 @@ describe('codex adapter — spawn()', () => {
     await codex.spawn('hi', {
       sessionId: null,
       _spawnImpl: impl,
+      env: spawnEnv(),
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example.test',
       environment: {
@@ -292,6 +303,7 @@ describe('codex adapter — spawn()', () => {
     await codex.spawn('hi', {
       sessionId: null,
       _spawnImpl: impl,
+      env: spawnEnv(),
       runtimeToken: 'cm_agent_secret',
       instanceUrl: 'https://api.example.test',
       environment: {
@@ -697,6 +709,7 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
       await codex.spawn('hi', {
         sessionId: null,
         _spawnImpl: impl,
+        env: spawnEnv(),
         runtimeToken: 'cm_agent_secret',
         instanceUrl: 'https://api.example.test',
         environment: { mcp },

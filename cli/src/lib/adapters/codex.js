@@ -57,7 +57,7 @@ import {
   resolve as pathResolve,
 } from 'path';
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
-import { deliverSeatCredential } from '../mcp-credential-delivery.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 
@@ -536,6 +536,15 @@ export default {
         effort: ctx.environment?.effort,
       });
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // Derived from the process environment, so the bootstrap export has to be
+      // taken back out: the declaration above moved our server onto the file,
+      // and a value left here is a value codex's own children inherit. Kept only
+      // when the substitution genuinely needed it (`forwardedEnv` names that
+      // carve-out, and the warning above it is emitted for the same spawn).
+      withholdRuntimeCredential(childEnv, {
+        credentialFile: credential?.path || null,
+        keepsValue: mcp.forwardedEnv[CREDENTIAL_KEY] !== undefined,
+      });
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
       }

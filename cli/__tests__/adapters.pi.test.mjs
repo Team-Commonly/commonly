@@ -154,6 +154,33 @@ describe('spawn', () => {
     expect(args.join(' ')).not.toContain('cm_agent_secret');
   });
 
+  test("a launcher-exported credential is taken out of pi's own environment, and its path is put in", async () => {
+    // The shape that made this necessary: `agent run` exports COMMONLY_AGENT_TOKEN
+    // for bootstrap, so `ctx.env` carries it, and `baseEnv` is `ctx.env ||
+    // process.env` — the value reached pi itself, and pi's `bash` tool spawns
+    // children with `{ ...process.env }`. The bridge already needed no value
+    // (its servers arrive on fd 3), so the environment is not a channel here at
+    // all; the PATH is, because a hook child resolves its credential from it.
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+    const launcherToken = 'cm_agent_'.padEnd(73, 'L');
+    await pi.spawn('hi', baseCtx({
+      _spawnImpl: impl,
+      _bridgePath: '/x/bridge.mjs',
+      runtimeToken: 'cm_agent_secret',
+      instanceUrl: 'https://api.example',
+      env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: 'sk-test', COMMONLY_AGENT_TOKEN: launcherToken },
+      environment: { mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'], env: { COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } }] },
+    }));
+    const { opts } = calls[0];
+    expect(opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    expect(JSON.stringify(opts.env)).not.toContain(launcherToken);
+    expect(JSON.stringify(opts.env)).not.toContain('cm_agent_secret');
+    expect(opts.env.COMMONLY_TOKEN_FILE).toMatch(/\/credentials\/.+\/token$/);
+    // The provider key is not the seat credential and stays: pi calls the model
+    // with it, and the acceptance names it separately for that reason.
+    expect(opts.env.COMMONLY_LITELLM_KEY).toBe('sk-test');
+  });
+
   test('a spawn seam with no fd 3 pipe fails loudly, rather than leaving the bridge with nothing to read', async () => {
     const proc = fakeChild({ stdout: assistant('ok') });
     delete proc.stdio;
