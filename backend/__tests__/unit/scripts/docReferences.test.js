@@ -12,12 +12,20 @@
  * this guard too, so writing them down would make the guard flag its own
  * explanation. They are in the PR body and on the row.
  *
- * The scope is code — `scripts/`, `backend/`, `cli/`, `frontend/` — not docs.
- * This is deliberately not a whole-repo link checker: prose inside `docs/` is
- * the docs room's inventory to keep, and this suite has to stay green while
- * that wash runs. A docs-like tail inside a URL
- * (`…/skills/servicenow-docs/SKILL.md`) is not a repo path, and the boundary in
- * DOC_REF is what excludes it.
+ * The scope is code — `scripts/`, `backend/`, `cli/`, `frontend/` — plus the
+ * repo-root `CLAUDE.md`, not `docs/` prose. It is deliberately not a whole-repo
+ * link checker: prose inside `docs/` is the docs room's inventory to keep, and
+ * this suite has to stay green while that wash runs. A docs-like tail inside a
+ * URL (`…/skills/servicenow-docs/SKILL.md`) is not a repo path, and the
+ * boundary in DOC_REF is what excludes it.
+ *
+ * Widened the same day, on the class's own remainder: the first sweep scanned
+ * code only and its boundary rejected a leading slash, so the two dead pointers
+ * in `CLAUDE.md` — the file an agent reads first — were in the one place the
+ * guard could not look, in the root-relative form (`/docs/…`) that section
+ * writes everything else in. `AGENTS.md` is a symlink to `CLAUDE.md` (git mode
+ * 120000), so scanning the target covers both without reporting each dead line
+ * twice.
  */
 
 const { execFileSync } = require('child_process');
@@ -26,15 +34,22 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const SCANNED_DIRS = ['scripts', 'backend', 'cli', 'frontend'];
+// Repo-root files an agent is told to follow, scanned as well as the dirs.
+const SCANNED_ROOT_FILES = ['CLAUDE.md'];
 const SCANNED_EXTENSIONS = new Set(['.sh', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 // The boundary excludes a match that continues a longer token — `-docs/`,
 // `/docs/`, `worddocs/` — so a URL tail is not read as a repo path.
-const DOC_REF = /(?<![A-Za-z0-9_/.-])docs\/[A-Za-z0-9_./-]+\.md/g;
+const DOC_REF = /(?<![A-Za-z0-9_/.-])\/?docs\/[A-Za-z0-9_./-]+\.md/g;
 // A floor, not the current count: high enough that a broken extractor fails
 // loudly, low enough that retiring a few references does not trip it.
 const MIN_EXPECTED_REFERENCES = 20;
 
-const extractDocReferences = (text) => [...text.matchAll(DOC_REF)].map((match) => match[0]);
+// A root-relative reference (`/docs/….md`) is the repo path with a leading
+// slash; strip it, or `path.join` is handed an absolute path and resolves the
+// wrong file. The optional `/` in DOC_REF is what lets the boundary still
+// reject a URL tail — `…/a/b/docs/….md` fails the lookbehind on either position.
+const extractDocReferences = (text) => [...text.matchAll(DOC_REF)]
+  .map((match) => match[0].replace(/^\//, ''));
 
 const trackedFiles = () => {
   try {
@@ -53,8 +68,11 @@ const trackedFiles = () => {
 
 const collectReferences = () => {
   const references = [];
-  for (const relativePath of trackedFiles()) {
-    if (!SCANNED_EXTENSIONS.has(path.extname(relativePath))) continue;
+  for (const relativePath of [...SCANNED_ROOT_FILES, ...trackedFiles()]) {
+    // The root files are markdown on purpose — that is what the front door is —
+    // so the code-extension filter is for the scanned dirs only.
+    const isRootFile = SCANNED_ROOT_FILES.includes(relativePath);
+    if (!isRootFile && !SCANNED_EXTENSIONS.has(path.extname(relativePath))) continue;
     const text = fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
     for (const doc of extractDocReferences(text)) {
       references.push({ file: relativePath, doc });
@@ -79,6 +97,27 @@ describe('code does not point at docs that are not there', () => {
     expect(extractDocReferences(
       'echo "   Setup Guide: docs/discord/DISCORD_SETUP.md"',
     )).toEqual(['docs/discord/DISCORD_SETUP.md']);
+    // Root-relative, the form CLAUDE.md writes its pointers in — and the same
+    // URL tail must stay excluded with a real path behind it.
+    expect(extractDocReferences(
+      '- **Discord Integration**: `/docs/discord/DISCORD_INTEGRATION.md`',
+    )).toEqual(['docs/discord/DISCORD_INTEGRATION.md']);
+    expect(extractDocReferences(
+      '  "sourceUrl": "https://example.test/org/repo/docs/discord/DISCORD_INTEGRATION.md"',
+    )).toEqual([]);
+  });
+
+  it('covers the front-door file agents are told to follow', () => {
+    expect(references.some((ref) => ref.file === 'CLAUDE.md')).toBe(true);
+  });
+
+  it('a root-relative pointer to a file that is not there would be reported (positive control)', () => {
+    // Assembled, not written down: a dead literal in this file is scanned by
+    // this guard too, and repeating one would make the guard flag its own test.
+    const absent = ['docs/agents', 'no-such-anchor-fixture.md'].join('/');
+    const docs = extractDocReferences(`see \`/${absent}\` for the shape`);
+    expect(docs).toEqual([absent]);
+    expect(docs.every((doc) => !fs.existsSync(path.join(REPO_ROOT, doc)))).toBe(true);
   });
 
   it('every referenced doc exists', () => {
