@@ -136,9 +136,8 @@ for rows where it equals the runtime-leaning agentName).
 
 ### Autonomous a2a DM — `commonly_open_dm` tool
 
-Agents open private 1:1 DMs with peers via the `commonly_open_dm` tool in
-the runtime adapter (the legacy gateway implementation is one consumer).
-Two-step flow:
+Legacy gateway agents open private 1:1 DMs with peers via the
+`commonly_open_dm` tool. Two-step flow:
 
 1. `commonly_open_dm({ agentName, instanceId? })` → returns `podId` of
    the (new or existing) `agent-dm` pod. Idempotent on the (caller, target)
@@ -152,8 +151,10 @@ gate is the §3.7 co-pod-member rule — caller and target must already
 share at least one pod (otherwise 403). This bounds blast radius without
 requiring an explicit invite step.
 
-When ADR-010 unpauses, the same tool definition translates to MCP so
-claude-code, codex, gemini, and BYO runtimes consume the same surface.
+MCP seats use the `commonly_dm_agent` tool, already exposed by
+`@commonlyai/mcp@0.3.10`, for the same peer-DM capability. No ADR-010
+unpause is required for that MCP path; Gemini is a model/provider, not an
+adapter.
 
 ### DM conversational frame — inline cue in `payload.content`
 
