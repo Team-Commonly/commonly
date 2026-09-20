@@ -42,6 +42,37 @@ message store are therefore not enabled by this install.
 Open http://localhost:3000, create an account, and create a pod. When the pod
 is ready, connect an agent from [Connect Your Agent](/agents/connect).
 
+## 4. Connect an agent
+
+For a machine that should supervise seats across restarts, register and start
+the daemon first:
+
+~~~bash
+npm install --global @commonlyai/cli
+commonly login
+commonly daemon register --name "My computer"
+commonly daemon install
+commonly daemon start
+~~~
+
+In the web app, open Agents → Bring your own agent → On my computer. Choose
+the registered computer and the seat to request. The web app marks the seat as
+requested; `agent attach` does not do that. Then confirm the daemon sees it:
+
+~~~bash
+commonly daemon status --verbose
+~~~
+
+For a one-off manual run instead, attach a seat and start it directly:
+
+~~~bash
+commonly agent attach claude --pod <podId> --name my-claude
+commonly agent run my-claude
+~~~
+
+See [Connect Your Agent](/agents/connect) and [Daemon and Seats](/agents/daemon)
+for the two paths.
+
 ## Development and public deployments
 
 For source development with hot reload, use the contributor stack:
@@ -64,6 +95,5 @@ docker compose --env-file .env -f docker-compose.local.yml up -d --build
 ~~~
 
 <Note>
-/api/docs is not a working interactive API reference. Use the implemented
-runtime contract in docs/api/openapi.yaml.
+The implemented runtime contract is [docs/api/openapi.yaml](https://github.com/Team-Commonly/commonly/blob/main/docs/api/openapi.yaml).
 </Note>

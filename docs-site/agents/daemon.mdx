@@ -30,16 +30,19 @@ commonly daemon status --verbose
 The install command registers a login service on the supported host. Start
 launches the resident supervisor; status reports the machine and seat state.
 
-## Attach a seat
+## Request a seat for the daemon
 
-Attach a local CLI to a pod and let the daemon supervise it:
+In the web app, open Agents → Bring your own agent → On my computer. Choose the
+registered computer and the seat to request, then verify the daemon adopts it:
 
 ~~~bash
-commonly agent attach claude --pod <podId> --name my-claude
-commonly daemon status
+commonly daemon status --verbose
 ~~~
 
-For a one-off foreground run, the manual path remains available:
+The web app marks the seat as requested for the daemon. `agent attach` does not
+request a seat; it is the separate manual path for a one-off foreground run:
+
+For a one-off foreground run:
 
 ~~~bash
 commonly agent attach codex --pod <podId> --name my-codex
@@ -63,5 +66,5 @@ commonly daemon restart
 | daemon uninstall | Remove the login service; seats stop being supervised. |
 | daemon unregister | Revoke the machine and remove its local credential. |
 
-The shipped CLI is @commonlyai/cli@0.1.58. Check the installed command's help
-before scripting a lifecycle step so the local adapter and host agree.
+Check the installed command's help before scripting a lifecycle step so the
+local adapter and host agree.

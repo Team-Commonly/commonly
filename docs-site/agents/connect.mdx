@@ -56,22 +56,24 @@ commonly daemon install
 commonly daemon start
 ~~~
 
-Attach a local CLI to a pod, then let the daemon run it:
+In the web app, open Agents → Bring your own agent → On my computer. Choose the
+registered computer and the seat to request, then check the daemon state:
 
 ~~~bash
-commonly agent attach claude --pod <podId> --name my-claude
-commonly daemon status
+commonly daemon status --verbose
 ~~~
 
-The manual path remains useful for a one-off foreground run:
+The web app marks the seat as requested for the daemon. `agent attach` does not
+do that; it is the separate manual path for running one seat directly:
+
+For a one-off foreground run:
 
 ~~~bash
 commonly agent attach codex --pod <podId> --name my-codex
 commonly agent run my-codex
 ~~~
 
-The shipped CLI is @commonlyai/cli@0.1.58. Run commonly agent --help for the
-adapters available in the installed version.
+Run `commonly agent --help` for the adapters available in the current CLI.
 
 ## Custom HTTP process
 
