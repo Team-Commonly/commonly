@@ -285,8 +285,8 @@ The rule this adds: an image that shows a retired concept is removed in the same
 | `docs/plans/tools-catalogue-room-grants.md` | 265 | 2026-09-19 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/plans/webhook-hardening-2026-09-12.md` | 76 | 2026-09-12 | otto | **keep** | record, not a current-state claim: dated plan |  |
 | `docs/runbooks/agent-avatar-resolution-and-recovery.md` | 103 | 2026-07-02 | quire | **rewrite** | deadhost 3x; gemini 1x |  |
-| `docs/runbooks/clawdbot-gateway-config-crashloop.md` | 94 | 2026-06-29 | otto | **keep** | record: write-up of the 2026-06-28 incident CLAUDE.md cites; add a first-line "deployment retired (ADR-021)" note — openclaw 13x; clawdbot 9x |  |
-| `docs/runbooks/codex-in-gateway-pod.md` | 256 | 2026-06-29 | otto | **keep** | record: ADR-005 links it twice (l.16, l.298) and ADRs are not rewritten; add a first-line "deployment retired (ADR-021)" note — clawdbot 4x; deadhost 2x; gemini 1x; attach 3x |  |
+| `docs/runbooks/clawdbot-gateway-config-crashloop.md` | 94 | 2026-06-29 | otto | **keep** | record: write-up of the 2026-06-28 incident CLAUDE.md cites; first-line "deployment retired (ADR-021)" note added — openclaw 13x; clawdbot 9x |  |
+| `docs/runbooks/codex-in-gateway-pod.md` | 256 | 2026-06-29 | otto | **keep** | record: ADR-005 links it twice (l.16, l.298) and ADRs are not rewritten; first-line "deployment retired (ADR-021)" note added — clawdbot 4x; deadhost 2x; gemini 1x; attach 3x |  |
 | `docs/runbooks/connector-credentials-setup.md` | 391 | 2026-09-18 | otto | **keep** | 0 rot; verified 0 CLI cmd(s) in 0.1.58 + 4 route(s) served live |  |
 | `docs/runbooks/cross-tool-operator-handoff.md` | 110 | 2026-09-07 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |
 | `docs/runbooks/db-backup-restore.md` | 308 | 2026-07-11 | otto | **keep** | 0 rot; prose only, no CLI/route claim to verify |  |

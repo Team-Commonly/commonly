@@ -1,5 +1,7 @@
 # Recovering the clawdbot gateway from a config crash-loop
 
+> **Deployment retired.** The `clawdbot-gateway` Deployment is parked — `agents.clawdbot.enabled: false` in `values-dev.yaml` since #1051 (2026-08-20), under the staged OpenClaw retirement in [ADR-021](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Nothing below runs against a live pod today. This page is kept as a record of the 2026-06-28 incident and the `moltbot.json` schema trap that caused it, not as current operating guidance.
+
 **Symptom:** `clawdbot-gateway` is in `CrashLoopBackOff`; the whole dev-agent
 fleet is offline. Logs show openclaw rejecting `/state/moltbot.json`:
 
