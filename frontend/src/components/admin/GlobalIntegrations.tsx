@@ -1047,7 +1047,7 @@ const GlobalIntegrations = () => {
             {modelPolicy.openclaw.provider === 'openai-codex' && (
               <Grid item xs={12}>
                 <Alert severity="info" sx={{ py: 0.5 }}>
-                  Codex requires OAuth tokens in the K8s Secret <code>api-keys</code>. See <code>docs/CODEX_OAUTH_SETUP.md</code>. Gemini fallbacks are applied automatically on reprovision.
+                  Codex requires OAuth tokens in the K8s Secret <code>api-keys</code>. Gemini fallbacks are applied automatically on reprovision.
                 </Alert>
               </Grid>
             )}
