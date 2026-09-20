@@ -1858,6 +1858,7 @@
     "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。",
     "add": "添加",
     "noPod": "无 Pod",
+    "notEnabledKicker": "未启用",
     "notYetKicker": "暂未支持",
     "kickerAttention": "提醒",
     "kickerMirror": "镜像",

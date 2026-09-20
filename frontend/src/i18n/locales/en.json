@@ -1866,6 +1866,7 @@
     "footnote": "You get a one-time code to send to the bot. More platforms are on the way.",
     "add": "Add",
     "noPod": "no pod",
+    "notEnabledKicker": "not enabled",
     "notYetKicker": "not yet",
     "kickerAttention": "attention",
     "kickerMirror": "mirror",

@@ -1791,6 +1791,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
     expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
     expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
+    // TASK-140: the aside's Revoke ✕ carries `--secondary` as well as `--icon`,
+    // and `--secondary` sets `min-height: 36px`. Because min-height beats height,
+    // a composed rule that pins `height: 32px` alone still measures 32×36 — the
+    // first cut of this fix did exactly that and the gate caught it (#1799, 1440).
+    // The assertion below is on `min-height` for that reason: this guard would
+    // otherwise have been green while the box was still 36 tall.
+    const asideIcon = ruleBody(v2, '.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon');
+    expect(asideIcon).toContain('width: 32px');
+    expect(asideIcon).toContain('height: 32px');
+    expect(asideIcon).toContain('min-height: 32px');
+    expect(phone760).toContain('.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { width: 44px; height: 44px; min-height: 44px; }');
     expect(phone760).toContain('.v2-connector-row { min-height: 72px; }');
     // The gear shares row 1 with the name (the selection button is pinned to row 1 too), and it is declared AFTER the older act placement so the cascade keeps it.
     expect(phone760).toContain('.v2-root button.v2-connector-row__selection { grid-row: 1; }');

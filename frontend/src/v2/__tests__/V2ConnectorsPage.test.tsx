@@ -552,6 +552,35 @@ describe('V2ConnectorsPage', () => {
       ));
     });
 
+    // TASK-140: a not-enabled row has no connection at all, so its pod slot
+    // said `no pod` — false about a row whose blocker is the instance itself,
+    // and it reads as a missing pod rather than a disabled provider.
+    it('TASK-140: a not-enabled row names its blocker in the kicker, never "no pod"', async () => {
+      mockCatalog([
+        entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
+        entry({
+          installableId: 'telegram',
+          label: 'Telegram',
+          available: true,
+          installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+          integration: liveIntegration({ _id: 'i-tg', installationId: 'install-telegram-u1', type: 'telegram' }),
+        }),
+      ]);
+      renderPage();
+
+      const ask = (await screen.findAllByRole('link', { name: 'Ask' }))
+        .find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
+      expect(ask).toBeDefined();
+      expect(ask?.closest('.v2-connector-row')?.querySelector('.v2-connector-row__kicker'))
+        .toHaveTextContent(/^not enabled$/);
+      expect(screen.queryByText('no pod')).toBeNull();
+
+      // Positive control: the row that DOES carry a connection still names its
+      // pod, so the assertion above cannot pass by every kicker reading alike.
+      const linked = (await screen.findAllByRole('button', { name: 'View Telegram' }))[0];
+      expect(linked.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/^Rewire Live Demo · /);
+    });
+
     it('labels the row step separately from the final connect action', async () => {
       mockCatalog([entry()]);
       renderPage();

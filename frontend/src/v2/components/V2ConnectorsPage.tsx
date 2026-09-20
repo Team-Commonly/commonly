@@ -896,7 +896,11 @@ const V2ConnectorsPage: React.FC = () => {
   // the timestamp, never from rendered English (Vera, Connectors 70300).
   const kickerFor = (item: ListItem, row: ConnectorRow): string => {
     const podId = item.connector ? connectorPodId(item.connector) : null;
-    const pod = podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
+    // TASK-140: a not-enabled row has no connection to name a pod for, so the
+    // pod slot read `no pod` — which is false, it names the blocker instead.
+    const pod = row.notEnabled
+      ? t('connectors.notEnabledKicker', { defaultValue: 'not enabled' })
+      : podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
     // A row with no age (the not-enabled row's '—') carries only the pod.
     return row.when === '—' ? pod : `${pod} · ${row.when}`;
   };
