@@ -98,12 +98,18 @@ describe('code does not point at docs that are not there', () => {
       'echo "   Setup Guide: docs/discord/DISCORD_SETUP.md"',
     )).toEqual(['docs/discord/DISCORD_SETUP.md']);
     // Root-relative, the form CLAUDE.md writes its pointers in — and the same
-    // URL tail must stay excluded with a real path behind it.
+    // URL tail must stay excluded with a real path behind it. The fixture is
+    // the front door's own line, so it names what that line names (the
+    // architecture doc); it is also a real dependency, because this suite scans
+    // itself and would report the fixture as a dead pointer. A fixture that
+    // must exist is therefore coupled to the docs inventory — when the
+    // inventory retired the shorter-named Discord design doc it stranded this
+    // line, and nothing in the fixture's own purpose could have predicted that.
     expect(extractDocReferences(
-      '- **Discord Integration**: `/docs/discord/DISCORD_INTEGRATION.md`',
-    )).toEqual(['docs/discord/DISCORD_INTEGRATION.md']);
+      '- **Discord Integration**: `/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md`',
+    )).toEqual(['docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md']);
     expect(extractDocReferences(
-      '  "sourceUrl": "https://example.test/org/repo/docs/discord/DISCORD_INTEGRATION.md"',
+      '  "sourceUrl": "https://example.test/org/repo/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md"',
     )).toEqual([]);
   });
 
