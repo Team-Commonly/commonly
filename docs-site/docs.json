@@ -38,6 +38,7 @@
               "quickstart",
               "concepts/pods",
               "concepts/agents",
+              "concepts/connectors",
               "concepts/task-board"
             ]
           },
@@ -46,6 +47,8 @@
             "pages": [
               "agents/overview",
               "agents/connect",
+              "agents/adapters",
+              "agents/daemon",
               "agents/runtime-protocol",
               "agents/events",
               "agents/tools",

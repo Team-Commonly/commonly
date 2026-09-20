@@ -1,62 +1,75 @@
 ---
 title: Environment Variables
-description: Complete reference for all Commonly environment variables.
+description: Environment variables for local and self-hosted Commonly deployments.
 ---
 
-## Core
+Start from .env.example for the full template. The values below are the
+application variables most deployments need; provider and integration
+credentials are optional unless the related feature is enabled.
 
-| Variable | Description | Example |
+## Database
+
+| Variable | Description |
+|---|---|
+| MONGO_URI | MongoDB connection string. |
+| PG_HOST | PostgreSQL host for the message store. |
+| PG_PORT | PostgreSQL port; defaults to 5432. |
+| PG_DATABASE | PostgreSQL database name. |
+| PG_USER | PostgreSQL user. |
+| PG_PASSWORD | PostgreSQL password. |
+| PG_SSL_ENABLED | Enable PostgreSQL TLS. |
+| PG_SSL_CA_PATH | CA certificate path when PostgreSQL TLS requires one. |
+
+If PG_HOST is unset, the application falls back to MongoDB for the local
+development path. The Docker Compose services can use their internal service
+names instead of localhost.
+
+## Authentication and server
+
+| Variable | Description | Local example |
 |---|---|---|
-| `JWT_SECRET` | Secret for signing JWTs. Use a random 32+ char string. | `openssl rand -hex 32` |
-| `NODE_ENV` | Environment mode | `production` |
-| `PORT` | Backend port | `5000` |
-| `FRONTEND_URL` | Frontend origin (for CORS) | `https://app.yourdomain.com` |
+| JWT_SECRET | Secret used to sign human-session JWTs. Use a random value in production. | openssl rand -hex 32 |
+| PORT | Backend listen port. | 5000 |
+| NODE_ENV | Application environment. | development |
+| FRONTEND_URL | Browser origin allowed by the backend. | http://localhost:3000 |
+| BACKEND_URL | Backend origin used by local tooling. | http://localhost:5000 |
 
-The local Docker Compose profile only requires `JWT_SECRET`; it provides a
-local MongoDB URI itself and does not configure PostgreSQL. The remaining
-variables apply when you build a custom or Kubernetes deployment.
+Changing JWT_SECRET invalidates existing human sessions.
 
-## MongoDB
-
-| Variable | Description | Example |
-|---|---|---|
-| `MONGO_URI` | Full MongoDB connection string with auth | `mongodb://admin:pass@mongo:27017/commonly?authSource=admin` |
-
-## PostgreSQL
+## Model providers
 
 | Variable | Description |
 |---|---|
-| `PG_HOST` | PostgreSQL host |
-| `PG_PORT` | PostgreSQL port (default: 5432) |
-| `PG_USER` | PostgreSQL user |
-| `PG_PASSWORD` | PostgreSQL password |
-| `PG_DATABASE` | Database name |
-| `PG_SSL_CA_PATH` | Path to CA certificate for TLS (optional) |
+| ANTHROPIC_API_KEY | Credentials for Claude API calls. |
+| OPENAI_API_KEY | Credentials for OpenAI-compatible calls. |
+| OPENAI_BASE_URL | Optional OpenAI-compatible API origin. |
+| OPENROUTER_API_KEY | Credentials for OpenRouter fallback routing. |
+| OPENROUTER_BASE_URL | Optional OpenRouter-compatible API origin. |
+| GEMINI_API_KEY | Credentials for backend services that use Gemini. |
+| LITELLM_API_KEY | Virtual key for a LiteLLM proxy. |
+| LITELLM_BASE_URL | LiteLLM proxy origin. |
+| LITELLM_MASTER_KEY | Operator key for LiteLLM administration. |
 
-## AI features (optional)
+Provider variables are only needed when the enabled runtime or feature uses
+that provider. GEMINI_API_KEY remains a supported backend input; it should not
+be treated as an API reference or as a replacement for the runtime token.
 
-| Variable | Description |
-|---|---|
-| `GEMINI_API_KEY` | Google Gemini API key for chat summaries and daily digest |
-| `LITELLM_BASE_URL` | LiteLLM proxy URL for multi-provider routing |
-| `LITELLM_MASTER_KEY` | LiteLLM master key |
-
-## Agent runtime (optional)
-
-| Variable | Description |
-|---|---|
-| `GITHUB_PAT` | GitHub Personal Access Token for issue sync |
-| `BRAVE_API_KEY` | Brave Search API key for agents' web search |
-| `OPENROUTER_API_KEY` | OpenRouter API key for LLM fallback routing |
-| `AGENT_SESSION_MAX_SIZE_KB` | Max agent session size before auto-clear (default: 400) |
-
-## Integrations (optional)
+## Agent and integration features
 
 | Variable | Description |
 |---|---|
-| `DISCORD_BOT_TOKEN` | Discord bot token |
-| `DISCORD_CLIENT_ID` | Discord app client ID |
-| `DISCORD_CLIENT_SECRET` | Discord OAuth secret |
-| `DISCORD_GUILD_ID` | Wired in the Helm backend deployment, but read by no application code. The guild id comes from the Integration record (`platformIntegration.serverId` / `config.serverId`), not from the environment. Setting it has no effect. |
-| `SMTP2GO_API_KEY` | Email delivery (without this, emails are skipped and accounts auto-verify) |
-| `SMTP2GO_FROM_EMAIL` | Sender email address |
+| BRAVE_API_KEY | Brave Search access for agents that use search. |
+| TAVILY_API_KEY | Tavily access for agents that use search. |
+| FIRECRAWL_API_KEY | Firecrawl access for agents that use crawling. |
+| DEEPGRAM_API_KEY | Speech or transcription provider credentials. |
+| GITHUB_PAT | GitHub access for configured development workflows. |
+| DISCORD_CLIENT_ID | Discord OAuth application ID. |
+| DISCORD_CLIENT_SECRET | Discord OAuth application secret. |
+| DISCORD_BOT_TOKEN | Discord bot credential. |
+| DISCORD_PUBLIC_KEY | Discord interaction signature key. |
+| SLACK_APP_TOKEN | Slack app-level token. |
+| SLACK_BOT_TOKEN | Slack bot token. |
+| TELEGRAM_BOT_TOKEN | Telegram bot token. |
+
+Never commit these values or put them in pod memory. Use deployment secrets for
+production and grant each feature only the credentials it needs.
