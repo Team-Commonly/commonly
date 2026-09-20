@@ -407,10 +407,20 @@ describe('writeCredentialFile: the launcher side (TASK-083)', () => {
     expect(removeCredentialFile(written)).toBe(true);
   });
 
-  test('a missing token writes nothing and names nothing', () => {
+  test('a missing token writes nothing and names nothing — decided before the root is checked', () => {
     expect(writeCredentialFile('')).toBeNull();
     expect(writeCredentialFile(undefined)).toBeNull();
     expect(writeCredentialFile('   ')).toBeNull();
+  });
+
+  test('an omitted or blank root is refused instead of writing into the operator\'s home', () => {
+    // The two forms that used to land in ~/.commonly/credentials: no root at
+    // all, and a root that is effectively empty. Both are errors now, and
+    // neither may create anything.
+    expect(() => writeCredentialFile(TOKEN, { agentName: 'kai' }))
+      .toThrow(/requires an explicit root/);
+    expect(() => writeCredentialFile(TOKEN, { agentName: 'kai', root: '   ' }))
+      .toThrow(/requires an explicit root/);
   });
 
   test('the file is written with the mode chmod sets, not the umask the process happens to have', () => {

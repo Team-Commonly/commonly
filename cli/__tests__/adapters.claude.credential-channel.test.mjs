@@ -44,7 +44,18 @@ const TOKEN = 'cm_agent_'.padEnd(73, 'x');
  * coincidentally unset.
  */
 const LAUNCHER_TOKEN = 'cm_agent_'.padEnd(73, 'L');
-const spawnEnv = () => ({ ...process.env, COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN });
+// A path this launcher did not mint stands in for the runner's own, which is what
+// a seat process actually carries. Without it these assertions would be decided
+// by whatever the runner happened to export — the no-minted-token case below is
+// the one that failed in a seat-run suite and passed in CI. Planted for the same
+// reason as the token above (Vera, 70455): the assertion has to be the same one
+// in every runner, and its stronger form is that the foreign path is REMOVED.
+const FOREIGN_FILE = path.join(os.tmpdir(), 'another-spawn', 'token');
+const spawnEnv = () => ({
+  ...process.env,
+  COMMONLY_AGENT_TOKEN: LAUNCHER_TOKEN,
+  COMMONLY_TOKEN_FILE: FOREIGN_FILE,
+});
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   const proc = new EventEmitter();
@@ -178,7 +189,7 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
     expect(call.config.mcpServers.commonly.env.COMMONLY_TOKEN_FILE).toBe('${COMMONLY_TOKEN_FILE}');
   });
 
-  test('no runtime token means no file, and the declaration is left as it was', async () => {
+  test('no runtime token means no file var, even one this spawn inherited', async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kai-claude-nocred-'));
     const { calls, impl } = captureImpl();
     await claude.spawn('hi', {
@@ -186,6 +197,7 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
       cwd,
       runtimeToken: undefined,
       environment: { mcp: declaration({ COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' }) },
+      env: spawnEnv(),
       _spawnImpl: impl,
     });
     // Nothing to point at ⇒ rewritten to nothing would be a path to nowhere, so
@@ -193,6 +205,8 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
     // behaviour for a seat with no minted token.
     expect(calls[0].declared.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
     expect(calls[0].env.COMMONLY_TOKEN_FILE).toBeUndefined();
+    // FOREIGN_FILE is the runner's own credential file, so this is not "the
+    // runner was clean" but "a path this spawn did not mint is removed".
   });
 });
 

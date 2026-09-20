@@ -44,9 +44,20 @@ export const CREDENTIAL_FILE_PLACEHOLDER = '${COMMONLY_TOKEN_FILE}';
  * a field the adapter substitutes LITERALLY has no file channel, so `keepsValue`
  * is passed in by the adapter rather than inferred, and the spawn that keeps a
  * secret says so in its own warning.
+ *
+ * The PATH comes out too when there is no file for THIS spawn. The runtime
+ * environment is derived from `process.env`, so a launcher whose own process was
+ * spawned by another seat inherits that seat's `COMMONLY_TOKEN_FILE` and hands
+ * it to the runtime and every MCP child below it — a path to a credential this
+ * launcher did not mint. The value was already deleted here for that reason; the
+ * path is the same leak with a smaller blast radius.
  */
 export const withholdRuntimeCredential = (env, { credentialFile = null, keepsValue = false } = {}) => {
-  if (credentialFile) env[CREDENTIAL_FILE_VAR] = credentialFile;
+  if (credentialFile) {
+    env[CREDENTIAL_FILE_VAR] = credentialFile;
+  } else {
+    delete env[CREDENTIAL_FILE_VAR];
+  }
   if (!keepsValue) delete env[CREDENTIAL_KEY];
   return env;
 };
