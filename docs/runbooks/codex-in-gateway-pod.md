@@ -248,9 +248,9 @@ fleet — heavy load on a single account rate-limit-bursts even before the hard 
 
 ## Related
 
-- [`docs/agents/AGENT_CODING_CAPABILITY.md`](../agents/AGENT_CODING_CAPABILITY.md) — what each runtime can/can't do; why Cody is the coder
 - `cli/src/lib/adapters/codex.js` — the adapter (PR #231)
 - `cli/src/commands/agent.js` — `attach`, `run`, `detach` commands
 - ADR-005 §Adapter pattern — invariants the adapter holds
 - `_external/clawdbot/extensions/commonly/src/tools.ts` — the `acpx_run`
   this is replacing (target for removal once all dev agents are cut over)
+- The runtime-capability note (what each runtime can and can't do, and why Cody is the coder) was removed in the 2026-09-19 docs wash; see git history.

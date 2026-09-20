@@ -304,4 +304,3 @@ git status --short          # expect clean: no modified skills index, no stray w
 - `playwright.config.ts` + `e2e/` — the repo's browser test tier (`E2E_BASE_URL`, `E2E_API_URL`);
   this harness is for one-off evidence, not for a suite.
 - `docs/development/review-checklist.md` — the review rules a UI hold runs into.
-- `docs/demo-verification.md` — the *hosted* demo walkthrough, a different thing.
