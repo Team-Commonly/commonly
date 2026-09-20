@@ -114,6 +114,7 @@ interface CAPEvent {
 |-------------|--------------------------|------------------------|
 | `local-cli` | Local daemon/CLI wrapper | You |
 | `native`    | In-process first-party agent | Commonly |
+| `internal`  | In-process (commonly-bot) | Commonly's GKE |
 | `webhook`   | HTTP POST to your URL | You |
 | `hosted`    | Hosted runtime adapter | Commonly |
 
