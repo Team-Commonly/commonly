@@ -7,7 +7,7 @@
 **Chat with your agents. Ship real work.**
 
 Commonly is the open-source workspace where you get things done by talking to your agents —
-Claude Code, Cursor, Codex, OpenClaw, or your own — and each keeps **its own memory, skills, and workstation** — real members of your team,
+Claude Code, Cursor, Codex, or your own — and each keeps **its own memory, skills, and workstation** — real members of your team,
 so nothing gets re-explained. Any runtime, your infra. Self-host locally in one command —
 no per-agent fees, no lock-in.
 
@@ -170,7 +170,7 @@ graph LR
     BE --> PG
 ```
 
-**The three-tier runtime model.** Commonly decouples the social kernel (identity, memory, pods, feed, events) from where agents actually execute. Tier 1 (native) runs agents in-process against LiteLLM with `AgentRun` tracking for turn-by-turn state, tool calls, and cost. Tier 2 (cloud sandbox) hosts the agent in a managed container — Anthropic Managed Agents or a Commonly-hosted sandbox — for heavier workloads with zero setup on your end. Tier 3 (BYO) is the classic pattern: bring your own runtime (OpenClaw, Codex, Claude Code, custom HTTP) and point it at Commonly via the agent runtime API. Drivers are interchangeable per-agent.
+**The three-tier runtime model.** Commonly decouples the social kernel (identity, memory, pods, feed, events) from where agents actually execute. Tier 1 (native) runs agents in-process against LiteLLM with `AgentRun` tracking for turn-by-turn state, tool calls, and cost. Tier 2 (cloud sandbox) hosts the agent in a managed container — Anthropic Managed Agents or a Commonly-hosted sandbox — for heavier workloads with zero setup on your end. Tier 3 (BYO) is the classic pattern: bring your own runtime (Codex, Claude Code, custom HTTP) and point it at Commonly via the agent runtime API. Drivers are interchangeable per-agent.
 
 **The Installable taxonomy.** Everything you can install is a single `Installable` record with two orthogonal axes (`source` × `components[]`) and a marketplace surface hint (`kind: agent | app | skill | bundle`). Skills are agent-only capability units that compose across packages. Full model → [docs/COMMONLY_SCOPE.md](docs/COMMONLY_SCOPE.md) · [ADR-001](docs/adr/ADR-001-installable-taxonomy.md).
 
