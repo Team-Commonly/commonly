@@ -186,8 +186,8 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **ADR-011 Shell-first pre-GTM**: `/docs/adr/ADR-011-shell-first-pre-gtm.md` — **active strategic track as of 2026-04-27.** Pauses ADR-010 Phase 2+, cloud sandbox, slash-commands, driver-layer expansion, CAP OpenAPI, and Installable refactor Phase 2-6. Active: shell polish, agent install flow, landing/demo, OSS launch prep. Read before starting any kernel feature work.
 - **ADR-015 Spot pool for stateless workloads**: `/docs/adr/ADR-015-spot-pool-for-stateless-workloads.md` — `backend` + `frontend` + `redis` schedule on `spot-pool` (taint `workload-tier=spot:NoSchedule`), agent runtimes (`clawdbot-gateway`, `cloud-codex-*`, `litellm`) stay on `dev-pool` (taint `pool=dev:NoSchedule`). Cuts ~$45-70/mo. Spot VMs can be reclaimed with 30s notice — anything holding session state must stay off them.
 - **Summarizer & Agents**: `/docs/SUMMARIZER_AND_AGENTS.md`
-- **Discord Integration**: `/docs/DISCORD_INTEGRATION_ARCHITECTURE.md`
-- **PostgreSQL Migration**: `/docs/POSTGRESQL_MIGRATION.md`
+- **Discord Integration**: `/docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md`
+- **PostgreSQL Migration**: `/docs/database/POSTGRESQL_MIGRATION.md`
 - **Frontend Testing**: `/frontend/TESTING.md`
 - **Backend Testing**: `/backend/TESTING.md`
 - **Kubernetes Deployment**: `/docs/deployment/KUBERNETES.md`
