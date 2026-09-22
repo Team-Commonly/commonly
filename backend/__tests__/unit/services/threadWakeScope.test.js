@@ -11,7 +11,7 @@ const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
-const { createTableFor } = require('../../utils/schemaTable');
+const { applyTable } = require('../../utils/schemaTable');
 const { effectiveFollowerIds, narrowToThread } = require('../../../services/threadWakeScopeService');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 
@@ -43,9 +43,9 @@ beforeAll(async () => {
   // Shipped DDL, not hand-written — same correction as 2/4's suites
   // (@sprint-review 56811). This file still had a hand-rolled `messages` and
   // `thread_user_state`, so every constraint it leaned on was one typed here.
-  await mockPool.query(createTableFor('pods'));
-  await mockPool.query(createTableFor('messages'));
-  await mockPool.query(createTableFor('thread_user_state'));
+  await applyTable(mockPool, 'pods');
+  await applyTable(mockPool, 'messages');
+  await applyTable(mockPool, 'thread_user_state');
   await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p','chat','u')", [POD]);
 });
 
