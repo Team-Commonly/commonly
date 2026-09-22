@@ -213,6 +213,49 @@ describe('renew and revoke', () => {
     expect(res.body.code).toBe('not_found');
   });
 
+  test('a child presenting its OWN token can neither renew nor revoke itself', async () => {
+    // Vera 70769 measured this at the recut's parent head: from a child token,
+    // mint is 403 and renew and DELETE are 404. The parent link is what makes
+    // it true — a child is the parent of nothing, so its own id never matches
+    // `parentId`. Without this a leaked credential file could extend its own
+    // life or hide its own row from the boot sweep.
+    const child = new Types.ObjectId();
+    const store = {
+      _id: child,
+      parentId: SEAT_ID,
+      status: 'active',
+      scopes: ['spawn'],
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      maxExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+    const asChild = () => {
+      mockAuthState = { agentUser: { _id: AGENT_USER_ID }, agentCredential: store, agentTokenHash: 'child-hash' };
+    };
+    // Modelled as a store, not as a hand-stubbed answer per call: a lookup that
+    // drops the parent constraint WOULD find this row, so the assertion fails
+    // if that constraint is ever removed from the query.
+    const storeLookup = (filter) => {
+      if (filter.tokenHash) return chain(store);
+      if (String(filter._id) !== String(child)) return chain(null);
+      if (filter.parentId !== undefined && String(filter.parentId) !== String(store.parentId)) return chain(null);
+      return chain(store);
+    };
+    AgentCredential.findOne.mockImplementation(storeLookup);
+
+    asChild();
+    const renew = await request(app).post(`/api/agents/runtime/spawn-credentials/${child}/renew`).send({});
+    expect(renew.status).toBe(404);
+    expect(renew.body.code).toBe('not_found');
+
+    asChild();
+    const revoke = await request(app).delete(`/api/agents/runtime/spawn-credentials/${child}`);
+    expect(revoke.status).toBe(404);
+
+    // And the row is untouched: no extension, no revocation, no backfill write.
+    expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+    expect(AgentCredential.updateMany).not.toHaveBeenCalled();
+  });
+
   test('renewing an expired child is 409: a late renewal must not resurrect it', async () => {
     const child = new Types.ObjectId();
     AgentCredential.findOne

@@ -25,6 +25,9 @@
 // Two invariants a reader should not have to re-derive from the tests:
 //   1. A child cannot mint another child. Otherwise a leaked file can be
 //      extended indefinitely and the TTL bounds nothing.
+//   1b. A renewal may extend by at most one default TTL, and no `ttlSeconds`
+//      above `SPAWN_TTL_MAX_SECONDS` (== the default) is honoured, so `(v)`
+//      holds whatever the caller asks for.
 //   2. The TTL is the authority and revocation is the optimisation — a
 //      supervisor that is SIGKILLed never runs its exit path, so a credential
 //      whose only bound was "revoked in finally" would leak on precisely the
@@ -45,7 +48,12 @@ export const SPAWN_SCOPE = 'spawn';
 // 15 minutes is the renewal TTL: it is what an abandoned credential outlives
 // its spawn by, and it is why the default is short rather than long.
 export const SPAWN_TTL_DEFAULT_SECONDS = 15 * 60;
-export const SPAWN_TTL_MAX_SECONDS = 24 * 60 * 60;
+// A caller may SHORTEN the renewal TTL, never lengthen it: the maximum is the
+// default. Letting a per-call `ttlSeconds` reach 24h would make acceptance (v)
+// — an abandoned copy is 401 within one TTL of the spawn ending — a property of
+// the caller's good manners rather than of the system (Vera 70795, Wren 70796).
+// The 24h ceiling still exists, but only on `maxExpiresAt`.
+export const SPAWN_TTL_MAX_SECONDS = SPAWN_TTL_DEFAULT_SECONDS;
 export const SPAWN_TTL_MIN_SECONDS = 60;
 // The absolute ceiling, measured from the mint: no amount of renewal moves a
 // child past it, so a supervisor that never stops renewing still dies at 24h.

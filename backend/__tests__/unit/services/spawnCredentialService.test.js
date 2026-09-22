@@ -72,8 +72,10 @@ describe('the ruling\'s numbers are pinned as literals', () => {
     expect(SPAWN_ABSOLUTE_LIFETIME_SECONDS).toBe(86400);
   });
 
-  test('a requested lifetime may not exceed 24 hours nor drop below a minute', () => {
-    expect(SPAWN_TTL_MAX_SECONDS).toBe(86400);
+  test('a requested lifetime may not exceed the 15-minute renewal TTL nor drop below a minute', () => {
+    // The caller may SHORTEN, never lengthen: with the cap at the default, one
+    // mint cannot opt out of the (v) bound (Vera 70795, Wren 70796).
+    expect(SPAWN_TTL_MAX_SECONDS).toBe(900);
     expect(SPAWN_TTL_MIN_SECONDS).toBe(60);
   });
 
@@ -96,17 +98,22 @@ describe('clampSpawnTtlSeconds', () => {
     expect(clampSpawnTtlSeconds(null)).toBe(SPAWN_TTL_DEFAULT_SECONDS);
   });
 
-  test('a lifetime above the cap is clamped down to it', () => {
-    expect(clampSpawnTtlSeconds(30 * 24 * 60 * 60)).toBe(SPAWN_TTL_MAX_SECONDS);
+  test('a lifetime above the cap is clamped down to the 15-minute default, literally', () => {
+    // Literal, not SPAWN_TTL_MAX_SECONDS: a test that reads the constant it is
+    // checking moves with it and cannot fail when the cap is widened again.
+    expect(clampSpawnTtlSeconds(901)).toBe(900);
+    expect(clampSpawnTtlSeconds(86400)).toBe(900);
+    expect(clampSpawnTtlSeconds(30 * 24 * 60 * 60)).toBe(900);
   });
 
   test('a lifetime below the floor is clamped up to it, so a spawn cannot be given a token that dies mid-turn', () => {
     expect(clampSpawnTtlSeconds(5)).toBe(SPAWN_TTL_MIN_SECONDS);
   });
 
-  test('a parseable lifetime is honoured', () => {
-    expect(clampSpawnTtlSeconds(3600)).toBe(3600);
-    expect(clampSpawnTtlSeconds('3600')).toBe(3600);
+  test('a parseable lifetime at or below the cap is honoured, so a caller may still shorten', () => {
+    expect(clampSpawnTtlSeconds(300)).toBe(300);
+    expect(clampSpawnTtlSeconds('300')).toBe(300);
+    expect(clampSpawnTtlSeconds(900)).toBe(900);
   });
 
   test('unparseable or non-positive input is refused rather than defaulted, because a silent default hides the caller bug', () => {
@@ -189,19 +196,22 @@ describe('mintSpawnCredential', () => {
     expect(result.token.startsWith('cm_agent_')).toBe(true);
   });
 
-  test('the expiry uses the clamped lifetime, not the requested one', async () => {
+  test('a mint that asks for 24 hours gets 15 minutes, because the request may only shorten', async () => {
     AgentCredential.create.mockResolvedValue(createdChild());
     const before = Date.now();
 
     const result = await mintSpawnCredential({
       seat: seatRow(),
       spawnId: 'spawn-1',
-      ttlSeconds: 30 * 24 * 60 * 60,
+      ttlSeconds: 86400,
     });
 
     const ttlMs = result.expiresAt.getTime() - before;
-    expect(ttlMs).toBeGreaterThan(SPAWN_TTL_MAX_SECONDS * 1000 - 5000);
-    expect(ttlMs).toBeLessThanOrEqual(SPAWN_TTL_MAX_SECONDS * 1000 + 5000);
+    expect(ttlMs).toBeGreaterThan(14 * 60 * 1000);
+    expect(ttlMs).toBeLessThanOrEqual(900 * 1000 + 5000);
+    // The 24h ceiling is still minted: it bounds the total of many renewals, it
+    // is not a longer first lease.
+    expect(result.maxExpiresAt.getTime() - before).toBeGreaterThan(23 * 60 * 60 * 1000);
   });
 
   test('the mint records the absolute ceiling, so renewal can never move the expiry past it', async () => {
@@ -343,6 +353,27 @@ describe('renewSpawnCredential', () => {
 
     expect(result).toEqual({ ok: false, code: 'not_renewable' });
     expect(AgentCredential.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('one renewal extends by at most the pinned 15 minutes, whatever the caller asks for', async () => {
+    const before = Date.now();
+    AgentCredential.findOne.mockReturnValue(selectedLean({
+      _id: 'child-id',
+      status: 'active',
+      expiresAt: new Date(before + 60 * 1000),
+      maxExpiresAt: new Date(before + 24 * 60 * 60 * 1000),
+    }));
+    AgentCredential.updateOne.mockResolvedValue({ modifiedCount: 1 });
+
+    const result = await renewSpawnCredential({
+      credentialId: 'child-id', seatCredentialId: SEAT_ID, ttlSeconds: 86400,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.extended).toBe(true);
+    const extendedMs = result.expiresAt.getTime() - before;
+    expect(extendedMs).toBeGreaterThan(14 * 60 * 1000);
+    expect(extendedMs).toBeLessThanOrEqual(900 * 1000 + 5000);
   });
 
   test('a long renewal stops at the absolute ceiling instead of granting the requested lifetime', async () => {

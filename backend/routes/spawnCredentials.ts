@@ -16,9 +16,11 @@
 // is how long an abandoned one outlives its spawn.
 //
 // Scope: a child may not mint (a leaked file must not be able to manufacture a
-// longer-lived one), may only renew or revoke itself, and the seat may only
-// revoke its own children — the parent link is part of every query, not a check
-// after the fact.
+// longer-lived one), and it can neither renew nor revoke itself — every write is
+// keyed on the presenting credential being the PARENT of the target, and a child
+// is nobody's parent, so a child presenting its own id is a 404 rather than a
+// refusal it could argue with. Only the seat renews or revokes its own children:
+// the parent link is part of every query, not a check after the fact.
 import express from 'express';
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query recognizes
 // the limiter (same pattern as routes/credentials.ts and routes/messages.ts).
