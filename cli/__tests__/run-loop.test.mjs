@@ -132,6 +132,85 @@ describe('performRun', () => {
     );
   });
 
+  test('a refused model route is named in the log and reported, not posted as silence', async () => {
+    // TASK-096. pi exits 0 with no text when the route refuses, so this turn
+    // used to reach the seat log as `no wrapper-post (empty output)` — the same
+    // line a seat that simply had nothing to say produces. Measured cost of that
+    // ambiguity: two and a half days of a 429 budget refusal read as an agent
+    // fault (Kai, 2026-09-20..22).
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'are you there?' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+    }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    const refusalLine = lines.find((line) => line.includes('upstream refused'));
+    expect(refusalLine).toContain('upstream refused 429');
+    expect(refusalLine).toContain('Budget has been exceeded!');
+    // The old line must be GONE for this case, not merely accompanied: a reader
+    // grepping for `no wrapper-post` should find only genuine silence.
+    expect(lines.some((line) => line.includes('no wrapper-post'))).toBe(false);
+
+    // Nothing was delivered, and the ack says why rather than saying "declined" —
+    // `no_action` with no reason would hand a human wake to another listener
+    // while a route-wide refusal queues every other seat behind the same wall.
+    expect(mockPost).not.toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', expect.anything());
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+        },
+      },
+    );
+  });
+
+  test('an empty turn with no refusal still reads as ordinary silence', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'noop' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: '', upstream: null }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(lines.some((line) => line.includes('no wrapper-post (empty output)'))).toBe(true);
+    expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
   test('one same-pod inbox page becomes one turn, carries the true count, and claims binding items before spawn', async () => {
     const events = [
       makeEvent({ _id: 'evt-batch-a', type: 'message.posted', payload: { content: 'first context', messageId: 'msg-a' } }),

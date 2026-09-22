@@ -38,6 +38,10 @@ import { mkdir, readdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  readUpstreamRefusal,
+  spawnCredentials,
+} from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
@@ -326,7 +330,7 @@ export const extractReply = (stdout) => {
   return { text, sawAssistant, errors };
 };
 
-const runPi = ({ args, cwd, env, payload, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   let stdout = '';
   let stderr = '';
   let timedOut = false;
@@ -352,6 +356,11 @@ const runPi = ({ args, cwd, env, payload, timeoutMs, spawnImpl = childSpawn }) =
     clearTimeout(timer);
     if (timedOut) return reject(new Error(`pi timed out after ${timeoutMs}ms`));
     const reply = extractReply(stdout);
+    // A refused model route is NOT an error event: pi retries the ladder itself
+    // and exits 0 with no assistant text, which is why this read has to happen
+    // on the stream rather than on the exit code (TASK-096, measured 2026-09-22).
+    const upstream = readUpstreamRefusal(stdout, { credentials });
+    if (upstream) reply.upstream = upstream;
     if (code !== 0 && !reply.sawAssistant) {
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
       return reject(new Error(`pi exited ${code}: ${tail}`));
@@ -383,6 +392,12 @@ export default {
     if (!baseEnv[provider.apiKeyEnv]) {
       throw new Error(`pi adapter: ${provider.apiKeyEnv} is not set — the seat's environment must carry the provider key (LiteLLM virtual key)`);
     }
+    // The values this spawn is handed, for the refusal log's exact-match check:
+    // the provider key the route authenticates with, and the seat credential the
+    // bridge carries. Snapshot them HERE — `withholdRuntimeCredential` removes
+    // the token from the child copy below, and after that there is nothing left
+    // to compare a refusal against.
+    const credentials = spawnCredentials(ctx, [provider.apiKeyEnv]);
 
     // Per-seat pi home: models.json holds the provider by env reference.
     const home = seatHome(ctx);
@@ -437,11 +452,13 @@ export default {
         env: childEnv,
         payload: servers.length ? JSON.stringify(servers) : undefined,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        credentials,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
       // Empty text with a clean exit is a silent turn; the run loop treats it
-      // as NO_REPLY-shaped and re-delivers on its own rules.
-      return { text: reply.text, newSessionId: sessionId };
+      // as NO_REPLY-shaped and re-delivers on its own rules. Empty text that
+      // came with a refusal is named instead — see upstream-refusal.js.
+      return { text: reply.text, newSessionId: sessionId, upstream: reply.upstream ?? null };
     } finally {
       // Best effort: the bridge has already read what it needs by the time the
       // turn ends, and a token file that outlives its turn is a token file that

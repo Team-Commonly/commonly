@@ -286,6 +286,62 @@ describe('spawn', () => {
     const impl = () => { const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stderr = new EventEmitter(); p.kill = jest.fn(() => p.emit('close', null)); return p; };
     await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl, timeoutMs: 20 }))).rejects.toThrow(/timed out/);
   });
+
+  // TASK-096. A refused model route is the one failure that reaches the wrapper
+  // as a SUCCESS: pi runs its own retry ladder, then exits 0 with no assistant
+  // text. These fixtures are the measured shapes (2026-09-22, pi 0.84.1).
+  describe('an upstream refusal is returned, not swallowed', () => {
+    const refusal = (line) => `${line}\n`;
+    const budget429 = '{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"429: {\\"message\\":\\"Budget has been exceeded! Current cost: 12.34, Max budget: 10.00\\",\\"type\\":\\"budget_exceeded\\",\\"code\\":\\"429\\"}"}';
+    const html502 = '{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"502 <html><head><title>502 Bad Gateway</title></head><body>nginx</body></html>"}';
+    const keyEcho401 = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"401: {\\"message\\":\\"Invalid API key provided: sk-live-test-secret-value\\"}"}}';
+
+    test('a 429 with a clean exit resolves with the status and the kept body', async () => {
+      const { impl } = makeSpawnImpl({ stdout: refusal(budget429), code: 0 });
+
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+
+      // Resolves rather than throwing: that exit-0 is exactly why the wrapper
+      // reported "no wrapper-post (empty output)" for two and a half days.
+      expect(result.text).toBe('');
+      expect(result.upstream).toEqual({
+        status: 429,
+        detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00',
+      });
+    });
+
+    test('a 401 that echoes the spawn key keeps the status and drops the body', async () => {
+      const key = 'sk-live-test-secret-value';
+      const { impl } = makeSpawnImpl({ stdout: refusal(keyEcho401), code: 0 });
+
+      const result = await pi.spawn('p', baseCtx({
+        _spawnImpl: impl,
+        env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: key },
+      }));
+
+      expect(result.upstream).toEqual({ status: 401, detail: null });
+      // The exact-match refusal is the whole point: the key the wrapper handed
+      // this spawn must not appear anywhere in what the turn returns.
+      expect(JSON.stringify(result)).not.toContain(key);
+    });
+
+    test('an HTML 502 keeps the status and nothing else', async () => {
+      const { impl } = makeSpawnImpl({ stdout: refusal(html502), code: 0 });
+
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+
+      expect(result.upstream).toEqual({ status: 502, detail: null });
+    });
+
+    test('a genuinely empty turn reports no refusal, so the silent path is unchanged', async () => {
+      const { impl } = makeSpawnImpl({ stdout: '', code: 0 });
+
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+
+      expect(result.text).toBe('');
+      expect(result.upstream).toBeNull();
+    });
+  });
 });
 
 describe('helpers', () => {
