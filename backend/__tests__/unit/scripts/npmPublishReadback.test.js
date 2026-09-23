@@ -42,12 +42,14 @@ const REGISTRY_SERVES = '0.1.67';
  *   STUB_FAILS_UNTIL=n        the first n `<name>@<version>` lookups 404
  *   STUB_NEVER_PUBLISHED=1    every such lookup 404s
  *   STUB_LATEST               what `dist-tags` and `<name>` lookups serve
+ *   STUB_SLEEP_SECONDS        how long each `npm view` takes
  * The call log and attempt counter are files next to the stub: the attempt
  * count is the assertion, so it must come from outside this script's output.
  */
 const stubSource = [
   '#!/usr/bin/env bash',
   "printf '%s\\n' \"$*\" >> \"$STUB_LOG.calls\"",
+  'sleep "${STUB_SLEEP_SECONDS:-0}"',
   'if [ "$1" != "view" ]; then',
   '  echo "stub: unexpected npm call: $*" >&2',
   '  exit 1',
@@ -83,16 +85,25 @@ const withStub = () => {
   return { dir, log: path.join(dir, 'npm-log') };
 };
 
-const runScript = (env) => {
+// `timeout` is load-bearing: the defect this file now guards against is a loop
+// that cannot terminate, and without a kill-timeout the suite HANGS on it —
+// which reads as an infrastructure problem rather than a failed assertion.
+const runScript = (env, { timeoutMs = 30000 } = {}) => {
   try {
     const stdout = execFileSync('bash', [SCRIPT], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
       env: { ...process.env, ...env },
     });
-    return { status: 0, stdout, stderr: '' };
+    return { status: 0, stdout, stderr: '', signal: null };
   } catch (err) {
-    return { status: err.status, stdout: err.stdout || '', stderr: err.stderr || '' };
+    return {
+      status: err.status ?? null,
+      stdout: err.stdout || '',
+      stderr: err.stderr || '',
+      signal: err.signal ?? null,
+    };
   }
 };
 
@@ -135,6 +146,47 @@ describe('npm publish read-back', () => {
 
     expect(result.status).toBe(1);
     expect(attempts(log)).toBe(3);
+  });
+
+  test('the budget is a clock: interval 0 with a non-zero budget still terminates', () => {
+    // Vera 71347, reproduced: `elapsed` advanced only by INTERVAL_SECONDS, so at
+    // interval 0 it never reached the timeout — 789 attempts in 8s, still
+    // reporting 0s, killed by an external alarm. In the release job that is not a
+    // red step but a run held to the six-hour limit. The assertion is that the
+    // script EXITS 1 (not that it is fast): the kill-timeout turns a hang into a
+    // failure, and attempts > 1 proves the loop actually ran more than once.
+    const { dir, log } = withStub();
+    const started = Date.now();
+    const result = runScript(
+      withEnv(dir, log, {
+        STUB_NEVER_PUBLISHED: '1',
+        READBACK_INTERVAL_SECONDS: '0',
+        READBACK_TIMEOUT_SECONDS: '2',
+      }),
+      { timeoutMs: 15000 },
+    );
+
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(1);
+    expect(attempts(log)).toBeGreaterThan(1);
+    expect(Date.now() - started).toBeLessThan(12000);
+  });
+
+  test('the reported elapsed is a clock, not the sum of the intervals', () => {
+    // With interval 0 the old arithmetic reported `0s after publish` no matter
+    // how long the poll took, because it only ever added INTERVAL_SECONDS. A
+    // 1.2s stub makes the two disagree by construction.
+    const { dir, log } = withStub();
+    const result = runScript(withEnv(dir, log, {
+      STUB_SLEEP_SECONDS: '1.2',
+      STUB_LATEST: WANT,
+      READBACK_INTERVAL_SECONDS: '0',
+      READBACK_TIMEOUT_SECONDS: '30',
+    }));
+
+    expect(result.status).toBe(0);
+    expect(attempts(log)).toBe(1);
+    expect(result.stdout).toMatch(/is live \(attempt 1, [1-9]\d*s after publish\)/);
   });
 
   test('exhaustion names what the registry serves and exits non-zero', () => {

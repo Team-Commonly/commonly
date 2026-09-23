@@ -24,8 +24,17 @@
 # Env:
 #   NAME                            package name, e.g. @commonlyai/cli   (required)
 #   WANT                            the version just published           (required)
-#   READBACK_TIMEOUT_SECONDS        total budget, default 300
+#   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default 300
 #   READBACK_INTERVAL_SECONDS       gap between polls, default 10
+#
+# The budget is measured on a CLOCK, not by adding up the gaps. Summing the
+# intervals made the budget depend on an env var the caller controls: at
+# READBACK_INTERVAL_SECONDS=0 the loop could never reach the timeout (789
+# attempts in 8s, still reporting 0s, killed by an external alarm — Vera 71347),
+# and at any interval it undercounted by every `npm view` round-trip, so the
+# "after 300s" in the failure line was not what happened. Both matter here: this
+# runs inside a release job, where a loop that cannot terminate is not a red step
+# but a run held to the six-hour limit.
 #
 # Exits 0 once the registry serves NAME@WANT; 1 if the budget runs out. Never
 # exits 0 on a value it did not read.
@@ -43,11 +52,12 @@ INTERVAL_SECONDS="${READBACK_INTERVAL_SECONDS:-10}"
 stderr_file=$(mktemp)
 trap 'rm -f "$stderr_file"' EXIT
 
-elapsed=0
+started_at=$(date +%s)
 attempt=0
 while :; do
   attempt=$((attempt + 1))
   got=$(npm view "$NAME@$WANT" version 2>"$stderr_file" || true)
+  elapsed=$(( $(date +%s) - started_at ))
 
   if [ "$got" = "$WANT" ]; then
     echo "✓ $NAME@$WANT is live (attempt $attempt, ${elapsed}s after publish)"
@@ -60,7 +70,6 @@ while :; do
 
   echo "· $NAME@$WANT not visible yet (attempt $attempt, ${elapsed}s; got '${got:-<empty>}') — retrying in ${INTERVAL_SECONDS}s"
   sleep "$INTERVAL_SECONDS"
-  elapsed=$((elapsed + INTERVAL_SECONDS))
 done
 
 echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)). The publish step reported success, so check what the registry is actually serving below before re-running."
