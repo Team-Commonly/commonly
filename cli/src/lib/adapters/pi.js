@@ -43,6 +43,7 @@ import {
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { effectiveSandboxTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
@@ -283,10 +284,23 @@ export const sessionExists = async (sessionDir, sessionId) => {
   }
 };
 
-/** Fail closed: pi cannot enforce `environment.sandbox`, so a seat that declares one does not start. */
+/**
+ * Fail closed: pi cannot enforce `environment.sandbox`, so a seat that declares
+ * one does not start.
+ *
+ * The trust is read THROUGH the legacy table (`effectiveSandboxTrust`), not
+ * raw. A stored `internal` means `public` (Vera 69592, Wren 69585) and every
+ * other gate in this package resolves it that way: the attach path
+ * (`agent.js`), the mode resolver (`sandbox/mode.js`) and the grant-broker
+ * guard. Reading it raw here made this gate the one site that failed OPEN — a
+ * legacy record passed both checks and the seat started unconfined, which is
+ * the exact outcome that was refused for the record it was migrated from.
+ * The mode clause needs no mapping: `internal` and the derived mode are
+ * independent, and a public-meaning record is refused before the mode is read.
+ */
 export const assertNoSandboxDeclared = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
-  if (sandbox.trust === 'public') {
+  if (effectiveSandboxTrust(sandbox.trust) === 'public') {
     throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
   }
   if (sandbox.mode && sandbox.mode !== 'none') {

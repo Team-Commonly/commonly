@@ -513,6 +513,23 @@ describe('sandbox — fail closed: pi cannot enforce one', () => {
       .rejects.toThrow(/public-trust seats are not supported/);
     expect(calls).toHaveLength(0);
   });
+  // TASK-114. This gate read `trust` raw, so it was the one site in the package
+  // that failed OPEN: a stored `internal` means `public` (Vera 69592, Wren
+  // 69585) and every other gate resolves it that way, but here both checks
+  // passed and the seat started with no confinement — pi confines on no host,
+  // so that is the whole of its confinement. Read through the shared reader.
+  test('a legacy `internal` record is refused too — it means public, and pi reads it that way', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'internal' } } })))
+      .rejects.toThrow(/public-trust seats are not supported/);
+    expect(calls).toHaveLength(0);
+  });
+  test("an explicit mode 'none' does not rescue a legacy `internal` record", async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { trust: 'internal', mode: 'none' } } })))
+      .rejects.toThrow(/public-trust seats are not supported/);
+    expect(calls).toHaveLength(0);
+  });
   test('a declared sandbox mode is refused rather than silently left unenforced', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
     await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { sandbox: { mode: 'workspace' } } })))
