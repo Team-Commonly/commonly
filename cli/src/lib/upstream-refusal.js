@@ -29,14 +29,15 @@
  *     relayed in an upstream error is not detectable here, because the one
  *     inventory this module has is the set of values it was itself handed.
  *
- * Scope: this reader is wired into the pi adapter only. codex and claude are NOT
- * silent the way pi was: the claude adapter rejects on a non-zero exit and
- * deliberately reports stdout with it, because a `-p` run writes quota
- * conditions there; the codex adapter rejects on `turnFailedMessage` even at
- * exit 0. Their gap is the opposite one — the text they raise is the raw tail,
- * unscrubbed by the rules above, and carries no HTTP status for the run loop to
- * key a refusal on. Extending this module to them is adapter work (TASK-103),
- * not a line in this comment.
+ * Scope: this reader was wired into the pi adapter only. TASK-103 extended it
+ * to codex and claude, which are NOT silent the way pi was: the claude adapter
+ * rejects on a non-zero exit and deliberately reports stdout with it, because a
+ * `-p` run writes quota conditions there; the codex adapter rejects on
+ * `turnFailedMessage` even at exit 0. Their gap was the opposite one — the text
+ * they raised was the raw tail, unscrubbed by the rules above, and carried no
+ * HTTP status for the run loop to classify on. `scrubAdapterFailure` below is
+ * the shared reader they now both go through, so the two rules cannot drift
+ * apart between three adapters.
  */
 
 /** The kept detail is truncated, ellipsis included, to this many characters. */
@@ -177,6 +178,82 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
 
   if (status === null) return null;
   return { status, detail: keptRefusalDetail(raw, { credentials }) };
+};
+
+/**
+ * The first 4xx/5xx the text names, at the start or anywhere in it.
+ *
+ * `statusFromError` is anchored at the start because pi hands over one candidate
+ * string. An adapter's tail is different: claude joins stderr and stdout with
+ * ` | `, so when stderr has anything at all the status is NOT at position 0 — a
+ * prefix-only read would report a 429 body as an unclassified runtime failure,
+ * which is the misclassification this work exists to remove. A standalone
+ * three-digit token is what is matched, so a timestamp (`2026-09-23T…`) or a
+ * count (`1234 tokens`) is not read as a status.
+ */
+const statusInText = (text) => {
+  const prefixed = statusFromError(text);
+  if (prefixed !== null) return prefixed;
+  for (const match of String(text ?? '').matchAll(/\b(\d{3})\b/g)) {
+    const value = Number(match[1]);
+    if (value >= 400 && value <= 599) return value;
+  }
+  return null;
+};
+
+/**
+ * The shared reader for an adapter's own failure tail (TASK-103).
+ *
+ * The two rules above are about a body an adapter captured, and they apply here
+ * too — but the tail is a different shape from pi's refusal, and the difference
+ * decides how each rule lands:
+ *
+ *  - The tail is often NOT JSON. Claude's `-p` mode writes its terminal
+ *    condition as prose (`Claude usage limit reached. Your limit will reset at
+ *    11:40pm.`), and that line is the whole diagnostic value of reporting
+ *    stdout at all — 361 consecutive failures on 2026-08-03 carried no reason
+ *    because of it. So the keep-list applies only when the tail parses as a
+ *    body; when it does not, the text is KEPT as a whole shape and the
+ *    exact-match rule is what protects it (`redactKnownCredentials`, which
+ *    substitutes rather than drops, precisely because a whole-shape text has no
+ *    second field to fall back to).
+ *
+ *  - A body that IS JSON is reduced to one named field, and a field that echoed
+ *    a value this spawn was handed is dropped and the whole body redacted — the
+ *    same trade rule 2 makes everywhere.
+ *
+ * Returns `{ status, detail }`: `status` is the 4xx/5xx the tail named, or null.
+ * The caller decides where the status goes; `classifySpawnFailure` reads it off
+ * `error.status` or out of the message text, so both a leading `429: …` prefix
+ * and an attached field classify the same way.
+ */
+export const scrubAdapterFailure = (text, { credentials = [], limit = MAX_REFUSAL_DETAIL } = {}) => {
+  const raw = String(text ?? '').trim();
+  const atStart = statusFromError(raw);
+  const status = atStart ?? statusInText(raw);
+  const body = atStart === null ? raw : bodyFromError(raw);
+  const kept = keptRefusalDetail(body, { credentials });
+  const detail = kept ?? redactKnownCredentials(body, credentials);
+  return { status, detail: detail.slice(0, limit) };
+};
+
+/**
+ * The Error an adapter raises, built from its own failure tail.
+ *
+ * `status` is attached as a field, not only written into the text: the run
+ * loop's classifier tests `error.status === 429` before it looks at the
+ * message, and a refusal that is only readable by regex is one wording away
+ * from the misclassification that cost an hour on 2026-08-18 (see
+ * spawn-retry.js). The message still names the status so a human log says the
+ * same thing as the classifier's decision.
+ */
+export const adapterFailure = (label, text, { credentials = [], exitCode = null, limit } = {}) => {
+  const { status, detail } = scrubAdapterFailure(text, { credentials, limit });
+  const code = exitCode === null ? '' : ` exited with code ${exitCode}`;
+  const named = status === null ? '' : ` (upstream ${status})`;
+  const error = new Error(`${label}${code}${named}: ${detail}`);
+  if (status !== null) error.status = status;
+  return error;
 };
 
 /**

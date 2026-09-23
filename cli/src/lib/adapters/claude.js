@@ -75,6 +75,7 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -234,7 +235,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
   ];
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   const proc = spawnImpl(cmd, args, {
     cwd,
     env,
@@ -265,8 +266,19 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
       // at all because of this. It is not only a diagnosability problem: the
       // circuit breaker classifies from the error message, so a blank message
       // downgrades a hard quota failure to RUNTIME and its shortest backoff.
+      //
+      // TASK-103: the tail goes through the same reader pi's refusal log uses.
+      // A non-JSON tail (which this normally is — the usage-limit line above is
+      // prose) is kept whole and only exact-match redacted; a JSON body is
+      // reduced to one named field. The status, when the tail names one, is
+      // attached as `error.status` so a refusal classifies by field rather than
+      // by regex.
       const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
-      return reject(new Error(`claude exited with code ${code}: ${detail.slice(0, 2000)}`));
+      return reject(adapterFailure('claude', detail, {
+        credentials,
+        exitCode: code,
+        limit: 2000,
+      }));
     }
     resolve(stdout);
   });
@@ -688,6 +700,11 @@ export default {
         cwd: ctx.cwd,
         env,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        // The values this spawn was handed, for the failure tail's exact-match
+        // check. Snapshot before the spawn: claude is subscription-authenticated
+        // and its provider key is not an env var here, so the seat credential is
+        // the value a tail can echo back.
+        credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
       return { text: stdout.trim(), newSessionId: sessionId };
@@ -703,7 +720,7 @@ export default {
         // session that misses the durable-state cue.
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
         const retryBase = ['-p', freshPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
-        const retry = await prepareArgv(retryBase, {
+        const retryCtx = {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
@@ -714,13 +731,15 @@ export default {
             mcpConfig?.expansionEnv,
             mcpConfig?.credential?.path || null,
           ),
-        });
+        };
+        const retry = await prepareArgv(retryBase, retryCtx);
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
           cwd: ctx.cwd,
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+          credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl,
         });
         return { text: stdout.trim(), newSessionId: freshId };

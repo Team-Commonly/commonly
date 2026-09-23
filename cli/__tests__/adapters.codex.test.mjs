@@ -605,6 +605,33 @@ describe('codex adapter — spawn()', () => {
     ).rejects.toThrow(/codex exited with code 1.*auth error/);
   });
 
+  test('a turn.failed tail is scrubbed and status-named without losing its wording', async () => {
+    // TASK-103. This branch is the one that becomes the agent's REPLY (see the
+    // adapter's comment), so a tail echoing the provider key would be posted
+    // into a pod. The wording itself must survive — that is why the branch
+    // reports stdout at all — and the status must be attached so the circuit
+    // breaker stands down instead of probing a provider that answered 429.
+    const secret = 'sk-litellm-abcdef123456';
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-1"}\n',
+        `{"type":"turn.failed","error":{"message":"429: insufficient_quota for key ${secret}"}}\n`,
+      ],
+      code: 0,
+    });
+
+    const err = await codex.spawn('x', {
+      sessionId: null,
+      env: { ...process.env, LITELLM_API_KEY: secret },
+      _spawnImpl: impl,
+    }).catch((e) => e);
+
+    expect(err.message).toContain('insufficient_quota');
+    expect(err.message).not.toContain(secret);
+    expect(err.message).toContain('upstream 429');
+    expect(err.status).toBe(429);
+  });
+
   test('rejects on timeout and SIGTERMs the child', async () => {
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
