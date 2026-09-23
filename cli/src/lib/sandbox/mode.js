@@ -29,20 +29,13 @@
  * host mechanism — its permission profiles run on both platforms — so its
  * derived default is 'workspace' everywhere.
  */
-import { LEGACY_SANDBOX_TRUST } from '../environment.js';
+import { effectiveSandboxTrust } from '../environment.js';
 
 export const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 
-/** `internal` → `public`; anything else (including absent) is itself. */
-const effectiveTrust = (trust) => (
-  typeof trust === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, trust)
-    ? LEGACY_SANDBOX_TRUST[trust]
-    : trust
-);
-
 export const resolvePublicSandboxMode = (sandbox, platform = process.platform) => {
   const declared = sandbox?.mode;
-  if (effectiveTrust(sandbox?.trust) !== 'public') return declared;
+  if (effectiveSandboxTrust(sandbox?.trust) !== 'public') return declared;
   if (declared !== undefined && declared !== null) return declared;
   return platform === 'darwin' ? 'workspace' : 'bwrap';
 };

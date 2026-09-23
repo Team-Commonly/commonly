@@ -74,7 +74,7 @@
  */
 import { isGrantBrokerUrl } from './adapters/pi-mcp-client.mjs';
 import { ADAPTERS_WITH_DEFAULT_SANDBOX } from './default-environment.js';
-import { LEGACY_SANDBOX_TRUST } from './environment.js';
+import { effectiveSandboxTrust } from './environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './sandbox/mode.js';
 
 /** One typed code, two emitters (`decidedBy` says which one spoke). */
@@ -91,13 +91,6 @@ export const ENFORCING_MODES = new Set([...PUBLIC_SANDBOX_MODES, 'bwrap']);
 
 const URL_PLACEHOLDERS = ['${COMMONLY_API_URL}', '${COMMONLY_INSTANCE_URL}'];
 const PARSE_ANCHOR = 'https://grant-declaration.invalid';
-
-/** `internal` → `public`; anything else (including absent) is itself. */
-const effectiveTrust = (trust) => (
-  typeof trust === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, trust)
-    ? LEGACY_SANDBOX_TRUST[trust]
-    : trust
-);
 
 /**
  * A bound instance is only trimmed here (`agent.js` does the same). Any
@@ -190,7 +183,7 @@ export const confinementReason = (environment, adapter, platform = process.platf
   if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return 'sandbox_absent';
   const declared = sandbox;
   if (declared.mode === 'none') return 'sandbox_mode_none';
-  if (effectiveTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
+  if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
   const mode = resolvePublicSandboxMode(declared, platform);
   if (typeof mode !== 'string' || !ENFORCING_MODES.has(mode)) return 'sandbox_mode_unenforceable';
   return null;
@@ -220,7 +213,7 @@ const detailFor = (reason, adapter, environment) => {
   }
   const trust = environment?.sandbox?.trust;
   const shown = trust === undefined ? 'absent' : `'${String(trust)}'`;
-  return `the declared sandbox.trust is ${shown}${shown === 'absent' ? '' : ` (effective '${String(effectiveTrust(trust))}')`},`
+  return `the declared sandbox.trust is ${shown}${shown === 'absent' ? '' : ` (effective '${String(effectiveSandboxTrust(trust))}')`},`
     + " and no host confines a seat whose trust is not 'public'; declare sandbox.trust 'public'" + ` ${drop}`;
 };
 

@@ -69,6 +69,22 @@ export const normalizeSandboxTrust = (sandbox) => (
     ? { ...sandbox, trust: LEGACY_SANDBOX_TRUST[sandbox.trust] }
     : sandbox
 );
+/**
+ * A declared trust resolved THROUGH the legacy table: `internal` → `public`,
+ * anything else (including absent) is itself.
+ *
+ * Exported so every gate reads the mapping once. `normalizeSandboxTrust` above
+ * rewrites a whole sandbox object; this is the scalar form for a site that only
+ * compares the trust and must not write anything back. The server spells the
+ * same predicate `effectiveSandboxTrust` (`grantBrokerConfinement.ts`) — the two
+ * sides have to read `internal` the same way or one of them confines a seat the
+ * other withholds from (Wren 71662).
+ */
+export const effectiveSandboxTrust = (trust) => (
+  typeof trust === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, trust)
+    ? LEGACY_SANDBOX_TRUST[trust]
+    : trust
+);
 
 const expandHome = (p) => {
   if (!p || typeof p !== 'string') return p;
