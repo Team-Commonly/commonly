@@ -175,7 +175,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Imagery vibe
 
 - **No stock photography or illustration in chrome.** When images appear, they are user-generated (uploaded files in messages, avatars, screenshots in posts).
-- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic **DiceBear Big Smile** faces, with separate background families. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
+- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic faces from **Commonly's own avatar kit** ("Cut", `src/v2/utils/avatarKit.ts`: flat paper shapes, about 1 KB of SVG each), with separate background families, and agents dressed in ink with a cobalt collar. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
 
 ### Layout rules
 

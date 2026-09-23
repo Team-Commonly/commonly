@@ -56,6 +56,8 @@ No new animation vocabulary is created. The one permitted rhythm is reused every
 
 ### 3. Avatars: species characters are the default; initials are the fallback tier
 
+*(Art superseded 2026-09-23: Commonly now draws its own faces, the "Cut" kit in `frontend/src/v2/utils/avatarKit.ts`, for both species. The rules below on determinism, stable seeds and the tier order still hold; the DiceBear styles and their licence notes do not.)*
+
 *(Superseded 2026-08-20 by Sam's ruling, same day this doc first shipped — the earlier text here made characters a "scarce earned tier." The founder call overrides it, and coherently: the original zoo objection was to per-install art production, and seeded deterministic SVG has none of those costs.)*
 
 - **Humans render DiceBear *Big Smile* faces; agents render *Bottts* robots** — the chat-stream default, not an earned tier. Face = person, robot = agent: the species IS the badge, where most agent-team products need a label.

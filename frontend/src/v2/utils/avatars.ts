@@ -1,7 +1,6 @@
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { createAvatar } from '@dicebear/core';
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { bigSmile } from '@dicebear/collection';
+import {
+  faceTraitsFor, renderFace, faceDataUri, FaceCell, HairStyle, Accessory,
+} from './avatarKit';
 
 // Avatar tints. Blue-forward and cohesive with the design system's single
 // accent (#2f6feb) — deliberately purple-free (the old palette led with two
@@ -115,26 +114,26 @@ export const initialsFor = (name: string | undefined | null): string => {
 
 // ── Character tier ──────────────────────────────────────────────────────────
 //
-// Sam's ruling (2026-08-21, revising 2026-08-20): bigSmile faces for BOTH
-// species — the bottts robots read as ugly in practice. Species still has to
-// be legible at a glance in mixed chat, so the kind now selects the
-// BACKGROUND family instead of the art style: humans sit on warm tints,
-// agents on cool ones. The two sets are disjoint on purpose.
+// Commonly's own faces for BOTH species (Sam, 2026-09-23: the "Cut" direction
+// from the Avatar kit canvas, replacing DiceBear Big Smile; see avatarKit.ts).
+// Species has to be legible at a glance in mixed chat, so it is carried twice:
+// the kind selects the BACKGROUND family (people on warm tints, agents on cool
+// ones, disjoint on purpose), and the face itself dresses agents in ink with a
+// cobalt collar while people wear light shirts.
 //
 // The stored prefixes ('bigsmile:' / 'bottts:') are SPECIES TAGS on the wire,
-// not artwork names — 'bottts:<seed>' means "agent-styled character", and
-// after this revision that renders a bigSmile face on an agent tint. Keeping
-// the tag stable is what let this revision ship with zero backend changes and
-// zero data migration.
+// not artwork names — 'bottts:<seed>' means "agent-styled character" and
+// 'bigsmile:<seed>' means "person-styled character", whatever the art is.
+// Keeping the tags stable is what lets an art change ship with zero backend
+// changes and zero data migration: a stored pick keeps its seed and redraws.
 //
 // Deterministic, local, SVG: same seed, same face, forever. No image API and
 // no art pipeline, so install #10,000 costs what install #1 did. That is what
 // separates this tier from generated art, which was rejected for exactly
 // those costs.
 //
-// License note that must not rot: bigSmile is CC BY 4.0 — the visible credit
-// in the login footer is a LICENSE REQUIREMENT, not decoration. If the style
-// is ever swapped, re-check the license and the credit line together.
+// License: the faces are drawn in this repo, so no third-party credit is owed.
+// If a licensed style ever comes back, its credit line comes back with it.
 export type AvatarKind = 'human' | 'agent';
 
 // Disjoint background families — the species signal now that both kinds share
@@ -152,25 +151,19 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
 //
 // A grid of 8 random rolls can hand a user 8 similar faces and nothing that
 // looks like them. So the picker's 8 cells are CURATED, not rolled: cell i
-// pins skin tone i of bigSmile's full range (lightest → deepest, one each, so
+// pins skin tone i of the full range (lightest → deepest, one each, so
 // every grid spans the whole range), and alternates between the two hair
 // presentation groups. The seed still personalizes everything else — which
 // style within the group, hair color, eyes, mouth — so two users' grids stay
 // different while both stay representative.
 //
-// Natural browns/black plus two warm dyes. Deliberately excludes bigSmile's
-// violet/teal hair, which fights the tinted backgrounds.
-const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
-// Everyday accessories only — the default set includes clown noses and cat
-// ears, which is the wrong register for a colleague's face. Mustache appears
-// only in male-leaning archetype cells below, never in the shared default.
-const ACCESSORIES = ['glasses', 'sunglasses', 'mustache'] as const;
+// Hair colors, skin tones and accessories live in avatarKit.ts with the art.
 
 // ── The archetype grid (Sam, 2026-08-21: "Asian male female, Caucasian ones,
 // black ones brown ones") ───────────────────────────────────────────────────
 //
-// Ethnic representation in bigSmile is expressed through the three levers the
-// style exposes: skin tone + hair style + hair color. The 24 cells are
+// Ethnic representation is expressed through three levers: skin tone + hair
+// style + hair color. The 24 cells are
 // CURATED combinations, laid out as 4 rows of 6 — East Asian, Caucasian,
 // brown (South Asian / Latino / MENA), Black — each row 3 female-leaning +
 // 3 male-leaning looks. The seed still personalizes within a cell (which
@@ -180,65 +173,54 @@ const ACCESSORIES = ['glasses', 'sunglasses', 'mustache'] as const;
 //
 // Cells derive from the `-v<n>` suffix (see presetCharacterOptions in
 // utils/avatarUtils), so stored values stay plain seeds — zero storage or
-// backend changes. (`as const`-friendly literal arrays throughout: dicebear
-// types these fields as literal-union arrays, so widened string[] does not
-// compile.)
-const F_ACC = ['glasses', 'sunglasses'] as const;
-const M_ACC = ['glasses', 'sunglasses', 'mustache'] as const;
+// backend changes. Hair names are avatarKit's seven cuts; the typed table
+// makes a misspelled cut a compile error rather than a silent default.
+const F_ACC: Accessory[] = ['glasses', 'sunglasses'];
+const M_ACC: Accessory[] = ['glasses', 'sunglasses', 'mustache'];
 
-interface PickerArchetype {
+type PickerArchetype = FaceCell & {
   skin: string[];
-  hair: string[];
+  hair: HairStyle[];
   color: string[];
-  acc: string[];
-}
+  acc: Accessory[];
+};
 
-export const PICKER_ARCHETYPES: PickerArchetype[] = ([
+export const PICKER_ARCHETYPES: PickerArchetype[] = [
   // Row 1 — East Asian: light tones, black straight-leaning hair
-  { skin: ['ffe4c0'], hair: ['straightHair', 'bangs'], color: ['220f00'], acc: F_ACC },
-  { skin: ['f5d7b1'], hair: ['bunHair', 'wavyBob'], color: ['220f00', '3a1a00'], acc: F_ACC },
-  { skin: ['efcc9f'], hair: ['bangs', 'bunHair'], color: ['220f00'], acc: F_ACC },
-  { skin: ['ffe4c0'], hair: ['shortHair', 'bowlCutHair'], color: ['220f00'], acc: M_ACC },
-  { skin: ['f5d7b1'], hair: ['shortHair', 'straightHair'], color: ['220f00'], acc: M_ACC },
-  { skin: ['efcc9f'], hair: ['curlyShortHair', 'shortHair'], color: ['220f00', '3a1a00'], acc: M_ACC },
+  { skin: ['ffe4c0'], hair: ['long', 'bob'], color: ['220f00'], acc: F_ACC },
+  { skin: ['f5d7b1'], hair: ['bun', 'bob'], color: ['220f00', '3a1a00'], acc: F_ACC },
+  { skin: ['efcc9f'], hair: ['bob', 'bun'], color: ['220f00'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['crop', 'side'], color: ['220f00'], acc: M_ACC },
+  { skin: ['f5d7b1'], hair: ['crop', 'side'], color: ['220f00'], acc: M_ACC },
+  { skin: ['efcc9f'], hair: ['curly', 'crop'], color: ['220f00', '3a1a00'], acc: M_ACC },
   // Row 2 — Caucasian: light tones, blonde / brown / ginger
-  { skin: ['ffe4c0'], hair: ['wavyBob', 'curlyBob'], color: ['e9b729', 'd56c0c'], acc: F_ACC },
-  { skin: ['f5d7b1'], hair: ['straightHair', 'bangs'], color: ['71472d', 'e2ba87'], acc: F_ACC },
-  { skin: ['ffe4c0'], hair: ['bunHair', 'wavyBob'], color: ['3a1a00', '71472d'], acc: F_ACC },
-  { skin: ['ffe4c0'], hair: ['shortHair', 'curlyShortHair'], color: ['e9b729', '71472d'], acc: M_ACC },
-  { skin: ['f5d7b1'], hair: ['shortHair', 'mohawk'], color: ['3a1a00', 'd56c0c'], acc: M_ACC },
-  { skin: ['efcc9f'], hair: ['curlyShortHair', 'shavedHead'], color: ['71472d'], acc: M_ACC },
+  { skin: ['ffe4c0'], hair: ['bob', 'curly'], color: ['e9b729', 'd56c0c'], acc: F_ACC },
+  { skin: ['f5d7b1'], hair: ['long', 'bob'], color: ['71472d', 'e2ba87'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['bun', 'bob'], color: ['3a1a00', '71472d'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['crop', 'curly'], color: ['e9b729', '71472d'], acc: M_ACC },
+  { skin: ['f5d7b1'], hair: ['crop', 'side'], color: ['3a1a00', 'd56c0c'], acc: M_ACC },
+  { skin: ['efcc9f'], hair: ['curly', 'shaved'], color: ['71472d'], acc: M_ACC },
   // Row 3 — brown (South Asian / Latino / MENA): mid tones, dark hair
-  { skin: ['e2ba87'], hair: ['straightHair', 'wavyBob'], color: ['220f00', '3a1a00'], acc: F_ACC },
-  { skin: ['c99c62'], hair: ['braids', 'bunHair'], color: ['220f00'], acc: F_ACC },
-  { skin: ['e2ba87'], hair: ['curlyBob', 'bangs'], color: ['3a1a00'], acc: F_ACC },
-  { skin: ['e2ba87'], hair: ['shortHair', 'curlyShortHair'], color: ['220f00', '3a1a00'], acc: M_ACC },
-  { skin: ['c99c62'], hair: ['shortHair', 'shavedHead'], color: ['220f00'], acc: M_ACC },
-  { skin: ['c99c62'], hair: ['curlyShortHair', 'mohawk'], color: ['220f00'], acc: M_ACC },
+  { skin: ['e2ba87'], hair: ['long', 'bob'], color: ['220f00', '3a1a00'], acc: F_ACC },
+  { skin: ['c99c62'], hair: ['long', 'bun'], color: ['220f00'], acc: F_ACC },
+  { skin: ['e2ba87'], hair: ['curly', 'bob'], color: ['3a1a00'], acc: F_ACC },
+  { skin: ['e2ba87'], hair: ['crop', 'curly'], color: ['220f00', '3a1a00'], acc: M_ACC },
+  { skin: ['c99c62'], hair: ['crop', 'shaved'], color: ['220f00'], acc: M_ACC },
+  { skin: ['c99c62'], hair: ['curly', 'side'], color: ['220f00'], acc: M_ACC },
   // Row 4 — Black: deep tones, textured styles
-  { skin: ['a47539'], hair: ['braids', 'froBun'], color: ['220f00'], acc: F_ACC },
-  { skin: ['8c5a2b'], hair: ['curlyBob', 'bunHair'], color: ['220f00'], acc: F_ACC },
-  { skin: ['643d19'], hair: ['braids', 'curlyBob'], color: ['220f00'], acc: F_ACC },
-  { skin: ['8c5a2b'], hair: ['curlyShortHair', 'froBun'], color: ['220f00'], acc: M_ACC },
-  { skin: ['643d19'], hair: ['shavedHead', 'shortHair'], color: ['220f00'], acc: M_ACC },
-  { skin: ['a47539'], hair: ['halfShavedHead', 'curlyShortHair'], color: ['220f00'], acc: M_ACC },
-] as Array<{ skin: readonly string[]; hair: readonly string[]; color: readonly string[]; acc: readonly string[] }>)
-  .map((a) => ({ skin: [...a.skin], hair: [...a.hair], color: [...a.color], acc: [...a.acc] }));
+  { skin: ['a47539'], hair: ['long', 'bun'], color: ['220f00'], acc: F_ACC },
+  { skin: ['8c5a2b'], hair: ['curly', 'bun'], color: ['220f00'], acc: F_ACC },
+  { skin: ['643d19'], hair: ['long', 'curly'], color: ['220f00'], acc: F_ACC },
+  { skin: ['8c5a2b'], hair: ['curly', 'bun'], color: ['220f00'], acc: M_ACC },
+  { skin: ['643d19'], hair: ['shaved', 'crop'], color: ['220f00'], acc: M_ACC },
+  { skin: ['a47539'], hair: ['side', 'curly'], color: ['220f00'], acc: M_ACC },
+];
 
 export const PICKER_CELL_COUNT = PICKER_ARCHETYPES.length;
 
-const variantTraits = (key: string) => {
+const cellFor = (key: string): PickerArchetype | undefined => {
   const m = /-v([1-9]|1[0-9]|2[0-4])$/.exec(key);
-  if (!m) return null;
-  const cell = PICKER_ARCHETYPES[Number(m[1]) - 1];
-  if (!cell) return null;
-  return {
-    skinColor: cell.skin,
-    hair: cell.hair,
-    hairColor: cell.color,
-    accessories: cell.acc,
-    accessoriesProbability: 20,
-  };
+  return m ? PICKER_ARCHETYPES[Number(m[1]) - 1] : undefined;
 };
 
 /**
@@ -259,22 +241,11 @@ export const characterAvatarFor = (
   const key = String(seed || '').trim();
   if (!key) return null;
   // Same-seed human and agent still must never render identically (the
-  // species-legibility rule) — the disjoint background families guarantee it
-  // even on a face collision.
-  const options = {
-    seed: key,
-    backgroundColor: [backgroundFor(key, kind).slice(1)],
-    hairColor: [...HAIR_COLORS],
-    accessories: [...ACCESSORIES],
-    accessoriesProbability: 25,
-    ...variantTraits(key),
-  };
+  // species-legibility rule): the disjoint background families guarantee it
+  // even on a face collision, and the shirt and collar say it again.
   try {
-    // Cast: the archetype table's fields are runtime string[]s, but dicebear
-    // types every option as a literal-union array. The table's values are
-    // pinned by the avatarCharacter tests against the RENDERED SVG, which is
-    // a stronger guarantee than the compile-time enum the cast gives up.
-    return createAvatar(bigSmile, options as Parameters<typeof createAvatar>[1]).toDataUri();
+    const traits = faceTraitsFor(key, kind, backgroundFor(key, kind).slice(1), cellFor(key));
+    return faceDataUri(renderFace(traits));
   } catch {
     return null;
   }

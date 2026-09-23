@@ -1,9 +1,14 @@
 import { characterAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT } from '../utils/avatars';
+import {
+  faceTraitsFor, renderFace, HAIR_STYLES, SKIN_TONES, FaceTraits,
+} from '../utils/avatarKit';
+
+const svgOf = (uri: string | null): string => decodeURIComponent(String(uri).replace(/^data:image\/svg\+xml;utf8,/, ''));
 
 /**
- * The character tier: bigSmile faces for BOTH species (Sam's 2026-08-21
- * revision — the robots were rejected on looks), with species carried by
- * disjoint background families instead of art style. Everything here defends
+ * The character tier: Commonly's own faces for BOTH species (the "Cut" kit,
+ * Sam 2026-09-23, replacing Big Smile), with species carried by disjoint
+ * background families and by dress: agents in ink with a cobalt collar. Everything here defends
  * the properties that make it shippable at all — determinism, distinctness,
  * species legibility, and a fallback that cannot strand a render.
  */
@@ -51,8 +56,8 @@ describe('characterAvatarFor', () => {
   test('every archetype cell renders its own skin tone, every user', () => {
     // Sam's rule (2026-08-21): explicit representation, not a rolled
     // gradient. Each of the 24 cells is a curated combination; the cell's
-    // tone must appear in the RENDERED SVG itself, so a dicebear enum rename
-    // fails loudly instead of silently rolling random faces again.
+    // tone must appear in the RENDERED SVG itself, so a table edit that stops
+    // reaching the renderer fails loudly instead of silently rolling faces.
     expect(PICKER_ARCHETYPES).toHaveLength(24);
     for (const base of ['sam', 'someone-else']) {
       PICKER_ARCHETYPES.forEach((cell, i) => {
@@ -66,11 +71,11 @@ describe('characterAvatarFor', () => {
 
   test('the archetype table stays representation-complete', () => {
     // The four ethnic rows and both gender presentations must survive edits:
-    // all 8 bigSmile skin tones appear somewhere, and both accessory shapes
+    // all 8 skin tones appear somewhere, and both accessory shapes
     // (mustache-bearing male-leaning, mustache-free female-leaning) exist.
     expect(PICKER_CELL_COUNT).toBe(PICKER_ARCHETYPES.length);
     const tones = new Set(PICKER_ARCHETYPES.flatMap((c) => c.skin));
-    for (const tone of ['ffe4c0', 'f5d7b1', 'efcc9f', 'e2ba87', 'c99c62', 'a47539', '8c5a2b', '643d19']) {
+    for (const tone of SKIN_TONES) {
       expect(tones.has(tone)).toBe(true);
     }
     expect(PICKER_ARCHETYPES.some((c) => c.acc.includes('mustache'))).toBe(true);
@@ -82,5 +87,79 @@ describe('characterAvatarFor', () => {
     // accidentally match it.
     expect(characterAvatarFor('fable-lead:default', 'agent')).not.toBeNull();
     expect(characterAvatarFor('user-v9000', 'human')).not.toBeNull();
+  });
+
+  test('species reads from the face itself: agents in ink with a cobalt collar', () => {
+    // At 20px the ground colour alone is not enough; the shirt carries it too.
+    const shirtOf = (svg: string) => /<path d="M8 64C[^"]*" fill="#([0-9a-f]{6})"/.exec(svg)?.[1];
+    for (const seed of ['scout:default', 'fable-lead:default', 'wren:default']) {
+      const agent = svgOf(characterAvatarFor(seed, 'agent'));
+      expect(shirtOf(agent)).toBe('101828');
+      expect(agent).toContain('fill="#1d3fd1"');
+    }
+    for (const seed of ['user-123', 'sam', 'someone-else', 'sam-v4', 'sam-v23']) {
+      const human = svgOf(characterAvatarFor(seed, 'human'));
+      expect(['f9fafb', 'e4e7ec', 'd0d5dd']).toContain(shirtOf(human));
+      expect(human).not.toContain('fill="#1d3fd1"');
+    }
+  });
+
+  test('a face is small, self-contained SVG that parses', () => {
+    const roster = ['scout:default', 'user-123', 'sam-v7', 'sam-v22', 'fable-lead:default'];
+    for (const seed of roster) {
+      for (const kind of ['human', 'agent'] as const) {
+        const svg = svgOf(characterAvatarFor(seed, kind));
+        expect(svg.length).toBeLessThan(2048);
+        // The namespace declaration is the one URI an SVG must carry; nothing
+        // else may point outside the face.
+        expect(svg.replace('xmlns="http://www.w3.org/2000/svg"', '')).not.toMatch(/https?:|href=|<image|<style|<script|foreignObject/);
+        const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+        expect(doc.getElementsByTagName('parsererror')).toHaveLength(0);
+        expect(doc.documentElement.getAttribute('viewBox')).toBe('0 0 64 64');
+      }
+    }
+  });
+
+  test('every arc winds clockwise, so overlapping shapes union instead of cutting holes', () => {
+    // Head, neck and ears share one path. Under the nonzero fill rule an arc
+    // wound the other way cancels where it overlaps a clockwise rect, which
+    // once punched a ground-coloured hole under every chin on the canvas.
+    for (const style of HAIR_STYLES) {
+      const svg = renderFace({
+        kind: 'agent', background: '0e7490', skin: 'efcc9f', hair: '220f00', style,
+        eyewear: 'glasses', mustache: true, mouth: 'small', shirt: '101828',
+      });
+      expect(svg).toMatch(/ 0 1 1 /);
+      expect(svg).not.toMatch(/a[\d.]+ [\d.]+ 0 [01] 0 /);
+    }
+  });
+
+  test('every hair cut, eyewear and the mustache draw something distinct', () => {
+    const base: FaceTraits = {
+      kind: 'human', background: '2f6feb', skin: 'efcc9f', hair: '220f00', style: 'crop',
+      eyewear: 'none', mustache: false, mouth: 'smile', shirt: 'f9fafb',
+    };
+    const cuts = new Set(HAIR_STYLES.map((style) => renderFace({ ...base, style })));
+    expect(cuts.size).toBe(HAIR_STYLES.length);
+    const variants = new Set([
+      renderFace(base),
+      renderFace({ ...base, eyewear: 'glasses' }),
+      renderFace({ ...base, eyewear: 'sunglasses' }),
+      renderFace({ ...base, mustache: true }),
+    ]);
+    expect(variants.size).toBe(4);
+  });
+
+  test('the traits draw is stable, and picker cells stay inside their cell', () => {
+    // The draw order is the contract that keeps a seed's face stable; if this
+    // changes, every stored pick redraws.
+    expect(faceTraitsFor('sam', 'human', '2f6feb')).toEqual(faceTraitsFor('sam', 'human', '2f6feb'));
+    PICKER_ARCHETYPES.forEach((cell, i) => {
+      const t = faceTraitsFor(`sam-v${i + 1}`, 'human', '2f6feb', cell);
+      expect(cell.skin).toContain(t.skin);
+      expect(cell.hair).toContain(t.style);
+      expect(cell.color).toContain(t.hair);
+      if (t.mustache) expect(cell.acc).toContain('mustache');
+    });
   });
 });
