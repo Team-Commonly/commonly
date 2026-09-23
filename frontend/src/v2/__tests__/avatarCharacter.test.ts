@@ -31,6 +31,38 @@ describe('characterAvatarFor', () => {
     expect(agent).not.toBe(human);
   });
 
+  test('people and agents draw their ground from disjoint families', () => {
+    // Species is carried twice — the ground colour and the dress. The dress half
+    // is pinned above ("agents in ink with a cobalt collar"); the ground half was
+    // not: sprint-review 71419 measured that pointing AGENT_BG at HUMAN_BG left
+    // every suite green, so a same-seed human and agent could wear one wash and
+    // nothing failed. The ground is the first layer renderFace paints.
+    const groundOf = (uri: string | null): string => {
+      const svg = svgOf(uri);
+      const m = /<path d="[^"]*" fill="#([0-9a-f]{6})"/.exec(svg);
+      if (!m) throw new Error(`no ground layer in ${svg.slice(0, 80)}`);
+      return m[1];
+    };
+
+    // A seed sweep rather than one hand-picked pair: the index is
+    // hashString(key) % 4, so a single seed exercises one of four slots and a
+    // wrong-but-lucky family would pass.
+    const seeds = Array.from({ length: 200 }, (_, i) => `species-${i}`);
+    const groundsFor = (kind: 'human' | 'agent') => seeds.map((s) => groundOf(characterAvatarFor(s, kind)));
+    const human = groundsFor('human');
+    const agent = groundsFor('agent');
+
+    // A family is a family: the ground varies within each kind...
+    expect(new Set(human).size).toBeGreaterThanOrEqual(3);
+    expect(new Set(agent).size).toBeGreaterThanOrEqual(3);
+    // ...and the two never touch. This is what the mutation breaks: it fails on
+    // any agent ground appearing among the human ones, in either direction.
+    const humanSet = new Set(human);
+    expect([...new Set(agent)].filter((g) => humanSet.has(g))).toEqual([]);
+    // And the same seed never wears the other kind's wash.
+    seeds.forEach((_, i) => expect(agent[i]).not.toBe(human[i]));
+  });
+
   test('distinct agents get distinct characters across the real roster', () => {
     const roster = [
       'fable-lead:default', 'sprint-review:default', 'pod-architect:default',
