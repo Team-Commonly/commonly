@@ -135,7 +135,15 @@ const ADD_PLATFORMS = [
   { type: 'telegram', enabled: true },
   { type: 'slack', enabled: true },
 ];
-const UNAVAILABLE_PLATFORM_LABELS = ['Discord', 'WhatsApp'];
+// Providers we have not built at all. This is NOT the same claim as "not
+// enabled on this instance": that answer belongs to the catalog, which draws a
+// `v2-connector-row--not-enabled` row with an Ask link when a manifest declares
+// readiness and reports `not_configured`. Discord used to live in this list,
+// which made the page say "we don't build this" about a shipping connector
+// (routes/discord.ts) whose only defect was a missing readiness() declaration;
+// it now arrives through the catalog exactly as slack and telegram do, so the
+// page can no longer advertise it as unbuilt while the instance runs it.
+const UNAVAILABLE_PLATFORM_LABELS = ['WhatsApp'];
 
 const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 const RECENT_MS = 10 * 60_000;
@@ -1378,7 +1386,7 @@ const V2ConnectorsPage: React.FC = () => {
               <article className="v2-connector-row v2-connector-row--not-yet">
                 <span className="v2-connector-row__name">
                   <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
-                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="discord" /></span>
+                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="whatsapp" /></span>
                   <span>{UNAVAILABLE_PLATFORM_LABELS.join(' · ')}</span>
                 </span>
                 <span className="v2-connector-row__details">

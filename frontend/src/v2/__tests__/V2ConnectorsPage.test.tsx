@@ -5,6 +5,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
+import { PlatformGlyph } from '../icons/platforms';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -140,7 +141,12 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
     expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
+    // TASK-024: this row is "we have not built it", so it lists only providers
+    // with no manifest at all. Discord is a built connector and reaches the page
+    // through the catalog (available, or the not-enabled row when the instance
+    // lacks its credentials), so naming it here asserted something false.
+    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
+    expect(screen.queryByText('Discord · WhatsApp')).toBeNull();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
@@ -518,6 +524,49 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('Issues and pull requests.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
       expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
+    });
+
+    // TASK-024. Discord is a shipping connector (routes/discord.ts: install
+    // link, callback, binding, uninstall) that read as "we don't build this"
+    // because its manifest declared no readiness(), which is what the catalog
+    // filters on. Once it declares one the catalog owns every claim about it:
+    // configured -> a connectable row, not configured -> the not-enabled row
+    // that already exists for slack. The not-yet row must stop covering it.
+    const glyphPath = (type: string): string | null => {
+      const { container } = render(<PlatformGlyph type={type} />);
+      return container.querySelector('svg path')?.getAttribute('d') || null;
+    };
+
+    it('describes Discord only through the catalog, never as a provider we have not built', async () => {
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
+      ]);
+      renderPage();
+
+      const notEnabled = (await screen.findByText('Not enabled on this instance.')).closest('.v2-connector-row');
+      expect(notEnabled).toHaveClass('v2-connector-row--not-enabled');
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet).toHaveClass('v2-connector-row--not-yet');
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+
+      // The glyph tracks the label: the row is about WhatsApp now, and the two
+      // glyphs differ, so this cannot pass by comparing a value to itself.
+      const whatsapp = glyphPath('whatsapp');
+      expect(whatsapp).not.toBeNull();
+      expect(whatsapp).not.toBe(glyphPath('discord'));
+      expect(notYet.querySelector('svg path')?.getAttribute('d')).toBe(whatsapp);
+    });
+
+    it('offers Discord as a connectable channel when the instance has it configured', async () => {
+      mockCatalog([entry({ installableId: 'discord', label: 'Discord', available: true })]);
+      renderPage();
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+      expect(await screen.findByRole('button', { name: 'Connect a channel' })).toBeInTheDocument();
     });
 
     it('renders an unavailable provider with Ask and an available one with Choose a pod', async () => {
