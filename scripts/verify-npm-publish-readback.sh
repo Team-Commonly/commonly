@@ -36,6 +36,16 @@
 # papers over, and a 404 there is genuinely "not published yet", so the retry
 # loop still earns its place for real propagation.
 #
+# A published version is not the same as a MOVED TAG (TASK-116). `latest` comes
+# from the dist-tags document, a third read again — and also uncached
+# (`cf-cache-status: DYNAMIC`, 19 bytes) — so a publish that lands without moving
+# `latest` is a different defect from a version that never appeared. It is
+# assertable here because nothing in this repo publishes with `--tag`: there is
+# one `npm publish --provenance --access public` (npm-publish.yml:143) and
+# neither package sets `publishConfig.tag`. That is why the assertion is exact
+# rather than pre-weakened for a prerelease shape we do not ship — and it is the
+# assertion that will say so the day someone adds one.
+#
 # Env:
 #   NAME                            package name, e.g. @commonlyai/cli   (required)
 #   WANT                            the version just published           (required)
@@ -75,10 +85,41 @@ INTERVAL_SECONDS="${READBACK_INTERVAL_SECONDS:-10}"
 # both forms answer, and the encoded one is the shape the measurement above was
 # taken on.
 REGISTRY_URL="${READBACK_REGISTRY_URL:-https://registry.npmjs.org}"
-DOC_URL="$REGISTRY_URL/$(printf '%s' "$NAME" | sed 's|/|%2f|g')/$WANT"
+ENCODED_NAME="$(printf '%s' "$NAME" | sed 's|/|%2f|g')"
+DOC_URL="$REGISTRY_URL/$ENCODED_NAME/$WANT"
+# The tag is a second document: asking the version document which version exists
+# cannot answer which version `latest` points at.
+DIST_TAGS_URL="$REGISTRY_URL/-/package/$ENCODED_NAME/dist-tags"
 
 stderr_file=$(mktemp)
-trap 'rm -f "$stderr_file"' EXIT
+tag_file=$(mktemp)
+tag_err=$(mktemp)
+trap 'rm -f "$stderr_file" "$tag_file" "$tag_err"' EXIT
+
+# Read `latest` from the uncached dist-tags document. Echoes the tag (empty when
+# there is none) and leaves the HTTP status in DT_STATUS, because the three
+# outcomes are genuinely different findings and must not collapse into one:
+#   200 + the published version -> the tag moved
+#   200 + anything else        -> published, tag did not move
+#   anything else              -> the document could not be read at all, so the
+#                                 check cannot claim the tag moved. A public
+#                                 package answers this anonymously (a name the
+#                                 registry will not serve answers 401, not 404),
+#                                 so a non-200 here is itself the finding.
+# The status rides a FILE, not a variable: `latest=$(read_latest_tag)` is a
+# subshell, so a variable assigned inside would never reach the caller — which is
+# exactly how the first draft of this read a 401 as an empty tag.
+tag_status_file=$(mktemp)
+trap 'rm -f "$stderr_file" "$tag_file" "$tag_err" "$tag_status_file"' EXIT
+read_latest_tag() {
+  status=$(curl -sS -o "$tag_file" -w '%{http_code}' "$DIST_TAGS_URL" 2>"$tag_err" || true)
+  printf '%s' "$status" > "$tag_status_file"
+  if [ "$status" != "200" ]; then
+    return 0
+  fi
+  node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).latest ?? ""' < "$tag_file" 2>/dev/null || true
+}
+tag_status() { cat "$tag_status_file"; }
 
 started_at=$(date +%s)
 attempt=0
@@ -93,7 +134,16 @@ while :; do
   elapsed=$(( $(date +%s) - started_at ))
 
   if [ "$got" = "$WANT" ]; then
-    echo "✓ $NAME@$WANT is live (attempt $attempt, ${elapsed}s after publish)"
+    latest=$(read_latest_tag)
+    if [ "$(tag_status)" != "200" ]; then
+      echo "::error::$NAME@$WANT is live, but the dist-tags document could not be read (HTTP $(tag_status) at GET $DIST_TAGS_URL), so the check cannot confirm that latest moved. A published package answers this anonymously, so check the publish's visibility (--access) before re-running."
+      exit 1
+    fi
+    if [ "$latest" != "$WANT" ]; then
+      echo "::error::$NAME@$WANT is live, but latest points at '${latest:-<empty>}' — the version is published and the tag did NOT move. This is not 'not published yet': the version document served $WANT. This repo publishes without --tag (npm-publish.yml:143), so latest is expected to move; check for a publish that used one, or a visibility change."
+      exit 1
+    fi
+    echo "✓ $NAME@$WANT is live and latest points at it (attempt $attempt, ${elapsed}s after publish)"
     exit 0
   fi
 
@@ -108,9 +158,11 @@ done
 echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DOC_URL. The publish step reported success, so check what the registry is actually serving below before re-running."
 echo "--- what the registry serves for $NAME ---"
 echo "version document (the endpoint this poll reads, uncached): $(printf '%s' "$body" | head -c 400)"
-echo "dist-tags: $(npm view "$NAME" dist-tags --json 2>&1 | tr -d '\n' || true)"
-echo "latest:    $(npm view "$NAME" version 2>&1 | tr -d '\n' || true)"
-echo "(the two lines above are PACKUMENT reads — edge-cached up to 300s, so they can lag a just-published version by themselves)"
+echo "dist-tags (uncached, the endpoint the tag check reads): latest=$(read_latest_tag) [HTTP $(tag_status)]"
+if [ "$(tag_status)" != "200" ] && [ -s "$tag_err" ]; then
+  echo "  (dist-tags read failed: $(tr -d '\n' < "$tag_err"))"
+fi
+echo "what a cached npm client may still serve (PACKUMENT, edge-cached up to 300s, so it can lag a just-published version by itself): $(npm view "$NAME" version 2>&1 | tr -d '\n' || true)"
 echo "--- last error from: curl -fsS $DOC_URL ---"
 if [ -s "$stderr_file" ]; then
   cat "$stderr_file"
