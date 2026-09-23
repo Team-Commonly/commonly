@@ -42,6 +42,7 @@ const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { rateLimitObserver } = require('../middleware/rateLimitObserver');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -110,7 +111,11 @@ const phase4AgentRateLimit = rateLimit({
   }),
 });
 
-const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit];
+// TASK-109 / TASK-097 §6: the observer is LAST so it reads the per-token tier's
+// `req.rateLimit` (each limiter in a stack overwrites it, last wins) — the tier
+// whose 120/60s budget `(A)` is gated on. It is off unless RATE_LIMIT_OBSERVE is
+// set, and it always calls next(): see middleware/rateLimitObserver.ts.
+const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit, rateLimitObserver];
 
 // Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
 // that accept BOTH human JWTs and agent runtime tokens use this — the token
