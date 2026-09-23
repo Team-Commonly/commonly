@@ -57,7 +57,7 @@ const ApiDevPage = () => {
                         password: "password123"
                     },
                     exampleOutput: {
-                        message: "User registered successfully. Check your email for verification."
+                        message: "Registered. Verify your email to join the Community pod."
                     }
                 },
                 {

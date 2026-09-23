@@ -421,7 +421,7 @@ exports.register = async (req: any, res: any) => {
       .status(201)
       .json({
         message: hasEmailConfig
-          ? 'User registered successfully. Check your email for verification.'
+          ? 'Registered. Verify your email to join the Community pod.'
           : 'User registered successfully. Email verification is not required.',
       });
   } catch (err: any) {

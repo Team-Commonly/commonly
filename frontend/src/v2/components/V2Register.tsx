@@ -86,7 +86,13 @@ const V2Register: React.FC = () => {
         // is unavailable (for example while an older backend is rolling out).
       }
 
-      setVerifyPending(message.toLowerCase().includes('check your email'));
+      // The response names the state in prose, so the screen is chosen from
+      // prose. Both phrasings are matched: the current one, and the pre-2026-09-23
+      // wording ("Check your email for verification.") that a rolling backend can
+      // still send. A structured flag on the response would remove this coupling
+      // — until then a copy edit that drops both phrases silently switches the
+      // screen, which is why V2Register.test.tsx pins both directions.
+      setVerifyPending(/check your email|verify your email/i.test(message));
       setDone(message);
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } } };
@@ -105,7 +111,9 @@ const V2Register: React.FC = () => {
             {verifyPending ? t('auth.register.success.checkEmailTitle') : t('auth.register.success.createdTitle')}
           </h1>
           <p className="v2-login__subtitle">
-            {verifyPending ? t('auth.register.success.checkEmailMessage') : t('auth.register.success.ready')}
+            {verifyPending
+              ? t('auth.register.success.checkEmailMessage', { email: email.trim() })
+              : t('auth.register.success.ready')}
           </p>
           {verifyPending ? (
             <p className="v2-login__hint">

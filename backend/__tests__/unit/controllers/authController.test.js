@@ -108,7 +108,7 @@ describe('Auth Controller Tests', () => {
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('User registered successfully'),
+          message: 'User registered successfully. Email verification is not required.',
         }),
       );
     });
@@ -210,6 +210,34 @@ describe('Auth Controller Tests', () => {
       );
 
       errorSpy.mockRestore();
+    });
+
+    it('names joining the Community pod as the only gate when a mail was sent', async () => {
+      // The verification-required branch, which the suite otherwise never reaches
+      // (it clears SMTP2GO above). Pinned because the frontend picks its success
+      // screen from this sentence: V2Register.test.tsx matches /verify your email/i.
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.example';
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      User.prototype.save = jest.fn().mockResolvedValueOnce({
+        _id: 'mockedUserId',
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: { username: 'testuser', email: 'test@example.com', password: 'Password123!' },
+      }, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Registered. Verify your email to join the Community pod.',
+      });
     });
 
     it('should not register a user with an existing email', async () => {
