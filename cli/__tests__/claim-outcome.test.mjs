@@ -14,7 +14,10 @@
  */
 import { describe, expect, test } from '@jest/globals';
 
-import { claimReleaseFor, ackResultFor, REFUSAL_REASONS } from '../src/lib/claim-outcome.js';
+import {
+  claimReleaseFor, ackResultFor, REFUSAL_REASONS,
+  MIN_UPSTREAM_STATUS, MAX_UPSTREAM_STATUS,
+} from '../src/lib/claim-outcome.js';
 
 const humanBroadcast = { type: 'message.posted', payload: { senderIsHuman: true } };
 const agentMention = { type: 'chat.mention', payload: {} };
@@ -42,6 +45,38 @@ describe('claimReleaseFor', () => {
       outcome: 'no_action', refused: { reason: 'upstream-refused', status: null },
     });
     expect('status' in release).toBe(false);
+  });
+
+  test('the kernel\'s status range is mirrored, at both bounds', () => {
+    // Pinned as literals rather than read from the constants: a test that asks
+    // the constant what the constant should be cannot fail when it changes.
+    // The kernel's `MIN_UPSTREAM_STATUS`/`MAX_UPSTREAM_STATUS` are 400 and 599,
+    // and this is the sender's half of that contract.
+    expect([MIN_UPSTREAM_STATUS, MAX_UPSTREAM_STATUS]).toEqual([400, 599]);
+  });
+
+  test('the bounds are inclusive: 400 and 599 are forwarded', () => {
+    expect(claimReleaseFor(agentMention, {
+      outcome: 'no_action', refused: { reason: 'upstream-refused', status: 400 },
+    })).toEqual({ outcome: 'refused', reason: 'upstream-refused', status: 400 });
+    expect(claimReleaseFor(agentMention, {
+      outcome: 'no_action', refused: { reason: 'upstream-refused', status: 599 },
+    })).toEqual({ outcome: 'refused', reason: 'upstream-refused', status: 599 });
+  });
+
+  test('an out-of-range status keeps the class and drops the number', () => {
+    // The kernel refuses a status outside 400-599 with a 400, and the 400
+    // fallback re-releases as `completed` — terminal, so the refusal would lose
+    // its handoff entirely. Dropping the number alone keeps the handoff: the
+    // turn is still recorded as an upstream refusal, which is the part a human
+    // wake is routed on.
+    for (const status of [200, 399, 600, 0, 1000]) {
+      const release = claimReleaseFor(agentMention, {
+        outcome: 'no_action', refused: { reason: 'upstream-refused', status },
+      });
+      expect(release).toEqual({ outcome: 'refused', reason: 'upstream-refused' });
+      expect('status' in release).toBe(false);
+    }
   });
 
   test('the cap refusal is a refusal, and carries no status', () => {

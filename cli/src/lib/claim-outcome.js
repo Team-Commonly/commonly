@@ -44,6 +44,19 @@ export const REFUSAL_REASONS = ['upstream-refused', 'cascade-cap', 'delivery-ref
 export const DEFAULT_REFUSAL_REASON = 'delivery-refused';
 
 /**
+ * The range the kernel accepts for a refusal's `status` — its
+ * `MIN_UPSTREAM_STATUS` / `MAX_UPSTREAM_STATUS` in `messageClaimService`.
+ * A number outside it is not a refusal status the kernel will record: it
+ * answers 400, and the 400 fallback in `enforcement.release` re-releases as
+ * `completed` — which is terminal. So forwarding an out-of-range number does
+ * not merely lose the number, it loses the handoff: an upstream refusal on a
+ * human wake would be recorded as a clean completion. The sender's rule has to
+ * be the receiver's rule, which is why the bound lives here as well as there.
+ */
+export const MIN_UPSTREAM_STATUS = 400;
+export const MAX_UPSTREAM_STATUS = 599;
+
+/**
  * @param {{type?: string, payload?: {senderIsHuman?: boolean}}} event
  * @param {{refused?: {reason?: string, status?: number}|true, outcome?: string, reason?: string}|undefined} turnResult
  * @returns {{outcome?: 'refused'|'declined'|'completed', reason?: string, status?: number}}
@@ -61,8 +74,14 @@ export const claimReleaseFor = (event, turnResult) => {
     // The status is the instance of the class, and only the upstream class has
     // one: a cap refusal or a refused post never saw an upstream HTTP status,
     // so sending its number would put a field on the record that cannot mean
-    // what a reader would assume.
-    const status = reason === 'upstream-refused' && Number.isInteger(declared.status)
+    // what a reader would assume. It is also bounded by what the kernel
+    // accepts — an out-of-range number keeps the class and drops only the
+    // number, so the refusal still hands off instead of falling back to
+    // `completed`.
+    const status = reason === 'upstream-refused'
+      && Number.isInteger(declared.status)
+      && declared.status >= MIN_UPSTREAM_STATUS
+      && declared.status <= MAX_UPSTREAM_STATUS
       ? declared.status
       : undefined;
     return {
