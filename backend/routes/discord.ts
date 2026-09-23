@@ -23,6 +23,7 @@ const { runDiscordCommandForIntegrations } = require('../services/discordMultiCo
 // Static import keeps the destructive route visible to CodeQL's rate-limit
 // query while sharing the connector write bucket with its sibling routes.
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
+import { platformIpRateLimit } from '../middleware/platformRateLimit';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -277,7 +278,20 @@ router.post('/register-all', auth, adminAuth, async (_req: AuthReq, res: Res) =>
   }
 });
 
-router.get('/callback', async (req: AuthReq, res: Res) => {
+// TASK-108 (triage doc §6/§5): a third-party redirect target — Discord sends a
+// browser here, so there is no token to key on and the IP tier is the only
+// tier it can have. 600/60s is DERIVED, not ruled (the §6 table gives one
+// budget, to the X callback, for this class), and it is deliberately generous:
+// a human clicking an install link must never meet this limiter, and the
+// machine-driven Discord surface is POST /interactions, which is a different
+// route with its own signature check.
+const discordCallbackLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 600,
+  label: '600 Discord OAuth callback hits per 60s per IP',
+});
+
+router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => {
   try {
     const { code, state, guild_id: guildId } = req.query || {};
     if (!code) return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=No authorization code received`);
