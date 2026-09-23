@@ -142,18 +142,20 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
 
+      # The poll, its budget (READBACK_TIMEOUT_SECONDS, default 300) and the
+      # failure diagnostics live in the script, not inline here — a workflow
+      # body cannot be exercised by the suite, and this loop went red on two
+      # good publishes (cli 0.1.65 run 35498255344, 0.1.66 run 35804128707)
+      # before anyone could test it. TASK-100.
+      #
+      # $GITHUB_WORKSPACE, not a relative path: this job sets
+      # working-directory to the package dir, and the script is at the repo
+      # root. It is cwd-independent, so the workspace path is the only
+      # unambiguous way to reach it.
       - name: Read it back from the registry
         if: steps.cmp.outputs.action == 'publish'
         shell: bash
         env:
           NAME: ${{ steps.cmp.outputs.name }}
           WANT: ${{ steps.cmp.outputs.repo_v }}
-        run: |
-          set -euo pipefail
-          for i in 1 2 3 4 5 6; do
-            got=$(npm view "$NAME@$WANT" version 2>/dev/null || true)
-            [ "$got" = "$WANT" ] && { echo "✓ $NAME@$WANT is live"; exit 0; }
-            sleep 10
-          done
-          echo "::error::$NAME@$WANT not visible on the registry after publish"
-          exit 1
+        run: bash "$GITHUB_WORKSPACE/scripts/verify-npm-publish-readback.sh"
