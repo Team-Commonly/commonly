@@ -98,6 +98,10 @@ const stubSource = [
  *   STUB_TAG_LATEST           what latest points at in the dist-tags document
  *                             (defaults to STUB_LATEST, i.e. the tag moved)
  *   STUB_TAG_STATUS           the status the dist-tags read answers (default 200)
+ *   STUB_TAG_BEHIND_FOR=n     the first n tag reads still report the old tag
+ *   STUB_TAG_BEHIND_VALUE     what they report instead (default 0.0.0)
+ *   STUB_TAG_BAD_FOR=n        the first n tag reads do not answer
+ *   STUB_TAG_BAD_STATUS       the status they answer instead (default 401)
  */
 const curlSource = [
   '#!/usr/bin/env bash',
@@ -128,10 +132,20 @@ const curlSource = [
   '    prev="$arg"',
   '  done',
   '  if [ -z "$out" ]; then echo "stub curl: the tag read must use -o (got: $*)" >&2; exit 1; fi',
+  // One publish writes two documents; nothing has measured that the registry
+  // makes them visible in the same instant. These two knobs are how the harness
+  // models that gap: the tag lags for the first n reads, or does not answer for
+  // the first n — so "retry inside the budget" is a testable claim rather than
+  // an assumption.
+  '  n=$(( $(cat "$STUB_LOG.tagreads" 2>/dev/null || echo 0) + 1 ))',
+  '  echo "$n" > "$STUB_LOG.tagreads"',
   '  status="${STUB_TAG_STATUS:-200}"',
+  '  if [ "$n" -le "${STUB_TAG_BAD_FOR:-0}" ]; then status="${STUB_TAG_BAD_STATUS:-401}"; fi',
+  '  latest="${STUB_TAG_LATEST:-${STUB_LATEST:-0.0.0}}"',
+  '  if [ "$n" -le "${STUB_TAG_BEHIND_FOR:-0}" ]; then latest="${STUB_TAG_BEHIND_VALUE:-0.0.0}"; fi',
   '  printf %s "$status"',
   '  if [ "$status" = "200" ]; then',
-  "    printf '{\"latest\":\"%s\"}\\n' \"${STUB_TAG_LATEST:-${STUB_LATEST:-0.0.0}}\" > \"$out\"",
+  "    printf '{\"latest\":\"%s\"}\\n' \"$latest\" > \"$out\"",
   '  else',
   "    printf 'Unauthorized\\n' > \"$out\"",
   '  fi',
@@ -182,6 +196,7 @@ const runScript = (env, { timeoutMs = 30000 } = {}) => {
   }
 };
 
+const tagReads = (log) => Number(fs.readFileSync(`${log}.tagreads`, 'utf8').trim() || 0);
 const attempts = (log) => Number(fs.readFileSync(`${log}.attempts`, 'utf8').trim());
 
 const withEnv = (dir, log, extra) => ({
@@ -245,7 +260,10 @@ describe('npm publish read-back', () => {
   });
 
   describe('the tag must move with the version', () => {
-    const succeeded = (extra) => {
+    // The budget is a fixture, not a duration: these rows are about which claim
+    // was outstanding at exhaustion, so they spend it in busy-second units
+    // instead of waiting out the 300s the real job uses.
+    const run = (extra) => {
       const { dir, log } = withStub();
       return {
         log,
@@ -258,36 +276,71 @@ describe('npm publish read-back', () => {
         })),
       };
     };
+    const outOfBudget = (extra) => run({ READBACK_TIMEOUT_SECONDS: '2', ...extra });
 
     test('a publish that moved latest succeeds, and the success line says the tag moved', () => {
-      const { result } = succeeded({});
+      const { result } = run({});
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('latest points at it');
     });
 
+    test('a tag that lags the version and catches up inside the budget is a PASS', () => {
+      // One publish writes two documents; nothing has measured that the registry
+      // publishes them in the same instant. A live version whose tag is one read
+      // behind is a good publish, and this row is the one that says so.
+      const { log, result } = run({ STUB_TAG_BEHIND_FOR: '2' });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('latest points at it');
+      // It really did take more than one read to get there — otherwise this row
+      // would pass for the wrong reason (a one-shot check that happened to be
+      // right on the first read).
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('one unreadable dist-tags read does not fail the check', () => {
+      // A non-200 is a finding at exhaustion, not on a single read: the document
+      // not answering once is not the same as the tag not having moved.
+      const { log, result } = run({ STUB_TAG_BAD_FOR: '1' });
+
+      expect(result.status).toBe(0);
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
     test('a version published without moving latest fails as a tag that did not move', () => {
-      // The version IS live; only the tag is behind. This is not "not published
-      // yet" and must not read like it.
-      const { result } = succeeded({ STUB_TAG_LATEST: REGISTRY_SERVES });
+      // The version IS live; only the tag is behind, and it stays behind for the
+      // whole budget. This is not "not published yet" and must not read like it.
+      const { log, result } = outOfBudget({ STUB_TAG_LATEST: REGISTRY_SERVES });
 
       expect(result.status).toBe(1);
       expect(result.stdout).toContain('the tag did NOT move');
-      expect(result.stdout).toContain(`latest points at '${REGISTRY_SERVES}'`);
+      expect(result.stdout).toContain(`latest still pointed at '${REGISTRY_SERVES}'`);
       expect(result.stdout).not.toContain('is not visible on the registry');
+      // Retried rather than bailing on the first read.
+      expect(tagReads(log)).toBeGreaterThan(1);
     });
 
     test('an unreadable dist-tags document fails as unreadable, not as a tag that did not move', () => {
-      // A name the registry will not serve answers 401, not 404, so "could not
-      // read" and "did not move" are different findings and stay different.
-      const { result } = succeeded({ STUB_TAG_STATUS: '401' });
+      // Sustained: a name the registry will not serve answers 401, not 404.
+      const { log, result } = outOfBudget({ STUB_TAG_BAD_FOR: '9999' });
 
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain('could not be read (HTTP 401');
+      expect(result.stdout).toContain('did not answer for 2s');
       expect(result.stdout).not.toContain('did NOT move');
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('a version that never appears is still reported as never appearing', () => {
+      // The third headline, and the one the other two must not have stolen: a
+      // tag state is only meaningful once the version document has answered.
+      const { result } = outOfBudget({ STUB_NEVER_PUBLISHED: '1' });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('is not visible on the registry');
+      expect(result.stdout).not.toContain('the tag did NOT move');
     });
 
     test('the tag is read from the uncached dist-tags document', () => {
-      const { log, result } = succeeded({});
+      const { log, result } = run({});
       expect(result.status).toBe(0);
 
       const calls = fs.readFileSync(`${log}.calls`, 'utf8').trim().split('\n');
