@@ -120,6 +120,10 @@ describe('can this daemon confine a seat running this adapter', () => {
     ['a derived public baseline — the working seat', 'claude', { sandbox: { trust: 'public' } }, null],
     ['the stored c4-smoke shape', 'claude', { sandbox: { mode: 'workspace', trust: 'public' } }, null],
     ['a legacy internal trust, which resolves toward confinement', 'claude', { sandbox: { mode: 'workspace', trust: 'internal' } }, null],
+    // The mapping as the ONLY gate on the record: with no mode the legacy table
+    // is all that stands between this seat and a withheld broker, and nothing
+    // else in this table exercises that (Wren 71662).
+    ['a legacy internal trust with no declared mode', 'claude', { sandbox: { trust: 'internal' } }, null],
     ['read-only for codex', 'codex', { sandbox: { mode: 'read-only', trust: 'public' } }, null],
     ['pi, which refuses a declared sandbox and derives none', 'pi', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['an adapter this daemon cannot confine', 'mystery', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
