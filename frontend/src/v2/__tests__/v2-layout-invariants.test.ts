@@ -2190,6 +2190,17 @@ describe('the landing hero demo (TASK-147)', () => {
     // position cue at exactly the width where the strip IS the navigation.
     expect(phone).toMatch(/\.v2-root button\.v2-demo__pod \{[^}]*background: var\(--v2-surface\);/);
     expect(phone).toMatch(/\.v2-root button\.v2-demo__pod--active \{[^}]*background: var\(--v2-accent-soft\);/);
+    // Order IS the defect, so order is what this guard has to see. The two rules
+    // are the same specificity (0,2,1), so the tint survives only because
+    // --active sits later in the block: move it above the row rule with every
+    // declaration unchanged and the active pod repaints white. sprint-review
+    // measured exactly that in a browser at 390 — 86 parsed rules either way, so
+    // it is the cascade, not a parse break — and this suite stayed green until
+    // this pair. (Textual presence alone cannot see it.)
+    const rowAt = phone.indexOf('.v2-root button.v2-demo__pod {');
+    const activeAt = phone.indexOf('.v2-root button.v2-demo__pod--active {');
+    expect(rowAt).toBeGreaterThanOrEqual(0);
+    expect(activeAt).toBeGreaterThan(rowAt);
     // And hover cannot wipe it either — hover outranks the active rule, which is
     // the opposite of the product, where .v2-pods__item:hover is weaker than
     // .v2-root button.v2-pods__item--active.
