@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -12,8 +12,10 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import V2LangSwitch from '../components/V2LangSwitch';
+import DemoWorkspace from './DemoWorkspace';
 import '../v2.css';
 import './v2-landing.css';
+import './demo-workspace.css';
 
 import yourTeamImg from '../../assets/landing/your-team.png';
 import realEngineeringImg from '../../assets/landing/real-engineering.png';
@@ -186,16 +188,6 @@ const V2LandingPage: React.FC = () => {
   // hasn't asked for reduced motion — so no-JS, old browsers, and
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
-  // Hero demo video. Autoplay is driven imperatively, NOT via the autoPlay
-  // prop: React never renders the `muted` attribute into the DOM
-  // (facebook/react#10389), and iOS Safari refuses autoplay for any video
-  // it doesn't see as muted — so the prop-only version silently showed the
-  // poster on iPhones (2026-07-03 field report). Setting muted via the ref
-  // and calling play() explicitly satisfies the mobile autoplay policy;
-  // the rejection catch keeps the poster for Low Power Mode / data-saver
-  // visitors, which is the correct fallback anyway.
-  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
-
   // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
   // registration opened (2026-07-03: invite codes gate cloud agents, not
   // signup) the label is "Get started", not "Request access" — the old copy
@@ -247,15 +239,6 @@ const V2LandingPage: React.FC = () => {
     nodes.forEach((n) => io.observe(n));
     return () => io.disconnect();
   }, [motion, stats]);
-
-  useEffect(() => {
-    const v = demoVideoRef.current;
-    if (!v || !motion) return;
-    v.muted = true;
-    v.defaultMuted = true;
-    const p = v.play();
-    if (p && typeof p.catch === 'function') p.catch(() => { /* poster stays */ });
-  }, [motion]);
 
   const hasStats = Boolean(stats && (
     stats.activePods
@@ -323,28 +306,20 @@ const V2LandingPage: React.FC = () => {
           </div>
 
           <div className="v2-landing__hero-art">
-            {/* Real product demo in the framed-screenshot chrome. 2x-speed
-                muted loop (3.7MB H.264, /public so it stays out of the JS
-                bundle). Autoplay rides the same `motion` gate as every other
-                animation — reduced-motion / no-JS visitors get the poster. */}
+            {/* The product, not a video (Sam approved 2026-09-23). The demo is
+                an interactive fake of the workspace built from the real v2
+                components with fixture data and scripted replies — no backend,
+                and it says so inside itself and again in the caption. There is
+                no autoplay gate to reason about any more: nothing plays until
+                the visitor acts, so reduced-motion visitors get the same
+                surface as everyone else. */}
             <figure className="v2-landing__shot">
-              <div className="v2-landing__shot-frame">
-                <div className="v2-landing__shot-bar" aria-hidden="true">
-                  <span className="v2-landing__shot-dot" />
-                  <span className="v2-landing__shot-dot" />
-                  <span className="v2-landing__shot-dot" />
-                </div>
-                <video
-                  ref={demoVideoRef}
-                  className="v2-landing__shot-img"
-                  src="/media/demo-2x.mp4"
-                  poster="/media/demo-poster.jpg"
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                  aria-label={t('landing.hero.demoAria')}
-                />
+              <div
+                className="v2-landing__shot-frame v2-landing__demo-frame"
+                role="group"
+                aria-label={t('landing.hero.demoAria')}
+              >
+                <DemoWorkspace />
               </div>
               <figcaption className="v2-landing__shot-cap">
                 {t('landing.hero.demoCaption')}

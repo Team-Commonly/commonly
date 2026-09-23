@@ -1,0 +1,615 @@
+/* Landing hero demo (TASK-147). Spec: docs/design/landing-demo/Demo.dc.html.
+ *
+ * The stage is the spec's 1312 x 720 canvas: a 56px rail, a 212px pod column,
+ * a flexible thread and a 272px inspector, on the app's own page background
+ * (--v2-page-bg is #eef0f4, the canvas the board is drawn on). Everything
+ * inside it uses v2 tokens — this is a marketing surface showing the product,
+ * so a stray hex here reads as the product being a different colour than it is.
+ *
+ * The four columns are fixed-or-flexible rather than scaled, so the demo is
+ * the real thing at 1312 and degrades by shrinking its thread, the way the app
+ * does. Below 760px it becomes a phone layout: pods as a wrapping strip, the
+ * thread, then the inspector's panels as a two-column block. The disclosure
+ * line ("replies are scripted") stays visible in every layout — it is the
+ * demo's one honesty requirement, so it is never the item that scrolls away.
+ */
+
+.v2-demo {
+  width: 100%;
+  max-width: 1312px;
+  margin: 0 auto;
+  border-radius: var(--v2-radius);
+  overflow: hidden;
+  background: var(--v2-page-bg);
+}
+
+.v2-demo__stage {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 56px 212px minmax(0, 1fr) 272px;
+  gap: 12px;
+  height: 720px;
+  padding: 14px;
+  background: var(--v2-page-bg);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
+}
+
+.v2-demo__stage > * { min-width: 0; }
+
+/* ---------- Labels, faces, shared bits ---------- */
+
+.v2-demo__label {
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  line-height: var(--v2-lh-label);
+  color: var(--v2-text-tertiary);
+}
+
+.v2-demo__face {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--v2-radius-sm);
+  flex: 0 0 auto;
+  display: block;
+}
+
+.v2-demo__face--initial {
+  display: grid;
+  place-items: center;
+  background: var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+}
+
+.v2-demo__pulse { animation: v2-demo-pulse 1.6s ease-in-out infinite; }
+@keyframes v2-demo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* The demo animates on its own; a reduced-motion visitor gets the same
+   information (the row is still there, still says it is working). */
+@media (prefers-reduced-motion: reduce) {
+  .v2-demo__pulse { animation: none; }
+}
+
+.v2-demo__muted { color: var(--v2-text-tertiary); }
+
+/* ---------- Rail ---------- */
+
+.v2-demo__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.v2-demo__mark {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: #ffffff;
+  font-family: var(--v2-font-display);
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.v2-demo__rail-slot {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-border);
+}
+
+.v2-demo__rail-slot--on { background: var(--v2-ink); }
+
+.v2-demo__rail-me { margin-top: auto; }
+
+/* ---------- Pod column ---------- */
+
+.v2-demo__pods {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.v2-demo__group {
+  padding: 8px 12px 2px;
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  color: var(--v2-text-placeholder);
+}
+
+/* Specificity-matched against the global button reset (0,0,2,1), same trap
+   v2.css documents for .v2-pods__item. */
+.v2-root button.v2-demo__pod {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-root button.v2-demo__pod:hover { background: var(--v2-border-soft); }
+
+/* The live rail's active row (v2.css .v2-pods__item--active): accent tint +
+   a 3px accent mark + accent-free title. The design board drew it cobalt-filled,
+   which is not what the product does; ux-lead's gate says follow the component. */
+.v2-root button.v2-demo__pod--active {
+  position: relative;
+  background: var(--v2-accent-soft);
+  color: var(--v2-text-primary);
+  font-weight: 600;
+}
+
+.v2-root button.v2-demo__pod--active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--v2-accent);
+}
+
+.v2-demo__pad { color: var(--v2-accent-text); }
+.v2-root button.v2-demo__pod--active .v2-demo__pad { color: var(--v2-accent-text); }
+
+.v2-demo__pod-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-demo__pod-count {
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-accent-text);
+}
+
+.v2-demo__label--direct { margin-top: 14px; }
+
+.v2-demo__dm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-secondary);
+}
+
+.v2-demo__dm-face { width: 20px; height: 20px; }
+
+.v2-demo__sample {
+  margin-top: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  line-height: var(--v2-lh-label);
+  color: var(--v2-text-tertiary);
+}
+
+/* ---------- Thread ---------- */
+
+.v2-demo__thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+
+.v2-demo__thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-demo__thread-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v2-demo__thread-title h3 {
+  margin: 0;
+  font-family: var(--v2-font-display);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--v2-text-primary);
+}
+
+.v2-demo__thread-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-demo__thread-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+}
+
+.v2-demo__working { color: var(--v2-accent-text); }
+.v2-demo__channel-inline { color: var(--v2-text-tertiary); }
+
+/* column-reverse keeps the newest exchange at the bottom without reversing
+   the DOM order (one child, so the browser's scroll origin is the bottom). */
+.v2-demo__log {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+  padding: 10px 16px;
+}
+
+.v2-demo__log-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-demo__msg {
+  display: flex;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-demo__msg-body { min-width: 0; }
+
+.v2-demo__msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.v2-demo__msg-head strong { font-weight: 600; }
+.v2-demo__meta {
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+.v2-demo__msg-text { color: var(--v2-text-primary); }
+.v2-demo__sub {
+  margin-top: 5px;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-demo__card { margin: 4px 0; }
+.v2-demo__card .v2-decision-card__agent { font-size: 11px; }
+
+.v2-demo__pulse--dot {
+  width: 8px;
+  height: 8px;
+  background: var(--v2-accent);
+  display: inline-block;
+}
+
+.v2-demo__typing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+}
+
+.v2-demo__typing-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-accent-text);
+}
+
+.v2-demo__composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 16px 14px;
+}
+
+.v2-demo__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-root button.v2-demo__chip {
+  padding: 5px 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: border-color 80ms ease, color 80ms ease;
+}
+
+.v2-root button.v2-demo__chip:hover {
+  border-color: var(--v2-accent);
+  color: var(--v2-accent-text);
+}
+
+.v2-demo__composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-demo__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.v2-demo__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: inherit;
+  padding: 0;
+}
+
+.v2-demo__input::placeholder { color: var(--v2-text-placeholder); }
+
+.v2-demo__enter {
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-text-placeholder);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-demo__send {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: 600 13px/20px var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-demo__send:hover { background: var(--v2-ink-hover); }
+
+/* Focus is a kernel-wide invariant: every interactive piece in the demo has to
+   be reachable and visibly focused, because these are real buttons. */
+.v2-root button.v2-demo__pod:focus-visible,
+.v2-root button.v2-demo__chip:focus-visible,
+.v2-root button.v2-demo__send:focus-visible,
+.v2-demo__input:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+  border-color: var(--v2-accent);
+}
+
+/* ---------- Inspector ---------- */
+
+.v2-demo__inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.v2-demo__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+
+.v2-demo__needs--pending { border: 2px solid var(--v2-accent); }
+
+.v2-demo__needs-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.v2-demo__needs-who {
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  color: var(--v2-accent-text);
+  font-weight: 600;
+}
+
+.v2-demo__agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-demo__agent-body { flex: 1; min-width: 0; }
+.v2-demo__agent-name { font-weight: 600; }
+
+.v2-demo__agent-status {
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  line-height: var(--v2-lh-label);
+  color: var(--v2-text-tertiary);
+}
+
+.v2-demo__agent-status--waiting { color: var(--v2-accent-text); }
+
+.v2-demo__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: var(--v2-border-soft);
+}
+
+.v2-demo__dot[data-state='on'] { background: var(--v2-accent); }
+
+.v2-demo__board-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.v2-demo__board-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-demo__board-state {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-demo__board-state--accent {
+  color: var(--v2-accent-text);
+  font-weight: 600;
+}
+
+.v2-demo__channel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-demo__channel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--v2-ink);
+}
+
+.v2-demo__channel-count {
+  margin-left: auto;
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  color: var(--v2-text-tertiary);
+}
+
+/* ---------- Phone (<= 760px) ----------
+   The 1312 canvas cannot shrink into 390 and stay legible, so the phone layout
+   is a different arrangement of the same pieces: pods as a wrapping strip, the
+   thread with a usable transcript height, then the inspector's panels as a
+   two-column block with "needs you" full width above them. The rail and the
+   DM rows are dropped — they are chrome and navigation the hero does not need.
+   The disclosure line goes last in the strip, wrapping onto its own row so it
+   is never the thing that scrolls out of view. */
+@media (max-width: 760px) {
+  .v2-demo__stage {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .v2-demo__rail { display: none; }
+
+  .v2-demo__pods {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .v2-demo__group,
+  .v2-demo__label--direct,
+  .v2-demo__dm { display: none; }
+
+  .v2-demo__pods > .v2-demo__label { flex: 0 0 auto; }
+
+  .v2-root button.v2-demo__pod {
+    width: auto;
+    padding: 7px 10px;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+  }
+
+  .v2-root button.v2-demo__pod--active { border-color: transparent; }
+
+  .v2-root button.v2-demo__pod--active::before {
+    left: -1px;
+    top: 6px;
+    bottom: 6px;
+  }
+
+  .v2-demo__sample {
+    flex: 1 1 100%;
+    order: 99;
+    margin-top: 2px;
+    padding: 8px 2px 0;
+  }
+
+  .v2-demo__thread { min-height: 0; }
+
+  .v2-demo__log { min-height: 300px; }
+
+  .v2-demo__thread-head {
+    align-items: flex-start;
+    padding: 12px 14px;
+  }
+
+  .v2-demo__thread-title { flex-direction: column; gap: 2px; }
+  .v2-demo__thread-meta { flex-direction: column; align-items: flex-end; gap: 2px; }
+  .v2-demo__composer-wrap { margin: 0 12px 12px; }
+
+  .v2-demo__inspector {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .v2-demo__needs { grid-column: 1 / -1; order: -1; }
+  .v2-demo__panel { padding: 12px; }
+}

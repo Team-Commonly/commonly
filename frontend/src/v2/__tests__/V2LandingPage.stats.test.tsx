@@ -20,17 +20,6 @@ const renderLanding = () => render(
 );
 
 describe('V2LandingPage public proof', () => {
-  let playSpy: jest.SpyInstance;
-
-  beforeAll(() => {
-    playSpy = jest.spyOn(window.HTMLMediaElement.prototype, 'play')
-      .mockResolvedValue(undefined);
-  });
-
-  afterAll(() => {
-    playSpy.mockRestore();
-  });
-
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseAuth.mockReturnValue({ isAuthenticated: false });

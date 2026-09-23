@@ -2120,3 +2120,89 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
 });
+
+// The landing hero demo (TASK-147) is the product's own four-column workspace
+// shrunk into a landing page, so its two failure modes are the ones jsdom
+// cannot see: content clipped by the stage's fixed 720px height once the
+// columns stack, and a transcript that collapses to nothing when the stage
+// stops being a fixed-height grid. Both were reasoned about from the CSS and
+// neither can be reproduced in a render test.
+describe('the landing hero demo (TASK-147)', () => {
+  const demo = read('../landing/demo-workspace.css');
+  const landing = read('../landing/v2-landing.css');
+  const landingPage = read('../landing/V2LandingPage.tsx');
+  const component = read('../landing/DemoWorkspace.tsx');
+
+  // demo-workspace.css carries exactly one phone block (v2.css carries many,
+  // which is why it needs a different helper there).
+  const phoneBlock = (css: string): string => {
+    const at = css.indexOf('@media (max-width: 760px)');
+    if (at < 0) return '';
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    return css.slice(at, end + 1);
+  };
+
+  test('the demo is the workspace at its own canvas, not a smaller invention', () => {
+    expect(ruleBody(demo, '.v2-demo')).toContain('max-width: 1312px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 212px minmax(0, 1fr) 272px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('height: 720px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('background: var(--v2-page-bg)');
+    // The demo is the product's page, so it sits on the app's canvas colour.
+    expect(cssVariable(read('../v2.css'), '--v2-page-bg')).toBe('#eef0f4');
+  });
+
+  test('a phone stacks the columns and lets the stage grow instead of clipping them', () => {
+    const phone = phoneBlock(demo);
+    expect(phone).toContain('.v2-demo__stage');
+    expect(phone).toMatch(/\.v2-demo__stage \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+    // `height: auto` is the load-bearing half: .v2-demo has overflow:hidden, so
+    // a stage that kept 720px while the columns stacked would cut off whatever
+    // did not fit — silently, and only on a phone.
+    expect(phone).toMatch(/\.v2-demo__stage \{[^}]*height: auto;/);
+  });
+
+  test('the transcript keeps a floor on a phone so the thread is never empty', () => {
+    const phone = phoneBlock(demo);
+    // .v2-demo__log is flex:1 / min-height:0, which needs a sized parent; on a
+    // phone the stage is auto-height, so without this floor the hero's thread
+    // renders as a blank strip.
+    expect(phone).toMatch(/\.v2-demo__log \{[^}]*min-height: 300px;/);
+  });
+
+  test('the hero is the product, not the video it replaced', () => {
+    expect(landingPage).toContain('<DemoWorkspace />');
+    expect(landingPage).not.toContain('/media/demo-2x.mp4');
+    expect(landingPage).not.toContain('demoVideoRef');
+    // The demo explains its own honesty limit in its chrome, and the component
+    // renders that line unconditionally (the phone layout keeps it wrapping on
+    // its own row rather than letting it scroll out of the pod strip).
+    expect(component).toContain('sample workspace · replies are scripted');
+    expect(phoneBlock(read('../landing/demo-workspace.css'))).toMatch(
+      /\.v2-demo__sample \{[^}]*flex: 1 1 100%;/,
+    );
+  });
+
+  test('the active pod row follows the component, not the board that drew it filled', () => {
+    // ux-lead's carry note on #1841: the design board paints the active pod row
+    // cobalt-filled, while the live rail uses a tint plus a 3px accent mark.
+    // The build follows the component — a filled row here would be the landing
+    // showing a product that does not exist.
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).toContain('background: var(--v2-accent-soft)');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).not.toContain('background: var(--v2-accent);');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('width: 3px');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('background: var(--v2-accent);');
+  });
+
+  test('the hero demo keeps the letterboxed screenshot chrome out of its card', () => {
+    // The feature rows still use the framed-screenshot chrome with window dots;
+    // the live demo is not a screenshot, so its card has no dots bar.
+    expect(ruleBody(landing, '.v2-landing__shot-bar')).toContain('height: 32px');
+    expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
+  });
+});
