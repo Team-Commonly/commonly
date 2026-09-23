@@ -3,16 +3,16 @@
 // per-token request rate measurable, so the mount-level decision `(A)` is taken
 // on a reading rather than a derivation.
 //
-// Two tiers of test here, deliberately:
-//   - unit: the gating (flag, watermark), the emitted shape, and the properties
-//     that make it safe to deploy (inert until enabled, always calls next, a
-//     throwing sink cannot break a route);
+// Three tiers of test here, deliberately:
+//   - unit: the gating (flag, watermark), the emitted field set, and the
+//     properties that make it safe to deploy (inert until enabled, always calls
+//     next, a throwing sink cannot break a route);
 //   - against the REAL limiter (express + express-rate-limit, the installed
-//     version): because what this middleware reports is `req.rateLimit`, and
-//     that shape belongs to the dependency, not to us. The docs say
-//     `{limit, used, remaining, resetTime, key}`; the assertion below is against
-//     the package, so a rename upstream fails here instead of silently
-//     producing a watermark log of zeros.
+//     version), because what this middleware reports is `req.rateLimit`, and
+//     that shape belongs to the dependency rather than to us;
+//   - the two assertions Vera asked for rather than assumed (71402): that with
+//     two limiters stacked the reading is the TOKEN tier and not the IP tier,
+//     and that the middleware is a no-op with the flag unset.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -25,21 +25,38 @@ const {
   createRateLimitObserver,
   isObserveEnabled,
   observeWatermark,
+  correlationKey,
+  secondsUntilReset,
   DEFAULT_OBSERVE_WATERMARK,
+  KEY_CORRELATION_LENGTH,
 } = require('../../../middleware/rateLimitObserver');
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 const ENV_ON = { RATE_LIMIT_OBSERVE: 'true' };
 const FIXED_NOW = new Date('2026-09-23T05:00:00.000Z');
+const RESET_AT = new Date(FIXED_NOW.getTime() + 45_000);
+
+const FULL_HASH = sha('Bearer cm_agent_secretvalue');
+const FULL_TOKEN_KEY = `tok:${FULL_HASH}`;
 
 /** A request as the limiter leaves it: rateLimit set, nothing else needed. */
-const limitedReq = (rateLimitInfo, headers = {}) => ({
+const limitedReq = (rateLimitInfo, extras = {}) => ({
   rateLimit: rateLimitInfo,
-  headers,
+  headers: {},
   method: 'POST',
   url: '/api/agents/runtime/pods/6a8f6dc7a1dccf2e02f31015/messages',
   ip: '203.0.113.7',
+  ...extras,
+});
+
+const counter = (overrides = {}) => ({
+  limit: 120,
+  used: 60,
+  remaining: 60,
+  resetTime: RESET_AT,
+  key: FULL_TOKEN_KEY,
+  ...overrides,
 });
 
 const run = (observer, req) => {
@@ -68,7 +85,7 @@ describe('rateLimitObserver — the flag decides whether anything is read at all
       sink: (e) => entries.push(e),
       replica: 'replica-a',
     });
-    run(observer, limitedReq({ limit: 120, used: 120, remaining: 0, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: 120, remaining: 0 })));
     expect(entries).toEqual([]);
   });
 
@@ -83,8 +100,8 @@ describe('rateLimitObserver — the flag decides whether anything is read at all
     expect(isObserveEnabled({ RATE_LIMIT_OBSERVE: value })).toBe(true);
   });
 
-  // Ops flip the flag on a running deployment story; nothing captures it at
-  // import time, so a change takes effect on the next request.
+  // Ops flip the flag on a deployment story; nothing captures it at import time,
+  // so a change takes effect on the next request.
   it('reads the flag per request, not at construction', () => {
     const env = {};
     const entries = [];
@@ -93,7 +110,7 @@ describe('rateLimitObserver — the flag decides whether anything is read at all
       sink: (e) => entries.push(e),
       replica: 'replica-a',
     });
-    const req = limitedReq({ limit: 120, used: 120, remaining: 0, resetTime: FIXED_NOW, key: 'tok:abc' });
+    const req = limitedReq(counter({ used: 120, remaining: 0 }));
     run(observer, req);
     expect(entries).toHaveLength(0);
     env.RATE_LIMIT_OBSERVE = 'true';
@@ -105,9 +122,9 @@ describe('rateLimitObserver — the flag decides whether anything is read at all
 describe('rateLimitObserver — the watermark decides which requests are worth a line', () => {
   it('stays silent below the watermark and speaks at it', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, used: 59, remaining: 61, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: 59, remaining: 61 })));
     expect(entries).toHaveLength(0);
-    run(observer, limitedReq({ limit: 120, used: 60, remaining: 60, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: 60, remaining: 60 })));
     expect(entries).toHaveLength(1);
   });
 
@@ -118,9 +135,9 @@ describe('rateLimitObserver — the watermark decides which requests are worth a
 
   it('honours an override', () => {
     const { entries, observer } = collect({ env: { RATE_LIMIT_OBSERVE_WATERMARK: '100' } });
-    run(observer, limitedReq({ limit: 120, used: 60, remaining: 60, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: 60 })));
     expect(entries).toHaveLength(0);
-    run(observer, limitedReq({ limit: 120, used: 100, remaining: 20, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: 100, remaining: 20 })));
     expect(entries).toHaveLength(1);
   });
 
@@ -139,33 +156,31 @@ describe('rateLimitObserver — the watermark decides which requests are worth a
 
   it('emits nothing when the limiter left no numeric counter', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, remaining: 0, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq({ limit: 120, remaining: 0, resetTime: RESET_AT, key: FULL_TOKEN_KEY }));
     expect(entries).toEqual([]);
   });
 
-  // A coerced counter would emit `used: '120'` beside `remaining: 0` — a line
-  // that looks like a reading and is a fabrication. The types are the contract.
+  // A coerced counter would emit `used: '120'`, a line that looks like a reading
+  // and is a fabrication. The types are the contract.
   it('emits nothing when the counter arrives as a string', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, used: '120', remaining: 0, resetTime: FIXED_NOW, key: 'tok:abc' }));
+    run(observer, limitedReq(counter({ used: '120' })));
     expect(entries).toEqual([]);
   });
 });
 
 describe('rateLimitObserver — what a line carries, and what it never carries', () => {
-  it('emits the counter, the limiter key, the replica and the time', () => {
+  it('emits the counter, the bucket, the route pattern, the window and the replica', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, used: 61, remaining: 59, resetTime: FIXED_NOW, key: 'tok:abc123' }));
+    run(observer, limitedReq(counter({ used: 61, remaining: 59 }), { route: { path: '/pods/:podId/messages' } }));
     expect(entries).toEqual([
       {
         event: 'agent_rate_limit_watermark',
-        key: 'tok:abc123',
+        key: `tok:${FULL_HASH.slice(0, KEY_CORRELATION_LENGTH)}`,
+        route: '/pods/:podId/messages',
         used: 61,
-        limit: 120,
-        remaining: 59,
-        resetTime: String(FIXED_NOW),
+        resetInSeconds: 45,
         replica: 'replica-a',
-        at: FIXED_NOW.toISOString(),
       },
     ]);
   });
@@ -174,34 +189,85 @@ describe('rateLimitObserver — what a line carries, and what it never carries',
     const { entries, observer } = collect();
     run(
       observer,
-      limitedReq(
-        { limit: 120, used: 120, remaining: 0, resetTime: FIXED_NOW, key: `hdr:${sha('Bearer cm_agent_secretvalue')}` },
-        { authorization: 'Bearer cm_agent_secretvalue', 'cf-connecting-ip': '198.51.100.10' },
-      ),
+      limitedReq(counter({ used: 120, remaining: 0 }), {
+        authorization: 'Bearer cm_agent_secretvalue',
+        'cf-connecting-ip': '198.51.100.10',
+        originalUrl: '/api/agents/runtime/pods/6a8f6dc7a1dccf2e02f31015/messages?foo=bar',
+        route: { path: '/pods/:podId/messages' },
+      }),
     );
+    // `limit` and `remaining` are absent by spec: one repeats a constant, the
+    // other is arithmetic on the fields that are here.
     expect(Object.keys(entries[0]).sort()).toEqual(
-      ['at', 'event', 'key', 'limit', 'remaining', 'replica', 'resetTime', 'used'].sort(),
+      ['event', 'key', 'replica', 'resetInSeconds', 'route', 'used'].sort(),
     );
     const line = JSON.stringify(entries[0]);
-    // The credential is in the request and must not be in the observation. The
-    // key the limiter hands us is already a hash; nothing here re-derives or
-    // widens it.
     expect(line).not.toContain('cm_agent_secretvalue');
-    expect(entries[0].key).toBe(`hdr:${sha('Bearer cm_agent_secretvalue')}`);
-    for (const material of ['method', 'url', 'headers', 'body', 'query', 'ip']) {
+    expect(line).not.toContain(FULL_HASH);
+    // The route pattern is the pattern: ids and query strings stay out.
+    expect(line).not.toContain('6a8f6dc7a1dccf2e02f31015');
+    expect(line).not.toContain('foo=bar');
+    expect(line).not.toContain('198.51.100.10');
+    for (const material of ['method', 'url', 'originalUrl', 'headers', 'body', 'query', 'ip', 'status']) {
       expect(Object.keys(entries[0])).not.toContain(material);
     }
   });
 
-  it('keeps a null resetTime rather than inventing one', () => {
+  it('keeps the bucket prefix, and only the head of the hash', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, used: 60, remaining: 60, key: 'tok:abc' }));
-    expect(entries[0].resetTime).toBeNull();
+    run(observer, limitedReq(counter({ used: 60, key: `hdr:${sha('Bearer raw-token-xyz')}` })));
+    expect(entries[0].key).toBe(`hdr:${sha('Bearer raw-token-xyz').slice(0, 12)}`);
+    expect(entries[0].key.length).toBe('hdr:'.length + 12);
+  });
+
+  // The prefix is what tells a per-seat reading from a per-connection one, which
+  // is the whole difference TASK-110 exists to fix.
+  it.each([
+    ['tok:abcdef0123456789', 'tok:abcdef012345'],
+    ['hdr:fedcba9876543210', 'hdr:fedcba987654'],
+    ['ip:203.0.113.7', 'ip:203.0.113.7'],
+    ['no-prefix-key', 'no-prefix-ke'],
+    ['', 'unknown'],
+    [undefined, 'unknown'],
+    [42, 'unknown'],
+  ])('shortens %p to %p', (input, expected) => {
+    expect(correlationKey(input)).toBe(expected);
+  });
+
+  // An IP bucket is kept whole: it is a prefix, not a secret, and shortening it
+  // costs the bucket while hiding nothing (Vera 71426). The assertion names it
+  // because the mutation that removes the exception must have one owner.
+  it('keeps an IP bucket whole — it is a bucket, not a secret', () => {
+    expect(correlationKey('ip:2001:db8:1234:5678::/64')).toBe('ip:2001:db8:1234:5678::/64');
+    expect(correlationKey('ip:203.0.113.7')).toBe('ip:203.0.113.7');
+  });
+
+  it('reports a missing route pattern as null rather than guessing one', () => {
+    const { entries, observer } = collect();
+    run(observer, limitedReq(counter()));
+    expect(entries[0].route).toBeNull();
+  });
+
+  it('reports the seconds left in the window, and never a negative', () => {
+    expect(secondsUntilReset(RESET_AT, FIXED_NOW)).toBe(45);
+    // Half a second rounds up: "1 second left" is truer than "0" for a window
+    // that has not expired.
+    expect(secondsUntilReset(new Date(FIXED_NOW.getTime() + 500), FIXED_NOW)).toBe(1);
+    // Clock skew between the store and the app must not produce "-3 seconds".
+    expect(secondsUntilReset(new Date(FIXED_NOW.getTime() - 3_000), FIXED_NOW)).toBe(0);
+    expect(secondsUntilReset(undefined, FIXED_NOW)).toBeNull();
+    expect(secondsUntilReset('2026-09-23T05:00:45.000Z', FIXED_NOW)).toBeNull();
+  });
+
+  it('reports the window as null when the limiter gave no reset time', () => {
+    const { entries, observer } = collect();
+    run(observer, limitedReq(counter({ resetTime: undefined })));
+    expect(entries[0].resetInSeconds).toBeNull();
   });
 
   it('reports an absent key as unknown rather than leaving it undefined', () => {
     const { entries, observer } = collect();
-    run(observer, limitedReq({ limit: 120, used: 60, remaining: 60 }));
+    run(observer, limitedReq(counter({ key: undefined })));
     expect(entries[0].key).toBe('unknown');
   });
 
@@ -214,7 +280,7 @@ describe('rateLimitObserver — what a line carries, and what it never carries',
     try {
       const entries = [];
       const observer = createRateLimitObserver({ env: ENV_ON, sink: (e) => entries.push(e) });
-      run(observer, limitedReq({ limit: 120, used: 60, remaining: 60, key: 'tok:abc' }));
+      run(observer, limitedReq(counter()));
       expect(entries[0].replica).toBe('unknown');
     } finally {
       if (saved === undefined) delete process.env.HOSTNAME;
@@ -228,7 +294,7 @@ describe('rateLimitObserver — what a line carries, and what it never carries',
     try {
       const entries = [];
       const observer = createRateLimitObserver({ env: ENV_ON, sink: (e) => entries.push(e) });
-      run(observer, limitedReq({ limit: 120, used: 60, remaining: 60, key: 'tok:abc' }));
+      run(observer, limitedReq(counter()));
       expect(entries[0].replica).toBe('commonly-backend-7d9f8c-abcde');
     } finally {
       if (saved === undefined) delete process.env.HOSTNAME;
@@ -240,9 +306,9 @@ describe('rateLimitObserver — what a line carries, and what it never carries',
 describe('rateLimitObserver — the instrument cannot break the route', () => {
   it('calls next exactly once on every path', () => {
     const { observer } = collect();
-    const req = limitedReq({ limit: 120, used: 120, remaining: 0, resetTime: FIXED_NOW, key: 'tok:abc' });
+    const req = limitedReq(counter({ used: 120, remaining: 0 }));
     expect(run(observer, req)).toHaveBeenCalledTimes(1);
-    expect(run(observer, limitedReq({ limit: 120, used: 1, remaining: 119, key: 'tok:abc' }))).toHaveBeenCalledTimes(1);
+    expect(run(observer, limitedReq(counter({ used: 1, remaining: 119 })))).toHaveBeenCalledTimes(1);
     const off = createRateLimitObserver({ env: {}, sink: () => {}, replica: 'replica-a' });
     expect(run(off, req)).toHaveBeenCalledTimes(1);
   });
@@ -256,58 +322,119 @@ describe('rateLimitObserver — the instrument cannot break the route', () => {
       replica: 'replica-a',
     });
     const next = jest.fn();
-    expect(() =>
-      observer(limitedReq({ limit: 120, used: 60, remaining: 60, key: 'tok:abc' }), {}, next),
-    ).not.toThrow();
+    expect(() => observer(limitedReq(counter()), {}, next)).not.toThrow();
     expect(next).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('rateLimitObserver — against the real limiter (express-rate-limit 8.3.2)', () => {
-  const buildApp = (entries, watermark) => {
+  const buildApp = (entries, { watermark, observe = true, ipMax = 1000, tokenMax = 3 } = {}) => {
     const app = express();
-    app.use(rateLimit({ windowMs: 60_000, max: 3, standardHeaders: true, legacyHeaders: false, keyGenerator: () => 'test-key' }));
-    app.use(
+    const router = express.Router();
+    const ipTier = rateLimit({
+      windowMs: 60_000,
+      max: ipMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: () => 'ip:198.51.100',
+    });
+    const tokenTier = rateLimit({
+      windowMs: 60_000,
+      max: tokenMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: () => 'tok:testkey',
+    });
+    router.post(
+      '/pods/:podId/messages',
+      ipTier,
+      tokenTier,
       createRateLimitObserver({
-        env: { RATE_LIMIT_OBSERVE: 'true', RATE_LIMIT_OBSERVE_WATERMARK: String(watermark) },
+        env: observe ? { RATE_LIMIT_OBSERVE: 'true', RATE_LIMIT_OBSERVE_WATERMARK: String(watermark) } : {},
         sink: (e) => entries.push(e),
         replica: 'replica-a',
-        now: () => FIXED_NOW,
       }),
+      (req, res) => res.json({ ok: true }),
     );
-    app.get('/x', (_req, res) => res.json({ ok: true }));
+    app.use('/api/agents/runtime', router);
     return app;
+  };
+
+  const fire = async (app, times) => {
+    const statuses = [];
+    for (let i = 0; i < times; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await supertest(app).post('/api/agents/runtime/pods/6a8f6dc7a1dccf2e02f31015/messages?foo=bar');
+      statuses.push(res.status);
+    }
+    return statuses;
   };
 
   it('reads the counter the limiter actually sets, and never sees the refusal', async () => {
     const entries = [];
-    const app = buildApp(entries, 2);
+    const app = buildApp(entries, { watermark: 2 });
 
-    const statuses = [];
-    for (let i = 0; i < 4; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const res = await supertest(app).get('/x');
-      statuses.push(res.status);
-    }
+    const statuses = await fire(app, 4);
 
-    // 3 pass, the 4th is refused by the limiter — and the refusal is answered
+    // 3 pass, the 4th is refused by the token tier — and the refusal is answered
     // there, so this middleware never runs for it.
     expect(statuses).toEqual([200, 200, 200, 429]);
     expect(entries.map((e) => e.used)).toEqual([2, 3]);
-    expect(entries.map((e) => e.limit)).toEqual([3, 3]);
-    expect(entries.map((e) => e.remaining)).toEqual([1, 0]);
-    expect(entries.every((e) => e.key === 'test-key')).toBe(true);
-    // The consequence, stated as an assertion: the log is a LOWER bound on the
-    // peak. A window in which 50 requests were refused still logs `used == 3`.
+    // The consequence, asserted rather than described: the log is a LOWER bound
+    // on peaks. A window in which 50 requests were refused still logs used == 3.
     expect(entries).toHaveLength(2);
     expect(entries.some((e) => e.used > 3)).toBe(false);
+    expect(entries.every((e) => e.replica === 'replica-a')).toBe(true);
+  });
+
+  // Vera's 71402 assertion, as a test rather than an assumption: with two
+  // limiters stacked, req.rateLimit is the TOKEN tier's counter — the IP tier
+  // here allows 1000, so a reading of it would show rising `used` and no 429.
+  it('reports the token tier, not the IP tier, when two limiters are stacked', async () => {
+    const entries = [];
+    const app = buildApp(entries, { watermark: 2, ipMax: 1000, tokenMax: 3 });
+
+    const statuses = await fire(app, 4);
+
+    expect(statuses).toEqual([200, 200, 200, 429]);
+    expect(entries.map((e) => e.used)).toEqual([2, 3]);
+    expect(entries.every((e) => e.key === 'tok:testkey')).toBe(true);
+    expect(entries.some((e) => e.key.startsWith('ip:'))).toBe(false);
+  });
+
+  it('reports the route pattern, with no ids or query strings from the request', async () => {
+    const entries = [];
+    const app = buildApp(entries, { watermark: 1 });
+
+    await fire(app, 2);
+
+    expect(entries.map((e) => e.route)).toEqual(['/pods/:podId/messages', '/pods/:podId/messages']);
+    expect(JSON.stringify(entries)).not.toContain('6a8f6dc7a1dccf2e02f31015');
+    expect(JSON.stringify(entries)).not.toContain('foo=bar');
+  });
+
+  it('reports a window that has not expired yet', async () => {
+    const entries = [];
+    const app = buildApp(entries, { watermark: 1 });
+    await fire(app, 1);
+    expect(entries[0].resetInSeconds).toBeGreaterThan(0);
+    expect(entries[0].resetInSeconds).toBeLessThanOrEqual(60);
   });
 
   it('emits nothing from a real limiter below the watermark', async () => {
     const entries = [];
-    const app = buildApp(entries, 3);
-    const res = await supertest(app).get('/x');
-    expect(res.status).toBe(200);
+    const app = buildApp(entries, { watermark: 3 });
+    const statuses = await fire(app, 1);
+    expect(statuses).toEqual([200]);
+    expect(entries).toEqual([]);
+  });
+
+  // Vera's second 71402 assertion: the middleware is a no-op with the flag unset.
+  it('is a no-op — on the wire, not just in the sink — with the flag unset', async () => {
+    const entries = [];
+    const app = buildApp(entries, { watermark: 1, observe: false });
+    const statuses = await fire(app, 3);
+    expect(statuses).toEqual([200, 200, 200]);
     expect(entries).toEqual([]);
   });
 });
@@ -326,8 +453,7 @@ describe('rateLimitObserver — mounted where the reading comes from', () => {
     // so an observer mounted before the token tier would report the IP tier's
     // 3000/60s numbers and `(A)` would be decided on the wrong counter.
     expect(stack[stack.length - 1]).toBe('rateLimitObserver');
-    expect(stack).toContain('phase4AgentRateLimit');
-    expect(stack).toContain('phase4IpRateLimit');
+    expect(stack).toEqual(['phase4IpRateLimit', 'phase4AgentRateLimit', 'rateLimitObserver']);
   });
 
   it('imports the observer it mounts', () => {
