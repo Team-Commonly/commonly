@@ -31,6 +31,8 @@ import {
   MAX_SPAWN_ID_LENGTH,
   SPAWN_ABSOLUTE_LIFETIME_SECONDS,
   SPAWN_TTL_DEFAULT_SECONDS,
+  SPAWN_TTL_MAX_SECONDS,
+  SPAWN_TTL_MIN_SECONDS,
   mintSpawnCredential,
   renewSpawnCredential,
   resolveSeatCredential,
@@ -209,9 +211,19 @@ router.delete('/:id', spawnCredentialRateLimit, agentRuntimeAuth, async (req: Ru
 
 // Exposed for the route tests and for a caller that wants to know the shape
 // without minting (the cli reads its own cadence off these, PR B).
+//
+// `minTtlSeconds`/`maxTtlSeconds` are the bounds `clampSpawnTtlSeconds` actually
+// applies, published so a caller is not silently clamped: asking for 3600 used
+// to yield a 900s credential with no way to find that out, which is the kind of
+// difference a renewal cadence is built on (Vera 71068). They are this
+// service's own outputs, not a second copy of the numbers — the route test pins
+// each published value to the clamp rather than to a literal, so a change to the
+// clamp that does not move the published bound reddens that test.
 router.get('/policy', spawnCredentialRateLimit, agentRuntimeAuth, (_req: RuntimeReq, res: express.Response) => {
   res.json({
     defaultTtlSeconds: SPAWN_TTL_DEFAULT_SECONDS,
+    minTtlSeconds: SPAWN_TTL_MIN_SECONDS,
+    maxTtlSeconds: SPAWN_TTL_MAX_SECONDS,
     absoluteLifetimeSeconds: SPAWN_ABSOLUTE_LIFETIME_SECONDS,
     maxSpawnIdLength: MAX_SPAWN_ID_LENGTH,
   });

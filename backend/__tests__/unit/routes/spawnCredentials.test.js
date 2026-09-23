@@ -35,10 +35,18 @@ jest.mock('../../../models/AgentRegistry', () => ({
 const AgentCredential = require('../../../models/AgentCredential');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const spawnCredentialRoutes = require('../../../routes/spawnCredentials');
+const { clampSpawnTtlSeconds } = require('../../../services/spawnCredentialService');
 
 const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime/spawn-credentials', spawnCredentialRoutes);
+
+// Seconds from now until an ISO expiry, and how far off a bound we tolerate
+// before calling it "not that bound". The route computes the expiry from
+// Date.now() in-process, so a slow runner shifts it by milliseconds — an
+// exact-boundary assertion would be asserting the runner's speed (TASK-112).
+const secondsUntil = (iso) => (new Date(iso).getTime() - Date.now()) / 1000;
+const WINDOW_SECONDS = 30;
 
 const SEAT_ID = new Types.ObjectId();
 const AGENT_USER_ID = new Types.ObjectId();
@@ -88,6 +96,37 @@ describe('POST /api/agents/runtime/spawn-credentials', () => {
     // The plaintext is never stored: only its hash, and it is not the returned value.
     expect(row.tokenHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(row)).not.toContain(res.body.token);
+  });
+
+  test('a request above the published cap gets the cap instead of what it asked for', async () => {
+    // TASK-102 (Vera 71068): the cap used to be discoverable only by reading the
+    // source, so a caller asking for 3600 built a renewal cadence on a value the
+    // server never honoured. This is the caller-facing half of that fix.
+    const policy = await request(app).get('/api/agents/runtime/spawn-credentials/policy');
+
+    const res = await request(app)
+      .post('/api/agents/runtime/spawn-credentials')
+      .send({ spawnId: 'spawn-cap', ttlSeconds: 3600 });
+
+    expect(res.status).toBe(201);
+    const grantedSeconds = secondsUntil(res.body.expiresAt);
+    // The claim is WHICH bound was applied, not the sub-second edge of it: an
+    // exact-boundary assertion here measures the runner, not the route.
+    expect(grantedSeconds).toBeLessThan(3600);
+    expect(Math.abs(grantedSeconds - policy.body.maxTtlSeconds)).toBeLessThanOrEqual(WINDOW_SECONDS);
+  });
+
+  test('a request below the published floor is lifted to it', async () => {
+    const policy = await request(app).get('/api/agents/runtime/spawn-credentials/policy');
+
+    const res = await request(app)
+      .post('/api/agents/runtime/spawn-credentials')
+      .send({ spawnId: 'spawn-floor', ttlSeconds: 10 });
+
+    expect(res.status).toBe(201);
+    const grantedSeconds = secondsUntil(res.body.expiresAt);
+    expect(grantedSeconds).toBeGreaterThan(10);
+    expect(Math.abs(grantedSeconds - policy.body.minTtlSeconds)).toBeLessThanOrEqual(WINDOW_SECONDS);
   });
 
   test('the child is bound to the seat row, not to whatever the caller claims', async () => {
@@ -346,6 +385,25 @@ describe('GET /policy', () => {
     const res = await request(app).get('/api/agents/runtime/spawn-credentials/policy');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ defaultTtlSeconds: 900, absoluteLifetimeSeconds: 86400, maxSpawnIdLength: 128 });
+    expect(res.body).toEqual({
+      defaultTtlSeconds: 900,
+      minTtlSeconds: 60,
+      maxTtlSeconds: 900,
+      absoluteLifetimeSeconds: 86400,
+      maxSpawnIdLength: 128,
+    });
+    expect(res.body.minTtlSeconds).toBeLessThanOrEqual(res.body.defaultTtlSeconds);
+    expect(res.body.defaultTtlSeconds).toBeLessThanOrEqual(res.body.maxTtlSeconds);
+  });
+
+  test('the published bounds are the clamp\u2019s own outputs, not a second copy of the numbers', async () => {
+    // Pinned to the function the mint path actually calls, so a change to the
+    // clamp that leaves the published numbers behind reddens here rather than
+    // shipping a policy that misdescribes what the server will honour.
+    const res = await request(app).get('/api/agents/runtime/spawn-credentials/policy');
+
+    expect(res.body.minTtlSeconds).toBe(clampSpawnTtlSeconds(1));
+    expect(res.body.maxTtlSeconds).toBe(clampSpawnTtlSeconds(Number.MAX_SAFE_INTEGER));
+    expect(res.body.defaultTtlSeconds).toBe(clampSpawnTtlSeconds(undefined));
   });
 });
