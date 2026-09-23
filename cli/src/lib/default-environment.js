@@ -22,6 +22,8 @@
  * declaration itself carries no secret and is safe to persist to a token file.
  */
 
+import { normalizeSandboxTrust } from './environment.js';
+
 export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
 
 /**
@@ -129,7 +131,12 @@ export const withDefaultSandbox = (environment) => {
     && (typeof environment !== 'object' || Array.isArray(environment))) {
     return environment;
   }
-  const sandbox = environment?.sandbox;
+  // Normalized first (Wren 71719): `assertSandboxDeclaredForPublicPod`'s own
+  // comment says this predicate mirrors it, and a legacy `internal` record
+  // means `public` to both. Read raw, this one replaced a record the attach
+  // gate accepts — benign (same effective trust) but not a mirror, and the
+  // comment would be false. The ORIGINAL block is what gets returned below.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
   // An ENFORCED declaration is one the adapters act on: a public trust (whose
   // mode they resolve, and refuse to spawn without) or an explicit non-'none'
   // mode. `mode: 'none'`, an empty block and a missing one are all the same

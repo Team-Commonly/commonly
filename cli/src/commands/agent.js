@@ -331,8 +331,14 @@ export const assertSandboxDeclaredForPublicPod = async ({
 }) => {
   if (!podId || !client) return;
 
-  const mode = environment?.sandbox?.mode;
-  const trust = environment?.sandbox?.trust;
+  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // legacy `internal` record as the `public` it means, the same mapping the
+  // attach gate and both adapters use. Reading it raw refused a record that
+  // means public one call before the gate #1840 fixes — TASK-113 claims
+  // attach's inconsistent derivation is closed, and this path is attach's.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const mode = sandbox?.mode;
+  const trust = sandbox?.trust;
   // An ENFORCED declaration is one the adapters act on: a public trust (whose
   // mode they resolve per host at spawn) or an explicit non-'none' mode. This
   // mirrors the daemon's predicate in lib/default-environment.js, so the shape
