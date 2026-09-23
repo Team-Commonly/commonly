@@ -33,7 +33,45 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
+
+describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
+  test('a legacy internal trust with no declared mode confines, on both hosts', () => {
+    // The record that used to attach unconfined: trust `internal` read as not
+    // public, so the mode fell to 'none' with nothing refusing it.
+    expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'darwin' }))
+      .toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'linux' }))
+      .toEqual({ mode: 'bwrap', trust: 'public' });
+  });
+
+  test('a legacy internal trust beside mode none is refused, not silently run', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'internal' } },
+    })).toThrow(/refusing to attach unsandboxed/);
+  });
+
+  test('an explicit mode is taken as declared, and a public one is guarded', () => {
+    const workspace = resolveAttachSandbox({
+      environment: { sandbox: { mode: 'read-only', trust: 'internal' } }, platform: 'darwin',
+    });
+    expect(workspace).toEqual({ mode: 'read-only', trust: 'public' });
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'public' } },
+    })).toThrow(/refusing to attach unsandboxed/);
+  });
+
+  test('an absent or unrecognised trust is left alone and is not refused', () => {
+    // The regression witness: this gate must keep allowing a seat that never
+    // asked to be confined, or every private agent stops attaching.
+    expect(resolveAttachSandbox({ environment: { model: 'gpt-5.4' } }))
+      .toEqual({ mode: 'none', trust: undefined });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'private' } },
+    })).toEqual({ mode: 'none', trust: 'private' });
+  });
+});
 
 describe('setWakeOnMessage', () => {
   const record = {

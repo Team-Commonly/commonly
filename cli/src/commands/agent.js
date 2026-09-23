@@ -32,7 +32,7 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
 import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
@@ -478,6 +478,36 @@ export const updateAgentConfiguration = async ({
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
+ * The sandbox an attach will actually run under — derived, then gated.
+ *
+ * The trust is normalized ONCE, before it is used for anything. A stored
+ * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * off the raw value made `{ trust: 'internal' }` with no declared mode fall to
+ * `'none'`: no refusal AND no confinement, the one combination this gate exists
+ * to catch. It also refused the opposite way — `internal` beside
+ * `mode: 'workspace'` threw as "only implemented for public adapters" — so the
+ * raw compare both under- and over-refused (Kai, TASK-113).
+ *
+ * Whether the resolved mode is AVAILABLE here (bwrap installed, macOS for
+ * Seatbelt, the adapter honouring it) is deliberately not this function's
+ * question: that needs the host and the adapter and lives at the call site.
+ */
+export const resolveAttachSandbox = ({
+  environment, platform = process.platform,
+} = {}) => {
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const trust = sandbox?.trust;
+  const mode = sandbox?.mode
+    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (trust === 'public' && mode === 'none') {
+    throw new Error(
+      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+    );
+  }
+  return { mode, trust };
+};
+
+/**
  * Publish, install, and mint a runtime token for a local-CLI-wrapped agent.
  * Pure core — the commander action wraps this with config loading + logging.
  */
@@ -513,16 +543,7 @@ export const performAttach = async ({
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const sandboxMode = environment.sandbox?.mode
-      || (environment.sandbox?.trust === 'public'
-        ? resolvePublicSandboxMode(environment.sandbox)
-        : 'none');
-    const sandboxTrust = environment.sandbox?.trust;
-    if (sandboxTrust === 'public' && sandboxMode === 'none') {
-      throw new Error(
-        'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
-      );
-    }
+    const { mode: sandboxMode, trust: sandboxTrust } = resolveAttachSandbox({ environment });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
