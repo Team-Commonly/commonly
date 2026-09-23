@@ -46,6 +46,17 @@ helm repo add external-secrets https://charts.external-secrets.io
 helm install external-secrets external-secrets/external-secrets -n external-secrets-system --create-namespace
 
 # NGINX Ingress Controller
+# This guide has no tunnel, so on THIS path the controller is the public
+# entrance and `cf-connecting-ip` is client-controlled: an honest caller sends
+# no such header and shares the `req.ip` buckets with every other honest
+# caller, while a caller who sends it leaves the shared bucket and can exhaust
+# it for everyone else without ever limiting itself. That is the global-lockout
+# shape the header-keyed limiters close for tunnelled deployments, reappearing
+# one deployment over; TASK-120 tracks the operator opt-out. How far the shared
+# side collapses is left unstated on purpose — it depends on the
+# LoadBalancer's `externalTrafficPolicy`, which nobody has measured.
+# Tunnel deployments install the controller as ClusterIP instead:
+# k8s/helm/commonly/README.md step 2.
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
 ```

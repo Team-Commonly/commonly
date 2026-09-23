@@ -8,6 +8,7 @@ const express = require('express');
 const multer = require('multer');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
@@ -389,6 +390,7 @@ const podAdminRateLimit = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 /**
@@ -476,6 +478,7 @@ const agentStatesRateLimit = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
@@ -627,6 +630,7 @@ const podVisibilityRateLimit = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 /**

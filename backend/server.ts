@@ -89,11 +89,23 @@ const app = express();
 // any client can spoof req.ip and bypass the IP-keyed rate limiters
 // (express-rate-limit ERR_ERL_PERMISSIVE_TRUST_PROXY). Every real hop in
 // front of us — cloudflared pod, nginx, docker-compose bridge, local dev —
-// sits on a loopback/private address, so trusting only those ranges walks
-// X-Forwarded-For from the right past our own infra and stops at the first
-// public address: the client IP as recorded by Cloudflare. A spoofed header
-// just gets the real client IP appended after it by the edge, so spoofing
-// can't reach req.ip.
+// sits on a loopback/private address, so this list trusts all of them.
+//
+// What that means for `req.ip` was measured on the deployed cluster
+// (2026-09-23), and it is NOT what this comment used to claim: nginx REPLACES
+// X-Forwarded-For with its own peer and parks the incoming chain on
+// X-Original-Forwarded-For, so the chain the backend walks holds one
+// in-cluster address and every entry is trusted. `req.ip` is therefore a
+// cloudflared pod address — one of two — for EVERY external caller, never the
+// client. Do not key an internet-facing rate limiter on `req.ip`; see
+// middleware/ipRateLimit.ts, which keys on `cf-connecting-ip` for that reason.
+// It stays correct for in-cluster callers (clawdbot, commonly-bot,
+// cloud-codex reach the backend Service directly and send no CF header), which
+// is why the trust list is still here.
+//
+// trust proxy is still required for what it was originally added for:
+// `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
+// TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 const buildAllowedOrigins = () => {
   const raw = process.env.FRONTEND_URL;

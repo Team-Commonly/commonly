@@ -4,6 +4,7 @@ export {};
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
@@ -54,6 +55,7 @@ const provisionRateLimit = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   skip: () => process.env.NODE_ENV === 'test',
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 30 provision requests per 60s',
