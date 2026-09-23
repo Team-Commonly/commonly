@@ -19,16 +19,34 @@
  * turn instead of forever.
  *
  * THE FALLBACK PREDICATE IS ABOUT WHAT A FAILURE TELLS US (vera 71068/`#1823`
- * thread). A **capacity** refusal (429, 5xx, or no HTTP response at all) says
- * the server could not mint *right now* — it says nothing about whether this
- * seat may mint, and the seat token is an authority the seat already holds, so
- * falling back grants nothing new and keeps the seat working. Every **4xx** is
- * a verdict about the caller or the request (401 dead token, 403 not this
- * seat's installation, 400 malformed spawn id, 404/409 ledger conflict): a
- * refusal there must fail closed, because falling back would silently restore
- * the exact authority the refusal was about and make the whole mechanism
- * decorative. `no status` is classified with capacity — the request never got a
- * verdict, so it is an availability fact, not an authorization one.
+ * thread). Four arms, each named here so a reader checking the predicate against
+ * this comment does not have to re-derive one:
+ *
+ *   capacity — 429, 5xx, or no HTTP response at all. The server could not mint
+ *     *right now*; that says nothing about whether this seat may mint, and the
+ *     seat token is an authority the seat already holds, so falling back grants
+ *     nothing new and keeps the seat working. `no status` belongs here because
+ *     the request never got a verdict at all: an availability fact, not an
+ *     authorization one.
+ *   route absent — a 404 whose body carries NO `code`. The mint's own refusals
+ *     always name themselves (`REFUSAL_STATUS` in
+ *     `backend/routes/spawnCredentials.ts` maps `not_found` → 404), so a bare
+ *     404 is Express's default page from a backend deployed before this route
+ *     existed. Failing THAT closed would stop every spawn on such a fleet and
+ *     re-deliver the event forever — strictly worse than the seat token every
+ *     seat was using before this module existed. `readSpawnPolicy` reads its own
+ *     404 the same way; one reading of "404" per file, not two.
+ *   verdict — every other 4xx (401 dead token, 403 not this seat's installation,
+ *     400 malformed spawn id, 409 not renewable, or a 404 that DOES carry a
+ *     code). A refusal is about the caller or the request, and falling back
+ *     there would silently restore the exact authority the refusal was about,
+ *     making the whole mechanism decorative.
+ *   malformed success — a 2xx carrying no usable token. Deliberately NOT filed
+ *     under capacity: the server answered, and the answer is a server bug
+ *     rather than anything about this caller. It falls back for the same reason
+ *     route-absent does — the seat's authority is what it already had, and
+ *     failing closed would take a fleet down over someone else's bug — but it is
+ *     its own arm so that the choice is visible as a choice.
  *
  * The caller's own identity is never used for its own HTTP call: the lease is
  * minted with the SEAT token over the seat's client, and only the CHILD gets
@@ -64,6 +82,20 @@ export const isCapacityRefusal = (status) => (
 );
 
 /**
+ * A 404 with no `code` is the route missing, not this caller being refused.
+ *
+ * The mint's refusals are always typed (`not_found` → 404 via
+ * `REFUSAL_STATUS`), so an untyped 404 cannot have come from the route — it is
+ * Express's default page. Treated as its own arm rather than as a verdict
+ * because the two call for opposite handling: a verdict must fail the spawn
+ * closed, while a route that does not exist yet must not stop the fleet from
+ * spawning at all.
+ */
+export const isRouteAbsentRefusal = (status, body) => (
+  status === 404 && !body?.code
+);
+
+/**
  * The ledger names the spawn, and the name has to be stable per spawn and
  * unique across spawns: the event id is the only identifier the wrapper has
  * that means "this turn" (a session id recurs across turns, an agent name
@@ -72,10 +104,19 @@ export const isCapacityRefusal = (status) => (
  */
 export const buildSpawnId = ({ agentName = 'agent', eventId = null, maxLength = 128 } = {}) => {
   const suffix = eventId === null || eventId === undefined ? 'unknown' : String(eventId);
-  const prefix = `${agentName}:`;
-  const room = Math.max(1, maxLength - prefix.length);
-  const keptSuffix = suffix.length > room ? suffix.slice(-room) : suffix;
-  return `${prefix}${keptSuffix}`;
+  const tail = `:${suffix}`;
+  // The bound is on the WHOLE id. Bounding only the suffix (the first version)
+  // let a long enough agent name through the bound entirely: the backend
+  // refuses anything over MAX_SPAWN_ID_LENGTH with `invalid_spawn_id` → 400 →
+  // fail closed, so a name would have made its own seat unspawnable. The name is
+  // shortened first because it is the part a reader can infer from the pod; the
+  // event id is what makes the row unique across turns, so it is kept whole
+  // whenever it fits. Longest live `instanceId` is 25 chars (vera, 566 seats),
+  // so this guards a future name rather than a live path.
+  const nameBudget = Math.max(1, maxLength - tail.length);
+  const name = String(agentName).slice(0, nameBudget) || 'agent';
+  const id = `${name}${tail}`;
+  return id.length > maxLength ? id.slice(0, maxLength) : id;
 };
 
 /**
@@ -107,6 +148,32 @@ export const readSpawnPolicy = async ({ client, log = () => {} }) => {
   } catch (err) {
     log(`spawn credential policy unavailable (${err?.status ?? 'no response'}) — sending the TTL ask unclamped`);
     return null;
+  }
+};
+
+/**
+ * The boot sweep: collect credentials orphaned by a process that died before it
+ * could revoke them (a killed seat, a crashed daemon, a machine that rebooted
+ * mid-turn). `POST /revoke-orphans` is the net behind `close()`.
+ *
+ * Called once per process from the run entry, and best-effort on purpose: it is
+ * the SECOND net, so a failure has to leave the seat starting normally. It also
+ * cannot be allowed to hold up the first turn, which is why the caller does not
+ * await it.
+ */
+export const revokeOrphanedSpawnCredentials = async ({ client, log = () => {} }) => {
+  try {
+    const result = await client.post(`${SPAWN_CREDENTIAL_BASE}/revoke-orphans`, {});
+    const revoked = typeof result?.revoked === 'number' ? result.revoked : null;
+    log(revoked
+      ? `spawn credential boot sweep revoked ${revoked} orphan(s)`
+      : 'spawn credential boot sweep found no orphans');
+    return { ok: true, revoked };
+  } catch (err) {
+    // Includes the route-absent case: a backend older than the mint has no
+    // sweep to run, and that must be a log line, never a failed boot.
+    log(`spawn credential boot sweep skipped (${err?.status ?? 'no response'})`);
+    return { ok: false, reason: 'sweep-failed' };
   }
 };
 
@@ -149,6 +216,12 @@ export const openSpawnCredential = async ({
     if (isCapacityRefusal(status === null ? undefined : status)) {
       log(`spawn credential unavailable (${status === null ? 'no response' : `HTTP ${status}`}) — spawning with the seat token`);
       return { token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null };
+    }
+    if (isRouteAbsentRefusal(status, err?.body)) {
+      log('spawn credential route absent on this backend (HTTP 404 with no code) — spawning with the seat token');
+      return {
+        token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, reason: 'route-absent',
+      };
     }
     const code = err?.body?.code ? ` code=${err.body.code}` : '';
     const refusal = new Error(`spawn credential refused: HTTP ${status}${code}`);
@@ -240,6 +313,14 @@ export const createSpawnCredentialLease = ({
         log(`spawn credential renewal deferred (${status === null ? 'no response' : `HTTP ${status}`})`);
         return;
       }
+      if (isRouteAbsentRefusal(status, err?.body)) {
+        // Same reading of 404 as `openSpawnCredential`: an untyped 404 is the
+        // route missing, so keep the timer and do not treat it as a verdict
+        // about this credential. The credential keeps its remaining lifetime
+        // either way, and a route that comes back is picked up next tick.
+        log('spawn credential renewal deferred (route absent, HTTP 404 with no code)');
+        return;
+      }
       // A verdict — expired or revoked. The route's contract is explicit that
       // this is the caller's signal to stop, not to retry harder: a late
       // renewal must not resurrect a dead child.
@@ -268,9 +349,9 @@ export const createSpawnCredentialLease = ({
 
     /**
      * End the spawn: stop extending it and revoke it. Revocation is
-     * best-effort on purpose — the boot sweep (`revoke-orphans`) is the second
-     * net, and a failed revoke must never fail a turn that already produced an
-     * answer.
+     * best-effort on purpose — the boot sweep (`revokeOrphanedSpawnCredentials`,
+     * called once per process from the run entry) is the second net, and a
+     * failed revoke must never fail a turn that already produced an answer.
      */
     async close() {
       stopRenewal();

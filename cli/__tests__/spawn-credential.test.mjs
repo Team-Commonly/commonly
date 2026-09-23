@@ -21,10 +21,12 @@ const {
   buildSpawnId,
   createSpawnCredentialLease,
   isCapacityRefusal,
+  isRouteAbsentRefusal,
   openSpawnCredential,
   readSpawnPolicy,
   renewIntervalMs,
   resolveSpawnTtlSeconds,
+  revokeOrphanedSpawnCredentials,
 } = await import('../src/lib/spawn-credential.js');
 
 const SEAT = 'cm_agent_seat_token';
@@ -70,6 +72,43 @@ describe('buildSpawnId', () => {
     expect(long.length).toBe(128);
     // The TAIL is the event id, so truncation keeps the identifying part.
     expect(long.endsWith('x')).toBe(true);
+  });
+
+  test('the bound is on the WHOLE id, not on the suffix (vera 72149)', () => {
+    // The first version bounded only the suffix, so a long enough agent name
+    // produced an id over the route's 128 limit — `invalid_spawn_id` → 400 →
+    // fail closed, i.e. a name that makes its own seat unspawnable. Latent
+    // today (longest live instanceId is 25), which is why it is pinned here.
+    const longName = buildSpawnId({ agentName: 'a'.repeat(200), eventId: 'batch-evt-1' });
+    expect(longName.length).toBeLessThanOrEqual(128);
+    expect(longName.length).toBe(128);
+    // The event id is kept whole when the name is what had to give: it is what
+    // makes the ledger row unique across turns, and the name is inferable.
+    expect(longName.endsWith(':batch-evt-1')).toBe(true);
+
+    // A gigantic event id still cannot escape the bound, even though the name
+    // has no room left to give.
+    const bothLong = buildSpawnId({ agentName: 'b'.repeat(200), eventId: 'y'.repeat(200) });
+    expect(bothLong.length).toBe(128);
+
+    // A name at the real fleet maximum is untouched, so nothing about today's
+    // seats changes shape.
+    expect(buildSpawnId({ agentName: 'a'.repeat(25), eventId: 'batch-evt-1' }))
+      .toBe(`${'a'.repeat(25)}:batch-evt-1`);
+  });
+});
+
+describe('isRouteAbsentRefusal', () => {
+  test('an UNTYPED 404 is a missing route; a typed 404 is a verdict', () => {
+    // The mint's own refusals always carry a code (`not_found` → 404 in
+    // REFUSAL_STATUS), so the body is what separates the two cases.
+    expect(isRouteAbsentRefusal(404, null)).toBe(true);
+    expect(isRouteAbsentRefusal(404, {})).toBe(true);
+    expect(isRouteAbsentRefusal(404, { message: 'Not Found' })).toBe(true);
+    expect(isRouteAbsentRefusal(404, { code: 'not_found' })).toBe(false);
+    expect(isRouteAbsentRefusal(400, { code: 'invalid_spawn_id' })).toBe(false);
+    expect(isRouteAbsentRefusal(500, null)).toBe(false);
+    expect(isRouteAbsentRefusal(undefined, null)).toBe(false);
   });
 });
 
@@ -148,11 +187,32 @@ describe('openSpawnCredential', () => {
     expect(opened.token).toBe(SEAT);
   });
 
-  test.each([400, 401, 403, 404, 409])('a verdict (%s) fails closed instead of falling back', async (status) => {
+  test.each([400, 401, 403, 409])('a verdict (%s) fails closed instead of falling back', async (status) => {
     const client = fakeClient({ post: jest.fn(async () => { throw httpError(status, { code: 'spawn_not_permitted' }); }) });
     await expect(openSpawnCredential({
       client, seatToken: SEAT, spawnId: 'kai:72120', policy: POLICY,
     })).rejects.toMatchObject({ spawnCredentialRefused: true, status });
+  });
+
+  test('a TYPED 404 is this seat being refused and fails closed', async () => {
+    const client = fakeClient({ post: jest.fn(async () => { throw httpError(404, { code: 'not_found', message: 'spawn not found' }); }) });
+    await expect(openSpawnCredential({
+      client, seatToken: SEAT, spawnId: 'kai:72120', policy: POLICY,
+    })).rejects.toMatchObject({ spawnCredentialRefused: true, status: 404 });
+  });
+
+  test('an UNTYPED 404 is a backend without the route, and it falls back (wren 72152)', async () => {
+    // Express's default page, not a verdict: the mint contract never emits an
+    // untyped 404. Failing this closed would stop every spawn on a fleet
+    // deployed before the route existed and re-deliver forever — worse than the
+    // seat token every seat used before this module existed.
+    const lines = [];
+    const client = fakeClient({ post: jest.fn(async () => { throw httpError(404, { message: 'Cannot POST /api/agents/runtime/spawn-credentials' }); }) });
+    const opened = await openSpawnCredential({
+      client, seatToken: SEAT, spawnId: 'kai:72120', policy: POLICY, log: (l) => lines.push(l),
+    });
+    expect(opened).toMatchObject({ token: SEAT, source: 'seat-fallback', reason: 'route-absent' });
+    expect(lines.join('\n')).toContain('route absent on this backend');
   });
 
   test('a 201 with no token is treated as un-mintable, not as a credential', async () => {
@@ -218,6 +278,20 @@ describe('createSpawnCredentialLease', () => {
     await b.lease.open();
     await b.timers[0].fn();
     expect(b.cleared).toHaveLength(0);
+
+    // A renewal 404 with no code is read the SAME way the mint reads an untyped
+    // 404 — route absent, not a verdict about this credential — so the loop keeps
+    // its timer. The credential keeps its remaining lifetime either way, so the
+    // choice only decides whether a route that comes back is picked up.
+    const routeAbsent = fakeClient();
+    routeAbsent.post
+      .mockResolvedValueOnce({ token: CHILD, credentialId: 'cred-1', expiresAt: mintedAt() })
+      .mockRejectedValueOnce(httpError(404, { message: 'Cannot POST /renew' }));
+    const c = leaseFor(routeAbsent, { log: (l) => lines.push(l) });
+    await c.lease.open();
+    await c.timers[0].fn();
+    expect(c.cleared).toHaveLength(0);
+    expect(lines.join('\n')).toContain('renewal deferred (route absent');
   });
 
   test('close revokes once, clears the timer, and is idempotent', async () => {
@@ -249,5 +323,40 @@ describe('createSpawnCredentialLease', () => {
     expect(timers).toHaveLength(0);
     await lease.close();
     expect(client.del).not.toHaveBeenCalled();
+  });
+});
+
+describe('revokeOrphanedSpawnCredentials', () => {
+  // The second net behind `close()`. It is only a net if it is actually called,
+  // which is the point wren's read made: `close()`'s comment claimed a boot
+  // sweep that nothing invoked.
+  test('sweeps at boot and reports what it collected', async () => {
+    const lines = [];
+    const client = fakeClient({ post: jest.fn(async () => ({ revoked: 3 })) });
+    const result = await revokeOrphanedSpawnCredentials({ client, log: (l) => lines.push(l) });
+    expect(client.post).toHaveBeenCalledWith(`${SPAWN_CREDENTIAL_BASE}/revoke-orphans`, {});
+    expect(result).toEqual({ ok: true, revoked: 3 });
+    expect(lines.join('\n')).toContain('boot sweep revoked 3 orphan(s)');
+  });
+
+  test('an empty sweep is not an error and says nothing happened', async () => {
+    const lines = [];
+    const client = fakeClient({ post: jest.fn(async () => ({})) });
+    const result = await revokeOrphanedSpawnCredentials({ client, log: (l) => lines.push(l) });
+    expect(result).toEqual({ ok: true, revoked: null });
+    expect(lines.join('\n')).toContain('boot sweep found no orphans');
+  });
+
+  test('a failed sweep is reported, never thrown — a boot must not depend on it', async () => {
+    const lines = [];
+    const absent = fakeClient({ post: jest.fn(async () => { throw httpError(404, { message: 'Cannot POST /revoke-orphans' }); }) });
+    await expect(revokeOrphanedSpawnCredentials({ client: absent, log: (l) => lines.push(l) }))
+      .resolves.toEqual({ ok: false, reason: 'sweep-failed' });
+
+    const unreachable = fakeClient({ post: jest.fn(async () => { throw new Error('fetch failed'); }) });
+    await expect(revokeOrphanedSpawnCredentials({ client: unreachable, log: (l) => lines.push(l) }))
+      .resolves.toEqual({ ok: false, reason: 'sweep-failed' });
+    expect(lines.join('\n')).toContain('boot sweep skipped (404)');
+    expect(lines.join('\n')).toContain('boot sweep skipped (no response)');
   });
 });

@@ -22,6 +22,7 @@ import {
   createSpawnCredentialLease,
   readSpawnPolicy,
   resolveSpawnTtlSeconds,
+  revokeOrphanedSpawnCredentials,
 } from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
@@ -936,9 +937,26 @@ export const performRun = ({
   // makes a clamp visible instead of silent.
   spawnCredentialTtlSeconds = null,
   spawnCredentialLeaseFactory = createSpawnCredentialLease,
+  revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
+
+  // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat
+  // that dies mid-turn (kill, crash, reboot) leaves its child credential live
+  // until its own TTL expires, because `close()` never ran; this is what collects
+  // those. Fire-and-forget by contract: `performRun` is synchronous for its
+  // callers, the sweep is best-effort, and a sweep that failed must not stop a
+  // seat from spawning — it logs and returns. Per process rather than per spawn
+  // because the orphans being collected belong to the PREVIOUS process.
+  //
+  // The promise wrapper is not ceremony: it makes a throwing OR rejecting
+  // implementation of the seam a log line instead of an unhandled rejection,
+  // which is the difference between a diagnostic and a crash in a seat that is
+  // otherwise fine.
+  void Promise.resolve()
+    .then(() => revokeOrphansImpl({ client, log }))
+    .catch((err) => log(`spawn credential boot sweep failed (${err?.message ?? err})`));
 
   // The bounds the server will clamp to. READ ONLY IF THERE IS AN ASK TO CLAMP:
   // with no `COMMONLY_SPAWN_TTL_SECONDS` the cli sends no `ttlSeconds` at all

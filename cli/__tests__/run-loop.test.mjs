@@ -1046,7 +1046,8 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-nopod/ack',
       { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
   test('adapter.spawn throws → no post, no ack (re-delivery path)', async () => {
@@ -1894,6 +1895,69 @@ describe('performRun', () => {
     expect(replyPosts(mockPost)).toHaveLength(0);
     expect(ackPosts(mockPost)).toHaveLength(0);
     expect(logs.join('\n')).toContain('spawn credential refused (HTTP 403)');
+  });
+
+  test('TASK-102 part B: the boot sweep runs once per process, before the first spawn, and never blocks it', async () => {
+    // The second net behind `close()`. wren's read found `close()` claiming a
+    // sweep that nothing invoked; this is the wiring that makes the claim true,
+    // and the ordering assertion is the part a unit test of the sweep cannot
+    // make.
+    const order = [];
+    const lines = [];
+    const sweep = jest.fn(async (args) => { order.push('sweep'); return { ok: true, revoked: 2 }; });
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del: jest.fn() });
+
+    const spawn = jest.fn(async () => { order.push('spawn'); return { text: 'ok' }; });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      revokeOrphansImpl: sweep,
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(sweep).toHaveBeenCalledTimes(1);
+    expect(sweep.mock.calls[0][0].client).toBeDefined();
+    expect(order).toEqual(['sweep', 'spawn']);
+  });
+
+  test('TASK-102 part B: a failing boot sweep is a log line, not a failed seat', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: mockPost,
+      del: jest.fn(),
+    });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      // A REJECTING implementation, which the shipped one never is — the point is
+      // that the call site cannot turn one into an unhandled rejection.
+      revokeOrphansImpl: jest.fn(async () => { throw new Error('sweep exploded'); }),
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(lines.join('\n')).toContain('boot sweep failed (sweep exploded)');
   });
 });
 
