@@ -11,10 +11,19 @@ import { cloudflareIpRateLimitKeyGenerator } from './ipRateLimit';
  * token to key on, or where a token key would answer the wrong question
  * (wren 71374): pre-auth reads (`/auth/registration-policy`,
  * `/auth/verify-email`), third-party redirect and callback targets
- * (`x/oauth/callback`, `discord /callback`, `billing POST /webhook`), and the
+ * (`x/oauth/callback`, `discord /callback`), and the
  * long-poll reads (`/events`, `/bot/events`) — a retry storm from a third party
  * is still an IP, and a long-poll's request count is not a per-token budget
  * question.
+ *
+ * `billing POST /webhook` IS DELIBERATELY NOT HERE, and the reason is the probe
+ * rule (71392) rather than trust in the sender: before the signature passes, an
+ * anonymous hit costs one HMAC over a body capped by body-parser's 100kb
+ * default (`server.ts:183`) and a 400 — no store is touched — and the only
+ * caller a limiter there could ever refuse is Stripe, whose retry backoff would
+ * delay a paying user's entitlement by up to three days. §5 of
+ * `docs/audits/codeql-missing-rate-limiting-triage.md` records it as the
+ * accepted exception, not as debt.
  *
  * THE KEY IS THE SAME ONE THE OTHER IP TIER USES. Not `req.ip`, and not a
  * fresh copy of the logic: `cloudflareIpRateLimitKeyGenerator` is the generator
