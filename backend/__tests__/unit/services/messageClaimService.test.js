@@ -36,10 +36,12 @@ describe('messageClaimService', () => {
     expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS declined_by/.test(sql))).toBe(true);
   });
 
-  test('prunes expired completed and abandoned-decline handoff history', async () => {
+  test('prunes expired completed, abandoned-decline and refusal history', async () => {
     pool.query.mockImplementation((sql) => {
       if (/DELETE FROM message_claims/.test(sql)) {
-        expect(sql).toContain("state IN ('completed', 'declined')");
+        // `refused` joins the prune list with its own retention clock: a
+        // tombstone is history, and history that never expires is storage.
+        expect(sql).toContain("state IN ('completed', 'declined', 'refused')");
       }
       if (/INSERT INTO message_claims/.test(sql)) {
         return Promise.resolve({ rows: [{ claimed_by: 'ux-lead', instance_id: 'default', expires_at: new Date() }] });
@@ -123,6 +125,263 @@ describe('messageClaimService', () => {
     expect(r).toEqual({
       released: true, podId: 'p1', state: 'declined', declinedBy: ['seat-a:default'],
     });
+  });
+
+  test('a refusal keeps a named tombstone with its class, status and refuser', async () => {
+    // TASK-099: the whole point of the third outcome is that the kernel can
+    // still tell "answered" from "never ran" after the turn closed. A DELETE
+    // erases that difference, so the refusal must retain the row — carrying the
+    // CLASS (countable), the upstream status where there is one, and the
+    // refusing seat, which is what keeps the re-offer chain finite.
+    pool.query.mockImplementation((sql, params) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        expect(sql).toMatch(/SET state = 'refused'/);
+        expect(sql).toMatch(/refusal_reason = \$5/);
+        expect(sql).toMatch(/refusal_status = \$6/);
+        expect(sql).toMatch(/array_append\(declined_by, \$7\)/);
+        expect(params).toEqual([
+          'm', 'seat-a', 'default', 3600, 'upstream-refused', 429, 'seat-a:default',
+        ]);
+        return Promise.resolve({
+          rows: [{
+            pod_id: 'p1', state: 'refused', refusal_reason: 'upstream-refused',
+            refusal_status: 429, declined_by: ['seat-a:default'],
+          }],
+        });
+      }
+      expect(sql).not.toMatch(/DELETE FROM message_claims/);
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused',
+      reason: 'upstream-refused', status: 429,
+    });
+
+    expect(r).toEqual({
+      released: true,
+      podId: 'p1',
+      state: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+      declinedBy: ['seat-a:default'],
+    });
+    expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(false);
+  });
+
+  test('a refused claim is immediately claimable by another seat', async () => {
+    // The kernel half of the corrected ruling: a refusal on a human wake hands
+    // the message on. If the CAS did not admit `refused`, the re-offered seat
+    // would be told the row is held and stand down — the human's message would
+    // disappear silently, which is the exact failure this outcome exists to
+    // prevent.
+    pool.query.mockImplementation((sql) => {
+      if (/INSERT INTO message_claims/.test(sql)) {
+        expect(sql).toMatch(/message_claims\.state = 'refused'/);
+        return Promise.resolve({
+          rows: [{
+            claimed_by: 'seat-b', instance_id: 'default', expires_at: new Date(),
+            state: 'claimed', declined_by: ['seat-a:default'],
+          }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-b' });
+    expect(r).toMatchObject({ claimed: true, claimedBy: 'seat-b' });
+  });
+
+  test('a re-claim is a new turn: the previous seat\'s refusal class does not outlive it', async () => {
+    // connector-ops 71316, ruled by wren 71322. The PR's own headline path:
+    // A refuses upstream-refused/429 -> the handoff re-offers -> B claims and
+    // declines. The row is B's turn now, so it must not still read
+    // `refusal_reason='upstream-refused'`; that would attribute A's dead route
+    // to B's decision, which is the "answered vs never ran" confusion one
+    // column over. The release branches only run from a live lease, so the CAS
+    // is the single place the class can be reset.
+    //
+    // The fake assigns the columns the statement actually assigns: deleting the
+    // reset from the CAS leaves the class behind and this test fails on the
+    // intermediate assertion, not on a string match.
+    const row = {
+      claimed_by: null,
+      instance_id: 'default',
+      expires_at: new Date(),
+      state: null,
+      declined_by: [],
+      refusal_reason: null,
+      refusal_status: null,
+    };
+    pool.query.mockImplementation((sql, params) => {
+      const claimant = String(params?.[2] || 'seat-a');
+      if (/INSERT INTO message_claims/.test(sql)) {
+        row.claimed_by = claimant;
+        row.state = 'claimed';
+        // Each column is assigned only if the CAS assigns it: a fake that
+        // clears both whenever either appears cannot tell a half-reset from a
+        // full one, which is how a surviving mutation hides.
+        if (/refusal_reason = NULL/.test(sql)) row.refusal_reason = null;
+        if (/refusal_status = NULL/.test(sql)) row.refusal_status = null;
+        return Promise.resolve({ rows: [{ ...row }] });
+      }
+      if (/SET state = 'refused'/.test(sql)) {
+        row.state = 'refused';
+        row.refusal_reason = params[4];
+        row.refusal_status = params[5];
+        row.declined_by = [params[6]];
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1', ...row }] });
+      }
+      if (/SET state = 'declined'/.test(sql)) {
+        row.state = 'declined';
+        row.declined_by = [...row.declined_by, params[3]];
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1', ...row }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-a' });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(row.refusal_reason).toBe('upstream-refused');
+    expect(row.refusal_status).toBe(429);
+
+    const reClaim = await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-b' });
+    expect(reClaim).toMatchObject({ claimed: true, claimedBy: 'seat-b' });
+    expect(row.refusal_reason).toBeNull();
+    expect(row.refusal_status).toBeNull();
+
+    const declined = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-b', outcome: 'declined',
+    });
+    expect(declined).toMatchObject({ released: true, state: 'declined' });
+    expect(row).toMatchObject({
+      state: 'declined', refusal_reason: null, refusal_status: null,
+      declined_by: ['seat-a:default', 'seat-b:default'],
+    });
+  });
+
+  test('a refusal reason is bounded, and an absent or unusable one stays absent', async () => {
+    // Truncation, not rejection: a reason that is too long must never be able
+    // to fail its own release. A missing reason must not become the string
+    // "undefined" either — absence is the honest record. Same for a status
+    // that is not an HTTP 4xx/5xx integer: the column stays NULL rather than
+    // recording a number a reader would take for a real upstream answer.
+    const calls = [];
+    pool.query.mockImplementation((sql, params) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        calls.push(params);
+        return Promise.resolve({ rows: [{ pod_id: 'p1', state: 'refused', refusal_reason: params[4] }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'x'.repeat(400),
+    });
+    await MessageClaimService.release({ messageId: 'm', agentName: 'seat-a', outcome: 'refused' });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 42, status: '429',
+    });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 200,
+    });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+
+    expect(calls[0][4]).toHaveLength(256);
+    expect(calls[1][4]).toBeNull();
+    expect(calls[2][4]).toBeNull();
+    expect(calls[3][4]).toBe('upstream-refused');
+    expect(calls[3][5]).toBeNull(); // 200 is not a refusal status
+    expect(calls[4][5]).toBe(429);
+  });
+
+  test('a completion with no handoff history still deletes the claim', async () => {
+    // The paired control for the refusal above: the retention is a property of
+    // a refusal, not of the outcome argument. An ordinary answered message must
+    // not start accumulating tombstones.
+    pool.query.mockImplementation((sql) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        expect(sql).toMatch(/state = 'completed'/);
+        return Promise.resolve({ rows: [] }); // no declined_by → falls through
+      }
+      if (/DELETE FROM message_claims/.test(sql)) {
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1' }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'completed',
+    });
+
+    expect(r).toEqual({ released: true, podId: 'p1' });
+    expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(true);
+  });
+
+  test('a terminal row cannot be re-released: no outcome flips a tombstone', async () => {
+    // Wren's ruling at 02:28Z: `AND state = 'claimed'` on all four write paths
+    // — a terminal state must only be reachable from a live lease. The trigger
+    // is an ack retry that lands a second outcome, and it matters because a
+    // refused row is immediately re-claimable: flipping a `completed` tombstone
+    // to `refused` makes an already-answered human message re-offerable, and
+    // the handoff wakes it at a second seat.
+    //
+    // The fake below is a one-row table that HONOURS the guard the SQL carries,
+    // rather than being told the answer. That is what makes it able to fail:
+    // drop the guard from any branch and the fake reports the write as matched,
+    // the outcome as released, and the tombstone as overwritten.
+    const row = { state: 'claimed', declined_by: ['seat-a:default'] };
+    const guardMissing = [];
+    const applyWrite = (sql) => {
+      const guarded = /state = 'claimed'/.test(sql);
+      if (!guarded) guardMissing.push(sql.match(/(UPDATE|DELETE) FROM message_claims/)[1]);
+      if (row.state !== 'claimed' && guarded) return { rows: [] };
+      if (/SET state = 'declined'/.test(sql)) row.state = 'declined';
+      if (/SET state = 'refused'/.test(sql)) row.state = 'refused';
+      if (/SET state = 'completed'/.test(sql)) row.state = 'completed';
+      if (/DELETE FROM message_claims/.test(sql)) row.state = 'deleted';
+      return { rows: [{ message_id: 'm', pod_id: 'p1', state: row.state, declined_by: row.declined_by }] };
+    };
+    pool.query.mockImplementation((sql) => {
+      if (/UPDATE message_claims/.test(sql) || /DELETE FROM message_claims/.test(sql)) {
+        return Promise.resolve(applyWrite(sql));
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    // A live lease completes and keeps its handoff history as a tombstone.
+    const first = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'completed',
+    });
+    expect(first).toMatchObject({ released: true, state: 'completed' });
+
+    // Every later release from the same seat is now a no-op, whatever it asks
+    // for. `completed -> refused` is the one that would re-offer the message.
+    const flipToRefused = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(flipToRefused).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    const flipToDeclined = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'declined',
+    });
+    expect(flipToDeclined).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    // The legacy no-outcome DELETE is the fourth path, and it must not remove a
+    // tombstone either — that would erase the record instead of flipping it.
+    const legacyDelete = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a',
+    });
+    expect(legacyDelete).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    expect(guardMissing).toEqual([]);
   });
 
   test('a completed claim remains terminal: a later seat cannot take it', async () => {
