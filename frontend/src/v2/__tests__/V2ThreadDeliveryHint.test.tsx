@@ -62,7 +62,7 @@ const DEFAULT_AGENTS = [{
   agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', status: 'active',
 }];
 
-const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType = 'chat', onOpenInvite }) => {
+const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType = 'chat', podId = 'pod-1', onOpenInvite }) => {
   const [messages, setMessages] = useState([]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
@@ -70,7 +70,7 @@ const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType =
     return response;
   };
   const detail = {
-    pod: { _id: 'pod-1', name: 'Launch Room', type: podType },
+    pod: { _id: podId, name: 'Launch Room', type: podType },
     members: [{ _id: 'u1', username: 'alice', isBot: false }],
     messages,
     agents,
@@ -358,6 +358,61 @@ describe('V2Thread agent delivery hint', () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+    });
+  });
+
+  test('an agent typing clears the row before the pod detail lists it', async () => {
+    // `agents` stays empty on purpose: the live guard cannot hide the row here,
+    // so only the clear in the typing handler can. That is the real #914 shape —
+    // an agent typing need not be in the pod detail's `agents` prop yet, and the
+    // row must not sit above the reply that is about to land.
+    const handlers = {};
+    mockSocketValue = {
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+        emit: jest.fn(),
+      },
+      connected: true,
+    };
+    renderHarness(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    );
+
+    sendDraft('anyone there');
+    await screen.findByText('no agent in this pod');
+
+    act(() => {
+      handlers.agent_typing_start({ podId: 'pod-1', agentName: 'guide', displayName: 'Guide' });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    });
+  });
+
+  test('leaving the pod drops the row, and coming back does not resurrect it', async () => {
+    const props = { agents: [], onOpenInvite: jest.fn() };
+    const response = makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 });
+    const view = render(harnessElement(response, jest.fn(), { ...props, podId: 'pod-1' }));
+
+    sendDraft('anyone there');
+    await screen.findByText('no agent in this pod');
+
+    view.rerender(harnessElement(response, jest.fn(), { ...props, podId: 'pod-2' }));
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    });
+
+    // Back to the pod that earned it. The message is still in the transcript
+    // (the harness keeps it), so a state not cleared on pod change would put the
+    // row back under a message the user did not just send — explaining the wrong
+    // room, with `pod-1`'s session key already spent so no send could re-earn it.
+    view.rerender(harnessElement(response, jest.fn(), { ...props, podId: 'pod-1' }));
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
     });
   });
 });
