@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -16,6 +17,7 @@ const checkoutLimit = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 const FRONTEND = () => process.env.FRONTEND_URL || 'https://commonly.me';

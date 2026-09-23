@@ -46,8 +46,11 @@ helm repo add external-secrets https://charts.external-secrets.io
 helm install external-secrets external-secrets/external-secrets -n external-secrets-system --create-namespace
 
 # NGINX Ingress Controller
+# ClusterIP, not LoadBalancer: the CF tunnel is the only entrance, and
+# `cf-connecting-ip` (what the IP rate limiters key on) is only trustworthy
+# while that is true. See k8s/helm/commonly/README.md step 2.
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=LoadBalancer
+helm install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace --set controller.service.type=ClusterIP
 ```
 
 ### 4. Set Up GCP Secret Manager (10 minutes)

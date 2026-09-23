@@ -42,8 +42,19 @@ helm install external-secrets external-secrets/external-secrets \
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm install nginx-ingress ingress-nginx/ingress-nginx \
   --namespace ingress-nginx --create-namespace \
-  --set controller.service.type=LoadBalancer
+  --set controller.service.type=ClusterIP
 ```
+
+**`ClusterIP`, not `LoadBalancer`, and the difference is a security property.** The
+IP-keyed rate limiters key on `cf-connecting-ip` because the Cloudflare Tunnel is
+the only way in: the header is authoritative exactly as long as nothing else can
+reach this controller (`backend/middleware/ipRateLimit.ts` carries the probe that
+checked it). A public controller is a second entrance, and through it any caller
+can send that header itself and pick a fresh rate-limit bucket per request.
+
+Publish it with `--set controller.service.type=LoadBalancer` only if this ingress
+is your own public entrance and you are not running the tunnel — and then read
+that file first, because the CF header is not a client identity on that path.
 
 ### 2b. Cloudflare Tunnel (Optional)
 
