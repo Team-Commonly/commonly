@@ -5,6 +5,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
+import { PlatformGlyph } from '../icons/platforms';
 import { AuthContext } from '../../context/AuthContext';
 import en from '../../i18n/locales/en.json';
 import i18n, { i18nReady } from '../../i18n';
@@ -205,9 +206,13 @@ describe('V2ConnectorsPage', () => {
     expect(names).not.toBeNull();
     // Separate elements, not one joined string: above 760 they stack in the name
     // track, so a joined string would be a single 140px-wide line that runs into
-    // the details column.
-    expect(Array.from(names!.querySelectorAll('.v2-connector-row__name-item')).map((item) => item.textContent)).toEqual(['Discord', 'WhatsApp']);
-    expect(names!.querySelectorAll('.v2-connector-row__name-sep')).toHaveLength(1);
+    // the details column. TASK-024 left this row one name — Discord is a built
+    // connector and now arrives through the catalog — so the LIST is what is
+    // asserted and the separator count follows from its length. Nothing renders a
+    // `__name-sep` until a second unbuilt provider joins WhatsApp; the rule that
+    // shows it at ≤760 stays pinned in v2-layout-invariants.test.ts.
+    expect(Array.from(names!.querySelectorAll('.v2-connector-row__name-item')).map((item) => item.textContent)).toEqual(['WhatsApp']);
+    expect(names!.querySelectorAll('.v2-connector-row__name-sep')).toHaveLength(0);
   });
 
   it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
@@ -241,10 +246,14 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
     expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    // TASK-162 (2): the two not-yet names are separate elements that stack in the
-    // name track above 760 and join with ' · ' at ≤760 — no longer one string.
-    expect(screen.getByText('Discord')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
+    const notYetNames = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
+    // TASK-024: this row is "we have not built it", so it lists only providers
+    // with no manifest at all. Discord is a built connector (routes/discord.ts;
+    // discordProvider.ts) and reaches the page through the catalog — available, or
+    // the not-enabled row when the instance lacks its credentials — so naming it
+    // here asserted something false. Scoped to this row deliberately: a plain
+    // queryByText would also fail if a later fixture adds Discord as a catalog row.
+    expect(notYetNames?.textContent).toBe('WhatsApp');
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
@@ -892,6 +901,49 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByText('Issues and pull requests.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
       expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
+    });
+
+    // TASK-024. Discord is a shipping connector (routes/discord.ts: install
+    // link, callback, binding, uninstall) that read as "we don't build this"
+    // because its manifest declared no readiness(), which is what the catalog
+    // filters on. Once it declares one the catalog owns every claim about it:
+    // configured -> a connectable row, not configured -> the not-enabled row
+    // that already exists for slack. The not-yet row must stop covering it.
+    const glyphPath = (type: string): string | null => {
+      const { container } = render(<PlatformGlyph type={type} />);
+      return container.querySelector('svg path')?.getAttribute('d') || null;
+    };
+
+    it('describes Discord only through the catalog, never as a provider we have not built', async () => {
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
+      ]);
+      renderPage();
+
+      const notEnabled = (await screen.findByText('Not enabled on this instance.')).closest('.v2-connector-row');
+      expect(notEnabled).toHaveClass('v2-connector-row--not-enabled');
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet).toHaveClass('v2-connector-row--not-yet');
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+
+      // The glyph tracks the label: the row is about WhatsApp now, and the two
+      // glyphs differ, so this cannot pass by comparing a value to itself.
+      const whatsapp = glyphPath('whatsapp');
+      expect(whatsapp).not.toBeNull();
+      expect(whatsapp).not.toBe(glyphPath('discord'));
+      expect(notYet.querySelector('svg path')?.getAttribute('d')).toBe(whatsapp);
+    });
+
+    it('offers Discord as a connectable channel when the instance has it configured', async () => {
+      mockCatalog([entry({ installableId: 'discord', label: 'Discord', available: true })]);
+      renderPage();
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+      expect(await screen.findByRole('button', { name: 'Connect a channel' })).toBeInTheDocument();
     });
 
     it('renders an unavailable provider with Ask and an available one with Choose a pod', async () => {
