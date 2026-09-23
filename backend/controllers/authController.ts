@@ -90,6 +90,46 @@ const sendVerificationEmail = async (user: any) => {
   });
 };
 
+// Registration must not wait on the mail provider. SMTP2GO's send routinely
+// takes seconds and emailService sets a 30s timeout, so awaiting it here was the
+// whole of a six-second signup (6211 ms measured on POST /api/auth/register,
+// build 58a6f2c2, 2026-09-23). TASK-142.
+//
+// Best-effort and deliberately in-process: one immediate retry covers a
+// transient socket or provider blip, and a failure that survives it is
+// recoverable without a durability layer — an unverified account is shown a
+// banner whose resend button hits POST /api/auth/resend-verification, which is
+// separately rate-limited. It is NOT durable across a pod restart; that limit
+// is stated on the task rather than implied away.
+//
+// resendVerification still awaits its own send on purpose: there the user asked
+// for the mail, so a 502 is feedback they can act on.
+const sendVerificationEmailInBackground = (user: any) => {
+  void (async () => {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const smtpRes = await sendVerificationEmail(user);
+        console.log('SMTP2GO send response:', smtpRes?.data);
+        return;
+      } catch (sendError: any) {
+        const reason = sendError?.response?.data || sendError?.message;
+        if (attempt === 2) {
+          console.error(
+            `[register] verification email failed for user ${user._id} after ${attempt} attempts:`,
+            reason,
+          );
+          return;
+        }
+        console.error(
+          `[register] verification email attempt ${attempt} failed for user ${user._id}, retrying:`,
+          reason,
+        );
+      }
+    }
+  })();
+};
+
 // Give every new signup a default private workspace pod so the BYO
 // onboarding flow has a target to install/talk-to an agent in. Matches
 // the Mongo Pod shape created by podController.createPod (type 'chat',
@@ -374,20 +414,7 @@ exports.register = async (req: any, res: any) => {
     if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
     if (hasEmailConfig) {
-      try {
-        console.log('SMTP2GO send attempt:', {
-          to: user.email,
-          sender: process.env.SMTP2GO_FROM_EMAIL,
-          fromName: process.env.SMTP2GO_FROM_NAME,
-        });
-        const smtpRes = await sendVerificationEmail(user);
-        console.log('SMTP2GO send response:', smtpRes?.data);
-      } catch (sendError: any) {
-        console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
-        return res.status(502).json({
-          error: 'Email delivery failed. Please verify SMTP2GO configuration.',
-        });
-      }
+      sendVerificationEmailInBackground(user);
     }
 
     return res
