@@ -17,6 +17,26 @@
  *  2. Exact-match refusal for credentials. If the kept text contains a value
  *     this spawn was handed, the text is dropped — a known value, not a guessed
  *     shape (Wren 70877).
+ *
+ * Two limits follow from rule 2. They are the accepted cost of refusing guessed
+ * shapes, named here so they are not rediscovered as defects later (Vera 71082):
+ *
+ *  a. The match is exact and against THIS spawn's values only, so a credential
+ *     that arrives transformed — base64 inside a proxy error, percent-encoded in
+ *     a URL echo — does not match and the text is kept. Matching transformed
+ *     shapes instead would reintroduce the class rule 1 exists to avoid.
+ *  b. The keep-list can still surface someone ELSE's secret. A third party's key
+ *     relayed in an upstream error is not detectable here, because the one
+ *     inventory this module has is the set of values it was itself handed.
+ *
+ * Scope: this reader is wired into the pi adapter only. codex and claude are NOT
+ * silent the way pi was: the claude adapter rejects on a non-zero exit and
+ * deliberately reports stdout with it, because a `-p` run writes quota
+ * conditions there; the codex adapter rejects on `turnFailedMessage` even at
+ * exit 0. Their gap is the opposite one — the text they raise is the raw tail,
+ * unscrubbed by the rules above, and carries no HTTP status for the run loop to
+ * key a refusal on. Extending this module to them is adapter work (TASK-103),
+ * not a line in this comment.
  */
 
 /** The kept detail is truncated, ellipsis included, to this many characters. */
