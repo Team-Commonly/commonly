@@ -508,13 +508,18 @@ describe('messageExists', () => {
     // Passed through to the CAS, not checked: no query is sent from here, so
     // this pins the arm rather than a verification it does not perform.
     expect(pool.query).not.toHaveBeenCalled();
-    // Pod is still required first — the arm does not bypass the scope check.
+    // Pod is still required first — the arm does not bypass the scope check
+    // that the ROUTE enforces (400 without a podId); what it does not do is
+    // verify the id against the pod, which is why this is dedupe and not
+    // existence.
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', '')).resolves.toBe(false);
-    // Hex case is not spelling: an id that is a legitimate ObjectId in either
-    // case is let through, because the cost of refusing one is failOpen on a
-    // real wake, while the cost of accepting it is a claim key no producer
-    // emits in that spelling.
-    await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(true);
+    // Hex case is spelling, and canonical spelling is lowercase: `String()` on
+    // an ObjectId is lowercase in every driver we send, so an uppercase
+    // spelling is refused rather than accepted as a second claim key for one
+    // comment. Named here because the consequence is a failOpen for that
+    // spelling, which is the failure class this whole arm exists to remove —
+    // acceptable only because no producer emits one.
+    await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(false);
   });
 
   test('the comment namespace is the bare 24-hex shape, and near-misses are refused', async () => {
@@ -527,13 +532,11 @@ describe('messageExists', () => {
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  test('a 24-digit id is not refused by the split — it is a possible ObjectId and not a chat id either way', async () => {
-    // 24 hex digits is a possible ObjectId AND far outside int4, so it must not
-    // be refused. Which arm answers is NOT observable: the namespaces cannot
-    // overlap (a chat id is at most 10 digits, an ObjectId is always 24 chars),
-    // so both orders return the same answer for every input, and the mutation
-    // that swaps them survives — expected, not a hole. Asserted so a future
-    // reader who reorders the arms knows nothing behavioural rides on it.
+  test('an all-digit 24-hex id is passed through — the arm order is what keeps it from being 404\'d', async () => {
+    // 24 hex digits is a legal ObjectId AND far outside int4, which is the one
+    // input where the arm order changes the answer: written digits-first, the
+    // natural shape returns false from the range test and this id is refused,
+    // costing a real comment wake its dedupe (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
     expect(pool.query).not.toHaveBeenCalled();
   });

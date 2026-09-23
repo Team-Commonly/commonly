@@ -117,7 +117,7 @@ const MESSAGE_ID_MAX = 2147483647;
  * accept digits:
  *
  *   chat id     digits, 1..2147483647   verified against Postgres below
- *   comment id  24 hex                  passed through to the CAS, unverified
+ *   comment id  24 hex, canonical case  passed through to the CAS, unverified
  *   anything else                       refused, no query
  *
  * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
@@ -129,20 +129,34 @@ const MESSAGE_ID_MAX = 2147483647;
  * it fails open: `enforcement.js:414` catches the throw and returns
  * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
  * regression this arm exists to prevent (connector-ops 71952, vera 71956,
- * measured against this route's own head).
+ * wren's ruling 71961).
  *
- * The comment arm is NOT verified, and the cost is stated rather than hidden: a
- * garbage 24-hex id still mints a permanent, un-renewable phantom row, so this
- * closes the defect for one namespace only. Verifying it means reading Mongo
- * from this service — a store boundary, not a predicate tweak — filed as its
- * own row rather than folded here.
+ * THIS ARM IS DEDUPE, NOT EXISTENCE, and the difference is not an oversight:
+ * the pod for a comment wake cannot be verified here by construction, because
+ * the enqueue resolves it through `resolveMentionPod`, which may return the
+ * request's pod or a fallback — so a lookup here could refuse a wake that is
+ * real. Passing the id through keeps the race deduping, which is the property
+ * the wake path needs; existence is what the chat arm buys and all this arm
+ * can buy is that one lease is minted per comment id. The corollary is stated
+ * rather than hidden: a fabricated 24-hex id still mints a permanent,
+ * un-renewable phantom row, so the defect is closed for one namespace only,
+ * and verifying the other means reading Mongo from this service — a store
+ * boundary, not a predicate tweak (TASK-122, filed for the gate to keep or
+ * close).
  *
- * The arms are tested in THIS order because the namespaces are not disjoint as
- * strings: '123456789012345678901234' is 24 hex digits, hence a valid ObjectId,
- * and also far outside int4. It cannot be a chat id, so the order cannot accept
- * something the numeric arm would have refused for a reason that matters.
+ * Canonical case only. `String(objectId)` is lowercase in every driver we
+ * send, so an uppercase spelling is refused with the digits arm's 404 — which
+ * fails open for that spelling rather than minting a second claim key for one
+ * comment. No producer emits one; if one ever does, this is the line to revisit.
+ *
+ * The arms are tested IN THIS ORDER, and the order is load-bearing for one
+ * input: '123456789012345678901234' is 24 hex digits, hence a legal ObjectId,
+ * and far outside int4. Checked digits-first it fails the range test and — in
+ * the natural rewrite, where the digits arm returns false — is 404'd, costing
+ * a real wake its dedupe. The all-digit test below is the witness that kills
+ * that shape.
  */
-const MONGO_OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+const MONGO_OBJECT_ID = /^[0-9a-f]{24}$/;
 
 function isChatMessageId(id: string): boolean {
   if (!/^\d+$/.test(id)) return false;
@@ -200,8 +214,8 @@ class MessageClaimService {
     const pod = String(podId ?? '');
     if (!pod) return false;
     // Comment namespace: it exists in Mongo, not in Postgres, and is not this
-    // service's store to check. Passing it through restores the wake dedupe for
-    // post comments; see MONGO_OBJECT_ID for why refusing it fails open.
+    // service's store to check. This arm is DEDUPE, not existence — see
+    // MONGO_OBJECT_ID for why the pod cannot be verified here.
     if (MONGO_OBJECT_ID.test(id)) return true;
     if (!isChatMessageId(id)) return false;
     const found = await pool.query(
