@@ -29,6 +29,16 @@ const firstHeaderValue = (value: string | string[] | undefined): string | undefi
  *      `error code: 1000` from `server: cloudflare`, with the control bucket
  *      moving exactly one per header-free request, so none reached the origin.
  *
+ * WHEN NEITHER HOLDS — a public controller with no tunnel — the header is
+ * client-controlled, and the asymmetry is the point: honest callers send no
+ * `cf-connecting-ip` at all, so they share the `req.ip` buckets, while a caller
+ * who sends it leaves the shared bucket and can exhaust it for everyone else
+ * without ever limiting itself. How far the shared side collapses is left
+ * unstated on purpose — it depends on the LoadBalancer's `externalTrafficPolicy`,
+ * which nobody has measured. The operator opt-out that fixes that deployment is
+ * TASK-120 (default = trust the header, so a missed setting degrades to weaker
+ * limiting for the attacker, never to a one-caller lockout).
+ *
  * INTERNET-FACING ONLY — this is not a boundary. Every pod can reach
  * `backend.<ns>.svc.cluster.local:5000` (the tree carries no NetworkPolicy), so
  * an in-cluster caller can send the header itself and choose a bucket, or omit
