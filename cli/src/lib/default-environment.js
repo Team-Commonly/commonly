@@ -32,8 +32,9 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
  *
  * `pi` is absent deliberately. It has no sandbox path until #1740's transport
  * work gives it one, and since #1727 it REFUSES TO START on a spec that
- * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on
- * `trust: 'public'` and on any `mode` other than 'none'. So handing pi this
+ * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on an
+ * effective `trust: 'public'` (a legacy `internal` resolves to it) and on any
+ * `mode` other than 'none'. So handing pi this
  * block is not a harmless no-op — it is an unspawnable seat. A pi seat gets the
  * `mcp[]` half only, and the residual is that such a seat runs unconfined: that
  * belongs to the row that owns pi confinement, not to a declaration written
