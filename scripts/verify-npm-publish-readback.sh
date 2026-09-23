@@ -15,17 +15,32 @@
 # (most pushes are "registry already equal" and never reach here), so it is at
 # most ~4 extra minutes on a release, and zero on everything else.
 #
-# On exhaustion this names what the registry DID serve (dist-tags and latest)
-# alongside the version that never appeared. A read-back that can only report
-# the value it was looking for cannot distinguish "propagation is still slow"
-# from "the publish silently did not happen" or "the token has no read access" —
-# the same false negative one layer down.
+# On exhaustion this names what the registry DID serve (the version document
+# it read, plus the packument's dist-tags and latest) alongside the version that
+# never appeared. A read-back that can only report the value it was looking for
+# cannot distinguish "propagation is still slow" from "the publish silently did
+# not happen" or "the token has no read access" — the same false negative one
+# layer down.
+#
+# The registry read is the VERSION DOCUMENT, not the packument (TASK-115).
+# `npm view <pkg>@<version> version` fetches the whole packument — 130KB for
+# @commonlyai/cli — and filters locally, and that endpoint is served through a
+# CDN with `cache-control: public, max-age=300`: a copy cached moments before
+# the publish stays stale for almost exactly as long as this loop is willing to
+# wait (the budget default is also 300s), which showed up as 31 E404s followed
+# by success with no propagation delay involved (Wren/Vera 71761-71763). The
+# version document is `cf-cache-status: DYNAMIC` — not edge-cached at all,
+# 2.4KB — so it answers the question this check actually means to ask. `curl`
+# also sidesteps the runner's local npm cache, which `--prefer-online` only
+# papers over, and a 404 there is genuinely "not published yet", so the retry
+# loop still earns its place for real propagation.
 #
 # Env:
 #   NAME                            package name, e.g. @commonlyai/cli   (required)
 #   WANT                            the version just published           (required)
 #   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default 300
 #   READBACK_INTERVAL_SECONDS       gap between polls, default 10
+#   READBACK_REGISTRY_URL           registry base, default https://registry.npmjs.org
 #
 # The budget is measured on a CLOCK, not by adding up the gaps. Summing the
 # intervals made the budget depend on an env var the caller controls: at
@@ -46,17 +61,29 @@ set -euo pipefail
 TIMEOUT_SECONDS="${READBACK_TIMEOUT_SECONDS:-300}"
 INTERVAL_SECONDS="${READBACK_INTERVAL_SECONDS:-10}"
 
-# `npm view` reads the package named on the command line, so this is
-# cwd-independent on purpose: the publish job runs it with working-directory set
-# to the package dir, and a test harness runs it from anywhere.
+# The version document, not the packument: `npm view` reads the package named
+# on the command line, so the old form was cwd-independent on purpose — the
+# publish job runs this with working-directory set to the package dir, and a
+# test harness runs it from anywhere. A URL is cwd-independent by construction.
+# The name is percent-encoded because a scoped name contains a path separator;
+# both forms answer, and the encoded one is the shape the measurement above was
+# taken on.
+REGISTRY_URL="${READBACK_REGISTRY_URL:-https://registry.npmjs.org}"
+DOC_URL="$REGISTRY_URL/$(printf '%s' "$NAME" | sed 's|/|%2f|g')/$WANT"
+
 stderr_file=$(mktemp)
 trap 'rm -f "$stderr_file"' EXIT
 
 started_at=$(date +%s)
 attempt=0
+body=''
 while :; do
   attempt=$((attempt + 1))
-  got=$(npm view "$NAME@$WANT" version 2>"$stderr_file" || true)
+  body=$(curl -fsS "$DOC_URL" 2>"$stderr_file" || true)
+  # `-f` keeps a 404 body out of the parse: the registry answers a missing
+  # version with the plain text `"version not found: 9.9.9"`, which is not JSON,
+  # so a read that fails is an empty value rather than a confusing one.
+  got=$(printf '%s' "$body" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version ?? ""' 2>/dev/null || true)
   elapsed=$(( $(date +%s) - started_at ))
 
   if [ "$got" = "$WANT" ]; then
@@ -72,11 +99,13 @@ while :; do
   sleep "$INTERVAL_SECONDS"
 done
 
-echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)). The publish step reported success, so check what the registry is actually serving below before re-running."
+echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DOC_URL. The publish step reported success, so check what the registry is actually serving below before re-running."
 echo "--- what the registry serves for $NAME ---"
+echo "version document (the endpoint this poll reads, uncached): $(printf '%s' "$body" | head -c 400)"
 echo "dist-tags: $(npm view "$NAME" dist-tags --json 2>&1 | tr -d '\n' || true)"
 echo "latest:    $(npm view "$NAME" version 2>&1 | tr -d '\n' || true)"
-echo "--- last error from: npm view $NAME@$WANT version ---"
+echo "(the two lines above are PACKUMENT reads — edge-cached up to 300s, so they can lag a just-published version by themselves)"
+echo "--- last error from: curl -fsS $DOC_URL ---"
 if [ -s "$stderr_file" ]; then
   cat "$stderr_file"
 else
