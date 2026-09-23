@@ -32,7 +32,7 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
 import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
@@ -331,8 +331,14 @@ export const assertSandboxDeclaredForPublicPod = async ({
 }) => {
   if (!podId || !client) return;
 
-  const mode = environment?.sandbox?.mode;
-  const trust = environment?.sandbox?.trust;
+  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // legacy `internal` record as the `public` it means, the same mapping the
+  // attach gate and both adapters use. Reading it raw refused a record that
+  // means public one call before the gate #1840 fixes — TASK-113 claims
+  // attach's inconsistent derivation is closed, and this path is attach's.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const mode = sandbox?.mode;
+  const trust = sandbox?.trust;
   // An ENFORCED declaration is one the adapters act on: a public trust (whose
   // mode they resolve per host at spawn) or an explicit non-'none' mode. This
   // mirrors the daemon's predicate in lib/default-environment.js, so the shape
@@ -478,6 +484,70 @@ export const updateAgentConfiguration = async ({
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
+ * The sandbox an attach will actually run under — derived, then gated.
+ *
+ * The trust is normalized ONCE, before it is used for anything. A stored
+ * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * off the raw value made this gate disagree with the adapters in BOTH
+ * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
+ * mode at `'none'` and refused nothing here, and `internal` beside
+ * `mode: 'workspace'` was refused outright as "implemented only for public codex
+ * or Claude adapters" — turning away a record both adapters confine happily.
+ *
+ * This does NOT take the confinement decision from the adapters. They normalize
+ * and re-derive from the environment themselves (claude.js:615, codex.js:546) and
+ * the attach-time value never reaches them, so a legacy record was confined
+ * either way; what was wrong is that this gate's verdict contradicted theirs, and
+ * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
+ * attach had already published and minted. Normalizing here makes the two agree
+ * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
+ * source after Vera 71664).
+ *
+ * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
+ * Seatbelt, the codex permission-profile version — is deliberately not this
+ * function's question: that needs the host and the detected version and stays at
+ * the call site. What an adapter can honour at all is just a mode and a name, so
+ * that check is in here, with witnesses of both signs.
+ *
+ * Why this gate was the one that disagreed: the resolver compared the RAW trust,
+ * so a caller that did not normalize first read a legacy `internal` record as
+ * non-public. The adapters normalize at their own entry (claude.js:615,
+ * codex.js:546) and passed the normalized object on, which is why their suites
+ * confined a legacy record all along; the grant-broker guard normalized for its
+ * own trust check and then handed the resolver the raw object, so its symptom was
+ * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * main now — the resolver reads the effective trust (mode.js:38) and the guard
+ * imports the same reader from environment.js (grant-broker-guard.js:186) — so
+ * this helper needs no coupling to them: it normalizes once, here, before its own
+ * two gates, because those gates compare `trust` directly.
+ */
+export const resolveAttachSandbox = ({
+  environment, adapterName, platform = process.platform,
+} = {}) => {
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const trust = sandbox?.trust;
+  const mode = sandbox?.mode
+    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (trust === 'public' && mode === 'none') {
+    throw new Error(
+      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+    );
+  }
+  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
+  // pure — a mode and an adapter name — so it belongs with the derivation, and
+  // its witnesses live beside it.
+  if ((mode === 'workspace' || mode === 'read-only')
+    && (trust !== 'public' || !['codex', 'claude'].includes(adapterName))) {
+    throw new Error(
+      `sandbox.mode=${mode} is currently implemented only for public `
+      + 'codex or Claude adapters',
+    );
+  }
+  return { mode, trust };
+};
+
+/**
  * Publish, install, and mint a runtime token for a local-CLI-wrapped agent.
  * Pure core — the commander action wraps this with config loading + logging.
  */
@@ -513,16 +583,7 @@ export const performAttach = async ({
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const sandboxMode = environment.sandbox?.mode
-      || (environment.sandbox?.trust === 'public'
-        ? resolvePublicSandboxMode(environment.sandbox)
-        : 'none');
-    const sandboxTrust = environment.sandbox?.trust;
-    if (sandboxTrust === 'public' && sandboxMode === 'none') {
-      throw new Error(
-        'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
-      );
-    }
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -535,12 +596,6 @@ export const performAttach = async ({
         );
       }
     } else if (sandboxMode === 'workspace' || sandboxMode === 'read-only') {
-      if (sandboxTrust !== 'public' || !['codex', 'claude'].includes(adapterName)) {
-        throw new Error(
-          `sandbox.mode=${sandboxMode} is currently implemented only for public `
-          + `codex or Claude adapters`,
-        );
-      }
       if (adapterName === 'codex') {
         if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
           throw new Error(

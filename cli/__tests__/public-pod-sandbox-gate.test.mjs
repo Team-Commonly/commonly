@@ -45,6 +45,30 @@ describe('public-pod sandbox gate', () => {
     })).rejects.toThrow(/publicly readable/i);
   });
 
+  test('accepts a legacy `internal` record, which means public here too', async () => {
+    // Vera 71715 / Wren 71718. `internal` is read as `public` by the attach
+    // gate and by both adapters, so a raw compare here refused a record that
+    // means public one call before the gate TASK-113 fixes — the row's claim
+    // would be false with this path still throwing. No pod read: a declared
+    // sandbox short-circuits before the client is touched.
+    const client = clientFor(PUBLIC_POD);
+    await expect(assertSandboxDeclaredForPublicPod({
+      client, podId: 'p1', environment: { sandbox: { trust: 'internal' } },
+    })).resolves.toBeUndefined();
+    expect(client.get).not.toHaveBeenCalled();
+  });
+
+  test('still refuses a legacy `internal` record that declares mode none', async () => {
+    // The mapping changes what `internal` MEANS, not whether `none` counts as
+    // confinement: resolved through the table this is the public+none shape the
+    // test above already refuses.
+    await expect(assertSandboxDeclaredForPublicPod({
+      client: clientFor(PUBLIC_POD),
+      podId: 'p1',
+      environment: { sandbox: { trust: 'internal', mode: 'none' } },
+    })).rejects.toThrow(/publicly readable/i);
+  });
+
   test('refuses a communityListed pod even when publicRead is false', async () => {
     await expect(assertSandboxDeclaredForPublicPod({
       client: clientFor({ _id: 'p3', name: 'Bug Reports', communityListed: true }),

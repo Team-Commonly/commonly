@@ -129,6 +129,15 @@ describe('withDefaultSandbox', () => {
       .toEqual({ trust: 'public' });
   });
 
+  test('leaves a legacy `internal` block alone — it means public, so it is enforced', () => {
+    // Wren 71719. `assertSandboxDeclaredForPublicPod` says in its own comment
+    // that its predicate mirrors this one; read raw, this one replaced a block
+    // the attach gate accepts. The miss was benign (both resolve to the same
+    // effective trust) but the mirror has to agree, or the comment is false.
+    const legacy = { sandbox: { trust: 'internal' } };
+    expect(withDefaultSandbox(legacy)).toBe(legacy);
+  });
+
   test('never overrides an enforced sandbox, including read-only', () => {
     const declared = { sandbox: { mode: 'read-only', trust: 'public' } };
     expect(withDefaultSandbox(declared)).toBe(declared);
