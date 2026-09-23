@@ -103,7 +103,128 @@ function clampLease(seconds: unknown): number {
   return Math.min(Math.trunc(n), MAX_LEASE_SECONDS);
 }
 
+/**
+ * `messages.id` is SERIAL, i.e. int4: 2147483647 is the largest value that can
+ * name a row, and one past it is an out-of-range ERROR rather than an absent
+ * row (see messageExists). Named rather than inlined so the bound is one
+ * reviewable fact and the tests that pin it cite the same number.
+ */
+const MESSAGE_ID_MAX = 2147483647;
+
+/**
+ * Ids reaching this predicate do NOT all come from one namespace, and the
+ * predicate is a total split over them rather than a filter that happens to
+ * accept digits:
+ *
+ *   chat id     digits, 1..2147483647   verified against Postgres below
+ *   comment id  24 hex, canonical case  passed through to the CAS, unverified
+ *   anything else                       refused, no query
+ *
+ * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
+ * `postController.ts:295` enqueues with `_id: comment._id`, and every payload
+ * builder stringifies that into `messageId` (`message?._id || message?.id`,
+ * agentMentionService.ts:1417/1481/1674/1722/1793/1861/2145). The wake race
+ * dedupes BY that id — several seats are woken for one comment, the first
+ * lease wins, the rest stand down — so refusing the shape does not fail closed,
+ * it fails open: `enforcement.js:414` catches the throw and returns
+ * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
+ * regression this arm exists to prevent (connector-ops 71952, vera 71956,
+ * wren's ruling 71961).
+ *
+ * THIS ARM IS DEDUPE, NOT EXISTENCE, and the difference is not an oversight:
+ * the pod for a comment wake cannot be verified here by construction, because
+ * the enqueue resolves it through `resolveMentionPod`, which may return the
+ * request's pod or a fallback — so a lookup here could refuse a wake that is
+ * real. Passing the id through keeps the race deduping, which is the property
+ * the wake path needs; existence is what the chat arm buys and all this arm
+ * can buy is that one lease is minted per comment id. The corollary is stated
+ * rather than hidden: a fabricated 24-hex id still mints a permanent,
+ * un-renewable phantom row, so the defect is closed for one namespace only,
+ * and verifying the other means reading Mongo from this service — a store
+ * boundary, not a predicate tweak (TASK-122, filed for the gate to keep or
+ * close).
+ *
+ * Canonical case only. `String(objectId)` is lowercase in every driver we
+ * send, so an uppercase spelling is refused with the digits arm's 404 — which
+ * fails open for that spelling rather than minting a second claim key for one
+ * comment. No producer emits one; if one ever does, this is the line to revisit.
+ *
+ * The arms are tested IN THIS ORDER, and the order is load-bearing for one
+ * input: '123456789012345678901234' is 24 hex digits, hence a legal ObjectId,
+ * and far outside int4. Checked digits-first it fails the range test and — in
+ * the natural rewrite, where the digits arm returns false — is 404'd, costing
+ * a real wake its dedupe. The all-digit test below is the witness that kills
+ * that shape.
+ */
+const MONGO_OBJECT_ID = /^[0-9a-f]{24}$/;
+
+function isChatMessageId(id: string): boolean {
+  if (!/^\d+$/.test(id)) return false;
+  const n = Number(id);
+  // Number.isInteger alone is not a bound: 100-digit inputs are integers too,
+  // and `n <= MESSAGE_ID_MAX` is what rejects them.
+  return Number.isInteger(n) && n >= 1 && n <= MESSAGE_ID_MAX;
+}
+
 class MessageClaimService {
+  /**
+   * Does this message exist, in this pod?
+   *
+   * The claim table carries no foreign key to `messages` — deliberately: the
+   * ADR-018 sketch said "claim state lives with the message row", and this
+   * service keys a dedicated table instead precisely so the busiest table in
+   * the system takes no retrofit DDL (see the header note). The cost of that
+   * choice is that the CAS will mint a lease for an id that names nothing.
+   * Measured 2026-09-23 against the live instance: POST
+   * /api/agents/runtime/messages/999999999999/claim → 200 `claimed: true` for
+   * an id that has no row anywhere. Such a lease is un-renewable, can never be
+   * completed, and — because the prune collects terminal states only — is
+   * permanent storage. Hence this predicate, before the CAS:
+   *
+   * `messages.id` is SERIAL (config/schema.sql:43), so a non-numeric id cannot
+   * name a row, and answering it WITHOUT a query is the point rather than an
+   * optimisation: handing 'TASK-110' to Postgres raises `invalid input syntax
+   * for type integer`, which the route's catch turns into a 500 — the same
+   * wrong answer in new clothes (vera's gate, 71873).
+ *
+ * DIGITS ALONE ARE NOT THE SHAPE — SERIAL is int4. '999999999999' passes a
+ * `/^\d+$/` test and is not a syntax error either: Postgres raises `22003
+ * value "999999999999" is out of range for type integer`, the catch turns that
+ * into a 500, and that id is this predicate's own headline reproduction
+ * (vera's gate, 71928, measured read-only against the live DB: '999999999999'
+ * and '2147483648' throw, '5' and '00000000005' are simply absent). The bound
+ * is therefore part of the shape test, not decoration — hence MESSAGE_ID_MAX
+ * and the two tests pinning the first out-of-range value and this one to
+ * no-query-false.
+ *
+ * The LOWER bound is a different kind of clause and is not asserted as if it
+ * were the same thing: '0' is merely absent, so `n >= 1` saves one pointless
+ * query and changes no answer (vera 71951). It stays because it is free, and it
+ * is deliberately NOT given a no-query test — a test named after safety that
+ * actually pins an optimisation teaches the next reader the wrong reason for
+ * the bound's existence. What the upper bound buys is a 500 averted; what the
+ * lower bound buys is a query not sent.
+ *
+ * Pod-scoped on purpose. Existence alone would let a seat installed in pod A
+ * lease a message in pod B; the route checks installation separately, and
+ * this is the message half. Both are required, so both are read here.
+ */
+  static async messageExists(messageId: unknown, podId: unknown): Promise<boolean> {
+    const id = String(messageId ?? '');
+    const pod = String(podId ?? '');
+    if (!pod) return false;
+    // Comment namespace: it exists in Mongo, not in Postgres, and is not this
+    // service's store to check. This arm is DEDUPE, not existence — see
+    // MONGO_OBJECT_ID for why the pod cannot be verified here.
+    if (MONGO_OBJECT_ID.test(id)) return true;
+    if (!isChatMessageId(id)) return false;
+    const found = await pool.query(
+      'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',
+      [id, pod],
+    );
+    return found.rows.length > 0;
+  }
+
   /**
    * Atomically claim a message, or renew a claim you already hold (the same
    * statement serves both — a holder "wins against itself", which IS renewal,

@@ -413,3 +413,131 @@ describe('messageClaimService', () => {
     expect(r.claimed).toBe(false);
   });
 });
+
+/**
+ * messageExists — the claim route's precondition (TASK-118).
+ *
+ * Two of these are about the SHAPE of the answer rather than its value, because
+ * vera's gate (71873) named both traps and neither is a data question:
+ *
+ *  - `messages.id` is SERIAL in the shipped schema but VARCHAR(24) in the unit
+ *    harness (`__tests__/utils/testUtils.js:159`), so a test that runs here can
+ *    pass on a value production rejects. The first test therefore asserts the
+ *    shipped DDL still says SERIAL — that is what makes the numeric guard
+ *    correct, and it reddens if anyone changes the id type — instead of
+ *    pretending the in-memory column is the real one.
+ *  - The guard's whole job is to keep a malformed id away from Postgres, so the
+ *    assertion is that NO query was issued, not that the result was false.
+ *    A false-from-the-database would still be a 500 in production when the
+ *    column is an integer.
+ */
+describe('messageExists', () => {
+  beforeEach(() => {
+    pool.query.mockReset();
+    pool.query.mockResolvedValue({ rows: [] });
+  });
+
+  test('the numeric guard rests on a SERIAL id — the shipped schema still says so', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const schema = fs.readFileSync(path.resolve(__dirname, '../../../config/schema.sql'), 'utf8');
+    // Scoped to the messages block, and that scoping is the point: slicing to
+    // the end of the file left a LATER table's `id SERIAL PRIMARY KEY` matching
+    // this regex, so the assertion stayed green when messages.id was mutated to
+    // UUID. Found by the mutation ledger, not by review.
+    const start = schema.indexOf('CREATE TABLE IF NOT EXISTS messages');
+    const messages = schema.slice(start, schema.indexOf('CREATE TABLE', start + 10));
+    expect(messages).toMatch(/id SERIAL PRIMARY KEY/);
+  });
+
+  test('a non-numeric id never reaches the database — the 500 that would become', async () => {
+    await expect(MessageClaimService.messageExists('TASK-110', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('an empty id or pod is answered without a query too', async () => {
+    await expect(MessageClaimService.messageExists('', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('42', '')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(undefined, undefined)).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('existence is scoped to the pod — the id alone is not the question', async () => {
+    pool.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+    await expect(MessageClaimService.messageExists('52907', 'p1')).resolves.toBe(true);
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/FROM messages WHERE id = \$1 AND pod_id = \$2/);
+    expect(params).toEqual(['52907', 'p1']);
+  });
+
+  test('a numeric id with no row in that pod is false, not an error', async () => {
+    pool.query.mockResolvedValue({ rows: [] });
+    await expect(MessageClaimService.messageExists('52907', 'other-pod')).resolves.toBe(false);
+  });
+
+  // The digits test is not the shape test: SERIAL is int4, so an id above
+  // 2147483647 is `22003 out of range`, which the route's catch turns into a
+  // 500 — the same wrong answer as 'TASK-110', reached by a different error.
+  test('an id past int4 is answered without a query — 22003, not an absent row', async () => {
+    await expect(MessageClaimService.messageExists('2147483648', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('999999999999', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('the bound is inclusive and a longer input is not an escape', async () => {
+    // 2147483647 is a legitimate id, so the database IS asked — this is what
+    // makes the upper bound load-bearing in both directions.
+    await expect(MessageClaimService.messageExists('2147483647', 'p1')).resolves.toBe(false);
+    expect(pool.query.mock.calls[0][1]).toEqual(['2147483647', 'p1']);
+    // 100 digits are digits, and Number(...) calls it an integer; only the
+    // bound rejects it.
+    pool.query.mockClear();
+    await expect(MessageClaimService.messageExists('9'.repeat(100), 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  // The second namespace, and why it is not a nicety. A post-thread comment
+  // enters the mention and wake path as a Mongo ObjectId (postController.ts:295
+  // enqueues with `_id: comment._id`; the payload builders stringify it into
+  // `messageId`). Refusing that shape does not fail closed: enforcement.js:414
+  // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
+  // unguarded and the race stops deduping — measured against this route's own
+  // head before it shipped (connector-ops 71952, vera 71956).
+  test('a post-comment ObjectId is claimable, so the wake race still dedupes', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    // Passed through to the CAS, not checked: no query is sent from here, so
+    // this pins the arm rather than a verification it does not perform.
+    expect(pool.query).not.toHaveBeenCalled();
+    // Pod is still required first — the arm does not bypass the scope check
+    // that the ROUTE enforces (400 without a podId); what it does not do is
+    // verify the id against the pod, which is why this is dedupe and not
+    // existence.
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', '')).resolves.toBe(false);
+    // Hex case is spelling, and canonical spelling is lowercase: `String()` on
+    // an ObjectId is lowercase in every driver we send, so an uppercase
+    // spelling is refused rather than accepted as a second claim key for one
+    // comment. Named here because the consequence is a failOpen for that
+    // spelling, which is the failure class this whole arm exists to remove —
+    // acceptable only because no producer emits one.
+    await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(false);
+  });
+
+  test('the comment namespace is the bare 24-hex shape, and near-misses are refused', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd7994390111', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901g', 'p1')).resolves.toBe(false);
+    // Not parsed, so a prefix or padding is a miss rather than a near-hit.
+    await expect(MessageClaimService.messageExists('0x507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(' 507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('an all-digit 24-hex id is passed through — the arm order is what keeps it from being 404\'d', async () => {
+    // 24 hex digits is a legal ObjectId AND far outside int4, which is the one
+    // input where the arm order changes the answer: written digits-first, the
+    // natural shape returns false from the range test and this id is refused,
+    // costing a real comment wake its dedupe (wren 71962 — order matters).
+    await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+});

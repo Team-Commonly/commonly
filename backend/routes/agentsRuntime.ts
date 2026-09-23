@@ -347,6 +347,25 @@ router.post('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, asy
     if (!installed) return res.status(403).json({ error: 'no active installation in this pod' });
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const MessageClaimService = require('../services/messageClaimService');
+    // A claim is a lease on a MESSAGE. The CAS alone will mint one for an id
+    // that names nothing (measured: /messages/999999999999/claim →
+    // `claimed: true`), and the prune collects terminal states only, so such a
+    // row outlives the process that made it — the laptop-lid shape ADR-018 D4
+    // exists for, minus the re-delivery that would ever clear it.
+    //
+    // 404, not 403 and not 200: the caller asked about something that is not
+    // there. The answer is the same whether the id is malformed, absent from
+    // this pod, or absent entirely, so the route leaks no membership oracle —
+    // and the guard inside messageExists runs before the query, because
+    // `messages.id` is SERIAL and a non-numeric id would otherwise reach
+    // Postgres as a syntax error the catch turns into a 500 (vera 71873).
+    // That guard is a split over namespaces, not a digits test: the wake for a
+    // post-thread comment carries a Mongo ObjectId, so refusing that shape
+    // 404s a legitimate wake and costs the claim race its dedupe.
+    const targetExists = await MessageClaimService.messageExists(req.params.messageId, podId);
+    if (!targetExists) {
+      return res.status(404).json({ claimed: false, reason: 'message_not_found' });
+    }
     const result = await MessageClaimService.claim({
       messageId: req.params.messageId,
       podId,

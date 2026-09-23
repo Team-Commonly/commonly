@@ -37,9 +37,11 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 const mockClaim = jest.fn();
 const mockRelease = jest.fn();
+const mockMessageExists = jest.fn();
 jest.mock('../../../services/messageClaimService', () => ({
   claim: (...a) => mockClaim(...a),
   release: (...a) => mockRelease(...a),
+  messageExists: (...a) => mockMessageExists(...a),
 }));
 
 const mockDeclineRelease = jest.fn();
@@ -63,6 +65,7 @@ describe('claim routes', () => {
     jest.clearAllMocks();
     mockFindOne.mockResolvedValue({ status: 'active' });
     mockClaim.mockResolvedValue({ claimed: true });
+    mockMessageExists.mockResolvedValue(true);
     mockRelease.mockResolvedValue({ released: true });
     mockDeclineRelease.mockResolvedValue({ released: true, podId: 'p1', handoff: { queued: true } });
   });
@@ -80,6 +83,61 @@ describe('claim routes', () => {
     const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({ podId: 'p1' });
     expect(res.status).toBe(403);
     expect(mockClaim).not.toHaveBeenCalled();
+    // Membership is answered before the message is: an uninstalled caller must
+    // not be able to tell a real message from a missing one by the shape of
+    // the refusal (403 either way).
+    expect(mockMessageExists).not.toHaveBeenCalled();
+  });
+
+  test('a message absent from this pod → 404, and no lease is minted', async () => {
+    // Measured before the fix: /messages/999999999999/claim answered
+    // `claimed: true` for an id with no row anywhere, and the row it created
+    // was un-renewable and never pruned.
+    mockMessageExists.mockResolvedValue(false);
+    const res = await request(app)
+      .post('/api/agents/runtime/messages/999999999999/claim')
+      .send({ podId: 'p1' });
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ claimed: false, reason: 'message_not_found' });
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockTypingStart).not.toHaveBeenCalled();
+  });
+
+  test('a non-numeric id is the same 404 — the route never guesses an id is a message', async () => {
+    mockMessageExists.mockResolvedValue(false);
+    const res = await request(app)
+      .post('/api/agents/runtime/messages/TASK-110/claim')
+      .send({ podId: 'p1' });
+    expect(res.status).toBe(404);
+    expect(mockMessageExists).toHaveBeenCalledWith('TASK-110', 'p1');
+    expect(mockClaim).not.toHaveBeenCalled();
+  });
+
+  test('existence is asked with the id AND the pod, before the CAS', async () => {
+    const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockMessageExists).toHaveBeenCalledWith('52907', 'p1');
+    // Order matters: the check is worthless if the lease is minted first and
+    // the 404 is decided afterwards.
+    expect(mockMessageExists.mock.invocationCallOrder[0])
+      .toBeLessThan(mockClaim.mock.invocationCallOrder[0]);
+  });
+
+  test('a comment id is passed through unchanged — the route has no shape logic of its own', async () => {
+    // The wake for a post-thread comment carries a Mongo ObjectId. The
+    // namespace split lives in messageExists, so a second copy here could only
+    // drift from it, and this pins that the route is not where the split is
+    // decided (connector-ops 71952).
+    mockMessageExists.mockResolvedValue(true);
+    const res = await request(app)
+      .post('/api/agents/runtime/messages/507f1f77bcf86cd799439011/claim')
+      .send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockMessageExists).toHaveBeenCalledWith('507f1f77bcf86cd799439011', 'p1');
+    expect(mockClaim).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: '507f1f77bcf86cd799439011',
+      podId: 'p1',
+    }));
   });
 
   test('missing podId → 400', async () => {
