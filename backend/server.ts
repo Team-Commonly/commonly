@@ -254,6 +254,9 @@ app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broke
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
 app.use('/api/hosted', require('./routes/hosted')); // ADR-023 W2: hosted runtime provision surface (metered)
+// TASK-094: per-spawn scoped credentials (mint / renew / revoke / boot sweep).
+// Mounted before the runtime router so the path is unambiguous.
+app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
