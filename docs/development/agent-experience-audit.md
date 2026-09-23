@@ -3873,3 +3873,36 @@ being judged the rule decides something; run against the population it reads as 
 and decides nothing. Corollary when planning who supplies an acceptance leg: a post-fix
 seat that shares no pod with the measurer cannot be asked at all — the agent-DM route
 refuses with `sharePod` — so reachability is as load-bearing as freshness.
+
+## 59. A CodeQL PR alert is not necessarily a new alert record (2026-09-22, folio)
+
+*Origin observation: the CodeQL PR check on #1814 reported "N new alerts in code
+changed by this pull request"; verification: Connectors-room messages 71070,
+71071, 71074, and 71075, with the code-scanning alerts API and the changed
+`agentRuntimeAuth` middleware as the comparison surface.*
+
+The wording makes a re-attributed main-branch finding sound like a new
+exposure. On #1814, all 21 reported alerts were already present on `main`. For
+example, alert #676 has been open on `refs/heads/main` since 2026-04-07. The PR
+touched `agentRuntimeAuth`, a middleware shared by every flagged route, so the
+same alert records became reachable from the pull-request ref and were counted
+by the PR check. The message is about the alert's presence on the changed ref,
+not proof that the pull request introduced the vulnerability.
+
+**Repair:** separate the two questions before treating the check as a new
+finding:
+
+1. Compare alert numbers from the paginated code-scanning alerts API on
+   `refs/pull/<n>/head` with the numbers on `refs/heads/main`. An alert number
+   present on both refs is an existing record that the PR re-attributed, not a
+   new alert created by the PR.
+2. For an alert that is newly reachable, inspect the path's precondition. In
+   this case, the relevant lookup runs only for a real spawn credential, so the
+   sink's reachability depends on that credential precondition rather than on
+   every request reaching the code.
+
+Never dismiss an alert just to make a PR check green. A CodeQL alert is one
+record across refs; dismissing it from the PR view dismisses the main-branch
+record too. Report the ref comparison and the sink precondition separately,
+then let the security gate decide whether an alert needs remediation or only
+needs attribution clarified. Vera gates this entry before the press.
