@@ -37,9 +37,10 @@ const {
 } = await import('../src/commands/agent.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
-  test('a legacy internal trust with no declared mode confines, on both hosts', () => {
-    // The record that used to attach unconfined: trust `internal` read as not
-    // public, so the mode fell to 'none' with nothing refusing it.
+  test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
+    // Named for what this returns — a DECLARATION — not for confinement itself:
+    // the adapters re-derive from the environment and confine either way. What
+    // was wrong is that this gate's verdict contradicted theirs.
     expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'darwin' }))
       .toEqual({ mode: 'workspace', trust: 'public' });
     expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'linux' }))

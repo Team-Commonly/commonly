@@ -482,11 +482,20 @@ export const updateAgentConfiguration = async ({
  *
  * The trust is normalized ONCE, before it is used for anything. A stored
  * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
- * off the raw value made `{ trust: 'internal' }` with no declared mode fall to
- * `'none'`: no refusal AND no confinement, the one combination this gate exists
- * to catch. It also refused the opposite way — `internal` beside
- * `mode: 'workspace'` threw as "only implemented for public adapters" — so the
- * raw compare both under- and over-refused (Kai, TASK-113).
+ * off the raw value made this gate disagree with the adapters in BOTH
+ * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
+ * mode at `'none'` and refused nothing here, and `internal` beside
+ * `mode: 'workspace'` was refused outright as "implemented only for public codex
+ * or Claude adapters" — turning away a record both adapters confine happily.
+ *
+ * This does NOT take the confinement decision from the adapters. They normalize
+ * and re-derive from the environment themselves (claude.js:615, codex.js:546) and
+ * the attach-time value never reaches them, so a legacy record was confined
+ * either way; what was wrong is that this gate's verdict contradicted theirs, and
+ * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
+ * attach had already published and minted. Normalizing here makes the two agree
+ * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
+ * source after Vera 71664).
  *
  * Whether the resolved mode is AVAILABLE here (bwrap installed, macOS for
  * Seatbelt, the adapter honouring it) is deliberately not this function's
