@@ -6,7 +6,7 @@ Chosen by Sam on 2026-09-03 from three named directions (Studio, Workshop, Signa
 - Tokens: `frontend/src/v2/v2.css` (ships) and `frontend/design-system/tokens.css` (mirror). They move together in one PR.
 - Anchor: `frontend/design-system/README.md` § *Identity: Signal* carries the short form of this page.
 
-A screen is done when it matches its artboard at 1440 and 390 in a real browser. Nothing is pressed on a description; Sam sees it live beside its artboard.
+A screen is done when it matches its artboard at 1200 and 390 in a real browser (evidence widths per Sam, 68655; confirmed 2026-09-23). Nothing is pressed on a description; Sam sees it live beside its artboard.
 
 ## 1. The five rules
 
@@ -77,8 +77,8 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 1. **Directions before deliverables.** When a direction is open, three *named* candidates on one page, each built around the *same product moment* with the *same fixed copy*, so the only variable is the design. Five shades of one idea is not a choice.
 2. **The chosen one gets clickable.** The winning direction is applied to the screen people live in as a working prototype (state changes, not a tour) before any other screen is drawn.
 3. **One system, two volumes.** Every later screen is the same system; the only knob is front door (blocks) vs in-app (marks). A screen that needs a new colour or radius is wrong, not the system.
-4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1440 and 390 screenshots of the real screen beside it.
-5. **Survey what is left.** Periodically screenshot every live route at 1440 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
+4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1200 and 390 screenshots of the real screen beside it.
+5. **Survey what is left.** Periodically screenshot every live route at 1200 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
 6. **A screen ships whole, never in slices.** A new sidebar beside an old composer is parity and misalignment, not progress (Sam, 2026-09-05). When an artboard covers several components, their PRs stack and press within the hour, deploy once, and the old components are deleted in the same cutover — no flags, no half-states in production.
 7. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
 
