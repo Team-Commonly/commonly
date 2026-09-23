@@ -52,6 +52,10 @@ interface V2ThreadMessagesProps {
   starterPanel?: React.ReactNode;
   emptyState?: React.ReactNode;
   agentDeliveryHint?: { messageId: string; mentionHandle: string } | null;
+  // A pod with no installed agent answers nothing by construction, so there is
+  // no handle to suggest — a different row, in the same slot.
+  noAgentsHint?: { messageId: string } | null;
+  onAddAgent?: () => void;
   messagesContainerRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -135,6 +139,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   starterPanel,
   emptyState,
   agentDeliveryHint,
+  noAgentsHint,
+  onAddAgent,
   messagesContainerRef,
   messagesEndRef,
 }) => {
@@ -276,6 +282,21 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     values={{ handle: agentDeliveryHint.mentionHandle }}
                     components={{ handle: <strong /> }}
                   />
+                </div>
+              )}
+              {noAgentsHint?.messageId === message.id && (
+                <div className="v2-chat__no-agents" role="status">
+                  <div className="v2-chat__no-agents-kicker">{t('podChat.noAgentsInPod.kicker')}</div>
+                  <div className="v2-chat__no-agents-body">{t('podChat.noAgentsInPod.body')}</div>
+                  {onAddAgent && (
+                    <button
+                      type="button"
+                      className="v2-chat__no-agents-action"
+                      onClick={onAddAgent}
+                    >
+                      {t('podChat.noAgentsInPod.action')}
+                    </button>
+                  )}
                 </div>
               )}
             </React.Fragment>

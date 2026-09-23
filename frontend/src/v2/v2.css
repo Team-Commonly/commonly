@@ -1831,6 +1831,66 @@ body.modern-ui.v2-canvas {
   font-weight: 600;
 }
 
+/* The delivery hint above requires an agent to name (`agentsInPod > 0`), which
+   leaves out the pod where nothing can answer at all — a team pod with no agent
+   installed. This row sits in the same slot under the sent message, says why
+   the send went quiet, and carries the one step that changes it. Ink and tint
+   only: nothing here succeeded, and no accent or toast should say otherwise. */
+.v2-chat__no-agents {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  /* `.v2-chat__messages > *` sets width: 100%, so the 50px indent below has to
+     be subtracted or the row overruns the pane by exactly 50px: at 390 the
+     full-width act ran 64→426 and the body line was cut (ux-lead's shot,
+     2026-09-23). Same rule as `.v2-thread-block` below — indent + width must
+     sum to 100% (Sam, 2026-08-24, the same bug one indent over). */
+  width: calc(100% - 50px);
+  margin: -4px 0 8px 50px;
+}
+
+.v2-chat__no-agents-kicker {
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-transform: lowercase;
+}
+
+.v2-chat__no-agents-body {
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-root button.v2-chat__no-agents-action {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-root button.v2-chat__no-agents-action:hover {
+  background: var(--v2-surface-hover);
+}
+
+@media (max-width: 760px) {
+  /* The row's single act is a touch target on a phone: full width of the row,
+     44 tall. This must override the MINIMUM, not a height — a `height` here
+     would lose to the base rule's own min-height and render 32 (TASK-140). */
+  .v2-root button.v2-chat__no-agents-action {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
 /* First-run is a shell-level dialog. The overlay separates the one-time setup
    path from pod content, while the dialog itself owns overflow on short mobile
    viewports so every step and the dismissal control stay reachable. */
