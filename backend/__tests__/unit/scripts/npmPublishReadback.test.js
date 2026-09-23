@@ -25,6 +25,13 @@
  * packument fails loudly — that is what makes the endpoint a property under
  * test instead of a detail of the implementation.
  *
+ * TASK-116 adds a fifth: the TAG must move. A published version whose `latest`
+ * still points at the previous one is a different defect from a version that
+ * never appeared, and the two must not share a message. The assertion is exact
+ * because nothing here publishes with `--tag` — that reason is asserted to be in
+ * the script, so the day someone adds one, the comment is what says why the
+ * check was allowed to be this strict.
+ *
  * The stubs answer by argument shape, so the assertions above are about this
  * script's decisions, not about the network. The wiring half is asserted
  * against the workflow text because a workflow body cannot be executed here.
@@ -87,21 +94,63 @@ const stubSource = [
  * budget are about.
  *   STUB_FAILS_UNTIL=n        the first n version-document reads 404
  *   STUB_NEVER_PUBLISHED=1    every such read 404s
- *   STUB_LATEST               the version the document reports
+ *   STUB_LATEST               the version the version-document reports
+ *   STUB_TAG_LATEST           what latest points at in the dist-tags document
+ *                             (defaults to STUB_LATEST, i.e. the tag moved)
+ *   STUB_TAG_STATUS           the status the dist-tags read answers (default 200)
+ *   STUB_TAG_BEHIND_FOR=n     the first n tag reads still report the old tag
+ *   STUB_TAG_BEHIND_VALUE     what they report instead (default 0.0.0)
+ *   STUB_TAG_BAD_FOR=n        the first n tag reads do not answer
+ *   STUB_TAG_BAD_STATUS       the status they answer instead (default 401)
  */
 const curlSource = [
   '#!/usr/bin/env bash',
   "printf '%s\\n' \"$*\" >> \"$STUB_LOG.calls\"",
   'sleep "${STUB_SLEEP_SECONDS:-0}"',
-  'if [ "${1:-}" != "-fsS" ]; then',
-  '  echo "stub curl: the poll must call curl -fsS (got: $*)" >&2',
-  '  exit 1',
-  'fi',
+  // Two endpoints, two flag pairs: `-fsS` for the version document (a 404 body
+  // must not be parsed) and `-sS` for the dist-tags document (the status code is
+  // the finding, so it must be readable). Each flag is refused on the other URL.
+  'mode=""',
+  'case "${1:-}" in',
+  '  -fsS) mode=version ;;',
+  '  -sS) mode=tag ;;',
+  '  *) echo "stub curl: unexpected flags: $*" >&2; exit 1 ;;',
+  'esac',
   'url="${@: -1}"',
   'case "$url" in',
   '  https://registry.npmjs.org/*) rest="${url#https://registry.npmjs.org/}" ;;',
   '  *) echo "stub curl: unexpected registry host: $url" >&2; exit 1 ;;',
   'esac',
+  'if [ "$mode" = "tag" ]; then',
+  '  case "$rest" in',
+  '    */dist-tags) ;;',
+  '    *) echo "stub curl: -sS used for a URL that is not dist-tags: $url" >&2; exit 1 ;;',
+  '  esac',
+  '  out=""; prev=""',
+  '  for arg in "$@"; do',
+  '    if [ "$prev" = "-o" ]; then out="$arg"; fi',
+  '    prev="$arg"',
+  '  done',
+  '  if [ -z "$out" ]; then echo "stub curl: the tag read must use -o (got: $*)" >&2; exit 1; fi',
+  // One publish writes two documents; nothing has measured that the registry
+  // makes them visible in the same instant. These two knobs are how the harness
+  // models that gap: the tag lags for the first n reads, or does not answer for
+  // the first n — so "retry inside the budget" is a testable claim rather than
+  // an assumption.
+  '  n=$(( $(cat "$STUB_LOG.tagreads" 2>/dev/null || echo 0) + 1 ))',
+  '  echo "$n" > "$STUB_LOG.tagreads"',
+  '  status="${STUB_TAG_STATUS:-200}"',
+  '  if [ "$n" -le "${STUB_TAG_BAD_FOR:-0}" ]; then status="${STUB_TAG_BAD_STATUS:-401}"; fi',
+  '  latest="${STUB_TAG_LATEST:-${STUB_LATEST:-0.0.0}}"',
+  '  if [ "$n" -le "${STUB_TAG_BEHIND_FOR:-0}" ]; then latest="${STUB_TAG_BEHIND_VALUE:-0.0.0}"; fi',
+  '  printf %s "$status"',
+  '  if [ "$status" = "200" ]; then',
+  "    printf '{\"latest\":\"%s\"}\\n' \"$latest\" > \"$out\"",
+  '  else',
+  "    printf 'Unauthorized\\n' > \"$out\"",
+  '  fi',
+  '  exit 0',
+  'fi',
   'if [ "$(printf %s "$rest" | tr -cd / | wc -c | tr -d " ")" != "1" ]; then',
   '  echo "stub curl: PACKUMENT read ($url) — the read-back must read the version document" >&2',
   '  exit 1',
@@ -147,6 +196,7 @@ const runScript = (env, { timeoutMs = 30000 } = {}) => {
   }
 };
 
+const tagReads = (log) => Number(fs.readFileSync(`${log}.tagreads`, 'utf8').trim() || 0);
 const attempts = (log) => Number(fs.readFileSync(`${log}.attempts`, 'utf8').trim());
 
 const withEnv = (dir, log, extra) => ({
@@ -207,6 +257,112 @@ describe('npm publish read-back', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(`GET https://registry.npmjs.org/@commonlyai%2fcli/${WANT}`);
     expect(result.stdout).toContain('version document');
+  });
+
+  describe('the tag must move with the version', () => {
+    // The budget is a fixture, not a duration: these rows are about which claim
+    // was outstanding at exhaustion, so they spend it in busy-second units
+    // instead of waiting out the 300s the real job uses.
+    const run = (extra) => {
+      const { dir, log } = withStub();
+      return {
+        log,
+        result: runScript(withEnv(dir, log, {
+          STUB_LATEST: WANT,
+          STUB_TAG_LATEST: WANT,
+          READBACK_INTERVAL_SECONDS: '0',
+          READBACK_TIMEOUT_SECONDS: '30',
+          ...extra,
+        })),
+      };
+    };
+    const outOfBudget = (extra) => run({ READBACK_TIMEOUT_SECONDS: '2', ...extra });
+
+    test('a publish that moved latest succeeds, and the success line says the tag moved', () => {
+      const { result } = run({});
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('latest points at it');
+    });
+
+    test('a tag that lags the version and catches up inside the budget is a PASS', () => {
+      // One publish writes two documents; nothing has measured that the registry
+      // publishes them in the same instant. A live version whose tag is one read
+      // behind is a good publish, and this row is the one that says so.
+      const { log, result } = run({ STUB_TAG_BEHIND_FOR: '2' });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('latest points at it');
+      // It really did take more than one read to get there — otherwise this row
+      // would pass for the wrong reason (a one-shot check that happened to be
+      // right on the first read).
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('one unreadable dist-tags read does not fail the check', () => {
+      // A non-200 is a finding at exhaustion, not on a single read: the document
+      // not answering once is not the same as the tag not having moved.
+      const { log, result } = run({ STUB_TAG_BAD_FOR: '1' });
+
+      expect(result.status).toBe(0);
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('a version published without moving latest fails as a tag that did not move', () => {
+      // The version IS live; only the tag is behind, and it stays behind for the
+      // whole budget. This is not "not published yet" and must not read like it.
+      const { log, result } = outOfBudget({ STUB_TAG_LATEST: REGISTRY_SERVES });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('the tag did NOT move');
+      expect(result.stdout).toContain(`latest still pointed at '${REGISTRY_SERVES}'`);
+      expect(result.stdout).not.toContain('is not visible on the registry');
+      // Retried rather than bailing on the first read.
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('an unreadable dist-tags document fails as unreadable, not as a tag that did not move', () => {
+      // Sustained: a name the registry will not serve answers 401, not 404.
+      const { log, result } = outOfBudget({ STUB_TAG_BAD_FOR: '9999' });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('did not answer for 2s');
+      expect(result.stdout).not.toContain('did NOT move');
+      expect(tagReads(log)).toBeGreaterThan(1);
+    });
+
+    test('a version that never appears is still reported as never appearing', () => {
+      // The third headline, and the one the other two must not have stolen: a
+      // tag state is only meaningful once the version document has answered.
+      const { result } = outOfBudget({ STUB_NEVER_PUBLISHED: '1' });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('is not visible on the registry');
+      expect(result.stdout).not.toContain('the tag did NOT move');
+    });
+
+    test('the tag is read from the uncached dist-tags document', () => {
+      const { log, result } = run({});
+      expect(result.status).toBe(0);
+
+      const calls = fs.readFileSync(`${log}.calls`, 'utf8').trim().split('\n');
+      const tagCalls = calls.filter((c) => c.startsWith('-sS '));
+      expect(tagCalls.length).toBeGreaterThan(0);
+      for (const call of tagCalls) {
+        expect(call).toContain('https://registry.npmjs.org/-/package/@commonlyai%2fcli/dist-tags');
+      }
+      // The tag document is NOT the packument: `npm view dist-tags` would be the
+      // cached read TASK-115 removed, one endpoint over.
+      expect(tagCalls.some((c) => c.startsWith('-sS -o '))).toBe(true);
+    });
+
+    test('the exact assertion carries its reason: nothing here publishes with --tag', () => {
+      // The ruling's condition, asserted rather than promised: the assertion is
+      // strict BECAUSE there is one publish invocation and no publishConfig.tag,
+      // so the day someone adds `--tag` this comment is what tells them why the
+      // check reddened.
+      const script = fs.readFileSync(SCRIPT, 'utf8');
+      expect(script).toContain('publishes without --tag');
+      expect(script).toContain('npm-publish.yml:143');
+    });
   });
 
   // The count is a BOUND, not a number, because the script's budget clock is
@@ -283,7 +439,7 @@ describe('npm publish read-back', () => {
 
     expect(result.status).toBe(0);
     expect(attempts(log)).toBe(1);
-    expect(result.stdout).toMatch(/is live \(attempt 1, [1-9]\d*s after publish\)/);
+    expect(result.stdout).toMatch(/is live and latest points at it \(attempt 1, [1-9]\d*s after publish\)/);
   });
 
   test('exhaustion names what the registry serves and exits non-zero', () => {
@@ -300,16 +456,20 @@ describe('npm publish read-back', () => {
     // and npm's own last error — the three facts the old message withheld.
     expect(result.stdout).toContain(`::error::${NAME}@${WANT}`);
     // The endpoint the poll read is named in the banner: "which question did we
-    // ask" is part of the diagnosis, and the packument lines below are labelled
-    // as the cached reads they are.
+    // ask" is part of the diagnosis.
     expect(result.stdout).toContain(`GET https://registry.npmjs.org/@commonlyai%2fcli/${WANT}`);
     expect(result.stdout).toContain('uncached');
     // The banner a human reads first: what follows it is the registry's
     // actual state, and it is the line that turns a red run into a
     // diagnosis instead of a mystery.
     expect(result.stdout).toContain(`--- what the registry serves for ${NAME} ---`);
-    expect(result.stdout).toMatch(new RegExp(`dist-tags: .*${REGISTRY_SERVES}`));
-    expect(result.stdout).toMatch(new RegExp(`latest: +${REGISTRY_SERVES}`));
+    // Both uncached reads are shown as such, with the tag's HTTP status — a
+    // non-200 there is a finding, not an absence. The one PACKUMENT read that
+    // survives answers the different question "what will a user's npm see",
+    // and says that it may lag by itself.
+    expect(result.stdout).toContain('dist-tags (uncached');
+    expect(result.stdout).toContain(`latest=${REGISTRY_SERVES} [HTTP 200]`);
+    expect(result.stdout).toContain('PACKUMENT');
     expect(result.stdout).toContain('The requested URL returned error: 404');
     expect(attempts(log)).toBe(1);
   });
