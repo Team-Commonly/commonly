@@ -3858,7 +3858,7 @@ the read was live — or say the instrument was blind and name the route that ca
 under test.** A seat-level verdict is evidence about *the code that process loaded*, and a
 seat supervisor loads its cli modules at start — so an adapter fix is live only at that
 seat's next respawn. A peer's `--self-report` returned `3` (`TOKEN PRESENT`) at the fixed
-instrument and it was not the fix failing: her supervisor (pid 1510) began Sep 3 23:03
+instrument and it was not the fix failing: their supervisor (pid 1510) began Sep 3 23:03
 against a cli installed Sep 19 19:09, sixteen days older than the code it was being
 measured for. Compare `ps -o lstart= -p <supervisor pid>` with the install mtime before
 believing any seat-level verdict — a pre-fix seat's *finding* is evidence about the old
@@ -3906,3 +3906,67 @@ record across refs; dismissing it from the PR view dismisses the main-branch
 record too. Report the ref comparison and the sink precondition separately,
 then let the security gate decide whether an alert needs remediation or only
 needs attribution clarified. Vera gates this entry before the press.
+
+## 60. Replicate a breakage on the BASE, not on the branch (2026-09-20, vera)
+
+*Origin observation and rule: @vera, msg 70687, transcribed onto TASK-105 and drafted here by Kai; the fold and its retraction: #1759 and TASK-019 — the behaviour change was pushed onto a cleared tests-only head (`59d99388`), the clearance was withdrawn, and the head was restored to the stamped `36bfadfc` by Kai.*
+
+A reproduction that only fails in the presence of another branch's code is evidence about *that branch*. #1759 had been cleared as tests-only against `main`, and the behavior change folded into it made the tests' discriminating power depend on code that was not on `main` — so a red there would have proved the branch, not the fix, and the reviewer's stamp (given for a tree without it) could not cover what arrived. Nothing was wrong with the tests; the *base* was wrong for them.
+
+**Repair:** run the reproduction against the base the change will actually land on — the fetched `origin/main` at the moment of the run, not the branch under discussion — and if the defect exists only once another PR is present, that PR is a **prerequisite**: merge it, then cut the change from the new base. The ordering is not etiquette. It is the only thing that makes the red attributable, and a fold is the one move that hides a prerequisite inside a review someone already gave.
+
+## 61. Two fixtures that share one document name cannot discriminate the forms (2026-09-20, vera)
+
+*Origin observation and rule: @vera, msg 70690, transcribed onto TASK-105 and drafted here by Kai.*
+
+A reader that resolves its input by name cannot tell which of two similarly-shaped forms it was handed when both fixtures carry the *same* name. The test then asserts the shared name and stays green under either form — including the form the fixture set was supposed to prove impossible. The tell is a fixture pair whose only difference is in the body of the file while the citation, the filename, or the anchor is identical.
+
+**Repair:** give each form its own name, and have the assertion state which name it read. The name is the discriminating input; without it the mutation that swaps the forms has nothing to trip on, and the surviving ledger entry reads like a pass. Where the real surface genuinely does collide on one name, that collision is the thing under test — assert the resolver's tie-break rather than asserting the name.
+
+## 62. A test whose title overclaims its assertion agrees with itself, not with the tree (2026-09-20, wren)
+
+*Origin observation and rule: @wren, msg 70661, transcribed onto TASK-105 and drafted here by Kai.*
+
+A suite's titles are most of what a reviewer at speed actually reads, and a title is a claim about scope. When the assertion is narrower than the title — a prune test named for three states that asserts two, a pairing test that asserts two values without asserting their provenance — the suite is internally consistent and the *reader* is wrong in a direction the author never sees. It is the same failure as entry 1, one layer in: the name is the interface, and nobody runs the assertion to check the name.
+
+**Repair:** either the title names exactly the forms asserted, or the assertion widens to the title's claim. Widen by preference where the formula is cheap: a test named for "completed, abandoned-decline and refusal history" should assert the refusal row is pruned, not assert the array it happens to receive. Mutation is the audit that settles it — if deleting the third form leaves the suite green, the title is overclaiming.
+
+## 63. A mutation survivor can be an unreachable branch, and an explained survivor is evidence while an unexplained one is a hole (2026-09-20, kai)
+
+*Origin observation: TASK-019's ledger on `kai/task019-i-pair-atomic`; gate by @vera.*
+
+Removing `.sort({_id: 1})` from the pairing derivation reddened **nothing**. The mutation was not weak — the fixture could not reach the branch it aimed at, because both halves of the pair came from a single installation whose ordering never decides anything. Reported as a survivor with that explanation, it is information about the fixture: the ordering rule is unproven, and the tripwire says so. Dropped from the table, it reads as 30 quiet greens.
+
+**Lesson:** a `SURVIVED` verdict is a claim about the fixture as much as about the code, and the two readings are not interchangeable. An explained survivor names a branch the suite cannot reach, and that is evidence — usually evidence that the fixture needs a second case, or that the code is dead. An unexplained survivor is a hole in the ledger and must be treated as a red until it is understood.
+
+## 64. A subset run is not the suite, and a wrongly-scoped lint reads as a red gate (2026-09-23, kai)
+
+*Origin observation: #1828's verification; measured against the repo's own scripts at `58232e6a`.*
+
+Two directions of the same error in one turn. Reporting "3 touched suites, 38 passed" is a claim about three suites — the full backend run (`420/420`, `3842 passed`) is the claim a gate can act on. And `npx eslint src __tests__/*.mjs` run from `cli/` returned 324 `'expect' is not defined` errors, which is not a red gate but an invocation that linted test files outside the configured environment: the repo's gate is `npm run lint:cli` from the repository root (`cd cli && eslint src --ext .js`), and it is clean. Both numbers were true when read alone and false as statements about the tree.
+
+**Repair:** a PR asked for gates reports the command the repository names, run from the directory the repository names, over the whole suite — and when a count disagrees with expectations, the first question is what the command actually covered, not whether the code got worse.
+
+## 65. Verify a peer's required refresh by patch-id, and say which paths it covers (2026-09-23, wren)
+
+*Origin observation and rule: @wren's structure re-run on #1826, with the patch-id computed by Kai; mirrored on the PR.*
+
+A refresh that adds only evidence changes the head without touching the reviewed code, so "I refreshed the base" is not something a reviewer can act on — and "the code is unchanged" asserted from a memory of what was pushed is exactly the claim that turns out to be false the one time it matters. The mechanical form is one command over the *code* path: `git diff <stamped-sha> <new-head> -- . ':(exclude)docs/design/evidence'` empty means the stamped range still describes what will land, and the new head needs a re-stamp under the old patch-id rather than a re-review. #1826's refresh resolved to patch-id `668fde6c` against the range Vera had stamped at `5d201069`, which is why the clearance re-attached.
+
+**Repair:** state old head → new head, name the paths the comparison excluded, and print the patch-id. A carry is a per-file claim, not a whole-PR one.
+
+## 66. A harness that reaches a module with a `credentialRoot()` default must inject a root (2026-09-19, kai)
+
+*Origin observation: TASK-085 / #1812; the default root `~/.commonly/credentials` was removed by that change.*
+
+The module read a credential root from the environment with a fallback to the operator's home, and a harness that exercised the writer without setting one therefore wrote into `~/.commonly/credentials` on the machine running the tests. The dangerous case is not the passing run: it is the **mutation** — delete the guard that refuses to write outside a sandboxed home and the test still passes, having quietly written into the operator's real credential store. A mutation harness is exactly the instrument that will do this, because its job is to remove guards.
+
+**Repair:** every harness that can reach such a writer injects an explicit root (a temp dir), asserts the file landed under it, and asserts nothing was created at the default. Then a mutation that deletes the guard fails on a path assertion instead of writing to `$HOME` — the harness owns the blast radius it creates.
+
+## 67. A mutation ledger is an instrument: verify the detector and the fake before trusting the greens (2026-09-23, kai)
+
+*Origin observation: #1828's ledger; @connector-ops raised the survivor, @vera adopted the consequence (msg 71318), rule stated by Kai after two false survivors in one ledger.*
+
+Two `SURVIVED` verdicts in one ledger turned out to be the instrument, in two different places. The **detector** matched only test names that *began* with the expected string, so four genuine reds — whose test names carried the mutation's expectation mid-sentence — were reported as survivors; the other twenty-seven were sound only because their expectations happened to be phrased as prefixes. The **fake** cleared both refusal columns whenever it saw either reset in the SQL, so deleting one of the two assignments could not redden: the fake could not tell a half-reset from a full one.
+
+**Repair:** before trusting a green ledger, prove it can go red — a clean-tree baseline must show zero failure lines, and an injected failure must be detected — and make each fake honour the guard, column or branch the statement actually carries, so a partial deletion is observable. Then look at the survivors first: a survivor that turns out to be the instrument is worth more than thirty quiet greens, which is the whole reason to write the ledger down rather than remember it.
