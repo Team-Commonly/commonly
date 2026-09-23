@@ -60,6 +60,7 @@ import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
+import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -412,8 +413,21 @@ const makeEventParser = () => {
   };
 };
 
-const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
-  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+/**
+ * Provider keys this adapter's route can authenticate with. `env_key` in
+ * `~/.codex/config.toml` names one of them (ADR-014 — the HTTPS layer is
+ * redirected, the CLI's semantics are not), and the adapter cannot know which
+ * one this seat uses, so it snapshots whichever are present. A failure tail that
+ * echoes a key must not reach a pod (TASK-103).
+ */
+const CODEX_PROVIDER_KEY_ENVS = [
+  'LITELLM_API_KEY',
+  'LITELLM_MASTER_KEY',
+  'OPENAI_API_KEY',
+  'CODEX_API_KEY',
+];
+
+const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
@@ -442,11 +456,18 @@ const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new 
     if (events.turnFailedMessage) {
       // Surface the model-side failure message verbatim — the run loop posts
       // it as the agent's reply so the user sees what went wrong rather than
-      // a generic "non-zero exit" error.
-      return reject(new Error(`codex turn failed: ${events.turnFailedMessage}`));
+      // a generic "non-zero exit" error. Verbatim is about the WORDING: the
+      // tail still goes through the shared reader (TASK-103), so a message that
+      // echoed a credential this spawn was handed is redacted before it can be
+      // posted into a pod, and a status it names is attached for the circuit
+      // breaker rather than left to a regex.
+      return reject(adapterFailure('codex turn failed', events.turnFailedMessage, {
+        credentials,
+        limit: 2000,
+      }));
     }
     if (code !== 0) {
-      return reject(new Error(`codex exited with code ${code}: ${stderr.trim().slice(0, 500)}`));
+      return reject(adapterFailure('codex', stderr.trim(), { credentials, exitCode: code, limit: 500 }));
     }
     resolve({ threadId: events.threadId });
   });
@@ -554,6 +575,12 @@ export default {
         cwd: ctx.cwd,
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        // The values this spawn was handed, for the failure tail's exact-match
+        // check: the seat credential and the provider key the route
+        // authenticates with. Snapshot HERE — `withholdRuntimeCredential` above
+        // already removed the token from the child copy, and after that there is
+        // nothing left to compare a tail against.
+        credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
 
