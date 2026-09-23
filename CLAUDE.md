@@ -408,10 +408,10 @@ The frontend row says *no* rather than `lint-staged` because that glob is
 directory over. And `npm run lint` is `lint:cli && lint:backend &&
 lint:frontend`, so while the backend leg is red the frontend leg **never
 executes**; that error count came from running eslint directly, not from the
-script. Re-measuring it from a clean checkout is currently blocked: `npm ci`
-fails in `frontend/` because `package.json` declares three `@dicebear/*`
-dependencies the committed `package-lock.json` does not carry. Both the dead
-glob and the lockfile belong to the burn-down.
+script. The clean-checkout blocker once reported here is gone: `npm ci
+--dry-run` succeeds in `frontend/` (measured 2026-09-23), and the `@dicebear/*`
+packages it named were removed with Commonly's own avatar kit. The dead glob
+still belongs to the burn-down.
 
 Backend `.ts` reaches zero because 48 rules that fire on existing code are
 parked in `backend/.eslintrc.js` with their counts — 2,127 errors, 72%

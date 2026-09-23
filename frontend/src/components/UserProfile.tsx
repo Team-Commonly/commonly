@@ -862,7 +862,7 @@ const UserProfile = () => {
                     </Box>
                     {/* Generated face presets (Sam, 2026-08-20; archetype grid
                         2026-08-21). Replaces the flat color circles AND the deprecated
-                        Generate-with-AI flow: curated bigSmile archetype cells (four
+                        Generate-with-AI flow: curated archetype cells of our own faces (four
                         ethnic rows, female- and male-leaning looks) seeded off the
                         user's identity, so the grid is personal and never reshuffles
                         between visits. The pick is stored as 'bigsmile:<seed>' and
