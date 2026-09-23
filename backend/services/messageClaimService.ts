@@ -33,14 +33,26 @@ const MAX_LEASE_SECONDS = 600; // Nobody gets to park a claim for an hour by pas
 // chain must not become permanent claim-table storage. Ordinary successful
 // claims still DELETE immediately.
 const HANDOFF_HISTORY_RETENTION_SECONDS = 60 * 60;
+// A refusal reason is a label, not a transcript. The ROUTE validates it against
+// the driver enum (upstream-refused / cascade-cap / delivery-refused) and 400s
+// anything else; the bound here is the second layer, for a caller that reaches
+// the service directly. Truncated rather than rejected — a reason that is too
+// long must never turn a release into a 500.
+const MAX_REFUSAL_REASON = 256;
+// The upstream HTTP status, for `upstream-refused` only: the enum names the
+// class, this names the instance, and "how many 429s" is the question the
+// record exists to answer. Same range the adapters classify by.
+const MIN_UPSTREAM_STATUS = 400;
+const MAX_UPSTREAM_STATUS = 599;
 
 interface ClaimResult {
   claimed: boolean;
   claimedBy?: string;
   instanceId?: string;
   expiresAt?: Date;
-  state?: 'claimed' | 'declined' | 'completed';
+  state?: 'claimed' | 'declined' | 'completed' | 'refused';
   declinedBy?: string[];
+  reason?: string;
 }
 
 let bootstrapped = false;
@@ -67,6 +79,14 @@ async function ensureTable(): Promise<void> {
   );
   await pool.query(
     'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS declined_by TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]',
+  );
+  // TASK-099: the named half of a released refusal. Nullable by design —
+  // every pre-existing row, and every non-refused outcome, has no reason.
+  await pool.query(
+    'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS refusal_reason TEXT',
+  );
+  await pool.query(
+    'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS refusal_status INTEGER',
   );
   // Expired rows are dead weight; the CAS treats them as absent. A small
   // index makes the pod-scoped sweep cheap if one is ever added.
@@ -109,10 +129,19 @@ class MessageClaimService {
     // retention window outlives the requeue cap so attempted-seat history
     // survives every legitimate delayed delivery.
     await pool.query(
-      "DELETE FROM message_claims WHERE state IN ('completed', 'declined') AND expires_at < NOW()",
+      "DELETE FROM message_claims WHERE state IN ('completed', 'declined', 'refused') AND expires_at < NOW()",
     );
     const lease = clampLease(options.leaseSeconds);
 
+    // A re-claim is a NEW TURN, so the previous seat's refusal class does not
+    // outlive it (wren 71322). Without this, the row from A refuses 429 ->
+    // handoff re-offers -> B declines reads `state='declined'` while still
+    // carrying `refusal_reason='upstream-refused'`, and that class then
+    // attributes A's dead route to B's decision — the same "answered vs never
+    // ran" confusion one column over. The release branches all run from a live
+    // lease, so this CAS is the one place. The own-holder renewal shares this
+    // SET; clearing is a no-op there because a claimed row never carries a
+    // class (nothing else can set one without a lease).
     const win = await pool.query(
       `INSERT INTO message_claims (message_id, pod_id, claimed_by, instance_id, expires_at, state)
        VALUES ($1, $2, $3, $4, NOW() + make_interval(secs => $5), 'claimed')
@@ -121,8 +150,11 @@ class MessageClaimService {
              instance_id = EXCLUDED.instance_id,
              expires_at = EXCLUDED.expires_at,
              state = 'claimed',
+             refusal_reason = NULL,
+             refusal_status = NULL,
              created_at = NOW()
          WHERE message_claims.state = 'declined'
+            OR message_claims.state = 'refused'
             OR (message_claims.state = 'claimed' AND message_claims.expires_at < NOW())
             OR (message_claims.state = 'claimed'
                 AND message_claims.claimed_by = EXCLUDED.claimed_by
@@ -172,18 +204,32 @@ class MessageClaimService {
     messageId: string;
     agentName: string;
     instanceId?: string;
-    outcome?: 'declined' | 'completed';
+    outcome?: 'declined' | 'completed' | 'refused';
+    /** Only read for outcome 'refused' — see that branch below. */
+    reason?: string;
+    /** Only read for outcome 'refused' with an upstream class. */
+    status?: number;
   }): Promise<{
     released: boolean;
     podId?: string;
-    state?: 'declined' | 'completed';
+    state?: 'declined' | 'completed' | 'refused';
     declinedBy?: string[];
+    reason?: string;
+    status?: number;
   }> {
     const { messageId, agentName, instanceId = 'default' } = options;
     if (!messageId || !agentName) throw new Error('messageId and agentName are required');
     await ensureTable();
     const canonicalAgentName = agentName.toLowerCase();
     const outcome = options.outcome;
+    // Every write below is reachable only from a LIVE LEASE (`state='claimed'`).
+    // A terminal state must never be reachable from another terminal state: a
+    // seat can flip its own tombstone by replaying a release — an ack retry
+    // that lands a second outcome — and because a refused row is immediately
+    // re-claimable, that would make an already-answered human message
+    // re-offerable to a second seat. Losing the race is not an error: the
+    // caller gets `released: false` and the handoff (which itself requires
+    // `released`) queues nothing.
     if (outcome === 'declined') {
       // A decline is immediately claimable by the one re-offered seat.
       // Keeping its history on the message, rather than in a driver-local
@@ -201,6 +247,7 @@ class MessageClaimService {
                ELSE declined_by
              END
          WHERE message_id = $1 AND claimed_by = $2 AND instance_id = $3
+           AND state = 'claimed'
          RETURNING message_id, pod_id, state, declined_by`,
         [
           String(messageId), canonicalAgentName, instanceId,
@@ -217,6 +264,64 @@ class MessageClaimService {
         }
         : { released: false };
     }
+    if (outcome === 'refused') {
+      // A refusal is NAMED, and on a human wake it is a HANDOFF rather than a
+      // close (TASK-099, corrected ruling 71194/71195/71210). The driver held
+      // the lease and could not deliver — an upstream 429/502/401 for this
+      // seat, or the server refusing the post — so nothing about the agent's
+      // CHOICE happened. A per-seat failure must not make the human's message
+      // disappear: the row stays claimable exactly like a decline, and the
+      // handoff service re-offers the original wake to one remaining listener.
+      // The route decides human-vs-agent by whether such a wake exists (the
+      // handoff's own `senderIsHuman` filter), not by a second definition here.
+      //
+      // What this branch adds over `declined` is the RECORD. `completed`
+      // DELETEs the row, which leaves "answered" and "never ran"
+      // indistinguishable in the one place a kernel-side reader can look; a
+      // refusal keeps a tombstone carrying the class and, for an upstream
+      // refusal, the HTTP status — on the same retention clock as decline
+      // history, history rather than storage.
+      const reason = typeof options.reason === 'string'
+        ? options.reason.slice(0, MAX_REFUSAL_REASON)
+        : null;
+      const status = Number.isInteger(options.status)
+        && Number(options.status) >= MIN_UPSTREAM_STATUS
+        && Number(options.status) <= MAX_UPSTREAM_STATUS
+        ? Number(options.status)
+        : null;
+      const refused = await pool.query(
+        `UPDATE message_claims
+         SET state = 'refused',
+             expires_at = NOW() + make_interval(secs => $4),
+             refusal_reason = $5,
+             refusal_status = $6,
+             declined_by = CASE
+               WHEN NOT ($7 = ANY(declined_by))
+                 THEN array_append(declined_by, $7)
+               ELSE declined_by
+             END
+         WHERE message_id = $1 AND claimed_by = $2 AND instance_id = $3
+           AND state = 'claimed'
+         RETURNING message_id, pod_id, state, refusal_reason, refusal_status, declined_by`,
+        [
+          String(messageId), canonicalAgentName, instanceId, HANDOFF_HISTORY_RETENTION_SECONDS,
+          reason, status, `${canonicalAgentName}:${instanceId}`,
+        ],
+      );
+      return refused.rows.length > 0
+        ? {
+          released: true,
+          podId: refused.rows[0].pod_id,
+          state: refused.rows[0].state,
+          reason: refused.rows[0].refusal_reason || undefined,
+          status: refused.rows[0].refusal_status ?? undefined,
+          // The refuser is recorded as having had its turn, which is what
+          // keeps the re-offer chain finite: without it the handoff would
+          // hand the same message straight back to the seat that refused it.
+          declinedBy: refused.rows[0].declined_by || [],
+        }
+        : { released: false };
+    }
     if (outcome === 'completed') {
       // Only a message that already handed off needs a completion tombstone.
       // Normal claims retain the old DELETE path, otherwise every answered
@@ -228,6 +333,7 @@ class MessageClaimService {
          WHERE message_id = $1
            AND claimed_by = $2
            AND instance_id = $3
+           AND state = 'claimed'
            AND cardinality(declined_by) > 0
          RETURNING message_id, pod_id, state, declined_by`,
         [String(messageId), canonicalAgentName, instanceId, HANDOFF_HISTORY_RETENTION_SECONDS],
@@ -247,6 +353,7 @@ class MessageClaimService {
     const res = await pool.query(
       `DELETE FROM message_claims
        WHERE message_id = $1 AND claimed_by = $2 AND instance_id = $3
+         AND state = 'claimed'
        RETURNING message_id, pod_id`,
       [String(messageId), canonicalAgentName, instanceId],
     );

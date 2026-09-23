@@ -1,5 +1,14 @@
 export {};
 
+// TASK-099: the refusal classes a driver may name on release. The enum is the
+// record's vocabulary — "how many upstream refusals, how many cap refusals" —
+// so it is validated here rather than accepting whatever word a driver sends.
+// Free text belongs in the seat log; the kernel stores the class. Defined at
+// module scope so the route and its tests can point at one list.
+const REFUSAL_REASONS = ['upstream-refused', 'cascade-cap', 'delivery-refused'];
+const MIN_UPSTREAM_STATUS = 400;
+const MAX_UPSTREAM_STATUS = 599;
+
 // ADR-003 Phase 4: ESM import for express-rate-limit (the rest of this file
 // uses CJS require()). CodeQL's js/missing-rate-limiting query recognises the
 // ESM import shape but has trouble tracing rate-limit middleware through
@@ -375,18 +384,54 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
     const { agentName, instanceId } = resolveClaimIdentity(req);
     if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
     const outcome = req.body?.outcome;
-    if (outcome !== undefined && outcome !== 'declined' && outcome !== 'completed') {
-      return res.status(400).json({ error: 'outcome must be declined or completed' });
+    if (outcome !== undefined && outcome !== 'declined' && outcome !== 'completed' && outcome !== 'refused') {
+      return res.status(400).json({ error: 'outcome must be declined, completed, or refused' });
     }
-    // An explicit decline advances a human wake to exactly one original
-    // listener. Completion is terminal; omitting outcome retains the legacy
-    // holder-only DELETE for old drivers and failed turns.
+    // A refusal is NAMED, and on a HUMAN wake it is a handoff rather than a
+    // close (TASK-099, corrected ruling 71194/71195/71210). The row is left
+    // claimable exactly like a decline, and the handoff service re-offers the
+    // original wake to one remaining listener — a per-seat upstream 429 must
+    // not make a human's message disappear. Whether a handoff is actually
+    // queued is decided there, by the source event's own `senderIsHuman`: an
+    // agent-authored wake has no such event, so the refusal is terminal for it
+    // without a second definition of "human wake" living in this route.
+    //
+    // `reason` is REQUIRED for a refusal and refused for every other outcome —
+    // the enum is what makes refusals countable per class, and an unmapped
+    // class is a driver bug, not a fourth class (drivers map anything they do
+    // not recognise to delivery-refused before sending). `status` is the HTTP
+    // status, an integer 4xx/5xx, and only meaningful for upstream-refused.
+    const reason = req.body?.reason;
+    const status = req.body?.status;
+    if (reason !== undefined && outcome !== 'refused') {
+      return res.status(400).json({ error: 'reason is only read with outcome refused' });
+    }
+    if (outcome === 'refused') {
+      if (!REFUSAL_REASONS.includes(reason)) {
+        return res.status(400).json({ error: `reason must be one of: ${REFUSAL_REASONS.join(', ')}` });
+      }
+      if (status !== undefined
+        && (reason !== 'upstream-refused'
+          || !Number.isInteger(status)
+          || status < MIN_UPSTREAM_STATUS
+          || status > MAX_UPSTREAM_STATUS)) {
+        return res.status(400).json({
+          error: 'status is an HTTP 4xx/5xx integer and rides only with upstream-refused',
+        });
+      }
+    }
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const ClaimReleaseService = outcome === 'declined'
+    const ClaimReleaseService = outcome === 'declined' || outcome === 'refused'
       ? require('../services/messageClaimHandoffService')
       : require('../services/messageClaimService');
     const result = await ClaimReleaseService.release({
-      messageId: req.params.messageId, agentName, instanceId, ...(outcome ? { outcome } : {}),
+      messageId: req.params.messageId,
+      agentName,
+      instanceId,
+      ...(outcome ? { outcome } : {}),
+      ...(outcome === 'refused'
+        ? { reason, ...(status !== undefined ? { status } : {}) }
+        : {}),
     });
     // D7 mirror: releasing the lease ends "someone's on it" immediately
     // (claim-then-decline is a normal, frequent path per D6 — the indicator

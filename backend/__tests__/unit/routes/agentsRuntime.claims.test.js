@@ -115,6 +115,100 @@ describe('claim routes', () => {
     expect(mockDeclineRelease).not.toHaveBeenCalled();
   });
 
+  test('a refusal release is NAMED and handed on: handoff service gets the resolved class', async () => {
+    // Corrected TASK-099 ruling (71194/71195/71210): a refusal on a human wake
+    // is a handoff, exactly like a decline — a per-seat upstream failure must
+    // not make the human's message disappear. Whether a handoff is actually
+    // queued is the handoff service's own `senderIsHuman` filter, so the route
+    // routes both outcomes there and keeps no second definition of "human".
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'upstream-refused', status: 429 });
+
+    expect(res.status).toBe(200);
+    expect(mockDeclineRelease).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: '52907',
+      agentName: 'ux-lead',
+      instanceId: 'default',
+      outcome: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+    }));
+    expect(mockRelease).not.toHaveBeenCalled();
+  });
+
+  test('the other refusal classes need no status', async () => {
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'cascade-cap' });
+
+    expect(res.status).toBe(200);
+    expect(mockDeclineRelease.mock.calls[0][0]).toMatchObject({
+      outcome: 'refused', reason: 'cascade-cap',
+    });
+    expect(mockDeclineRelease.mock.calls[0][0].status).toBeUndefined();
+  });
+
+  test('an uncountable reason is refused at the door, not stored', async () => {
+    // Free text belongs in the seat log. The kernel's record is the enum, and
+    // a 400 here is what keeps "how many upstream refusals" a query. Two
+    // probes, because they fail different weak validators: the first is what
+    // the CLI sent before the enum existed (a class with its status baked in),
+    // the second is a well-formed name that is simply not a class — a shape
+    // check (`/^[a-z-]+$/`) accepts it, and only the enum rejects it.
+    const statusBakedIn = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'upstream-refused-429' });
+    expect(statusBakedIn.status).toBe(400);
+
+    const shapely = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'rate-limited' });
+    expect(shapely.status).toBe(400);
+
+    expect(mockRelease).not.toHaveBeenCalled();
+    expect(mockDeclineRelease).not.toHaveBeenCalled();
+  });
+
+  test('a refusal with no reason is refused at the door', async () => {
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused' });
+
+    expect(res.status).toBe(400);
+    expect(mockDeclineRelease).not.toHaveBeenCalled();
+  });
+
+  test('a status rides only with upstream-refused, and only as an HTTP code', async () => {
+    const withCap = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'cascade-cap', status: 429 });
+    expect(withCap.status).toBe(400);
+
+    const asString = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'upstream-refused', status: '429' });
+    expect(asString.status).toBe(400);
+
+    const notAnErrorCode = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'refused', reason: 'upstream-refused', status: 200 });
+    expect(notAnErrorCode.status).toBe(400);
+
+    expect(mockDeclineRelease).not.toHaveBeenCalled();
+  });
+
+  test('a reason with any other outcome is refused, not forwarded', async () => {
+    // "required iff refused" cuts both ways: the field is what makes a refusal
+    // explicable, and on a completion it would be a record with no reader.
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'completed', reason: 'upstream-refused' });
+
+    expect(res.status).toBe(400);
+    expect(mockRelease).not.toHaveBeenCalled();
+  });
+
   // ── ADR-018 D7: the claim IS the visibility signal ─────────────────────────
 
   test('a won claim fires the typing indicator for the life of the lease', async () => {
