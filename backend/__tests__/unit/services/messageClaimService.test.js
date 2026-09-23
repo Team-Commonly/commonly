@@ -495,4 +495,46 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('9'.repeat(100), 'p1')).resolves.toBe(false);
     expect(pool.query).not.toHaveBeenCalled();
   });
+
+  // The second namespace, and why it is not a nicety. A post-thread comment
+  // enters the mention and wake path as a Mongo ObjectId (postController.ts:295
+  // enqueues with `_id: comment._id`; the payload builders stringify it into
+  // `messageId`). Refusing that shape does not fail closed: enforcement.js:414
+  // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
+  // unguarded and the race stops deduping — measured against this route's own
+  // head before it shipped (connector-ops 71952, vera 71956).
+  test('a post-comment ObjectId is claimable, so the wake race still dedupes', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    // Passed through to the CAS, not checked: no query is sent from here, so
+    // this pins the arm rather than a verification it does not perform.
+    expect(pool.query).not.toHaveBeenCalled();
+    // Pod is still required first — the arm does not bypass the scope check.
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', '')).resolves.toBe(false);
+    // Hex case is not spelling: an id that is a legitimate ObjectId in either
+    // case is let through, because the cost of refusing one is failOpen on a
+    // real wake, while the cost of accepting it is a claim key no producer
+    // emits in that spelling.
+    await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(true);
+  });
+
+  test('the comment namespace is the bare 24-hex shape, and near-misses are refused', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd7994390111', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901g', 'p1')).resolves.toBe(false);
+    // Not parsed, so a prefix or padding is a miss rather than a near-hit.
+    await expect(MessageClaimService.messageExists('0x507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(' 507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('a 24-digit id is not refused by the split — it is a possible ObjectId and not a chat id either way', async () => {
+    // 24 hex digits is a possible ObjectId AND far outside int4, so it must not
+    // be refused. Which arm answers is NOT observable: the namespaces cannot
+    // overlap (a chat id is at most 10 digits, an ObjectId is always 24 chars),
+    // so both orders return the same answer for every input, and the mutation
+    // that swaps them survives — expected, not a hole. Asserted so a future
+    // reader who reorders the arms knows nothing behavioural rides on it.
+    await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
 });

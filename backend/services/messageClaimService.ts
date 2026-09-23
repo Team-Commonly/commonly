@@ -111,7 +111,40 @@ function clampLease(seconds: unknown): number {
  */
 const MESSAGE_ID_MAX = 2147483647;
 
-function isMessageId(id: string): boolean {
+/**
+ * Ids reaching this predicate do NOT all come from one namespace, and the
+ * predicate is a total split over them rather than a filter that happens to
+ * accept digits:
+ *
+ *   chat id     digits, 1..2147483647   verified against Postgres below
+ *   comment id  24 hex                  passed through to the CAS, unverified
+ *   anything else                       refused, no query
+ *
+ * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
+ * `postController.ts:295` enqueues with `_id: comment._id`, and every payload
+ * builder stringifies that into `messageId` (`message?._id || message?.id`,
+ * agentMentionService.ts:1417/1481/1674/1722/1793/1861/2145). The wake race
+ * dedupes BY that id — several seats are woken for one comment, the first
+ * lease wins, the rest stand down — so refusing the shape does not fail closed,
+ * it fails open: `enforcement.js:414` catches the throw and returns
+ * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
+ * regression this arm exists to prevent (connector-ops 71952, vera 71956,
+ * measured against this route's own head).
+ *
+ * The comment arm is NOT verified, and the cost is stated rather than hidden: a
+ * garbage 24-hex id still mints a permanent, un-renewable phantom row, so this
+ * closes the defect for one namespace only. Verifying it means reading Mongo
+ * from this service — a store boundary, not a predicate tweak — filed as its
+ * own row rather than folded here.
+ *
+ * The arms are tested in THIS order because the namespaces are not disjoint as
+ * strings: '123456789012345678901234' is 24 hex digits, hence a valid ObjectId,
+ * and also far outside int4. It cannot be a chat id, so the order cannot accept
+ * something the numeric arm would have refused for a reason that matters.
+ */
+const MONGO_OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+
+function isChatMessageId(id: string): boolean {
   if (!/^\d+$/.test(id)) return false;
   const n = Number(id);
   // Number.isInteger alone is not a bound: 100-digit inputs are integers too,
@@ -149,15 +182,28 @@ class MessageClaimService {
  * is therefore part of the shape test, not decoration — hence MESSAGE_ID_MAX
  * and the two tests pinning the first out-of-range value and this one to
  * no-query-false.
-   *
-   * Pod-scoped on purpose. Existence alone would let a seat installed in pod A
-   * lease a message in pod B; the route checks installation separately, and
-   * this is the message half. Both are required, so both are read here.
-   */
+ *
+ * The LOWER bound is a different kind of clause and is not asserted as if it
+ * were the same thing: '0' is merely absent, so `n >= 1` saves one pointless
+ * query and changes no answer (vera 71951). It stays because it is free, and it
+ * is deliberately NOT given a no-query test — a test named after safety that
+ * actually pins an optimisation teaches the next reader the wrong reason for
+ * the bound's existence. What the upper bound buys is a 500 averted; what the
+ * lower bound buys is a query not sent.
+ *
+ * Pod-scoped on purpose. Existence alone would let a seat installed in pod A
+ * lease a message in pod B; the route checks installation separately, and
+ * this is the message half. Both are required, so both are read here.
+ */
   static async messageExists(messageId: unknown, podId: unknown): Promise<boolean> {
     const id = String(messageId ?? '');
     const pod = String(podId ?? '');
-    if (!isMessageId(id) || !pod) return false;
+    if (!pod) return false;
+    // Comment namespace: it exists in Mongo, not in Postgres, and is not this
+    // service's store to check. Passing it through restores the wake dedupe for
+    // post comments; see MONGO_OBJECT_ID for why refusing it fails open.
+    if (MONGO_OBJECT_ID.test(id)) return true;
+    if (!isChatMessageId(id)) return false;
     const found = await pool.query(
       'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',
       [id, pod],

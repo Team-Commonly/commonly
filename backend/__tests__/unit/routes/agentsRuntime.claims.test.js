@@ -123,6 +123,23 @@ describe('claim routes', () => {
       .toBeLessThan(mockClaim.mock.invocationCallOrder[0]);
   });
 
+  test('a comment id is passed through unchanged — the route has no shape logic of its own', async () => {
+    // The wake for a post-thread comment carries a Mongo ObjectId. The
+    // namespace split lives in messageExists, so a second copy here could only
+    // drift from it, and this pins that the route is not where the split is
+    // decided (connector-ops 71952).
+    mockMessageExists.mockResolvedValue(true);
+    const res = await request(app)
+      .post('/api/agents/runtime/messages/507f1f77bcf86cd799439011/claim')
+      .send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockMessageExists).toHaveBeenCalledWith('507f1f77bcf86cd799439011', 'p1');
+    expect(mockClaim).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: '507f1f77bcf86cd799439011',
+      podId: 'p1',
+    }));
+  });
+
   test('missing podId → 400', async () => {
     const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({});
     expect(res.status).toBe(400);
