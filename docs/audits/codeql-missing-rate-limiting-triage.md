@@ -179,6 +179,13 @@ The existing budget the decision starts from, already two-tier in `agentsRuntime
 120 / 60s** (`agentRateLimitKeyGenerator`). `phase4RateLimit` is the stack; registering only
 `phase4IpRateLimit` is exactly "IP tier on, token tier off".
 
+**Precondition (0), TASK-110** (vera 71399, verbatim): *Both tiers' budgets assume an IP key
+the caller cannot choose.* `cloudflareIpRateLimitKeyGenerator` accepts `cf-connecting-ip` from
+any peer, so a rotating header yields a fresh IP bucket per request; absent the header, all
+external traffic arrives from the tunnel and shares one. **Numbers here are provisional until
+the key is derived from a trusted-proxy check.** Until then every "per IP" figure below should
+be read as "per key the caller may be able to choose".
+
 ### Scope of (B), measured
 
 Public/anon here means: no auth/token/member/scope middleware anywhere in the registration
@@ -197,6 +204,13 @@ sites, all `GET`:**
 | `GET /` | `pg-status.ts` | read-only meta | exemption candidate (§5) |
 | `GET /backend` | `docs.ts` | read-only meta | exemption candidate (§5) |
 
+**The three budgets are threat-model numbers, not measured ones** (vera 71390): the ingress
+access log holds 5,417 requests over 24h and **zero** hits on `/verify-email` and
+`/registration-policy` — mail clients and scanners have not been arriving in the window
+sampled. There is no baseline to confirm or contradict them, so they are threat models ("a
+human clicks once, a scanner hammers it") and are labelled as such rather than fitted to
+traffic. They stay.
+
 So (B)'s actionable surface is **3 routes** — the OAuth redirect target and the two auth reads —
 plus the two IP-tier-only classes above; the other **190** flagged sites are authenticated and
 belong to (A) or to the burn-down list. If `GET /public` turns out to do work per request it is
@@ -213,7 +227,18 @@ a fourth.
   heartbeats and tool calls. This is a **bound derived from source, not a measurement**, which
   is exactly why (A) waits on an instrument instead: a sampled log of `req.rateLimit.used` per
   key behind an env flag — the key is already `tok:<sha256>`, so no secret is logged. Filed as
-  its own builder's row under this task.
+  its own builder's row under this task (TASK-109).
+- **Nothing persists a per-token request rate today** (vera 71378). `phase4AgentRateLimit` uses
+  the default in-memory store, so the only place the real count exists is the live
+  `RateLimit-Remaining` header, per backend process — and `tool_calls` cannot stand in: 5 rows
+  all-time, one seat, 2026-09-18. So a "measured steady state" is either an instrument or it is
+  a derivation, and the difference is stated rather than implied.
+- **The instrument's shape is vera's to scope, Kai's to build** (wren 71398; vera 71401). Her
+  scope, quoted: a **watermark log, not an access log** — one middleware registered immediately
+  after `phase4RateLimit`, reading `req.rateLimit` (express-rate-limit 8.3.2 sets
+  `{limit, used, remaining, resetTime}`), emitting a line only when
+  `used >= RATE_LIMIT_OBSERVE_WATERMARK` (default 60, half of 120). An idle fleet emits
+  nothing; the log records the approach to the ceiling, not the traffic.
 
 **One risk worth putting in front of the (A) budget:** the fleet's seats run on **one host**
 (the launchd supervisor), so they share a single egress IP — an **IP-tier-only** bucket is a
@@ -238,8 +263,8 @@ itself: it is that the registration-chain walk resolves every site to a named re
 that its first pass was wrong in both directions and is disclosed in §3 rather than reported as
 the measurement.
 
-Both figures were re-run on 2026-09-23: the unpaginated call and the paginated one, which is
-how the artifact was identified. **Nothing about the list narrows** — 349 records, 200 sites,
+Both figures were re-run on 2026-09-23 — the unpaginated call and the paginated one — which is
+how the artifact was identified, and the reconciliation is vera's own (71371, restated 71385). **Nothing about the list narrows** — 349 records, 200 sites,
 33 files stand, and so does the burn-down baseline of 232 registrations.
 
 It does not disturb the conclusion the 78 was cited for: 21 alerts on #1814 against a
