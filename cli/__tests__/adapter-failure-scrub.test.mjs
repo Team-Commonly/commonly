@@ -126,13 +126,41 @@ describe('the shared reader — scrubAdapterFailure', () => {
     expect(scrubAdapterFailure('overloaded, retry in 500 seconds').status).toBeNull();
   });
 
-  test('a JSON string or array tail is prose, not a body to reduce', () => {
+  test('a JSON string tail is prose, not a body to reduce', () => {
     // A terse gateway can answer with a bare JSON string. It parses, so the
-    // keep-list finds no named field — but it is a whole-shape text and keeps its
-    // wording, because the fallback is gated on "is this a JSON OBJECT", not on
-    // "did it parse" and not on "did the keep-list return null".
+    // keep-list finds no named field — but it is a whole-shape text with no
+    // fields to reduce, and it keeps its wording, because the fallback is gated
+    // on the SHAPE, not on "did it parse" and not on "did the keep-list return
+    // null".
     expect(scrubAdapterFailure('"Too many requests, slow down"').detail).toContain('Too many requests');
-    expect(scrubAdapterFailure('["rate limited"]').detail).toContain('rate limited');
+  });
+
+  test('a JSON ARRAY tail is structured data, so nothing of it is echoed', () => {
+    // Vera 71360, measured: an array parsed, `keptRefusalDetail` found no named
+    // field (there is no top-level `error`/`message` on a list), and the old
+    // is-JSON-OBJECT gate excluded arrays — so the fallback treated upstream
+    // structured data as prose and shipped it whole under exact-match alone. That
+    // is precisely the case rule 1 exists for.
+    const tail = '[{"error":{"message":"boom","api_key":"sk-live-ARRAYSECRET0123456789"}}]';
+    const { status, detail } = scrubAdapterFailure(tail, { credentials: ['sk-live-ARRAYSECRET0123456789'] });
+    expect(detail).toBe('');
+    expect(detail).not.toContain('ARRAYSECRET');
+    expect(detail).not.toContain('boom');
+    expect(status).toBeNull();
+  });
+
+  test('an HTTP status LINE names its status — the most canonical shape there is', () => {
+    // Vera 71359: `HTTP/1.1 429 Too Many Requests` read as `status: null`, because
+    // the named-shape gap cannot cross the `1` in `/1.1` (it is a WORD character).
+    // A real status line classified as an unclassified runtime failure — the
+    // misclassification this row exists to remove.
+    expect(scrubAdapterFailure('HTTP/1.1 429 Too Many Requests').status).toBe(429);
+    expect(scrubAdapterFailure('HTTP/2 503').status).toBe(503);
+    expect(scrubAdapterFailure('HTTP/1.1 200 OK').status).toBeNull();
+    // The shape is narrow on purpose: a path that merely looks like a version is
+    // not a status line, and `HTTP 429` still works through the named shape.
+    expect(scrubAdapterFailure('GET /v1.1/models responded 500').status).toBeNull();
+    expect(scrubAdapterFailure('HTTP 429 Too Many Requests').status).toBe(429);
   });
 
   test('a status the tail NAMES is read wherever it sits', () => {

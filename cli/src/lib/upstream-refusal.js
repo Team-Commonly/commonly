@@ -181,14 +181,21 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
 };
 
 /**
- * Does this text parse as a JSON object? The gate for the whole-tail fallback
- * below — deliberately NOT `kept === null`, which is true for five different
- * reasons (Vera 71350).
+ * Is this text STRUCTURED upstream data — a JSON object or an array? The gate for
+ * the whole-tail fallback below, deliberately NOT `kept === null`, which is true
+ * for five different reasons (Vera 71350).
+ *
+ * An array counts, and that is a correction (Vera 71360, measured): `[{...}]` is
+ * structured data with fields this code does not know, which is exactly what rule
+ * 1 exists for, and treating it as prose shipped the whole body under exact-match
+ * alone. A JSON *string* is the opposite case and does NOT count — `"Too many
+ * requests"` is a whole-shape text with no fields to reduce, so it keeps its
+ * wording like any other prose.
  */
-const isJsonObject = (raw) => {
+const isStructuredBody = (raw) => {
   try {
     const parsed = JSON.parse(String(raw ?? ''));
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+    return parsed !== null && typeof parsed === 'object';
   } catch {
     return false;
   }
@@ -207,6 +214,15 @@ const isJsonObject = (raw) => {
  * that never happened, which is worse than no status at all (Vera 71352).
  */
 const STATUS_NAMED = /\b(?:status(?:_?code)?|code|http)\b\W{0,4}(\d{3})(?!\d)/gi;
+// `HTTP/1.1 429 Too Many Requests` is the most canonical refusal shape there is,
+// and the `\W{0,4}` gap above handles `HTTP 429` but cannot reach a VERSIONED
+// line: the `1` in `/1.1` is a
+// WORD character, so `HTTP` and `429` are not within four non-word characters of
+// each other. It read as `status: null` — an unclassified runtime failure on the
+// single most recognisable shape, which is the misclassification this row exists
+// to remove (Vera 71359). Its own pattern, not a looser gap: widening the gap
+// would start reading `/v1/models 500` as a status.
+const STATUS_LINE = /\bHTTP\/\d(?:\.\d)?\s+(\d{3})(?!\d)/gi;
 const STATUS_COLON = /(?:^|\|\s*)(\d{3})(?!\d)\s*:/g;
 
 /** The first 4xx/5xx one of those shapes names, or null. */
@@ -232,19 +248,23 @@ const scanStatuses = (text, pattern) => {
  * same shape as the anchored prefix (`429: {body}`), just found at a segment
  * boundary — claude's `stderr | stdout` join. A status that appears inside a
  * body (`{"error":{"code":"429"}}`) or as prose (`HTTP 503`) names the status
- * but marks no boundary, so the whole text stays the body.
+ * (`HTTP/1.1 429`) but marks no boundary, so the whole text stays the body.
  */
 const readStatusAndBody = (text) => {
   const raw = String(text ?? '');
   const prefixed = statusFromError(raw);
   if (prefixed !== null) return { status: prefixed, body: bodyFromError(raw) };
+  // Only the colon shape moves the boundary — see the note above. A status LINE
+  // names the status but its reason phrase is prose, so the body stays the whole
+  // text and the exact-match rule protects it.
   for (const match of raw.matchAll(STATUS_COLON)) {
     const value = Number(match[1]);
     if (value >= 400 && value <= 599) {
       return { status: value, body: raw.slice(match.index + match[0].length).replace(/^\s*:?\s*/, '') };
     }
   }
-  return { status: scanStatuses(raw, STATUS_NAMED), body: raw };
+  const named = scanStatuses(raw, STATUS_NAMED);
+  return { status: named ?? scanStatuses(raw, STATUS_LINE), body: raw };
 };
 
 /**
@@ -254,7 +274,7 @@ const readStatusAndBody = (text) => {
  * too — but the tail is a different shape from pi's refusal, and the difference
  * decides how each rule lands:
  *
- *  - The tail is often NOT JSON. Claude's `-p` mode writes its terminal
+ *  - The tail is often NOT structured. Claude's `-p` mode writes its terminal
  *    condition as prose (`Claude usage limit reached. Your limit will reset at
  *    11:40pm.`), and that line is the whole diagnostic value of reporting
  *    stdout at all — 361 consecutive failures on 2026-08-03 carried no reason
@@ -264,10 +284,11 @@ const readStatusAndBody = (text) => {
  *    substitutes rather than drops, precisely because a whole-shape text has no
  *    second field to fall back to).
  *
- *  - A body that IS JSON is reduced to one named field, and a body whose field
- *    echoed a value this spawn was handed is DROPPED WHOLE — the same trade rule
- *    2 makes everywhere. The fallback to the whole tail is gated on the SHAPE
- *    (not a JSON object), never on "the keep-list returned null": that null has
+ *  - A body that IS structured (a JSON object or array) is reduced to one named
+ *    field, and a body whose field echoed a value this spawn was handed is
+ *    DROPPED WHOLE — the same trade rule 2 makes everywhere. The fallback to the
+ *    whole tail is gated on the SHAPE (is it structured at all), never on
+ *    "the keep-list returned null": that null has
  *    four other causes, and one of them is the credential echo this line exists
  *    to drop. Gating on `kept === null` would emit the whole body for that case,
  *    which is precisely what rule 2 forbids — and exact-match cannot see a
@@ -284,7 +305,7 @@ export const scrubAdapterFailure = (text, { credentials = [], limit = MAX_REFUSA
   const raw = String(text ?? '').trim();
   const { status, body } = readStatusAndBody(raw);
   const kept = keptRefusalDetail(body, { credentials });
-  const detail = kept ?? (isJsonObject(body) ? '' : redactKnownCredentials(body, credentials));
+  const detail = kept ?? (isStructuredBody(body) ? '' : redactKnownCredentials(body, credentials));
   return { status, detail: detail.slice(0, limit) };
 };
 
