@@ -1318,7 +1318,9 @@ export const performRun = ({
     //
     // A refusal throws: `openSpawnCredential` only falls back to the seat token
     // for capacity, and a verdict (401/403/400/404/409) must fail the spawn
-    // rather than restore the authority the refusal was about.
+    // rather than restore the authority the refusal was about. The catch below
+    // turns that throw into a NAMED refusal on the turn result, so the claim is
+    // released as `delivery-refused` instead of being re-delivered forever.
     const spawnPolicyOrNull = spawnPolicyForAsk();
     const lease = spawnCredentialLeaseFactory({
       client,
@@ -1332,8 +1334,40 @@ export const performRun = ({
     try {
       opened = await lease.open();
     } catch (err) {
-      log(`spawn credential refused (HTTP ${err?.status ?? 'no response'}) — not spawning`);
-      throw err;
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
+      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
+      // a transient failure, wrong for a refusal that recurs on every
+      // redelivery: the wake loops forever with one local log line as its only
+      // record. Naming it on the turn result is what lets the release carry the
+      // class, and on a human wake lets the kernel hand the message to a
+      // remaining listener instead of stranding it.
+      if (!err?.spawnCredentialRefused) {
+        // ONLY a verdict is named as a refusal. An unexpected failure inside
+        // the lease — a bug in our own code, not the server's answer — keeps
+        // the legacy release, because `delivery-refused` would hand a human's
+        // message away and close the row on the strength of our own defect.
+        // Redelivery is the right remedy for a crash.
+        log(`spawn credential lease failed (${err?.message ?? err}) — not spawning`);
+        throw err;
+      }
+      const status = Number.isInteger(err.status) ? err.status : null;
+      const code = typeof err.body?.code === 'string' ? err.body.code : null;
+      log(`spawn credential refused (HTTP ${status ?? 'no response'}) — not spawning`);
+      // `delivery-refused` claims the least of the three classes: the model
+      // never ran, and the refuser is our own mint rather than the model
+      // provider (that would be `upstream-refused`, and its status is the HTTP
+      // status of an upstream call — a meaning this refusal does not have, so
+      // the number travels in the ack instead of on the claim record).
+      return {
+        outcome: 'no_action',
+        refused: { reason: 'delivery-refused' },
+        reason: `spawn-credential-refused-${status ?? 'unknown'}`,
+        details: {
+          ...(status !== null ? { status } : {}),
+          ...(code !== null ? { code } : {}),
+        },
+      };
     }
     let result;
     try {
