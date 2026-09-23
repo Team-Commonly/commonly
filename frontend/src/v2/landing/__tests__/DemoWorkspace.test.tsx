@@ -149,6 +149,38 @@ describe('DemoWorkspace', () => {
     expect(screen.getByLabelText('Message Launch')).toHaveValue('');
   });
 
+  it('rules one pod, then a second, and neither ruling disturbs the other', () => {
+    render(<DemoWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Email them now' }));
+    advance(1200);
+
+    fireEvent.click(podButton('Support'));
+    fireEvent.click(screen.getByRole('button', { name: 'Export everything' }));
+    advance(1200);
+
+    // Two rulings have to stand at once. If the ruled state is a single slot
+    // rather than per pod, ruling Support throws Launch away — and a visitor
+    // watches their own first ruling un-rule itself when they come back.
+    expect(screen.queryByRole('button', { name: 'Export everything' })).not.toBeInTheDocument();
+    expect(message('Exported all of it and sent Dana the link in Slack. The link expires in 7 days.')).toBeInTheDocument();
+    expect(podButton('Launch')).not.toHaveTextContent('1');
+    expect(podButton('Support')).not.toHaveTextContent('1');
+
+    // Support's reply was ruled in Support, so it lives there. A reply
+    // addressed to whichever pod is open — or to the pod you started on —
+    // lands somewhere it does not belong, and this is where that shows.
+    fireEvent.click(podButton('Launch'));
+    expect(message('Sending from support@ now: one line and a link to the fix. I\u2019ll post the open rate here tomorrow.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Email them now' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Exported all of it and sent Dana the link in Slack. The link expires in 7 days.')).not.toBeInTheDocument();
+
+    // Back in Support: its ruling and its reply survived the round trip.
+    fireEvent.click(podButton('Support'));
+    expect(screen.queryByRole('button', { name: 'Export everything' })).not.toBeInTheDocument();
+    expect(message('Exported all of it and sent Dana the link in Slack. The link expires in 7 days.')).toBeInTheDocument();
+  });
+
   it('drops a queued reply when the visitor leaves the page', () => {
     const { unmount } = render(<DemoWorkspace />);
     fireEvent.click(screen.getByRole('button', { name: 'Email them now' }));
