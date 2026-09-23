@@ -149,7 +149,14 @@ still an IP, and a long-poll's request count is not a per-token budget question.
 | class | flagged sites | members | treatment |
 |---|---|---|---|
 | test-file express apps | 3 | `__tests__/service/two-way-integration-e2e.test.js`, `__tests__/service/summaries.test.js`, `__tests__/unit/middleware/appAuth.test.js` | **exemption** — not production surface; the app is built inside the test |
-| health / status / read-only meta | 6 | `health.ts` ×2, `pg-status.ts` ×2, `docs.ts`, `stats.ts` | **exemption candidate** — a limiter on a liveness probe can *be* the outage |
+| health / status / read-only meta | 6 | `health.ts` ×2, `pg-status.ts` ×2, `docs.ts` (exempt), `stats.ts` (not exempt — see below) | **exemption for the five probes; `stats.ts` takes the IP tier** — a limiter on a liveness probe can *be* the outage, but the rule is *does an anonymous hit do database work* (ruled, wren 71392) |
+
+**The probe rule, ruled (wren 71392): "does an anonymous hit do database work".** Liveness and
+read-only meta stay exempt — `health.ts` (×2), `pg-status.ts` (×2), `docs.ts` (a file read).
+`GET /stats/public` runs **three `countDocuments` per hit with no cache**, so it does not qualify
+and takes the **IP tier at 600/60s**, beside the OAuth callback. The rule is stated because it
+decides the next probe added, rather than being re-litigated per route: a probe that reaches the
+database is not a probe.
 | third-party-triggered callbacks | 3 | `admin/globalIntegrations.ts` `GET /x/oauth/callback`, `discord.ts` `GET /callback`, `billing.ts` `POST /webhook` | **IP tier, token tier off** (ruled) |
 | long-poll reads | 2 | `agentsRuntime.ts` `GET /events`, `GET /bot/events` | **IP tier, token tier off** (ruled) |
 
@@ -198,7 +205,7 @@ sites, all `GET`:**
 | `GET /x/oauth/callback` | `admin/globalIntegrations.ts` | third-party redirect target | 600 / 60s |
 | `GET /registration-policy` | `auth.ts` | read on the signup page, pre-auth by construction | 60 / 60s |
 | `GET /verify-email` | `auth.ts` | link-driven: mail clients prefetch, scanners hammer it | 30 / 60s |
-| `GET /public` | `stats.ts` | public read — limit it only if it does real work per request | exemption candidate (§5) |
+| `GET /public` | `stats.ts` | three `countDocuments` per hit, uncached | 600 / 60s (ruled, wren 71392) |
 | `GET /` | `health.ts` | liveness probe | exemption candidate (§5) |
 | `GET /ready` | `health.ts` | readiness probe | exemption candidate (§5) |
 | `GET /` | `pg-status.ts` | read-only meta | exemption candidate (§5) |
@@ -211,7 +218,8 @@ sampled. There is no baseline to confirm or contradict them, so they are threat 
 human clicks once, a scanner hammers it") and are labelled as such rather than fitted to
 traffic. They stay.
 
-So (B)'s actionable surface is **3 routes** — the OAuth redirect target and the two auth reads —
+So (B)'s actionable surface is **4 routes** — the OAuth redirect target, the two auth reads, and
+`GET /stats/public` under the probe rule —
 plus the two IP-tier-only classes above; the other **190** flagged sites are authenticated and
 belong to (A) or to the burn-down list. If `GET /public` turns out to do work per request it is
 a fourth.
