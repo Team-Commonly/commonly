@@ -91,7 +91,8 @@ const V2Register: React.FC = () => {
       // wording ("Check your email for verification.") that a rolling backend can
       // still send. A structured flag on the response would remove this coupling
       // — until then a copy edit that drops both phrases silently switches the
-      // screen, which is why V2Register.test.tsx pins both directions.
+      // screen, which is why V2Register.test.tsx pins all three cases: the current
+      // phrasing, the legacy wording, and the message that needs no reminder.
       setVerifyPending(/check your email|verify your email/i.test(message));
       setDone(message);
     } catch (err) {

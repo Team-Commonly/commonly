@@ -38,8 +38,7 @@ describe('i18n configuration', () => {
     language.mockRestore();
   });
 
-  it('interpolates Phase 1B auth and invite chrome in both locales', () => {
-    expect(i18n.t('auth.oauth.continueWith', {
+  it('interpolates Phase 1B auth and invite chrome in both locales', () => {    expect(i18n.t('auth.oauth.continueWith', {
       lng: 'en',
       provider: 'GitHub',
     })).toBe('Continue with GitHub');
@@ -51,5 +50,20 @@ describe('i18n configuration', () => {
       lng: 'zh-CN',
       podName: 'Commonly HQ',
     })).toBe('你受邀加入 Commonly HQ');
+  });
+
+  it('keeps the verification copy glossary-clean in Simplified Chinese', () => {
+    // lily-shen's zh-CN gate (2026-09-23, the eng lead's read under the
+    // zh-cn-ui-localization skill, standing in for Sam's pass): "Pod" stays
+    // English with half-width spaces, the purpose-clause calque 以…加入 is out,
+    // and a Chinese sentence takes ，rather than an em dash. The banner and the
+    // screen carry one sentence, so the two move together.
+    const banner = i18n.t('auth.verificationBanner.message', { lng: 'zh-CN', email: 'new@example.com' });
+    const screen = i18n.t('auth.register.success.checkEmailMessage', { lng: 'zh-CN', email: 'new@example.com' });
+
+    expect(banner).toBe('验证邮箱后即可加入 Community Pod，链接已发送至 new@example.com。');
+    expect(screen).toBe(banner);
+    expect(i18n.t('auth.register.success.checkEmailTitle', { lng: 'zh-CN' })).toBe('欢迎加入');
+    expect(`${banner}${screen}`).not.toMatch(/群组|—/);
   });
 });
