@@ -20,7 +20,7 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 ## Method rules
 
 1. **Stranger session.** "A new user connects it" is checked from a fresh non-admin account's own session, never an admin one. An admin session cannot reproduce what 0 of 29 hit (Vera).
-2. **Both widths.** Every UI cell is walked at 1440 and at 390 (ux-lead).
+2. **Both widths.** Every UI cell is walked at 1200 and at 390, the evidence widths Sam set (68655), as ux-lead asked. `signal-identity.md` still says 1440; reconciling the two is Sam's call.
 3. **Named failure.** "Failure handled" passes only when the failure is named to the user, not merely survived (#1823).
 4. **Read the source of truth.** Check the catalogue API as well as the page. When the catalogue can't be read, the Connectors page silently falls back to Telegram and Slack, so a page-only check passes a broken catalogue.
 5. **Record the build.** Every cell records the build it was verified on and links its evidence. A cell verified on an older build is stale, not green.
@@ -33,7 +33,7 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 | C1 | New user connects it | A stranger account completes the connect flow without an operator |
 | C2 | The person sees the state | The Connectors page shows connected or not enabled; a failure lands as an Activity row; revoke is reachable at 390 (ux-lead) |
 | C3 | Hosted agent uses it | A hosted agent in the pod completes a real action through it |
-| C4 | Local agent uses it | A daemon seat completes the same action, running the build the deploy shipped (a stale daemon seat reads green and isn't; TASK-089). Precondition: a claude or codex seat declares `trust: 'public'`, with the mode optional, since it resolves at spawn to Seatbelt on macOS and bwrap elsewhere. An absent sandbox block defaults to mode `none` and is the unconfined case. A pi seat confines on no host, so it gets no grant broker anywhere (sprint-review) |
+| C4 | Local agent uses it | A daemon seat completes the same action, running the build the deploy shipped (a stale daemon seat reads green and isn't; TASK-089). Precondition: a claude or codex seat declares `trust: 'public'`, with the mode optional, since it resolves at spawn to Seatbelt on macOS and bwrap elsewhere. A daemon seat with no sandbox block is derived to `trust: 'public'` by the seat baseline, so it reads confined. Only a hand-authored record run with `commonly agent run` and no block defaults to mode `none`, which is the unconfined case (Wren). A pi seat confines on no host, so it gets no grant broker anywhere (sprint-review) |
 | C5 | Both directions, and silence is explained | Messages or events flow in and out with sender identity preserved, and when nothing flows the person can see why. A refused model route read as silence until #1827 and #1831 (Kai) |
 | C6 | Decision from it | A decision card is answered from the channel or app, and the agent receives the ruling |
 | C7 | A second open client sees it | An already-open tab converges without a refresh (the TASK-135 shape) (sprint-review) |
@@ -60,7 +60,8 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 | red | state |
 |---|---|
 | The IP rate-limit tier trusts `cf-connecting-ip` from any peer, so every callback and webhook row's failure column runs on a bucket the caller picks | filed as TASK-110 |
-| A seat started with `commonly agent run` that declares no sandbox can receive the grant broker while unconfined (31 claude and codex seats; 33 of 36 token files declare no sandbox, two of which are pi and refused server-side anyway) | latent: the only grant today belongs to a seat that declares a workspace sandbox. Server-side fix being filed by Vera |
+| A seat started with `commonly agent run` that declares no sandbox can receive the grant broker while unconfined (31 claude and codex seats; 33 of 36 token files declare no sandbox, two of which are pi and refused server-side anyway) | latent: the only grant today belongs to a seat that declares a workspace sandbox. TASK-111: the server hands out the broker only through the daemon's assignment route, so the gap is a hand-authored record run with `commonly agent run`; the fix is the same withholding guard at that spawn site, cli-side (Wren, with Vera concurring) |
+| Withholding the broker from a seat is a convenience, not a boundary: `POST /api/mcp/grants/:grantId` accepts any agent token in the grant's audience. If confinement is meant to gate use of a granter's authority, that is a wider row than TASK-111 | open; Wren to scope (Vera) |
 | A Mac seat that declares `bwrap` keeps it and is refused, since bwrap is Linux-only | unverified fix path |
 | No agent seat can do a logged-in walk on commonly.me (blocked since 09-16 per ux-lead) | Until that lifts, stranger-session walks run from the operator session with a throwaway account |
 
