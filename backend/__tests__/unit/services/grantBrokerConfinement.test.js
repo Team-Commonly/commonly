@@ -49,6 +49,11 @@ describe('grant broker confinement predicate', () => {
       null,
     ],
     [
+      'a legacy internal trust with no declared mode — the mapping is the only gate',
+      { sandbox: { trust: 'internal' } },
+      null,
+    ],
+    [
       'a confined seat carrying network and filesystem policy',
       { sandbox: { mode: 'workspace', trust: 'public', network: { policy: 'restricted' }, filesystem: { 'write-outside': [] } } },
       null,
@@ -80,6 +85,20 @@ describe('grant broker confinement predicate', () => {
     expect(grantBrokerRefusal({ sandbox: { mode: 'workspace' } }).detail).toContain('absent');
     expect(grantBrokerRefusal({ sandbox: { mode: 'workspace', trust: 'private' } }).detail)
       .toContain("'private'");
+  });
+
+  // Every other `internal` case in this suite pairs the mapping with a mode, so
+  // a mode check carries the assertion on its own. With NO mode declared the
+  // mapping is the only gate on the record: `internal` must read as `public`
+  // (LEGACY_SANDBOX_TRUST) or a seat the daemon will confine loses the broker.
+  // It is the easiest part of the predicate to break silently, which is why it
+  // is asserted on its own rather than left to the table row.
+  it('lets a legacy internal trust through when it is the only thing declared', () => {
+    expect(grantBrokerRefusal({ sandbox: { trust: 'internal' } })).toBeNull();
+    // The neighbouring shape must keep failing, so the assertion above cannot
+    // be satisfied by dropping the trust check altogether.
+    expect(grantBrokerRefusal({ sandbox: { trust: 'private' } }))
+      .toMatchObject({ reason: 'sandbox_trust_not_public' });
   });
 
   // The adapter is a host-independent fact: pi's assertNoSandboxDeclared
