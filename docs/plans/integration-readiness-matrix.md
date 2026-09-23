@@ -29,16 +29,17 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 
 | # | column | passes when |
 |---|---|---|
+| C0 | Offered on commonly.me | The row appears to a stranger on the deployed instance. Offering (the seeded roster) and readiness (the capability) are separate gates the page hides, so a row that is never offered is red here, not in C1 (Kai; TASK-024) |
 | C1 | New user connects it | A stranger account completes the connect flow without an operator |
 | C2 | The person sees the state | The Connectors page shows connected or not enabled; a failure lands as an Activity row; revoke is reachable at 390 (ux-lead) |
 | C3 | Hosted agent uses it | A hosted agent in the pod completes a real action through it |
-| C4 | Local agent uses it | A daemon seat completes the same action. Precondition: the seat declares a `workspace` or `read-only` sandbox. A pi seat confines on no host, so it gets no grant broker anywhere |
-| C5 | Both directions | Messages or events flow in and out, with sender identity preserved |
+| C4 | Local agent uses it | A daemon seat completes the same action, running the build the deploy shipped (a stale daemon seat reads green and isn't; TASK-089). Precondition: a claude or codex seat declares `trust: 'public'`, with the mode optional, since it resolves at spawn to Seatbelt on macOS and bwrap elsewhere. An absent sandbox block defaults to mode `none` and is the unconfined case. A pi seat confines on no host, so it gets no grant broker anywhere (sprint-review) |
+| C5 | Both directions, and silence is explained | Messages or events flow in and out with sender identity preserved, and when nothing flows the person can see why. A refused model route read as silence until #1827 and #1831 (Kai) |
 | C6 | Decision from it | A decision card is answered from the channel or app, and the agent receives the ruling |
 | C7 | A second open client sees it | An already-open tab converges without a refresh (the TASK-135 shape) (sprint-review) |
 | C8 | A room grant stays confined | A tool granted to one pod works there and is refused elsewhere, and the trail shows the refusal (Wren) |
 | C9 | Authority is bounded and revocable | The connector cannot do more than granted; revoke, expiry and rotation all take effect without anyone watching (Vera, sprint-review) |
-| C10 | Failure is named | Bad credentials, a revoked install, rate limits and outages each reach the person as a named state |
+| C10 | Failure is named | Bad credentials, a revoked install, rate limits, outages, a refused model route, and the consecutive-run cascade cap each reach the person as a named state. The cascade cap refuses posts by design and otherwise looks like a broken channel (Kai) |
 
 ## Rows and known state
 
@@ -48,7 +49,7 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 |---|---|---|
 | Telegram | yes | Connect flow stable per the Connectors lane; C1 needs a real Telegram user account for the check |
 | Slack | yes | Install flow (authorize URL) stable per the Connectors lane; C1 needs a dedicated Slack workspace for the check |
-| Discord | partly | **red**: not connectable (TASK-104), and not offered on the Connectors page (#1826, held for Sam's read of the renders) |
+| Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
 | GitHub (app) | yes | **red**: disabled on commonly.me until the GitHub App credentials are set (TASK-033 hold). The Tools page (#1669) has never been walked with an admin GitHub App connection. The header reads `1 agents` |
@@ -59,7 +60,7 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 | red | state |
 |---|---|
 | The IP rate-limit tier trusts `cf-connecting-ip` from any peer, so every callback and webhook row's failure column runs on a bucket the caller picks | filed as TASK-110 |
-| A seat started with `commonly agent run` that declares no sandbox can receive the grant broker while unconfined (33 of 36 token files declare none) | latent: the only grant today belongs to a seat that declares a workspace sandbox. Server-side fix being filed by Vera |
+| A seat started with `commonly agent run` that declares no sandbox can receive the grant broker while unconfined (31 claude and codex seats; 33 of 36 token files declare no sandbox, two of which are pi and refused server-side anyway) | latent: the only grant today belongs to a seat that declares a workspace sandbox. Server-side fix being filed by Vera |
 | A Mac seat that declares `bwrap` keeps it and is refused, since bwrap is Linux-only | unverified fix path |
 | No agent seat can do a logged-in walk on commonly.me (blocked since 09-16 per ux-lead) | Until that lifts, stranger-session walks run from the operator session with a throwaway account |
 
@@ -82,6 +83,7 @@ The team split on which app comes after GitHub, and the split is about the freez
 | GroupMe and X first | Wren | Both have code that exists and is unverified; Linear and Google would be builds under a feature freeze. If Google comes, name one product, since a three-product row never goes green |
 | Google Workspace before Linear | ux-lead | The Connectors artboard already draws Gmail, Calendar and Drive, and a decision answered from mail or calendar is the loop a team feels first; Linear shares GitHub's shape and its credential hold |
 | Linear and Google, chosen by failure shape | sprint-review | Another chat channel adds little new evidence. Linear is the only row exercising write-back into someone else's system of record; Google is the only one exercising OAuth refresh and an org admin revoking access |
+| Linear, then Google Workspace, then email over IMAP | Kai | Linear is the cheapest real exercise of C6; Google is the hardest C1 (OAuth consent plus a domain install); email stresses C5 without an app API |
 
 Recommendation: verify GroupMe and X inside the freeze, since they are existing code. Then lift the freeze for exactly one build, Google Calendar, as a single product.
 
