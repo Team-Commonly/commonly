@@ -113,6 +113,105 @@ describe('Auth Controller Tests', () => {
       );
     });
 
+    // TASK-142: the verification email used to be awaited inline, so signup
+    // blocked on SMTP2GO (6211 ms measured live; emailService allows 30s).
+    // This test is the mutation proof for the fix: it hands the handler a send
+    // that never settles, so `await authController.register(...)` can only
+    // return if the handler does NOT wait for it. Restoring the inline await
+    // makes this test time out rather than fail an assertion.
+    it('responds 201 without waiting for the verification email', async () => {
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.me';
+
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const savedUser = {
+        _id: 'mockedUserId',
+        username: 'slowmail',
+        email: 'slow@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      };
+      User.prototype.save = jest.fn().mockResolvedValueOnce(savedUser);
+
+      let releaseSend;
+      sendEmail.mockImplementationOnce(() => new Promise((resolve) => {
+        releaseSend = resolve;
+      }));
+
+      const req = {
+        body: {
+          username: 'slowmail',
+          email: 'slow@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      // The send is still pending at this line; a handler that awaits it never
+      // gets here.
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'slow@example.com' }));
+
+      releaseSend({ data: { succeeded: 1 } });
+    });
+
+    // The response must also survive a provider failure, and the failure must
+    // be visible in the logs rather than swallowed: after the inline await was
+    // removed there is no 502 left to tell an operator the mail never went out.
+    it('retries once and logs when the background verification email fails', async () => {
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.me';
+
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const savedUser = {
+        _id: 'mockedUserId',
+        username: 'failmail',
+        email: 'fail@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      };
+      User.prototype.save = jest.fn().mockResolvedValueOnce(savedUser);
+
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      sendEmail.mockRejectedValue(new Error('smtp2go unavailable'));
+
+      const req = {
+        body: {
+          username: 'failmail',
+          email: 'fail@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.register(req, res);
+
+      // Two macrotask turns let both attempts (and the retry) settle.
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(sendEmail).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('verification email failed for user'),
+        expect.anything(),
+      );
+
+      errorSpy.mockRestore();
+    });
+
     it('should not register a user with an existing email', async () => {
       // Mock User.findOne to return an existing user
       const existingUser = {
