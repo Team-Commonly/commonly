@@ -1,11 +1,13 @@
 # CodeQL `js/missing-rate-limiting` — backlog triage (TASK-097)
 
 **Row:** TASK-097 · **Author:** kai · **Measured:** 2026-09-23 against `origin/main` @ `58232e6a`
-**Status:** triage complete; the enforcement choice is an open **Wren + Sam** call (§6).
+**Status:** triage complete; enforcement **ruled** (wren 71373) — the public/anon per-route
+half is a builder's row under this task, the mount-level half is **Sam's** call gated on a
+measurement (§6).
 
 The row asks two things: reconcile the disagreeing counts, then say which routes need a
-limiter and which get a documented exemption. This is the measurement; the last section is
-the question the code does not force.
+limiter and which get a documented exemption. This is the measurement; §6 records the ruling
+that came out of it.
 
 ## TL;DR
 
@@ -25,11 +27,13 @@ the question the code does not force.
 5. The repo already owns a burn-down list for this exact surface:
    `backend/__tests__/unit/routes/routeRateLimitGuard.baseline.json` — **232 registrations**,
    which may only shrink, guarded in `npm test`.
-6. **The decision (§6):** extend the existing two-tier limiter stack to the whole
-   `/api/agents/runtime` family (behaviour change for every seat), do it per-route, or leave
-   the baseline as the record. Recommended: **per-route on the public/anon-facing surface
-   first, then the agent-runtime family with the existing 120/60s per-token budget** — but
-   that second half is a Wren + Sam call by construction.
+6. **The call (§6), now ruled** (wren 71373): per-route on the public/anon surface is a
+   **builder's row under this task**; the mount-level limiter on `/api/agents/runtime` is
+   **Sam's own order**, not before the fleet's per-token steady state is measured against the
+   existing 120/60s and a runtime 429 reads as a *named* refusal in one seat's tool path.
+7. **The public/anon surface is small and measured: 8 production sites, all `GET`** (§6) — two
+   of them the auth reads `/registration-policy` and `/verify-email`; five liveness/meta probes;
+   one third-party redirect target.
 
 ## How these numbers were produced
 
@@ -61,10 +65,11 @@ re-attributed to #1814** while being main records (`#676` has been open since 20
 `349 rows → 200 sites` is not double-counting: the query reports one alert per dataflow
 instance, so the same registration can carry two alerts with different end ranges.
 
-**Not yet reconciled: "78".** The row records "Vera counted 78 repo-wide"; no query shape I
-tried produces it (349 filtered, 349 unfiltered, 200 distinct sites, 33 files, 332 files
-above 78…). §7 poses the question rather than guessing — the answer decides whether the
-backlog is 200 sites or something narrower.
+**The "78" is reconciled, and it was a page artifact (vera, 71371).** Her query was the
+alerts call **without `--paginate`**: it read the first 100 open alerts *of all rules*, 78 of
+which happened to be this one. The same call with `--paginate` returns 349. So 349 is the
+population and 78 was a page of it; the row's companion figure "38 in one file" comes from the
+same page and is likewise unmeasured. See §7.
 
 ## 2. The second instrument the repo already has
 
@@ -135,55 +140,94 @@ The largest single cluster (26 sites) is `agentsRuntime.ts`; after it `pods.ts` 
 - admin/registry mutations: `runtime-start|stop|restart|clear-sessions`, `reprovision-all`,
   `trigger-heartbeat`, `session-token`, `installations` DELETE, `PATCH /pods/:podId/agents/:name`
 
-## 5. Exemption candidates (documented, narrow)
+## 5. Exemptions, and the classes that get the IP tier only
 
-| class | flagged sites | members | why an exemption is defensible |
+Ruled (wren 71374): **third-party callbacks and long-poll reads are not exemptions** — they
+carry the **IP tier with the token tier off**, because a retry storm from a third party is
+still an IP, and a long-poll's request count is not a per-token budget question.
+
+| class | flagged sites | members | treatment |
 |---|---|---|---|
-| test-file express apps | 3 | `__tests__/service/two-way-integration-e2e.test.js`, `__tests__/service/summaries.test.js`, `__tests__/unit/middleware/appAuth.test.js` | not production surface — the app is built inside the test |
-| health / status / read-only meta | 6 | `health.ts` ×2, `pg-status.ts` ×2, `docs.ts`, `stats.ts` | unauthenticated liveness and read-only probes; a limiter here can break the probe |
-| third-party-triggered callbacks | 3 | `admin/globalIntegrations.ts` `GET /x/oauth/callback`, `discord.ts` `GET /callback`, `billing.ts` `POST /webhook` | retry behaviour is outside our control; the webhook family already carries the two-tier stack where we own the caller |
-| long-poll reads | 2 | `agentsRuntime.ts` `GET /events`, `GET /bot/events` | counted per request, a poll loop's real cost is concurrency; a request-count limiter needs a budget that clears the fleet's steady state or seats 429 each other |
+| test-file express apps | 3 | `__tests__/service/two-way-integration-e2e.test.js`, `__tests__/service/summaries.test.js`, `__tests__/unit/middleware/appAuth.test.js` | **exemption** — not production surface; the app is built inside the test |
+| health / status / read-only meta | 6 | `health.ts` ×2, `pg-status.ts` ×2, `docs.ts`, `stats.ts` | **exemption candidate** — a limiter on a liveness probe can *be* the outage |
+| third-party-triggered callbacks | 3 | `admin/globalIntegrations.ts` `GET /x/oauth/callback`, `discord.ts` `GET /callback`, `billing.ts` `POST /webhook` | **IP tier, token tier off** (ruled) |
+| long-poll reads | 2 | `agentsRuntime.ts` `GET /events`, `GET /bot/events` | **IP tier, token tier off** (ruled) |
 
-Everything else is a write or an expensive read and is a candidate for a limiter, not for an
-exemption.
+The remaining **186 of 200** sites are writes or authenticated reads: limiter candidates, not
+exemption candidates.
 
-## 6. The call that is Wren's + Sam's
+## 6. The ruling (wren 71373): (D), split in two
 
-A limiter on `agentRuntimeAuth` itself changes behaviour for every seat, so this is not mine to
-take. The existing budget in `agentsRuntime.ts` is the natural candidate because it already
-exists and is already two-tier:
+The four options were (A) mount-level on the agent-runtime family, (B) per-route on the
+public/anon surface, (C) leave the baseline as the record, (D) B now then A. **Ruled: (D),
+split** — and the split is what makes it landable, because the two halves have different blast
+radii:
 
-- **IP tier** 3000 / 60s, keyed by the Cloudflare-aware generator (IPv6 collapsed to /64)
-- **token tier** 120 / 60s, keyed by `agentRateLimitKeyGenerator`
+- **(B) is now a builder's row under this task.** Per-route limiters on the public/anon
+  surface, with a budget per route, and **each 429 body carries `status` and a named reason**
+  so #1823's reader classifies it. Note the existing limiter bodies in `agentsRuntime.ts` are
+  `{message, code: 'rate_limited'}` — no `status`, no named reason — so the *existing* shape is
+  not enough for a seat's tool path; the new bodies need the fields the reader keys on, and the
+  name must distinguish a **platform** 429 from an **upstream** one, which is a different fact.
+- **(A) is Sam's own order, and not yet.** Two preconditions, both named by wren: the fleet's
+  per-token steady state measured against the existing 120/60s, and a runtime 429 reading as a
+  *named refusal* in one seat's tool path — the same legibility requirement the refusal work
+  (TASK-099/#1828) exists to satisfy.
 
-Options:
+The existing budget the decision starts from, already two-tier in `agentsRuntime.ts`:
+**IP tier 3000 / 60s** (Cloudflare-aware key, IPv6 collapsed to /64) then **token tier
+120 / 60s** (`agentRateLimitKeyGenerator`). `phase4RateLimit` is the stack; registering only
+`phase4IpRateLimit` is exactly "IP tier on, token tier off".
 
-- **(A) Mount-level** — apply the same two-tier stack to `/api/agents/runtime` as a whole.
-  Closes 18+ sites at one config point, uses budgets already proven against the fleet.
-  Cost: every seat's poll loop now shares a 120/60s bucket; a runaway seat surfaces as a 429
-  it cannot see in the tool path, which is the same class of failure as the 2026-08-18
-  misclassification (an hour lost to an unreadable refusal).
-- **(B) Per-route** — limit the write/expensive routes only, leave the reads.
-  Smallest blast radius, N config sites, and it makes the guard's baseline shrink in
-  measurable steps. Leaves the read surface unlimited.
-- **(C) Leave the baseline as the record** — fix only the 3 test-file sites and accept 200
-  forever. Cheapest; keeps re-attributing to every PR that touches a shared dataflow node.
-- **(D) A+B** — B now on the public/anon-facing surface (highest exposure, lowest semantics
-  risk), then A for the agent-runtime family once the fleet's real per-token request rate is
-  measured against the 120/60s budget.
+### Scope of (B), measured
 
-**Recommended: (D)**, with the fleet rate measured before A — the budget must be set from the
-seats' actual steady-state (heartbeat + claim + long-poll) per token per minute, not guessed.
-If A is taken, a 429 must be legible to the seat (the refusal work in TASK-099/#1828 is the
-same shape) or the change will look like a broken seat rather than a limiter.
+Public/anon here means: no auth/token/member/scope middleware anywhere in the registration
+chain, strings stripped so a path like `/invite/:token` cannot masquerade as a guard.
+**9 of the 200 flagged sites qualify, and one of them is the test-file app — so 8 production
+sites, all `GET`:**
 
-## 7. The one question I could not answer
+| route | file | why it is public | proposed IP budget |
+|---|---|---|---|
+| `GET /x/oauth/callback` | `admin/globalIntegrations.ts` | third-party redirect target | 600 / 60s |
+| `GET /registration-policy` | `auth.ts` | read on the signup page, pre-auth by construction | 60 / 60s |
+| `GET /verify-email` | `auth.ts` | link-driven: mail clients prefetch, scanners hammer it | 30 / 60s |
+| `GET /public` | `stats.ts` | public read — limit it only if it does real work per request | exemption candidate (§5) |
+| `GET /` | `health.ts` | liveness probe | exemption candidate (§5) |
+| `GET /ready` | `health.ts` | readiness probe | exemption candidate (§5) |
+| `GET /` | `pg-status.ts` | read-only meta | exemption candidate (§5) |
+| `GET /backend` | `docs.ts` | read-only meta | exemption candidate (§5) |
 
-**@vera: what produced "78 repo-wide"?** My shapes are above (349 filtered, 349 unfiltered,
-200 distinct sites, 33 files, 302 distinct path+line+end). Any of these could be your 78 by a
-different filter — a ref other than `main`, severity, a single analysis run, or the UI's
-grouping. The answer decides whether the burn-down list is 232 registrations or something
-narrower, so it is worth pinning rather than averaging.
+So (B)'s actionable surface is **3 routes** — the OAuth redirect target and the two auth reads —
+plus the two IP-tier-only classes above; the other **190** flagged sites are authenticated and
+belong to (A) or to the burn-down list. If `GET /public` turns out to do work per request it is
+a fourth.
+
+**One risk worth putting in front of the (A) budget:** the fleet's seats run on **one host**
+(the launchd supervisor), so they share a single egress IP — an **IP-tier-only** bucket is a
+*shared* bucket for the whole fleet, not a per-seat one. 3000 / 60s is 50/s against roughly 30
+seats reconnecting a long-poll on the order of once per 30s (~1/s), so the headroom is large,
+but the number that matters for (A) is the per-token rate, and the number that matters for the
+IP-tier-only rows is the *fleet-aggregate* rate. Both are measurements, not estimates, before
+anything is mounted.
+
+## 7. The 78, reconciled — a page read as a population
+
+**vera 71371: 78 was hers and it was wrong.** Her query was the alerts call **without
+`--paginate`** — the first 100 open alerts *of all rules*, 78 of which happened to be this one;
+the same call with `--paginate` returns 349. The companion figure "38 in one file" comes from
+that same page and is unmeasured. **349 is the population; 78 was a page of it.**
+
+This is the third time in one night that this pod has hit the same shape — an unpaginated read
+that looks exactly like a complete one — and it is worth naming, because it is invisible in
+review: the query is well-formed, the output is plausible, and the only tell is a number that
+does not match a second instrument. What made 200 trustworthy where 78 was not is not the count
+itself: it is that the registration-chain walk resolves every site to a named registration and
+that its first pass was wrong in both directions and is disclosed in §3 rather than reported as
+the measurement.
+
+It does not disturb the conclusion the 78 was cited for: 21 alerts on #1814 against a
+*population* larger than the cited one still says pre-existing rule, not new exposure — the
+precondition short-circuit was the load-bearing half (vera 71372).
 
 ## Appendix — flagged sites per file
 
