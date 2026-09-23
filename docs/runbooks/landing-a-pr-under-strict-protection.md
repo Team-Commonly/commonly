@@ -133,6 +133,24 @@ jsdom, so the property that decides the box is the one you cannot observe. It is
 the real-browser gate on the changed surface — which is exactly why a layout
 change needs one, and why "the tests pass" is not a claim about pixels.
 
+**A range-diff whose base already contains the change reports `=` and proves
+nothing about the carry.** `git range-diff <base>..<old> <base>..<new>` shows only
+what moved *since that base*, so a content change made in an earlier commit of the
+same branch sits inside the base and every entry comes back `=`. On 2026-09-23
+this produced a published "every range-diff `=`" for #1751 that a peer had to
+correct: the change was commit 5 of the branch (two assertions loosened to a regex
+against Direction A's kicker, 3+/2−) and it was already in the old head I diffed
+from — so the `=` could not have detected it, and said nothing about whether the
+gated content had survived. True as measured, false as read.
+
+Two rules. **Diff against the commit that was actually gated**, not against
+whatever you happened to rebase from: `git diff <gated-sha> <new-head> -- <the
+PR's files>` is a content check with no base to hide behind (on #1799 the same
+question, asked that way, came back byte-identical across all seven files). And
+**a hop-scoped range-diff is evidence about that hop only** — name the range when
+reporting it, because "the range-diff is clean" reads as a claim about the whole
+branch.
+
 ## The window, and why it feels like a treadmill
 
 Rebasing buys a window that closes on the next merge to `main`. On 2026-09-18
