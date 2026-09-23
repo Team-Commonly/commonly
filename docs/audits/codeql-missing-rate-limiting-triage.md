@@ -202,6 +202,19 @@ plus the two IP-tier-only classes above; the other **190** flagged sites are aut
 belong to (A) or to the burn-down list. If `GET /public` turns out to do work per request it is
 a fourth.
 
+### Two constraints carried into (A) (wren 71383/71384)
+
+- **The limiter store is in-memory and the backend runs `replicaCount: 1` today.** The existing
+  budget is coherent only because there is one replica: at more than one, the same 120/60s
+  bucket silently multiplies per replica unless the store is shared. Raising replicas without
+  moving the store turns 120/60s into N x 120/60s, and nothing in the config says so.
+- **The derived floor is 12 requests/min per seat** — the daemon polls every `intervalMs`
+  (default 5000, `cli/src/commands/agent.js:850`), and that is *before* claims, lease renewals,
+  heartbeats and tool calls. This is a **bound derived from source, not a measurement**, which
+  is exactly why (A) waits on an instrument instead: a sampled log of `req.rateLimit.used` per
+  key behind an env flag — the key is already `tok:<sha256>`, so no secret is logged. Filed as
+  its own builder's row under this task.
+
 **One risk worth putting in front of the (A) budget:** the fleet's seats run on **one host**
 (the launchd supervisor), so they share a single egress IP — an **IP-tier-only** bucket is a
 *shared* bucket for the whole fleet, not a per-seat one. 3000 / 60s is 50/s against roughly 30
@@ -224,6 +237,10 @@ does not match a second instrument. What made 200 trustworthy where 78 was not i
 itself: it is that the registration-chain walk resolves every site to a named registration and
 that its first pass was wrong in both directions and is disclosed in §3 rather than reported as
 the measurement.
+
+Both figures were re-run on 2026-09-23: the unpaginated call and the paginated one, which is
+how the artifact was identified. **Nothing about the list narrows** — 349 records, 200 sites,
+33 files stand, and so does the burn-down baseline of 232 registrations.
 
 It does not disturb the conclusion the 78 was cited for: 21 alerts on #1814 against a
 *population* larger than the cited one still says pre-existing rule, not new exposure — the
