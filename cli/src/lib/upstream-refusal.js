@@ -181,24 +181,70 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
 };
 
 /**
- * The first 4xx/5xx the text names, at the start or anywhere in it.
- *
- * `statusFromError` is anchored at the start because pi hands over one candidate
- * string. An adapter's tail is different: claude joins stderr and stdout with
- * ` | `, so when stderr has anything at all the status is NOT at position 0 — a
- * prefix-only read would report a 429 body as an unclassified runtime failure,
- * which is the misclassification this work exists to remove. A standalone
- * three-digit token is what is matched, so a timestamp (`2026-09-23T…`) or a
- * count (`1234 tokens`) is not read as a status.
+ * Does this text parse as a JSON object? The gate for the whole-tail fallback
+ * below — deliberately NOT `kept === null`, which is true for five different
+ * reasons (Vera 71350).
  */
-const statusInText = (text) => {
-  const prefixed = statusFromError(text);
-  if (prefixed !== null) return prefixed;
-  for (const match of String(text ?? '').matchAll(/\b(\d{3})\b/g)) {
+const isJsonObject = (raw) => {
+  try {
+    const parsed = JSON.parse(String(raw ?? ''));
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A 3-digit number is read as a status only when the tail NAMES it as one:
+ * `status 429`, `HTTP 429`, `code: "429"` — or when it opens the tail or a ` | `
+ * segment followed by a colon, which is the shape claude's `stderr | stdout`
+ * join produces for a body that leads with its status.
+ *
+ * A bare `\b(\d{3})\b` scan is not enough, and the false positives are not
+ * hypothetical: `500 tokens`, `"max_tokens": 500` and `retry in 500 seconds`
+ * all read as 500, and `classifySpawnFailure` tests the status FIELD before the
+ * message — so a count misread as a status stands the fleet down on a refusal
+ * that never happened, which is worse than no status at all (Vera 71352).
+ */
+const STATUS_NAMED = /\b(?:status(?:_?code)?|code|http)\b\W{0,4}(\d{3})(?!\d)/gi;
+const STATUS_COLON = /(?:^|\|\s*)(\d{3})(?!\d)\s*:/g;
+
+/** The first 4xx/5xx one of those shapes names, or null. */
+const scanStatuses = (text, pattern) => {
+  for (const match of String(text ?? '').matchAll(pattern)) {
     const value = Number(match[1]);
     if (value >= 400 && value <= 599) return value;
   }
   return null;
+};
+
+/**
+ * Find the status AND the body boundary, because they are the same question.
+ *
+ * Anchoring the status to a ` | ` segment start is not enough on its own: the
+ * body has to be taken from just past that status too, or a mid-tail read
+ * isolates the status and then hands the WHOLE joined tail to the body rules,
+ * which no longer look like a JSON body and so fall through to "keep it all".
+ * That is the difference between dropping a credential-echoing body and shipping
+ * the part of it that exact-match cannot see.
+ *
+ * `STATUS_COLON` is the only shape that moves the boundary, because it is the
+ * same shape as the anchored prefix (`429: {body}`), just found at a segment
+ * boundary — claude's `stderr | stdout` join. A status that appears inside a
+ * body (`{"error":{"code":"429"}}`) or as prose (`HTTP 503`) names the status
+ * but marks no boundary, so the whole text stays the body.
+ */
+const readStatusAndBody = (text) => {
+  const raw = String(text ?? '');
+  const prefixed = statusFromError(raw);
+  if (prefixed !== null) return { status: prefixed, body: bodyFromError(raw) };
+  for (const match of raw.matchAll(STATUS_COLON)) {
+    const value = Number(match[1]);
+    if (value >= 400 && value <= 599) {
+      return { status: value, body: raw.slice(match.index + match[0].length).replace(/^\s*:?\s*/, '') };
+    }
+  }
+  return { status: scanStatuses(raw, STATUS_NAMED), body: raw };
 };
 
 /**
@@ -218,22 +264,27 @@ const statusInText = (text) => {
  *    substitutes rather than drops, precisely because a whole-shape text has no
  *    second field to fall back to).
  *
- *  - A body that IS JSON is reduced to one named field, and a field that echoed
- *    a value this spawn was handed is dropped and the whole body redacted — the
- *    same trade rule 2 makes everywhere.
+ *  - A body that IS JSON is reduced to one named field, and a body whose field
+ *    echoed a value this spawn was handed is DROPPED WHOLE — the same trade rule
+ *    2 makes everywhere. The fallback to the whole tail is gated on the SHAPE
+ *    (not a JSON object), never on "the keep-list returned null": that null has
+ *    four other causes, and one of them is the credential echo this line exists
+ *    to drop. Gating on `kept === null` would emit the whole body for that case,
+ *    which is precisely what rule 2 forbids — and exact-match cannot see a
+ *    transformed shape (limit (a) in the header), so a key that arrived
+ *    base64'd or percent-encoded would ship (Vera 71350/71351).
  *
  * Returns `{ status, detail }`: `status` is the 4xx/5xx the tail named, or null.
  * The caller decides where the status goes; `classifySpawnFailure` reads it off
  * `error.status` or out of the message text, so both a leading `429: …` prefix
- * and an attached field classify the same way.
+ * and an attached field classify the same way. `detail` is `''` when nothing of
+ * the body may be shown — the status is then the whole diagnostic.
  */
 export const scrubAdapterFailure = (text, { credentials = [], limit = MAX_REFUSAL_DETAIL } = {}) => {
   const raw = String(text ?? '').trim();
-  const atStart = statusFromError(raw);
-  const status = atStart ?? statusInText(raw);
-  const body = atStart === null ? raw : bodyFromError(raw);
+  const { status, body } = readStatusAndBody(raw);
   const kept = keptRefusalDetail(body, { credentials });
-  const detail = kept ?? redactKnownCredentials(body, credentials);
+  const detail = kept ?? (isJsonObject(body) ? '' : redactKnownCredentials(body, credentials));
   return { status, detail: detail.slice(0, limit) };
 };
 
@@ -251,7 +302,7 @@ export const adapterFailure = (label, text, { credentials = [], exitCode = null,
   const { status, detail } = scrubAdapterFailure(text, { credentials, limit });
   const code = exitCode === null ? '' : ` exited with code ${exitCode}`;
   const named = status === null ? '' : ` (upstream ${status})`;
-  const error = new Error(`${label}${code}${named}: ${detail}`);
+  const error = new Error(`${label}${code}${named}${detail ? `: ${detail}` : ''}`);
   if (status !== null) error.status = status;
   return error;
 };
