@@ -56,7 +56,7 @@ Publish it with `--set controller.service.type=LoadBalancer` only if this ingres
 is your own public entrance and you are not running the tunnel — and then read
 that file first, because the CF header is not a client identity on that path.
 
-### 2b. Cloudflare Tunnel (Optional)
+### 2b. Cloudflare Tunnel (required when the controller is ClusterIP)
 
 If you want Cloudflare Tunnel managed by this chart, create the tunnel and
 credentials secret, then enable `cloudflared` in `values.yaml`:
