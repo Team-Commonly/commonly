@@ -497,12 +497,23 @@ export const updateAgentConfiguration = async ({
  * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
  * source after Vera 71664).
  *
- * Whether the resolved mode is AVAILABLE here (bwrap installed, macOS for
- * Seatbelt, the adapter honouring it) is deliberately not this function's
- * question: that needs the host and the adapter and lives at the call site.
+ * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
+ * Seatbelt, the codex permission-profile version — is deliberately not this
+ * function's question: that needs the host and the detected version and stays at
+ * the call site. What an adapter can honour at all is just a mode and a name, so
+ * that check is in here, with witnesses of both signs.
+ *
+ * The raw compare inside `resolvePublicSandboxMode` (mode.js:31) bites whichever
+ * caller hands it a still-raw object. Both adapters normalize at their own entry
+ * (claude.js:615, codex.js:546) and pass the normalized object on, which is why
+ * their suites confined a legacy record on main all along. The grant-broker guard
+ * normalizes for its own trust check (`effectiveTrust`, grant-broker-guard.js:193)
+ * and then hands it the raw one, so its symptom is a false
+ * `sandbox_mode_unenforceable` refusal — the same mismatch #1838 patches in
+ * mode.js (Vera 71676).
  */
 export const resolveAttachSandbox = ({
-  environment, platform = process.platform,
+  environment, adapterName, platform = process.platform,
 } = {}) => {
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
   const trust = sandbox?.trust;
@@ -511,6 +522,17 @@ export const resolveAttachSandbox = ({
   if (trust === 'public' && mode === 'none') {
     throw new Error(
       'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+    );
+  }
+  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
+  // pure — a mode and an adapter name — so it belongs with the derivation, and
+  // its witnesses live beside it.
+  if ((mode === 'workspace' || mode === 'read-only')
+    && (trust !== 'public' || !['codex', 'claude'].includes(adapterName))) {
+    throw new Error(
+      `sandbox.mode=${mode} is currently implemented only for public `
+      + 'codex or Claude adapters',
     );
   }
   return { mode, trust };
@@ -552,7 +574,7 @@ export const performAttach = async ({
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode, trust: sandboxTrust } = resolveAttachSandbox({ environment });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -565,12 +587,6 @@ export const performAttach = async ({
         );
       }
     } else if (sandboxMode === 'workspace' || sandboxMode === 'read-only') {
-      if (sandboxTrust !== 'public' || !['codex', 'claude'].includes(adapterName)) {
-        throw new Error(
-          `sandbox.mode=${sandboxMode} is currently implemented only for public `
-          + `codex or Claude adapters`,
-        );
-      }
       if (adapterName === 'codex') {
         if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
           throw new Error(

@@ -41,10 +41,12 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // Named for what this returns — a DECLARATION — not for confinement itself:
     // the adapters re-derive from the environment and confine either way. What
     // was wrong is that this gate's verdict contradicted theirs.
-    expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'darwin' }))
-      .toEqual({ mode: 'workspace', trust: 'public' });
-    expect(resolveAttachSandbox({ environment: { sandbox: { trust: 'internal' } }, platform: 'linux' }))
-      .toEqual({ mode: 'bwrap', trust: 'public' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'public' });
   });
 
   test('a legacy internal trust beside mode none is refused, not silently run', () => {
@@ -53,9 +55,32 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     })).toThrow(/refusing to attach unsandboxed/);
   });
 
+  test("a legacy internal record beside mode 'workspace' attaches, it does not throw (Vera 71675)", () => {
+    // The raw compare failed CLOSED here: `sandboxTrust !== 'public'` was true,
+    // so attach refused a record both adapters confine — the adapter suites pin
+    // that on this exact shape (adapters.claude.environment.test.mjs:444 spawns
+    // sandbox-exec; adapters.codex.test.mjs:257 asserts no bypass flag).
+    for (const adapterName of ['claude', 'codex']) {
+      expect(resolveAttachSandbox({
+        environment: { sandbox: { mode: 'workspace', trust: 'internal' } },
+        adapterName,
+        platform: 'darwin',
+      })).toEqual({ mode: 'workspace', trust: 'public' });
+    }
+  });
+
+  test('that same record is still refused on an adapter that cannot honour it', () => {
+    // The support check moved into the derivation must not become a no-op.
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
+    })).toThrow(/implemented only for public codex or Claude adapters/);
+  });
+
   test('an explicit mode is taken as declared, and a public one is guarded', () => {
     const workspace = resolveAttachSandbox({
-      environment: { sandbox: { mode: 'read-only', trust: 'internal' } }, platform: 'darwin',
+      environment: { sandbox: { mode: 'read-only', trust: 'internal' } },
+      adapterName: 'claude',
+      platform: 'darwin',
     });
     expect(workspace).toEqual({ mode: 'read-only', trust: 'public' });
     expect(() => resolveAttachSandbox({
