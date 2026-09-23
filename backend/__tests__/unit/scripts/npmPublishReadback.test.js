@@ -17,8 +17,16 @@
  *      a read-back that cannot say what it saw is the same false negative one
  *      layer down.
  *
- * The stub `npm` answers by argument shape, so the assertions above are about
- * this script's decisions, not about the network. The wiring half is asserted
+ * TASK-115 adds a fourth: the poll reads the VERSION DOCUMENT (2.4KB,
+ * `cf-cache-status: DYNAMIC`), not the packument (130KB, `cache-control:
+ * public, max-age=300` — the same 300s as the budget, so the old form raced a
+ * cache rather than propagation: 31 E404s then success, Vera 71761-71763).
+ * The `curl` stub therefore answers ONLY the version URL, and a request for the
+ * packument fails loudly — that is what makes the endpoint a property under
+ * test instead of a detail of the implementation.
+ *
+ * The stubs answer by argument shape, so the assertions above are about this
+ * script's decisions, not about the network. The wiring half is asserted
  * against the workflow text because a workflow body cannot be executed here.
  */
 
@@ -39,12 +47,14 @@ const REGISTRY_SERVES = '0.1.67';
  * A stub `npm` whose behaviour is driven by env, so each test states the
  * registry's condition rather than mocking this script's internals.
  *   STUB_NAME                 the package name (so the two `version` shapes differ)
- *   STUB_FAILS_UNTIL=n        the first n `<name>@<version>` lookups 404
- *   STUB_NEVER_PUBLISHED=1    every such lookup 404s
+ * After TASK-115 `npm` serves the DIAGNOSTIC reads only — the two packument
+ * shapes printed under the exhaustion banner — so it no longer counts attempts.
+ *   STUB_NAME                 the package name (so the two `version` shapes differ)
  *   STUB_LATEST               what `dist-tags` and `<name>` lookups serve
- *   STUB_SLEEP_SECONDS        how long each `npm view` takes
- * The call log and attempt counter are files next to the stub: the attempt
- * count is the assertion, so it must come from outside this script's output.
+ *   STUB_SLEEP_SECONDS        how long each read takes
+ * The call log and the attempt counter are files next to the stubs, because the
+ * attempt count is an assertion about the poll and has to come from outside
+ * this script's output.
  */
 const stubSource = [
   '#!/usr/bin/env bash',
@@ -63,25 +73,55 @@ const stubSource = [
   '  echo "${STUB_LATEST:-0.0.0}"',
   '  exit 0',
   'fi',
-  'if [ "$verb" = "version" ]; then',
-  '  n=$(( $(cat "$STUB_LOG.attempts" 2>/dev/null || echo 0) + 1 ))',
-  '  echo "$n" > "$STUB_LOG.attempts"',
-  '  if [ "${STUB_NEVER_PUBLISHED:-0}" = "1" ] || [ "$n" -le "${STUB_FAILS_UNTIL:-0}" ]; then',
-  '    echo "npm error code E404" >&2',
-  '    echo "npm error 404 No match found for version" >&2',
-  '    exit 1',
-  '  fi',
-  '  echo "${STUB_LATEST:-0.0.0}"',
-  '  exit 0',
-  'fi',
   'echo "stub: unexpected npm call: $*" >&2',
   'exit 1',
+  '',
+].join('\n');
+
+/**
+ * The stub `curl` the poll goes through since TASK-115. It answers ONLY
+ * `<registry>/<name>/<version>` — the version document — and refuses the
+ * packument with a distinguishable message, so "which endpoint did this read"
+ * is a property under test rather than a detail of the implementation. The
+ * attempt counter lives here now: this is the call the retry loop and the
+ * budget are about.
+ *   STUB_FAILS_UNTIL=n        the first n version-document reads 404
+ *   STUB_NEVER_PUBLISHED=1    every such read 404s
+ *   STUB_LATEST               the version the document reports
+ */
+const curlSource = [
+  '#!/usr/bin/env bash',
+  "printf '%s\\n' \"$*\" >> \"$STUB_LOG.calls\"",
+  'sleep "${STUB_SLEEP_SECONDS:-0}"',
+  'if [ "${1:-}" != "-fsS" ]; then',
+  '  echo "stub curl: the poll must call curl -fsS (got: $*)" >&2',
+  '  exit 1',
+  'fi',
+  'url="${@: -1}"',
+  'case "$url" in',
+  '  https://registry.npmjs.org/*) rest="${url#https://registry.npmjs.org/}" ;;',
+  '  *) echo "stub curl: unexpected registry host: $url" >&2; exit 1 ;;',
+  'esac',
+  'if [ "$(printf %s "$rest" | tr -cd / | wc -c | tr -d " ")" != "1" ]; then',
+  '  echo "stub curl: PACKUMENT read ($url) — the read-back must read the version document" >&2',
+  '  exit 1',
+  'fi',
+  'name="${rest%%/*}"; version="${rest##*/}"',
+  'n=$(( $(cat "$STUB_LOG.attempts" 2>/dev/null || echo 0) + 1 ))',
+  'echo "$n" > "$STUB_LOG.attempts"',
+  'if [ "${STUB_NEVER_PUBLISHED:-0}" = "1" ] || [ "$n" -le "${STUB_FAILS_UNTIL:-0}" ]; then',
+  '  echo "curl: (56) The requested URL returned error: 404" >&2',
+  '  exit 56',
+  'fi',
+  "printf '{\"name\":\"%s\",\"version\":\"%s\"}\\n' \"$name\" \"${STUB_LATEST:-0.0.0}\"",
+  'exit 0',
   '',
 ].join('\n');
 
 const withStub = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readback-stub-'));
   fs.writeFileSync(path.join(dir, 'npm'), stubSource, { mode: 0o755 });
+  fs.writeFileSync(path.join(dir, 'curl'), curlSource, { mode: 0o755 });
   return { dir, log: path.join(dir, 'npm-log') };
 };
 
@@ -133,6 +173,40 @@ describe('npm publish read-back', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(new RegExp(`${WANT} is live`));
     expect(attempts(log)).toBe(6);
+  });
+
+  test('the poll reads the uncached version document, not the edge-cached packument', () => {
+    // TASK-115. `npm view pkg@version version` fetches the 130KB packument,
+    // which is served `public, max-age=300` — the same 300s as this loop's
+    // budget — so a copy cached just before the publish stays stale for the
+    // whole run. The version document is `cf-cache-status: DYNAMIC`. The stub
+    // refuses the packument outright, so this fails if the endpoint regresses.
+    const { dir, log } = withStub();
+    const result = runScript(withEnv(dir, log, {
+      STUB_NEVER_PUBLISHED: '1',
+      STUB_LATEST: REGISTRY_SERVES,
+      READBACK_INTERVAL_SECONDS: '0',
+      READBACK_TIMEOUT_SECONDS: '0',
+    }));
+
+    const calls = fs.readFileSync(`${log}.calls`, 'utf8').trim().split('\n');
+    // The log is shared with the diagnostic reads the exhaustion banner makes,
+    // so the assertion separates them: every curl call is the version document,
+    // and no npm call is the shape the poll used to make.
+    const curlCalls = calls.filter((c) => c.startsWith('-fsS '));
+    expect(curlCalls.length).toBeGreaterThan(0);
+    for (const call of curlCalls) {
+      expect(call).toBe(`-fsS https://registry.npmjs.org/@commonlyai%2fcli/${WANT}`);
+    }
+    for (const call of calls.filter((c) => c.startsWith('view '))) {
+      // The old poll shape was `view <name>@<version> version`; the surviving
+      // npm calls are `view <name> dist-tags --json` and `view <name> version`,
+      // which carry no second `@`.
+      expect(call).not.toMatch(/^view .+@[0-9].* version$/);
+    }
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`GET https://registry.npmjs.org/@commonlyai%2fcli/${WANT}`);
+    expect(result.stdout).toContain('version document');
   });
 
   // The count is a BOUND, not a number, because the script's budget clock is
@@ -225,13 +299,18 @@ describe('npm publish read-back', () => {
     // The version that never appeared, the one the registry actually serves,
     // and npm's own last error — the three facts the old message withheld.
     expect(result.stdout).toContain(`::error::${NAME}@${WANT}`);
+    // The endpoint the poll read is named in the banner: "which question did we
+    // ask" is part of the diagnosis, and the packument lines below are labelled
+    // as the cached reads they are.
+    expect(result.stdout).toContain(`GET https://registry.npmjs.org/@commonlyai%2fcli/${WANT}`);
+    expect(result.stdout).toContain('uncached');
     // The banner a human reads first: what follows it is the registry's
     // actual state, and it is the line that turns a red run into a
     // diagnosis instead of a mystery.
     expect(result.stdout).toContain(`--- what the registry serves for ${NAME} ---`);
     expect(result.stdout).toMatch(new RegExp(`dist-tags: .*${REGISTRY_SERVES}`));
     expect(result.stdout).toMatch(new RegExp(`latest: +${REGISTRY_SERVES}`));
-    expect(result.stdout).toContain('E404');
+    expect(result.stdout).toContain('The requested URL returned error: 404');
     expect(attempts(log)).toBe(1);
   });
 
