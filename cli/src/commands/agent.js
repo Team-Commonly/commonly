@@ -39,6 +39,7 @@ import {
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
+import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
@@ -1045,6 +1046,7 @@ export const performRun = ({
       // goes in a sibling field instead of being spelled into the reason.
       return {
         outcome: 'no_action',
+        refused: { reason: 'cascade-cap' },
         reason: 'cascade-cap',
         details: {
           // The id of what was dropped. `reason` and `streak` say a refusal
@@ -1139,16 +1141,19 @@ export const performRun = ({
     } finally {
       // A silent, normally completed human wake is an explicit decline, not
       // a successful answer. Tell the kernel so it can hand the message to
-      // exactly one remaining original listener. Any posted reply, refusal
-      // with a reason, or thrown spawn retains completion/legacy semantics:
-      // re-offering those would duplicate a visible response or defeat normal
-      // at-least-once redelivery after an infrastructure failure.
-      const claimOutcome = event.type === 'message.posted'
-        && event.payload?.senderIsHuman === true
-        && turnResult?.outcome === 'no_action' && !turnResult?.reason
-        ? 'declined'
-        : (turnResult ? 'completed' : undefined);
-      await claimKeeper?.release(claimOutcome);
+      // exactly one remaining original listener. A refusal — the upstream
+      // route down, or the server refusing the post — is NAMED (TASK-099): it
+      // carries its class so the kernel's record can tell "answered" from
+      // "never ran", and on a human wake the kernel hands it on exactly as it
+      // does a decline, because a failure local to THIS seat must not make a
+      // human's message disappear. A thrown spawn keeps the legacy release, so
+      // normal at-least-once redelivery still happens after an infrastructure
+      // failure. One decision point, shared with the batch path — see
+      // lib/claim-outcome.js.
+      const release = claimReleaseFor(event, turnResult);
+      await claimKeeper?.release(release.outcome, {
+        reason: release.reason, status: release.status,
+      });
     }
   };
 
@@ -1397,6 +1402,7 @@ export const performRun = ({
     if (deliveryRefusal) {
       return {
         outcome: 'no_action',
+        refused: { reason: 'delivery-refused' },
         reason: deliveryRefusal.reason,
         details: {
           mode: deliveryRefusal.mode,
@@ -1409,14 +1415,22 @@ export const performRun = ({
         },
       };
     }
-    // A refusal is not a decline. `no_action` with no reason means "the agent
-    // chose not to answer" and hands a human wake to one remaining listener;
-    // nothing about the agent's choice happened here — the model never ran — so
-    // say what did happen, and let the event close rather than fan a
-    // route-wide refusal out across the rest of the fleet.
+    // A refusal is not a decline, and it is not a close either. `no_action`
+    // with no reason means "the agent chose not to answer" and hands a human
+    // wake to one remaining listener; nothing about the agent's choice happened
+    // here — the model never ran — so the release says WHICH class of refusal
+    // it was (TASK-099). The kernel routes from there: on a human wake the
+    // message is handed to one remaining listener exactly as a decline is
+    // (this seat's upstream route being down says nothing about theirs), and on
+    // any other wake it is terminal. The free-text detail stays in the seat
+    // log and the event ack; the kernel records the class.
     if (!delivered && upstream) {
       return {
         outcome: 'no_action',
+        refused: {
+          reason: 'upstream-refused',
+          ...(Number.isInteger(upstream.status) ? { status: upstream.status } : {}),
+        },
         reason: `upstream-refused-${upstream.status}`,
         details: {
           status: upstream.status,
@@ -1461,6 +1475,7 @@ export const performRun = ({
 
   const batchAdmissionResult = (event, admission) => ({
     outcome: 'no_action',
+    refused: { reason: 'cascade-cap' },
     reason: 'cascade-cap',
     details: {
       messageId: event?.payload?.messageId || null,
@@ -1646,14 +1661,14 @@ export const performRun = ({
         .filter((entry) => entry.claimKeeper)
         .map(async (entry) => {
           // Preserve ADR-018 D6.1 per binding message: a silent human
-          // broadcast may be handed to one remaining listener, while every
-          // other completed batch item closes normally.
-          const claimOutcome = entry.event.type === 'message.posted'
-            && entry.event.payload?.senderIsHuman === true
-            && turnResult?.outcome === 'no_action' && !turnResult?.reason
-            ? 'declined'
-            : (turnResult ? 'completed' : undefined);
-          await entry.claimKeeper.release(claimOutcome);
+          // broadcast may be handed to one remaining listener, a refusal
+          // closes with its reason, and every other completed batch item
+          // closes normally. Same decision point as the single-event path.
+          // Same decision point as the single-event path.
+          const release = claimReleaseFor(entry.event, turnResult);
+          await entry.claimKeeper.release(release.outcome, {
+            reason: release.reason, status: release.status,
+          });
         }));
     }
   };
@@ -1743,7 +1758,7 @@ export const performRun = ({
             try {
               const deliveryId = event.payload?.deliveryId;
               await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
-                result: entry.result,
+                result: ackResultFor(entry.result),
                 ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
               });
             } catch (ackErr) {
@@ -1843,7 +1858,7 @@ export const performRun = ({
         try {
           const deliveryId = event.payload?.deliveryId;
           await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
-            result,
+            result: ackResultFor(result),
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {

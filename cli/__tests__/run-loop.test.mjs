@@ -1821,15 +1821,20 @@ describe('performRun — ADR-018 enforcement', () => {
     events,
     messages = [{ _id: 'msg-1', isBot: false, self: false }],
     claimResult = { claimed: true, expiresAt: 'later' },
+    messagesResult = {},
+    delImpl = async () => ({ released: true }),
   }) => {
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) {
         if (claimResult instanceof Error) throw claimResult;
         return typeof claimResult === 'function' ? claimResult() : claimResult;
       }
+      if (route.startsWith('/api/agents/runtime/pods/') && route.endsWith('/messages')) {
+        return messagesResult;
+      }
       return {};
     });
-    const del = jest.fn(async () => ({ released: true }));
+    const del = jest.fn(delImpl);
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
       if (route.endsWith('/messages')) return { messages };
@@ -1935,14 +1940,13 @@ describe('performRun — ADR-018 enforcement', () => {
   });
 
   // TASK-096 / vera (71090, 71091): the release outcome keys on the PRESENCE
-  // of a reason, not its value — `outcome === 'no_action' && !turnResult?.reason`
-  // at :1148 and again at :1653. Deleting that conjunct at both sites left the
-  // whole cli suite green (759 passed), because nothing paired a reason-bearing
-  // `no_action` with a bare one on the SAME path: the NO_REPLY test above has no
-  // reason, and the claim-held stand-down releases nothing at all. These two are
-  // that pair — they differ in exactly one input, the refusal — so moving the
-  // conjunct reddens exactly one of them and its name says which side moved.
-  test('a human broadcast refused upstream releases completed, not declined', async () => {
+  // of a reason, not its value. TASK-099 then split that reason-bearing case
+  // out into its own outcome, and the corrected ruling (71194/71195/71210)
+  // made the CLASS an enum: `upstream-refused` (+ the HTTP status),
+  // `cascade-cap`, `delivery-refused`. These tests move together — each
+  // differs in one input, so a rule change that reddens one and not the other
+  // says which side moved.
+  test('a human broadcast refused upstream releases refused, with its class and status', async () => {
     const { post, del } = makeClient({
       events: [makeClaimEvent({
         type: 'message.posted',
@@ -1957,10 +1961,16 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // `completed`, not `declined`: a route-wide refusal would queue every other
-    // seat behind the same wall rather than rescuing the wake. TASK-099 is the
-    // third outcome that lets a seat-specific refusal hand off instead.
-    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+    // `refused`, not `declined`: the message was not declined, THIS runtime
+    // could not take it — and the kernel hands it to one remaining listener
+    // for exactly that reason. The class and status are what let the kernel's
+    // record answer "how many 429s" instead of erasing both causes with a
+    // DELETE. The free text stays in the log and the ack.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+    });
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
       {
@@ -1971,6 +1981,32 @@ describe('performRun — ADR-018 enforcement', () => {
         },
       },
     );
+  });
+
+  test('a server refusal to deliver releases refused as delivery-refused', async () => {
+    // The SECOND producer of `refused`: the post route answers 200 with
+    // { refused: true } rather than erroring. Same outcome, different class —
+    // no upstream HTTP status exists here, so none is recorded. The server's
+    // own wording (`consecutive_run_cap`) is free text and stays in the log.
+    const { del } = makeClient({
+      events: [makeClaimEvent()],
+      messagesResult: {
+        success: false,
+        refused: true,
+        reason: 'consecutive_run_cap',
+        consecutive: 3,
+        guidance: 'Wait for someone else to speak; do not retry unchanged.',
+      },
+    });
+    const spawn = jest.fn(async () => ({ text: 'a reply the server will refuse' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
   });
 
   test('the paired control: the same wake with no refusal still releases declined', async () => {
@@ -1989,6 +2025,87 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
+  });
+
+  test('an older kernel that rejects the refused outcome still releases — one fallback', async () => {
+    // The deploy window the enum makes unavoidable: the CLI ships before the
+    // server it talks to understands the third outcome, and that server answers
+    // 400 ("outcome must be declined or completed"). Without a fallback the
+    // release is lost and the lease is held to expiry — the seat's message
+    // stays claimed with nobody on it. One retry as `completed` is exactly what
+    // the release did before this outcome existed.
+    const rejected = Object.assign(new Error('outcome must be declined or completed'), { status: 400 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async (_path, body) => {
+        if (body?.outcome === 'refused') throw rejected;
+        return { released: true };
+      },
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenNthCalledWith(1, CLAIM_PATH, {
+      outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(del).toHaveBeenNthCalledWith(2, CLAIM_PATH, { outcome: 'completed' });
+    expect(del).toHaveBeenCalledTimes(2);
+  });
+
+  test('the fallback is bounded to a 400 — a 500 is not a second write', async () => {
+    // A 5xx says the server is broken, not that it does not know the outcome.
+    // Retrying a refusal on a 500 would turn one failed release into two writes
+    // for no benefit — and the lease is already best-effort from here.
+    const broke = Object.assign(new Error('claim_release_failed'), { status: 500 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async () => { throw broke; },
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+  });
+
+  test('the fallback is bounded to a refusal — a 400 on another outcome is not retried', async () => {
+    // The fallback exists because an OLDER KERNEL does not know `refused`. A
+    // 400 on a decline or a completion means something else is wrong with the
+    // request, and re-sending it as `completed` would silently write a
+    // different outcome than the one this seat decided on.
+    const rejected = Object.assign(new Error('bad request'), { status: 400 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async () => { throw rejected; },
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
   });
 
