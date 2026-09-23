@@ -2684,3 +2684,120 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 });
+
+// TASK-111, ruling B (wren 71640/71641): the withhold goes at the performRun
+// site, in memory, record untouched. The broker arrives as an injected MCP
+// entry written by hand into the seat's own record — there is no server
+// projection to gate (`GRANT_BROKER_URL` is imported by one route, the daemon
+// assignment, and that one already refuses) — so `commonly agent run` under
+// launchd is the only other site that can see the declaration.
+describe('performRun — the grant broker is withheld where no daemon will judge it', () => {
+  const INSTANCE = 'http://localhost:5000';
+  const BROKER = { name: 'commonly-grant-broker', url: '${COMMONLY_API_URL}/api/mcp/grants/g1' };
+  const OTHER = { name: 'commonly', url: '${COMMONLY_API_URL}/api/mcp' };
+
+  let delivery = 0;
+  const runOnce = async ({ environment, adapterName = 'claude' }) => {
+    // A unique delivery per call: the file's earlier tests record handled
+    // deliveries in the same store, and a reused id is answered with
+    // `duplicate delivery … re-acking without batch spawn` — which reads as a
+    // broker bug when it is only a fixture collision.
+    delivery += 1;
+    const events = [makeEvent({
+      _id: `evt-broker-${delivery}`,
+      payload: { content: 'hello', deliveryId: `delivery-broker-${delivery}` },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'hello back' }));
+    const adapter = { name: adapterName, detect: stubAdapter.detect, spawn };
+    const log = jest.fn();
+    const { stop } = performRun({
+      instanceUrl: INSTANCE,
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      instanceId: 'default',
+      setTimeoutImpl: noopTimeout,
+      environment,
+      log,
+    });
+    // Drain until the turn reaches the adapter rather than a fixed depth: the
+    // file's DRAIN_DEPTH assumes the chain is 10 await boundaries, and the
+    // ordering of its macrotasks relative to a full-file run is not guaranteed
+    // (the fixed depth was enough in isolation and one boundary short here).
+    // Waiting on the condition is what the assertion actually needs.
+    for (let i = 0; i < 400 && spawn.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setImmediate(r));
+    }
+    stop();
+    expect(spawn).toHaveBeenCalled();
+    const [, options] = spawn.mock.calls[0];
+    return { spawn, log, spawned: options.environment };
+  };
+
+  test('a seat declaring no sandbox does not spawn the broker', async () => {
+    const environment = { mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('grant_broker_unconfined (sandbox_absent'));
+  });
+
+  test('a confining seat keeps its broker', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [BROKER, OTHER] };
+    const { spawned } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([BROKER, OTHER]);
+  });
+
+  // Vera's mapping case, at the run path: with no mode declared the legacy
+  // mapping is the only gate on the record, and `internal` reads as `public`.
+  test('a legacy internal trust with no declared mode still carries the broker', async () => {
+    const environment = { sandbox: { trust: 'internal' }, mcp: [BROKER] };
+    const { spawned } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([BROKER]);
+  });
+
+  test('a non-public trust is withheld, named as its own reason', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'private' }, mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('sandbox_trust_not_public'));
+  });
+
+  // An adapter that confines on no host cannot be handed a granter's authority
+  // even when it declares a confining sandbox — the declaration is not honoured
+  // there. The suite's own stub adapters are named 'stub', so this is also the
+  // case every other test in this file runs through.
+  test('an adapter that cannot confine loses the broker whatever it declares', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment, adapterName: 'stub' });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('adapter_cannot_confine'));
+  });
+
+  test('the record is untouched, and an untouched environment is passed by identity', async () => {
+    // Withheld: the entry stays on the record (the daemon still judges this
+    // host) and the seat spawns from a copy that lacks it.
+    const withheld = { mcp: [BROKER] };
+    const first = await runOnce({ environment: withheld });
+    expect(withheld.mcp).toEqual([BROKER]);
+    expect(first.spawned).not.toBe(withheld);
+    // Nothing to withhold: the same object reaches the adapter, because the
+    // derive sites use identity as their dirty check.
+    const clean = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [OTHER] };
+    const second = await runOnce({ environment: clean });
+    expect(second.spawned).toBe(clean);
+  });
+
+  test('a foreign server under the broker path is not ours and is left alone', async () => {
+    const foreign = { name: 'someone-else', url: 'https://other.example.com/api/mcp/grants/g1' };
+    const environment = { mcp: [foreign] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([foreign]);
+    // The loop logs for other reasons (cascade defaults), so the assertion is
+    // about the refusal it did NOT emit, not about silence.
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('grant_broker_unconfined'));
+  });
+});

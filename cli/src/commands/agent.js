@@ -34,6 +34,7 @@ import { detectMemorySources, composeImport, importMemory } from '../lib/memory-
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
 import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
+import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
@@ -872,6 +873,27 @@ export const performRun = ({
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
+
+  // THE SEAT'S OWN RECORD IS THE ONLY DECLARATION THERE IS. The broker reaches a
+  // seat as an injected MCP entry written by hand into its environment — no
+  // server projection puts it there (`GRANT_BROKER_URL` is imported by one
+  // route, the daemon assignment, and that one already refuses). So a seat run
+  // by `commonly agent run` under launchd spawns the entry verbatim, and the
+  // confinement it promises is declared in a different field (`sandbox`), which
+  // can disagree. The daemon half of this refusal already runs
+  // (`daemon-supervisor.js`); this is the same predicate at the only other site
+  // that can see the record — same code, so one refusal with two emitters.
+  //
+  // IN MEMORY, RECORD UNTOUCHED (wren 71641): the withheld environment is what
+  // the adapter spawns with, and the stored record keeps its broker, so the
+  // daemon stays the layer that judges a host it knows. Applied once for the
+  // run rather than per turn: `agent run` reads its record once at boot.
+  const seatEnvironment = withholdGrantBroker(environment, adapter?.name, {
+    instanceUrl,
+    onRefuse: (refusal, names) => log(
+      `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
+    ),
+  });
   let running = true;
   // Stop-after-N-auth-failures: without this, a revoked token leaves the
   // poller hammering 401s forever at 60s backoff — invisible to the user.
@@ -1195,7 +1217,7 @@ export const performRun = ({
       cwd: agentCwd,
       env: process.env,
       memoryLongTerm,
-      environment,
+      environment: seatEnvironment,
       // Runtime context the Claude/Codex adapters expose only to their
       // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
       // literal on disk and lets its native MCP parser expand them, so the
