@@ -503,14 +503,17 @@ export const updateAgentConfiguration = async ({
  * the call site. What an adapter can honour at all is just a mode and a name, so
  * that check is in here, with witnesses of both signs.
  *
- * The raw compare inside `resolvePublicSandboxMode` (mode.js:31) bites whichever
- * caller hands it a still-raw object. Both adapters normalize at their own entry
- * (claude.js:615, codex.js:546) and pass the normalized object on, which is why
- * their suites confined a legacy record on main all along. The grant-broker guard
- * normalizes for its own trust check (`effectiveTrust`, grant-broker-guard.js:193)
- * and then hands it the raw one, so its symptom is a false
- * `sandbox_mode_unenforceable` refusal — the same mismatch #1838 patches in
- * mode.js (Vera 71676).
+ * Why this gate was the one that disagreed: the resolver compared the RAW trust,
+ * so a caller that did not normalize first read a legacy `internal` record as
+ * non-public. The adapters normalize at their own entry (claude.js:615,
+ * codex.js:546) and passed the normalized object on, which is why their suites
+ * confined a legacy record all along; the grant-broker guard normalized for its
+ * own trust check and then handed the resolver the raw object, so its symptom was
+ * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * main now — the resolver reads the effective trust (mode.js:38) and the guard
+ * imports the same reader from environment.js (grant-broker-guard.js:186) — so
+ * this helper needs no coupling to them: it normalizes once, here, before its own
+ * two gates, because those gates compare `trust` directly.
  */
 export const resolveAttachSandbox = ({
   environment, adapterName, platform = process.platform,
