@@ -28,7 +28,8 @@
 # CDN with `cache-control: public, max-age=300`: a copy cached moments before
 # the publish stays stale for almost exactly as long as this loop is willing to
 # wait (the budget default is also 300s), which showed up as 31 E404s followed
-# by success with no propagation delay involved (Wren/Vera 71761-71763). The
+# by success with no propagation delay involved (Vera 71761-71763: the cache
+# headers, the 300s/300s coincidence, and the endpoint). The
 # version document is `cf-cache-status: DYNAMIC` — not edge-cached at all,
 # 2.4KB — so it answers the question this check actually means to ask. `curl`
 # also sidesteps the runner's local npm cache, which `--prefer-online` only
@@ -41,6 +42,11 @@
 #   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default 300
 #   READBACK_INTERVAL_SECONDS       gap between polls, default 10
 #   READBACK_REGISTRY_URL           registry base, default https://registry.npmjs.org
+#
+# `node` on PATH: the version document is parsed as JSON. The publish job already
+# guarantees it (`actions/setup-node` at npm-publish.yml:69 runs before this), and
+# the stub-driven tests never reach it — but this is the one script that runs
+# after a publish has already happened, so its dependencies belong here.
 #
 # The budget is measured on a CLOCK, not by adding up the gaps. Summing the
 # intervals made the budget depend on an env var the caller controls: at
@@ -109,6 +115,6 @@ echo "--- last error from: curl -fsS $DOC_URL ---"
 if [ -s "$stderr_file" ]; then
   cat "$stderr_file"
 else
-  echo "(npm view wrote nothing to stderr — read error, or an empty response)"
+  echo "(curl wrote nothing to stderr — read error, or an empty response)"
 fi
 exit 1

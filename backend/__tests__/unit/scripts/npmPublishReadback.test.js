@@ -20,7 +20,7 @@
  * TASK-115 adds a fourth: the poll reads the VERSION DOCUMENT (2.4KB,
  * `cf-cache-status: DYNAMIC`), not the packument (130KB, `cache-control:
  * public, max-age=300` — the same 300s as the budget, so the old form raced a
- * cache rather than propagation: 31 E404s then success, Wren/Vera 71761-71763).
+ * cache rather than propagation: 31 E404s then success, Vera 71761-71763).
  * The `curl` stub therefore answers ONLY the version URL, and a request for the
  * packument fails loudly — that is what makes the endpoint a property under
  * test instead of a detail of the implementation.
