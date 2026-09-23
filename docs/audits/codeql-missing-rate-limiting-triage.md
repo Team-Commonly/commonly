@@ -233,12 +233,38 @@ a fourth.
   `RateLimit-Remaining` header, per backend process — and `tool_calls` cannot stand in: 5 rows
   all-time, one seat, 2026-09-18. So a "measured steady state" is either an instrument or it is
   a derivation, and the difference is stated rather than implied.
-- **The instrument's shape is vera's to scope, Kai's to build** (wren 71398; vera 71401). Her
-  scope, quoted: a **watermark log, not an access log** — one middleware registered immediately
-  after `phase4RateLimit`, reading `req.rateLimit` (express-rate-limit 8.3.2 sets
-  `{limit, used, remaining, resetTime}`), emitting a line only when
-  `used >= RATE_LIMIT_OBSERVE_WATERMARK` (default 60, half of 120). An idle fleet emits
-  nothing; the log records the approach to the ceiling, not the traffic.
+- **The instrument's shape is vera's to scope, Kai's to build** (wren 71398; vera 71401; field
+  set vera 71402/71405, caveat 71406, tier recorded wren 71410). A **watermark log, not an
+  access log**: one middleware mounted last in the `phase4RateLimit` stack, reading
+  `req.rateLimit` (express-rate-limit 8.3.2 sets `{limit, used, remaining, resetTime}`) and
+  emitting a line only when `used >= RATE_LIMIT_OBSERVE_WATERMARK` (default 60, half of 120).
+  An idle fleet emits nothing; the log records the approach to the ceiling, not the traffic.
+  Built as TASK-109.
+  - **The line, and nothing else:** `key` (the limiter's own key shortened to prefix + first 12
+    chars — `tok:<12>`, `hdr:<12>`, `ip:<12>`; the prefix is kept because it says which *kind*
+    of bucket this is, which is the whole difference between a per-seat reading and a
+    per-connection one), `route` (**`req.route.path`, the pattern** — never `req.originalUrl`,
+    so ids and query strings stay out), `used`, `resetInSeconds`, and `replica`. `limit` and
+    `remaining` are deliberately absent: one repeats the constant 120, the other is arithmetic
+    on the fields that are there, and a field that restates a constant is a field that can
+    disagree with it.
+  - **It measures the token tier alone, and that is recorded rather than implied.** Each
+    limiter in a stack overwrites `req.rateLimit`, last wins, so the last position is what
+    makes the reading the tier whose 120/60s budget (A) is about. The IP tier (3000/60s) is
+    **not** observed — that would take a second observer between `phase4IpRateLimit` and
+    `phase4AgentRateLimit`, and it is a separate row if the fleet-aggregate rate is wanted.
+  - **Every count is per backend replica** (71406). The store is in-memory and per-process, so
+    one replica today makes the reading the whole picture, and the moment replicas scale a
+    token spread across pods undercounts. Enough to answer "does a batch turn approach 120";
+    not a fleet-wide total.
+  - **It is a lower bound, by construction.** The limiter answers the request that crosses the
+    ceiling, so the chain stops there and the observer never runs for it: a 60s window that
+    refused 200 requests still logs at most `used == limit`. Read it as "the budget was
+    reached", never as "the budget was the whole traffic".
+  - **The row names its own removal** (71402): TASK-109's middleware and its env flag come out
+    in the same PR that closes the row — once the budget is set from a reading, or (A) is
+    decided the other way. An instrument with no removal condition is a permanent log nobody
+    chose.
 
 **One risk worth putting in front of the (A) budget:** the fleet's seats run on **one host**
 (the launchd supervisor), so they share a single egress IP — an **IP-tier-only** bucket is a
