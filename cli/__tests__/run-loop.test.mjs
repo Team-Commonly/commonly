@@ -132,6 +132,85 @@ describe('performRun', () => {
     );
   });
 
+  test('a refused model route is named in the log and reported, not posted as silence', async () => {
+    // TASK-096. pi exits 0 with no text when the route refuses, so this turn
+    // used to reach the seat log as `no wrapper-post (empty output)` — the same
+    // line a seat that simply had nothing to say produces. Measured cost of that
+    // ambiguity: two and a half days of a 429 budget refusal read as an agent
+    // fault (Kai, 2026-09-20..22).
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'are you there?' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+    }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    const refusalLine = lines.find((line) => line.includes('upstream refused'));
+    expect(refusalLine).toContain('upstream refused 429');
+    expect(refusalLine).toContain('Budget has been exceeded!');
+    // The old line must be GONE for this case, not merely accompanied: a reader
+    // grepping for `no wrapper-post` should find only genuine silence.
+    expect(lines.some((line) => line.includes('no wrapper-post'))).toBe(false);
+
+    // Nothing was delivered, and the ack says why rather than saying "declined" —
+    // `no_action` with no reason would hand a human wake to another listener
+    // while a route-wide refusal queues every other seat behind the same wall.
+    expect(mockPost).not.toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', expect.anything());
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+        },
+      },
+    );
+  });
+
+  test('an empty turn with no refusal still reads as ordinary silence', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'noop' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: '', upstream: null }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(lines.some((line) => line.includes('no wrapper-post (empty output)'))).toBe(true);
+    expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
   test('one same-pod inbox page becomes one turn, carries the true count, and claims binding items before spawn', async () => {
     const events = [
       makeEvent({ _id: 'evt-batch-a', type: 'message.posted', payload: { content: 'first context', messageId: 'msg-a' } }),
@@ -1853,6 +1932,64 @@ describe('performRun — ADR-018 enforcement', () => {
     stop();
 
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+  });
+
+  // TASK-096 / vera (71090, 71091): the release outcome keys on the PRESENCE
+  // of a reason, not its value — `outcome === 'no_action' && !turnResult?.reason`
+  // at :1148 and again at :1653. Deleting that conjunct at both sites left the
+  // whole cli suite green (759 passed), because nothing paired a reason-bearing
+  // `no_action` with a bare one on the SAME path: the NO_REPLY test above has no
+  // reason, and the claim-held stand-down releases nothing at all. These two are
+  // that pair — they differ in exactly one input, the refusal — so moving the
+  // conjunct reddens exactly one of them and its name says which side moved.
+  test('a human broadcast refused upstream releases completed, not declined', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    // `completed`, not `declined`: a route-wide refusal would queue every other
+    // seat behind the same wall rather than rescuing the wake. TASK-099 is the
+    // third outcome that lets a seat-specific refusal hand off instead.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded!' },
+        },
+      },
+    );
+  });
+
+  test('the paired control: the same wake with no refusal still releases declined', async () => {
+    // Identical to the test above except that the refusal is absent. That one
+    // difference is the entire routing input, so this assertion is what fails
+    // if the pair ever stops differing — the NO_REPLY test above reaches
+    // `declined` by a different route and cannot stand in for it.
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
   });
 
   test('a claim-route failure fails OPEN: the turn proceeds unguarded (#887 rule)', async () => {

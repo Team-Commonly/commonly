@@ -42,6 +42,7 @@ import {
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
+import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -1249,13 +1250,22 @@ export const performRun = ({
     const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
+    // A refused model route is not a silent turn. pi reports the refusal on its
+    // own JSON stream and exits 0 with no text, so before this the seat log read
+    // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
+    // nowhere (TASK-096; two and a half days of this on one seat).
+    const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
         const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
-        log(`[${event.type}] no private response (${reason})`);
+        // The same naming rule as the chat path below: an ask that went
+        // unanswered because the route refused must not read as the agent
+        // having nothing to say.
+        if (upstream) log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — no private response`);
+        else log(`[${event.type}] no private response (${reason})`);
       } else {
         try {
           await client.post(
@@ -1304,6 +1314,11 @@ export const performRun = ({
           + `(matched message ${suppressedBy.id} by ${suppressedBy.author} `
           + `via ${suppressedBy.basis})`,
         );
+      } else if (upstream) {
+        // The status is always named; the body only when the keep-list kept one.
+        // No retry is added: the adapter's own ladder has already run, and a
+        // refused route is refused on the next attempt too.
+        log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — nothing posted this turn`);
       } else {
         log(`[${event.type}] no wrapper-post (${reason}) — nothing posted this turn`);
       }
@@ -1391,6 +1406,21 @@ export const performRun = ({
             ? { consecutive: deliveryRefusal.consecutive }
             : {}),
           ...(deliveryRefusal.guidance ? { guidance: deliveryRefusal.guidance } : {}),
+        },
+      };
+    }
+    // A refusal is not a decline. `no_action` with no reason means "the agent
+    // chose not to answer" and hands a human wake to one remaining listener;
+    // nothing about the agent's choice happened here — the model never ran — so
+    // say what did happen, and let the event close rather than fan a
+    // route-wide refusal out across the rest of the fleet.
+    if (!delivered && upstream) {
+      return {
+        outcome: 'no_action',
+        reason: `upstream-refused-${upstream.status}`,
+        details: {
+          status: upstream.status,
+          ...(upstream.detail ? { detail: upstream.detail } : {}),
         },
       };
     }
