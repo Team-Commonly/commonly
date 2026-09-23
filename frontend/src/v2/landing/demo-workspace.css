@@ -151,6 +151,13 @@
 
 .v2-root button.v2-demo__pod:hover { background: var(--v2-border-soft); }
 
+/* Hover outranks the active rule below, so without this pair hovering the open
+   pod wipes the tint that says it is open. The product's own hover rule is
+   weaker than its active rule (.v2-pods__item:hover = 0,2,0 against
+   .v2-root button.v2-pods__item--active = 0,2,1), so pairing here follows the
+   component rather than inventing a state it does not have. */
+.v2-root button.v2-demo__pod--active:hover { background: var(--v2-accent-soft); }
+
 /* The live rail's active row (v2.css .v2-pods__item--active): accent tint +
    a 3px accent mark + accent-free title. The design board drew it cobalt-filled,
    which is not what the product does; ux-lead's gate says follow the component. */
@@ -576,7 +583,14 @@
     border: 1px solid var(--v2-border);
   }
 
-  .v2-root button.v2-demo__pod--active { border-color: transparent; }
+  /* The row rule above has the same specificity as the desktop --active rule
+     and sits later in the file, so it wins: without a background here the phone
+     strip paints the open pod exactly like its neighbours and the active row
+     loses its only position cue. (ux-lead, #1855 gate at 62ceda24.) */
+  .v2-root button.v2-demo__pod--active {
+    background: var(--v2-accent-soft);
+    border-color: transparent;
+  }
 
   .v2-root button.v2-demo__pod--active::before {
     left: -1px;
@@ -604,6 +618,14 @@
   .v2-demo__thread-meta { flex-direction: column; align-items: flex-end; gap: 2px; }
   .v2-demo__composer-wrap { margin: 0 12px 12px; }
 
+  .v2-demo__panel { padding: 12px; }
+}
+
+/* Two columns are a 641-760 affordance. At 390 each column is ~156px against a
+   board row that needs ~230, so every row title truncated to an ellipsis with
+   nothing left to read — a phone gets one column instead, with the needs-you
+   panel hoisted to the top. (ux-lead, #1855 gate at 62ceda24.) */
+@media (max-width: 760px) and (min-width: 641px) {
   .v2-demo__inspector {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -611,5 +633,9 @@
   }
 
   .v2-demo__needs { grid-column: 1 / -1; order: -1; }
-  .v2-demo__panel { padding: 12px; }
+}
+
+@media (max-width: 640px) {
+  .v2-demo__inspector { gap: 8px; }
+  .v2-demo__needs { order: -1; }
 }

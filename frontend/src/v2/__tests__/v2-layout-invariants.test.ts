@@ -2135,8 +2135,12 @@ describe('the landing hero demo (TASK-147)', () => {
 
   // demo-workspace.css carries exactly one phone block (v2.css carries many,
   // which is why it needs a different helper there).
-  const phoneBlock = (css: string): string => {
-    const at = css.indexOf('@media (max-width: 760px)');
+  // Match an at-rule by its FULL text, never by a prefix: `@media (max-width:
+  // 760px)` is a prefix of the 641-760 query beside it, so a prefix match reads
+  // whichever the file happens to put first and the guard quietly asserts on the
+  // wrong block.
+  const mediaAt = (css: string, atRule: string): string => {
+    const at = css.indexOf(atRule);
     if (at < 0) return '';
     const open = css.indexOf('{', at);
     let depth = 0;
@@ -2147,6 +2151,8 @@ describe('the landing hero demo (TASK-147)', () => {
     }
     return css.slice(at, end + 1);
   };
+
+  const phoneBlock = (css: string): string => mediaAt(css, '@media (max-width: 760px) {');
 
   test('the demo is the workspace at its own canvas, not a smaller invention', () => {
     expect(ruleBody(demo, '.v2-demo')).toContain('max-width: 1312px');
@@ -2173,6 +2179,38 @@ describe('the landing hero demo (TASK-147)', () => {
     // phone the stage is auto-height, so without this floor the hero's thread
     // renders as a blank strip.
     expect(phone).toMatch(/\.v2-demo__log \{[^}]*min-height: 300px;/);
+  });
+
+  test('the active pod row keeps its tint on a phone, where a later rule would clear it', () => {
+    const phone = phoneBlock(demo);
+    // ux-lead's 390 gate (#1855, at 62ceda24) measured the strip painting the
+    // open pod like its neighbours. The cause is order, not a missing rule: the
+    // phone row rule below has the same specificity as the desktop --active rule
+    // and comes later, so its surface colour wins and the rail loses its only
+    // position cue at exactly the width where the strip IS the navigation.
+    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod \{[^}]*background: var\(--v2-surface\);/);
+    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod--active \{[^}]*background: var\(--v2-accent-soft\);/);
+    // And hover cannot wipe it either — hover outranks the active rule, which is
+    // the opposite of the product, where .v2-pods__item:hover is weaker than
+    // .v2-root button.v2-pods__item--active.
+    expect(demo).toMatch(/\.v2-root button\.v2-demo__pod--active:hover \{[^}]*background: var\(--v2-accent-soft\);/);
+  });
+
+  test('the inspector is one column at 390 and two only from 641 up', () => {
+    // At 390 the two columns are ~156px against a board row that needs ~230, so
+    // every row title truncated to an ellipsis with nothing left to read
+    // (ux-lead, #1855 gate at 62ceda24).
+    const twoUp = mediaAt(demo, '@media (max-width: 760px) and (min-width: 641px)');
+    expect(twoUp).toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    expect(twoUp).toMatch(/\.v2-demo__needs \{[^}]*grid-column: 1 \/ -1;/);
+    // The phone block itself must not turn the inspector back into a grid: it
+    // covers widths the 640 rule below also covers, and it comes first, so the
+    // two-column layout would win at 390 as surely as it did before the fix.
+    expect(phoneBlock(demo)).not.toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns/);
+    // Below 641 it is the base flex column again, with needs hoisted to the top.
+    expect(ruleBody(demo, '.v2-demo__inspector')).toContain('flex-direction: column');
+    const oneUp = mediaAt(demo, '@media (max-width: 640px) {');
+    expect(oneUp).toMatch(/\.v2-demo__needs \{ order: -1; \}/);
   });
 
   test('the hero is the product, not the video it replaced', () => {
