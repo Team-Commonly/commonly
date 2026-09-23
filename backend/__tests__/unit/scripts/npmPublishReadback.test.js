@@ -135,17 +135,40 @@ describe('npm publish read-back', () => {
     expect(attempts(log)).toBe(6);
   });
 
-  test('the budget is honoured: with a 2s budget and a 1s interval it stops at 3 attempts', () => {
+  // The count is a BOUND, not a number, because the script's budget clock is
+  // `date +%s` — one-second granularity (verify-npm-publish-readback.sh:55,60)
+  // — and every attempt spawns a stub process. Measured on the same code:
+  //   · a fast stub           → 3 attempts
+  //   · a loaded CI runner    → 2  (#1838's run, job 107092464765: expected 3,
+  //                                received 2, in a PR touching nothing here)
+  //   · STUB_SLEEP_SECONDS=1  → 1  (reproduced on demand on this box)
+  // An exact count made the only required check flake red for every open PR,
+  // because the assertion was about the runner's speed rather than about this
+  // script's decision. What the contract promises is that the budget stops the
+  // loop within one interval of expiring, which is what is asserted here — and
+  // the slow row keeps a strict assertion by pinning the cost profile that the
+  // fast row is racing.
+  test.each([
+    ['a fast stub', {}, 2, 3],
+    ['a stub that spends the budget in its own calls', { STUB_SLEEP_SECONDS: '1' }, 1, 2],
+  ])('the budget is honoured: %s stops inside one interval of expiring', (_label, extra, min, max) => {
     const { dir, log } = withStub();
     const result = runScript(withEnv(dir, log, {
       STUB_NEVER_PUBLISHED: '1',
       STUB_LATEST: REGISTRY_SERVES,
       READBACK_INTERVAL_SECONDS: '1',
       READBACK_TIMEOUT_SECONDS: '2',
+      ...extra,
     }));
 
+    // The decision that matters is unchanged by the count: it gives up, it says
+    // so, and it is not a success. A residual is stated rather than hidden — a
+    // first attempt costing more than the entire budget would still read as 1,
+    // and that is the cost profile the second row pins deliberately.
     expect(result.status).toBe(1);
-    expect(attempts(log)).toBe(3);
+    const count = attempts(log);
+    expect(count).toBeGreaterThanOrEqual(min);
+    expect(count).toBeLessThanOrEqual(max);
   });
 
   test('the budget is a clock: interval 0 with a non-zero budget still terminates', () => {
