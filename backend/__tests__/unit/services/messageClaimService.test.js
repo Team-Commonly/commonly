@@ -413,3 +413,86 @@ describe('messageClaimService', () => {
     expect(r.claimed).toBe(false);
   });
 });
+
+/**
+ * messageExists — the claim route's precondition (TASK-118).
+ *
+ * Two of these are about the SHAPE of the answer rather than its value, because
+ * vera's gate (71873) named both traps and neither is a data question:
+ *
+ *  - `messages.id` is SERIAL in the shipped schema but VARCHAR(24) in the unit
+ *    harness (`__tests__/utils/testUtils.js:159`), so a test that runs here can
+ *    pass on a value production rejects. The first test therefore asserts the
+ *    shipped DDL still says SERIAL — that is what makes the numeric guard
+ *    correct, and it reddens if anyone changes the id type — instead of
+ *    pretending the in-memory column is the real one.
+ *  - The guard's whole job is to keep a malformed id away from Postgres, so the
+ *    assertion is that NO query was issued, not that the result was false.
+ *    A false-from-the-database would still be a 500 in production when the
+ *    column is an integer.
+ */
+describe('messageExists', () => {
+  beforeEach(() => {
+    pool.query.mockReset();
+    pool.query.mockResolvedValue({ rows: [] });
+  });
+
+  test('the numeric guard rests on a SERIAL id — the shipped schema still says so', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const schema = fs.readFileSync(path.resolve(__dirname, '../../../config/schema.sql'), 'utf8');
+    // Scoped to the messages block, and that scoping is the point: slicing to
+    // the end of the file left a LATER table's `id SERIAL PRIMARY KEY` matching
+    // this regex, so the assertion stayed green when messages.id was mutated to
+    // UUID. Found by the mutation ledger, not by review.
+    const start = schema.indexOf('CREATE TABLE IF NOT EXISTS messages');
+    const messages = schema.slice(start, schema.indexOf('CREATE TABLE', start + 10));
+    expect(messages).toMatch(/id SERIAL PRIMARY KEY/);
+  });
+
+  test('a non-numeric id never reaches the database — the 500 that would become', async () => {
+    await expect(MessageClaimService.messageExists('TASK-110', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('an empty id or pod is answered without a query too', async () => {
+    await expect(MessageClaimService.messageExists('', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('42', '')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(undefined, undefined)).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('existence is scoped to the pod — the id alone is not the question', async () => {
+    pool.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+    await expect(MessageClaimService.messageExists('52907', 'p1')).resolves.toBe(true);
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/FROM messages WHERE id = \$1 AND pod_id = \$2/);
+    expect(params).toEqual(['52907', 'p1']);
+  });
+
+  test('a numeric id with no row in that pod is false, not an error', async () => {
+    pool.query.mockResolvedValue({ rows: [] });
+    await expect(MessageClaimService.messageExists('52907', 'other-pod')).resolves.toBe(false);
+  });
+
+  // The digits test is not the shape test: SERIAL is int4, so an id above
+  // 2147483647 is `22003 out of range`, which the route's catch turns into a
+  // 500 — the same wrong answer as 'TASK-110', reached by a different error.
+  test('an id past int4 is answered without a query — 22003, not an absent row', async () => {
+    await expect(MessageClaimService.messageExists('2147483648', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('999999999999', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('the bound is inclusive and a longer input is not an escape', async () => {
+    // 2147483647 is a legitimate id, so the database IS asked — this is what
+    // makes the upper bound load-bearing in both directions.
+    await expect(MessageClaimService.messageExists('2147483647', 'p1')).resolves.toBe(false);
+    expect(pool.query.mock.calls[0][1]).toEqual(['2147483647', 'p1']);
+    // 100 digits are digits, and Number(...) calls it an integer; only the
+    // bound rejects it.
+    pool.query.mockClear();
+    await expect(MessageClaimService.messageExists('9'.repeat(100), 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+});

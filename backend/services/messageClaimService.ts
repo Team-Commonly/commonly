@@ -103,7 +103,68 @@ function clampLease(seconds: unknown): number {
   return Math.min(Math.trunc(n), MAX_LEASE_SECONDS);
 }
 
+/**
+ * `messages.id` is SERIAL, i.e. int4: 2147483647 is the largest value that can
+ * name a row, and one past it is an out-of-range ERROR rather than an absent
+ * row (see messageExists). Named rather than inlined so the bound is one
+ * reviewable fact and the tests that pin it cite the same number.
+ */
+const MESSAGE_ID_MAX = 2147483647;
+
+function isMessageId(id: string): boolean {
+  if (!/^\d+$/.test(id)) return false;
+  const n = Number(id);
+  // Number.isInteger alone is not a bound: 100-digit inputs are integers too,
+  // and `n <= MESSAGE_ID_MAX` is what rejects them.
+  return Number.isInteger(n) && n >= 1 && n <= MESSAGE_ID_MAX;
+}
+
 class MessageClaimService {
+  /**
+   * Does this message exist, in this pod?
+   *
+   * The claim table carries no foreign key to `messages` — deliberately: the
+   * ADR-018 sketch said "claim state lives with the message row", and this
+   * service keys a dedicated table instead precisely so the busiest table in
+   * the system takes no retrofit DDL (see the header note). The cost of that
+   * choice is that the CAS will mint a lease for an id that names nothing.
+   * Measured 2026-09-23 against the live instance: POST
+   * /api/agents/runtime/messages/999999999999/claim → 200 `claimed: true` for
+   * an id that has no row anywhere. Such a lease is un-renewable, can never be
+   * completed, and — because the prune collects terminal states only — is
+   * permanent storage. Hence this predicate, before the CAS:
+   *
+   * `messages.id` is SERIAL (config/schema.sql:43), so a non-numeric id cannot
+   * name a row, and answering it WITHOUT a query is the point rather than an
+   * optimisation: handing 'TASK-110' to Postgres raises `invalid input syntax
+   * for type integer`, which the route's catch turns into a 500 — the same
+   * wrong answer in new clothes (vera's gate, 71873).
+ *
+ * DIGITS ALONE ARE NOT THE SHAPE — SERIAL is int4. '999999999999' passes a
+ * `/^\d+$/` test and is not a syntax error either: Postgres raises `22003
+ * value "999999999999" is out of range for type integer`, the catch turns that
+ * into a 500, and that id is this predicate's own headline reproduction
+ * (vera's gate, 71928, measured read-only against the live DB: '999999999999'
+ * and '2147483648' throw, '5' and '00000000005' are simply absent). The bound
+ * is therefore part of the shape test, not decoration — hence MESSAGE_ID_MAX
+ * and the two tests pinning the first out-of-range value and this one to
+ * no-query-false.
+   *
+   * Pod-scoped on purpose. Existence alone would let a seat installed in pod A
+   * lease a message in pod B; the route checks installation separately, and
+   * this is the message half. Both are required, so both are read here.
+   */
+  static async messageExists(messageId: unknown, podId: unknown): Promise<boolean> {
+    const id = String(messageId ?? '');
+    const pod = String(podId ?? '');
+    if (!isMessageId(id) || !pod) return false;
+    const found = await pool.query(
+      'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',
+      [id, pod],
+    );
+    return found.rows.length > 0;
+  }
+
   /**
    * Atomically claim a message, or renew a claim you already hold (the same
    * statement serves both — a holder "wins against itself", which IS renewal,
