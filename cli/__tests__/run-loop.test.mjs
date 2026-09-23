@@ -1934,6 +1934,64 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
   });
 
+  // TASK-096 / vera (71090, 71091): the release outcome keys on the PRESENCE
+  // of a reason, not its value — `outcome === 'no_action' && !turnResult?.reason`
+  // at :1148 and again at :1653. Deleting that conjunct at both sites left the
+  // whole cli suite green (759 passed), because nothing paired a reason-bearing
+  // `no_action` with a bare one on the SAME path: the NO_REPLY test above has no
+  // reason, and the claim-held stand-down releases nothing at all. These two are
+  // that pair — they differ in exactly one input, the refusal — so moving the
+  // conjunct reddens exactly one of them and its name says which side moved.
+  test('a human broadcast refused upstream releases completed, not declined', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    // `completed`, not `declined`: a route-wide refusal would queue every other
+    // seat behind the same wall rather than rescuing the wake. TASK-099 is the
+    // third outcome that lets a seat-specific refusal hand off instead.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded!' },
+        },
+      },
+    );
+  });
+
+  test('the paired control: the same wake with no refusal still releases declined', async () => {
+    // Identical to the test above except that the refusal is absent. That one
+    // difference is the entire routing input, so this assertion is what fails
+    // if the pair ever stops differing — the NO_REPLY test above reaches
+    // `declined` by a different route and cannot stand in for it.
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
+  });
+
   test('a claim-route failure fails OPEN: the turn proceeds unguarded (#887 rule)', async () => {
     const { post } = makeClient({
       events: [makeClaimEvent()],
