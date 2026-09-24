@@ -56,6 +56,15 @@ const {
 } = await import('../src/lib/session-store.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
+// TASK-102 part B: the spawn-credential mint is a POST through the same mocked
+// client, so "nothing was posted" has to name the paths it means. The invariant
+// these tests defend is that a failed turn posts no reply and no ack — minting a
+// credential is neither, and asserting on the whole mock would have made the
+// invariant pass by accident on any implementation that forgot to mint.
+const callsTo = (mockPost, fragment) => mockPost.mock.calls.filter(([p]) => String(p).includes(fragment));
+const replyPosts = (mockPost) => callsTo(mockPost, '/messages');
+const ackPosts = (mockPost) => callsTo(mockPost, '/ack');
+
 const makeEvent = (overrides = {}) => ({
   _id: 'evt-1',
   type: 'chat.mention',
@@ -743,7 +752,8 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-hb/ack',
       { result: { outcome: 'no_action' } },
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
   test('heartbeat event posts substantive output before acking', async () => {
@@ -1036,7 +1046,8 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-nopod/ack',
       { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
   test('adapter.spawn throws → no post, no ack (re-delivery path)', async () => {
@@ -1102,7 +1113,8 @@ describe('performRun', () => {
     expect(logs.filter((l) => /claude process died/.test(l))).toHaveLength(1);
 
     // CRITICAL: no message post, no ack — kernel MUST re-deliver.
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
   });
 
   test('first processing failure stops the fetched batch before another model launch', async () => {
@@ -1134,7 +1146,8 @@ describe('performRun', () => {
     stop();
 
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
     expect(scheduled).toHaveLength(1);
     expect(scheduled[0].delayMs).toBe(5000);
   });
@@ -1377,7 +1390,8 @@ describe('performRun', () => {
 
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(wasEventHandled('my-stub', event._id)).toBe(false);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
   });
 
   test('ack failure persists the handled id, so a second run skips spawn and re-acks', async () => {
@@ -1774,6 +1788,12 @@ describe('performRun', () => {
     // The claude adapter uses these to substitute ${COMMONLY_AGENT_TOKEN}
     // and ${COMMONLY_API_URL} placeholders in MCP env values, so users can
     // keep their checked-in env files free of secrets.
+    //
+    // SINCE TASK-102 part B this is also the FALLBACK witness: `mockPost` answers
+    // the mint with `{}`, which carries no token, so the lease falls back and the
+    // seat token is what reaches the adapter. The minted path has its own test
+    // below — without both, this one would pass on an implementation that never
+    // minted at all.
     const events = [makeEvent()];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1795,6 +1815,158 @@ describe('performRun', () => {
     const ctx = spawn.mock.calls[0][1];
     expect(ctx.runtimeToken).toBe('cm_agent_specific_token');
     expect(ctx.instanceUrl).toBe('https://api-dev.commonly.me');
+  });
+
+  test('TASK-102 part B: a minted spawn credential is what the CHILD gets, and it is revoked when the turn ends', async () => {
+    // The wiring witness. A unit test of the lease cannot prove the adapter was
+    // handed the scoped token rather than the seat token, and that substitution
+    // is the entire point of the change.
+    const events = [makeEvent({ payload: { content: 'hello', deliveryId: 'delivery-child' } })];
+    const childToken = 'cm_agent_child_of_seat';
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async (path) => (
+      path === '/api/agents/runtime/spawn-credentials'
+        ? { token: childToken, credentialId: 'cred-child', expiresAt: new Date(Date.now() + 900000).toISOString() }
+        : {}
+    ));
+    const del = jest.fn(async () => ({ revoked: true }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    // The child holds the scoped credential, not the seat's.
+    expect(spawn.mock.calls[0][1].runtimeToken).toBe(childToken);
+    expect(spawn.mock.calls[0][1].runtimeToken).not.toBe('cm_agent_seat_token');
+
+    // The ledger names the spawn it was minted for, and the turn's credential is
+    // revoked once the child returns — the window is one turn, not a seat's life.
+    // The ledger names the spawn it was minted for. The id is the BATCH event's,
+    // not the triggering message's: one spawn serves one inbox page, so the page
+    // is what the ledger should name.
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/spawn-credentials',
+      { spawnId: 'my-stub:batch-evt-1' },
+    );
+    expect(del).toHaveBeenCalledWith('/api/agents/runtime/spawn-credentials/cred-child');
+
+    // The wrapper's own posting still goes out under the seat identity it was
+    // built with; minting must not touch the client's token.
+    expect(createClient).toHaveBeenCalledWith({ instance: 'https://api.commonly.me', token: 'cm_agent_seat_token' });
+  });
+
+  test('TASK-102 part B: a REFUSED mint fails the spawn closed instead of falling back to the seat token', async () => {
+    const refusal = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 403,
+      body: { code: 'spawn_not_permitted' },
+    });
+    const events = [makeEvent({ payload: { content: 'hello' } })];
+    const logs = [];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async (path) => {
+      if (path === '/api/agents/runtime/spawn-credentials') throw refusal;
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del: jest.fn() });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (l) => logs.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    // No child ran, and no reply was fabricated out of a refusal.
+    expect(spawn).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    // The event IS acked now, and that is the fold: this assertion was
+    // `toHaveLength(0)` because a verdict was thrown bare, which released the
+    // claim anonymously and left the kernel re-delivering a 403 forever. The
+    // ack names the class, so "this seat cannot deliver" is a record instead of
+    // a loop. The release shape is asserted in the ADR-018 block below.
+    expect(ackPosts(mockPost)).toHaveLength(1);
+    expect(logs.join('\n')).toContain('spawn credential refused (HTTP 403)');
+  });
+
+  test('TASK-102 part B: the boot sweep runs once per process, before the first spawn, and never blocks it', async () => {
+    // The second net behind `close()`. wren's read found `close()` claiming a
+    // sweep that nothing invoked; this is the wiring that makes the claim true,
+    // and the ordering assertion is the part a unit test of the sweep cannot
+    // make.
+    const order = [];
+    const lines = [];
+    const sweep = jest.fn(async (args) => { order.push('sweep'); return { ok: true, revoked: 2 }; });
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del: jest.fn() });
+
+    const spawn = jest.fn(async () => { order.push('spawn'); return { text: 'ok' }; });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      revokeOrphansImpl: sweep,
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(sweep).toHaveBeenCalledTimes(1);
+    expect(sweep.mock.calls[0][0].client).toBeDefined();
+    expect(order).toEqual(['sweep', 'spawn']);
+  });
+
+  test('TASK-102 part B: a failing boot sweep is a log line, not a failed seat', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: mockPost,
+      del: jest.fn(),
+    });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      // A REJECTING implementation, which the shipped one never is — the point is
+      // that the call site cannot turn one into an unhandled rejection.
+      revokeOrphansImpl: jest.fn(async () => { throw new Error('sweep exploded'); }),
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(lines.join('\n')).toContain('boot sweep failed (sweep exploded)');
   });
 });
 
@@ -1822,12 +1994,21 @@ describe('performRun — ADR-018 enforcement', () => {
     messages = [{ _id: 'msg-1', isBot: false, self: false }],
     claimResult = { claimed: true, expiresAt: 'later' },
     messagesResult = {},
+    spawnCredentialResult = null,
     delImpl = async () => ({ released: true }),
   }) => {
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) {
         if (claimResult instanceof Error) throw claimResult;
         return typeof claimResult === 'function' ? claimResult() : claimResult;
+      }
+      if (route === '/api/agents/runtime/spawn-credentials') {
+        // The mint, driven through the real `openSpawnCredential` — so what the
+        // test throws is what the HTTP layer would have thrown, and the
+        // module's own classification decides the arm.
+        if (spawnCredentialResult instanceof Error) throw spawnCredentialResult;
+        if (typeof spawnCredentialResult === 'function') return spawnCredentialResult();
+        return {};
       }
       if (route.startsWith('/api/agents/runtime/pods/') && route.endsWith('/messages')) {
         return messagesResult;
@@ -2007,6 +2188,131 @@ describe('performRun — ADR-018 enforcement', () => {
       outcome: 'refused',
       reason: 'delivery-refused',
     });
+  });
+
+  test('a MINT VERDICT releases refused as delivery-refused and acks the class (wren 72153 / vera 72157)', async () => {
+    // The THIRD producer of `refused`, and the one that used to be invisible: a
+    // verdict escaped `runTurn` as a bare throw, so `turnResult` was undefined
+    // and the release was the legacy holder-only DELETE. A malicious or
+    // misconfigured seat gets a 403 on every redelivery, so that shape is an
+    // infinite wake whose only record is one local log line.
+    const verdict = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 403,
+      body: { code: 'spawn_not_permitted' },
+    });
+    const { post, del } = makeClient({
+      events: [makeClaimEvent()],
+      spawnCredentialResult: verdict,
+    });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
+    // The number is deliberately NOT on the release: `status` on a claim record
+    // means an upstream call's HTTP status, and this refusal never made one
+    // (vera 72157 accepted that narrowing; wren 72153 asked for the class). The
+    // number and the server's own code stay in the ack instead.
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-1/ack', {
+      result: {
+        outcome: 'no_action',
+        reason: 'spawn-credential-refused-403',
+        details: { status: 403, code: 'spawn_not_permitted' },
+      },
+    });
+    expect(replyPosts(post).filter(([p]) => !String(p).endsWith('/claim'))).toHaveLength(0);
+  });
+
+  test('a mint verdict in a BATCH refuses every binding message, not just the first', async () => {
+    // The batch path is the one `message.posted` actually reaches, and one spawn
+    // serves the whole page — so one refused mint refuses the page. Pinned here
+    // because the release loop reads `turnResult` directly: if the refusal were
+    // still a bare throw, `entry.result` would never be assigned and the page's
+    // entries would release anonymously.
+    const verdict = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 401,
+    });
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({ _id: 'evt-a' }), makeClaimEvent({ _id: 'evt-b' })],
+      spawnCredentialResult: verdict,
+    });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { inboxBatchLimit: 2 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
+    const acks = callsTo(post, '/ack');
+    expect(acks).toHaveLength(2);
+    expect(acks.map(([, body]) => body.result.reason)).toEqual([
+      'spawn-credential-refused-401',
+      'spawn-credential-refused-401',
+    ]);
+  });
+
+  test('the paired control: a NON-verdict failure inside the lease keeps the legacy release', async () => {
+    // One field apart from the test above (`spawnCredentialRefused` absent) and
+    // the routing inverts, which is the whole discriminator. A crash must keep
+    // at-least-once redelivery: naming it `delivery-refused` would hand a
+    // human's message away and close the row on the strength of our own bug.
+    //
+    // Driven through the LEASE SEAM rather than the mint route, because a mint
+    // failure is classified by `openSpawnCredential` before it can reach this
+    // catch — a 500 there is capacity, and capacity correctly spawns on the
+    // seat token (asserted below). What only this seam can produce is a crash
+    // with no classification, which is the case the discriminator exists for.
+    const { del } = makeClient({ events: [makeClaimEvent()] });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      {
+        spawnCredentialLeaseFactory: () => ({
+          open: async () => { throw new Error('lease exploded'); },
+          close: async () => ({ revoked: false, reason: 'nothing-to-revoke' }),
+        }),
+      },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    // One argument: the legacy holder-only DELETE. No body is sent at all, so
+    // this is also the assertion that nothing synthetic was invented for it.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH);
+  });
+
+  test('the paired control: a CAPACITY failure still spawns on the seat token and releases completed', async () => {
+    // vera 72157: "capacity fallbacks are unaffected — those spawn successfully
+    // on the seat token and release normally." Same input shape as the verdict
+    // above, different class, so the two arms are pinned against each other
+    // rather than asserted separately.
+    const busy = Object.assign(new Error('busy'), { status: 503 });
+    const { del } = makeClient({
+      events: [makeClaimEvent()],
+      spawnCredentialResult: busy,
+    });
+    const spawn = jest.fn(async () => ({ text: 'a normal reply' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
   });
 
   test('the paired control: the same wake with no refusal still releases declined', async () => {
