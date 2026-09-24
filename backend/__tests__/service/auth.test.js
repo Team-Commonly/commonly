@@ -12,6 +12,7 @@ const {
   closeMongoDb,
   clearMongoDb,
   generateTestToken,
+  waitFor,
 } = require('../utils/testUtils');
 
 // Mock SendGrid to prevent actual emails from being sent
@@ -98,12 +99,24 @@ describe('Auth Routes Integration Tests', () => {
       // agentName 'scout' — 2026-08-13): the workspace's first inhabitants
       // are the creator AND the per-user scout agent — the "sole member"
       // assertion encoded the pre-Guide behavior.
+      //
+      // TASK-149 split those two: the creator is a member on the response path,
+      // the Guide is installed by the queued onboarding tail, so membership is
+      // re-read after the Guide lands rather than sampled at the 201.
       const memberIds = pod.members.map((m) => m.toString());
       expect(memberIds).toContain(user._id.toString());
+
+      await waitFor(async () => Boolean(await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': 'scout',
+      })));
+
       const scoutUser = await User.findOne({ isBot: true, 'botMetadata.agentName': 'scout' });
       expect(scoutUser).toBeTruthy();
-      expect(memberIds).toContain(scoutUser._id.toString());
-      expect(memberIds).toHaveLength(2);
+      const withGuide = await Pod.findById(pod._id);
+      const memberIdsWithGuide = withGuide.members.map((m) => m.toString());
+      expect(memberIdsWithGuide).toContain(scoutUser._id.toString());
+      expect(memberIdsWithGuide).toHaveLength(2);
     });
 
     it('defaults entitlements.cloudAgents to false for new signups', async () => {

@@ -294,7 +294,12 @@ describe('OAuth Controller', () => {
       expect(res.redirect).toHaveBeenCalledWith(
         expect.stringContaining('oauthError=email_unverified'),
       );
-      expect(await User.countDocuments({})).toBe(0);
+      // Scoped to non-bot rows rather than every row: TASK-149 queues the
+      // workspace onboarding off the response path, so a previous test's Guide
+      // (a bot User) can land between tests. The subject here is that the
+      // rejected profile got no ACCOUNT, and a count of all rows would be
+      // asserting the absence of a background step from another test.
+      expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     });
 
     it('suffixes the username when the provider handle is taken', async () => {
