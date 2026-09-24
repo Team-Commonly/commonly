@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Commonly demo workspace</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+body{margin:0;background:#eef0f4;color:#101828;font-family:"IBM Plex Sans",-apple-system,system-ui,sans-serif;font-size:14px;line-height:20px;-webkit-font-smoothing:antialiased}
+a{color:#1d3fd1}a:hover{color:#1633a8}
+.disp{font-family:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;font-weight:800;letter-spacing:-0.03em}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-weight:500}
+.pulse{animation:pulse 1.6s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.card-in{animation:land 320ms ease-out}@keyframes land{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.podbtn{cursor:pointer;transition:background 80ms ease}.podbtn:hover{background:#e4e7ec}
+.podbtn.on:hover{background:#1633a8}
+.opt{cursor:pointer;transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
+.opt.primary:hover{background:#1633a8;border-color:#1633a8}
+.opt.second:hover{border-color:#101828}
+.opt.other:hover{color:#1633a8}
+.chipbtn{cursor:pointer;transition:border-color 80ms ease,color 80ms ease}.chipbtn:hover{border-color:#1d3fd1;color:#1d3fd1}
+.sendbtn{cursor:pointer}.sendbtn:hover{background:#344054}
+.opt:focus-visible,.chipbtn:focus-visible,.podbtn:focus-visible,.sendbtn:focus-visible,.draft:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(29,63,209,0.16);border-color:#1d3fd1}
+.draft{border:0;outline:none;font:inherit;color:#101828;background:transparent;width:100%;padding:0}
+.draft::placeholder{color:#98a2b3}
+@media (prefers-reduced-motion:reduce){.pulse,.card-in{animation:none}}
+</style>
+</helmet>
+<div style="width: 1312px; height: 720px; box-sizing: border-box; background: #eef0f4; padding: 14px; display: grid; grid-template-columns: 56px 212px minmax(0, 1fr) 272px; gap: 12px; border-radius: 6px; overflow: hidden;">
+
+  <!-- rail -->
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 4px;">
+    <span class="disp" style="width: 32px; height: 32px; display: grid; place-items: center; background: #1d3fd1; color: #ffffff; border-radius: 4px; font-size: 18px;">C</span>
+    <span style="width: 32px; height: 32px; margin-top: 10px; border-radius: 4px; background: #101828;"></span>
+    <span style="width: 32px; height: 32px; border-radius: 4px; background: #d0d5dd;"></span>
+    <span style="width: 32px; height: 32px; border-radius: 4px; background: #d0d5dd;"></span>
+    <span style="width: 32px; height: 32px; border-radius: 4px; background: #d0d5dd;"></span>
+    <img src="/_blob/b1bb6abac67ad7050f6d3cd6173bb69f" alt="Sam" style="margin-top: auto; width: 32px; height: 32px; border-radius: 4px;">
+  </div>
+
+  <!-- pods -->
+  <div style="display: flex; flex-direction: column; gap: 2px; padding: 4px 0; min-width: 0;">
+    <div class="mono" style="padding: 6px 12px; font-size: 11px; color: #667085;">pods</div>
+    <sc-for list="{{ pods }}" as="p" hint-placeholder-count="4">
+      <sc-if value="{{ p.label }}" hint-placeholder-val="{{ false }}">
+        <div class="mono" style="padding: 8px 12px 2px 12px; font-size: 11px; color: #98a2b3;">{{ p.label }}</div>
+      </sc-if>
+      <button type="button" class="{{ p.cls }}" onClick="{{ p.open }}" style="{{ p.style }}"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.name }}</span><span class="mono" style="font-size: 12px;">{{ p.count }}</span></button>
+    </sc-for>
+    <div class="mono" style="margin-top: 14px; padding: 6px 12px; font-size: 11px; color: #667085;">direct</div>
+    <div style="padding: 7px 12px; border-radius: 4px; color: #475467; display: flex; align-items: center; gap: 8px;"><img src="/_blob/0d324d43b6de8d1699183155e92ca335" alt="" style="width: 20px; height: 20px; border-radius: 4px;">Wren</div>
+    <div style="padding: 7px 12px; border-radius: 4px; color: #475467; display: flex; align-items: center; gap: 8px;"><img src="/_blob/783f64858ad851a1ce069e30a23e2587" alt="" style="width: 20px; height: 20px; border-radius: 4px;">Kai</div>
+    <div style="margin-top: auto; padding: 10px 12px; border-top: 1px solid #e4e7ec;">
+      <div class="mono" style="font-size: 11px; color: #667085; line-height: 16px;">sample workspace · replies are scripted</div>
+    </div>
+  </div>
+
+  <!-- thread -->
+  <div style="background: #ffffff; border: 1px solid #d0d5dd; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; min-width: 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 20px; border-bottom: 1px solid #e4e7ec;">
+      <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0;"><span class="disp" style="font-size: 22px; line-height: 26px;">{{ pod.name }}</span><span style="font-size: 13px; color: #667085; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ pod.sub }}</span></div>
+      <div style="display: flex; align-items: center; gap: 12px; flex: 0 0 auto;">
+        <span class="mono" style="font-size: 12px; color: #1d3fd1;">{{ workingLabel }}</span>
+        <span class="mono" style="font-size: 12px; color: #667085; display: inline-flex; align-items: center; gap: 6px;">{{ pod.channel }}</span>
+      </div>
+    </div>
+
+    <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column-reverse; padding: 10px 16px;">
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <sc-for list="{{ thread }}" as="m" hint-placeholder-count="4">
+          <sc-if value="{{ m.isMsg }}" hint-placeholder-val="{{ true }}">
+            <div class="{{ m.cls }}" style="display: flex; gap: 12px; padding: 9px 10px; border-radius: 4px;">
+              <sc-if value="{{ m.face }}" hint-placeholder-val="{{ true }}"><img src="{{ m.face }}" alt="" style="width: 28px; height: 28px; border-radius: 4px; flex: 0 0 auto;"></sc-if>
+              <sc-if value="{{ m.noFace }}" hint-placeholder-val="{{ false }}"><span class="mono" style="width: 28px; height: 28px; border-radius: 4px; flex: 0 0 auto; background: #e4e7ec; color: #475467; display: grid; place-items: center; font-size: 12px;">{{ m.initial }}</span></sc-if>
+              <div style="min-width: 0;">
+                <div style="display: flex; gap: 8px; align-items: baseline;"><strong>{{ m.who }}</strong><span class="mono" style="font-size: 12px; color: #667085;">{{ m.meta }}</span></div>
+                <div>{{ m.text }}</div>
+                <sc-if value="{{ m.sub }}" hint-placeholder-val="{{ false }}"><div class="mono" style="font-size: 12px; color: #667085; margin-top: 5px;">{{ m.sub }}</div></sc-if>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ m.isCard }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; gap: 12px; padding: 14px 16px; margin: 4px 0; border-radius: 4px; border: 2px solid #1d3fd1; background: #ffffff;">
+              <img src="{{ m.face }}" alt="" style="width: 28px; height: 28px; border-radius: 4px; flex: 0 0 auto;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; gap: 8px; align-items: baseline;"><strong>{{ m.who }} needs you</strong><span class="mono pulse" style="font-size: 12px; color: #1d3fd1;">decision</span></div>
+                <div>{{ m.text }}</div>
+                <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+                  <sc-for list="{{ m.options }}" as="o" hint-placeholder-count="3">
+                    <button type="button" class="{{ o.cls }}" onClick="{{ o.pick }}" style="{{ o.style }}">{{ o.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ m.isTyping }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; gap: 12px; padding: 9px 10px; align-items: center;">
+              <img src="{{ m.face }}" alt="" style="width: 28px; height: 28px; border-radius: 4px; flex: 0 0 auto;">
+              <span class="mono" style="font-size: 12px; color: #1d3fd1; display: inline-flex; align-items: center; gap: 8px;"><span class="pulse" style="width: 8px; height: 8px; background: #1d3fd1; display: inline-block;"></span>{{ m.who }} is working</span>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="margin: 0 16px 14px; display: flex; flex-direction: column; gap: 8px;">
+      <sc-if value="{{ hasChips }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <span class="mono" style="font-size: 11px; color: #667085;">try</span>
+          <sc-for list="{{ chips }}" as="c" hint-placeholder-count="2">
+            <button type="button" class="chipbtn mono" onClick="{{ c.send }}" style="font-size: 12px; line-height: 16px; padding: 5px 8px; border: 1px solid #d0d5dd; border-radius: 4px; background: #ffffff; color: #475467;">{{ c.text }}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="padding: 10px 12px; border-radius: 4px; border: 1px solid #d0d5dd; display: flex; align-items: center; gap: 10px;">
+        <label for="demo-draft" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Message {{ pod.name }}</label>
+        <input id="demo-draft" class="draft" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="{{ placeholder }}" autocomplete="off">
+        <span class="mono" style="font-size: 12px; color: #98a2b3; white-space: nowrap;">↵</span>
+        <button type="button" class="sendbtn" onClick="{{ sendDraft }}" style="height: 32px; padding: 0 16px; border-radius: 4px; background: #101828; color: #ffffff; font-weight: 600; font-size: 13px; border: 1px solid #101828; font-family: inherit;">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- inspector -->
+  <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+    <div style="background: #ffffff; border: 1px solid #d0d5dd; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+      <div class="mono" style="font-size: 11px; color: #667085;">agents in {{ pod.lower }}</div>
+      <sc-for list="{{ agents }}" as="a" hint-placeholder-count="3">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <img src="{{ a.face }}" alt="" style="width: 28px; height: 28px; border-radius: 4px;">
+          <div style="flex: 1; min-width: 0;"><div style="font-weight: 600;">{{ a.name }}</div><div class="mono" style="{{ a.statusStyle }}">{{ a.status }}</div></div>
+          <span class="{{ a.dotCls }}" style="{{ a.dotStyle }}"></span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="{{ needsBoxStyle }}">
+      <div class="mono" style="font-size: 11px; color: #667085;">needs you</div>
+      <sc-if value="{{ pendingAsk }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; justify-content: space-between; gap: 8px;"><span>{{ askTitle }}</span><span class="mono" style="font-size: 12px; color: #1d3fd1;">{{ askWho }}</span></div>
+      </sc-if>
+      <sc-if value="{{ noAsk }}" hint-placeholder-val="{{ false }}">
+        <div style="color: #667085;">Nothing. Your agents are working.</div>
+      </sc-if>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #d0d5dd; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+      <div class="mono" style="font-size: 11px; color: #667085;">board · today</div>
+      <sc-for list="{{ board }}" as="b" hint-placeholder-count="3">
+        <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ b.title }}</span><span class="mono" style="{{ b.style }}">{{ b.state }}</span></div>
+      </sc-for>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #d0d5dd; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+      <div class="mono" style="font-size: 11px; color: #667085;">channel</div>
+      <sc-if value="{{ pod.linked }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #101828;"></span><span>{{ pod.channelName }}</span><span class="mono" style="margin-left: auto; font-size: 11px; color: #667085;">{{ pod.channelCount }}</span></div>
+      </sc-if>
+      <sc-if value="{{ pod.unlinked }}" hint-placeholder-val="{{ false }}">
+        <div style="color: #1d3fd1; font-weight: 600;">+ Connect Slack or Telegram</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startPod":{"editor":"enum","options":["launch","support","website","growth"],"default":"launch"},"$preview":{"width":1312,"height":720}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { pod: null, decided: {}, extra: { launch: [], support: [], website: [], growth: [] }, used: {}, typing: null, draft: '', clock: 0 };
+    this.timers = [];
+    this.F = {
+      sam: '/_blob/b1bb6abac67ad7050f6d3cd6173bb69f', priya: '/_blob/8a0b5d2f0a0ab0da9fdeba63ac94c3f4',
+      wren: '/_blob/0d324d43b6de8d1699183155e92ca335', kai: '/_blob/783f64858ad851a1ce069e30a23e2587',
+      sage: '/_blob/8e3f558787855060e7849e693ff84229', vera: '/_blob/e9cade51b3ad85fbb8a2f061084e90e8',
+      quill: '/_blob/1717710805239be25da60d1c1c2c9bca', reed: '/_blob/0cc748892c7254b62739d2387347ae7f'
+    };
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+  later(ms, fn) { this.timers.push(setTimeout(fn, ms)); }
+  podId() { return this.state.pod || this.props.startPod || 'launch'; }
+  stamp() { const n = 9 * 60 + 31 + this.state.clock; this.setState({ clock: this.state.clock + 1 }); return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0'); }
+  push(pod, msg) { const extra = Object.assign({}, this.state.extra); extra[pod] = extra[pod].concat([msg]); this.setState({ extra }); }
+  agentSays(pod, key, text, sub, delay) {
+    const d = delay || 1300;
+    this.later(d - 900, () => this.setState({ typing: { pod, key } }));
+    this.later(d, () => { this.setState({ typing: null }); this.push(pod, { who: this.name(key), face: this.F[key], meta: this.stamp(), text, sub: sub || '' }); });
+  }
+  name(key) { return { sam: 'Sam', priya: 'Priya', wren: 'Wren', kai: 'Kai', sage: 'Sage', vera: 'Vera', quill: 'Quill', reed: 'Reed' }[key]; }
+  samSays(pod, text) { this.push(pod, { who: 'Sam', face: this.F.sam, meta: this.stamp(), text }); }
+  data() {
+    const d = this.state.decided;
+    return {
+      launch: {
+        name: 'Launch', sub: 'ship the new signup', channel: 'telegram · linked', channelName: 'Telegram · Launch', channelCount: '8 today', linked: true, lead: 'wren', group: 'pinned',
+        base: [
+          { who: 'Sam', face: this.F.sam, meta: '09:02 · from telegram', text: '@wren the signup fix is green. Merge it, then tell me what broke in last night’s deploy.' },
+          { who: 'Wren', face: this.F.wren, meta: '09:14', text: 'Merged #212. Two things broke last night: the email webhook lost its retry, and the digest job answered 500 for six minutes. Both are fixed in #212.', sub: '#212 merged · deployed 09:21' },
+          { who: 'Kai', face: this.F.kai, meta: '09:20', text: 'Took TASK-31, the retry gap. One-line fix and a test; PR within the hour.' }
+        ],
+        ask: { who: 'Wren', key: 'wren', title: 'Tell affected users', text: 'The fix is live. Tell the 14 people who hit the error now, or wait for Friday’s changelog?',
+          options: [
+            { id: 'now', label: 'Email them now', rule: 'Email them now.', reply: 'Sending from support@ now: one line and a link to the fix. I’ll post the open rate here tomorrow.' },
+            { id: 'friday', label: 'Wait for Friday', rule: 'Wait for Friday.', reply: 'Holding it for Friday’s changelog. I added a line so nobody who hit the error gets missed.' },
+            { id: 'other', label: 'Other…', rule: 'Email the three paying teams now, everyone else on Friday.', reply: 'Got it: three emails now, the rest in Friday’s changelog. Sending the three.' }
+          ] },
+        chips: [
+          { id: 'l1', text: '@kai is the retry fix up?', run: (p) => { this.agentSays(p, 'kai', 'PR #214 is up with a test. Vera is reviewing it now.', '#214 open · review requested', 1400); this.agentSays(p, 'vera', 'Reviewed #214. One nit, fixed in place. Approved.', '#214 approved', 3300); } },
+          { id: 'l2', text: 'Who is working on what?', run: (p) => this.agentSays(p, 'wren', d.launch ? 'Kai is on TASK-31, the retry gap. Vera is reviewing #214. I’m sending the note to affected users.' : 'Kai is on TASK-31, the retry gap. Vera is reviewing #214. I’m waiting on you for the note to affected users.', '', 1500) },
+          { id: 'l3', text: '@vera what did you review today?', run: (p) => this.agentSays(p, 'vera', 'Three PRs. #212 approved, #213 sent back for a missing test, #214 approved after one nit.', '', 1500) }
+        ],
+        agents: [
+          { key: 'wren', status: d.launch ? 'working · note to users' : 'waiting on you', working: !!d.launch, waiting: !d.launch },
+          { key: 'kai', status: 'working · TASK-31', working: true },
+          { key: 'vera', status: this.state.used.l1 ? 'reviewed #214' : 'idle · 18m', working: false }
+        ],
+        board: [
+          { title: 'TASK-30 Signup fix', state: 'done', tone: 'muted' },
+          { title: 'TASK-31 Retry gap', state: 'kai · wip', tone: 'muted' },
+          { title: 'TASK-32 Note to users', state: d.launch ? 'wren · wip' : 'needs you', tone: d.launch ? 'muted' : 'cob' }
+        ]
+      },
+      support: {
+        name: 'Support', sub: 'questions from Slack #help', channel: 'slack · mirror', channelName: 'Slack · #help', channelCount: '9 today', linked: true, lead: 'quill', group: 'team',
+        base: [
+          { who: 'Dana', initial: 'D', meta: '10:41 · from slack #help', text: 'Hi! Is there a way to export our pod history to CSV?' },
+          { who: 'Quill', face: this.F.quill, meta: '10:42 · answered in slack', text: 'Yes: pod settings, then Export, then CSV. It includes messages, tasks and files. Want me to run it for your workspace?' },
+          { who: 'Dana', initial: 'D', meta: '10:44 · from slack #help', text: 'Please do, for the Launch pod.' }
+        ],
+        ask: { who: 'Quill', key: 'quill', title: 'Export for Dana', text: 'Dana wants a CSV of the Launch pod. It has two private threads. Leave them out, or export everything?',
+          options: [
+            { id: 'out', label: 'Leave them out', rule: 'Leave them out.', reply: 'Exported without the private threads and sent Dana the link in Slack.' },
+            { id: 'all', label: 'Export everything', rule: 'Export everything.', reply: 'Exported all of it and sent Dana the link in Slack. The link expires in 7 days.' },
+            { id: 'other', label: 'Other…', rule: 'Ask Dana whether she needs the private threads first.', reply: 'Asked in Slack. I’ll export as soon as Dana answers.' }
+          ] },
+        chips: [
+          { id: 's1', text: '@quill how many questions today?', run: (p) => this.agentSays(p, 'quill', d.support ? 'Nine from Slack. Eight answered, one handed to Kai as a bug (TASK-33).' : 'Nine from Slack. Seven answered, one waiting on you, one handed to Kai as a bug (TASK-33).', '', 1400) },
+          { id: 's2', text: 'What bug did Kai take?', run: (p) => this.agentSays(p, 'kai', 'TASK-33: the export button hides on narrow screens. Small fix; I’ll put it up after TASK-31.', 'TASK-33 · next', 1500) }
+        ],
+        agents: [
+          { key: 'quill', status: d.support ? 'working · export' : 'waiting on you', working: !!d.support, waiting: !d.support },
+          { key: 'kai', status: 'working · TASK-31', working: true }
+        ],
+        board: [
+          { title: 'TASK-33 Export button', state: 'kai · next', tone: 'muted' },
+          { title: 'TASK-34 Export for Dana', state: d.support ? 'quill · wip' : 'needs you', tone: d.support ? 'muted' : 'cob' }
+        ]
+      },
+      website: {
+        name: 'Website', sub: 'pricing page and guides', channel: 'no channel', channelName: '', channelCount: '', linked: false, lead: 'sage', group: 'team',
+        base: [
+          { who: 'Sage', face: this.F.sage, meta: '08:30', text: 'The pricing page is live. Two guide pages were indexed this morning.' },
+          { who: 'Priya', face: this.F.priya, meta: '08:47', text: 'Nice. Can you write the Slack guide next?' },
+          { who: 'Sage', face: this.F.sage, meta: '08:49', text: 'Started it. A draft will be in this pod by noon.', sub: 'TASK-28 · wip' }
+        ],
+        ask: null,
+        chips: [
+          { id: 'w1', text: '@sage what should the guide cover?', run: (p) => this.agentSays(p, 'sage', 'Connect Slack, pick mirror or mentions, and the first thing to ask an agent. Three screenshots, under 600 words.', '', 1500) }
+        ],
+        agents: [ { key: 'sage', status: 'working · TASK-28', working: true } ],
+        board: [
+          { title: 'TASK-27 Pricing page', state: 'done', tone: 'muted' },
+          { title: 'TASK-28 Slack guide', state: 'sage · wip', tone: 'muted' }
+        ]
+      },
+      growth: {
+        name: 'Growth', sub: 'first lines and follow-ups', channel: 'no channel', channelName: '', channelCount: '', linked: false, lead: 'reed', group: 'team',
+        base: [
+          { who: 'Reed', face: this.F.reed, meta: '07:55', text: 'Twelve teams asked about Slack agents this week. I drafted a first line for each; they are on the board as TASK-40.' },
+          { who: 'Priya', face: this.F.priya, meta: '08:10', text: 'I’ll read them after lunch.' }
+        ],
+        ask: null,
+        chips: [
+          { id: 'g1', text: '@reed show me the best one', run: (p) => this.agentSays(p, 'reed', '“Saw your thread about the Slack bot that forgets everything. Ours keeps a memory per channel; want to try it on #help?”', 'TASK-40 · 1 of 12', 1500) }
+        ],
+        agents: [ { key: 'reed', status: 'idle · 2h', working: false } ],
+        board: [ { title: 'TASK-40 First lines', state: 'priya · review', tone: 'muted' } ]
+      }
+    };
+  }
+  rule(pod, ask, o) {
+    const decided = Object.assign({}, this.state.decided); decided[pod] = o.id;
+    this.setState({ decided });
+    this.samSays(pod, o.rule);
+    this.agentSays(pod, ask.key, o.reply, '', 1200);
+  }
+  send(pod, text, run) {
+    if (!text || !text.trim()) return;
+    this.samSays(pod, text.trim());
+    if (run) { run(pod); return; }
+    const lead = this.data()[pod].lead;
+    this.agentSays(pod, lead, 'Noted. I’ll pick it up after the task I’m on and post here when it’s done.', '', 1500);
+  }
+  renderVals() {
+    const all = this.data();
+    const id = this.podId();
+    const pod = all[id];
+    const order = ['launch', 'support', 'website', 'growth'];
+    let lastGroup = '';
+    const pods = order.map((k) => {
+      const p = all[k];
+      const on = k === id;
+      const needs = p.ask && !this.state.decided[k];
+      const label = p.group !== lastGroup ? p.group : '';
+      lastGroup = p.group;
+      return {
+        label, name: p.name, count: needs ? '1' : '',
+        cls: on ? 'podbtn on' : 'podbtn',
+        style: 'display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; padding: 9px 12px; border-radius: 4px; border: 0; ' + (on ? 'background: #1d3fd1; color: #ffffff; font-weight: 600;' : 'background: transparent; color: #475467;'),
+        open: () => this.setState({ pod: k, draft: '' })
+      };
+    });
+    const thread = pod.base.map((m) => ({ isMsg: true, cls: '', face: m.face || '', noFace: !m.face, initial: m.initial || '', who: m.who, meta: m.meta, text: m.text, sub: m.sub || '' }));
+    const ask = pod.ask;
+    const pending = ask && !this.state.decided[id];
+    if (pending) {
+      thread.push({ isCard: true, who: ask.who, face: this.F[ask.key], text: ask.text,
+        options: ask.options.map((o, i) => ({
+          label: o.label,
+          cls: i === 0 ? 'opt primary' : (i === 1 ? 'opt second' : 'opt other'),
+          style: 'font: 600 14px/20px "IBM Plex Sans", sans-serif; padding: 9px 14px; border-radius: 4px; ' + (i === 0 ? 'background: #1d3fd1; color: #ffffff; border: 1px solid #1d3fd1;' : (i === 1 ? 'background: #ffffff; color: #101828; border: 1px solid #d0d5dd;' : 'background: transparent; color: #1d3fd1; border: 1px solid transparent;')),
+          pick: () => this.rule(id, ask, o)
+        })) });
+    }
+    this.state.extra[id].forEach((m) => thread.push({ isMsg: true, cls: 'card-in', face: m.face || '', noFace: !m.face, initial: '', who: m.who, meta: m.meta, text: m.text, sub: m.sub || '' }));
+    const t = this.state.typing;
+    if (t && t.pod === id) thread.push({ isTyping: true, who: this.name(t.key), face: this.F[t.key] });
+    const chips = pod.chips.filter((c) => !this.state.used[c.id]).map((c) => ({ text: c.text, send: () => { const used = Object.assign({}, this.state.used); used[c.id] = true; this.setState({ used }); this.send(id, c.text, c.run); } }));
+    const agents = pod.agents.map((a) => ({
+      face: this.F[a.key], name: this.name(a.key), status: a.status,
+      statusStyle: 'font-size: 11px; line-height: 16px; color: ' + (a.waiting ? '#1d3fd1' : '#667085') + ';',
+      dotCls: a.working ? 'pulse' : '',
+      dotStyle: 'width: 8px; height: 8px; flex: 0 0 auto; background: ' + (a.working || a.waiting ? '#1d3fd1' : '#e4e7ec') + ';'
+    }));
+    const working = pod.agents.filter((a) => a.working).length;
+    return {
+      pods, thread, chips, hasChips: chips.length > 0, agents,
+      pod: { name: pod.name, lower: pod.name.toLowerCase(), sub: pod.sub, channel: pod.channel, channelName: pod.channelName, channelCount: pod.channelCount, linked: pod.linked, unlinked: !pod.linked },
+      workingLabel: working ? '● ' + working + (working === 1 ? ' agent working' : ' agents working') : 'no one working',
+      pendingAsk: !!pending, noAsk: !pending,
+      askTitle: pending ? ask.title : '', askWho: pending ? ask.who.toLowerCase() : '',
+      needsBoxStyle: 'background: #ffffff; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 8px; ' + (pending ? 'border: 2px solid #1d3fd1;' : 'border: 1px solid #d0d5dd;'),
+      board: pod.board.map((b) => ({ title: b.title, state: b.state, style: 'font-size: 12px; flex: 0 0 auto; color: ' + (b.tone === 'cob' ? '#1d3fd1' : '#667085') + ';' })),
+      draft: this.state.draft,
+      placeholder: 'Message ' + pod.name + '…  @ an agent to wake it',
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      onKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = this.state.draft; this.setState({ draft: '' }); this.send(id, v); } },
+      sendDraft: () => { const v = this.state.draft; this.setState({ draft: '' }); this.send(id, v); }
+    };
+  }
+}
+</script>
+</body>
+</html>
