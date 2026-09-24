@@ -2041,6 +2041,43 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).not.toContain('var(--v2-accent)');
     });
 
+    test('route chunks stay split the way the first screen depends on (TASK-145)', () => {
+      // The cut that took the entry chunk from 4.18 MB (1.16 MB gzip) to 455 kB
+      // (164 kB gzip) is one line of intent: every route renders a lazy chunk,
+      // the entry keeps the stylesheet and the faces, and the shell keeps the
+      // composer's own dependencies in its chunk. All three are reversible by a
+      // single innocent edit, and none of them can be seen from the CSS, so
+      // they are pinned here at the source that encodes them.
+      const entry = read('../../App.tsx');
+      expect(entry).toContain("const V2App = React.lazy(() => import('./v2/V2App'));");
+      expect(entry).not.toMatch(/^import V2App from '\.\/v2\/V2App';$/m);
+      // The entry, not the shell, has to carry the faces the first paint uses:
+      // @font-face rules inside a lazy chunk would leave the public landing in
+      // fallback fonts until the app shell loaded — and on the landing it never
+      // loads at all.
+      expect(entry).toContain("import '@fontsource-variable/bricolage-grotesque';");
+      expect(entry).toContain("import '@fontsource/ibm-plex-sans/400.css';");
+      expect(entry).toContain("import './v2/v2.css';");
+
+      const shell = read('../V2App.tsx');
+      // The composer lives in V2Layout, so V2Layout stays IN the shell chunk.
+      // Making it lazy would add a serial round trip to the very path this row
+      // is measured on while shrinking nothing that path does not need.
+      expect(shell).toContain("import V2Layout from './components/V2Layout';");
+      expect(shell).not.toContain("React.lazy(() => import('./components/V2Layout'))");
+      // And the surfaces the composer does not need stay OUT of it.
+      for (const heavy of [
+        "'./components/V2PodBoard'",
+        "'./components/V2ConnectorsPage'",
+        "'./components/V2ActivityPage'",
+        "'./components/V2ArtifactsPage'",
+        "'../components/ChatRoom'",
+        "'../components/admin/GlobalIntegrations'",
+      ]) {
+        expect(shell).toContain(`React.lazy(() => import(${heavy}))`);
+      }
+    });
+
     test('IBM Plex Sans is self-hosted, first in the stack, and imported before v2.css', () => {
       const app = read('../V2App.tsx');
       const fontImport = app.indexOf("import '@fontsource/ibm-plex-sans/400.css';");
