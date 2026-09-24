@@ -658,6 +658,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // noscript override must carry !important to beat the base rule.
     expect(indexHtml).toContain('#seo-page { display: none; }');
     expect(indexHtml).toMatch(/<noscript><style>#seo-page \{ display: block !important; \}<\/style><\/noscript>/);
+    // The FIFTH dark source, and the only one the TASK-145 route split
+    // introduced: the Suspense fallback frame. It mounts in `.App`, OUTSIDE
+    // `.v2-root`, so `var(--v2-page-bg, #0b1220)` could never reach the token
+    // (`#eef0f4` is declared on .v2-root, v2.css:22) and its navy fallback
+    // painted the whole viewport — the SAME shape as the four above, one
+    // mount point further out. ux-lead's #1861 gate, 390 at 1.6 Mbps: light
+    // at 3.0 s from the entry CSS, #0b1220 from 4.4 s to 7.35 s from this
+    // frame, light again. Three seconds of the flash Sam ruled out on 08-24,
+    // and under 150 ms unthrottled, so a laptop check cannot see it.
+    //
+    // The frame therefore paints nothing and lets the bare-body canvas pinned
+    // three assertions above show through; the boot colour IS that body
+    // colour, which is why it is asserted up there and not restated here. A
+    // literal `#f8f8fb` in the frame would work today and drift tomorrow — the
+    // body is where that value is pinned in lockstep with --v2-page-bg. Its
+    // height is the one thing the frame owns, so the viewport never jumps.
+    const appEntry = read('../../App.tsx');
+    const routeBoot = appEntry.slice(
+      appEntry.indexOf('const RouteBoot'),
+      appEntry.indexOf('class AppErrorBoundary'),
+    );
+    // Read the STYLE PROP, not the slice: the comment above it legitimately
+    // names both the token and the navy fallback, and a bare /background/
+    // over the slice would red on the explanation rather than the code.
+    const bootStyle = /style=\{\{([^}]*)\}\}/.exec(routeBoot)?.[1] ?? '';
+    expect(bootStyle).toContain("minHeight: '100vh'");
+    expect(bootStyle).not.toMatch(/background/);
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {

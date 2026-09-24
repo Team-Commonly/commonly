@@ -41,13 +41,24 @@ const V2LandingPage = React.lazy(() => import('./v2/landing/V2LandingPage'));
 const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize'));
 
 // Covers the moment a route's chunk is in flight. It deliberately depends on no
-// route chunk: the canvas colour is the entry stylesheet's, and the app shell
-// shows its own <V2Boot/> mark once the shell's code has arrived.
+// route chunk and paints NOTHING of its own: the pre-mount canvas belongs to
+// the bare body (App.css `body { background-color: #f8f8fb }`, the light
+// default Sam's 2026-08-24 ruling established), so the frame only has to not
+// cover it.
+//
+// It must NOT use `var(--v2-page-bg, …)`: that token is declared on `.v2-root`
+// (v2.css:22, `#eef0f4`) and this frame mounts in `.App`, before any `.v2-root`
+// exists — so the fallback always wins. ux-lead's #1861 gate measured exactly
+// that on a 1.6 Mbps phone: entry CSS painted light at 3.0 s, this frame then
+// painted its navy fallback for three seconds (4.4 s → 7.35 s), and the viewport
+// went light again — the dark flash App.css:25 records as ruled out on 08-24,
+// and invisible unthrottled (<150 ms). The app shell shows its own <V2Boot/>
+// mark once the shell's code has arrived.
 const RouteBoot: React.FC = () => (
   <div
     role="status"
     aria-label="Loading Commonly"
-    style={{ minHeight: '100vh', background: 'var(--v2-page-bg, #0b1220)' }}
+    style={{ minHeight: '100vh' }}
   />
 );
 
