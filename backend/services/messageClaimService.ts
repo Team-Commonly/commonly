@@ -321,8 +321,34 @@ class MessageClaimService {
     // Pruning happens on the same claim traffic that creates them; the
     // retention window outlives the requeue cap so attempted-seat history
     // survives every legitimate delayed delivery.
+    // TASK-121: a lease that lapsed with no outcome is the one row shape the
+    // terminal branch cannot see. Without the second branch it is permanent —
+    // the CAS treats an expired claim as absent, so the seat that abandoned it
+    // never revisits the row and it never becomes terminal. It is collected on
+    // the same rule a tombstone obeys: one retention window after it stopped
+    // being live. `expires_at` is what encodes that (a terminal row's release
+    // sets it to NOW() + retention, so the comparison is the retention test
+    // there too) and it is the column `idx_message_claims_terminal_expiry`
+    // indexes, so the new branch is covered without a second index.
+    //
+    // Not collected at lapse: the CAS reuses the row in place and its SET never
+    // touches `declined_by`, so the window is what preserves the chain's
+    // attempted-seat history for a delayed re-offer. The cap it protects is
+    // "three requeues within the residue window", not three ever.
+    //
+    // The wrap around the WHOLE disjunction is the protection, not the
+    // per-branch parens: OR is the top-level operator whether or not its
+    // operands are wrapped, so `(T) OR (C) AND x` still parses as
+    // `(T) OR ((C) AND x)` and a clause appended to scope the whole prune binds
+    // to the second branch alone. Measured with the suite's own evaluator: an
+    // appended `AND state = 'never'` leaves `(T) OR (C) AND x` collecting the
+    // terminal row, and collects neither under the shape below. The inner parens
+    // are for reading; this outer pair is what a future pod scope needs.
     await pool.query(
-      "DELETE FROM message_claims WHERE state IN ('completed', 'declined', 'refused') AND expires_at < NOW()",
+      `DELETE FROM message_claims
+        WHERE ((state IN ('completed', 'declined', 'refused') AND expires_at < NOW())
+           OR (state = 'claimed' AND expires_at < NOW() - make_interval(secs => $1)))`,
+      [HANDOFF_HISTORY_RETENTION_SECONDS],
     );
     const lease = clampLease(options.leaseSeconds);
 
