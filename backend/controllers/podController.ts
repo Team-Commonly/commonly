@@ -163,7 +163,20 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 // Get all pods or filter by type
 exports.getAllPods = async (req: any, res: any) => {
   try {
-    const { type } = req.query;
+    // `?type=` is a user-supplied value that used to reach the Mongo query
+    // below unchecked, and `req.query` is parsed by qs: `?type[$ne]=agent-admin`
+    // arrives as an OBJECT, so a caller could supply query operators instead of
+    // a pod type (CodeQL js/sql-injection, "Database query built from
+    // user-controlled sources", raised on this function). Only a string is
+    // honoured — what every real caller sends and what the schema stores — and
+    // anything else returns the same empty list an unknown type always did.
+    //
+    // Deliberately NOT an allowlist of the model's type enum: rows can predate
+    // the enum (the V2 router still knows 'gaming'), and this endpoint's job is
+    // to filter the caller's pods, not to police type names.
+    const rawType = req.query?.type;
+    const type = typeof rawType === 'string' ? rawType : undefined;
+    const hasUnusableType = rawType !== undefined && type === undefined;
     const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isCommunityScope = scope === 'community';
     const isDiscoverScope = scope === 'discover';
@@ -175,6 +188,7 @@ exports.getAllPods = async (req: any, res: any) => {
       }
       scopedCallerId = new mongoose.Types.ObjectId(rawCallerId);
     }
+    if (hasUnusableType) return res.json([]);
     // Exclude agent-admin DM pods from default listing; only show when
     // explicitly requested and the caller is a member.
     // Community and Discover are explicit, additive discovery scopes. Personal

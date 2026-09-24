@@ -104,7 +104,21 @@ const upload = multer({
   },
 });
 
-router.get('/', auth, getAllPods);
+// The sidebar listing is the heaviest read in the app — it populates
+// createdBy / members / parentPod and joins the last message — and every
+// signed-in load, reconnect and pod invalidation fetches it. CodeQL flags it
+// as `js/missing-rate-limiting`; it has been unlimited since the route landed
+// (routeRateLimitGuard.baseline.json, row deleted with this change). Keyed on
+// the token like the focus readers above, so one client cannot exhaust another
+// client's budget; authorization remains the source of truth behind this.
+const podListingRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.get('/', podListingRateLimit, auth, getAllPods);
 router.post('/', auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
