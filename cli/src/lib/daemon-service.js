@@ -36,8 +36,16 @@ const xmlEscape = (value) => String(value)
 // but correctness does not need an adversary: a provider key containing a `"`
 // writes a unit that will not start, with nothing on screen to say why.
 // systemd quoted values carry C-style escapes (systemd.syntax(7)), so both
-// values are escaped and neither sink is trusted to be the harmless one.
+// values are escaped and neither sink is trusted to be the harmless one. The
+// last replacement is the least obvious: `Environment=` does NOT expand `$VAR`
+// but DOES perform specifier expansion (systemd.exec(5), "Specifier expansion is
+// performed"), and `systemd.unit(5)` gives the escape — `%%` in place of `%`.
+// A key containing `%h` would otherwise be rewritten to the home directory: the
+// unit parses, the daemon starts, the seat gets a key nobody exported, and it
+// fails at the provider with nothing at daemon level naming the cause — the same
+// failure class this code exists to remove, arriving through the escaping.
 const systemdEscape = (value) => String(value)
+  .replace(/%/g, '%%')
   .replace(/\\/g, '\\\\')
   .replace(/"/g, '\\"')
   .replace(/\n/g, '\\n')

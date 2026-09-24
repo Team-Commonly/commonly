@@ -71,6 +71,18 @@ describe('unit content', () => {
     expect(unit).not.toContain('\nKillMode=none');
   });
 
+  // `Environment=` does not expand `$VAR` but DOES expand specifiers
+  // (systemd.exec(5)), and `%%` is the escape for a literal `%` (systemd.unit(5)).
+  // Without it a key containing `%h` is rewritten to the home directory: the unit
+  // parses, the daemon starts, the seat authenticates with a key nobody exported,
+  // and the only symptom is at the provider — the failure class this PR removes,
+  // arriving through the escaping instead of the omission.
+  test('a provider key value survives systemd specifier expansion', () => {
+    const unit = systemdUnit({ nodePath, cliPath, providerEnv: [['COMMONLY_LITELLM_KEY', 'k%h-100%']] });
+    expect(unit).toContain('Environment="COMMONLY_LITELLM_KEY=k%%h-100%%"');
+    expect(unit).not.toContain('k%h');
+  });
+
   test('no provider keys declared — neither unit gains an env line', () => {
     const plist = launchdPlist({ nodePath, cliPath, home });
     expect(plist).not.toContain('provider');
