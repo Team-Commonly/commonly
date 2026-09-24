@@ -11,6 +11,7 @@
  * supervisor: the unit CONTENT is unit-testable without touching launchctl.
  */
 
+import { randomBytes } from 'crypto';
 import { renameSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, dirname, resolve } from 'path';
@@ -88,21 +89,39 @@ const childPath = (nodePath) => [
 // never a truncated one.
 //
 // POSIX rename replaces the destination atomically, so this needs no
-// chmod-if-exists dance and no cleanup of the old file. The temp is unlinked if
-// anything throws; its mode is already 0600, so a failed install leaves no
-// readable secret behind.
+// chmod-if-exists dance and no cleanup of the old file.
+//
+// The temp NAME and the temp WRITE are each half of the same defence, and
+// neither is sufficient on its own. A predictable name (`<file>.tmp-<pid>`) lets
+// a process running as this user — which is every seat this repo spawns —
+// pre-plant a symlink at that path and capture the key when the write follows
+// it; `O_EXCL` is what actually refuses that, because it fails on a symlink at
+// the final component instead of writing through it. The random suffix only
+// removes the easy target, and the cleanup only deletes a temp this call made.
 export const SERVICE_FILE_MODE = 0o600;
 
-export const writeServiceFile = (file, content) => {
-  const tmp = `${file}.tmp-${process.pid}`;
+// Exported so the O_EXCL refusal is witnessed against a real symlink at a known
+// path rather than assumed from the absence of a race.
+export const serviceTempPath = (file, suffix = randomBytes(6).toString('hex')) => `${file}.tmp-${suffix}`;
+
+export const writeServiceFile = (file, content, { suffix } = {}) => {
+  const tmp = serviceTempPath(file, suffix);
+  let created = false;
   try {
-    writeFileSync(tmp, content, { encoding: 'utf8', mode: SERVICE_FILE_MODE });
+    // `wx` = O_CREAT|O_EXCL: the write either creates the temp itself or does not
+    // happen at all, so a planted path is refused rather than followed.
+    writeFileSync(tmp, content, { encoding: 'utf8', mode: SERVICE_FILE_MODE, flag: 'wx' });
+    created = true;
     renameSync(tmp, file);
   } catch (error) {
-    try {
-      unlinkSync(tmp);
-    } catch {
-      // Nothing to clean up; the original error is the one that matters.
+    // Only the temp this call created is ours to remove. After a refused write
+    // the path belongs to whoever planted it.
+    if (created) {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // Nothing to clean up; the original error is the one that matters.
+      }
     }
     throw error;
   }

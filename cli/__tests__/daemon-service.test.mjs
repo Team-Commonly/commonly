@@ -6,7 +6,7 @@
 // with, and no mock can show that a destination file was REPLACED rather than
 // rewritten. Injection is used for the values passed and for ordering, never as
 // a stand-in for the filesystem property under test.
-import { chmodSync, linkSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, linkSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { jest } from '@jest/globals';
@@ -19,10 +19,12 @@ import {
   launchdPlist,
   restartDaemonService,
   servicePaths,
+  serviceTempPath,
   startDaemonService,
   stopDaemonService,
   systemdUnit,
   uninstallDaemonService,
+  writeServiceFile,
 } from '../src/lib/daemon-service.js';
 import { providerKeyEnvNames } from '../src/lib/adapters/index.js';
 
@@ -281,6 +283,84 @@ describe('install', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // The OTHER half of the same threat, and the reason the temp is created with
+  // O_EXCL rather than merely under an unlikely name. A predictable temp path
+  // lets any process running as this user — every seat this repo spawns — plant a
+  // symlink there, and a plain write follows it: the key lands at a path and a
+  // mode the writer did not choose. The suffix is injected so the plant can be
+  // aimed at the exact path the writer will use; `wx` then refuses it.
+  test('a symlink planted at the temp path is refused, not followed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-symlink-'));
+    try {
+      const target = servicePaths('linux', dir);
+      mkdirSync(dirname(target.file), { recursive: true });
+      const captured = join(dir, 'captured.txt');
+      writeFileSync(captured, 'OLDCONTENT', { mode: 0o644 });
+      chmodSync(captured, 0o644);
+      const planted = serviceTempPath(target.file, 'suffix-used-by-the-test');
+      symlinkSync(captured, planted);
+
+      // Control: the fixture is a working symlink, so a refusal below cannot come
+      // from a plant that failed. Without `wx` this is exactly the exfiltration.
+      writeFileSync(planted, 'CONTROL-WRITE');
+      expect(readFileSync(captured, 'utf8')).toBe('CONTROL-WRITE');
+      writeFileSync(captured, 'OLDCONTENT');
+      chmodSync(captured, 0o644);
+
+      expect(() => writeServiceFile(target.file, 'sk-SECRET', { suffix: 'suffix-used-by-the-test' }))
+        .toThrow(/EEXIST/);
+      // The key never reached the link's target, and the link was left alone —
+      // removing a path we did not create would be its own bug.
+      expect(readFileSync(captured, 'utf8')).toBe('OLDCONTENT');
+      expect(statSync(captured).mode & 0o777).toBe(0o644);
+      expect(lstatSync(planted).isSymbolicLink()).toBe(true);
+      expect(existsSync(target.file)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The target may itself be planted as a symlink; `rename` displaces the link
+  // rather than writing through it, and the key's mode still comes from creation.
+  test('a symlink at the target path is displaced, not written through', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-target-link-'));
+    try {
+      const target = servicePaths('linux', dir);
+      mkdirSync(dirname(target.file), { recursive: true });
+      const captured = join(dir, 'captured.txt');
+      writeFileSync(captured, 'OLDCONTENT', { mode: 0o644 });
+      symlinkSync(captured, target.file);
+
+      await installDaemonService({
+        platform: 'linux',
+        home: dir,
+        nodePath,
+        cliPath,
+        providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+        env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+        mkdirp: (path) => mkdirSync(path, { recursive: true }),
+        chmod: chmodSync,
+        execCmd: async () => {},
+        log: () => {},
+      });
+      expect(readFileSync(captured, 'utf8')).toBe('OLDCONTENT');
+      expect(lstatSync(target.file).isSymbolicLink()).toBe(false);
+      expect(statSync(target.file).mode & 0o777).toBe(0o600);
+      expect(readFileSync(target.file, 'utf8')).toContain('COMMONLY_LITELLM_KEY');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A tripwire, not a proof: the name must not be derivable from the process, so
+  // that guessing it is not free. The refusal above is what actually holds.
+  test('the temp name is unpredictable, not derived from the pid', () => {
+    const first = serviceTempPath('/home/someone/.config/systemd/user/commonly.service');
+    const second = serviceTempPath('/home/someone/.config/systemd/user/commonly.service');
+    expect(first).not.toBe(second);
+    expect(first).not.toContain(String(process.pid));
   });
 
   // A failed install must not leave the key sitting in a temp file. The failure

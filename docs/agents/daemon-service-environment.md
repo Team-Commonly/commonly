@@ -95,8 +95,18 @@ mode applies only at creation, and the old file's mode survives the write — wh
 is exactly the case every upgrade meets. A `chmod` after the write narrows the
 file once the key is already in it. The rename also means a reader never sees a
 half-written unit; systemd reloads unit files on change, so an in-place write can
-be parsed mid-flight and fail. A failed install unlinks its temp, which was
-already `0600`. Note that systemd exposes `Environment=` to
+be parsed mid-flight and fail.
+
+The temp is created with `O_EXCL` (`flag: 'wx'`) under a **random** suffix, and
+both halves are load-bearing. A predictable name — `<file>.tmp-<pid>` was the
+first version — lets a process running as this user, which is every seat this
+repo spawns, pre-plant a symlink at that path; the write then follows the link
+and the key lands at a path and a mode the writer did not choose (the target's
+existing mode is kept, since `mode` applies only at creation). `O_EXCL` refuses
+a symlink at the final path component outright, so the race has nothing to win;
+the random suffix removes the easy target, and the cleanup removes only a temp
+this call created — never a planted path. A failed install therefore unlinks its
+own `0600` temp. Note that systemd exposes `Environment=` to
 `systemctl --user show`, so a key in the unit is readable by anything running as
 that user — putting it in the unit is not a way to hide it from the account.
 
