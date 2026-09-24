@@ -103,20 +103,27 @@ describe('Auth Routes Integration Tests', () => {
       // TASK-149 split those two: the creator is a member on the response path,
       // the Guide is installed by the queued onboarding tail, so membership is
       // re-read after the Guide lands rather than sampled at the 201.
+      //
+      // Waited on THIS pod's member count, not on 'some scout user exists':
+      // each signup forks its own per-user Guide identity, so a bot lookup
+      // global to the database can match an earlier test's Guide and return
+      // before this workspace has one.
       const memberIds = pod.members.map((m) => m.toString());
       expect(memberIds).toContain(user._id.toString());
 
-      await waitFor(async () => Boolean(await User.findOne({
-        isBot: true,
-        'botMetadata.agentName': 'scout',
-      })));
+      await waitFor(async () => {
+        const current = await Pod.findById(pod._id);
+        return current.members.length === 2;
+      });
 
-      const scoutUser = await User.findOne({ isBot: true, 'botMetadata.agentName': 'scout' });
-      expect(scoutUser).toBeTruthy();
       const withGuide = await Pod.findById(pod._id);
       const memberIdsWithGuide = withGuide.members.map((m) => m.toString());
-      expect(memberIdsWithGuide).toContain(scoutUser._id.toString());
+      expect(memberIdsWithGuide).toContain(user._id.toString());
       expect(memberIdsWithGuide).toHaveLength(2);
+      const guideId = memberIdsWithGuide.find((id) => id !== user._id.toString());
+      const guide = await User.findById(guideId);
+      expect(guide.isBot).toBe(true);
+      expect(guide.botMetadata.agentName).toBe('scout');
     });
 
     it('defaults entitlements.cloudAgents to false for new signups', async () => {
