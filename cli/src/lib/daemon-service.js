@@ -11,7 +11,7 @@
  * supervisor: the unit CONTENT is unit-testable without touching launchctl.
  */
 
-import { writeFileSync } from 'fs';
+import { renameSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, dirname, resolve } from 'path';
 
@@ -73,19 +73,40 @@ const childPath = (nodePath) => [
 //
 // The values are secrets. The daemon's own credential is a 0600 file, so the
 // service file is written 0600 too instead of being left at the umask default a
-// PATH-only unit could safely keep. The mode needs BOTH halves, and neither is
-// sufficient: `writeFileSync`'s mode applies only when the file does not exist,
-// which is exactly a fresh install (a chmod alone leaves the key at umask for
-// the window between the two calls), while a chmod is the only thing that
-// narrows a file an EARLIER install already created at 0644 (a write over it
-// does not change its mode). So the chmod runs before the write AND after it —
-// see `installDaemonService`.
+// PATH-only unit could safely keep.
+//
+// The mode is guaranteed BY CONSTRUCTION rather than by the order of two calls:
+// the content is written to a sibling temp file CREATED 0600 and then renamed
+// over the target. `writeFileSync`'s mode applies only at creation, so the
+// obvious alternatives each leave a path open — a write straight to the target
+// cannot narrow a file an EARLIER install left at 0644 (its mode survives the
+// write, and a pre-existing 0644 service file is what every upgrade meets),
+// and a chmod after the write closes the door the key already walked through.
+// The rename also removes a second, quieter hazard: systemd watches unit files
+// and reloads on change, so an in-place write can be read half-finished and the
+// unit parse fails; after a rename a reader sees the old file or the new one,
+// never a truncated one.
+//
+// POSIX rename replaces the destination atomically, so this needs no
+// chmod-if-exists dance and no cleanup of the old file. The temp is unlinked if
+// anything throws; its mode is already 0600, so a failed install leaves no
+// readable secret behind.
 export const SERVICE_FILE_MODE = 0o600;
 
-export const writeServiceFile = (file, content) => writeFileSync(file, content, {
-  encoding: 'utf8',
-  mode: SERVICE_FILE_MODE,
-});
+export const writeServiceFile = (file, content) => {
+  const tmp = `${file}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, content, { encoding: 'utf8', mode: SERVICE_FILE_MODE });
+    renameSync(tmp, file);
+  } catch (error) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // Nothing to clean up; the original error is the one that matters.
+    }
+    throw error;
+  }
+};
 export const providerEnvPairs = ({ names = [], env = process.env } = {}) => names
   .filter((name) => env[name])
   .map((name) => [name, String(env[name])]);
@@ -177,34 +198,18 @@ export const installDaemonService = async ({
   const providerEnv = providerEnvPairs({ names: providerKeyEnvNames, env });
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
 
-  // Narrow the target BEFORE the key lands, not only after. The writer sets the
-  // mode at CREATION, so a fresh install is already covered by the time the
-  // content is on disk; what it cannot cover is the UPGRADE, where the file a
-  // pre-PR install left at 0644 keeps 0644 straight through the write and a
-  // trailing chmod closes a door the key already walked through. A missing file
-  // is the expected case here (nothing to narrow yet), not an error.
-  try {
-    chmod(target.file, SERVICE_FILE_MODE);
-  } catch {
-    // Fresh install: the writer's creation mode covers it.
-  }
-
   if (target.kind === 'launchd') {
+    // The mode and the atomicity are the WRITER's, not an ordering rule here:
+    // `writeServiceFile` creates a 0600 sibling and renames it over the target,
+    // so no chmod is needed on this path and no half-written unit is ever
+    // visible to launchd (see the writer for why neither half could cover both).
     writeFile(target.file, launchdPlist({ nodePath, cliPath, home, providerEnv }));
-    // The file can now carry a provider key, so it does not keep the default
-    // permissions a PATH-only unit could: a key readable by every local user is
-    // a key handed to every local user. This chmod is the SECOND half — the
-    // writer already set the mode at creation, which is the half that covers a
-    // fresh install (writeFileSync's mode applies only when the file does not
-    // exist); this one covers a rewrite over an existing file.
-    chmod(target.file, SERVICE_FILE_MODE);
     // Reload cleanly if a previous version is loaded; the unload of an
     // unknown label fails by design and is ignored.
     await execCmd(['launchctl', 'unload', target.file]).catch(() => {});
     await execCmd(['launchctl', 'load', '-w', target.file]);
   } else {
     writeFile(target.file, systemdUnit({ nodePath, cliPath, providerEnv }));
-    chmod(target.file, SERVICE_FILE_MODE);
     await execCmd(['systemctl', '--user', 'daemon-reload']);
     await execCmd(['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]);
   }

@@ -1,10 +1,12 @@
 // ADR-026 D1: the generated service units and the install/uninstall flows,
 // with every side effect injected — no launchctl, no systemctl, no writes.
 //
-// One exception, deliberate: the create-mode witness writes a real file, because
-// a jest.fn() writer cannot show the mode a file was created with, and the mode
-// at creation is the half of the 0600 story that a chmod cannot cover.
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+// Three exceptions, deliberate: the mode and atomicity claims are witnessed on
+// real files, because a jest.fn() writer cannot show the mode a file was CREATED
+// with, and no mock can show that a destination file was REPLACED rather than
+// rewritten. Injection is used for the values passed and for ordering, never as
+// a stand-in for the filesystem property under test.
+import { chmodSync, linkSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { jest } from '@jest/globals';
@@ -21,7 +23,6 @@ import {
   stopDaemonService,
   systemdUnit,
   uninstallDaemonService,
-  writeServiceFile,
 } from '../src/lib/daemon-service.js';
 import { providerKeyEnvNames } from '../src/lib/adapters/index.js';
 
@@ -184,19 +185,12 @@ describe('install', () => {
     expect(withoutKey.warn).toHaveBeenCalledWith(expect.stringContaining('COMMONLY_LITELLM_KEY is not set in this shell'));
   });
 
-  test('the service file is 0600, because it can now carry a secret', async () => {
-    const deps = makeDeps();
-    deps.chmod = jest.fn();
-    const target = await installDaemonService({ platform: 'darwin', home, nodePath, cliPath, ...deps });
-    expect(deps.chmod).toHaveBeenCalledWith(target.file, 0o600);
-  });
-
-  // Both halves, and this is the one a chmod cannot give you: writeFileSync's
-  // mode applies only when the file does not exist, which is exactly a fresh
-  // install. Witnessed on a real file, through the REAL default writer and with
-  // chmod left at its no-op default, so the mode observed can only have come
-  // from creation — a fake writer and an injected chmod would prove neither.
-  test('a fresh install CREATES the service file 0600, not narrowed afterwards', async () => {
+  // The mode is held by construction — a sibling file created 0600 and renamed
+  // over the target — so the property to witness is the mode and the content,
+  // not which call did it. Real file through the REAL default writer, with chmod
+  // left at its no-op default: the 0600 observed can only have come from the
+  // file's own creation.
+  test('a fresh install lands the unit 0600', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-install-'));
     try {
       const target = await installDaemonService({
@@ -212,15 +206,16 @@ describe('install', () => {
       });
       expect(statSync(target.file).mode & 0o777).toBe(0o600);
       expect(readFileSync(target.file, 'utf8')).toContain('Environment="COMMONLY_LITELLM_KEY=vk-secret"');
+      expect(readdirSync(dirname(target.file)).filter((name) => name.includes('.tmp-'))).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  // The upgrade half of the same story. `writeFileSync`'s mode applies only when
-  // the file does not exist, so a file a PRE-PR install left at 0644 keeps 0644
-  // through the write and a trailing chmod closes a door the key already used.
-  test('an upgrade over a pre-PR 0644 file narrows it BEFORE the key lands', async () => {
+  // The upgrade half: the case every existing operator meets. `writeFileSync`'s
+  // mode applies only when the file does not exist, so a write straight at the
+  // target cannot narrow a file a PRE-PR install left at 0644.
+  test('an upgrade over a pre-PR 0644 file lands the unit 0600', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-upgrade-'));
     try {
       const target = servicePaths('linux', dir);
@@ -231,7 +226,6 @@ describe('install', () => {
       // from the fixture having been 0600 already.
       expect(statSync(target.file).mode & 0o777).toBe(0o644);
 
-      const modeWhenWritten = [];
       await installDaemonService({
         platform: 'linux',
         home: dir,
@@ -243,46 +237,77 @@ describe('install', () => {
         chmod: chmodSync,
         execCmd: async () => {},
         log: () => {},
-        // The REAL writer, observed at the moment the content lands. The mode is
-        // read immediately before the write and `writeFileSync` cannot change the
-        // mode of an existing file, so the mode read here is the mode the key was
-        // exposed at — which is the property under test, not a proxy for it.
-        writeFile: (file, content) => {
-          modeWhenWritten.push(statSync(file).mode & 0o777);
-          writeServiceFile(file, content);
-        },
       });
-      expect(modeWhenWritten).toEqual([0o600]);
+      expect(statSync(target.file).mode & 0o777).toBe(0o600);
       expect(readFileSync(target.file, 'utf8')).toContain('Environment="COMMONLY_LITELLM_KEY=vk-secret"');
+      expect(readFileSync(target.file, 'utf8')).not.toContain('old unit');
+      expect(readdirSync(dirname(target.file)).filter((name) => name.includes('.tmp-'))).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  // A second, independent instrument on the same fact: the upgrade witness can
-  // only pass if the narrowing happens first, and this says so as an ORDER rather
-  // than as an outcome, so the two fail differently when the fix regresses.
-  test('install narrows the target before writing the key into it', async () => {
-    const calls = [];
-    await installDaemonService({
-      platform: 'linux',
-      home: '/home/upgrade',
-      nodePath,
-      cliPath,
-      providerKeyEnvNames: [],
-      env: {},
-      mkdirp: () => {},
-      execCmd: async () => {},
-      log: () => {},
-      chmod: (file, mode) => calls.push(['chmod', file, mode]),
-      writeFile: (file) => calls.push(['write', file]),
-    });
-    const target = servicePaths('linux', '/home/upgrade').file;
-    const firstChmod = calls.findIndex(([kind, file]) => kind === 'chmod' && file === target);
-    const write = calls.findIndex(([kind, file]) => kind === 'write' && file === target);
-    expect(firstChmod).toBeGreaterThanOrEqual(0);
-    expect(calls[firstChmod][2]).toBe(0o600);
-    expect(firstChmod).toBeLessThan(write);
+  // A second, independent instrument on the same mechanism, and the one a
+  // rewrite-in-place cannot pass: a hard link is a SECOND NAME FOR THE SAME
+  // INODE, so content written into the existing file would show up under the
+  // link too. It does not, so the install displaced the old file rather than
+  // overwriting it — which is also what stops systemd, which reloads unit files
+  // when they change, from ever parsing a half-written unit.
+  test('the new unit REPLACES the old file instead of being written into it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-replace-'));
+    try {
+      const target = servicePaths('linux', dir);
+      mkdirSync(dirname(target.file), { recursive: true });
+      writeFileSync(target.file, 'old unit\n', { mode: 0o644 });
+      const sameInode = `${target.file}.witness`;
+      linkSync(target.file, sameInode);
+
+      await installDaemonService({
+        platform: 'linux',
+        home: dir,
+        nodePath,
+        cliPath,
+        providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+        env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+        mkdirp: (path) => mkdirSync(path, { recursive: true }),
+        chmod: chmodSync,
+        execCmd: async () => {},
+        log: () => {},
+      });
+      expect(readFileSync(sameInode, 'utf8')).toBe('old unit\n');
+      expect(readFileSync(target.file, 'utf8')).toContain('COMMONLY_LITELLM_KEY');
+      expect(statSync(target.file).mode & 0o777).toBe(0o600);
+      unlinkSync(sameInode);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A failed install must not leave the key sitting in a temp file. The failure
+  // here is real rather than injected: a directory at the target path makes the
+  // rename fail after the content has already been written, which is the only
+  // moment the cleanup path runs.
+  test('a failed rename removes the temp and rethrows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-fail-'));
+    try {
+      const target = servicePaths('linux', dir);
+      mkdirSync(target.file, { recursive: true });
+      await expect(installDaemonService({
+        platform: 'linux',
+        home: dir,
+        nodePath,
+        cliPath,
+        providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+        env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+        mkdirp: (path) => mkdirSync(path, { recursive: true }),
+        chmod: chmodSync,
+        execCmd: async () => {},
+        log: () => {},
+      })).rejects.toThrow();
+      expect(readdirSync(dirname(target.file)).filter((name) => name.includes('.tmp-'))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

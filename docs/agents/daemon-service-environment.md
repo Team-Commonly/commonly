@@ -85,7 +85,18 @@ The service file is written `0600` (TASK-049). It used to keep the umask
 default, which was fine while it held only `PATH` and `HOME`; it can now hold a
 provider key, and a key readable by every local user is a key handed to every
 local user. This matches the daemon's own credential, which is a `0600` file
-under `~/.commonly/daemon/`. Note that systemd exposes `Environment=` to
+under `~/.commonly/daemon/`.
+
+The mode is held by construction, not by the order of two calls: the content is
+written to a sibling temp file **created `0600`** and `rename`d over the target.
+Two windows make the obvious alternatives insufficient. A write straight to the
+target cannot narrow a file an *earlier* install left at `0644` — `writeFileSync`'s
+mode applies only at creation, and the old file's mode survives the write — which
+is exactly the case every upgrade meets. A `chmod` after the write narrows the
+file once the key is already in it. The rename also means a reader never sees a
+half-written unit; systemd reloads unit files on change, so an in-place write can
+be parsed mid-flight and fail. A failed install unlinks its temp, which was
+already `0600`. Note that systemd exposes `Environment=` to
 `systemctl --user show`, so a key in the unit is readable by anything running as
 that user — putting it in the unit is not a way to hide it from the account.
 
