@@ -14,6 +14,7 @@ const MAX_UPSTREAM_STATUS = 599;
 // ESM import shape but has trouble tracing rate-limit middleware through
 // require() returns; using `import` here makes the recognition unambiguous.
 import rateLimit from 'express-rate-limit';
+import { platformIpRateLimit } from '../middleware/platformRateLimit';
 
 const express = require('express');
 const agentHooksRoutes = require('./agentHooks');
@@ -116,6 +117,21 @@ const phase4AgentRateLimit = rateLimit({
 // whose 120/60s budget `(A)` is gated on. It is off unless RATE_LIMIT_OBSERVE is
 // set, and it always calls next(): see middleware/rateLimitObserver.ts.
 const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit, rateLimitObserver];
+
+// TASK-108 / TASK-097 §5: the long-poll reads take the IP tier with the token
+// tier OFF (ruled, wren 71374) — a long-poll's request count is not a per-token
+// budget question, and a retry storm is still an IP. 3000/60s is the existing
+// IP tier's own budget, restated here rather than reusing `phase4IpRateLimit`
+// because that instance emits the legacy `{message, code}` body and these two
+// routes sit on a seat's tool path, where a refusal has to be classifiable
+// (see middleware/platformRateLimit.ts). Registering a limiter per ROUTE is
+// not (A): (A) is the mount-level limiter on the family, which is Sam's order
+// and is not registered by this change.
+const longPollIpLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 3000,
+  label: '3000 long-poll reads per 60s per IP',
+});
 
 // Dual-auth dispatcher (mirrors `backend/routes/tasksApi.ts:34-36`). Routes
 // that accept BOTH human JWTs and agent runtime tokens use this — the token
@@ -545,7 +561,7 @@ router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
  * GET /events (agent runtime token auth)
  * Original endpoint for agent runtime tokens (cm_agent_*)
  */
-router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -623,7 +639,7 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
  * For bot users to poll events using their user API token
  * Bot user must have isBot: true and username matching agentName
  */
-router.get('/bot/events', auth, requireApiTokenScopes(['agent:events:read']), async (req: any, res: any) => {
+router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:events:read']), async (req: any, res: any) => {
   try {
     const { user, error } = await requireBotUser(req, res);
     if (error) return error;

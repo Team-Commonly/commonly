@@ -5,6 +5,7 @@ const axios = require('axios');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+const { platformIpRateLimit } = require('../../middleware/platformRateLimit');
 const Integration = require('../../models/Integration');
 const OAuthState = require('../../models/OAuthState');
 const Pod = require('../../models/Pod');
@@ -336,8 +337,19 @@ router.post('/x/oauth/start', auth, adminAuth, async (req: any, res: any) => {
 /**
  * X OAuth callback
  * GET /api/admin/integrations/global/x/oauth/callback
+ *
+ * TASK-108 (triage doc §6): a third-party redirect target, so it is public by
+ * construction and gets the IP tier with the token tier off. 600/60s is the
+ * ruled budget — the same as `/stats/public`, and for the same class of
+ * caller: a browser following a redirect, plus whatever walks the endpoint
+ * without following one.
  */
-router.get('/x/oauth/callback', async (req: any, res: any) => {
+const xOauthCallbackLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 600,
+  label: '600 X OAuth callback hits per 60s per IP',
+});
+router.get('/x/oauth/callback', xOauthCallbackLimit, async (req: any, res: any) => {
   try {
     const {
       state,

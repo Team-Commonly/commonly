@@ -3,6 +3,7 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -194,6 +195,32 @@ const oauthLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 30 OAuth attempts per 15 minutes'),
 });
 
+// TASK-108 (triage doc §6): the two pre-auth reads on the signup path. Neither
+// can carry a token tier — they are reached without one — so the IP tier is the
+// only tier they can have, and both take the new 429 body. The legacy
+// `{message, code}` shape the limiters above emit stays where it was written:
+// those are human browser surfaces, while these two are read by the signup page
+// and by mail clients and scanners, and a client that has to CLASSIFY a refusal
+// needs `status` plus a named reason (see middleware/platformRateLimit.ts for
+// why the name must not be an upstream one).
+//
+// Both budgets are threat models, not fitted numbers (vera 71390: zero hits on
+// either route in a 24h ingress window), so they are stated here as the
+// posture rather than as a measurement.
+const registrationPolicyLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  label: '60 registration-policy reads per 60s per IP',
+});
+const verifyEmailLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  // A mail client prefetches the link and a scanner can walk it; a human
+  // clicking once must never share a budget with either, which 30/min per IP
+  // gives comfortably.
+  label: '30 verify-email link reads per 60s per IP',
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 router.post('/register', registerLimiter, register);
@@ -201,7 +228,7 @@ router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
-router.get('/registration-policy', getRegistrationPolicy);
+router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
 router.post('/login', loginLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
@@ -289,7 +316,7 @@ router.post('/refresh', sessionLimiter, auth, (req: AuthReq, res: Res) => {
   return refresh(req, res);
 });
 router.get('/user', sessionLimiter, auth, getCurrentUser);
-router.get('/verify-email', verifyEmail);
+router.get('/verify-email', verifyEmailLimit, verifyEmail);
 router.get('/profile', sessionLimiter, auth, getProfile);
 router.put('/profile', sessionLimiter, auth, updateProfile);
 

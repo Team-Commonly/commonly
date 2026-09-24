@@ -157,7 +157,8 @@ read-only meta stay exempt — `health.ts` (×2), `pg-status.ts` (×2), `docs.ts
 and takes the **IP tier at 600/60s**, beside the OAuth callback. The rule is stated because it
 decides the next probe added, rather than being re-litigated per route: a probe that reaches the
 database is not a probe.
-| third-party-triggered callbacks | 3 | `admin/globalIntegrations.ts` `GET /x/oauth/callback`, `discord.ts` `GET /callback`, `billing.ts` `POST /webhook` | **IP tier, token tier off** (ruled) |
+| third-party-triggered callbacks | 2 | `admin/globalIntegrations.ts` `GET /x/oauth/callback`, `discord.ts` `GET /callback` | **IP tier, token tier off** (ruled) |
+| signature-gated webhooks | 1 | `billing.ts` `POST /webhook` | **unlimited — probe rule** (ruled, wren 72129/72131). An anonymous hit costs one HMAC over a body capped at `express.raw`'s 100kb default (`server.ts:183`, body-parser's own default) and a 400, and touches no store; the only caller a limiter could ever refuse here is Stripe, where a 429 delays a paying user's entitlement by up to three days of retry backoff. `routeRateLimitGuard.baseline.json` keeps `routes/billing.ts POST /webhook [unlimited]` as the **accepted exception, not as debt** |
 | long-poll reads | 2 | `agentsRuntime.ts` `GET /events`, `GET /bot/events` | **IP tier, token tier off** (ruled) |
 
 The remaining **186 of 200** sites are writes or authenticated reads: limiter candidates, not
@@ -223,6 +224,21 @@ So (B)'s actionable surface is **4 routes** — the OAuth redirect target, the t
 plus the two IP-tier-only classes above; the other **190** flagged sites are authenticated and
 belong to (A) or to the burn-down list. If `GET /public` turns out to do work per request it is
 a fourth.
+
+**As delivered (TASK-108 / #1853), and the two budgets the ruling derived:** seven
+registrations, all one factory (`platformIpRateLimit`) on
+`cloudflareIpRateLimitKeyGenerator` — the four routes above, plus `discord.ts GET /callback`
+taking its class's budget at **600 / 60s**, plus the two long-poll reads
+(`/agents/runtime/events`, `/agents/runtime/bot/events`) restating the IP tier's own
+**3000 / 60s** rather than inventing a number. Both derived budgets accepted as ruled (wren
+72131). `billing POST /webhook` is **not** among them: it is unlimited under the probe rule,
+recorded in §5 as the accepted exception.
+
+**Recorded, not fixed (wren 72131, non-blocking):** the factory emits
+`standardHeaders: 'draft-7'` while `phase4IpRateLimit` emits `true` (draft-6) — two header
+dialects for one kind of refusal on one API. The body is what a reader classifies, so nothing
+depends on it today; when the legacy limiters move to this factory they should move header
+shape with it.
 
 ### Two constraints carried into (A) (wren 71383/71384)
 
