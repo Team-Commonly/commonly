@@ -1834,24 +1834,34 @@ body.modern-ui.v2-canvas {
 
 /* The transcript's two side-rows — the sender-only delivery cue above and the
    no-agent row below — occupy ONE slot, and that slot IS the message text
-   column. Both are siblings of `.v2-msg` inside `.v2-chat__messages`, so the
-   indent is that grid's avatar column plus its gap (38 + 12 = 50) rather than
-   a number of its own, and the width subtracts the same indent: the
-   `.v2-chat__messages > *` rule sets width: 100%, so an indent without its
-   complement overruns the pane by exactly the indent. That was the #1846
-   defect — at 390 the
-   full-width act ran 64→426 and the body line was cut (ux-lead's shot,
-   2026-09-23) — and Sam hit the same class one indent over on
-   `.v2-thread-block` (2026-08-24): indent + width must sum to 100%.
+   column of the transcript they sit in. Both are siblings of `.v2-msg` inside
+   `.v2-chat__messages`, so the indent is the avatar track plus the gap of the
+   rule that governs those rows HERE, which is the thread override
+   `.v2-thread .v2-msg { grid-template-columns: 28px minmax(0, 1fr); gap: 8px }`
+   — 28 + 8 = 36, NOT the base `.v2-msg` grid (38 + 12 = 50), which that
+   override replaces (0,3,0 beats 0,1,0). The first cut of this rule derived
+   from the base grid and was 14px out; ux-lead's #1860 gate measured it at
+   390, 720 and 1440 — 50px put both rows 14px right of `.v2-msg__content`,
+   36px put them on it (injection on their fixture, right edge and scrollWidth
+   unchanged). Both placements of these rows share their message's container
+   (transcript level, or inside a `.v2-thread-block` for a thread root), so the
+   same relative indent holds in both.
+
+   The width subtracts the same indent: `.v2-chat__messages > *` sets
+   width: 100%, so an indent without its complement overruns the pane by exactly
+   the indent. That was the #1846 defect — at 390 the full-width act ran 64→426
+   and the body line was cut (ux-lead's shot, 2026-09-23) — and Sam hit the same
+   class one indent over on `.v2-thread-block` (2026-08-24): indent + width must
+   sum to 100%.
 
    One rule for both rows, so they cannot drift apart again: this is the only
    place either row's box is declared, and v2-layout-invariants.test.ts derives
-   the expected indent from `.v2-msg`'s own grid, so moving that column fails
-   the suite instead of silently misaligning these rows. */
+   the expected indent from `.v2-thread .v2-msg`'s own grid, so moving that
+   column fails the suite instead of silently misaligning these rows. */
 .v2-chat__delivery-hint,
 .v2-chat__no-agents {
-  width: calc(100% - 50px);
-  margin: -4px 0 8px 50px;
+  width: calc(100% - 36px);
+  margin: -4px 0 8px 36px;
 }
 
 /* The delivery hint above requires an agent to name (`agentsInPod > 0`), which

@@ -2069,13 +2069,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {'),
         v2.indexOf('}', v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {')),
       );
-      expect(slot).toContain('margin: -4px 0 8px 50px');
-      expect(slot).toContain('width: calc(100% - 50px)');
+      expect(slot).toContain('margin: -4px 0 8px 36px');
+      expect(slot).toContain('width: calc(100% - 36px)');
       // Their box is declared exactly once in the sheet — the shared slot — so
       // there is no second copy left for the cascade to pick between. The
-      // margin pair is unique to this slot; `width: calc(100% - 50px)` is not
-      // (`.v2-thread-block` carries the same complement one indent over).
-      expect(v2.match(/margin: -4px 0 8px 50px;/g) || []).toHaveLength(1);
+      // margin pair is unique to this slot; `width: calc(100% - 36px)` is not
+      // asserted globally because `.v2-thread-block` carries a complement of
+      // its own one indent over.
+      expect(v2.match(/margin: -4px 0 8px 36px;/g) || []).toHaveLength(1);
       // And neither row's own block restates a box. `ruleBody` cannot answer
       // this: it takes the FIRST line-start match, and the shared rule's second
       // selector line is itself a line-start `.v2-chat__no-agents {`, so it
@@ -2104,22 +2105,34 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
     test('both chat side-rows share one slot whose indent is the message text column', () => {
       // ux-lead's TASK-150 ruling: the delivery cue and the no-agent row must
-      // land on the message text column — derived from the grid `.v2-msg`
-      // actually uses, not 50px by assumption. So this guard reads the avatar
-      // track and the gap out of `.v2-msg` itself and compares; if that column
-      // moves and the slot rule stays put, the suite fails instead of the two
-      // edges quietly parting (ux-lead measured them 14px apart at 390 and 1440
-      // on the #1846 fixture).
+      // land on the message text column — derived from the grid those rows'
+      // own messages actually use, not a number by assumption. This guard reads
+      // the avatar track and the gap out of the rule in play and compares; if
+      // that column moves and the slot rule stays put, the suite fails instead
+      // of the two edges quietly parting.
+      //
+      // The grid in play is the THREAD override, not the base `.v2-msg` rule:
+      // these rows only ever render as siblings of a message inside
+      // `.v2-thread`, where `.v2-thread .v2-msg` (0,3,0) replaces the base grid
+      // (0,1,0). Deriving from the base rule is the mistake this rule shipped
+      // with — it read 38 + 12 = 50 and the gate measured both rows 14px right
+      // of `.v2-msg__content` at 390, 720 and 1440; 36px put them on it
+      // (ux-lead verified by injection on their fixture, right edge and
+      // scrollWidth unchanged).
       const at = v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {');
       expect(at).toBeGreaterThan(-1);
       const slot = v2.slice(v2.indexOf('{', at) + 1, v2.indexOf('}', at));
-      const grid = ruleBody(v2, '.v2-msg');
-      const lead = /grid-template-columns:\s*(\d+)px/.exec(grid);
-      const gap = /(?:^|\s)gap:\s*(\d+)px/.exec(grid);
-      expect(lead?.[1]).toBe('38');
-      expect(gap?.[1]).toBe('12');
+      const threadGrid = ruleBody(v2, '.v2-thread .v2-msg');
+      const lead = /grid-template-columns:\s*(\d+)px/.exec(threadGrid);
+      const gap = /(?:^|\s)gap:\s*(\d+)px/.exec(threadGrid);
+      expect(lead?.[1]).toBe('28');
+      expect(gap?.[1]).toBe('8');
       const indent = `${Number(lead?.[1]) + Number(gap?.[1])}px`;
-      expect(indent).toBe('50px');
+      expect(indent).toBe('36px');
+      // The base grid is deliberately NOT the target. Without this line a
+      // future reader finds 38 + 12 = 50 unreferenced and "corrects" the slot
+      // back to it, which is exactly how this shipped wrong the first time.
+      expect(ruleBody(v2, '.v2-msg')).toContain('grid-template-columns: 38px');
       expect(slot).toContain(`margin: -4px 0 8px ${indent};`);
       expect(slot).toContain(`width: calc(100% - ${indent});`);
       // Neither row restates its own box any more. A second declaration is
