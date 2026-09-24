@@ -62,7 +62,7 @@ const DEFAULT_AGENTS = [{
   agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', status: 'active',
 }];
 
-const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS }) => {
+const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS, podType = 'chat', podId = 'pod-1', onOpenInvite }) => {
   const [messages, setMessages] = useState([]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
@@ -70,7 +70,7 @@ const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS }) => {
     return response;
   };
   const detail = {
-    pod: { _id: 'pod-1', name: 'Launch Room', type: 'chat' },
+    pod: { _id: podId, name: 'Launch Room', type: podType },
     members: [{ _id: 'u1', username: 'alice', isBot: false }],
     messages,
     agents,
@@ -79,15 +79,19 @@ const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS }) => {
     error: null,
     refresh: jest.fn(),
   };
-  return <V2Thread detail={detail} />;
+  return <V2Thread detail={detail} onOpenInvite={onOpenInvite} />;
 };
 
-const renderHarness = (response, sendSpy = jest.fn()) => render(
+const harnessElement = (response, sendSpy = jest.fn(), extra = {}) => (
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
-      <DeliveryHarness response={response} sendSpy={sendSpy} />
+      <DeliveryHarness response={response} sendSpy={sendSpy} {...extra} />
     </MemoryRouter>
-  </AuthContext.Provider>,
+  </AuthContext.Provider>
+);
+
+const renderHarness = (response, sendSpy = jest.fn(), extra = {}) => render(
+  harnessElement(response, sendSpy, extra),
 );
 
 const sendDraft = (content) => {
@@ -206,6 +210,129 @@ describe('V2Thread agent delivery hint', () => {
     expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
   });
 
+  test('a pod with no agent at all says why the send went quiet, and offers the step', async () => {
+    const onOpenInvite = jest.fn();
+    renderHarness(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite },
+    );
+
+    sendDraft('anyone there');
+
+    const kicker = await screen.findByText('no agent in this pod');
+    expect(screen.getByText(/Nobody here answers yet/)).toBeInTheDocument();
+    // The other branch would tell the user to @mention nobody: it needs a
+    // handle to suggest, which is exactly why `agentsInPod > 0` gates it.
+    expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+    // The row sits under the message it is about, not at the end of the pod.
+    const row = kicker.closest('.v2-chat__no-agents');
+    expect(row.previousElementSibling.textContent).toContain('anyone there');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add an agent' }));
+    // The same sheet the starter panel opens, on its agent tab.
+    expect(onOpenInvite).toHaveBeenCalledWith('agent');
+    expect(sessionStorage.getItem('v2.noAgentsHint.pod-1')).toBe('1');
+  });
+
+  test('the no-agent row shows at most once per pod per browser session', async () => {
+    const first = renderHarness(
+      makeMessage('first silent send', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    );
+    sendDraft('first silent send');
+    await screen.findByText('no agent in this pod');
+    first.unmount();
+
+    renderHarness(
+      makeMessage('second silent send', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    );
+    sendDraft('second silent send');
+    await screen.findByText('second silent send');
+
+    expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+  });
+
+  test('the row goes as soon as an agent joins the pod', async () => {
+    const view = render(harnessElement(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    ));
+
+    sendDraft('anyone there');
+    await screen.findByText('no agent in this pod');
+
+    // The pod detail re-reads on join; no second send, so the row cannot be
+    // waiting for one to notice. It goes because its premise is gone.
+    view.rerender(harnessElement(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: DEFAULT_AGENTS, onOpenInvite: jest.fn() },
+    ));
+
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    });
+  });
+
+  test.each([['agent-dm'], ['agent-room']])(
+    'stays hidden in a DM pod (%s) — its empty state already says who is missing',
+    async (podType) => {
+      renderHarness(
+        makeMessage('dm send', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+        jest.fn(),
+        { agents: [], podType, onOpenInvite: jest.fn() },
+      );
+
+      sendDraft('dm send');
+      await screen.findByText('dm send');
+
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    },
+  );
+
+  test('stays hidden when the shell has no way to add an agent', async () => {
+    // The row's whole shape is the explanation plus the one step. Without the
+    // step it would be a sentence pointing at nothing the user can do.
+    renderHarness(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [] },
+    );
+
+    sendDraft('anyone there');
+    await screen.findByText('anyone there');
+
+    expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+  });
+
+  test('an agent joining does not suppress the mention hint in the same session', async () => {
+    // Same pod, same session: the no-agent row first, then an agent joins, then
+    // a send that reaches nobody. Separate session keys, so the second hint is
+    // not cancelled by the first.
+    const view = render(harnessElement(
+      makeMessage('before the join', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    ));
+    sendDraft('before the join');
+    await screen.findByText('no agent in this pod');
+
+    view.rerender(harnessElement(
+      makeMessage('hello room', { enqueued: 0, implicit: [], agentsInPod: 1 }),
+      jest.fn(),
+      { agents: DEFAULT_AGENTS, onOpenInvite: jest.fn() },
+    ));
+    sendDraft('hello room');
+
+    const hint = await screen.findByText(/No agent was notified/);
+    expect(hint).toHaveTextContent('@aria');
+  });
+
   test('clears the visible hint the moment an agent starts typing (#914)', async () => {
     const handlers = {};
     mockSocketValue = {
@@ -231,6 +358,61 @@ describe('V2Thread agent delivery hint', () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+    });
+  });
+
+  test('an agent typing clears the row before the pod detail lists it', async () => {
+    // `agents` stays empty on purpose: the live guard cannot hide the row here,
+    // so only the clear in the typing handler can. That is the real #914 shape —
+    // an agent typing need not be in the pod detail's `agents` prop yet, and the
+    // row must not sit above the reply that is about to land.
+    const handlers = {};
+    mockSocketValue = {
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+        emit: jest.fn(),
+      },
+      connected: true,
+    };
+    renderHarness(
+      makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 }),
+      jest.fn(),
+      { agents: [], onOpenInvite: jest.fn() },
+    );
+
+    sendDraft('anyone there');
+    await screen.findByText('no agent in this pod');
+
+    act(() => {
+      handlers.agent_typing_start({ podId: 'pod-1', agentName: 'guide', displayName: 'Guide' });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    });
+  });
+
+  test('leaving the pod drops the row, and coming back does not resurrect it', async () => {
+    const props = { agents: [], onOpenInvite: jest.fn() };
+    const response = makeMessage('anyone there', { enqueued: 0, implicit: [], agentsInPod: 0 });
+    const view = render(harnessElement(response, jest.fn(), { ...props, podId: 'pod-1' }));
+
+    sendDraft('anyone there');
+    await screen.findByText('no agent in this pod');
+
+    view.rerender(harnessElement(response, jest.fn(), { ...props, podId: 'pod-2' }));
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
+    });
+
+    // Back to the pod that earned it. The message is still in the transcript
+    // (the harness keeps it), so a state not cleared on pod change would put the
+    // row back under a message the user did not just send — explaining the wrong
+    // room, with `pod-1`'s session key already spent so no send could re-earn it.
+    view.rerender(harnessElement(response, jest.fn(), { ...props, podId: 'pod-1' }));
+    await waitFor(() => {
+      expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
     });
   });
 });

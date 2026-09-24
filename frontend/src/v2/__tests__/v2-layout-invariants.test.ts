@@ -48,6 +48,30 @@ const teamPhoneBlock = (css: string): string => {
   }
 };
 
+// The `@media (max-width: 760px)` block that carries `selector`, wherever it
+// sits in the sheet. A phone override is indented inside a media query, so
+// `ruleBody` (which prefers a line-start selector) silently returns the desktop
+// rule instead — and a guard reading the wrong rule is green while the phone
+// layout is broken (TASK-140).
+const mediaBlockContaining = (css: string, selector: string): string => {
+  const marker = '@media (max-width: 760px)';
+  let from = 0;
+  for (;;) {
+    const at = css.indexOf(marker, from);
+    if (at < 0) return '';
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    const block = css.slice(at, end + 1);
+    if (block.includes(selector)) return block;
+    from = end + 1;
+  }
+};
+
 const ruleBody = (css: string, selector: string): string => {
   // Prefer a selector at the start of a CSS line. A descendant selector can
   // contain the same text (`.parent .target {`) and is not the rule being
@@ -2030,6 +2054,31 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const pkg = JSON.parse(read('../../../package.json'));
       expect(pkg.dependencies['@fontsource/ibm-plex-sans']).toBeDefined();
       expect(pkg.dependencies['@fontsource-variable/bricolage-grotesque']).toBeDefined();
+    });
+
+    test('the empty-pod row survives on phones with its one act still reachable', () => {
+      // A send into a pod with no agent installed is the case the delivery hint
+      // skips (`agentsInPod > 0`), and the row's act is the whole point of it.
+      expect(thread).toContain('delivery.agentsInPod === 0');
+      expect(thread).toContain('noAgentsHint={noAgentsInPodLive ? noAgentsHint : null}');
+      expect(threadMessages).toContain('className="v2-chat__no-agents"');
+      expect(threadMessages).toContain('podChat.noAgentsInPod.action');
+      expect(ruleBody(v2, '.v2-chat__no-agents')).toContain('margin: -4px 0 8px 50px');
+      // `.v2-chat__messages > *` sets width: 100%, so the 50px indent must come
+      // OUT of the width. Without this the row overruns the pane by 50px and the
+      // full-width phone act and the body line are cut (ux-lead's 390 shot).
+      expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
+      expect(ruleBody(v2, '.v2-chat__no-agents')).toContain('width: calc(100% - 50px)');
+      expect(ruleBody(v2, '.v2-chat__no-agents-kicker')).toContain('font-size: 11px');
+      expect(ruleBody(v2, '.v2-chat__no-agents-kicker')).toContain('text-transform: lowercase');
+      expect(ruleBody(v2, '.v2-chat__no-agents-body')).toContain('color: var(--v2-text-secondary)');
+      expect(ruleBody(v2, '.v2-root button.v2-chat__no-agents-action')).toContain('min-height: 32px');
+      const phone = mediaBlockContaining(v2, 'button.v2-chat__no-agents-action');
+      expect(phone).toContain('min-height: 44px');
+      expect(phone).toContain('width: 100%');
+      // The override has to beat the base MINIMUM. A `height: 44px` here would
+      // lose to `min-height: 32px` and silently render 32 on a phone.
+      expect(phone).not.toMatch(/[^-]height: 44px/);
     });
 
     test('pod focus keeps one bounded panel above the existing board and stays usable on phones', () => {
