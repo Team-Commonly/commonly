@@ -94,8 +94,13 @@ target cannot narrow a file an *earlier* install left at `0644` — `writeFileSy
 mode applies only at creation, and the old file's mode survives the write — which
 is exactly the case every upgrade meets. A `chmod` after the write narrows the
 file once the key is already in it. The rename also means a reader never sees a
-half-written unit; systemd reloads unit files on change, so an in-place write can
-be parsed mid-flight and fail.
+half-written unit — but note what the reader actually is, because the obvious
+version of that claim is false. systemd does **not** re-read a changed unit by
+itself: it reports the file as changed on disk and keeps the loaded copy until a
+`systemctl --user daemon-reload`. The exposure is a reader *concurrent* with the
+write, which is ordinary on a developer box — an install ends by running
+`daemon-reload`, any other install on the machine can run one at that same moment,
+and `systemctl --user show` reads the file.
 
 The temp is created with `O_EXCL` (`flag: 'wx'`) under a **random** suffix, and
 both halves are load-bearing. A predictable name — `<file>.tmp-<pid>` was the

@@ -83,10 +83,14 @@ const childPath = (nodePath) => [
 // cannot narrow a file an EARLIER install left at 0644 (its mode survives the
 // write, and a pre-existing 0644 service file is what every upgrade meets),
 // and a chmod after the write closes the door the key already walked through.
-// The rename also removes a second, quieter hazard: systemd watches unit files
-// and reloads on change, so an in-place write can be read half-finished and the
-// unit parse fails; after a rename a reader sees the old file or the new one,
-// never a truncated one.
+// The rename also removes a second hazard, narrower than it first looks: systemd
+// does NOT re-read a changed unit by itself — it reports the file as changed on
+// disk and keeps the loaded copy until a `systemctl --user daemon-reload`. What
+// is exposed is a reader CONCURRENT with the write, and that is not exotic here:
+// an install ends by running `daemon-reload`, every other install on the machine
+// can run one at the same moment, and `systemctl --user show` reads the file.
+// After a rename each of them sees the old file or the new one, never a
+// truncated unit.
 //
 // POSIX rename replaces the destination atomically, so this needs no
 // chmod-if-exists dance and no cleanup of the old file.

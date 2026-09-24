@@ -253,8 +253,10 @@ describe('install', () => {
   // rewrite-in-place cannot pass: a hard link is a SECOND NAME FOR THE SAME
   // INODE, so content written into the existing file would show up under the
   // link too. It does not, so the install displaced the old file rather than
-  // overwriting it — which is also what stops systemd, which reloads unit files
-  // when they change, from ever parsing a half-written unit.
+  // overwriting it — which is also what keeps a reader CONCURRENT with the write
+  // (a `daemon-reload` from another install, `systemctl --user show`) from parsing
+  // a half-written unit. systemd does not re-read a changed unit by itself: it
+  // reports the file as changed on disk until a `daemon-reload`.
   test('the new unit REPLACES the old file instead of being written into it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-replace-'));
     try {
