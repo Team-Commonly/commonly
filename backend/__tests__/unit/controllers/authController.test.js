@@ -277,6 +277,19 @@ describe('Auth Controller Tests', () => {
       Task.create.mockImplementationOnce(() => new Promise(() => {}));
       let podVisibleAtResponse = null;
 
+      // The store check below races the queued tail — the pod create can land
+      // while the count query is in flight — so the order is also pinned
+      // synchronously: register has to have RESUMED from the pod create before
+      // it writes the response, which is what dropping the await breaks.
+      let podCreateResolved = false;
+      let podResolvedAtResponse = null;
+      const createPod = Pod.create.bind(Pod);
+      const createSpy = jest.spyOn(Pod, 'create').mockImplementation((...args) => createPod(...args)
+        .then((doc) => {
+          podCreateResolved = true;
+          return doc;
+        }));
+
       const req = {
         body: {
           username: 'slowtail',
@@ -293,6 +306,7 @@ describe('Auth Controller Tests', () => {
         // name rather than by createdBy because register uses the _id mongoose
         // assigned at construction, not the one this test's save mock returns.
         json: jest.fn(() => {
+          podResolvedAtResponse = podCreateResolved;
           podVisibleAtResponse = Pod.countDocuments({ name: 'My Workspace' })
             .then((count) => count > 0);
         }),
@@ -314,6 +328,8 @@ describe('Auth Controller Tests', () => {
         expect.objectContaining({ sourceRef: 'onboarding:invite-teammate' }),
       ]);
       expect(await podVisibleAtResponse).toBe(true);
+      expect(podResolvedAtResponse).toBe(true);
+      createSpy.mockRestore();
 
       if (oldPgHost === undefined) delete process.env.PG_HOST;
       else process.env.PG_HOST = oldPgHost;

@@ -100,4 +100,23 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
     expect(ids).toEqual([conventionId('aaaa1111'), conventionId('bbbb2222')]);
     expect(new Set(ids).size).toBe(2);
   });
+
+  // The dependency the tail's order exists for: the welcome is a message INSERT
+  // against the pod's PG row, so the mirror has to have finished first. Call
+  // order, not presence — presence alone would not notice the two being swapped.
+  test('mirrors the pod into PG before the Guide posts its welcome', async () => {
+    const oldPgHost = process.env.PG_HOST;
+    process.env.PG_HOST = 'localhost';
+    try {
+      await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
+
+      expect(mockSyncPod).toHaveBeenCalledTimes(1);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1);
+      expect(mockSyncPod.mock.invocationCallOrder[0])
+        .toBeLessThan(mockPostMessage.mock.invocationCallOrder[0]);
+    } finally {
+      if (oldPgHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = oldPgHost;
+    }
+  });
 });
