@@ -6,6 +6,11 @@
  * 'default') gave the whole instance ONE shared memory doc — user A's
  * durable preferences readable from user B's workspace. Caught 2026-08-13
  * with zero bytes written; these pin the fork so it cannot regress.
+ *
+ * TASK-149 moved the Guide's install into finishWorkspaceOnboarding, queued
+ * from createDefaultWorkspacePod rather than awaited before the 201. These
+ * tests therefore drive the tail directly — the identity is computed from the
+ * userId, so the entry point is irrelevant to the property under test.
  */
 
 // jsonwebtoken must be mocked or it fails to load under the Node-26 drift
@@ -59,11 +64,11 @@ const authController = require('../../../controllers/authController');
 // and OPAQUE — the raw userId must not survive into any identity tier.
 const conventionId = (userId) => `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
 
-describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
+describe('workspace onboarding guide identity fork (2026-08-13)', () => {
   beforeEach(() => jest.clearAllMocks());
 
   test('installs the guide under the convention instanceId — short, opaque, never default', async () => {
-    await authController.createDefaultWorkspacePod('User-1');
+    await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
     const expected = conventionId('User-1');
 
     const [filter, update] = mockInstallUpsert.mock.calls[0];
@@ -88,8 +93,8 @@ describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
   });
 
   test('two users get two distinct guide identities — the memory-envelope fork', async () => {
-    await authController.createDefaultWorkspacePod('aaaa1111');
-    await authController.createDefaultWorkspacePod('bbbb2222');
+    await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'aaaa1111');
+    await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'bbbb2222');
 
     const ids = mockInstallUpsert.mock.calls.map(([filter]) => filter.instanceId);
     expect(ids).toEqual([conventionId('aaaa1111'), conventionId('bbbb2222')]);
