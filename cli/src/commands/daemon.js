@@ -9,7 +9,7 @@
 import { hostname, homedir } from 'os';
 import { spawn } from 'child_process';
 import {
-  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch, writeFileSync,
+  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch,
 } from 'fs';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
@@ -21,7 +21,7 @@ import {
 } from '../lib/daemon-supervisor.js';
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getLastTurn } from '../lib/session-store.js';
-import { getAdapter } from '../lib/adapters/index.js';
+import { getAdapter, providerKeyEnvNames } from '../lib/adapters/index.js';
 import {
   installDaemonService,
   uninstallDaemonService,
@@ -29,6 +29,7 @@ import {
   stopDaemonService,
   restartDaemonService,
   daemonLogPath,
+  missingProviderKeys,
   servicePaths,
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
@@ -237,7 +238,10 @@ Examples:
 
   // ── install / uninstall (ADR-026 D1) ──────────────────────────────────────
   const serviceDeps = () => ({
-    writeFile: (file, content) => writeFileSync(file, content, 'utf8'),
+    // writeFile is deliberately NOT injected here: daemon-service.js's default
+    // writer sets the 0600 mode at CREATION, and a bare `writeFileSync(file,
+    // content, 'utf8')` dropped that — leaving the service file, which can hold
+    // a provider key, readable at umask until the chmod a moment later.
     mkdirp: (dir) => { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); },
     chmod: (path, mode) => chmodSync(path, mode),
     ensureFile: (path) => { const fd = openSync(path, 'a', 0o600); closeSync(fd); },
@@ -270,7 +274,12 @@ Examples:
       try {
         // A service without a credential just crash-loops at boot.
         requireDaemonRecord();
-        await installDaemonService(serviceDeps());
+        // Same class one layer over (TASK-049): a service without the SEATS'
+        // provider key comes up clean, and every pi seat then dies inside its
+        // adapter. The keys are captured here because this is the only moment
+        // the operator's shell is in reach; the ones that are missing are named
+        // by installDaemonService rather than left to be discovered per seat.
+        await installDaemonService({ ...serviceDeps(), providerKeyEnvNames: providerKeyEnvNames() });
         console.log('The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
       } catch (error) {
         console.error(`Daemon install failed: ${error.message}`);
@@ -341,6 +350,20 @@ Examples:
         if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
         chmodSync(logsDir, 0o700);
         const stampLog = (line) => console.log(`${new Date().toISOString()} ${line}`);
+
+        // TASK-049: fail loudly at BIND, once, naming the variable.
+        //
+        // A service-started daemon inherits a clean environment, so a provider
+        // key that lives only in the operator's shell is absent here; every pi
+        // seat then dies at adapter start with `COMMONLY_LITELLM_KEY is not set`
+        // and the operator sees crash loops with no cause at daemon level. One
+        // line at startup answers the question the log would otherwise take a
+        // seat autopsy to answer. Not fatal: the daemon's other seats are
+        // unaffected, and refusing to start would turn one missing key into a
+        // whole-machine outage.
+        for (const name of missingProviderKeys({ names: providerKeyEnvNames() })) {
+          stampLog(`WARNING: ${name} is not set in this environment — a seat whose adapter needs it will fail to start. Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+        }
 
         const supervisor = createDaemonSupervisor({
           record,

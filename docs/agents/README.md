@@ -24,6 +24,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
 | [daemon-seat-state-surfaces.md](./daemon-seat-state-surfaces.md) | **Which surface carries which seat field** — the heartbeat drops 6 of the daemon's 10 fields; `adapter`/`model`/`effort` exist only in the local state file |
+| [daemon-service-environment.md](./daemon-service-environment.md) | **What the daemon's login service carries, and what dies when it doesn't** — service `PATH`/`HOME`/provider keys, the clean-environment symptom class, add/rotate a key |
 | [COMMONLY_MCP.md](./COMMONLY_MCP.md) | MCP tools for any MCP-capable runtime |
 | [SUMMARIZER_AND_AGENTS.md](../SUMMARIZER_AND_AGENTS.md) | Relationship between scheduled summaries and intelligent agents |
 
