@@ -196,12 +196,6 @@ exports.getAllPods = async (req: any, res: any) => {
       }
       : (type ? { type } : { type: { $ne: 'agent-admin' } });
 
-    let pods = await Pod.find(query)
-      .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
-      .populate('parentPod', 'name _id')
-      .sort({ updatedAt: -1 });
-
     // Membership filter — return only pods the requester belongs to.
     //
     // Personal pod types (agent-admin / agent-room / agent-dm) have always
@@ -221,14 +215,42 @@ exports.getAllPods = async (req: any, res: any) => {
     // private DM in the instance leaks into their sidebar (which made
     // xcjsam see — and try to post into — sam-demo's agent-rooms).
     const isPersonal = isPersonalPodType(type);
+    let membershipFilterToMine = false;
+    let memberId: any = null;
     if (req.userId && !isCommunityScope && !isDiscoverScope) {
       const wantsAll = scope === 'all';
       const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
-      const filterToMine = isPersonal || !wantsAll || !isAdmin;
-      if (filterToMine) {
+      membershipFilterToMine = isPersonal || !wantsAll || !isAdmin;
+      if (membershipFilterToMine) {
         const uid = String(req.userId);
-        pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+        memberId = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
       }
+    }
+
+    // Push the membership predicate into Mongo rather than materialising every
+    // pod on the instance and discarding all but the caller's in JS (TASK-151).
+    // Measured before this change, for a caller with ONE pod: 118-182 ms on a
+    // 200-pod instance, 412-515 ms on 1,200, 644-767 ms on 4,200 — the cost was
+    // proportional to everyone else's pods (collection scan + in-memory sort +
+    // populate across all of them) while the response was byte-identical. After:
+    // the same three cases are flat (see the benchmark in the PR). Falls back to
+    // the JS filter only when the caller id is not castable, which preserves the
+    // previous behaviour exactly (no pods match, empty list) instead of throwing
+    // a CastError out of the query.
+    const listedQuery = memberId ? { ...query, members: memberId } : query;
+
+    let pods = await Pod.find(listedQuery)
+      .populate('createdBy', 'username profilePicture')
+      .populate('members', 'username profilePicture isBot')
+      .populate('parentPod', 'name _id')
+      .sort({ updatedAt: -1 });
+
+    if (membershipFilterToMine && !memberId) {
+      const uid = String(req.userId);
+      // `m &&` : populate leaves a null in place of a member whose User row is
+      // gone, and the previous `m._id` would throw on it — turning one stale
+      // reference anywhere on the instance into a 500 for the whole sidebar.
+      pods = pods.filter((p: any) => (p.members || []).some((m: any) => m && String(m._id || m) === uid));
     }
 
     // Attach last-message preview per pod for the sidebar snippet. Single
