@@ -10,6 +10,12 @@ on:
   # by hand. Merge-to-main guards (base-freshness, version-guard) stay scoped
   # to main; the test tiers run for every PR regardless of base.
   pull_request:
+  # The merge queue on main runs the required check (Test & Coverage) on the
+  # queue's own commit, which is main plus the PRs ahead of it. Without this
+  # trigger a queued PR never gets that check and the queue stalls. The
+  # concurrency group below already falls back to github.sha for this event,
+  # so each queue commit gets its own group.
+  merge_group:
   workflow_dispatch:
 
 permissions:
