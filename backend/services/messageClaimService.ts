@@ -146,17 +146,23 @@ const MESSAGE_ID_MAX = 2147483647;
  *
  * A STORE FAILURE PASSES THE ID THROUGH rather than refusing it, and the
  * direction carries the arm's own reasoning: a refusal for a 24-hex id does not
- * fail closed — `enforcement.js:414` turns the route's non-2xx into
- * `{failOpen: true}` — so an outage that refused would unguard every woken seat
- * and stop the race deduping. An unconfirmed id therefore degrades to the
+ * fail closed — the CLI's claim path (`cli/src/lib/enforcement.js:414`) turns
+ * the route's non-2xx into `{failOpen: true}` — so an outage that refused would
+ * unguard every woken seat and stop the race deduping. An unconfirmed id
+ * therefore degrades to the
  * pre-TASK-122 behaviour (dedupe holds, a phantom is possible) and says so on
  * one line, rather than reverting the hardening in silence.
  *
  * The lookup is a collection scan: no index covers `comments._id` (models/Post
- * declares none). Comment claims are a small subset of claims, so the cost is
- * named here rather than answered with a schema change inside a predicate —
- * milliseconds at this instance's scale, and the index is the follow-on if post
- * volume grows.
+ * declares none), so a MISS — the fabricated-id case this arm exists to refuse —
+ * examines every document. Measured on the live instance 2026-09-24 rather than
+ * estimated: 715 posts, 5,455 comments, 2.4 MB; a miss examines 715 and costs
+ * ~50 ms including the round trip. The cost thus falls on the fabricated-id
+ * request rather than the real one, and it is spent only behind a valid runtime
+ * token plus `phase4RateLimit`: if the route ever loses either, this index stops
+ * being a follow-on that day. Revisit when posts pass ~10k or when a miss
+ * doubles, whichever comes first — the latency trigger catches growing comment
+ * density, which a document count would not.
  *
  * Canonical case only. `String(objectId)` is lowercase in every driver we
  * send, so an uppercase spelling is refused with the digits arm's 404 — which
@@ -184,11 +190,14 @@ function isChatMessageId(id: string): boolean {
  * The comment namespace's store, loaded lazily.
  *
  * `Post.comments[]` is a subdocument array (models/Post.ts), so a comment's
- * `_id` cannot be answered by the Postgres query below. Required on first use
- * rather than at module scope: this module is loaded by the claim route on the
- * wake path, and a module-level require would register a Mongo model in every
- * process that loads the service, including the ones that never ask about a
- * comment.
+ * `_id` cannot be answered by the Postgres query below.
+ *
+ * Resolved on first use rather than at module scope, and the honest reason is
+ * the test seam rather than process hygiene: model registration is idempotent
+ * and `postController.ts` already loads Post in every backend process, so a
+ * module-level require would cost nothing. Keeping it in this one function makes
+ * it the service's only dependency on the Post model — which is exactly the
+ * thing a unit suite has to replace.
  */
 let commentsStore: { exists: (filter: Record<string, unknown>) => Promise<unknown> } | null = null;
 
