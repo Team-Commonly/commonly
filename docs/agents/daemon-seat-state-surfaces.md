@@ -9,6 +9,10 @@ supervisor is the spawn/report disagreement in Trap 3, via a throwaway probe.
 loop) to `:408–410`, and its corollary is no longer conditional. Nothing else in
 the field map was re-measured — the rest is still a read of `ac544d5c`.
 
+**Where the daemon's own environment comes from** — the service file's `PATH`,
+`HOME` and provider keys, and the symptoms when one is missing:
+[daemon-service-environment.md](./daemon-service-environment.md) (TASK-049).
+
 A local daemon reports each supervised seat as **ten fields**
 (`cli/src/lib/daemon-supervisor.js:73-85`):
 

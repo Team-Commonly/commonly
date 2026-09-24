@@ -36,7 +36,32 @@ const childPath = (nodePath) => [
   dirname(nodePath), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin',
 ].filter((entry, index, all) => all.indexOf(entry) === index).join(':');
 
-export const launchdPlist = ({ nodePath, cliPath, home = homedir() }) => `<?xml version="1.0" encoding="UTF-8"?>
+// TASK-049: PATH is not the only thing the children need.
+//
+// launchd and systemd both start the daemon from a CLEAN environment, so a
+// seat's provider key that exists only in the operator's interactive shell is
+// absent at boot — and the seat then dies inside its own adapter (`pi.js`
+// throws `COMMONLY_LITELLM_KEY is not set`). That is the same defect the PATH
+// line above fixes, one layer over, and it is fixed the same way: carry what
+// the install could see. Installation is the ONLY moment the operator's shell is
+// in reach, so the keys are captured there, and the ones that were missing are
+// named at install time rather than discovered one crash-looping seat at a time.
+//
+// The values are secrets. The daemon's own credential is a 0600 file, so the
+// service file is written 0600 too instead of being left at the umask default a
+// PATH-only unit could safely keep.
+export const providerEnvPairs = ({ names = [], env = process.env } = {}) => names
+  .filter((name) => env[name])
+  .map((name) => [name, String(env[name])]);
+
+export const missingProviderKeys = ({ names = [], env = process.env } = {}) => names
+  .filter((name) => !env[name]);
+
+const plistEnvPairs = (pairs) => pairs
+  .map(([name, value]) => `\t\t<key>${xmlEscape(name)}</key>\n\t\t<string>${xmlEscape(value)}</string>\n`)
+  .join('');
+
+export const launchdPlist = ({ nodePath, cliPath, home = homedir(), providerEnv = [] }) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -48,7 +73,7 @@ export const launchdPlist = ({ nodePath, cliPath, home = homedir() }) => `<?xml 
 \t\t<string>${xmlEscape(childPath(nodePath))}</string>
 \t\t<key>HOME</key>
 \t\t<string>${xmlEscape(home)}</string>
-\t</dict>
+${plistEnvPairs(providerEnv)}\t</dict>
 \t<key>ProgramArguments</key>
 \t<array>
 \t\t<string>${xmlEscape(nodePath)}</string>
@@ -69,7 +94,11 @@ export const launchdPlist = ({ nodePath, cliPath, home = homedir() }) => `<?xml 
 </plist>
 `;
 
-export const systemdUnit = ({ nodePath, cliPath }) => `[Unit]
+export const systemdUnit = ({ nodePath, cliPath, providerEnv = [] }) => {
+  const providerLines = providerEnv.length
+    ? `\n${providerEnv.map(([name, value]) => `Environment="${name}=${value}"`).join('\n')}`
+    : '';
+  return `[Unit]
 Description=Commonly local agent daemon (ADR-026)
 After=network-online.target
 
@@ -77,23 +106,28 @@ After=network-online.target
 ExecStart=${nodePath} ${cliPath} daemon run --foreground
 Restart=always
 RestartSec=5
-Environment=PATH=${childPath(nodePath)}
+Environment=PATH=${childPath(nodePath)}${providerLines}
 
 [Install]
 WantedBy=default.target
 `;
+};
 
 export const installDaemonService = async ({
   platform = process.platform,
   home = homedir(),
   nodePath = process.execPath,
   cliPath = resolve(process.argv[1]),
+  // The provider keys the seats' adapters declare (adapters/index.js).
+  providerKeyEnvNames = [],
+  env = process.env,
   writeFile,
   mkdirp,
   execCmd, // async (argv: string[]) => void — throws on failure
   chmod = () => {},
   ensureFile,
   log = () => {},
+  warn = log,
 }) => {
   const target = servicePaths(platform, home);
   mkdirp(dirname(target.file));
@@ -104,16 +138,27 @@ export const installDaemonService = async ({
     chmod(daemonLogPath(home), 0o600);
   }
 
+  const providerEnv = providerEnvPairs({ names: providerKeyEnvNames, env });
+  const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
+
   if (target.kind === 'launchd') {
-    writeFile(target.file, launchdPlist({ nodePath, cliPath, home }));
+    writeFile(target.file, launchdPlist({ nodePath, cliPath, home, providerEnv }));
+    // The file can now carry a provider key, so it does not keep the default
+    // permissions a PATH-only unit could: a key readable by every local user is
+    // a key handed to every local user.
+    chmod(target.file, 0o600);
     // Reload cleanly if a previous version is loaded; the unload of an
     // unknown label fails by design and is ignored.
     await execCmd(['launchctl', 'unload', target.file]).catch(() => {});
     await execCmd(['launchctl', 'load', '-w', target.file]);
   } else {
-    writeFile(target.file, systemdUnit({ nodePath, cliPath }));
+    writeFile(target.file, systemdUnit({ nodePath, cliPath, providerEnv }));
+    chmod(target.file, 0o600);
     await execCmd(['systemctl', '--user', 'daemon-reload']);
     await execCmd(['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]);
+  }
+  for (const name of missing) {
+    warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
   }
   log(`Installed ${target.kind} service (${target.file}). Logs: ${daemonLogPath(home)}`);
   return target;

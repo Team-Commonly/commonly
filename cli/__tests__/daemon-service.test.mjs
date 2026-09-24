@@ -15,6 +15,7 @@ import {
   systemdUnit,
   uninstallDaemonService,
 } from '../src/lib/daemon-service.js';
+import { providerKeyEnvNames } from '../src/lib/adapters/index.js';
 
 const nodePath = '/opt/node/bin/node';
 const cliPath = '/opt/cli/src/index.js';
@@ -35,6 +36,35 @@ describe('unit content', () => {
     const unit = systemdUnit({ nodePath, cliPath });
     expect(unit).toContain(`ExecStart=${nodePath} ${cliPath} daemon run`);
     expect(unit).toContain('Restart=always');
+  });
+
+  // TASK-049: launchd and systemd start the daemon with a CLEAN environment, so
+  // a provider key that lives only in the operator's shell is absent at boot and
+  // the seat dies inside its adapter. The install is the only moment the
+  // operator's shell is in reach, so the keys are captured there.
+  test('both units carry the provider keys the install could see', () => {
+    const providerEnv = [['COMMONLY_LITELLM_KEY', 'vk-secret']];
+    const plist = launchdPlist({ nodePath, cliPath, home, providerEnv });
+    expect(plist).toContain('<key>COMMONLY_LITELLM_KEY</key>\n\t\t<string>vk-secret</string>');
+    expect(systemdUnit({ nodePath, cliPath, providerEnv })).toContain('Environment="COMMONLY_LITELLM_KEY=vk-secret"');
+  });
+
+  test('a provider key value cannot break the plist XML', () => {
+    const plist = launchdPlist({ nodePath, cliPath, home, providerEnv: [['COMMONLY_LITELLM_KEY', 'a&b<c']] });
+    expect(plist).toContain('<string>a&amp;b&lt;c</string>');
+  });
+
+  test('no provider keys declared — neither unit gains an env line', () => {
+    const plist = launchdPlist({ nodePath, cliPath, home });
+    expect(plist).not.toContain('provider');
+    expect(systemdUnit({ nodePath, cliPath })).not.toContain('Environment="');
+  });
+
+  // The daemon reads this list from the registry, so a renamed variable in the
+  // adapter must not silently stop the key from being carried.
+  test('the pi adapter declares the provider key the daemon carries', () => {
+    expect(providerKeyEnvNames()).toContain('COMMONLY_LITELLM_KEY');
+    expect(providerKeyEnvNames({ pi: { providerKeyEnv: 'X' }, claude: {}, codex: {} })).toEqual(['X']);
   });
 });
 
@@ -89,6 +119,46 @@ describe('install', () => {
     expect(deps.chmod).toHaveBeenCalledWith(`${home}/.commonly/logs/daemon`, 0o700);
     expect(deps.ensureFile).toHaveBeenCalledWith(daemonLogPath(home));
     expect(deps.chmod).toHaveBeenCalledWith(daemonLogPath(home), 0o600);
+  });
+
+  test('install carries a present provider key into the unit and warns about a missing one', async () => {
+    const withKey = makeDeps();
+    withKey.warn = jest.fn();
+    await installDaemonService({
+      platform: 'darwin',
+      home,
+      nodePath,
+      cliPath,
+      providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+      env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+      ...withKey,
+    });
+    expect(withKey.writeFile.mock.calls[0][1]).toContain('COMMONLY_LITELLM_KEY</key>');
+    expect(withKey.warn).not.toHaveBeenCalled();
+
+    const withoutKey = makeDeps();
+    withoutKey.warn = jest.fn();
+    await installDaemonService({
+      platform: 'darwin',
+      home,
+      nodePath,
+      cliPath,
+      providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+      env: {},
+      ...withoutKey,
+    });
+    // Absent is stated, never invented: nothing is written and the operator is
+    // told at install time rather than discovering it one crash-looping seat at
+    // a time.
+    expect(withoutKey.writeFile.mock.calls[0][1]).not.toContain('COMMONLY_LITELLM_KEY');
+    expect(withoutKey.warn).toHaveBeenCalledWith(expect.stringContaining('COMMONLY_LITELLM_KEY is not set in this shell'));
+  });
+
+  test('the service file is 0600, because it can now carry a secret', async () => {
+    const deps = makeDeps();
+    deps.chmod = jest.fn();
+    const target = await installDaemonService({ platform: 'darwin', home, nodePath, cliPath, ...deps });
+    expect(deps.chmod).toHaveBeenCalledWith(target.file, 0o600);
   });
 });
 

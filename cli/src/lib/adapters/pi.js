@@ -386,6 +386,14 @@ const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl
 export default {
   name: 'pi',
 
+  // TASK-049: the variable this adapter needs from the environment of whatever
+  // process spawns it. Declared HERE because the adapter owns the provider; the
+  // registry collects it (adapters/index.js) so the daemon can carry the key
+  // into its login service and fail loudly at bind when it is absent, instead
+  // of the seat dying at line ~406 with nothing naming the missing variable at
+  // daemon level.
+  providerKeyEnv: DEFAULT_PROVIDER.apiKeyEnv,
+
   async detect() {
     const res = spawnSync('pi', ['--version'], { encoding: 'utf8' });
     if (res.error || res.status !== 0) return null;
