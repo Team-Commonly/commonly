@@ -1818,9 +1818,10 @@ body.modern-ui.v2-canvas {
 
 /* Sender-only teaching cue shown once per pod/session when a message reaches
    a pod with agents but addresses none of them. Aligns with message text,
-   stays quiet/secondary, and disappears naturally with transcript scroll. */
+   stays quiet/secondary, and disappears naturally with transcript scroll.
+   Box geometry is NOT here: it belongs to the side-row slot rule below, which
+   this row shares with the no-agent row. */
 .v2-chat__delivery-hint {
-  margin: -4px 0 8px 50px;
   color: var(--v2-text-tertiary);
   font-size: 12px;
   line-height: 1.4;
@@ -1829,6 +1830,28 @@ body.modern-ui.v2-canvas {
 .v2-chat__delivery-hint strong {
   color: var(--v2-ink);
   font-weight: 600;
+}
+
+/* The transcript's two side-rows — the sender-only delivery cue above and the
+   no-agent row below — occupy ONE slot, and that slot IS the message text
+   column. Both are siblings of `.v2-msg` inside `.v2-chat__messages`, so the
+   indent is that grid's avatar column plus its gap (38 + 12 = 50) rather than
+   a number of its own, and the width subtracts the same indent: the
+   `.v2-chat__messages > *` rule sets width: 100%, so an indent without its
+   complement overruns the pane by exactly the indent. That was the #1846
+   defect — at 390 the
+   full-width act ran 64→426 and the body line was cut (ux-lead's shot,
+   2026-09-23) — and Sam hit the same class one indent over on
+   `.v2-thread-block` (2026-08-24): indent + width must sum to 100%.
+
+   One rule for both rows, so they cannot drift apart again: this is the only
+   place either row's box is declared, and v2-layout-invariants.test.ts derives
+   the expected indent from `.v2-msg`'s own grid, so moving that column fails
+   the suite instead of silently misaligning these rows. */
+.v2-chat__delivery-hint,
+.v2-chat__no-agents {
+  width: calc(100% - 50px);
+  margin: -4px 0 8px 50px;
 }
 
 /* The delivery hint above requires an agent to name (`agentsInPod > 0`), which
@@ -1841,13 +1864,8 @@ body.modern-ui.v2-canvas {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  /* `.v2-chat__messages > *` sets width: 100%, so the 50px indent below has to
-     be subtracted or the row overruns the pane by exactly 50px: at 390 the
-     full-width act ran 64→426 and the body line was cut (ux-lead's shot,
-     2026-09-23). Same rule as `.v2-thread-block` below — indent + width must
-     sum to 100% (Sam, 2026-08-24, the same bug one indent over). */
-  width: calc(100% - 50px);
-  margin: -4px 0 8px 50px;
+  /* Box geometry lives in the shared side-row slot rule above, next to the
+     delivery cue it shares the slot with. */
 }
 
 .v2-chat__no-agents-kicker {
