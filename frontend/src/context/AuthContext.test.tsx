@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 test('register does not store a token and returns the response message', async () => {
-  const message = 'User registered successfully. Check your email for verification.';
+  const message = 'Registered. Verify your email to join the Community pod.';
   axios.post.mockResolvedValue({ data: { message } });
   let result;
   await act(async () => {

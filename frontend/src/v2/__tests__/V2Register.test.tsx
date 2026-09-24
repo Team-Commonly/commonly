@@ -69,7 +69,7 @@ describe('V2Register', () => {
         : Promise.resolve({ data: { providers: [] } })
     ));
     axios.post.mockResolvedValue({
-      data: { message: 'User registered successfully. Check your email for verification.' },
+      data: { message: 'Registered. Verify your email to join the Community pod.' },
     });
   });
 
@@ -95,8 +95,53 @@ describe('V2Register', () => {
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
 
-    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "You're in" })).toBeInTheDocument();
+    // The sentence names the gate — joining the Community pod — and the address
+    // it went to: the same sentence the in-app banner shows.
+    expect(screen.getByText(
+      'Verify your email to join the Community pod — link sent to new@example.com.',
+    )).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'sign in now' })).toHaveAttribute('href', '/v2/login');
     expect(login).toHaveBeenCalledWith('new@example.com', 'Password123!');
+  });
+
+  it('still shows the reminder for the pre-2026-09-23 wording a rolling backend sends', async () => {
+    // The one arm with no other guard: an old backend answering a new frontend,
+    // which is the window this ships through. Dropping `check your email` from
+    // the regex left the file green until this case existed.
+    axios.post.mockResolvedValue({
+      data: { message: 'User registered successfully. Check your email for verification.' },
+    });
+    renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(await screen.findByRole('heading', { name: "You're in" })).toBeInTheDocument();
+    expect(screen.getByText(/join the Community pod/)).toBeInTheDocument();
+  });
+
+  it('shows the plain created screen when verification is not required', async () => {
+    // The screen is selected from the response's prose, so both directions are
+    // pinned: a message naming verification shows the reminder, one saying none is
+    // needed shows the plain created state. A copy edit that drops both phrases
+    // would otherwise silently strand the reminder screen.
+    axios.post.mockResolvedValue({
+      data: { message: 'User registered successfully. Email verification is not required.' },
+    });
+    renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Account created' })).toBeInTheDocument();
+    expect(screen.queryByText(/join the Community pod/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'sign in now' })).not.toBeInTheDocument();
   });
 });

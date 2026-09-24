@@ -180,7 +180,7 @@
       "password": "Password"
     },
     "verificationBanner": {
-      "message": "Verify your email — we sent a link to {{email}}.",
+      "message": "Verify your email to join the Community pod — link sent to {{email}}.",
       "resend": "Resend",
       "sending": "Sending…",
       "resent": "Verification link requested.",
@@ -223,9 +223,9 @@
       },
       "success": {
         "ready": "Your account is ready. Sign in to continue.",
-        "checkEmailTitle": "Check your email",
+        "checkEmailTitle": "You're in",
         "createdTitle": "Account created",
-        "checkEmailMessage": "We sent a verification link to your email.",
+        "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "continue": "Continue to sign in"
       }

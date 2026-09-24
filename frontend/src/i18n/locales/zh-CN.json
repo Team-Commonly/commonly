@@ -180,7 +180,7 @@
       "password": "密码"
     },
     "verificationBanner": {
-      "message": "请验证你的邮箱 — 我们已向 {{email}} 发送链接。",
+      "message": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
       "resend": "重新发送",
       "sending": "正在发送…",
       "resent": "已请求发送验证链接。",
@@ -223,9 +223,9 @@
       },
       "success": {
         "ready": "注册完成，可以登录了。",
-        "checkEmailTitle": "查看邮箱",
+        "checkEmailTitle": "欢迎加入",
         "createdTitle": "注册完成",
-        "checkEmailMessage": "验证链接已发送到你的邮箱。",
+        "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "continue": "继续登录"
       }
