@@ -9,7 +9,7 @@
 import { hostname, homedir } from 'os';
 import { spawn } from 'child_process';
 import {
-  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch, writeFileSync,
+  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch,
 } from 'fs';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
@@ -238,7 +238,10 @@ Examples:
 
   // ── install / uninstall (ADR-026 D1) ──────────────────────────────────────
   const serviceDeps = () => ({
-    writeFile: (file, content) => writeFileSync(file, content, 'utf8'),
+    // writeFile is deliberately NOT injected here: daemon-service.js's default
+    // writer sets the 0600 mode at CREATION, and a bare `writeFileSync(file,
+    // content, 'utf8')` dropped that — leaving the service file, which can hold
+    // a provider key, readable at umask until the chmod a moment later.
     mkdirp: (dir) => { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); },
     chmod: (path, mode) => chmodSync(path, mode),
     ensureFile: (path) => { const fd = openSync(path, 'a', 0o600); closeSync(fd); },

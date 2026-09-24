@@ -1,5 +1,12 @@
 // ADR-026 D1: the generated service units and the install/uninstall flows,
 // with every side effect injected — no launchctl, no systemctl, no writes.
+//
+// One exception, deliberate: the create-mode witness writes a real file, because
+// a jest.fn() writer cannot show the mode a file was created with, and the mode
+// at creation is the half of the 0600 story that a chmod cannot cover.
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { jest } from '@jest/globals';
 
 import {
@@ -52,6 +59,16 @@ describe('unit content', () => {
   test('a provider key value cannot break the plist XML', () => {
     const plist = launchdPlist({ nodePath, cliPath, home, providerEnv: [['COMMONLY_LITELLM_KEY', 'a&b<c']] });
     expect(plist).toContain('<string>a&amp;b&lt;c</string>');
+  });
+
+  // Two sinks, two escaping rules, and the systemd one is the stricter: inside
+  // `Environment="…"` a raw quote closes it and a raw newline ends the
+  // assignment, so the remainder of the key lands in the unit as a directive of
+  // its own. Escaping only the plist would leave the sink nobody looked at.
+  test('a provider key value cannot break the systemd unit either', () => {
+    const unit = systemdUnit({ nodePath, cliPath, providerEnv: [['COMMONLY_LITELLM_KEY', 'a"b\nKillMode=none']] });
+    expect(unit).toContain('Environment="COMMONLY_LITELLM_KEY=a\\"b\\nKillMode=none"');
+    expect(unit).not.toContain('\nKillMode=none');
   });
 
   test('no provider keys declared — neither unit gains an env line', () => {
@@ -159,6 +176,32 @@ describe('install', () => {
     deps.chmod = jest.fn();
     const target = await installDaemonService({ platform: 'darwin', home, nodePath, cliPath, ...deps });
     expect(deps.chmod).toHaveBeenCalledWith(target.file, 0o600);
+  });
+
+  // Both halves, and this is the one a chmod cannot give you: writeFileSync's
+  // mode applies only when the file does not exist, which is exactly a fresh
+  // install. Witnessed on a real file, through the REAL default writer and with
+  // chmod left at its no-op default, so the mode observed can only have come
+  // from creation — a fake writer and an injected chmod would prove neither.
+  test('a fresh install CREATES the service file 0600, not narrowed afterwards', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-install-'));
+    try {
+      const target = await installDaemonService({
+        platform: 'linux',
+        home: dir,
+        nodePath,
+        cliPath,
+        providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+        env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+        mkdirp: (path) => mkdirSync(path, { recursive: true }),
+        execCmd: async () => {},
+        log: () => {},
+      });
+      expect(statSync(target.file).mode & 0o777).toBe(0o600);
+      expect(readFileSync(target.file, 'utf8')).toContain('Environment="COMMONLY_LITELLM_KEY=vk-secret"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
