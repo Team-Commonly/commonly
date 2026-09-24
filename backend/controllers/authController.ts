@@ -148,7 +148,14 @@ const sendVerificationEmailInBackground = (user: any) => {
 //
 // Every step is best-effort and individually caught, and the outer catch makes
 // this function total — it never rejects, which is what lets the caller fire
-// it without an unhandled-rejection risk.
+// it without an unhandled-rejection risk. Read that as a contract, not as
+// boilerplate: the outer catch is unreachable as written (a reviewer's
+// rethrow mutant changes no test, because each step below swallows its own
+// error already), and it is therefore NOT dead code to delete. It is the
+// backstop for a fourth step added outside an inner catch — without it, that
+// step's rejection surfaces as an unhandled rejection from the `void
+// finishWorkspaceOnboarding(...)` call site, which is a process crash under
+// Node's default --unhandled-rejections=throw, on the register path.
 const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
   try {
     // Mirror the workspace into PostgreSQL immediately. The UI path
