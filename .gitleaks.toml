@@ -53,6 +53,11 @@ paths = [
 id = "commonly-agent-token"
 description = "Commonly agent runtime token"
 regex = '''cm_agent_[0-9a-f]{64}'''
+# A real token is 64 random hex characters, about 3.9 bits per character. Test
+# fixtures build look-alikes from one or two repeated digits (about 1.1), and
+# without this floor one of them turned main's Secret Scan red on every push
+# from #1823 onward. 3.0 keeps every real token and drops the synthetic ones.
+entropy = 3.0
 tags = ["token", "commonly"]
 
 [[rules]]

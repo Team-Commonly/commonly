@@ -17,6 +17,13 @@ import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 
 import { createClient } from '../lib/api.js';
+import {
+  buildSpawnId,
+  createSpawnCredentialLease,
+  readSpawnPolicy,
+  resolveSpawnTtlSeconds,
+  revokeOrphanedSpawnCredentials,
+} from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
@@ -925,9 +932,45 @@ export const performRun = ({
   // Kept injectable for small-page regression cases; the runtime ships with
   // the server's ordinary ten-event page.
   inboxBatchLimit = 10,
+  // TASK-102 part B. Undefined means "use the server's published default"; a
+  // number here is the operator's ask, and the policy read at boot is what
+  // makes a clamp visible instead of silent.
+  spawnCredentialTtlSeconds = null,
+  spawnCredentialLeaseFactory = createSpawnCredentialLease,
+  revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
+
+  // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat
+  // that dies mid-turn (kill, crash, reboot) leaves its child credential live
+  // until its own TTL expires, because `close()` never ran; this is what collects
+  // those. Fire-and-forget by contract: `performRun` is synchronous for its
+  // callers, the sweep is best-effort, and a sweep that failed must not stop a
+  // seat from spawning — it logs and returns. Per process rather than per spawn
+  // because the orphans being collected belong to the PREVIOUS process.
+  //
+  // The promise wrapper is not ceremony: it makes a throwing OR rejecting
+  // implementation of the seam a log line instead of an unhandled rejection,
+  // which is the difference between a diagnostic and a crash in a seat that is
+  // otherwise fine.
+  void Promise.resolve()
+    .then(() => revokeOrphansImpl({ client, log }))
+    .catch((err) => log(`spawn credential boot sweep failed (${err?.message ?? err})`));
+
+  // The bounds the server will clamp to. READ ONLY IF THERE IS AN ASK TO CLAMP:
+  // with no `COMMONLY_SPAWN_TTL_SECONDS` the cli sends no `ttlSeconds` at all
+  // and the server's default is what it is, so a per-run read would be a request
+  // on every seat's boot in exchange for nothing. Read once and cached, because
+  // the bounds are constants for the life of a process. `readSpawnPolicy` never
+  // rejects (a failure resolves to null), so this cannot fail a spawn; it just
+  // sends the ask unclamped and lets the server decide.
+  let spawnPolicyPromise = null;
+  const spawnPolicyForAsk = () => {
+    if (spawnCredentialTtlSeconds === null || spawnCredentialTtlSeconds === undefined) return null;
+    if (spawnPolicyPromise === null) spawnPolicyPromise = readSpawnPolicy({ client, log });
+    return spawnPolicyPromise;
+  };
 
   // THE SEAT'S OWN RECORD IS THE ONLY DECLARATION THERE IS. The broker reaches a
   // seat as an injected MCP entry written by hand into its environment — no
@@ -1267,21 +1310,90 @@ export const performRun = ({
     const promptWithFocus = `${focusFrame}\n\n${prompt}`;
 
     log(`[${event.type}] spawning ${adapter.name}`);
-    const result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
-      sessionId,
-      cwd: agentCwd,
-      env: process.env,
-      memoryLongTerm,
-      environment: seatEnvironment,
-      // Runtime context the Claude/Codex adapters expose only to their
-      // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
-      // literal on disk and lets its native MCP parser expand them, so the
-      // bearer token never enters the generated config file.
-      runtimeToken: token,
-      instanceUrl,
-      agentName,
-      metadata: { event },
+    // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
+    // the seat token for its own polling, claiming and posting (`client` was
+    // built from `token` above and is not touched here). The lease renews while
+    // the child runs and revokes when it returns, so the window in which a
+    // leaked child credential is usable is one turn rather than a seat's life.
+    //
+    // A refusal throws: `openSpawnCredential` only falls back to the seat token
+    // for capacity, and a verdict (401/403/400/404/409) must fail the spawn
+    // rather than restore the authority the refusal was about. The catch below
+    // turns that throw into a NAMED refusal on the turn result, so the claim is
+    // released as `delivery-refused` instead of being re-delivered forever.
+    const spawnPolicyOrNull = spawnPolicyForAsk();
+    const lease = spawnCredentialLeaseFactory({
+      client,
+      seatToken: token,
+      spawnId: buildSpawnId({ agentName, eventId: event?._id || event?.payload?.batchEventIds || null }),
+      desiredTtlSeconds: spawnCredentialTtlSeconds,
+      policy: spawnPolicyOrNull === null ? null : await spawnPolicyOrNull,
+      log,
     });
+    let opened;
+    try {
+      opened = await lease.open();
+    } catch (err) {
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
+      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
+      // a transient failure, wrong for a refusal that recurs on every
+      // redelivery: the wake loops forever with one local log line as its only
+      // record. Naming it on the turn result is what lets the release carry the
+      // class, and on a human wake lets the kernel hand the message to a
+      // remaining listener instead of stranding it.
+      if (!err?.spawnCredentialRefused) {
+        // ONLY a verdict is named as a refusal. An unexpected failure inside
+        // the lease — a bug in our own code, not the server's answer — keeps
+        // the legacy release, because `delivery-refused` would hand a human's
+        // message away and close the row on the strength of our own defect.
+        // Redelivery is the right remedy for a crash.
+        log(`spawn credential lease failed (${err?.message ?? err}) — not spawning`);
+        throw err;
+      }
+      const status = Number.isInteger(err.status) ? err.status : null;
+      const code = typeof err.body?.code === 'string' ? err.body.code : null;
+      log(`spawn credential refused (HTTP ${status ?? 'no response'}) — not spawning`);
+      // `delivery-refused` claims the least of the three classes: the model
+      // never ran, and the refuser is our own mint rather than the model
+      // provider (that would be `upstream-refused`, and its status is the HTTP
+      // status of an upstream call — a meaning this refusal does not have, so
+      // the number travels in the ack instead of on the claim record).
+      return {
+        outcome: 'no_action',
+        refused: { reason: 'delivery-refused' },
+        reason: `spawn-credential-refused-${status ?? 'unknown'}`,
+        details: {
+          ...(status !== null ? { status } : {}),
+          ...(code !== null ? { code } : {}),
+        },
+      };
+    }
+    let result;
+    try {
+      result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
+        sessionId,
+        cwd: agentCwd,
+        env: process.env,
+        memoryLongTerm,
+        environment: seatEnvironment,
+        // Runtime context the Claude/Codex adapters expose only to their
+        // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
+        // literal on disk and lets its native MCP parser expand them, so the
+        // bearer token never enters the generated config file. Since TASK-102
+        // part B this is the per-spawn credential when one could be minted, and
+        // the seat token only when the server could not mint.
+        runtimeToken: opened.token,
+        instanceUrl,
+        agentName,
+        metadata: { event },
+      });
+    } finally {
+      // Best-effort by construction: `close` logs and returns on a failed
+      // revoke, so a turn that already produced an answer is not failed by
+      // cleanup. The boot sweep collects anything left behind.
+      await lease.close();
+    }
 
     if (result.newSessionId) {
       setSession(agentName, eventPodId, result.newSessionId);
@@ -2611,6 +2723,10 @@ Docs:
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),
+        // TASK-102 part B: the operator's TTL ask, if any. Unset means the
+        // server's published default, which is the only lifetime we can justify
+        // without an operator saying otherwise.
+        spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.

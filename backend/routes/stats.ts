@@ -8,6 +8,21 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line global-require
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
+
+// TASK-108 (triage doc §6, ruled wren 71392): `GET /public` is NOT a probe
+// exemption, and the rule is why — "does an anonymous hit do database work".
+// This one runs three countDocuments (Mongo) plus a Postgres COUNT per hit,
+// uncached, so it takes the IP tier beside the OAuth callback at the same
+// 600/60s. The four liveness/meta reads that stay exempt (health.ts ×2,
+// pg-status.ts, docs.ts) are exempt for the opposite reason: a limiter on a
+// liveness probe can BE the outage.
+const statsPublicLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 600,
+  label: '600 public stats reads per 60s per IP',
+});
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
@@ -21,7 +36,7 @@ const pgMessageCount24h = async (since: Date): Promise<number> => {
   return result.rows[0].count;
 };
 
-router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; status: (n: number) => { json: (d: unknown) => void } }) => {
+router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: unknown) => void; status: (n: number) => { json: (d: unknown) => void } }) => {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

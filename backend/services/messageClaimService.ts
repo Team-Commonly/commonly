@@ -117,7 +117,7 @@ const MESSAGE_ID_MAX = 2147483647;
  * accept digits:
  *
  *   chat id     digits, 1..2147483647   verified against Postgres below
- *   comment id  24 hex, canonical case  passed through to the CAS, unverified
+ *   comment id  24 hex, canonical case  verified against Mongo (existence only)
  *   anything else                       refused, no query
  *
  * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
@@ -131,18 +131,38 @@ const MESSAGE_ID_MAX = 2147483647;
  * regression this arm exists to prevent (connector-ops 71952, vera 71956,
  * wren's ruling 71961).
  *
- * THIS ARM IS DEDUPE, NOT EXISTENCE, and the difference is not an oversight:
- * the pod for a comment wake cannot be verified here by construction, because
- * the enqueue resolves it through `resolveMentionPod`, which may return the
- * request's pod or a fallback — so a lookup here could refuse a wake that is
- * real. Passing the id through keeps the race deduping, which is the property
- * the wake path needs; existence is what the chat arm buys and all this arm
- * can buy is that one lease is minted per comment id. The corollary is stated
- * rather than hidden: a fabricated 24-hex id still mints a permanent,
- * un-renewable phantom row, so the defect is closed for one namespace only,
- * and verifying the other means reading Mongo from this service — a store
- * boundary, not a predicate tweak (TASK-122, filed for the gate to keep or
- * close).
+ * THE POD CANNOT BE CHECKED HERE; THE ID NOW CAN (TASK-122). Until TASK-122
+ * this arm passed the id through unverified, so a fabricated 24-hex id minted a
+ * permanent, un-renewable, un-completable phantom lease — permanent because the
+ * prune collects terminal states only. It is now checked against the comment's
+ * own store, which is `Post.comments[]`, not `messages`.
+ *
+ * What the check is NOT is pod-scoped, and that is a property of the wake path
+ * rather than a shortcut: the pod for a comment wake cannot be verified here by
+ * construction, because the enqueue resolves it through `resolveMentionPod`,
+ * which may return the request's pod or a fallback — so refusing on a pod
+ * mismatch could refuse a wake that is real. Existence is what this arm can
+ * buy; the pod half stays the route's installation check.
+ *
+ * A STORE FAILURE PASSES THE ID THROUGH rather than refusing it, and the
+ * direction carries the arm's own reasoning: a refusal for a 24-hex id does not
+ * fail closed — the CLI's claim path (`cli/src/lib/enforcement.js:414`) turns
+ * the route's non-2xx into `{failOpen: true}` — so an outage that refused would
+ * unguard every woken seat and stop the race deduping. An unconfirmed id
+ * therefore degrades to the
+ * pre-TASK-122 behaviour (dedupe holds, a phantom is possible) and says so on
+ * one line, rather than reverting the hardening in silence.
+ *
+ * The lookup is a collection scan: no index covers `comments._id` (models/Post
+ * declares none), so a MISS — the fabricated-id case this arm exists to refuse —
+ * examines every document. Measured on the live instance 2026-09-24 rather than
+ * estimated: 715 posts, 5,455 comments, 2.4 MB; a miss examines 715 and costs
+ * ~50 ms including the round trip. The cost thus falls on the fabricated-id
+ * request rather than the real one, and it is spent only behind a valid runtime
+ * token plus `phase4RateLimit`: if the route ever loses either, this index stops
+ * being a follow-on that day. Revisit when posts pass ~10k or when a miss
+ * doubles, whichever comes first — the latency trigger catches growing comment
+ * density, which a document count would not.
  *
  * Canonical case only. `String(objectId)` is lowercase in every driver we
  * send, so an uppercase spelling is refused with the digits arm's 404 — which
@@ -164,6 +184,54 @@ function isChatMessageId(id: string): boolean {
   // Number.isInteger alone is not a bound: 100-digit inputs are integers too,
   // and `n <= MESSAGE_ID_MAX` is what rejects them.
   return Number.isInteger(n) && n >= 1 && n <= MESSAGE_ID_MAX;
+}
+
+/**
+ * The comment namespace's store, loaded lazily.
+ *
+ * `Post.comments[]` is a subdocument array (models/Post.ts), so a comment's
+ * `_id` cannot be answered by the Postgres query below.
+ *
+ * Resolved on first use rather than at module scope, and the honest reason is
+ * the test seam rather than process hygiene: model registration is idempotent
+ * and `postController.ts` already loads Post in every backend process, so a
+ * module-level require would cost nothing. Keeping it in this one function makes
+ * it the service's only dependency on the Post model — which is exactly the
+ * thing a unit suite has to replace.
+ */
+let commentsStore: { exists: (filter: Record<string, unknown>) => Promise<unknown> } | null = null;
+
+function commentStore() {
+  if (!commentsStore) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    commentsStore = require('../models/Post');
+  }
+  return commentsStore as { exists: (filter: Record<string, unknown>) => Promise<unknown> };
+}
+
+/**
+ * Does this comment exist? (TASK-122)
+ *
+ * The id goes to mongoose as a STRING and is cast to ObjectId by the path, so
+ * nothing here needs to construct one; the caller has already proven the 24-hex
+ * canonical shape, so the cast cannot fail on any input this predicate admits.
+ *
+ * The catch returns TRUE, not false, and that is the whole design: see
+ * MONGO_OBJECT_ID. A store that cannot answer must not unguard the fleet, and
+ * refusing an unconfirmed comment id is exactly what would do that.
+ */
+async function commentExists(objectId: string): Promise<boolean> {
+  try {
+    const found = await commentStore().exists({ 'comments._id': objectId });
+    return Boolean(found);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[claims] comment existence check failed (${message}) — passing ${objectId} through, `
+      + 'so the wake race keeps deduping',
+    );
+    return true;
+  }
 }
 
 class MessageClaimService {
@@ -207,16 +275,20 @@ class MessageClaimService {
  *
  * Pod-scoped on purpose. Existence alone would let a seat installed in pod A
  * lease a message in pod B; the route checks installation separately, and
- * this is the message half. Both are required, so both are read here.
+ * this is the message half. Both are required, so both are read here — and
+ * each namespace is read from its OWN store: chat ids from Postgres, comment
+ * ids from Mongo. One place answers "does this message exist", which is the
+ * property worth keeping; a second copy of the split in the route is how two
+ * answers drift apart.
  */
   static async messageExists(messageId: unknown, podId: unknown): Promise<boolean> {
     const id = String(messageId ?? '');
     const pod = String(podId ?? '');
     if (!pod) return false;
-    // Comment namespace: it exists in Mongo, not in Postgres, and is not this
-    // service's store to check. This arm is DEDUPE, not existence — see
-    // MONGO_OBJECT_ID for why the pod cannot be verified here.
-    if (MONGO_OBJECT_ID.test(id)) return true;
+    // Comment namespace: it exists in Mongo, not in Postgres, so it is the
+    // other store that answers it — and since TASK-122 it does, existence-only
+    // (commentExists names the direction a store failure takes, and why).
+    if (MONGO_OBJECT_ID.test(id)) return commentExists(id);
     if (!isChatMessageId(id)) return false;
     const found = await pool.query(
       'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',

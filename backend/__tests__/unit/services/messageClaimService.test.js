@@ -7,8 +7,14 @@
  */
 
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
+// The comment namespace's store (TASK-122). Mocked rather than connected: this
+// suite is about the predicate's ANSWERS, and the store's own behaviour is not
+// under test here — including the one answer that matters most, a store that
+// cannot answer at all.
+jest.mock('../../../models/Post', () => ({ exists: jest.fn() }));
 
 const { pool } = require('../../../config/db-pg');
+const Post = require('../../../models/Post');
 const MessageClaimService = require('../../../services/messageClaimService');
 
 const CAS = /INSERT INTO message_claims[\s\S]*ON CONFLICT \(message_id\) DO UPDATE[\s\S]*message_claims\.state = 'declined'[\s\S]*message_claims\.expires_at < NOW\(\)/;
@@ -435,6 +441,10 @@ describe('messageExists', () => {
   beforeEach(() => {
     pool.query.mockReset();
     pool.query.mockResolvedValue({ rows: [] });
+    // A comment that EXISTS is the pre-TASK-122 answer, so it is the default:
+    // the tests below that care about the other direction set their own.
+    Post.exists.mockReset();
+    Post.exists.mockResolvedValue({ _id: 'post-1' });
   });
 
   test('the numeric guard rests on a SERIAL id — the shipped schema still says so', () => {
@@ -503,16 +513,19 @@ describe('messageExists', () => {
   // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
   // unguarded and the race stops deduping — measured against this route's own
   // head before it shipped (connector-ops 71952, vera 71956).
-  test('a post-comment ObjectId is claimable, so the wake race still dedupes', async () => {
+  test('a post-comment ObjectId is claimable when its comment exists, so the wake race dedupes', async () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
-    // Passed through to the CAS, not checked: no query is sent from here, so
-    // this pins the arm rather than a verification it does not perform.
+    // The id is asked of the comment's own store, by the path the comment
+    // actually lives under — `comments._id`, a subdocument of Post.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '507f1f77bcf86cd799439011' });
+    // ...and NOT of Postgres, which cannot see a comment at all.
     expect(pool.query).not.toHaveBeenCalled();
     // Pod is still required first — the arm does not bypass the scope check
-    // that the ROUTE enforces (400 without a podId); what it does not do is
-    // verify the id against the pod, which is why this is dedupe and not
-    // existence.
+    // that the ROUTE enforces (400 without a podId). Nothing is asked of either
+    // store for an id that never gets that far.
+    Post.exists.mockClear();
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', '')).resolves.toBe(false);
+    expect(Post.exists).not.toHaveBeenCalled();
     // Hex case is spelling, and canonical spelling is lowercase: `String()` on
     // an ObjectId is lowercase in every driver we send, so an uppercase
     // spelling is refused rather than accepted as a second claim key for one
@@ -520,6 +533,36 @@ describe('messageExists', () => {
     // spelling, which is the failure class this whole arm exists to remove —
     // acceptable only because no producer emits one.
     await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(false);
+  });
+
+  test('a well-formed id with no comment behind it is refused — the phantom lease TASK-122 was filed for', async () => {
+    // '123456789012345678901234' is a legal ObjectId and names nothing; before
+    // TASK-122 this answered TRUE and minted a lease that is un-renewable,
+    // un-completable and permanent (the prune collects terminal states only).
+    Post.exists.mockResolvedValue(null);
+    await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(false);
+    // The store was ASKED: this false is an answer about the comment, not a
+    // shape refusal that never reached it.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('a store that cannot answer passes the id through — refusing would unguard every woken seat', async () => {
+    // The direction is the design: enforcement.js:414 turns the route's non-2xx
+    // into {failOpen: true}, so a refusal for a real comment wake stops the
+    // race deduping and every woken seat proceeds. An unconfirmed id must
+    // therefore degrade to the pre-TASK-122 behaviour (dedupe holds, a phantom
+    // is possible), not to a refusal.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    Post.exists.mockRejectedValue(new Error('MongoServerSelectionError'));
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    expect(Post.exists).toHaveBeenCalledTimes(1);
+    // ...and it SAYS so, on one line, rather than reverting the hardening in
+    // silence. A stored check that quietly stops checking is the failure mode
+    // this whole row is about.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/comment existence check failed.*MongoServerSelectionError/);
+    warn.mockRestore();
   });
 
   test('the comment namespace is the bare 24-hex shape, and near-misses are refused', async () => {
@@ -530,6 +573,9 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('0x507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
     await expect(MessageClaimService.messageExists(' 507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
     expect(pool.query).not.toHaveBeenCalled();
+    // A shape refusal is answered without asking the store either — the cost of
+    // a malformed id is a regex, not a query.
+    expect(Post.exists).not.toHaveBeenCalled();
   });
 
   test('an all-digit 24-hex id is passed through — the arm order is what keeps it from being 404\'d', async () => {
@@ -538,6 +584,8 @@ describe('messageExists', () => {
     // natural shape returns false from the range test and this id is refused,
     // costing a real comment wake its dedupe (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
+    // Answered by the comment store, never by the range test above it.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
     expect(pool.query).not.toHaveBeenCalled();
   });
 });
