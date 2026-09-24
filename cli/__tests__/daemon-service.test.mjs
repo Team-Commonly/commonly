@@ -4,9 +4,9 @@
 // One exception, deliberate: the create-mode witness writes a real file, because
 // a jest.fn() writer cannot show the mode a file was created with, and the mode
 // at creation is the half of the 0600 story that a chmod cannot cover.
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { jest } from '@jest/globals';
 
 import {
@@ -21,6 +21,7 @@ import {
   stopDaemonService,
   systemdUnit,
   uninstallDaemonService,
+  writeServiceFile,
 } from '../src/lib/daemon-service.js';
 import { providerKeyEnvNames } from '../src/lib/adapters/index.js';
 
@@ -214,6 +215,74 @@ describe('install', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // The upgrade half of the same story. `writeFileSync`'s mode applies only when
+  // the file does not exist, so a file a PRE-PR install left at 0644 keeps 0644
+  // through the write and a trailing chmod closes a door the key already used.
+  test('an upgrade over a pre-PR 0644 file narrows it BEFORE the key lands', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'commonly-daemon-upgrade-'));
+    try {
+      const target = servicePaths('linux', dir);
+      mkdirSync(dirname(target.file), { recursive: true });
+      writeFileSync(target.file, 'old unit\n', { mode: 0o644 });
+      chmodSync(target.file, 0o644);
+      // Control: the file really is 0644 going in, so a pass below cannot come
+      // from the fixture having been 0600 already.
+      expect(statSync(target.file).mode & 0o777).toBe(0o644);
+
+      const modeWhenWritten = [];
+      await installDaemonService({
+        platform: 'linux',
+        home: dir,
+        nodePath,
+        cliPath,
+        providerKeyEnvNames: ['COMMONLY_LITELLM_KEY'],
+        env: { COMMONLY_LITELLM_KEY: 'vk-secret' },
+        mkdirp: (path) => mkdirSync(path, { recursive: true }),
+        chmod: chmodSync,
+        execCmd: async () => {},
+        log: () => {},
+        // The REAL writer, observed at the moment the content lands. The mode is
+        // read immediately before the write and `writeFileSync` cannot change the
+        // mode of an existing file, so the mode read here is the mode the key was
+        // exposed at — which is the property under test, not a proxy for it.
+        writeFile: (file, content) => {
+          modeWhenWritten.push(statSync(file).mode & 0o777);
+          writeServiceFile(file, content);
+        },
+      });
+      expect(modeWhenWritten).toEqual([0o600]);
+      expect(readFileSync(target.file, 'utf8')).toContain('Environment="COMMONLY_LITELLM_KEY=vk-secret"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A second, independent instrument on the same fact: the upgrade witness can
+  // only pass if the narrowing happens first, and this says so as an ORDER rather
+  // than as an outcome, so the two fail differently when the fix regresses.
+  test('install narrows the target before writing the key into it', async () => {
+    const calls = [];
+    await installDaemonService({
+      platform: 'linux',
+      home: '/home/upgrade',
+      nodePath,
+      cliPath,
+      providerKeyEnvNames: [],
+      env: {},
+      mkdirp: () => {},
+      execCmd: async () => {},
+      log: () => {},
+      chmod: (file, mode) => calls.push(['chmod', file, mode]),
+      writeFile: (file) => calls.push(['write', file]),
+    });
+    const target = servicePaths('linux', '/home/upgrade').file;
+    const firstChmod = calls.findIndex(([kind, file]) => kind === 'chmod' && file === target);
+    const write = calls.findIndex(([kind, file]) => kind === 'write' && file === target);
+    expect(firstChmod).toBeGreaterThanOrEqual(0);
+    expect(calls[firstChmod][2]).toBe(0o600);
+    expect(firstChmod).toBeLessThan(write);
   });
 });
 

@@ -1,6 +1,6 @@
 # The daemon's service environment
 
-**Written 2026-09-24 from the tree at main `116ac7cb` (cli 0.1.73).** Everything
+**Written 2026-09-24 on the branch of PR #1859, cut from main `116ac7cb`.** Everything
 below is a read of `cli/src/lib/daemon-service.js`, `cli/src/commands/daemon.js`
 and `cli/src/lib/adapters/`, plus the unit tests that pin them. It is the doc
 TASK-049 asked for: the daemon's login service does **not** inherit the shell

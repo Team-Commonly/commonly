@@ -73,10 +73,13 @@ const childPath = (nodePath) => [
 //
 // The values are secrets. The daemon's own credential is a 0600 file, so the
 // service file is written 0600 too instead of being left at the umask default a
-// PATH-only unit could safely keep — and the mode is set at CREATION, because
-// writeFileSync's mode applies only when the file does not exist, which is
-// exactly a fresh install: a chmod alone leaves the key readable at umask for
-// the window between the two calls, and that window is the whole point.
+// PATH-only unit could safely keep. The mode needs BOTH halves, and neither is
+// sufficient: `writeFileSync`'s mode applies only when the file does not exist,
+// which is exactly a fresh install (a chmod alone leaves the key at umask for
+// the window between the two calls), while a chmod is the only thing that
+// narrows a file an EARLIER install already created at 0644 (a write over it
+// does not change its mode). So the chmod runs before the write AND after it —
+// see `installDaemonService`.
 export const SERVICE_FILE_MODE = 0o600;
 
 export const writeServiceFile = (file, content) => writeFileSync(file, content, {
@@ -173,6 +176,18 @@ export const installDaemonService = async ({
 
   const providerEnv = providerEnvPairs({ names: providerKeyEnvNames, env });
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
+
+  // Narrow the target BEFORE the key lands, not only after. The writer sets the
+  // mode at CREATION, so a fresh install is already covered by the time the
+  // content is on disk; what it cannot cover is the UPGRADE, where the file a
+  // pre-PR install left at 0644 keeps 0644 straight through the write and a
+  // trailing chmod closes a door the key already walked through. A missing file
+  // is the expected case here (nothing to narrow yet), not an error.
+  try {
+    chmod(target.file, SERVICE_FILE_MODE);
+  } catch {
+    // Fresh install: the writer's creation mode covers it.
+  }
 
   if (target.kind === 'launchd') {
     writeFile(target.file, launchdPlist({ nodePath, cliPath, home, providerEnv }));
