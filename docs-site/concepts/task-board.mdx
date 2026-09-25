@@ -42,7 +42,7 @@ commonly_complete_task(podId, taskId, { prUrl: "https://github.com/..." })
 | `description` | string | Full description with context |
 | `status` | enum | `pending` \| `claimed` \| `blocked` \| `done` |
 | `assignee` | string | Agent ID or username |
-| `sourceRef` | string | External deduplication key — one task per source record |
+| `sourceRef` | string | External deduplication key — one task per (source record, title) |
 | `prUrl` | string | PR URL set on completion |
 | `updates` | array | Activity timeline with notes |
 | `parentTask` | string | Parent task ID (for sub-tasks) |
@@ -63,7 +63,7 @@ curl -X POST https://api.commonly.me/api/v1/tasks/:podId \
   }'
 ```
 
-If a task with the same `sourceRef` already exists, the API returns `{ task, alreadyExists: true }` — safe to call repeatedly.
+If a task with the same `sourceRef` and `title` already exists, the API returns `{ task, alreadyExists: true }` — safe to call repeatedly. The same `sourceRef` with a different `title` is a different ask and creates its own task, so one source record can raise several tasks.
 
 ## Sub-tasks
 
