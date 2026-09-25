@@ -19,8 +19,12 @@
  * connection: a security direction change in the file whose whole job is
  * transport security (sprint-review, 74244). What is asserted now is the middle:
  * a configured CA path with an unusable file keeps TLS ON with no custom CA, so
- * the connect fails loudly and readiness reports it. Only an unset CA path (the
- * pre-existing behaviour) or an explicit `PG_SSL_ENABLED=false` reaches plaintext.
+ * the connect fails loudly and readiness reports it. Only an absent CA path (the
+ * pre-existing behaviour) or an explicit `PG_SSL_ENABLED=false` reaches plaintext
+ * — and a present-but-BLANK path is not absent (sprint-review, 74253).
+ *
+ * The level is asserted too: a missing CA file warned on main and an info line is
+ * what this row exists to kill (sprint-review, 74245).
  */
 jest.mock('fs');
 
@@ -36,6 +40,10 @@ const expectTlsKept = (d, why) => {
   expect(d.ssl).toEqual({ rejectUnauthorized: true });
   expect(d.reason).toContain(why);
   expect(d.reason).toContain('instead of downgrading to plaintext');
+  // An explicit TLS intent that failed is not routine config (sprint-review,
+  // 74245). Main warned for a missing CA file; the assertion is here so the
+  // level cannot quietly drop back to info.
+  expect(d.level).toBe('warn');
 };
 
 describe('resolvePgSsl — PG_SSL_ENABLED is read, not inferred (TASK-168)', () => {
@@ -78,14 +86,44 @@ describe('resolvePgSsl — PG_SSL_ENABLED is read, not inferred (TASK-168)', () 
     const d = resolvePgSsl({}, () => ca('anything'));
     expect(d.ssl).toBe(false);
     expect(d.reason).toContain('PG_SSL_CA_PATH');
+    expect(d.level).toBe('info');
   });
 
-  it('treats a whitespace-only CA path as no path at all', () => {
-    // A chart that renders an unset value into a space would otherwise take the
-    // unusable-CA path and hold TLS on against a server that has none.
+  it('sends a present-but-blank CA path to keepTls, not to the unset branch', () => {
+    // Measured by sprint-review (74253): the first cut decided "unset" on the
+    // TRIMMED value, so a whitespace-only path downgraded to plaintext one line
+    // below the empty-FILE case that correctly failed closed. The key is what
+    // separates "not configured" from "configured wrong".
     const d = resolvePgSsl({ PG_SSL_CA_PATH: '   ' }, () => ca('cert'));
-    expect(d.ssl).toBe(false);
-    expect(d.reason).toContain('PG_SSL_CA_PATH');
+    expectTlsKept(d, 'is blank');
+  });
+
+  it('treats an empty-string CA path as blank too, but an absent key as unset', () => {
+    // `''` is how a chart renders "not provided", and it is still a CA path this
+    // process was handed: present-but-blank. Only a missing key is unset.
+    const emptyString = resolvePgSsl({ PG_SSL_CA_PATH: '' }, () => ca('cert'));
+    const absent = resolvePgSsl({}, () => ca('cert'));
+    expect(emptyString.level).toBe('warn');
+    expect(emptyString.ssl).toEqual({ rejectUnauthorized: true });
+    expect(absent.ssl).toBe(false);
+    expect(absent.level).toBe('info');
+  });
+
+  it('covers all five configuration shapes, and only two of them are plaintext', () => {
+    // The table sprint-review drove (74252) — kept as one assertion so a change
+    // to any single shape is visible against the others, not just in isolation.
+    const shapes = {
+      'CA file empty': resolvePgSsl({ PG_SSL_CA_PATH: '/ca.pem' }, () => ca('')),
+      'CA file missing': resolvePgSsl({ PG_SSL_CA_PATH: '/ca.pem' }, missing),
+      'CA path whitespace-only': resolvePgSsl({ PG_SSL_CA_PATH: '  ' }, () => ca('cert')),
+      'CA path unset': resolvePgSsl({}, () => ca('cert')),
+      'SSL explicitly off': resolvePgSsl({ PG_SSL_ENABLED: 'false' }, () => ca('cert')),
+    };
+    const plaintext = Object.entries(shapes)
+      .filter(([, d]) => d.ssl === false)
+      .map(([name]) => name);
+    expect(plaintext).toEqual(['CA path unset', 'SSL explicitly off']);
+    expect(shapes['CA path whitespace-only'].level).toBe('warn');
   });
 
   it('keeps TLS on, without throwing, when the CA path does not exist', () => {
@@ -102,16 +140,18 @@ describe('resolvePgSsl — PG_SSL_ENABLED is read, not inferred (TASK-168)', () 
 
   it('is the ONLY pairing that yields plaintext: explicit off, or no CA path at all', () => {
     // Guards the direction of the fix. Plaintext has exactly two doors, both of
-    // them deliberate, and neither of them is "a CA file we could not use".
+    // them deliberate, and neither of them is "a CA path we could not use".
     const explicitOff = resolvePgSsl(
       { PG_SSL_ENABLED: 'false', PG_SSL_CA_PATH: '/app/certs/ca.pem' },
       () => ca('cert'),
     );
     const noPath = resolvePgSsl({}, () => ca('cert'));
     const emptyCa = resolvePgSsl({ PG_SSL_CA_PATH: '/app/certs/ca.pem' }, () => ca(''));
+    const blankPath = resolvePgSsl({ PG_SSL_CA_PATH: ' ' }, () => ca('cert'));
     expect(explicitOff.ssl).toBe(false);
     expect(noPath.ssl).toBe(false);
     expect(emptyCa.ssl).not.toBe(false);
+    expect(blankPath.ssl).not.toBe(false);
   });
 
   it('enables SSL with the CA when SSL is on by default and the CA is real', () => {
@@ -157,5 +197,8 @@ describe('the module reads the same decision it exports', () => {
     );
     expect(source).toContain('const sslDecision = resolvePgSsl(process.env');
     expect(source).toContain('pgConfig.ssl = sslDecision.ssl');
+    // The level travels with the decision, so the caller cannot flatten a failed
+    // TLS intent back into an info line (sprint-review, 74245).
+    expect(source).toContain("sslDecision.level === 'warn' ? console.warn : console.log");
   });
 });

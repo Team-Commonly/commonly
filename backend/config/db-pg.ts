@@ -78,9 +78,33 @@ const pgConfig: PgConfig = {
  * direction change, in the file whose whole job is transport security. A
  * configured `PG_SSL_CA_PATH` with an unusable file is a misconfiguration, not
  * a request for plaintext: TLS stays required with no custom CA, so the
- * handshake fails and readiness reports it. Unset `PG_SSL_CA_PATH` is the one
+ * handshake fails and readiness reports it. An ABSENT `PG_SSL_CA_PATH` is the one
  * plaintext path, matching the pre-existing behaviour, and `PG_SSL_ENABLED`
  * remains the explicit way to ask for it.
+ *
+ * PRESENT-BUT-BLANK IS NOT ABSENT (sprint-review, msg 74253 — they drove this
+ * function over all five shapes and found a third one). The first cut decided
+ * "unset" on `(env.PG_SSL_CA_PATH || '').trim()`, so a whitespace-only PATH took
+ * the unset branch and downgraded to plaintext, one line below the empty-FILE
+ * case that correctly fails closed. The distinction is the KEY: absent is "not
+ * configured", anything present but unusable is "configured wrong".
+ *
+ * THE LEVEL IS THE DECISION (sprint-review, msg 74245). Main warned for a
+ * missing CA file (`console.warn`, with `console.error` for an unreadable one);
+ * flattening all of it into one `SSL disabled — …` line at `console.log` would
+ * have reported a failed TLS intent as routine config — the silent-config-failure
+ * shape this row exists to kill, reintroduced by its own fix. `level` is part of
+ * the returned decision so the caller cannot lose it, and the module logs with
+ * it: deliberate config is info, a failed explicit intent is warn.
+ *
+ * WHAT THIS COSTS, stated because it is not free: every environment that
+ * declares a CA path without providing a CA now fails its connect instead of
+ * quietly going unencrypted. The chart already said which it wanted
+ * (`values-local.yaml: pgSslEnabled: "false"`, and the kinds/CI workflows set
+ * `PG_SSL_ENABLED=false`); docker-compose and the backend example env file
+ * declared a path the image does not contain and relied on the silent downgrade,
+ * so both now state the flag too. That is the intended trade: a misconfiguration
+ * that a human reads in a log beats chat that is quietly cleartext.
  */
 export const resolvePgSsl = (
   // `Record<string, string | undefined>` rather than a narrow object type:
@@ -89,23 +113,34 @@ export const resolvePgSsl = (
   // whole contract anyway.
   env: Record<string, string | undefined>,
   readCaFile: (p: string) => { exists: boolean; content: string },
-): { ssl: false | { rejectUnauthorized: boolean; ca?: string }; reason: string } => {
+): {
+  ssl: false | { rejectUnauthorized: boolean; ca?: string };
+  reason: string;
+  level: 'info' | 'warn';
+} => {
   const enabled = String(env.PG_SSL_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
   if (!enabled) {
-    return { ssl: false, reason: 'PG_SSL_ENABLED=false' };
+    return { ssl: false, reason: 'PG_SSL_ENABLED=false', level: 'info' };
   }
-  const caPath = (env.PG_SSL_CA_PATH || '').trim();
-  if (!caPath) {
-    return { ssl: false, reason: 'no PG_SSL_CA_PATH' };
+  // Absent key only — NOT "blank after trimming". A present-but-blank path is a
+  // misconfiguration like an empty file, and goes to keepTls with the rest.
+  if (env.PG_SSL_CA_PATH === undefined || env.PG_SSL_CA_PATH === null) {
+    return { ssl: false, reason: 'no PG_SSL_CA_PATH', level: 'info' };
   }
+  const caPath = env.PG_SSL_CA_PATH.trim();
   // The CA path is configured, so TLS was asked for; an unusable file is the
   // misconfiguration, never a reason to go plaintext. Verified against the
   // system store instead of a custom CA: a public CA still connects, anything
-  // else fails loudly here rather than reading chat in the clear.
+  // else fails loudly here rather than reading chat in the clear. `warn`
+  // because every branch below is the failure of an explicit intent.
   const keepTls = (why: string) => ({
     ssl: { rejectUnauthorized: true },
     reason: `${why} — keeping TLS on with no custom CA instead of downgrading to plaintext`,
+    level: 'warn' as const,
   });
+  if (!caPath) {
+    return keepTls('PG_SSL_CA_PATH is blank');
+  }
   let ca: { exists: boolean; content: string };
   try {
     ca = readCaFile(caPath);
@@ -119,7 +154,11 @@ export const resolvePgSsl = (
   if (!ca.content.trim()) {
     return keepTls(`CA file at ${caPath} is empty`);
   }
-  return { ssl: { rejectUnauthorized: true, ca: ca.content }, reason: `CA loaded from ${caPath}` };
+  return {
+    ssl: { rejectUnauthorized: true, ca: ca.content },
+    reason: `CA loaded from ${caPath}`,
+    level: 'info',
+  };
 };
 
 const sslDecision = resolvePgSsl(process.env, (caPath) => {
@@ -127,11 +166,8 @@ const sslDecision = resolvePgSsl(process.env, (caPath) => {
   return { exists: true, content: fs.readFileSync(caPath).toString() };
 });
 pgConfig.ssl = sslDecision.ssl;
-if (sslDecision.ssl) {
-  console.log(`SSL enabled — ${sslDecision.reason}`);
-} else {
-  console.log(`SSL disabled — ${sslDecision.reason}`);
-}
+const logSslDecision = sslDecision.level === 'warn' ? console.warn : console.log;
+logSslDecision(`SSL ${sslDecision.ssl ? 'enabled' : 'disabled'} — ${sslDecision.reason}`);
 
 const pool: unknown = pgConfig.host ? new Pool(pgConfig) : null;
 
