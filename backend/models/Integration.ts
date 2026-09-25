@@ -163,6 +163,14 @@ export interface IIntegration extends Document {
   lastSync?: Date | null;
   createdBy: Types.ObjectId;
   errorMessage?: string | null;
+  /**
+   * True when `errorMessage` was written by Commonly for the person reading the
+   * Connectors page, rather than copied out of a provider response. The page
+   * renders the message only when this is set, so the two writers of this field
+   * — our own classifier, and externalFeedService copying a provider's error
+   * text or a raw `err.message` — cannot be told apart by the reader's eye alone.
+   */
+  errorMessageUserFacing?: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -328,6 +336,9 @@ const IntegrationSchema = new Schema<IIntegration>(
     lastSync: { type: Date, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     errorMessage: { type: String, default: null },
+    // Set by connectorDeliveryFailureService, the only writer that puts text on
+    // the Connectors page for a person to read (see the model interface).
+    errorMessageUserFacing: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true, collection: 'integrations' },

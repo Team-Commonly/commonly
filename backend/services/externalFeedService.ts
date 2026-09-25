@@ -434,6 +434,11 @@ async function syncExternalFeeds(): Promise<FeedSyncResult[]> {
           await Integration.findByIdAndUpdate(integration._id, {
             $set: {
               status: 'error',
+              // Diagnostic, not copy. This is a provider's error text or a raw
+              // exception message, so `errorMessageUserFacing` stays unset and
+              // the Connectors page shows its generic sentence for these rows —
+              // the detail is kept here for whoever debugs the feed instead of
+              // being printed in someone's connector list (vera 73848).
               errorMessage: detail,
               lastSync: new Date(),
             },

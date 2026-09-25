@@ -11,6 +11,12 @@ const Pod = require('../../models/Pod');
 const ConnectorSecret = require('../../models/ConnectorSecret');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('../connectorSecrets');
+// The user-facing half of the error state: this module marks a row it cannot
+// decrypt, and the reason is written for the person reading the Connectors page
+// — the same flag the delivery-failure flip sets, so it comes from that service
+// rather than a second `$set` here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const connectorDeliveryFailures = require('../connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const isPodMember = require('../../utils/isPodMember');
 
@@ -208,16 +214,6 @@ const sweepStaleUninstalls = async (now: Date): Promise<number> => {
   return completed;
 };
 
-const markSlackIntegrationUnavailable = async (
-  integration: { _id: unknown },
-  message: string,
-): Promise<void> => {
-  await Integration.updateOne(
-    { _id: integration._id, isActive: true },
-    { $set: { status: 'error', errorMessage: message } },
-  );
-};
-
 const sweepExpiredSlackBinds = async (now: Date): Promise<number> => {
   const rows = await Integration.find({
     type: 'slack',
@@ -292,7 +288,12 @@ const sweepUnavailableSlackSecretKeys = async (): Promise<number> => {
   for (const secret of unavailable) {
     const integration = await Integration.findById(secret.integrationId)
       .select('installationId').lean() as { _id: unknown; installationId?: string } | null;
-    if (integration) await markSlackIntegrationUnavailable(integration, 'Slack connector secret key is unavailable');
+    if (integration) {
+      await connectorDeliveryFailures.markConnectorUnavailable(
+        integration,
+        'Slack connector secret key is unavailable',
+      );
+    }
   }
   return unavailable.length;
 };
