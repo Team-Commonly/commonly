@@ -188,6 +188,13 @@ describe('TASK-126 ip key separation', () => {
     expect(rec.r3).toBe(rec.r1);
   });
 
+  // What this measures (wren 73671, ruling (b)), not what it might be read as:
+  // a request with no credential, no param and no body — built from nothing and
+  // carrying only `cf-connecting-ip` — is bucketed per `cf-connecting-ip` on
+  // every instance. That is stricter than a per-arm check: a limiter with no IP
+  // arm at all keys such a request on a CONSTANT, one bucket for every anonymous
+  // caller, which is the same defect as raw `req.ip` behind cloudflared — and it
+  // collapses A and B here exactly the same way.
   it('every walked instance counts and separates; none collapses', async () => {
     const results = [];
     const runs = walked.map(async (w, i) => {
@@ -196,6 +203,14 @@ describe('TASK-126 ip key separation', () => {
     });
     await Promise.all(runs);
 
+    // Stub-only arm, disclosed rather than left implied (vera 73673): on the real
+    // app `users.ts:65` `profileWriteUserLimit` keys on
+    // `req.userId || req.user?.id || req.user?._id` FIRST, and `auth` runs before
+    // it (`users.ts:171`, `router.put('/profile', profileWriteIngressLimit, auth,
+    // profileWriteUserLimit, ...)`) — an unauthenticated request stops at auth, so
+    // its IP arm is unreachable in production. The arm is real and must stay
+    // CF-derived, but what this walk proves about it is the stub's behaviour, not
+    // liveness: in production that limiter keys per account, not per address.
     const unseen = results.filter((r) => r.r1 === null || r.r1 === undefined);
     const notCounting = results.filter((r) => r.r1 !== null && r.r1 !== undefined && r.r2 !== r.r1 - 1);
     // Collapse signature is r3 === r2 - 1, NOT r3 === r2: a third request into the
@@ -210,6 +225,8 @@ describe('TASK-126 ip key separation', () => {
     // The floor is on observations, not violations: an assertion that every
     // member of an EMPTY set is fine would pass on a walk that found nothing.
     expect(separated.length).toBeGreaterThanOrEqual(80);
+    // Census dump for reconciliation, not an assertion: it is what let 84 be
+    // accounted as 75 direct + 9 factory invocations instead of assumed.
     fs.writeFileSync(process.env.PROBE_CENSUS || '/tmp/kai126-probe-census.json', JSON.stringify({
       instances: results.length,
       separated: separated.length,
