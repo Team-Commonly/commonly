@@ -118,10 +118,11 @@ describe('clear-discord-bot-token', () => {
     await seedStoredCopies();
     // The live shapes, measured on the production store 2026-09-25: one row
     // holding a secret, one carrying the KEY with an empty value — which is what
-    // the live bind writes (`DiscordCallback.tsx` posts `botToken: ''`) — and one
-    // without the key at all. A single `$exists` count reported the empty key as
-    // a holder (it read 2 on a run whose prediction was 0) and turned a normal
-    // state into an unaccounted credential.
+    // the live bind used to write (`DiscordCallback.tsx` posted `botToken: ''`;
+    // the write path now strips the key, so this is the historical population) —
+    // and one without the key at all. A single `$exists` count reported the empty
+    // key as a holder (it read 2 on a run whose prediction was 0) and turned a
+    // normal state into an unaccounted credential.
     await integrationRows().insertMany([
       { type: 'discord', scope: 'user', config: { botToken: COPY_A, chatId: 'c1' } },
       { type: 'discord', scope: 'user', config: { botToken: '', chatId: 'c2' } },

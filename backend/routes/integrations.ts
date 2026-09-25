@@ -58,6 +58,17 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
+  // The token itself, one layer in from the opaque ref above: it is read as a
+  // credential by `providers/slackProvider`, by `routes/registry/helpers` (Slack
+  // and Telegram, each with an env fallback) and by the Discord resolver's
+  // legacy fallback, and its only writer is a caller's body — Slack's live bind
+  // stores `botTokenRef` and Telegram's runtime reads the env var. Left
+  // unstripped, a caller can satisfy a manifest's `botToken` requirement with a
+  // value no provider echoes and can drive their own row to `status:
+  // 'connected'` with a junk token. The two Discord refusals are kept and still
+  // run FIRST (they precede this strip on both routes), so a supplied Discord
+  // token is a 400 rather than a silent 200.
+  'botToken',
   // An administrator's pause is projected from the parent installation. An
   // owner's normal config write must never lift that stop.
   'adminPause',

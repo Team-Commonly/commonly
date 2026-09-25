@@ -69,9 +69,12 @@ export interface DiscordBotTokenClearResult {
   integrationConfigCopies: number;
   /**
    * `Integration.config.botToken` present as a KEY with no value.
-   * The live Discord bind writes exactly this shape (`botToken: ''`,
-   * `DiscordCallback.tsx`), so it is the normal state of that store and not a
-   * finding — which is why it is reported apart from the secrets above.
+   * Historical rows only: the live Discord bind used to write exactly this shape
+   * (`botToken: ''`, `DiscordCallback.tsx`), so it was the normal state of that
+   * store and not a finding — which is why it is reported apart from the secrets
+   * above. Since `botToken` joined `SERVER_OWNED_CONFIG_KEYS`
+   * (`routes/integrations.ts`) the write path strips the key instead, so this
+   * count should stop growing while the rows already carrying it stay counted.
    */
   integrationConfigEmptyHolders: number;
 }
