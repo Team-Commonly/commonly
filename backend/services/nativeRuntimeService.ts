@@ -650,9 +650,13 @@ function failedResult(
  *
  * Read from the database, never from anything the model can influence: the
  * audience check in `assertGrantUsable` is only as good as this field (vera
- * 73751). When more than one row shares an identity (a shared identity
- * installed by two owners), the one that is a MEMBER of the pod this run
- * happens in wins, because that is the seat this run is acting as.
+ * 73751). Resolved by `username`, because that is the row this run POSTS as —
+ * `getOrCreateAgentUser` finds-or-creates by exactly this key, derived from the
+ * same two functions — and `username` is the only unique key on a bot User.
+ * `(botMetadata.agentName, botMetadata.instanceId)` has no uniqueness
+ * constraint, so a name-pair query can match several rows and answer with one
+ * the conversation never names, which would put the ToolCall trail on the wrong
+ * seat (wren 73887). One row or none.
  */
 export const resolveSeatUserId = async (
   podId: string,
@@ -664,25 +668,27 @@ export const resolveSeatUserId = async (
     const User = require('../models/User');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Pod = require('../models/Pod');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const AgentIdentityService = require('./agentIdentityService');
+    // The same key the posting path derives, through the same two functions, so
+    // the broker and the chat cannot disagree about which row the run is.
+    const username = AgentIdentityService.buildAgentUsername(
+      AgentIdentityService.resolveAgentType(agentName),
+      instanceId || 'default',
+    );
+    const seat = await User.findOne({ username }).select('_id').lean() as { _id?: unknown } | null;
+    if (!seat) return '';
+    // Membership still gates it: this id is the audience term in
+    // `assertGrantUsable` and the attribution on every ToolCall the run writes,
+    // and a seat-target grant is projected on the id ALONE (a `seat` target
+    // carries no pod condition in `grantBrokerProjectionService`), so a row
+    // outside this pod must not resolve here. Empty ⇒ no broker assembled ⇒ no
+    // capability, the in-process analogue of the daemon path's
+    // `401 agent_identity_required` (vera 73884). Every exit from this function
+    // is a member's id or empty; none of them guesses.
     const pod = await Pod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
     const memberIds = new Set((pod?.members || []).map((member) => String(member)));
-    const seats = await User.find({
-      isBot: true,
-      'botMetadata.agentName': agentName,
-      'botMetadata.instanceId': instanceId,
-    }).select('_id').sort({ _id: 1 }).limit(5).lean() as Array<{ _id: unknown }>;
-    if (!seats.length) return '';
-    const inPod = seats.find((seat) => memberIds.has(String(seat._id)));
-    // Fail closed, and note what is being failed closed ON: this id is the
-    // audience term in `assertGrantUsable` and the attribution on every
-    // ToolCall the run writes, and a seat-target grant is projected on the id
-    // ALONE (`grantBrokerProjectionService`: a `seat` target carries no pod
-    // condition). So returning another row when none of them is a member of
-    // this pod would hand a grant minted for one identity to a run in a pod
-    // that identity is not in (vera's HOLD on #1880). No row in this pod means
-    // no broker for this run. The `_id` guard is not decoration either:
-    // `String(undefined)` is the truthy string `'undefined'`.
-    return inPod ? String(inPod._id) : '';
+    return memberIds.has(String(seat._id)) ? String(seat._id) : '';
   } catch (error) {
     console.warn('[native-runtime] seat identity lookup failed:', (error as Error).message);
     return '';

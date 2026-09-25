@@ -15,16 +15,22 @@ const mockAxiosPost = jest.fn();
 jest.mock('axios', () => ({ __esModule: true, default: { post: (...args) => mockAxiosPost(...args) } }));
 
 const mockSeatFind = jest.fn();
+const mockSeatFindOne = jest.fn();
 // The models are mocked with BOTH shapes on purpose: this file's code reaches
 // them two ways — `nativeRuntimeService` uses the CommonJS `require(...)` it
-// already used (`User.find`), and `grantBrokerProjectionService` uses a default
-// import (`default.find`). Their real modules export both (the CJS-compat tail
-// at the bottom of each model), so a mock that offers only one would fail on a
-// shape the production code never sees.
+// already used (`User.findOne`), and `grantBrokerProjectionService` uses a
+// default import (`default.find`). Their real modules export both (the CJS-compat
+// tail at the bottom of each model), so a mock that offers only one would fail on
+// a shape the production code never sees.
+//
+// `find` is still mocked even though the seat lookup no longer calls it: it is
+// the query the OLD name-pair resolution used, so a witness can hand it a
+// DIFFERENT in-pod row and show which row the broker actually follows.
 jest.mock('../../../models/User', () => ({
   __esModule: true,
-  default: { find: (...args) => mockSeatFind(...args) },
+  default: { find: (...args) => mockSeatFind(...args), findOne: (...args) => mockSeatFindOne(...args) },
   find: (...args) => mockSeatFind(...args),
+  findOne: (...args) => mockSeatFindOne(...args),
 }));
 
 const mockPodFindById = jest.fn();
@@ -76,18 +82,9 @@ const { runAgent, resolveSeatUserId } = require('../../../services/nativeRuntime
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
 
-// The seat lookup ends in `.select('_id').sort({ _id: 1 }).limit(5).lean()`.
-// `seatSortArg` records the sort so the determinism claim is witnessed instead
-// of assumed, and `seatRows` keeps the chain in one place.
-let seatSortArg = null;
-const seatRows = (rows) => {
-  const tail = { limit: () => ({ lean: async () => rows }) };
-  tail.sort = jest.fn((arg) => {
-    seatSortArg = arg;
-    return tail;
-  });
-  return { select: () => tail };
-};
+// The seat lookup is `User.findOne({ username }).select('_id').lean()` — the row
+// this run posts as. `seatRow` builds that chain for one row or none.
+const seatRow = (row) => ({ select: () => ({ lean: async () => row }) });
 
 const INSTALLATION = {
   podId: POD,
@@ -102,6 +99,20 @@ const LIVE_GRANT = {
   grantId: 'grant-seat',
   target: { kind: 'seat', id: SEAT },
   audience: [SEAT],
+  tools: ['github.list_issues'],
+  writeMode: 'read',
+};
+
+// A second row for the SAME (agentName, instanceId) pair that happens to be a
+// pod member too — the ambiguity wren 73887 named, and the reason the identity is
+// resolved by the unique username instead of by the pair. A name-pair query can
+// answer with this row, and a grant minted for it would then be executed on its
+// behalf inside a conversation it is not posting in.
+const OTHER_IN_POD_ROW = 'row-other';
+const OTHER_IN_POD_SEAT_GRANT = {
+  grantId: 'grant-other',
+  target: { kind: 'seat', id: OTHER_IN_POD_ROW },
+  audience: [OTHER_IN_POD_ROW],
   tools: ['github.list_issues'],
   writeMode: 'read',
 };
@@ -151,13 +162,15 @@ const chain = (rows) => ({ select: () => ({ lean: async () => rows }) });
 
 beforeEach(() => {
   jest.clearAllMocks();
-  seatSortArg = null;
   process.env.LITELLM_BASE_URL = 'http://litellm.test';
   process.env.LITELLM_MASTER_KEY = 'test-key';
 
   mockPodFindById.mockReturnValue(chain({ name: 'Launch Room', members: [SEAT] }));
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
-  mockSeatFind.mockReturnValue(seatRows([{ _id: SEAT }]));
+  mockSeatFindOne.mockReturnValue(seatRow({ _id: SEAT }));
+  // The name-pair query answers with a different in-pod row on purpose: it is
+  // the trap, and a test that intends to trip it sets a grant for this row.
+  mockSeatFind.mockReturnValue(chain([{ _id: OTHER_IN_POD_ROW }, { _id: SEAT }]));
   mockRoomGrantFind.mockReturnValue(chain([LIVE_GRANT]));
   AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: mockRunSave }));
 });
@@ -257,7 +270,7 @@ describe('a hosted run in a granted pod', () => {
   });
 
   test('a seat that cannot be resolved gets no broker rather than a guess', async () => {
-    mockSeatFind.mockReturnValue(seatRows([]));
+    mockSeatFindOne.mockReturnValue(seatRow(null));
     mockAxiosPost.mockResolvedValueOnce(finalTurn);
 
     await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'hello' } });
@@ -266,13 +279,32 @@ describe('a hosted run in a granted pod', () => {
     expect(mockAxiosPost.mock.calls[0][1].tools.some((tool) => tool.function.name.startsWith('github'))).toBe(false);
   });
 
-  test('a seat-target grant for a row that is not in this pod is not executed here (vera 73879)', async () => {
-    // The whole finding in one test. Rows for this agent exist, none of them is a
-    // member of the pod the run happens in, and a grant is live for one of those
-    // out-of-pod rows. Resolving the identity by fallback (the row that happened
-    // to come back first) puts that grant INSIDE this pod's run: the projection's
-    // seat arm has no pod condition, so the fallback is the only gate there is.
-    mockSeatFind.mockReturnValue(seatRows([{ _id: OUT_OF_POD_ROW }, { _id: 'row-b' }]));
+  test('two rows share the name pair and both are in the pod: the run follows the row it posts as (wren 73887)', async () => {
+    // The ambiguity, walked. `User.find` (the name-pair query) answers with
+    // `row-other`, which IS a pod member, so the old resolution would have
+    // selected it and executed its grant — while the chat posts as `SEAT`, the
+    // unique-username row, so the trail would name a seat the conversation never
+    // mentions. A grant is live for both rows, so only which identity the broker
+    // resolved to decides which one runs.
+    mockRoomGrantFind.mockReturnValue(chain([OTHER_IN_POD_SEAT_GRANT, LIVE_GRANT]));
+    mockPodFindById.mockReturnValue(chain({ name: 'Launch Room', members: [SEAT, OTHER_IN_POD_ROW] }));
+    mockCallTool.mockResolvedValue({ callId: 'tool_call_1', result: [{ number: 7, title: 'Fix the relay' }] });
+    mockAxiosPost.mockResolvedValueOnce(toolCallTurn()).mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'what is open?' } });
+
+    expect(mockCallTool).toHaveBeenCalledTimes(1);
+    expect(mockCallTool).toHaveBeenCalledWith(expect.objectContaining({
+      grantId: 'grant-seat',
+      agentUserId: SEAT,
+    }));
+  });
+
+  test('a grant for a row that is not in this pod is not executed here, and nothing is substituted (vera 73879)', async () => {
+    // The identity the run resolves to exists but is not a member of the pod the
+    // run happens in, and a grant is live for it. The projection's seat arm has
+    // no pod condition, so this resolution is the only gate there is.
+    mockSeatFindOne.mockReturnValue(seatRow({ _id: OUT_OF_POD_ROW }));
     mockRoomGrantFind.mockReturnValue(chain([OUT_OF_POD_SEAT_GRANT]));
     mockAxiosPost.mockResolvedValueOnce(finalTurn);
 
@@ -284,26 +316,35 @@ describe('a hosted run in a granted pod', () => {
 });
 
 describe('resolveSeatUserId', () => {
-  test('prefers the row that is a member of the pod the run happens in', async () => {
-    mockSeatFind.mockReturnValue(seatRows([{ _id: 'someone-else' }, { _id: SEAT }]));
-    expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe(SEAT);
-  });
-
-  test('asks for a deterministic order, so which row is picked cannot drift between runs', async () => {
-    mockSeatFind.mockReturnValue(seatRows([{ _id: SEAT }]));
+  test('asks for the row the chat posts as, by the unique username', async () => {
+    const AgentIdentityService = require('../../../services/agentIdentityService');
+    // Derived from the SAME two functions the posting path uses, so the witness
+    // pins the key rather than restating it.
+    const postingUsername = AgentIdentityService.buildAgentUsername(
+      AgentIdentityService.resolveAgentType('scout'),
+      'default',
+    );
     await resolveSeatUserId(POD, 'scout', 'default');
-    expect(seatSortArg).toEqual({ _id: 1 });
+    expect(mockSeatFindOne).toHaveBeenCalledWith({ username: postingUsername });
+    // And it no longer asks the weaker question at all.
+    expect(mockSeatFind).not.toHaveBeenCalled();
   });
 
-  test('rows exist but none is in this pod: empty, never another row\u2019s identity (vera 73879)', async () => {
-    // The case the preference cannot satisfy — the only one in which the old
-    // fallback decided anything, and the one the earlier two tests missed.
-    mockSeatFind.mockReturnValue(seatRows([{ _id: 'row-a' }, { _id: 'row-b' }]));
+  test('a legacy agent name resolves through the same mapping the posting path uses', async () => {
+    // `commonly-summarizer` posts as `commonly-bot` (LEGACY_AGENT_MAP), so the
+    // broker has to look for THAT row; querying the raw name finds nothing and
+    // silently drops the broker for every legacy-named install.
+    await resolveSeatUserId(POD, 'commonly-summarizer', 'default');
+    expect(mockSeatFindOne).toHaveBeenCalledWith({ username: 'commonly-bot' });
+  });
+
+  test('a row that is not a member of this pod is empty, never another row’s identity (vera 73879)', async () => {
+    mockSeatFindOne.mockReturnValue(seatRow({ _id: OUT_OF_POD_ROW }));
     expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe('');
   });
 
   test('a lookup failure is empty, never a fabricated identity', async () => {
-    mockPodFindById.mockImplementation(() => {
+    mockSeatFindOne.mockImplementation(() => {
       throw new Error('mongo is down');
     });
     expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe('');
