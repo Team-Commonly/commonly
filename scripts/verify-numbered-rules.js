@@ -48,6 +48,17 @@
  *     those needs to know which `rule N` a document means, which is the
  *     ambiguity this guard exists to keep from growing; they are protected by
  *     the two checks above, which keep the numbers and the names stable.
+ *
+ * Withdrawing a rule, if the day comes: append the withdrawal to the rule's
+ * BODY and leave its number, its lead sentence and its neighbours alone. That
+ * is green, the number stays claimed, and a citation of it still resolves —
+ * to a rule that says it is withdrawn. The two obvious routes both fail, and
+ * the failures are measured rather than reasoned (cases m9-m11 in the
+ * campaign): deleting the rule and closing the gap renumbers every rule after
+ * it (14 errors on a 34-rule file, each one a citation now pointing at
+ * different text), and marking the lead `Withdrawn` reads as a second rule
+ * claiming that number (1 error). There is no bypass — deliberately, the same
+ * as adr-numbering-guard.yml — so the body is where a retraction goes.
  */
 const fs = require('fs');
 const path = require('path');
