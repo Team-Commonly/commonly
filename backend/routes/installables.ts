@@ -18,6 +18,8 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
+const connectorDeliveryFailures = require('../services/connectorDeliveryFailureService');
+// eslint-disable-next-line global-require
 const {
   catalogFor,
   providerReadiness,
@@ -414,6 +416,10 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     {
       $set: {
         status: 'connected',
+        // A reconnect is the only thing that proves this connector works again,
+        // so it is the only thing that clears the reason an earlier flip left on
+        // the row — the same shape as the Telegram bind (wren 73838).
+        errorMessage: null,
         'config.teamId': pending.teamId,
         'config.teamName': pending.teamName,
         'config.slackUserId': pending.slackUserId,
@@ -433,12 +439,25 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   try {
     const token = await connectorSecrets.get(pending.botTokenRef);
     const livePod = await Pod.findById(confirmed.podId).select('name').lean();
-    await new SlackApi(token).postMessage(
+    const sent = await new SlackApi(token).postMessage(
       pending.chatId,
       // Same escape the relay uses, and for the same reason: the pod name is
       // owner-authored text landing in mrkdwn.
       `[${SlackApi.escapeSlackMrkdwn(livePod?.name || 'Commonly')}] connected`,
     );
+    // The marker goes to the chat this confirm just stored, so by 73777's own
+    // test this is a bound-chat send — the twin of the Telegram bind
+    // confirmation. A permanent refusal means the connector is bound to a DM
+    // the bot cannot post in, which is exactly the state the page has to name
+    // (wren 73837). It still cannot cost a good bind: only channel_not_found,
+    // not_in_channel and is_archived classify as permanent.
+    if (await connectorDeliveryFailures.noteBoundChatDeliveryFailure(confirmed, pending.chatId, sent)) {
+      const flipped = await Integration.findById(confirmed._id);
+      return res.json({
+        status: flipped?.status ?? 'error',
+        integration: publicIntegration(flipped || confirmed),
+      });
+    }
   } catch (error) {
     console.warn('[slack-oauth] connected marker could not be sent:', (error as Error).message);
   }

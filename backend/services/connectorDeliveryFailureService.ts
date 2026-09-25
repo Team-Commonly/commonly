@@ -94,9 +94,11 @@ interface FlipInput {
  * The match on `config.chatId` is the race guard: if the connector was
  * re-bound between the send and this call, the update matches nothing and no
  * row is written — we would be reporting a failure for a chat it no longer
- * owns. Unsetting the chat id is also what stops the relay (no relay predicate
- * reads `status`) and what allows a reconnect (the connect-code route 409s
- * while a chat id is present).
+ * owns. Unsetting the chat id is what allows a reconnect (the connect-code
+ * route 409s while a chat id is present), and it is what stops the Telegram
+ * relay — that predicate reads the chat id and the pause flag, never `status`.
+ * The Slack relay filters `status: { $ne: 'error' }` as well
+ * (slackBridgeService.findLiveIntegration), so there the flip stops it twice.
  */
 const flipConnectorOnPermanentDeliveryFailure = async ({
   integrationId,

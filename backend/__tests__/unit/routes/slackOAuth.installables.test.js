@@ -14,7 +14,7 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({
-  findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(),
+  findOne: jest.fn(), findOneAndUpdate: jest.fn(), findById: jest.fn(), updateOne: jest.fn(),
 }));
 jest.mock('../../../models/InstallableInstallation', () => ({ findOne: jest.fn() }));
 jest.mock('../../../utils/secret', () => ({ randomSecret: jest.fn(() => 'nonce-value') }));
@@ -57,6 +57,7 @@ const InstallableInstallation = require('../../../models/InstallableInstallation
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { mintConnectCode } = require('../../../services/telegramConnectCode');
 const SlackApi = require('../../../services/slackApi');
+const deliveryFailures = require('../../../services/connectorDeliveryFailureService');
 const slackOAuth = require('../../../services/slackOAuthService');
 const installableRoutes = require('../../../routes/installables');
 
@@ -262,6 +263,67 @@ describe('Slack installable OAuth routes', () => {
     expect(JSON.stringify(response.body)).not.toContain('secret-ref');
     expect(JSON.stringify(response.body)).not.toContain('nonce-never-return');
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[&lt;Evil|pod&gt;] connected');
+  });
+
+  test('a reconnect clears the reason an earlier flip left on the row (wren 73838)', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById
+      .mockResolvedValueOnce({ createdBy: { toString: () => 'another' }, members: [ownerId] })
+      .mockReturnValueOnce({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Pod' }) }) });
+    Integration.findOneAndUpdate.mockResolvedValue({ ...integration, status: 'connected', config: { ...pending, chatType: 'im' } });
+    connectorSecrets.get.mockResolvedValue('xoxb-secret');
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '1.1' }) }));
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('connected');
+    // A bind is the only thing that proves the connector works again, so it is
+    // the only thing that may clear what a flip wrote — otherwise a reconnect
+    // after any failure keeps naming a reason that is no longer true.
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'integration-1' }),
+      expect.objectContaining({ $set: expect.objectContaining({ errorMessage: null }) }),
+      expect.anything(),
+    );
+  });
+
+  test('a permanent refusal on the confirmation marker flips the connector and names the reason (wren 73837)', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    // The marker goes to the chat this confirm just stored, so this is a
+    // bound-chat send — the twin of the Telegram bind confirmation.
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById
+      .mockResolvedValueOnce({ createdBy: { toString: () => 'another' }, members: [ownerId] })
+      .mockReturnValueOnce({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Pod' }) }) });
+    Integration.findOneAndUpdate.mockResolvedValue({ ...integration, status: 'connected', config: { ...pending, chatType: 'im' } });
+    connectorSecrets.get.mockResolvedValue('xoxb-secret');
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: false, error: 'channel_not_found' }) }));
+    // The route re-reads after a flip, so the response cannot keep saying
+    // "connected" while the row says the connector needs attention.
+    Integration.findById.mockResolvedValue({
+      ...integration, status: 'error', errorMessage: deliveryFailures.SLACK_CHANNEL_GONE_REASON, config: {},
+    });
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('error');
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'integration-1', 'config.chatId': 'D1' },
+      {
+        $set: { status: 'error', errorMessage: deliveryFailures.SLACK_CHANNEL_GONE_REASON },
+        $unset: { 'config.chatId': '' },
+      },
+      { new: true },
+    );
   });
 
   test('rejects a pending Slack bind and revokes its secret reference', async () => {
