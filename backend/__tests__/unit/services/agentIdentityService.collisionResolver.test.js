@@ -89,7 +89,16 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
   });
 
   test('the upgrade branch (existing non-bot user) and the repair branch (bot user with stale meta) store no placeholder either (#1649)', async () => {
-    mockExisting = { _id: 'human-id', username: 'scout-3-scout', isBot: false };
+    // Fixture updated for TASK-133 (a), disclosed: the upgrade branch now requires
+    // the row to carry an agent marker, so this legacy row carries the derived
+    // agent address an install writes. Without it the row is a PERSON's account and
+    // is refused by name — see the two tests below.
+    mockExisting = {
+      _id: 'legacy-agent-id',
+      username: 'scout-3-scout',
+      email: 'scout-3-scout@agents.commonly.local',
+      isBot: false,
+    };
     await AgentIdentityService.getOrCreateAgentUser('scout-3', { instanceId: 'scout', displayName: 'Scout' });
     expect(mockSaved[0].botMetadata.description).toBe('');
     reset();
@@ -97,6 +106,69 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     await AgentIdentityService.getOrCreateAgentUser('scout-4', { instanceId: 'scout', displayName: 'Scout' });
     expect(mockSaved[0].botMetadata.description).toBe('');
     expect(mockSaved[0].botMetadata.description).not.toMatch(/ agent$/);
+  });
+
+  test('still adopts a row written before isBot existed, on any of the three agent markers (TASK-133 a)', async () => {
+    mockExisting = {
+      _id: 'legacy-email-id',
+      username: 'scout-5-scout',
+      email: 'scout-5-scout@agents.commonly.local',
+      isBot: false,
+    };
+    const byEmail = await AgentIdentityService.getOrCreateAgentUser('scout-5', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byEmail.isBot).toBe(true);
+    expect(mockSaved[0].isBot).toBe(true);
+
+    // botType, written by an install that predates the derived address
+    reset();
+    mockExisting = {
+      _id: 'legacy-bottype-id',
+      username: 'scout-6-scout',
+      email: 'old-address@example.com',
+      isBot: false,
+      botType: 'agent',
+    };
+    const byBotType = await AgentIdentityService.getOrCreateAgentUser('scout-6', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byBotType.isBot).toBe(true);
+
+    // botMetadata, written by an install
+    reset();
+    mockExisting = {
+      _id: 'legacy-botmeta-id',
+      username: 'scout-7-scout',
+      isBot: false,
+      botMetadata: { agentName: 'scout-7', instanceId: 'scout', displayName: 'Scout' },
+    };
+    const byBotMetadata = await AgentIdentityService.getOrCreateAgentUser('scout-7', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byBotMetadata.isBot).toBe(true);
+  });
+
+  test('refuses to adopt an account no agent install wrote, instead of converting a person into a bot (TASK-133 a)', async () => {
+    mockExisting = {
+      _id: 'person-id',
+      username: 'scout-9-scout',
+      email: 'person@example.com',
+      isBot: false,
+    };
+
+    await expect(
+      AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' }),
+    ).rejects.toThrow(/refusing to adopt the existing non-agent account/);
+
+    // Typed, and it names what it refused, so a caller can report the collision
+    // instead of guessing why a send or an install failed.
+    const err = await AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' })
+      .then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(AgentIdentityService.AgentUsernameConflictError);
+    expect(err.code).toBe('agent_username_conflict');
+    expect(err.username).toBe('scout-9-scout');
+    expect(err.existingUserId).toBe('person-id');
+
+    // The refusal writes nothing: no upgrade, so the person's account keeps its
+    // row and stays able to log in. (The mock hands back a copy, so `mockSaved`
+    // is the instrument that would show a conversion, not the fixture itself.)
+    expect(mockSaved).toHaveLength(0);
+    expect(mockExisting.isBot).toBe(false);
   });
 
   test('new install with no peers — bare displayName is kept', async () => {
