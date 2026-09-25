@@ -1392,11 +1392,11 @@
       "latencyHint": "Replies typically land in about ten seconds."
     },
     "preview": {
-      "title": "Your agent",
+      "title": "your agent",
       "inPod": "in {{pod}}",
-      "draft": "Not created yet",
-      "starting": "Starting…",
-      "live": "Listening",
+      "draft": "not created yet",
+      "starting": "starting…",
+      "live": "listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
       "noteByo": "Appears in the pod once your runtime connects with the token.",
       "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."

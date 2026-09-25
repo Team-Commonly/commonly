@@ -2676,6 +2676,87 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(avatars(layout)).toBe(4);
     expect(avatars(byo)).toBe(4);
   });
+
+  test('the preview label string is lowercase too (item 4, the third string)', () => {
+    // ux-lead's #1897 gate: the spec lowercased three en strings and the build
+    // caught two. The other two were CSS caps over sentence-case data; this
+    // one was caps in the data itself, which is why nothing in the sheet moved.
+    expect(en).toContain('"title": "your agent"');
+    expect(en).not.toContain('"title": "Your agent"');
+  });
+
+  test('the preview status line is a §3 line, not a pill (item 7 fold-in)', () => {
+    const status = cssDeclarations(ruleBody(v2, '.v2-byo__preview-status'));
+    // It sits directly beside the cobalt avatar dot, so the success pill read
+    // as a second, contradictory state of the same agent (ux-lead, #1897 gate).
+    expect(status.font).toBe('500 11px/16px var(--v2-font-mono)');
+    expect(status.color).toBe('var(--v2-text-muted)');
+    expect(status.padding).toBe('0');
+    expect(status['border-radius']).toBe('0');
+    expect(status.background).toBe('none');
+    // What the gate kept, so the fix is a restyle and not a removal.
+    expect(status.display).toBe('inline-flex');
+    expect(status.gap).toBe('6px');
+    expect(status['margin-top']).toBe('10px');
+  });
+
+  test('each preview status is its §3 state, and the success colours are gone', () => {
+    const draft = cssDeclarations(
+      ruleBody(v2, '.v2-byo__preview-status--draft .v2-byo__preview-dot'),
+    );
+    // §3 not yet — the Connectors dashed hollow dot. Without border-box the
+    // 1px dashed ring grows the 7px dot to 9px, which is a layout change, not a
+    // colour one.
+    expect(draft.border).toBe('1px dashed var(--v2-border-strong)');
+    expect(draft.background).toBe('transparent');
+    expect(draft['box-sizing']).toBe('border-box');
+
+    // §3 working — the team card's working line, colour and pulse both, so
+    // "an agent is starting" reads identically in the two places a human sees
+    // it. Non-vacuity: that rule and its keyframes are read, not assumed.
+    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-status--starting')).color)
+      .toBe('var(--v2-accent-text)');
+    const startingDot = cssDeclarations(
+      ruleBody(v2, '.v2-byo__preview-status--starting .v2-byo__preview-dot'),
+    );
+    expect(startingDot.background).toBe('var(--v2-accent)');
+    expect(startingDot.animation).toBe('v2-team-pulse 1.6s ease-in-out infinite');
+    expect(ruleBody(v2, '.v2-team-card__status--working .v2-team-card__dot'))
+      .toContain('animation: v2-team-pulse 1.6s ease-in-out infinite');
+    expect(v2).toContain('@keyframes v2-team-pulse');
+    // ...and it stops when motion is reduced, like the rule it copies. Read from
+    // the media block itself: `lastRuleBody` cannot reach an indented selector,
+    // and the base rule above is what it finds instead.
+    const sectionFrom = v2.indexOf('.v2-byo__preview-status {');
+    const reducedAt = v2.indexOf('@media (prefers-reduced-motion: reduce) {', sectionFrom);
+    expect(reducedAt).toBeGreaterThan(sectionFrom);
+    const reducedBlock = v2.slice(reducedAt, v2.indexOf('\n}', reducedAt));
+    expect(reducedBlock).toContain('.v2-byo__preview-status--starting .v2-byo__preview-dot');
+    expect(reducedBlock).toContain('animation: none');
+
+    // §3 connected / live — cobalt dot, muted text. Both halves are asserted
+    // because the defect was the colour AND the fill.
+    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-status--live')).color)
+      .toBe('var(--v2-text-muted)');
+    expect(cssDeclarations(
+      ruleBody(v2, '.v2-byo__preview-status--live .v2-byo__preview-dot'),
+    ).background).toBe('var(--v2-accent)');
+
+    // The negative that says what the fold-in removed: no status colour and no
+    // pill fill anywhere in this block. A future edit that adds one back is the
+    // regression, and a presence check on the new values cannot see it.
+    const to = v2.indexOf('.v2-byo__preview-note {');
+    expect(to).toBeGreaterThan(sectionFrom);
+    const block = v2.slice(sectionFrom, to);
+    ['--v2-success', '--v2-success-text', '--v2-success-soft', '--v2-warning', '--v2-surface-hover']
+      .forEach((token) => expect(block).not.toContain(token));
+
+    // The three strings, in the data rather than via a transform — the same
+    // reason the kicker's caps were fixed in en.json.
+    expect(en).toContain('"draft": "not created yet"');
+    expect(en).toContain('"starting": "starting…"');
+    expect(en).toContain('"live": "listening"');
+  });
 });
 
 // ---------------------------------------------------------------------------

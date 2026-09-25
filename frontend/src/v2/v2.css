@@ -5903,17 +5903,21 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
   color: var(--v2-text-tertiary);
 }
+/* The status line is Signal §3 in one row, and it has to agree with the avatar
+   dot beside it: since item 7 makes that dot cobalt, a green success pill next
+   to it reads as two different states of the same agent. So it is not a pill
+   at all — it is the team card's mono 11/16 muted line, with the dot carrying
+   the state (ux-lead's #1897 gate, measured at 1200/390). */
 .v2-byo__preview-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface-hover);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-muted);
 }
 .v2-byo__preview-dot {
   width: 7px;
@@ -5921,12 +5925,27 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-text-muted);
 }
-.v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-warning); }
-.v2-byo__preview-status--live {
-  color: var(--v2-success-text);
-  background: var(--v2-success-soft);
+/* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
+   (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
+   11px is 2.6:1. */
+.v2-byo__preview-status--draft .v2-byo__preview-dot {
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px dashed var(--v2-border-strong);
 }
-.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-success); }
+/* §3 working — the team card's working line (v2.css:12113–12122), same colour
+   and same pulse, so "an agent is starting" reads identically in both places. */
+.v2-byo__preview-status--starting { color: var(--v2-accent-text); }
+.v2-byo__preview-status--starting .v2-byo__preview-dot {
+  background: var(--v2-accent);
+  animation: v2-team-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-byo__preview-status--starting .v2-byo__preview-dot { animation: none; }
+}
+/* §3 connected / live — cobalt dot, muted text, no success colour and no fill. */
+.v2-byo__preview-status--live { color: var(--v2-text-muted); }
+.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-accent); }
 .v2-byo__preview-note {
   font-size: 12px;
   line-height: 1.5;
