@@ -26,6 +26,11 @@
    @typescript-eslint/no-require-imports */
 
 import axios, { AxiosError } from 'axios';
+import {
+  dispatchHostedBrokerTool,
+  hostedBrokerToolsForRun,
+  HostedBrokerProjection,
+} from './grantBrokerProjectionService';
 
 // --- public surface --------------------------------------------------------
 
@@ -640,6 +645,41 @@ function failedResult(
   };
 }
 
+/**
+ * The bot User `_id` for this seat — the id a grant carries in `audience`.
+ *
+ * Read from the database, never from anything the model can influence: the
+ * audience check in `assertGrantUsable` is only as good as this field (vera
+ * 73751). When more than one row shares an identity (a shared identity
+ * installed by two owners), the one that is a MEMBER of the pod this run
+ * happens in wins, because that is the seat this run is acting as.
+ */
+export const resolveSeatUserId = async (
+  podId: string,
+  agentName: string,
+  instanceId: string,
+): Promise<string> => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const User = require('../models/User');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Pod = require('../models/Pod');
+    const pod = await Pod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
+    const memberIds = new Set((pod?.members || []).map((member) => String(member)));
+    const seats = await User.find({
+      isBot: true,
+      'botMetadata.agentName': agentName,
+      'botMetadata.instanceId': instanceId,
+    }).select('_id').limit(5).lean() as Array<{ _id: unknown }>;
+    if (!seats.length) return '';
+    const inPod = seats.find((seat) => memberIds.has(String(seat._id)));
+    return String((inPod || seats[0])._id || '');
+  } catch (error) {
+    console.warn('[native-runtime] seat identity lookup failed:', (error as Error).message);
+    return '';
+  }
+};
+
 export async function runAgent(
   installation: any,
   trigger: NativeRunTrigger,
@@ -903,6 +943,33 @@ export async function runAgent(
   let turnIndex = 0;
   let postedViaTool = false;
 
+  // Row B (TASK-132): the seat's grant broker, assembled ONCE PER RUN at turn
+  // assembly.
+  //
+  // The projection's `dispatch` map is the ONLY thing this run holds on to.
+  // `toolBrokerService.callTool` re-reads the grant, recomputes the live member
+  // set and re-runs `assertGrantUsable` with the required write mode taken from
+  // the server-side definition map on EVERY call, which is what makes a
+  // once-per-run assembly safe and what lets a mid-run revocation refuse the
+  // next call. Caching the grant document, the member set or the usability
+  // verdict here — the natural thing to do when someone notices a Mongo read
+  // per tool call — would silently reopen that window for the rest of the run
+  // (vera 73751).
+  const seatUserId = await resolveSeatUserId(podId, agentName, instanceId);
+  let broker: HostedBrokerProjection = { tools: [], dispatch: new Map() };
+  if (seatUserId) {
+    try {
+      broker = await hostedBrokerToolsForRun({ identityId: seatUserId, podId });
+    } catch (error) {
+      // Fail closed: no broker tools for this run, and the run itself carries
+      // on. A projection failure may not become a silent capability.
+      console.warn(
+        `[native-runtime] ${agentName}:${instanceId} grant broker assembly failed:`,
+        (error as Error).message,
+      );
+    }
+  }
+
   try {
     // Bounded loop. Each iteration = one LiteLLM call + any tool dispatch.
     // Break on: no tool_calls (final assistant text), caps hit, or errors.
@@ -938,7 +1005,12 @@ export async function runAgent(
             model,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
-            tools: toolsForConfig(cfg),
+            // The manifest's allowlist, plus the grant broker's read tools for
+            // THIS run. The broker is deliberately not reachable through
+            // `TOOLS`/`toolsForConfig` (wren 73742): it is not the agent's
+            // declared capability, it is a live grant that can be revoked
+            // between runs, and it is assembled once per run above.
+            tools: [...toolsForConfig(cfg), ...broker.tools],
             tool_choice: 'auto',
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
@@ -1016,16 +1088,46 @@ export async function runAgent(
           } catch (parseErr) {
             parsedArgs = { _raw: tc.function?.arguments || '' };
           }
-          const result = await dispatchTool(tc.function?.name || '', parsedArgs, dispatchCtx);
+          const toolName = tc.function?.name || '';
+          // Row B (TASK-132): a granted seat's broker tool, dispatched in
+          // process. `null` means this is not a broker tool and the agent's own
+          // dispatcher handles it below.
+          const brokerCall = await dispatchHostedBrokerTool({
+            projection: broker,
+            name: toolName,
+            args: parsedArgs,
+            agentUserId: seatUserId,
+            agentName,
+            instanceId,
+          });
+          const elapsed = Date.now() - toolStart;
+          if (brokerCall) {
+            // A broker call records its callId and outcome and nothing else:
+            // the ToolCall row the broker writes is the trail for what was
+            // asked and returned, and an `AgentRun` must not become a second
+            // copy of pod content (wren 73743).
+            turn.toolCalls.push({
+              name: toolName,
+              callId: brokerCall.callId,
+              outcome: brokerCall.outcome,
+              elapsedMs: elapsed,
+            });
+            messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: JSON.stringify(brokerCall.content ?? { ok: brokerCall.outcome === 'ok' }),
+            });
+          } else {
+          const result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({
-            name: tc.function?.name || '',
+            name: toolName,
             args: parsedArgs,
             result: result.content,
             error: result.error,
             elapsedMs: elapsed,
           });
-          if (tc.function?.name === 'commonly_post_message' && !result.error) {
+          if (toolName === 'commonly_post_message' && !result.error) {
             postedViaTool = true;
             finalMessage = typeof (parsedArgs as any)?.content === 'string'
               ? String((parsedArgs as any).content)
@@ -1035,7 +1137,7 @@ export async function runAgent(
           // fallback below would double-post the model's narration next to
           // the card (the exact double-post class commonly_post_message's
           // special case exists for).
-          if (tc.function?.name === 'commonly_propose_action' && !result.error) {
+          if (toolName === 'commonly_propose_action' && !result.error) {
             postedViaTool = true;
           }
           messages.push({
@@ -1043,6 +1145,7 @@ export async function runAgent(
             tool_call_id: tc.id,
             content: JSON.stringify(result.content ?? { ok: !result.error }),
           });
+          }
         }
 
         turn.elapsedMs = Date.now() - turnStart;

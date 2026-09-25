@@ -44,6 +44,14 @@ export interface IAgentRunTurnToolCall {
   result?: unknown;
   error?: string;
   elapsedMs: number;
+  /**
+   * Broker calls record their trail by reference, not by value: `callId` names
+   * the ToolCall row (the durable record of the tool, its args and its result)
+   * and `outcome` is its verdict. `args`/`result` stay unset for those calls so
+   * an AgentRun never becomes a second copy of pod content (wren 73743).
+   */
+  callId?: string;
+  outcome?: string;
 }
 
 export interface IAgentRunTurn {
@@ -86,6 +94,8 @@ const AgentRunTurnToolCallSchema = new Schema<IAgentRunTurnToolCall>(
     result: { type: Schema.Types.Mixed },
     error: { type: String },
     elapsedMs: { type: Number, default: 0 },
+    callId: { type: String },
+    outcome: { type: String },
   },
   { _id: false },
 );
