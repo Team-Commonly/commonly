@@ -1,0 +1,125 @@
+name: Review Checklist Numbering Guard
+
+# The rules in docs/development/review-checklist.md are numbered, and the
+# numbers are cited BY NUMBER from outside the file — the file's own header
+# names three (ADR-028 rule 23, ADR-019 rule 9, REVIEW.md §7) and the rules
+# cite each other nine more times. A number is a name, and nothing mechanical
+# noticed when two PRs claimed one: on 2026-09-25 main gained a `rule 34`
+# (#1877) while an open PR added its own `rule 34`. Git caught that one as a
+# text conflict only because both appended at the file's end; an insert
+# mid-file conflicts less reliably, and a "keep both" merge of two rule 34s
+# would have shipped silently — the same shape as the ADR-018 duplicate, where
+# an author followed the wrong member of the pair and shipped a wake-policy
+# regression (#963). scripts/verify-numbered-rules.js is the check; this
+# workflow is when it runs.
+#
+# Two arms on purpose, the same split as adr-numbering-guard.yml:
+#   * the PR arm compares the PR against MAIN AS IT IS NOW, not against the
+#     merge base. A merge base predates whatever landed while the PR was open,
+#     which is exactly the state the collision occurs in.
+#   * the push arm re-checks main afterwards, because two PRs that each insert
+#     at a different place can both be green and still collide once both have
+#     merged. That arm cannot prevent it; it makes main say so within a minute.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    # `edited` catches base-branch retargeting, same reasoning as
+    # package-version-guard.yml: a stacked PR retargeted to main after its
+    # parent merges otherwise enters this population with no event firing.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  # github.ref, not the PR number: on a push event there is no PR to key on and
+  # every main build would share one group and cancel its predecessor.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-checklist-main:
+    name: main's rule numbers are coherent
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # HEAD^ is the reference for "did a rule change number or name in
+          # what just merged"; a shallow checkout has no parent to read.
+          fetch-depth: 2
+
+      - name: Numbers unique, contiguous, cited, and unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=()
+          if git rev-parse --verify -q HEAD^ >/dev/null; then
+            if git cat-file -e "HEAD^:docs/development/review-checklist.md" 2>/dev/null; then
+              git show "HEAD^:docs/development/review-checklist.md" > /tmp/prev.md
+              args+=(--previous /tmp/prev.md)
+            else
+              echo "· the file did not exist in the previous commit; nothing to compare"
+            fi
+          else
+            echo "· no parent commit on this ref; nothing to compare"
+          fi
+
+          node scripts/verify-numbered-rules.js "${args[@]}"
+
+  review-checklist:
+    name: Rule numbers are unique, cited, and stable
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR HEAD, not the merge ref: refs/pull/N/merge is recomputed
+          # lazily and can be badly stale. A guard reading a stale tree fails a
+          # PR for a collision somebody already fixed, which teaches authors
+          # that this check is noise. We read main separately below.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # --no-tags and no --depth: a shallow base makes the fork point
+          # unreachable and the comparison meaningless. Same trap as
+          # package-version-guard.yml (#1113) and no `|| true` for the same
+          # reason — a main we cannot read must stop the guard, not pass it.
+          fetch-depth: 0
+
+      - name: No rule number is duplicated, skipped, moved, or claimed twice
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin main
+          if ! base=$(git merge-base FETCH_HEAD HEAD); then
+            echo "::error::No merge base between origin/main and this PR head. Not passing on a baseline this guard cannot see."
+            exit 1
+          fi
+          echo "· merge base $base; main is $(git rev-parse --short FETCH_HEAD)"
+
+          if ! git cat-file -e "FETCH_HEAD:docs/development/review-checklist.md" 2>/dev/null; then
+            echo "· main does not carry the file yet; only the in-file checks apply"
+            node scripts/verify-numbered-rules.js
+            exit 0
+          fi
+          git show "FETCH_HEAD:docs/development/review-checklist.md" > /tmp/main.md
+
+          # The checker itself has to be resolved the same way as the file, and
+          # for the same reason adr-numbering-guard.yml does it (#1504): on a
+          # `pull_request` event GitHub takes the WORKFLOW from the merge ref
+          # but this job checks out the PR HEAD, so every PR branched before
+          # this guard landed has the workflow file and not the script, and
+          # `node scripts/...` would die with MODULE_NOT_FOUND — a red PR with
+          # no rule output at all, which reads as a broken guard.
+          bin=$(mktemp -d)
+          if git cat-file -e "HEAD:scripts/verify-numbered-rules.js" 2>/dev/null; then
+            git show "HEAD:scripts/verify-numbered-rules.js" > "$bin/verify-numbered-rules.js"
+          else
+            git show "FETCH_HEAD:scripts/verify-numbered-rules.js" > "$bin/verify-numbered-rules.js"
+          fi
+
+          node "$bin/verify-numbered-rules.js" --previous /tmp/main.md
