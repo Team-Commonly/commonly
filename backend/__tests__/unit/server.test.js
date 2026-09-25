@@ -45,74 +45,92 @@ jest.mock('../../routes/pg-status', () => {
 });
 jest.mock('../../routes/pg-messages', () => {
   const ex = require('express');
-  return ex.Router();
+  const r = ex.Router();
+  r.get('/', (req, res) => res.json({ mounted: true }));
+  return r;
 });
 
-describe('server pg status route', () => {
+/**
+ * TASK-168. The production failure being pinned here: one timed-out connect at
+ * boot used to decide PostgreSQL's fate for the pod's whole life, so on
+ * 2026-09-25 the only replica served without chat history (`/api/pg/messages`
+ * 404, pg-retention and installation-cleanup never started) until a human did a
+ * rollout restart, on an image that was fine and against a PG that answered a
+ * probe in 331ms.
+ *
+ * What server.ts owns is the WIRING: retry, and mount the message routes only
+ * once connect AND schema initialization have both succeeded. What the routes
+ * themselves answer is mocked here on purpose — the point is which router, if
+ * any, is on the path.
+ */
+describe('server pg boot routes', () => {
+  // Every case here re-requires server.ts (`jest.resetModules` between them,
+  // because PG_HOST decides the boot path), and that module loads ~50 routers,
+  // mongoose, socket.io and Sentry. Alone that is ~6s; inside a full parallel
+  // run — 451 suites on a loaded machine — it went past jest's 30s default and
+  // reported a timeout, not a failure. The budget is explicit rather than
+  // inherited so a genuine hang still shows up as a timeout, at 2x the headroom
+  // the loaded case needed.
+  jest.setTimeout(60000);
+
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     delete process.env.PG_HOST;
+    delete process.env.PG_BOOT_RETRY_BASE_DELAY_MS;
   });
 
-  it('returns available:false when PG not configured', async () => {
+  it('mounts the real status router even when PG is not configured', async () => {
     delete process.env.PG_HOST;
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
     const res = await request(app).get('/api/pg/status');
-    expect(res.body).toEqual({ available: false });
-  });
 
-  it('returns available:true when PG initialized', async () => {
-    process.env.PG_HOST = 'x';
-    mockConnectPG.mockResolvedValue({});
-    mockInitPGDB.mockResolvedValue(true);
-    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
-    const { app } = require('../../server');
-    // wait for async initialization
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
+    // This mocked router can only ever answer available:true, so getting its
+    // answer back is the proof that the real router is what serves this path.
+    // The placeholder `{ available: false }` handlers it replaces would win
+    // instead, because Express serves the first registered match — and those
+    // placeholders could never tell the truth after a late mount anyway.
     expect(res.body).toEqual({ available: true });
   });
 
-  it('returns available:false when PG connection fails', async () => {
+  it('leaves the message routes unmounted while the boot connect keeps failing', async () => {
     process.env.PG_HOST = 'x';
+    process.env.PG_BOOT_RETRY_BASE_DELAY_MS = '1';
     mockConnectPG.mockResolvedValue(null);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
-    expect(res.body).toEqual({ available: false });
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+
+    await request(app).get('/api/pg/messages').expect(404);
   });
 
-  it('returns available:false when PG init fails', async () => {
+  it('retries the boot connect and mounts the message routes when a later attempt succeeds', async () => {
     process.env.PG_HOST = 'x';
+    process.env.PG_BOOT_RETRY_BASE_DELAY_MS = '1';
+    mockConnectPG
+      .mockRejectedValueOnce(new Error('Connection terminated due to connection timeout'))
+      .mockResolvedValue({});
+    mockInitPGDB.mockResolvedValue(true);
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { app } = require('../../server');
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+
+    await request(app).get('/api/pg/messages').expect(200);
+    expect(mockConnectPG).toHaveBeenCalledTimes(2);
+    expect(mockInitPGDB).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mount the message routes when the schema initialization fails', async () => {
+    process.env.PG_HOST = 'x';
+    process.env.PG_BOOT_RETRY_BASE_DELAY_MS = '1';
     mockConnectPG.mockResolvedValue({});
     mockInitPGDB.mockResolvedValue(false);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
-    expect(res.body).toEqual({ available: false });
-  });
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
 
-  it('returns available:false when PG init throws', async () => {
-    process.env.PG_HOST = 'x';
-    mockConnectPG.mockResolvedValue({});
-    mockInitPGDB.mockRejectedValue(new Error('fail'));
-    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
-    const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
-    expect(res.body).toEqual({ available: false });
+    await request(app).get('/api/pg/messages').expect(404);
   });
 });
 
