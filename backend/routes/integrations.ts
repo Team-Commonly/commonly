@@ -33,6 +33,9 @@ const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 import { Types } from 'mongoose';
+import {
+  invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
+} from '../utils/discordBinding';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -379,6 +382,15 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
+    // This block refuses an id in a shape Discord would not accept, and a
+    // supplied `botToken` rather than stripping it, because a 200 for a write we
+    // ignored reports a binding that does not exist. Both refusals run before
+    // the row is saved and before the webhook is created.
+    if (type === 'discord') {
+      const malformed = malformedDiscordBindingField(config);
+      if (malformed) return res.status(400).json(invalidDiscordIdError(malformed));
+      if (isSupplied(config.botToken)) return res.status(400).json(serverOwnedConfigError('botToken'));
+    }
     const manifest = (manifests as Record<string, unknown>)[type];
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
     if ('linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
@@ -676,6 +688,16 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // who passes canDeleteIntegration name someone else as the bridge author.
     if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
+    }
+    // Same two refusals as the create path, for the reason this route is the
+    // other half of the defect: a PATCH retargets an existing row's guild and
+    // channel while keeping its stored listener state. Only fields the request
+    // actually supplies are examined, so a PATCH that does not touch the binding
+    // is unaffected.
+    if (integration.type === 'discord' && config) {
+      const malformed = malformedDiscordBindingField(config);
+      if (malformed) return res.status(400).json(invalidDiscordIdError(malformed));
+      if (isSupplied(config.botToken)) return res.status(400).json(serverOwnedConfigError('botToken'));
     }
     const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
     if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));

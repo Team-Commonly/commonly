@@ -194,12 +194,16 @@ describe('integration manifest validation', () => {
   });
 
   it('rejects discord creation when required fields are missing', async () => {
+    // The serverId is a well-formed snowflake on purpose: this test is about
+    // the missing-field check, and a malformed id now stops at the shape
+    // refusal above it (TASK-123 a), which would pass this assertion for the
+    // wrong reason.
     const res = await request(app)
       .post('/api/integrations')
       .send({
         podId: 'pod-1',
         type: 'discord',
-        config: { serverId: 'server-1' },
+        config: { serverId: '123456789012345678' },
       });
 
     expect(res.status).toBe(400);
