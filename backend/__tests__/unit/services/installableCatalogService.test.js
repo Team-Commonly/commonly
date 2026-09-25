@@ -50,7 +50,7 @@ describe('installable catalog service', () => {
         _id: installationId,
         installableId: 'telegram',
         status: 'error',
-        errorMessage: 'projection missing',
+        errorMessage: "This connector's channel is gone. Retry to rebuild it.",
         // The reconciler's own constant: a writer declared it readable.
         errorMessageUserFacing: true,
         targetId: userId,
@@ -89,7 +89,7 @@ describe('installable catalog service', () => {
       _id: installationId,
       installableId: 'telegram',
       status: 'error',
-      errorMessage: 'projection missing',
+      errorMessage: "This connector's channel is gone. Retry to rebuild it.",
       targetId: 'another-user',
       installedBy: 'another-user',
       claimId: 'private-claim',
@@ -129,7 +129,7 @@ describe('installable catalog service', () => {
         available: true,
         installation: {
           status: 'error',
-          errorMessage: 'projection missing',
+          errorMessage: "This connector's channel is gone. Retry to rebuild it.",
           // The mapper hands over the provenance with the message, so the page
           // never has to guess from the shape of the string (TASK-131).
           errorMessageUserFacing: false,

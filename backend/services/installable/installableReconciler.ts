@@ -58,7 +58,10 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
 
     const result = await InstallableInstallation.updateOne(
       { _id: installation._id, status: installation.status, claimId },
-      { $set: userFacingInstallationError('install lock expired') },
+      // The copy is the outcome the operator reads in the Connectors list, so
+      // it names the event and the next step and no internal one: a lock is our
+      // word, not theirs (wren 73914, vera 73915).
+      { $set: userFacingInstallationError('Setup was interrupted before it finished. Try again.') },
     );
     errored += result.modifiedCount || 0;
   }
@@ -87,7 +90,10 @@ const sweepActiveInstallations = async (): Promise<{ staleComponents: number; cl
       { _id: installation._id, status: 'active' },
       {
         $set: {
-          ...userFacingInstallationError('projection missing'),
+          // Distinct from the page's generic 'Setup didn't finish.' on purpose: the
+          // connector existed and its channel record vanished, which is a different
+          // event, and the evidence pair has to read as two outcomes (vera 73915).
+          ...userFacingInstallationError("This connector's channel is gone. Retry to rebuild it."),
           'components.$[].status': 'stale',
         },
       },

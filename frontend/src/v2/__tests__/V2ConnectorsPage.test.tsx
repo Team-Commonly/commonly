@@ -82,6 +82,11 @@ const renderPage = () => render(
   </AuthContext.Provider>,
 );
 
+// The reconciler's own constant — the reason a person reads when the channel
+// record behind a connector is gone. It replaced the old 'projection missing'
+// wording in the TASK-131 copy pass (wren 73914, vera 73915).
+const REASON_CHANNEL_GONE = "This connector's channel is gone. Retry to rebuild it.";
+
 describe('V2ConnectorsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -546,11 +551,10 @@ describe('V2ConnectorsPage', () => {
     });
 
     it('TASK-131: a catalog message written for a person still renders verbatim', async () => {
-      // The reconciler's own constants — `projection missing`, `install lock
-      // expired` — are written for the person reading this row, and the flag the
-      // builder sets beside them is what keeps them readable once the generic
-      // sentence became the fallback.
-      const reason = 'projection missing';
+      // The reconciler's own reasons are written for the person reading this row,
+      // and the flag the builder sets beside them is what keeps them readable once
+      // the generic sentence became the fallback.
+      const reason = REASON_CHANNEL_GONE;
       mockCatalog([
         entry({ installation: { status: 'error', errorMessage: reason, errorMessageUserFacing: true } }),
       ]);
@@ -710,12 +714,12 @@ describe('V2ConnectorsPage', () => {
 
     it('offers Retry on an error parent, posting the bound pod, and Remove in the aside', async () => {
       mockCatalog([entry({
-        // `projection missing` is the reconciler's own constant, and since
-        // TASK-131 it travels with the flag that says so: the row's line renders
-        // a message only when a writer declared it was written for a person.
+        // The reconciler's own reason, and since TASK-131 it travels with the flag
+        // that says so: the row's line renders a message only when a writer
+        // declared it was written for a person.
         installation: {
           status: 'error',
-          errorMessage: 'projection missing',
+          errorMessage: REASON_CHANNEL_GONE,
           errorMessageUserFacing: true,
           boundPodId: 'p2',
           updatedAt: new Date().toISOString(),
@@ -726,7 +730,7 @@ describe('V2ConnectorsPage', () => {
       axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
       renderPage();
 
-      expect((await screen.findAllByText('projection missing')).length).toBeGreaterThan(0);
+      expect((await screen.findAllByText(REASON_CHANNEL_GONE)).length).toBeGreaterThan(0);
       expect(screen.getByText('retry, or remove it')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
       await waitFor(() => expect(axios.post).toHaveBeenCalledWith(

@@ -611,6 +611,10 @@ describe('installable connector projection', () => {
     // the only sentence that says what to do (TASK-131).
     expect(expiring.errorMessageUserFacing).toBe(true);
     expect(expired.errorMessageUserFacing).toBe(true);
+    // The copy itself is pinned here: these two strings are the whole set of
+    // reasons the catalogue will ever print verbatim, so a writer that changes
+    // one has to change this line too (wren 73914, vera 73915).
+    expect(expiring.errorMessage).toBe('Setup was interrupted before it finished. Try again.');
   });
 
   it('makes a missing active projection a retriable parent error', async () => {
@@ -622,7 +626,7 @@ describe('installable connector projection', () => {
     const parent = await InstallableInstallation.findById(installed.installation._id);
     expect(reconciled.staleComponents).toBe(1);
     expect(parent.status).toBe('error');
-    expect(parent.errorMessage).toBe('projection missing');
+    expect(parent.errorMessage).toBe("This connector's channel is gone. Retry to rebuild it.");
     // The reconciler's own constant: a message written for a person, so it
     // carries the flag the page requires before rendering (TASK-131).
     expect(parent.errorMessageUserFacing).toBe(true);
