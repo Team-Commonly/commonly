@@ -31,6 +31,23 @@ const images = [...README.matchAll(/<img\s+([^>]*?)\/>/g)].map((m) => {
 
 const frames = images.filter((img) => img.src?.startsWith(FRAME_DIR));
 
+/**
+ * Characters of prose in an HTML fragment: anything outside a tag that is not
+ * whitespace. Written as a scan rather than a tag-stripping regex — CodeQL's
+ * js/incomplete-multi-character-sanitization reds the latter as a sanitizer,
+ * and a strip that tolerates nested tags is the wrong instrument for a count.
+ */
+const proseLength = (html) => {
+  let inTag = false;
+  let count = 0;
+  for (const ch of html) {
+    if (ch === '<') inTag = true;
+    else if (ch === '>') inTag = false;
+    else if (!inTag && !/\s/.test(ch)) count += 1;
+  }
+  return count;
+};
+
 /** Width and height straight out of the PNG's IHDR chunk. */
 const pngSize = (file) => {
   const buf = fs.readFileSync(file);
@@ -67,7 +84,7 @@ describe('README frames', () => {
     expect(closeAt).toBeGreaterThan(frame.at);
     expect(emAt).toBeGreaterThan(frame.at);
     expect(emAt).toBeLessThan(closeAt);
-    expect(README.slice(emAt, closeAt).replace(/<[^>]+>/g, '').trim().length).toBeGreaterThan(20);
+    expect(proseLength(README.slice(emAt, closeAt))).toBeGreaterThan(20);
 
     // A frame is an image of something, so it needs real alt text.
     expect(frame.alt).not.toBeNull();
