@@ -117,6 +117,50 @@ const buildAgentEmail = (agentType: string, instanceId: string): string => {
   return `${username || 'agent'}@agents.commonly.local`;
 };
 
+/**
+ * Refused rather than resolved: the username a derived agent identity maps to is
+ * already held by an account no agent install wrote (TASK-133 a). Adopting that
+ * row flips a person's account to `isBot: true` in place, and the login mints
+ * refuse bot rows (`authController` login filters `isBot: { $ne: true }`) — the
+ * owner would be locked out of the account they registered with, and the flip is
+ * not something they can undo from the UI.
+ */
+export class AgentUsernameConflictError extends Error {
+  readonly code = 'agent_username_conflict';
+
+  constructor(
+    public readonly username: string,
+    public readonly existingUserId: string,
+  ) {
+    super(`refusing to adopt the existing non-agent account "${username}" (${existingUserId}) as an agent identity`);
+    this.name = 'AgentUsernameConflictError';
+  }
+}
+
+/**
+ * A row an agent install may adopt: one that already carries agent markers.
+ * `isBot` alone is not the test — the branch this guards exists precisely for
+ * rows written before that flag, so the markers have to be the ones an install
+ * itself writes: the derived agent address, `botType`, or `botMetadata.agentName`.
+ *
+ * The leaf, not the container (vera 73985): `botMetadata`'s sub-paths carry
+ * defaults (`officialAgent: false`, `machineId: null`, `requestedMachineId:
+ * null`), so Mongoose materialises the object on EVERY document —
+ * `Boolean(row.botMetadata)` is true for an ordinary person's row and the
+ * refusal below could never fire. `agentName` is the leaf this writer always
+ * sets (`getOrCreateAgentUser`, create and upgrade arms alike).
+ */
+export const isAgentOwnedRow = (
+  row: {
+    email?: string | null;
+    botType?: string | null;
+    botMetadata?: { agentName?: string | null } | null;
+  },
+  agentEmail: string,
+): boolean => String(row.email || '').toLowerCase() === agentEmail.toLowerCase()
+  || Boolean(row.botType)
+  || Boolean(row.botMetadata?.agentName);
+
 interface AgentTypeConfig {
   officialDisplayName: string;
   officialDescription: string;
@@ -427,6 +471,13 @@ class AgentIdentityService {
       await agentUser.save();
       console.log(`Created bot user: ${username} (${botMetadata.displayName})`);
     } else if (!agentUser.isBot) {
+      // Fail closed (TASK-133 a): a row this function did not create may belong to
+      // a person, and adopting it is not reversible — `isBot: true` is refused by
+      // every login mint. Adopt only a row that already carries agent markers;
+      // anything else is refused by name instead of converted in place.
+      if (!isAgentOwnedRow(agentUser, buildAgentEmail(resolvedType, instanceId))) {
+        throw new AgentUsernameConflictError(username, String(agentUser._id));
+      }
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
       agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;

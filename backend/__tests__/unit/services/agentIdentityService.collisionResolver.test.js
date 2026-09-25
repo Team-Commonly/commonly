@@ -89,7 +89,16 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
   });
 
   test('the upgrade branch (existing non-bot user) and the repair branch (bot user with stale meta) store no placeholder either (#1649)', async () => {
-    mockExisting = { _id: 'human-id', username: 'scout-3-scout', isBot: false };
+    // Fixture updated for TASK-133 (a), disclosed: the upgrade branch now requires
+    // the row to carry an agent marker, so this legacy row carries the derived
+    // agent address an install writes. Without it the row is a PERSON's account and
+    // is refused by name — see the two tests below.
+    mockExisting = {
+      _id: 'legacy-agent-id',
+      username: 'scout-3-scout',
+      email: 'scout-3-scout@agents.commonly.local',
+      isBot: false,
+    };
     await AgentIdentityService.getOrCreateAgentUser('scout-3', { instanceId: 'scout', displayName: 'Scout' });
     expect(mockSaved[0].botMetadata.description).toBe('');
     reset();
@@ -97,6 +106,108 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     await AgentIdentityService.getOrCreateAgentUser('scout-4', { instanceId: 'scout', displayName: 'Scout' });
     expect(mockSaved[0].botMetadata.description).toBe('');
     expect(mockSaved[0].botMetadata.description).not.toMatch(/ agent$/);
+  });
+
+  test('still adopts a row written before isBot existed, on any of the three agent markers (TASK-133 a)', async () => {
+    mockExisting = {
+      _id: 'legacy-email-id',
+      username: 'scout-5-scout',
+      email: 'scout-5-scout@agents.commonly.local',
+      isBot: false,
+    };
+    const byEmail = await AgentIdentityService.getOrCreateAgentUser('scout-5', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byEmail.isBot).toBe(true);
+    expect(mockSaved[0].isBot).toBe(true);
+
+    // botType, written by an install that predates the derived address
+    reset();
+    mockExisting = {
+      _id: 'legacy-bottype-id',
+      username: 'scout-6-scout',
+      email: 'old-address@example.com',
+      isBot: false,
+      botType: 'agent',
+    };
+    const byBotType = await AgentIdentityService.getOrCreateAgentUser('scout-6', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byBotType.isBot).toBe(true);
+
+    // botMetadata, written by an install
+    reset();
+    mockExisting = {
+      _id: 'legacy-botmeta-id',
+      username: 'scout-7-scout',
+      isBot: false,
+      botMetadata: { agentName: 'scout-7', instanceId: 'scout', displayName: 'Scout' },
+    };
+    const byBotMetadata = await AgentIdentityService.getOrCreateAgentUser('scout-7', { instanceId: 'scout', displayName: 'Scout' });
+    expect(byBotMetadata.isBot).toBe(true);
+  });
+
+  // The arms are judged on a REAL User document, not an object literal: the
+  // container `botMetadata` is materialised on every row by its sub-path
+  // defaults, so `Boolean(botMetadata)` reads true for a person and the refusal
+  // never fires in production (vera 73985). A nested-path guard witnessed only
+  // against literals misses exactly that, so this test builds the document the
+  // service actually holds.
+  test('on a hydrated User document, a person row is not agent-owned and is refused (TASK-133 a)', async () => {
+    const RealUser = jest.requireActual('../../../models/User');
+    const person = new RealUser({ username: 'scout-9-scout', email: 'person@example.com', isBot: false });
+
+    // The container is always present; the leaf this writer sets is not.
+    expect(person.botMetadata).toBeTruthy();
+    expect(person.botMetadata.agentName).toBeUndefined();
+    expect(
+      AgentIdentityService.isAgentOwnedRow(person, 'scout-9-scout@agents.commonly.local'),
+    ).toBe(false);
+
+    // A legacy agent row written by this service carries the leaf, so it is
+    // still adopted.
+    const legacy = new RealUser({
+      username: 'scout-5-scout',
+      email: 'scout-5-scout@agents.commonly.local',
+      isBot: false,
+      botMetadata: { agentName: 'scout-5' },
+    });
+    expect(
+      AgentIdentityService.isAgentOwnedRow(legacy, 'scout-5-scout@agents.commonly.local'),
+    ).toBe(true);
+
+    // And the refusal itself runs on that document shape: the mock's findOne
+    // copy keeps the materialised container and no leaf, which is what a real
+    // person row looks like to this branch.
+    mockExisting = person;
+    await expect(
+      AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' }),
+    ).rejects.toThrow(/refusing to adopt the existing non-agent account/);
+    expect(mockSaved).toHaveLength(0);
+  });
+
+  test('refuses to adopt an account no agent install wrote, instead of converting a person into a bot (TASK-133 a)', async () => {
+    mockExisting = {
+      _id: 'person-id',
+      username: 'scout-9-scout',
+      email: 'person@example.com',
+      isBot: false,
+    };
+
+    await expect(
+      AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' }),
+    ).rejects.toThrow(/refusing to adopt the existing non-agent account/);
+
+    // Typed, and it names what it refused, so a caller can report the collision
+    // instead of guessing why a send or an install failed.
+    const err = await AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' })
+      .then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(AgentIdentityService.AgentUsernameConflictError);
+    expect(err.code).toBe('agent_username_conflict');
+    expect(err.username).toBe('scout-9-scout');
+    expect(err.existingUserId).toBe('person-id');
+
+    // The refusal writes nothing: no upgrade, so the person's account keeps its
+    // row and stays able to log in. (The mock hands back a copy, so `mockSaved`
+    // is the instrument that would show a conversion, not the fixture itself.)
+    expect(mockSaved).toHaveLength(0);
+    expect(mockExisting.isBot).toBe(false);
   });
 
   test('new install with no peers — bare displayName is kept', async () => {
