@@ -43,10 +43,13 @@ interface Connector {
   installationId?: string;
   type: string;
   status: string;
-  // The named reason the connector needs attention, written by whichever send
-  // failed permanently. Optional: rows that predate it, and failures we do not
-  // classify, fall back to the generic line below.
+  // A reason this connector needs attention. Two writers share the field: our
+  // own classifier, and externalFeedService, which copies a provider's error
+  // text or a raw `err.message` in here. `errorMessageUserFacing` is what tells
+  // them apart, and only a message written for a person is rendered — the field
+  // holding a value is not permission to show it (vera 73848).
   errorMessage?: string | null;
+  errorMessageUserFacing?: boolean;
   scope?: 'user' | 'pod';
   isActive?: boolean;
   createdAt?: string;
@@ -617,7 +620,9 @@ const V2ConnectorsPage: React.FC = () => {
         actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
-        line: connector.errorMessage || t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
+        line: connector.errorMessageUserFacing && connector.errorMessage
+          ? connector.errorMessage
+          : t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
         when: ageLine('since', connector.updatedAt || connector.createdAt),
       };

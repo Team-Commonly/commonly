@@ -287,7 +287,7 @@ describe('Slack installable OAuth routes', () => {
     // after any failure keeps naming a reason that is no longer true.
     expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'integration-1' }),
-      expect.objectContaining({ $set: expect.objectContaining({ errorMessage: null }) }),
+      expect.objectContaining({ $set: expect.objectContaining({ errorMessage: null, errorMessageUserFacing: false }) }),
       expect.anything(),
     );
   });
@@ -319,7 +319,13 @@ describe('Slack installable OAuth routes', () => {
     expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
       { _id: 'integration-1', 'config.chatId': 'D1' },
       {
-        $set: { status: 'error', errorMessage: deliveryFailures.SLACK_CHANNEL_GONE_REASON },
+        $set: {
+          status: 'error',
+          errorMessage: deliveryFailures.SLACK_CHANNEL_GONE_REASON,
+          // The page renders the message only when this flag is set, so the
+          // marker's own refusal has to write the pair, not just the string.
+          errorMessageUserFacing: true,
+        },
         $unset: { 'config.chatId': '' },
       },
       { new: true },

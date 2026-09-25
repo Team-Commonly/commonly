@@ -69,6 +69,12 @@ const classifySlackDeliveryFailure = (result?: SlackDeliveryResult | null): stri
  *       reply target. Content, not reachability: a pod named `A <b>` used to 400
  *       every confirmation, and that must not undo a working bind (wren 73778).
  *  429/5xx, and anything we did not classify            → never
+ *
+ * `errorCode`/`description` are read off the axios throw, so a Telegram reply
+ * that arrives as HTTP 200 with `ok: false` reaches here as a plain success and
+ * classifies as null. That is the direction this must fail in: a missed flip is
+ * a connector that keeps relaying until the next failure names it, a wrong flip
+ * is someone's working connector marked broken (vera 73849).
  */
 const classifyTelegramDeliveryFailure = (result?: DeliveryResult | null): string | null => {
   if (!result || result.success === true) return null;
@@ -99,6 +105,26 @@ interface FlipInput {
  * relay — that predicate reads the chat id and the pause flag, never `status`.
  * The Slack relay filters `status: { $ne: 'error' }` as well
  * (slackBridgeService.findLiveIntegration), so there the flip stops it twice.
+ *
+ * `errorMessage` on its own cannot say the reason is fit to read: this field has
+ * a second, older writer — externalFeedService copies a provider's error text or
+ * a raw `err.message` (`connect ECONNREFUSED <addr>:443`) into it for `x` and
+ * `instagram` rows — and the page renders every `status: 'error'` row through
+ * one branch. So "the field has a value" is not the same fact as "the value was
+ * written for a person". `errorMessageUserFacing` is that fact, this module is
+ * its only writer, and the page renders the message only when it is set; a
+ * writer that does not set it falls back to the generic sentence instead of
+ * printing our stack text in a connector row (vera 73848).
+ */
+const userFacingError = (reason: string) => ({
+  status: 'error',
+  errorMessage: reason,
+  errorMessageUserFacing: true,
+});
+
+/**
+ * The flip's update payload, and the reconciler's — one home for the pair, so a
+ * second user-facing writer cannot forget half of it.
  */
 const flipConnectorOnPermanentDeliveryFailure = async ({
   integrationId,
@@ -108,7 +134,7 @@ const flipConnectorOnPermanentDeliveryFailure = async ({
   const matched = await Integration.findOneAndUpdate(
     { _id: integrationId, 'config.chatId': String(failedChatId) },
     {
-      $set: { status: 'error', errorMessage: reason },
+      $set: userFacingError(reason),
       $unset: { 'config.chatId': '' },
     },
     { new: true },
@@ -155,11 +181,31 @@ const noteBoundChatDeliveryFailure = async (
   });
 };
 
+/**
+ * A connector-level failure that is not a delivery error but whose reason is
+ * still ours and still written for the person reading the page: the reconciler
+ * found that this row's connector secret can no longer be decrypted. Same
+ * `$set` as the flip; the filter stays the caller's own guard, and a row the
+ * user has already deactivated must not be marked.
+ */
+const markConnectorUnavailable = async (
+  integration: { _id?: unknown } | null | undefined,
+  reason: string,
+): Promise<boolean> => {
+  if (!integration?._id) return false;
+  const result = await Integration.updateOne(
+    { _id: integration._id, isActive: true },
+    { $set: userFacingError(reason) },
+  );
+  return (result.matchedCount || 0) > 0;
+};
+
 export {
   classifyDeliveryFailure,
   classifySlackDeliveryFailure,
   classifyTelegramDeliveryFailure,
   flipConnectorOnPermanentDeliveryFailure,
+  markConnectorUnavailable,
   noteBoundChatDeliveryFailure,
   TELEGRAM_BLOCKED_REASON,
   TELEGRAM_CHAT_GONE_REASON,

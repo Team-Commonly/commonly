@@ -89,8 +89,10 @@ describe('Telegram webhook routes', () => {
           'config.chatType': 'group',
         }),
         // The bind is the event that clears a named failure, and only a bind
-        // knows the connector works again (wren 73779).
+        // knows the connector works again (wren 73779). The flag is the pair's
+        // other half: it is what the page reads before rendering the message.
         errorMessage: null,
+        errorMessageUserFacing: false,
       }),
       // `new: true` is read back by the confirmation's classification: without
       // it the doc in hand still carries the PRE-bind chat id, and a permanent

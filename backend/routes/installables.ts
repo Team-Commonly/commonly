@@ -418,8 +418,10 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
         status: 'connected',
         // A reconnect is the only thing that proves this connector works again,
         // so it is the only thing that clears the reason an earlier flip left on
-        // the row — the same shape as the Telegram bind (wren 73838).
+        // the row — the same shape as the Telegram bind (wren 73838). The flag
+        // goes with the message: it is what the page reads before rendering it.
         errorMessage: null,
+        errorMessageUserFacing: false,
         'config.teamId': pending.teamId,
         'config.teamName': pending.teamName,
         'config.slackUserId': pending.slackUserId,

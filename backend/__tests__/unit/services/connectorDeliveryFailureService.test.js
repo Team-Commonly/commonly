@@ -162,6 +162,10 @@ describe('which chat may flip', () => {
     const stored = await storedIntegration(integration._id);
     expect(stored.status).toBe('error');
     expect(stored.errorMessage).toBe(deliveryFailures.TELEGRAM_BLOCKED_REASON);
+    // The flag the page reads before it renders the message: the field has a
+    // second writer that copies provider text into it, so the value alone is not
+    // permission to show it (vera 73848).
+    expect(stored.errorMessageUserFacing).toBe(true);
     // Unset, which is what stops the relay and re-allows a connect code.
     expect(stored.config.chatId).toBeUndefined();
   });
@@ -197,6 +201,26 @@ describe('which chat may flip', () => {
     expect(stored.status).toBe('connected');
     expect(stored.config.chatId).toBe('55501');
     expect(await Activity.countDocuments({})).toBe(0);
+  });
+
+  // The reconciler's caller: a connector-level failure that is not a delivery
+  // error, but whose reason is still ours and still written for a person. It is
+  // the other writer of the pair, so it goes through the same `$set` — and its
+  // own guard is that a row the user has deactivated is not marked.
+  it('marks a connector the reconciler can no longer decrypt, for a person, and leaves an inactive row alone', async () => {
+    const live = await makeIntegration();
+    const gone = await makeIntegration({ isActive: false, name: 'Slack', type: 'slack', config: {} });
+
+    expect(await deliveryFailures.markConnectorUnavailable(live, 'Slack connector secret key is unavailable'))
+      .toBe(true);
+    expect(await deliveryFailures.markConnectorUnavailable(gone, 'Slack connector secret key is unavailable'))
+      .toBe(false);
+
+    const stored = await storedIntegration(live._id);
+    expect(stored.status).toBe('error');
+    expect(stored.errorMessage).toBe('Slack connector secret key is unavailable');
+    expect(stored.errorMessageUserFacing).toBe(true);
+    expect((await storedIntegration(gone._id)).status).toBe('connected');
   });
 
   it('leaves a transient failure alone, end to end', async () => {

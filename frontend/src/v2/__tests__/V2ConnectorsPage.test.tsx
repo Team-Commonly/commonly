@@ -456,6 +456,9 @@ describe('V2ConnectorsPage', () => {
     const reason = 'Telegram stopped delivering: the bot was blocked or removed from this chat.';
     mockGets([{
       _id: 'i-tg-error', installationId: 'install-tg-u1', type: 'telegram', status: 'error', errorMessage: reason,
+      // The flag is what makes the message readable to a person: it is set by
+      // connectorDeliveryFailureService, the writer that owns the pair.
+      errorMessageUserFacing: true,
       config: { chatTitle: 'Ops chat', liveRelay: true },
       podId: { _id: 'p1', name: 'Rewire Live Demo' },
     }]);
@@ -463,6 +466,24 @@ describe('V2ConnectorsPage', () => {
 
     expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
     expect(screen.queryByText('The connection dropped.')).toBeNull();
+  });
+
+  it('does not print a provider error text in a connector row, only a message written for a person (vera 73848)', async () => {
+    // `Integration.errorMessage` has an older writer: externalFeedService copies
+    // a provider's response, or a raw exception message, into it for the `x` and
+    // `instagram` rows. Those rows reach this same error branch, so a value in
+    // the field is not permission to render it — `errorMessageUserFacing` is,
+    // and it is absent here. The row still shows the generic sentence.
+    const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+    mockGets([{
+      _id: 'i-x-error', installationId: 'install-x-u1', type: 'x', status: 'error', errorMessage: raw,
+      config: { chatTitle: 'Feed' },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText('The connection dropped.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText(raw)).toBeNull();
   });
 
   it('derives the installable lifecycle target from the connector row type', () => {

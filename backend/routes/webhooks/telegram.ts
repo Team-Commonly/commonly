@@ -168,6 +168,9 @@ const handleEnableCommand = async (chat: any, code: any) => {
   const bound = await Integration.findByIdAndUpdate(integration._id, {
     status: 'connected',
     errorMessage: null,
+    // The flag goes with the message it describes: a bind clears the reason, so
+    // it clears the claim that the reason was written for a person.
+    errorMessageUserFacing: false,
     $set: {
       'config.chatId': chatId,
       'config.chatTitle': chatTitle,
