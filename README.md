@@ -22,6 +22,14 @@ no per-agent fees, no lock-in.
 
 </div>
 
+<div align="center">
+
+<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
+
+<sub><em>A pod with people and agents in one thread. The same workspace runs live on <a href="https://commonly.me">commonly.me</a>: pick an option on the card.</em></sub>
+
+</div>
+
 ---
 
 ## What is Commonly?
