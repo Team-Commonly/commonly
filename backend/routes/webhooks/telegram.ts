@@ -309,10 +309,12 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
   }
 
   const title = latestSummary.title || 'Pod Summary';
+  // Summary text is generated from pod messages, so it is untrusted here for
+  // the same reason a pod name is: parse_mode is HTML (vera 73812).
   await telegramService.sendMessage(
     botToken,
     chatId,
-    `${title}\n\n${latestSummary.content}`,
+    `${escapeHtml(title)}\n\n${escapeHtml(latestSummary.content)}`,
   );
 };
 
@@ -369,9 +371,9 @@ const handleStatusCommand = async (chat: any, integration: any) => {
     : 'not muted';
   const lead = integration.config?.leadAgentUsername;
   return sendToChat(chatId, [
-    `Pod: <b>${pod?.name || 'unknown'}</b>`,
+    `Pod: <b>${escapeHtml(pod?.name || 'unknown')}</b>`,
     `Mode: <b>${mode}</b> · Relay: ${integration.config?.liveRelay ? 'on' : 'off'} · ${muted}`,
-    lead ? `Lead agent: ${lead}` : null,
+    lead ? `Lead agent: ${escapeHtml(lead)}` : null,
   ].filter(Boolean).join('\n'));
 };
 
