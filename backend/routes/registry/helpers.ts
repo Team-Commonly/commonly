@@ -256,7 +256,12 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       return;
     }
     if (type === 'slack') {
-      const botToken = String(config.botToken || process.env.SLACK_BOT_TOKEN || '').trim();
+      // The env token, not the row's copy: `config.botToken` has had no writer
+      // since TASK-139, every Slack send resolves the instance credential (the
+      // OAuth bind's `botTokenRef`, or `SLACK_BOT_TOKEN`), and handing the
+      // gateway a value no other reader echoes is how a rotation misses rows
+      // that already exist (TASK-124, one hop further out — TASK-140).
+      const botToken = String(process.env.SLACK_BOT_TOKEN || '').trim();
       const appToken = String(config.appToken || process.env.SLACK_APP_TOKEN || '').trim();
       const signingSecret = String(config.signingSecret || process.env.SLACK_SIGNING_SECRET || '').trim();
       if (!id || !botToken) return;
@@ -271,7 +276,12 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       return;
     }
     if (type === 'telegram') {
-      const botToken = String(config.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      // Same rule as Slack above, and measured: every live Telegram path reads
+      // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,
+      // `services/telegramBridgeService.ts`, `decisionCardReconcileService.ts`,
+      // both provisioners). This was the only reader that preferred a per-row
+      // copy (TASK-140, Wren 74155).
+      const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
       const webhookSecret = String(config.secretToken || process.env.TELEGRAM_SECRET_TOKEN || '').trim();
       if (!id || !botToken) return;
       channels.telegram.push({

@@ -49,55 +49,13 @@ import {
   listIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
-// Bridge attribution + binding fields are server-owned. linkedUserId is the
-// identity every inbound live-relay message is AUTHORED as; chatId/chatType
-// are written only by the /commonly-enable webhook (the code is the proof);
-// connectCode is minted here. Accepting any of them from a client body lets a
-// caller name someone else as the author or bind a chat without a code.
-const SERVER_OWNED_CONFIG_KEYS = [
-  'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
-  // GitHub App connection identity is administrator-owned. A member may not
-  // retarget an existing row that a grant already references.
-  'installationId', 'owner', 'repo',
-  // OAuth callback and connectorSecrets own Slack identity and its opaque
-  // credential reference. Accepting either from a browser body defeats D6.
-  'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
-  // The token itself, one layer in from the opaque ref above: it is read as a
-  // credential by `providers/slackProvider`, by `routes/registry/helpers` (Slack
-  // and Telegram, each with an env fallback) and by the Discord resolver's
-  // legacy fallback, and its only writer is a caller's body — Slack's live bind
-  // stores `botTokenRef` and Telegram's runtime reads the env var. Left
-  // unstripped, a caller can satisfy a manifest's `botToken` requirement with a
-  // value no provider echoes and can drive their own row to `status:
-  // 'connected'` with a junk token. The two Discord refusals are kept and still
-  // run FIRST (they precede this strip on both routes), so a supplied Discord
-  // token is a 400 rather than a silent 200.
-  'botToken',
-  // The Discord channel webhook URL is a bearer credential of its own — the URL
-  // embeds the webhook's token, so posting to it posts AS that channel — and the
-  // server derives it from the Discord API on both writers (`routes/integrations`
-  // at connect, `services/discordService` on a backfill). No browser sends it, and
-  // a caller-planted value would be read as the legacy fallback in
-  // `utils/discordWebhookUrl`. `webhookUrlRef` is the pointer to the encrypted
-  // copy: like the Slack ref above, accepting it from a body would let a caller
-  // point their row at another row's secret.
-  'webhookUrl', 'webhookUrlRef',
-  // An administrator's pause is projected from the parent installation. An
-  // owner's normal config write must never lift that stop.
-  'adminPause',
-  // A receipt proves this channel was shown the card. Owners may configure
-  // gates, but cannot invent, retarget, or close receipts from a browser.
-  'cards',
-  // Routing state is written by the bridges, never by a browser: relayMap is
-  // the reply window, messageBuffer the recent-lines digest a bridge reads to
-  // answer context, and webhookListenerEnabled a runtime switch the Discord
-  // gateway reads. A body that sets any of the three names a destination or
-  // starts a listener the caller was never granted.
-  'relayMap', 'messageBuffer', 'webhookListenerEnabled',
-];
+// The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
+// and this strip read the same one (TASK-140).
+// eslint-disable-next-line global-require
+const { SERVER_OWNED_CONFIG_KEYS } = require('../utils/serverOwnedConfigKeys');
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
-  SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  SERVER_OWNED_CONFIG_KEYS.forEach((k: string) => { delete next[k]; });
   return next;
 };
 
