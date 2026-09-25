@@ -106,6 +106,17 @@ const ownedSlackIntegration = async (userId: string): Promise<{ installation: an
   return integration ? { installation, integration } : null;
 };
 
+/**
+ * Whether the OAuth callback has stored a Slack bind on this row.
+ *
+ * `config.pendingBind` is a nested schema path, so a hydrated document carries
+ * it as `{}` even when the stored row has none: its truthiness says nothing.
+ * Judge by the secret reference the callback always writes into a bind. The
+ * `$exists` filters in the CAS updates below read the stored row and are right
+ * as they are.
+ */
+const hasPendingBind = (config: any): boolean => Boolean(config?.pendingBind?.botTokenRef);
+
 const slackError = (res: Res, status: number, code: string, error: string): void => {
   res.status(status).json({ code, error });
 };
@@ -166,7 +177,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
     if (!owned.integration.isActive) {
       return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
     }
-    if (owned.integration.config?.chatId || owned.integration.config?.pendingBind) {
+    if (owned.integration.config?.chatId || hasPendingBind(owned.integration.config)) {
       return slackError(res, 409, 'slack_already_authorized', 'Slack is already awaiting confirmation or connected.');
     }
     // OAuth state expires after ten minutes. Re-mint it here, rather than
@@ -372,7 +383,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   const owned = await ownedSlackIntegration(userId);
   if (!owned) return slackError(res, 404, 'slack_installation_not_found', 'Slack installation not found.');
   const pending = owned.integration.config?.pendingBind;
-  if (!pending) return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to confirm.');
+  if (!hasPendingBind(owned.integration.config)) {
+    return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to confirm.');
+  }
   if (new Date(pending.expiresAt) <= new Date()) {
     const cleared = await Integration.findOneAndUpdate(
       { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
@@ -436,7 +449,9 @@ router.post('/slack/reject', writeIntegrationsRateLimit, auth, async (req: AuthR
   const owned = await ownedSlackIntegration(userId);
   if (!owned) return slackError(res, 404, 'slack_installation_not_found', 'Slack installation not found.');
   const pending = owned.integration.config?.pendingBind;
-  if (!pending) return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to reject.');
+  if (!hasPendingBind(owned.integration.config)) {
+    return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to reject.');
+  }
   const rejected = await Integration.findOneAndUpdate(
     { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
     { $unset: { 'config.pendingBind': 1 } },
