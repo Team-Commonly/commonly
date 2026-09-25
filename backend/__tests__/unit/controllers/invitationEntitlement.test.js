@@ -12,6 +12,7 @@ const {
   setupMongoDb,
   closeMongoDb,
   clearMongoDb,
+  waitFor,
 } = require('../../utils/testUtils');
 
 // Invitation codes stopped gating signup and started granting the
@@ -132,6 +133,12 @@ describe('Invitation → cloudAgents entitlement', () => {
       const pod = await Pod.findOne({ createdBy: user._id });
       expect(pod).toBeTruthy();
       expect(pod.name).toBe('My Workspace');
+
+      // TASK-149 queues the checklist off the register response path, so the
+      // pod is asserted straight after the 201 and the three tasks are awaited
+      // — the pod row is what the client's landing guard reads, the checklist
+      // is onboarding that lands a moment later.
+      await waitFor(async () => (await Task.countDocuments({ podId: pod._id })) === 3);
 
       const tasks = await Task.find({ podId: pod._id }).sort({ taskNum: 1 });
       expect(tasks).toHaveLength(3);

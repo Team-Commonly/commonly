@@ -130,24 +130,34 @@ const sendVerificationEmailInBackground = (user: any) => {
   })();
 };
 
-// Give every new signup a default private workspace pod so the BYO
-// onboarding flow has a target to install/talk-to an agent in. Matches
-// the Mongo Pod shape created by podController.createPod (type 'chat',
-// creator = sole member); joinPolicy 'invite-only' keeps it private.
-// Best-effort: a pod-create hiccup must never fail signup — the user
-// can always create a pod from the UI later. Shared by password
-// registration and the OAuth signup path (oauthController).
-const createDefaultWorkspacePod = async (userId: any) => {
+// Everything a new workspace needs AFTER its own pod row: the PG mirror, the
+// starter checklist, and the Guide's install + welcome.
+//
+// Split out of createDefaultWorkspacePod by TASK-149. Registration was awaiting
+// these ~11 sequential remote ops after the user row was written (register p50
+// 1.59-1.76 s measured 2026-09-24 against a ~0.20 s floor and ~0.12 s of
+// bcrypt, so the tail was ~1.0 s of it) and nothing in the 201 depends on
+// them. The order below is inherited unchanged and is load-bearing, not
+// cosmetic: the user must be mirrored before the pod (the pod's member insert
+// would fail its user_id FK) and the pod's PG row must exist before the
+// Guide's welcome (AgentMessageService.postMessage inserts a message against
+// it). One consequence, stated rather than implied: the pod now exists in
+// Mongo ~1 s before it exists in PG, so any *non-message* PG op on a
+// brand-new workspace has a one-second window exactly like the 2026-07-24
+// re-home incident (the lazy backfill still catches it afterwards).
+//
+// Every step is best-effort and individually caught, and the outer catch makes
+// this function total — it never rejects, which is what lets the caller fire
+// it without an unhandled-rejection risk. Read that as a contract, not as
+// boilerplate: the outer catch is unreachable as written (a reviewer's
+// rethrow mutant changes no test, because each step below swallows its own
+// error already), and it is therefore NOT dead code to delete. It is the
+// backstop for a fourth step added outside an inner catch — without it, that
+// step's rejection surfaces as an unhandled rejection from the `void
+// finishWorkspaceOnboarding(...)` call site, which is a process crash under
+// Node's default --unhandled-rejections=throw, on the register path.
+const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
   try {
-    const pod = await Pod.create({
-      name: 'My Workspace',
-      description: 'Your private workspace',
-      type: 'chat',
-      joinPolicy: 'invite-only',
-      createdBy: userId,
-      members: [userId],
-    });
-
     // Mirror the workspace into PostgreSQL immediately. The UI path
     // (`createPod`) already does this, but registration's workspace pod did
     // not — so every new user's workspace lived only in Mongo until its first
@@ -295,6 +305,37 @@ const createDefaultWorkspacePod = async (userId: any) => {
     } catch (scoutError: any) {
       console.warn('[register] guide agent install failed:', scoutError?.message);
     }
+  } catch (onboardingError: any) {
+    console.warn('[register] workspace onboarding failed:', onboardingError?.message);
+  }
+};
+
+// Give every new signup a default private workspace pod so the BYO
+// onboarding flow has a target to install/talk-to an agent in. Matches
+// the Mongo Pod shape created by podController.createPod (type 'chat',
+// creator = sole member); joinPolicy 'invite-only' keeps it private.
+// Best-effort: a pod-create hiccup must never fail signup — the user
+// can always create a pod from the UI later. Shared by password
+// registration and the OAuth signup path (oauthController).
+//
+// TASK-149: only the pod row is awaited. The client needs it to exist by the
+// 201 — the V2 landing guard reads GET /api/pods immediately after register
+// (TASK-144) — and needs nothing else, so onboarding is queued instead of
+// awaited. The queued call is not tracked anywhere: a pod-restart mid-tail
+// leaves a workspace with no Guide and no starter checklist, the same
+// best-effort limit the verification email already carries.
+const createDefaultWorkspacePod = async (userId: any) => {
+  try {
+    const pod = await Pod.create({
+      name: 'My Workspace',
+      description: 'Your private workspace',
+      type: 'chat',
+      joinPolicy: 'invite-only',
+      createdBy: userId,
+      members: [userId],
+    });
+
+    void finishWorkspaceOnboarding(pod, userId);
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }
@@ -317,6 +358,7 @@ exports.isEnvInvitationCodeValid = isEnvInvitationCodeValid;
 exports.consumeDbInvitationCode = consumeDbInvitationCode;
 exports.redeemInvitationCode = redeemInvitationCode;
 exports.createDefaultWorkspacePod = createDefaultWorkspacePod;
+exports.finishWorkspaceOnboarding = finishWorkspaceOnboarding;
 
 // 📌 Register User
 exports.register = async (req: any, res: any) => {

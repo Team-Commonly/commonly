@@ -10,8 +10,18 @@ jest.mock('../../../services/communityPodService', () => ({
 jest.mock('../../../services/emailService', () => ({
   sendEmail: jest.fn().mockResolvedValue({ data: { succeeded: 1 } }),
 }));
+// The workspace onboarding tail (TASK-149) is queued off the register response
+// path, so a unit suite has to hold it still: the checklist is the step the test
+// below parks on, and the PG mirror is stubbed here so no test in this file
+// depends on whether the runner happens to export PG_HOST.
+jest.mock('../../../models/Task', () => ({ create: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../../services/pgPodSyncService', () => ({
+  syncPodFromMongo: jest.fn().mockResolvedValue({}),
+}));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const { sendEmail } = require('../../../services/emailService');
+const Task = require('../../../models/Task');
+const Pod = require('../../../models/Pod');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -238,6 +248,91 @@ describe('Auth Controller Tests', () => {
       expect(res.json).toHaveBeenCalledWith({
         message: 'Registered. Verify your email to join the Community pod.',
       });
+    });
+
+    // TASK-149: the workspace onboarding tail (PG mirror → starter checklist →
+    // Guide install + welcome) used to be awaited inline before the 201, and it
+    // was ~1.0 s of a 1.59-1.76 s p50 signup. Mutation proof for the split: the
+    // checklist is handed a promise that never settles, so `await register(...)`
+    // can only return if the handler does not wait for the tail. Restoring the
+    // inline await makes this test time out rather than fail an assertion.
+    it('responds 201 without waiting for the workspace onboarding tail', async () => {
+      const oldPgHost = process.env.PG_HOST;
+      delete process.env.PG_HOST;
+
+      // A real ObjectId for the saved row. Note register passes the _id mongoose
+      // assigned to the document, not this mock's return value, so the pod
+      // create succeeds either way — asserted below rather than assumed here.
+      const realUserId = new mongoose.Types.ObjectId();
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      User.prototype.save = jest.fn().mockResolvedValueOnce({
+        _id: realUserId,
+        username: 'slowtail',
+        email: 'slowtail@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      });
+
+      Task.create.mockImplementationOnce(() => new Promise(() => {}));
+      let podVisibleAtResponse = null;
+
+      // The store check below races the queued tail — the pod create can land
+      // while the count query is in flight — so the order is also pinned
+      // synchronously: register has to have RESUMED from the pod create before
+      // it writes the response, which is what dropping the await breaks.
+      let podCreateResolved = false;
+      let podResolvedAtResponse = null;
+      const createPod = Pod.create.bind(Pod);
+      const createSpy = jest.spyOn(Pod, 'create').mockImplementation((...args) => createPod(...args)
+        .then((doc) => {
+          podCreateResolved = true;
+          return doc;
+        }));
+
+      const req = {
+        body: {
+          username: 'slowtail',
+          email: 'slowtail@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        // The pod row has to exist BY the 201 — TASK-144's landing guard reads
+        // GET /api/pods immediately after register — so the check runs inside
+        // the response mock rather than after it. Moving the pod create into
+        // the tail leaves this false, which is the assertion below. Matched by
+        // name rather than by createdBy because register uses the _id mongoose
+        // assigned at construction, not the one this test's save mock returns.
+        json: jest.fn(() => {
+          podResolvedAtResponse = podCreateResolved;
+          podVisibleAtResponse = Pod.countDocuments({ name: 'My Workspace' })
+            .then((count) => count > 0);
+        }),
+      };
+
+      // The tail is still pending at this line; a handler that awaits it never
+      // gets here.
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      // And the assertion is non-vacuous: the tail ran PAST the pod row as far
+      // as the checklist before parking, which is what the never-settling
+      // promise is holding. It stays parked for the rest of the test on
+      // purpose — releasing it would drag the Guide's install (and a real
+      // message post) into a unit suite whose subject is the response path.
+      expect(Task.create).toHaveBeenCalledWith([
+        expect.objectContaining({ sourceRef: 'onboarding:connect-agent' }),
+        expect.objectContaining({ sourceRef: 'onboarding:first-task' }),
+        expect.objectContaining({ sourceRef: 'onboarding:invite-teammate' }),
+      ]);
+      expect(await podVisibleAtResponse).toBe(true);
+      expect(podResolvedAtResponse).toBe(true);
+      createSpy.mockRestore();
+
+      if (oldPgHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = oldPgHost;
     });
 
     it('should not register a user with an existing email', async () => {

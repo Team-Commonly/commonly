@@ -200,7 +200,12 @@ describe('OAuth Controller', () => {
       expect(user.authProviders).toHaveLength(1);
       expect(user.authProviders[0].providerId).toBe('4242');
       expect(user.verified).toBe(true); // provider-asserted
-      expect(await User.countDocuments({})).toBe(1); // linked, not duplicated
+      // Counted over non-bot rows: TASK-149 queues the workspace onboarding off
+      // the response path, and a previous test's Guide (a bot User) can land
+      // between tests. The subject is 'linked, not duplicated' — a human row
+      // count — and a count of every row would assert the timing of a
+      // background step in another test.
+      expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(1);
       expect(ensureUserInCommunityPod).toHaveBeenCalledWith(existing._id);
     });
 
@@ -215,7 +220,7 @@ describe('OAuth Controller', () => {
       expect(res.redirect).toHaveBeenCalledWith(
         expect.stringContaining('oauthError=invitation_required'),
       );
-      expect(await User.countDocuments({})).toBe(0);
+      expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     });
 
     it('consumes a DB invitation code captured at /start', async () => {
@@ -294,7 +299,12 @@ describe('OAuth Controller', () => {
       expect(res.redirect).toHaveBeenCalledWith(
         expect.stringContaining('oauthError=email_unverified'),
       );
-      expect(await User.countDocuments({})).toBe(0);
+      // Scoped to non-bot rows rather than every row: TASK-149 queues the
+      // workspace onboarding off the response path, so a previous test's Guide
+      // (a bot User) can land between tests. The subject here is that the
+      // rejected profile got no ACCOUNT, and a count of all rows would be
+      // asserting the absence of a background step from another test.
+      expect(await User.countDocuments({ isBot: { $ne: true } })).toBe(0);
     });
 
     it('suffixes the username when the provider handle is taken', async () => {
