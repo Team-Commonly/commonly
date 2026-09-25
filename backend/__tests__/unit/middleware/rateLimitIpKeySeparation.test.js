@@ -27,7 +27,7 @@
  * The two fixtures prove the instrument discriminates on the stub itself: a
  * deliberately raw-`req.ip` limiter must COLLAPSE and a
  * `cloudflareIpRateLimitKeyGenerator` one must SEPARATE. A stub that separates
- * everything handed to it would pass all 82 and establish nothing.
+ * everything handed to it would pass all 84 and establish nothing.
  */
 /* eslint-disable import/no-unresolved, import/extensions */
 const fs = require('fs');
@@ -36,12 +36,18 @@ const request = require('supertest');
 const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
 
-// The app only mounts pg-messages/pg-status when PG_HOST is set AND the connect
-// resolves truthy (server.ts:67,380-400), so the probe has to present that shape.
-// process.env is per WORKER, not per file: leaving PG_HOST set would hand every
-// later suite in this worker a PG-mounted app.
-const ENTRY_PG_HOST = process.env.PG_HOST;
-process.env.PG_HOST = ENTRY_PG_HOST || 'probe';
+// Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
+// a test moves with a leak instead of catching it: measured, with the per-request
+// restore removed an earlier test left 'development' set, the walk test's own
+// `entry` then read 'development' too, and the comparison passed.
+const ENTRY_NODE_ENV = process.env.NODE_ENV;
+
+// The app only mounts pg-messages/pg-status when PG_HOST is truthy AND the
+// connect resolves truthy (server.ts:67,378-400). That condition is already met
+// here: setup.js sets PG_HOST to the literal string 'undefined' in in-memory
+// mode, which is TRUTHY, so the mount in this file comes from the connect mocks
+// below and needs no PG_HOST handling. Measured: PG_HOST is "undefined" at
+// module scope, in a file that never touches it.
 jest.mock('../../../config/db', () => jest.fn());
 jest.mock('../../../config/db-pg', () => {
   const actual = jest.requireActual('../../../config/db-pg');
@@ -114,12 +120,10 @@ const hit = async (stub, ip) => {
   } catch (err) {
     outcome = { error: String((err && err.message) || err).slice(0, 80) };
   } finally {
-    // Restore per REQUEST, not per suite: a throw mid-walk would otherwise leave
-    // NODE_ENV flipped for the rest of this worker and silently un-skip every
-    // limiter in later suites.
+    // Restore per REQUEST so each iteration ends where it started; the assertion
+    // after the walk is what enforces that it did.
     process.env.NODE_ENV = entry;
   }
-  if (process.env.NODE_ENV !== entry) throw new Error('NODE_ENV leaked');
   return outcome;
 };
 
@@ -141,9 +145,11 @@ const fmt = (label, rec) => {
 };
 
 describe('TASK-126 ip key separation', () => {
+  // The walk's own assertion covers the probe path; this covers every test in the
+  // file, the two controls included — the leak mutation was introduced by the
+  // negative control, before the walk ever ran.
   afterAll(() => {
-    if (ENTRY_PG_HOST === undefined) delete process.env.PG_HOST;
-    else process.env.PG_HOST = ENTRY_PG_HOST;
+    expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
   });
 
   beforeAll(async () => {
@@ -197,11 +203,21 @@ describe('TASK-126 ip key separation', () => {
   // collapses A and B here exactly the same way.
   it('every walked instance counts and separates; none collapses', async () => {
     const results = [];
-    const runs = walked.map(async (w, i) => {
-      const rec = await observe(w.instance, i + 1);
-      results[i] = { path: w.path, method: w.method, ...rec };
-    });
-    await Promise.all(runs);
+    // Serial, not `Promise.all` (wren 73692): with 84 chains started in one tick,
+    // only the first reads the suite's NODE_ENV; the other 83 read the
+    // 'development' it just set and each restores what it read — so the walk ends
+    // flipped, and no per-request check can see it. Serialised, every iteration
+    // restores before the next begins, which is what makes the assertion below a
+    // witness rather than decoration: it fails if the walk does not end where it
+    // started.
+    /* eslint-disable no-await-in-loop, no-restricted-syntax -- serialised on
+       purpose: the NODE_ENV restore of one iteration must complete before the
+       next reads it, which is the property under test. */
+    for (const [i, w] of walked.entries()) {
+      results[i] = { path: w.path, method: w.method, ...(await observe(w.instance, i + 1)) };
+    }
+    /* eslint-enable no-await-in-loop, no-restricted-syntax */
+    expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
 
     // Stub-only arm, disclosed rather than left implied (vera 73673): on the real
     // app `users.ts:65` `profileWriteUserLimit` keys on
@@ -226,15 +242,18 @@ describe('TASK-126 ip key separation', () => {
     // member of an EMPTY set is fine would pass on a walk that found nothing.
     expect(separated.length).toBeGreaterThanOrEqual(80);
     // Census dump for reconciliation, not an assertion: it is what let 84 be
-    // accounted as 75 direct + 9 factory invocations instead of assumed.
-    fs.writeFileSync(process.env.PROBE_CENSUS || '/tmp/kai126-probe-census.json', JSON.stringify({
-      instances: results.length,
-      separated: separated.length,
-      notCounting: notCounting.length,
-      collapsed: collapsed.length,
-      unseen: unseen.length,
-      paths: results.map((r) => `${r.method.toUpperCase()} ${r.path}`),
-    }, null, 1));
+    // accounted as 75 direct + 9 factory invocations instead of assumed. Opt-in,
+    // so CI does not write a /tmp file on every run.
+    if (process.env.PROBE_CENSUS) {
+      fs.writeFileSync(process.env.PROBE_CENSUS, JSON.stringify({
+        instances: results.length,
+        separated: separated.length,
+        notCounting: notCounting.length,
+        collapsed: collapsed.length,
+        unseen: unseen.length,
+        paths: results.map((r) => `${r.method.toUpperCase()} ${r.path}`),
+      }, null, 1));
+    }
   });
 
   it('finds the limiters that mount late or behind a router', () => {
