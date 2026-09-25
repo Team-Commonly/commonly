@@ -2408,7 +2408,9 @@ describe('the landing hero demo (TASK-147)', () => {
 // declarations asserted on. It does not resolve percentages against containing
 // blocks, does not model `!important`, and treats unmodelled media features
 // (hover, prefers-reduced-motion) as applying — the conservative direction for a
-// guard whose job is to catch a rule that WINS.
+// guard whose job is to catch a rule that WINS. The chain matcher at the end of
+// this block walks the descendant axis for class-only compounds, and treats `>`
+// as descendant; every chain it is asked about is single-child, so the two agree.
 describe('the authenticated shell keeps its panes inside the banner row (TASK-157)', () => {
   const v2 = read('../v2.css');
 
@@ -2603,5 +2605,139 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(read('../components/V2Layout.tsx')).toContain("'v2-shell'");
     expect(read('../components/V2Thread.tsx')).toContain('"v2-pane v2-pane--main"');
     expect(read('../components/V2FeaturePage.tsx')).toContain('v2-pane v2-pane--main');
+  });
+
+  // ---- the phone pods list: the tab bar has to stay reachable -----------------
+  //
+  // ux-lead's design gate failed the first head here (390, `/v2`, verified user):
+  // 0 of 4 tabs hit-testable, on a short list and a long one. The height chain
+  // asserted above is still true under the fix — the aside is still `100%` —
+  // because what changed is the BOX that percentage resolves against, and the
+  // aside's stacking. So the same parser is asked two different questions: what
+  // wins `padding-bottom` on the list shell, and what wins `z-index` on the list
+  // aside. Neither is visible to a presence check.
+
+  // Class-only compounds. Anything carrying a pseudo or an attribute is skipped
+  // rather than mis-ranked, which is the honest direction: the alternative is a
+  // matcher that guesses.
+  const MODELABLE_COMPOUND = /^[A-Za-z0-9_.-]+$/;
+
+  // Outermost first; each entry is the class set of one rendered element.
+  const LIST_CHAIN = [
+    ['v2-authenticated-shell__content'],
+    ['v2-shell', 'v2-shell--list'],
+    ['v2-pane', 'v2-pods-aside', 'v2-pods-aside--page'],
+  ];
+  const TAB_BAR = [['v2-mobile-tabs']];
+
+  const matchesChain = (selector: string, chain: string[][]): boolean => {
+    const compounds = selector.split(/\s*>\s*|\s+/).filter(Boolean);
+    if (compounds.length === 0 || !compounds.every((c) => MODELABLE_COMPOUND.test(c))) {
+      return false;
+    }
+    let from = 0;
+    let i = 0;
+    while (i < compounds.length) {
+      const wanted = classTokens(compounds[i]);
+      let found = -1;
+      let j = from;
+      while (j < chain.length) {
+        const rendered = chain[j];
+        let all = true;
+        let k = 0;
+        while (k < wanted.length) {
+          if (!rendered.includes(wanted[k])) { all = false; break; }
+          k += 1;
+        }
+        if (all) { found = j; break; }
+        j += 1;
+      }
+      if (found < 0) return false;
+      from = found + 1;
+      i += 1;
+    }
+    return true;
+  };
+
+  const chainRules = (chain: string[][], width: number): ParsedRule[] => rules.filter(
+    (rule) => appliesAt(rule, width) && matchesChain(rule.selector, chain),
+  );
+
+  // `padding-bottom`, or the `padding` shorthand it may be written as. A guard
+  // that read only the longhand would pass while the shorthand took the space
+  // back — and the shorthand is how this rule is written.
+  const bottomPadding = (body: string): string | undefined => {
+    const found = declarations(body);
+    if (found['padding-bottom'] !== undefined) return found['padding-bottom'];
+    if (found.padding === undefined) return undefined;
+    const parts = found.padding.split(/\s+/).filter(Boolean);
+    // 2 values are vertical|horizontal, 3 are top|horizontal|bottom, 4 are
+    // top|right|bottom|left — so the bottom is the LAST value in 3- and 4-value
+    // form, and the first in 1- and 2-value form. Getting this wrong reads a
+    // `padding: 0 0 56px` as no reservation at all, which is how it was caught.
+    const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
+    const at = bottomIndex[parts.length];
+    return at === undefined ? undefined : parts[at];
+  };
+
+  test('the phone list reserves the tab bar\'s own height inside its box', () => {
+    const shellRules = chainRules(LIST_CHAIN, 390)
+      .filter((rule) => bottomPadding(rule.body) !== undefined);
+    // Non-vacuity, both parts: a winner of an empty set asserts nothing, and the
+    // specificity claim below needs a one-class competitor to be about.
+    expect(shellRules.length).toBeGreaterThan(1);
+    const oneClass = shellRules.filter((rule) => rule.specificity[1] <= 1);
+    expect(oneClass.length).toBeGreaterThan(0);
+
+    const barRules = chainRules(TAB_BAR, 390)
+      .filter((rule) => declarations(rule.body)['height'] !== undefined);
+    expect(barRules.length).toBeGreaterThan(0);
+    const barHeight = declarations(winnerOf(barRules).body)['height'];
+
+    const winner = winnerOf(shellRules);
+    // Derived, not restated: the reserved space must equal the bar it reserves,
+    // so a bar that grows reds this without anyone editing two numbers.
+    expect(bottomPadding(winner.body)).toBe(barHeight);
+    expect(bottomPadding(winner.body)).toMatch(/^[1-9]\d*px$/);
+    // …and it has to win on SPECIFICITY rather than on coming later. A one-class
+    // rule of the same name below it takes the padding back — the shape that has
+    // failed twice in this sheet, and why ux-lead's spec asks for the two-class
+    // selector. Mutation m4 reds this line and only this line.
+    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass).specificity[1]);
+  });
+
+  test('the list aside does not stack over the tab bar', () => {
+    const asideRules = chainRules(LIST_CHAIN, 390)
+      .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
+    // Non-vacuity: the reset needs something to beat. The drawer rule that
+    // stacks the aside at 60 must be in the set, or this ranks a winner among
+    // rules that never disagreed.
+    expect(asideRules.length).toBeGreaterThan(1);
+    expect(asideRules.map((rule) => declarations(rule.body)['z-index'])).toContain('60');
+
+    const barRules = chainRules(TAB_BAR, 390)
+      .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
+    expect(barRules.length).toBeGreaterThan(0);
+    const barZ = Number(declarations(winnerOf(barRules).body)['z-index']);
+    expect(Number.isNaN(barZ)).toBe(false);
+
+    const aside = winnerOf(asideRules);
+    const z = declarations(aside.body)['z-index'];
+    // `auto` never forms a stacking context; any number at or above the bar's own
+    // z-index paints over it. The bar is fixed, so being under it in paint order
+    // is the whole of being tappable.
+    const stacks = z !== 'auto' && Number(z) >= barZ;
+    // Named, not boolean: a bare `stacks: true` says something is wrong without
+    // saying which rule now wins the list.
+    expect({ selector: aside.selector, z, stacks }).toEqual({
+      selector: aside.selector, z, stacks: false,
+    });
+  });
+
+  test('the list chain this guard ranks is the chain the components render', () => {
+    const layout = read('../components/V2Layout.tsx');
+    expect(layout).toContain('v2-shell v2-shell--list');
+    expect(layout).toContain('<V2MobileTabs');
+    expect(read('../components/V2PodsSidebar.tsx')).toContain("' v2-pods-aside--page'");
   });
 });
