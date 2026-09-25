@@ -41,11 +41,13 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   'botToken',
   // Inbound-verification credentials: `signingSecret` is Slack's
   // event-signature key, `appToken` its app-level (socket-mode) key, and
-  // `secretToken` Telegram's webhook key. All three are the INSTANCE's — every
-  // reader takes them from the environment (TASK-141) — so a body-supplied copy
-  // only plants a verification key that outlives the access that set it. The
-  // legacy Slack route takes no auth at all and answers an inactive row like an
-  // unknown id, so the strip and the env-only read are the whole boundary.
+  // `secretToken` Telegram's webhook key. All three are the INSTANCE's: the
+  // readers take them from the environment, and the one place a row copy could
+  // still decide a request — the Telegram provider's second gate — is gone
+  // (TASK-141). A body-supplied copy only plants a verification key that
+  // outlives the access that set it. The legacy Slack route takes no auth at
+  // all and answers an inactive row like an unknown id, so the strip and the
+  // env-only read are the whole boundary.
   'signingSecret', 'appToken', 'secretToken',
   // The Discord channel webhook URL is a bearer credential of its own — the URL
   // embeds the webhook's token, so posting to it posts AS that channel — and the
