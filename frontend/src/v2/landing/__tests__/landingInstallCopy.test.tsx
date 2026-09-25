@@ -37,6 +37,32 @@ const mockUseAuth = useAuth as jest.Mock;
 
 const LANDING_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'V2LandingPage.tsx'), 'utf8');
 const LANDING_CSS = fs.readFileSync(path.join(__dirname, '..', 'v2-landing.css'), 'utf8');
+const V2_ROOT_CSS = fs.readFileSync(path.join(__dirname, '..', '..', 'v2.css'), 'utf8');
+
+/**
+ * TASK-154, ux-lead's design gate. `.v2-root button:not(.MuiButtonBase-root)`
+ * (v2.css:201) resets every button's padding, border, background and colour at
+ * (0,2,1) — one class, the :not() argument, and the element — so the pill
+ * written as a bare `.v2-landing__install-copy` (0,1,0) lost all four and
+ * computed as text, 27×18 with a 27×44 phone target. The fix is to write it in
+ * the reset's own tier, as .v2-byo__copy does.
+ *
+ * The comparator below is deliberately coarse and applied to BOTH selectors, so
+ * it answers "is the pill at least at the reset's tier" without anyone having to
+ * trust a specificity number restated by hand. A tie is resolved by sheet order,
+ * which is why this file's rule comes from the lazily-loaded landing chunk.
+ */
+const BUTTON_RESET_SELECTOR = '.v2-root button:not(.MuiButtonBase-root)';
+const PILL_SELECTOR = '.v2-root button.v2-landing__install-copy';
+
+const specificity = (selector: string): number => {
+  const notArgs = (selector.match(/:not\(([^)]*)\)/g) ?? []) as string[];
+  const base = selector.replace(/:not\([^)]*\)/g, '');
+  const classes = (base.match(/\.[\w-]+/g) ?? []).length
+    + notArgs.reduce<number>((n, arg) => n + (arg.match(/\.[\w-]+/g) ?? []).length, 0);
+  const elements = (base.match(/(^|\s)[a-z]+/g) ?? []).length;
+  return classes * 10 + elements;
+};
 
 /** The shipped constant, read from source — never a copy of it. */
 const selfHostCommand = (): string => {
@@ -142,6 +168,26 @@ describe('landing install line copy control (TASK-154)', () => {
     // The CSS has to match the markup: scroll on the wrapper, not on the box.
     expect(ruleBody('.v2-landing__install')).not.toContain('overflow-x');
     expect(ruleBody('.v2-landing__install-scroll')).toContain('overflow-x: auto');
+  });
+
+  it('writes the pill in the button reset\u2019s own tier, so the reset cannot erase it', () => {
+    // The reset this guards against has to still be in the sheet, or the
+    // comparison below is against nothing.
+    expect(V2_ROOT_CSS).toContain(`${BUTTON_RESET_SELECTOR} {`);
+    expect(specificity(PILL_SELECTOR)).toBeGreaterThanOrEqual(specificity(BUTTON_RESET_SELECTOR));
+
+    // Read the declarations THROUGH the qualified selector: ruleBody throws if
+    // the prefix is gone, so this cannot pass on a bare-class rule the reset
+    // would win against.
+    const pill = ruleBody(PILL_SELECTOR);
+    expect(pill).toContain('padding: 4px 10px');
+    expect(pill).toContain('border: 1px solid var(--v2-border)');
+    expect(pill).toContain('background: var(--v2-surface, #fff)');
+    expect(pill).toContain('color: var(--v2-text-secondary)');
+    expect(pill).toContain('font-size: 12px');
+    expect(pill).toContain('flex: none');
+    // The hover state needs the same tier: at (0,2,0) it lost to the (0,2,1) reset.
+    expect(ruleBody(`${PILL_SELECTOR}:hover`)).toContain('background: var(--v2-accent-soft)');
   });
 
   it('keeps the line 46px tall and gives the pill a 44px target on phones', () => {

@@ -220,8 +220,16 @@
   white-space: nowrap;
 }
 /* The BYO add-computer pill (.v2-byo__copy), restated under this surface's own
-   name: the two are styled separately even though the shape is the same. */
-.v2-landing__install-copy {
+   name: the two are styled separately even though the shape is the same.
+   Qualified as `.v2-root button.` exactly as .v2-byo__copy is, because the v2
+   button reset (`.v2-root button:not(.MuiButtonBase-root)`, v2.css:201) is
+   (0,2,1) and clears padding, border, background and colour: unqualified, this
+   rule is (0,1,0) and lost all four, so the pill computed as bare 27×18 text
+   with a 27×44 phone target (ux-lead's design gate on #1868; a scratch build
+   then measured the pill at 49.1×28, zh 46.5×28, and the target at 47.1×44).
+   Same tier as the reset, and this sheet loads after v2.css — the landing page
+   is a lazy route, so its chunk's CSS follows the shell's. */
+.v2-root button.v2-landing__install-copy {
   flex: none;
   padding: 4px 10px;
   border-radius: 6px;
@@ -232,7 +240,7 @@
   line-height: 18px;
   cursor: pointer;
 }
-.v2-landing__install-copy:hover {
+.v2-root button.v2-landing__install-copy:hover {
   background: var(--v2-accent-soft);
   border-color: var(--v2-accent-soft);
   color: var(--v2-accent-text);
