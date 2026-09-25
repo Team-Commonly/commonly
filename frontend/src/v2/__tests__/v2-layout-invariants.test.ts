@@ -1778,6 +1778,46 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
+  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere (eng lead 73726, vera 73776)', () => {
+    // Show is the default. This rule used to hide __detail for every state except
+    // two enumerated ones, so the not-yet row that IS available
+    // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
+    // "read, or read and write" and a stranger saw a "not granted" kicker with
+    // nothing under it. The two reason strings are already render-asserted in
+    // V2ConnectorTools.test.tsx:280/:317 — this is the half jsdom cannot see.
+    // If one row ever needs the detail hidden on phones, add that selector to the
+    // list below on purpose rather than re-introducing an exception chain.
+    const NAMED_DETAIL_HIDE_CASES: string[] = [];
+    // Scope is the whole sheet, deliberately rather than by accident. Three
+    // rounds of this guard each picked the wrong media set — unbounded, then
+    // 760-only, then every `max-width >= 390` — because a 390 phone matches
+    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`
+    // (vera 73776). The claim is not about a viewport: no rule in this sheet may
+    // hide the reason, and NAMED_DETAIL_HIDE_CASES is the deliberate exception
+    // list. So this reads the whole file and no media-picking predicate is left
+    // to get wrong.
+    //
+    // Controls first, so an empty or mis-typed scan cannot make the assertion
+    // below vacuous: the sheet was read, it carries the class, and it carries the
+    // not-yet row's details wrapper.
+    expect(v2).toContain('.v2-connector-row__detail');
+    expect(v2).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
+    // Every hiding mechanism a declaration can use, not just the one that
+    // caused this. `display:none` was the defect; `visibility:hidden` is the
+    // same loss through a different property, and neither hides the rule from a
+    // reader who greps for the class.
+    //
+    // The class test below is a substring on purpose (vera 73782):
+    // `.v2-connector-row__detail` also matches `.v2-connector-row__details`, the
+    // wrapper the reason sits inside, and hiding that wrapper loses the reason
+    // just as completely. Do not tighten it to an exact-selector match.
+    const hidingRules = v2
+      .split('}')
+      .filter((rule) => rule.includes('.v2-connector-row__detail') && /(display:\s*none|visibility:\s*hidden)/.test(rule))
+      .filter((rule) => !NAMED_DETAIL_HIDE_CASES.some((named) => rule.includes(named)));
+    expect(hidingRules).toEqual([]);
+  });
+
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
     // Direction A (2026-09-19): three tracks — the age moved into the kicker.
     expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
@@ -1841,7 +1881,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
-    expect(connectorCss).toMatch(/\.v2-connector-row:not\(.v2-connector-row--dead\):not\(.v2-connector-row--not-enabled\) \.v2-connector-row__detail \{ display: none; \}/);
+    // The phone block used to hide __detail behind an exception list — whose
+    // presence was pinned HERE, which is why the shape survived until a third
+    // state fell outside it (eng lead 73726). The inverted shape (show, hide no
+    // row) is pinned by the test above this one; the enumerating rule is gone.
+    expect(connectorCss).not.toContain('v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail');
   });
 
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
