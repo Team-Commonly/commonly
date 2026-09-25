@@ -1798,8 +1798,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
     const connectors = ruleBody(v2, '.v2-connectors');
-    expect(connectors).toContain('min-height: calc(100vh - 86px)');
+    // TASK-156, inverting #1547: a list card is as tall as its rows. The page
+    // scrolls; no card holds empty space. ux-lead measured 564px of card around
+    // 262px of rows at 1200, and a Tools card of 718px around one 86px row with
+    // the GitHub grant open.
+    expect(connectors).not.toContain('min-height');
     expect(connectors).not.toContain('max-width');
+    const connectorsContent = ruleBody(v2, '.v2-connectors__content');
+    expect(connectorsContent).toContain('align-items: start');
+    expect(connectorsContent).not.toContain('flex: 1');
+    expect(ruleBody(v2, '.v2-connectors__rows')).not.toContain('flex: 1');
     expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
@@ -1833,12 +1841,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-tools__trail-line')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-tools__count strong')).toContain('font-size: 22px');
     expect(ruleBody(v2, '.v2-tools__count span')).toContain('font-size: 11px');
-    expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; \}/);
     expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\); gap: 24px;/);
-    expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors__rows \{ flex: none; \}/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connector-row \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\);/);
-    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
+    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ gap: 24px; margin: -12px -18px 0;/);
+    // The Tools list opt-out is dead once nothing stretches. Matched as a regex on
+    // the Connectors section, not through ruleBody: with the rule gone ruleBody
+    // returns '' and would have passed this assertion without reading anything.
+    expect(connectorCss).not.toMatch(/\.v2-tools \{[^}]*flex: none/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
     expect(connectorCss).toMatch(/\.v2-connector-row:not\(.v2-connector-row--dead\):not\(.v2-connector-row--not-enabled\) \.v2-connector-row__detail \{ display: none; \}/);

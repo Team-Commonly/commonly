@@ -146,6 +146,48 @@ describe('V2ConnectorsPage', () => {
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
   });
 
+  // TASK-156. A linked Slack stores its workspace in `teamName`
+  // (slackOAuthService) and never in `chatTitle`, so the row read "Slack ·
+  // linked to Ops" beside the word Slack. The workspace name belongs on the
+  // detail line, not in the name slot — the name stays the platform.
+  describe('the row names the Slack workspace (TASK-156)', () => {
+    const slackRow = (config, podId = { _id: 'p2', name: 'Ops' }) => ({
+      _id: 'i-slack',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'connected',
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      updatedAt: new Date().toISOString(),
+      config,
+      podId,
+    });
+
+    it('reads the teamName when the link carries no chatTitle', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Slack · linked to Ops')).toBeNull();
+      const row = screen.getByText('Acme · linked to Ops').closest('.v2-connector-row');
+      expect(row?.querySelector('.v2-connector-row__name')?.textContent).toContain('Slack');
+    });
+
+    it('reads the teamName on the not-linked variant too', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false }, null)]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · not linked to a pod')).toBeInTheDocument();
+    });
+
+    it('keeps chatTitle winning when the link carries both', async () => {
+      mockGets([slackRow({ chatTitle: 'Rewire crew', teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Rewire crew · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Acme · linked to Ops')).toBeNull();
+    });
+  });
+
   it('offers a new code from the row and aside when the Telegram code has expired', async () => {
     mockGets([{ ...connectors[0], config: { connectCode: 'abc123' } }]);
     axios.post.mockResolvedValue({ data: {} });

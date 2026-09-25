@@ -23,6 +23,10 @@ interface ConnectorGate {
 
 interface ConnectorConfig {
   chatTitle?: string;
+  // A linked Slack stores its workspace name here (slackOAuthService), never in
+  // chatTitle — so without this the row read "Slack · linked to …" beside the
+  // word Slack (TASK-156).
+  teamName?: string;
   connectCode?: string;
   connectCodeExpiresAt?: string;
   liveRelay?: boolean;
@@ -605,7 +609,7 @@ const V2ConnectorsPage: React.FC = () => {
     const started = ageLine('started', connector.createdAt);
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
-    const title = connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type;
+    const title = connector.config?.chatTitle || connector.config?.teamName || TYPE_LABELS[connector.type] || connector.type;
 
     if (connector.status === 'error') {
       return {
