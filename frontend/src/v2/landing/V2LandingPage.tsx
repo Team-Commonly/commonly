@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -188,6 +188,33 @@ const V2LandingPage: React.FC = () => {
   // hasn't asked for reduced motion — so no-JS, old browsers, and
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
+  const [installCopied, setInstallCopied] = useState(false);
+  const installCmdRef = useRef<HTMLElement | null>(null);
+
+  // TASK-154. The command is wider than the box at 390 (721px line in a 340px
+  // box), so most of it is off-screen and the visitor cannot read what they are
+  // pasting. The button writes the constant itself — never the rendered text,
+  // which carries the `$` and follows the truncation — so the copied string is
+  // the one `SELF_HOST_COMMAND` names and stays in step with the README.
+  const copyInstallCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(SELF_HOST_COMMAND);
+      setInstallCopied(true);
+      window.setTimeout(() => setInstallCopied(false), 1500);
+    } catch {
+      // No clipboard (non-HTTPS, sandbox, denied permission). Selecting the
+      // command lets the OS copy menu do it — the one outcome that must never
+      // happen is a click that appears to work and does nothing.
+      const node = installCmdRef.current;
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (node && selection) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+  };
   // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
   // registration opened (2026-07-03: invite codes gate cloud agents, not
   // signup) the label is "Get started", not "Request access" — the old copy
@@ -295,8 +322,24 @@ const V2LandingPage: React.FC = () => {
             </div>
 
             <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
-              <span className="v2-landing__install-prompt">$</span>
-              <code className="v2-landing__install-cmd">{SELF_HOST_COMMAND}</code>
+              {/* The scroll region is this wrapper, not the box, so the Copy
+                  control beside it is visible at every width and scroll
+                  position (TASK-154). */}
+              <div className="v2-landing__install-scroll">
+                <span className="v2-landing__install-prompt">$</span>
+                <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+              </div>
+              <button
+                type="button"
+                className="v2-landing__install-copy"
+                onClick={copyInstallCommand}
+                aria-label={t('landing.hero.copyInstallAria')}
+              >
+                {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
+              </button>
+              <span className="v2-landing__install-status" role="status" aria-live="polite">
+                {installCopied ? t('landing.hero.copied') : ''}
+              </span>
             </div>
 
             <div className="v2-landing__hero-by">
