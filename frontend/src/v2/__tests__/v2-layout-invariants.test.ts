@@ -1808,6 +1808,29 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectorsContent).toContain('align-items: start');
     expect(connectorsContent).not.toContain('flex: 1');
     expect(ruleBody(v2, '.v2-connectors__rows')).not.toContain('flex: 1');
+    // sprint-review's #1869 note: ruleBody reads the FIRST line-start match, so a
+    // second `.v2-connectors { min-height: … }` written later in the sheet passes
+    // every assertion above while the browser paints the stretch again — equal
+    // specificity, later rule wins. Scan EVERY declaration block by selector, so
+    // position cannot hide one. Matching is on the last compound's class tokens
+    // (so `.v2-root .v2-connectors` counts, and `.v2-connectors__content` does
+    // not); a rule scoped some other way is still not covered.
+    const layoutBlocks = (className: string) =>
+      Array.from(v2.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+        .filter(([, sels]) =>
+          sels
+            .split(',')
+            .some((sel) => (sel.trim().split(/\s+/).pop() ?? '').split('.').includes(className)),
+        )
+        .map(([, , body]) => body);
+    // Non-vacuous: each selector's scan must still find the rule it is about.
+    for (const cls of ['v2-connectors', 'v2-connectors__content', 'v2-connectors__rows']) {
+      expect(layoutBlocks(cls).length).toBeGreaterThan(0);
+    }
+    // A list card is as tall as its rows wherever the rule is written.
+    expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
+    expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
+    expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
