@@ -60,7 +60,13 @@ interface Connector {
 
 interface CatalogInstallation {
   status: string;
+  // The same pair the pod-scoped half reads, and the same rule: the field
+  // holding a value is not permission to show it. A catalog failure is
+  // `markProjectionFailure`'s raw exception message unless a writer says
+  // otherwise, so the flag decides and the generic sentence is the fallback
+  // (TASK-131, vera 73848).
   errorMessage?: string;
+  errorMessageUserFacing?: boolean;
   boundPodId?: string;
   claimedAt?: string;
   updatedAt?: string;
@@ -820,7 +826,9 @@ const V2ConnectorsPage: React.FC = () => {
         actionLabel: t('connectors.retry', { defaultValue: 'Retry' }),
         detail: t('connectors.retryOrRemove', { defaultValue: 'retry, or remove it' }),
         dot: 'empty',
-        line: installation.errorMessage || t('connectors.setupFailed', { defaultValue: 'Setup didn’t finish.' }),
+        line: installation.errorMessageUserFacing && installation.errorMessage
+          ? installation.errorMessage
+          : t('connectors.setupFailed', { defaultValue: 'Setup didn’t finish.' }),
         pulse: false,
         when: since,
       };
