@@ -55,4 +55,14 @@ describe('escapeHtml', () => {
     expect(telegramService.escapeHtml('A <b> & "c"')).toBe('A &lt;b&gt; &amp; "c"');
     expect(telegramService.escapeHtml('plain')).toBe('plain');
   });
+
+  it('renders an absent value as nothing, not as the literal "null" or "undefined"', () => {
+    // The pair Slack's escaper already keeps: `String(undefined)` is a truthy
+    // two-character string that would print in place of the name. Unreachable
+    // today — every call site pre-guards — which is exactly why the assertion is
+    // about the function rather than about a send (vera 73849).
+    expect(telegramService.escapeHtml(undefined)).toBe('');
+    expect(telegramService.escapeHtml(null)).toBe('');
+    expect(telegramService.escapeHtml(0)).toBe('0');
+  });
 });

@@ -22,7 +22,9 @@ interface SendResult {
 // entities", and the bind confirmation that carries the pod name must never be
 // lost that way (wren 73778). Lives beside the parse_mode it exists for so the
 // route and the bridge share one implementation instead of a fourth copy.
-const escapeHtml = (raw: string): string => String(raw)
+// `?? ''` and not `||`: the pair with Slack's escaper, so an absent value
+// renders as nothing rather than as the literal `null`/`undefined` (vera 73849).
+const escapeHtml = (raw: string): string => String(raw ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
