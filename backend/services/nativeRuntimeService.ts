@@ -670,10 +670,19 @@ export const resolveSeatUserId = async (
       isBot: true,
       'botMetadata.agentName': agentName,
       'botMetadata.instanceId': instanceId,
-    }).select('_id').limit(5).lean() as Array<{ _id: unknown }>;
+    }).select('_id').sort({ _id: 1 }).limit(5).lean() as Array<{ _id: unknown }>;
     if (!seats.length) return '';
     const inPod = seats.find((seat) => memberIds.has(String(seat._id)));
-    return String((inPod || seats[0])._id || '');
+    // Fail closed, and note what is being failed closed ON: this id is the
+    // audience term in `assertGrantUsable` and the attribution on every
+    // ToolCall the run writes, and a seat-target grant is projected on the id
+    // ALONE (`grantBrokerProjectionService`: a `seat` target carries no pod
+    // condition). So returning another row when none of them is a member of
+    // this pod would hand a grant minted for one identity to a run in a pod
+    // that identity is not in (vera's HOLD on #1880). No row in this pod means
+    // no broker for this run. The `_id` guard is not decoration either:
+    // `String(undefined)` is the truthy string `'undefined'`.
+    return inPod ? String(inPod._id) : '';
   } catch (error) {
     console.warn('[native-runtime] seat identity lookup failed:', (error as Error).message);
     return '';

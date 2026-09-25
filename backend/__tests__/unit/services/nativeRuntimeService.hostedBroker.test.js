@@ -28,8 +28,7 @@ jest.mock('../../../models/User', () => ({
 }));
 
 const mockPodFindById = jest.fn();
-const mockPodFind = jest.fn();
-jest.mock('../../../models/Pod', () => ({
+const mockPodFind = jest.fn();jest.mock('../../../models/Pod', () => ({
   __esModule: true,
   default: {
     findById: (...args) => mockPodFindById(...args),
@@ -77,6 +76,19 @@ const { runAgent, resolveSeatUserId } = require('../../../services/nativeRuntime
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
 
+// The seat lookup ends in `.select('_id').sort({ _id: 1 }).limit(5).lean()`.
+// `seatSortArg` records the sort so the determinism claim is witnessed instead
+// of assumed, and `seatRows` keeps the chain in one place.
+let seatSortArg = null;
+const seatRows = (rows) => {
+  const tail = { limit: () => ({ lean: async () => rows }) };
+  tail.sort = jest.fn((arg) => {
+    seatSortArg = arg;
+    return tail;
+  });
+  return { select: () => tail };
+};
+
 const INSTALLATION = {
   podId: POD,
   agentName: 'scout',
@@ -90,6 +102,19 @@ const LIVE_GRANT = {
   grantId: 'grant-seat',
   target: { kind: 'seat', id: SEAT },
   audience: [SEAT],
+  tools: ['github.list_issues'],
+  writeMode: 'read',
+};
+
+// A grant minted for a row that is NOT a member of the pod the run happens in.
+// A `seat` target carries no pod condition in the projection, so the only thing
+// standing between this grant and execution inside someone else's pod is the
+// identity resolution that feeds it (vera's HOLD on #1880).
+const OUT_OF_POD_ROW = 'row-a';
+const OUT_OF_POD_SEAT_GRANT = {
+  grantId: 'grant-elsewhere',
+  target: { kind: 'seat', id: OUT_OF_POD_ROW },
+  audience: [OUT_OF_POD_ROW],
   tools: ['github.list_issues'],
   writeMode: 'read',
 };
@@ -126,12 +151,13 @@ const chain = (rows) => ({ select: () => ({ lean: async () => rows }) });
 
 beforeEach(() => {
   jest.clearAllMocks();
+  seatSortArg = null;
   process.env.LITELLM_BASE_URL = 'http://litellm.test';
   process.env.LITELLM_MASTER_KEY = 'test-key';
 
   mockPodFindById.mockReturnValue(chain({ name: 'Launch Room', members: [SEAT] }));
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
-  mockSeatFind.mockReturnValue({ select: () => ({ limit: () => ({ lean: async () => [{ _id: SEAT }] }) }) });
+  mockSeatFind.mockReturnValue(seatRows([{ _id: SEAT }]));
   mockRoomGrantFind.mockReturnValue(chain([LIVE_GRANT]));
   AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: mockRunSave }));
 });
@@ -231,7 +257,23 @@ describe('a hosted run in a granted pod', () => {
   });
 
   test('a seat that cannot be resolved gets no broker rather than a guess', async () => {
-    mockSeatFind.mockReturnValue({ select: () => ({ limit: () => ({ lean: async () => [] }) }) });
+    mockSeatFind.mockReturnValue(seatRows([]));
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'hello' } });
+
+    expect(mockCallTool).not.toHaveBeenCalled();
+    expect(mockAxiosPost.mock.calls[0][1].tools.some((tool) => tool.function.name.startsWith('github'))).toBe(false);
+  });
+
+  test('a seat-target grant for a row that is not in this pod is not executed here (vera 73879)', async () => {
+    // The whole finding in one test. Rows for this agent exist, none of them is a
+    // member of the pod the run happens in, and a grant is live for one of those
+    // out-of-pod rows. Resolving the identity by fallback (the row that happened
+    // to come back first) puts that grant INSIDE this pod's run: the projection's
+    // seat arm has no pod condition, so the fallback is the only gate there is.
+    mockSeatFind.mockReturnValue(seatRows([{ _id: OUT_OF_POD_ROW }, { _id: 'row-b' }]));
+    mockRoomGrantFind.mockReturnValue(chain([OUT_OF_POD_SEAT_GRANT]));
     mockAxiosPost.mockResolvedValueOnce(finalTurn);
 
     await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'hello' } });
@@ -243,12 +285,21 @@ describe('a hosted run in a granted pod', () => {
 
 describe('resolveSeatUserId', () => {
   test('prefers the row that is a member of the pod the run happens in', async () => {
-    mockSeatFind.mockReturnValue({
-      select: () => ({
-        limit: () => ({ lean: async () => [{ _id: 'someone-else' }, { _id: SEAT }] }),
-      }),
-    });
+    mockSeatFind.mockReturnValue(seatRows([{ _id: 'someone-else' }, { _id: SEAT }]));
     expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe(SEAT);
+  });
+
+  test('asks for a deterministic order, so which row is picked cannot drift between runs', async () => {
+    mockSeatFind.mockReturnValue(seatRows([{ _id: SEAT }]));
+    await resolveSeatUserId(POD, 'scout', 'default');
+    expect(seatSortArg).toEqual({ _id: 1 });
+  });
+
+  test('rows exist but none is in this pod: empty, never another row\u2019s identity (vera 73879)', async () => {
+    // The case the preference cannot satisfy — the only one in which the old
+    // fallback decided anything, and the one the earlier two tests missed.
+    mockSeatFind.mockReturnValue(seatRows([{ _id: 'row-a' }, { _id: 'row-b' }]));
+    expect(await resolveSeatUserId(POD, 'scout', 'default')).toBe('');
   });
 
   test('a lookup failure is empty, never a fabricated identity', async () => {
