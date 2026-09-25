@@ -20,9 +20,10 @@
  * a failure of any kind — an unusable key ring, a transient write error — leaves
  * that row's plaintext exactly where it was, and a re-run both retries it and
  * reports what already moved as `alreadyEncrypted`. There is deliberately no
- * separate ring pre-flight: `listWithUnavailableKey` lists refs whose key is
- * missing from the ring, it cannot fail, and a call that cannot fail is not a
- * guard. The ordering is, and two witnesses in the suite hold it there.
+ * separate ring pre-flight: `put` parses the key ring before it writes anything,
+ * so an unusable ring already fails the first row ahead of either `$unset`. A
+ * second check would be redundant, not safer. The ordering is what protects the
+ * data, and two witnesses in the suite hold it there.
  *
  * Both plaintext stores are read, because a row connected before this change can
  * hold either: the platform document's `webhookUrl` (the writer that derived it

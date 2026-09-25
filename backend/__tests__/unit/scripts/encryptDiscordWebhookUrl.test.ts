@@ -190,10 +190,12 @@ describe('encrypt-discord-webhook-url', () => {
 
   it('an unusable key ring hits the same ordering, not a pre-flight', async () => {
     // The ring-shaped instance of the property above. Note what does NOT protect
-    // this: the script used to call `listWithUnavailableKey()` first, which lists
-    // refs whose key is missing and cannot itself fail — deleting it reddens
-    // nothing, which is how vera found the ordering unwitnessed in the first
-    // place. The empty ring makes the real `put` throw, and the $unsets never run.
+    // this: the script used to call `listWithUnavailableKey()` first, and that
+    // call does parse the ring and would throw on an unusable one — but so does
+    // `put`, ahead of either `$unset`, so the pre-flight was redundant rather
+    // than protective, and deleting it reddens nothing (which is how vera found
+    // the ordering unwitnessed in the first place). The empty ring makes the real
+    // `put` throw, and the $unsets never run.
     process.env.CONNECTOR_SECRET_KEYS = '';
     const { integrationId, platformId } = await seedPair({ platform: { webhookUrl: URL_A } });
 
