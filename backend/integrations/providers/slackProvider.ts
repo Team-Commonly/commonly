@@ -1,7 +1,7 @@
 // eslint-disable-next-line global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line global-require
-const { manifests, manifestForValidation } = require('../manifests');
+const { manifests } = require('../manifests');
 // eslint-disable-next-line global-require
 const SlackApi = require('../../services/slackApi');
 // eslint-disable-next-line global-require
@@ -66,7 +66,7 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
 
   return {
     async validateConfig() {
-      validateRequiredConfig(config, manifestForValidation(manifests.slack));
+      validateRequiredConfig(config, manifests.slack);
     },
 
     // @ts-ignore — handler param types are more specific than generic interface allows

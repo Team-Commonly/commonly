@@ -71,12 +71,10 @@ const minimalConfigByType = {
     botToken: 'token-1',
   },
   slack: {
-    // The bot credential is the opaque ref the OAuth bind writes
-    // (`serverOwnedConfig`); the manifest publishes only what a caller supplies
-    // (TASK-140).
+    // The predicate names what the bind writes: the DM it opened and the opaque
+    // credential ref (TASK-140). The token itself is instance-wide.
     botTokenRef: 'secret-ref-fixture',
-    signingSecret: 'secret',
-    channelId: 'C123',
+    chatId: 'D123',
   },
   groupme: {
     botId: 'bot-1',

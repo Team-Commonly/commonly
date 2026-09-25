@@ -1,7 +1,7 @@
 // eslint-disable-next-line global-require
 const DiscordService = require('../../services/discordService');
 // eslint-disable-next-line global-require
-const { manifests, manifestForValidation } = require('../manifests');
+const { manifests } = require('../manifests');
 // eslint-disable-next-line global-require
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 // eslint-disable-next-line global-require
@@ -69,7 +69,7 @@ function createDiscordProvider(integration: IntegrationDoc): DiscordProvider {
   return {
     async validateConfig() {
       try {
-        validateRequiredConfig(config, manifestForValidation(manifests.discord));
+        validateRequiredConfig(config, manifests.discord);
         // The URL is encrypted, so it is resolved here rather than carried in
         // `config`: on a migrated row the merged plaintext is gone and the ref
         // is the only store, and a presence check on the merged value would

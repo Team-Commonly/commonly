@@ -1,7 +1,7 @@
 // eslint-disable-next-line global-require
 const { normalizeBufferMessage } = require('../normalizeBufferMessage');
 // eslint-disable-next-line global-require
-const { manifests, manifestForValidation } = require('../manifests');
+const { manifests } = require('../manifests');
 
 interface TelegramUpdate {
   message?: TelegramMessage;
@@ -102,7 +102,7 @@ function createTelegramProvider(integration: { _id: unknown; config?: Record<str
 
   return {
     async validateConfig() {
-      validateRequiredConfig(config, manifestForValidation(manifests.telegram));
+      validateRequiredConfig(config, manifests.telegram);
     },
 
     // @ts-ignore — handler param types are more specific than generic interface allows

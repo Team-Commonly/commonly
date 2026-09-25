@@ -6,16 +6,23 @@ export interface ProviderReadiness {
 
 interface IntegrationManifest {
   id: string;
-  /** What a CALLER supplies. Published verbatim in the catalog (`catalog.ts`). */
-  requiredConfig: string[];
   /**
-   * What the SERVER supplies: an environment credential it resolves on every
-   * read, or a value a bind writes. Validated like `requiredConfig` (so a row's
-   * `status` still means "this connector is configured") but never published —
-   * a caller cannot set one, and `SERVER_OWNED_CONFIG_KEYS` strips it from a
-   * request body before it reaches this check.
+   * The COMPLETENESS PREDICATE: every key a row must hold for
+   * `isManifestComplete` to call it configured (`routes/integrations.ts`), which
+   * is what sets a row's `status`. It names server-owned keys **by design** —
+   * a bind writes `botTokenRef`/`chatId`, the environment supplies `botToken` —
+   * because completeness is a fact about the row, not about who may send it.
+   *
+   * Do NOT "clean" this list down to the caller-supplied subset: an empty list
+   * reads as complete (`getMissingRequiredFields` returns `[]`), so a connector
+   * whose binding is written by a flow would be created `connected` before it is
+   * bound (wren, 74255).
+   *
+   * The catalog publishes this list MINUS `SERVER_OWNED_CONFIG_KEYS`
+   * (`catalog.ts`), so the published contract names only what a caller supplies
+   * while the predicate keeps naming what the row needs (TASK-140).
    */
-  serverOwnedConfig: string[];
+  requiredConfig: string[];
   configSchema: unknown;
   /** Runtime readiness for an installable provider, not legacy row config. */
   readiness?: () => ProviderReadiness;
@@ -62,13 +69,14 @@ const manifests: Record<string, IntegrationManifest> = {
   discord: validateManifest({
     id: 'discord',
     // `serverId`/`channelId` come from the consent callback (they name the guild
-    // and channel the caller authorised); the bot token is instance-wide and
-    // resolved from the environment, and the channel webhook URL is created by
-    // the connect route. Publishing `botToken` here told a client to send a key
+    // and channel the caller authorised); `botToken` is instance-wide and
+    // resolved from the environment on every read, including the create-time 400
+    // that keeps a tokenless instance from saving a row it will 500 on. It is in
+    // the predicate for that reason and filtered out of the published payload
+    // (`catalog.ts`) — a client that followed the old published list sent a key
     // the same route refuses with `server_owned_config_key` (TASK-140).
-    requiredConfig: ['serverId', 'channelId'],
-    serverOwnedConfig: ['botToken'],
-    configSchema: buildConfigSchema(['serverId', 'channelId']),
+    requiredConfig: ['serverId', 'channelId', 'botToken'],
+    configSchema: buildConfigSchema(['serverId', 'channelId', 'botToken']),
     catalog: {
       label: 'Discord',
       provider: 'discord',
@@ -80,13 +88,15 @@ const manifests: Record<string, IntegrationManifest> = {
   }),
   slack: validateManifest({
     id: 'slack',
-    // A caller may supply the legacy channel shape (`signingSecret` + a channel
-    // id, both read with an env fallback). The bot token is not the caller's:
-    // the OAuth bind writes the opaque `botTokenRef` and the token itself is the
-    // instance's `SLACK_BOT_TOKEN`.
-    requiredConfig: ['signingSecret', 'channelId'],
-    serverOwnedConfig: ['botTokenRef'],
-    configSchema: buildConfigSchema(['signingSecret', 'channelId']),
+    // The predicate names WHAT THE BIND WRITES — `chatId` (the DM it opens) and
+    // the opaque `botTokenRef` — because that is what a bound row holds. It used
+    // to name `botToken` (retired by TASK-124) and `channelId` (which no Slack
+    // writer has ever set), so a bound row failed its own completeness predicate
+    // and the next config PATCH flipped it back to `pending` (wren, 74256).
+    // `signingSecret` left the predicate with them: no route writes it, and both
+    // readers fall back to `SLACK_SIGNING_SECRET`.
+    requiredConfig: ['botTokenRef', 'chatId'],
+    configSchema: buildConfigSchema(['botTokenRef', 'chatId']),
     readiness: () => (
       hasConfiguration(
         'SLACK_CLIENT_ID',
@@ -108,7 +118,6 @@ const manifests: Record<string, IntegrationManifest> = {
   groupme: validateManifest({
     id: 'groupme',
     requiredConfig: ['botId', 'groupId'],
-    serverOwnedConfig: [],
     configSchema: buildConfigSchema(['botId', 'groupId']),
     catalog: {
       label: 'GroupMe',
@@ -123,12 +132,12 @@ const manifests: Record<string, IntegrationManifest> = {
     id: 'telegram',
     // Nothing here is the caller's: the row is bound by the connect code the
     // create route mints (`mintConnectCode`) and the `/start` that proves the
-    // chat, which is why `chatId` is server-owned and stripped from a body. It
-    // used to be published — the same defect as Discord's `botToken`, found by
-    // the invariant test rather than by grep (TASK-140).
-    requiredConfig: [],
-    serverOwnedConfig: ['chatId'],
-    configSchema: buildConfigSchema([]),
+    // chat, which is why `chatId` is stripped from a body. The predicate still
+    // names it — the row is not configured until a chat is bound — while the
+    // published list is empty, which is exactly the difference the filter keeps
+    // (`catalog.ts`; wren 74255).
+    requiredConfig: ['chatId'],
+    configSchema: buildConfigSchema(['chatId']),
     readiness: () => (
       hasConfiguration('TELEGRAM_BOT_TOKEN')
         && (hasConfiguration('TELEGRAM_SECRET_TOKEN') || process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED === 'true')
@@ -147,7 +156,6 @@ const manifests: Record<string, IntegrationManifest> = {
   x: validateManifest({
     id: 'x',
     requiredConfig: ['accessToken', 'username'],
-    serverOwnedConfig: [],
     configSchema: buildConfigSchema(['accessToken', 'username', 'userId', 'category']),
     catalog: {
       label: 'X',
@@ -161,7 +169,6 @@ const manifests: Record<string, IntegrationManifest> = {
   instagram: validateManifest({
     id: 'instagram',
     requiredConfig: ['accessToken', 'igUserId'],
-    serverOwnedConfig: [],
     configSchema: buildConfigSchema(['accessToken', 'igUserId', 'username', 'category']),
     catalog: {
       label: 'Instagram',
@@ -184,18 +191,6 @@ if (sdk.catalog && typeof sdk.catalog.register === 'function') {
   });
 }
 
-/**
- * The union the SERVER checks: a caller's fields plus the ones it resolves or a
- * bind writes. The SDK validator and every provider read only `requiredConfig`,
- * so they are handed this derived manifest — otherwise the split above would
- * quietly drop half of what used to be validated (TASK-140). The catalog
- * publishes `requiredConfig` alone, and never this.
- */
-const manifestForValidation = (manifest: IntegrationManifest): IntegrationManifest => ({
-  ...manifest,
-  requiredConfig: [...manifest.requiredConfig, ...(manifest.serverOwnedConfig || [])],
-});
-
-module.exports = { manifests, manifestForValidation };
+module.exports = { manifests };
 
 export {};

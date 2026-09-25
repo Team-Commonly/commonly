@@ -1,92 +1,100 @@
-/**
- * TASK-140 — the PUBLISHED contract must name only what a caller can supply.
- *
- * `GET /api/integrations/catalog` returns `manifest.requiredConfig` (and the
- * `configSchema` built from the same array) verbatim, while
- * `SERVER_OWNED_CONFIG_KEYS` deletes those keys from every request body. Discord
- * published `botToken` and then refused it with `server_owned_config_key`, so a
- * client that followed the catalog could not create what the catalog described —
- * one question, two answers, because the two lists lived in different files.
- *
- * The invariants below are what keeps them one list:
- *   1. no `requiredConfig` entry is server-owned — the published lie;
- *   2. every `serverOwnedConfig` entry IS server-owned — the mirror defect, a
- *      caller-suppliable field hidden from the caller;
- *   3. the catalog payload carries no server-owned name in `requiredConfig`,
- *      `configSchema.required` or `configSchema.properties` (the schema is part
- *      of the same response, so trimming one list and not the other would leave
- *      the defect in place);
- *   4. the SERVER still validates the union — the split must not silently drop
- *      the half a caller cannot see.
- */
-const { manifests, manifestForValidation } = require('../../../integrations/manifests');
-const { getManifestEntries } = require('../../../integrations/catalog');
+// TASK-140, item 1. `manifest.requiredConfig` is two things at once:
+//
+//   · the COMPLETENESS PREDICATE that sets a row's `status`
+//     (`getMissingRequiredFields` → `isManifestComplete`, `routes/integrations.ts`), which
+//     names server-owned keys BY DESIGN — a bind writes `chatId`/`botTokenRef`, the
+//     environment supplies Discord's `botToken`; and
+//   · minus `SERVER_OWNED_CONFIG_KEYS`, the contract published by
+//     `GET /api/integrations/catalog`.
+//
+// So these tests assert on the PUBLISHED output (`getManifestEntries`, the catalog's own
+// function) for the caller-facing half, and on the predicate for the status half. The
+// failure they are here to catch is a "cleanup" that deletes the second half: an empty
+// predicate reads as complete (`getMissingRequiredFields` returns `[]`), and a row would
+// then be created `connected` before anything bound it (wren, 74255).
+const { manifests } = require('../../../integrations/manifests');
+const { getManifestEntries, buildCatalogEntries } = require('../../../integrations/catalog');
 const { SERVER_OWNED_CONFIG_KEYS } = require('../../../utils/serverOwnedConfigKeys');
 
 const serverOwned = new Set(SERVER_OWNED_CONFIG_KEYS);
-const all = Object.values(manifests);
+const published = (id) => getManifestEntries().find((entry) => entry.id === id);
+const predicate = (id) => manifests[id].requiredConfig;
 
-const schemaNames = (schema) => [
-  ...((schema && Array.isArray(schema.required)) ? schema.required : []),
-  ...Object.keys((schema && schema.properties) || {}),
-];
-
-describe('manifest caller contract (TASK-140)', () => {
+describe('manifest contract (TASK-140)', () => {
   it('publishes no server-owned key in any requiredConfig', () => {
-    const offenders = all.flatMap((manifest) => manifest.requiredConfig
-      .filter((key) => serverOwned.has(key))
-      .map((key) => `${manifest.id}.${key}`));
+    const offenders = getManifestEntries()
+      .flatMap((entry) => entry.requiredConfig.map((key) => `${entry.id}.${key}`))
+      .filter((key) => serverOwned.has(key.split('.')[1]));
 
     expect(offenders).toEqual([]);
   });
 
-  it('declares every serverOwnedConfig entry in the shared server-owned list', () => {
-    const unknown = all.flatMap((manifest) => manifest.serverOwnedConfig
-      .filter((key) => !serverOwned.has(key))
-      .map((key) => `${manifest.id}.${key}`));
-
-    expect(unknown).toEqual([]);
-  });
-
-  it('publishes no server-owned key anywhere in the catalog payload', () => {
-    const offenders = getManifestEntries().flatMap((entry) => [
-      ...entry.requiredConfig,
-      ...schemaNames(entry.configSchema),
-    ].filter((key) => serverOwned.has(key)).map((key) => `${entry.id}.${key}`));
+  it('publishes no server-owned key in a schema property or in schema.required', () => {
+    const offenders = getManifestEntries().flatMap((entry) => {
+      const schema = entry.configSchema || {};
+      const keys = [ ...Object.keys(schema.properties || {}), ...(schema.required || []) ];
+      return keys.filter((key) => serverOwned.has(key)).map((key) => `${entry.id}.${key}`);
+    });
 
     expect(offenders).toEqual([]);
   });
 
-  it('publishes exactly the caller-supplied fields for discord and slack', () => {
-    const published = Object.fromEntries(getManifestEntries().map((e) => [e.id, e.requiredConfig]));
-
-    // Discord: the consent callback sends the two ids and an empty `botToken`
-    // (`DiscordCallback.tsx`), and the route refuses the token outright.
-    expect(published.discord).toEqual(['serverId', 'channelId']);
-    // Slack: the caller may send the legacy channel shape; the token is the
-    // instance credential, and the opaque ref is written by the OAuth bind.
-    expect(published.slack).toEqual(['signingSecret', 'channelId']);
+  it('publishes exactly what a caller may send, per connector', () => {
+    expect(published('discord').requiredConfig).toEqual(['serverId', 'channelId']);
+    // Slack binds over OAuth and Telegram binds by connect code: neither has a
+    // caller-supplied field left, so both publish an empty list.
+    expect(published('slack').requiredConfig).toEqual([]);
+    expect(published('telegram').requiredConfig).toEqual([]);
+    expect(published('groupme').requiredConfig).toEqual(['botId', 'groupId']);
+    expect(published('x').requiredConfig).toEqual(['accessToken', 'username']);
+    expect(published('instagram').requiredConfig).toEqual(['accessToken', 'igUserId']);
   });
 
-  it('still validates the server-owned half through the derived manifest', () => {
-    expect(manifestForValidation(manifests.discord).requiredConfig)
-      .toEqual(['serverId', 'channelId', 'botToken']);
-    expect(manifestForValidation(manifests.slack).requiredConfig)
-      .toEqual(['signingSecret', 'channelId', 'botTokenRef']);
-    expect(manifestForValidation(manifests.telegram).requiredConfig).toEqual(['chatId']);
+  it('keeps every published requirement inside the published schema', () => {
+    // `configSchema` may declare more than the predicate (x and instagram list
+    // optional extras), but a published requirement that is not in the schema
+    // would be a field the caller cannot see how to fill.
+    getManifestEntries().forEach((entry) => {
+      const declared = (entry.configSchema || {}).required || [];
+      entry.requiredConfig.forEach((key) => {
+        expect({ id: entry.id, key, declared }).toEqual({ id: entry.id, key, declared: expect.arrayContaining([ key ]) });
+      });
+    });
   });
 
-  it('publishes nothing for telegram, whose binding is the connect code', () => {
-    const published = Object.fromEntries(getManifestEntries().map((e) => [e.id, e.requiredConfig]));
-
-    expect(published.telegram).toEqual([]);
+  it('keeps the predicate naming the keys only the server writes', () => {
+    // The point of the split: the row is not configured until these exist, and
+    // the published list above says nothing about them.
+    expect(predicate('discord')).toContain('botToken');
+    expect(predicate('slack')).toContain('botTokenRef');
+    expect(predicate('slack')).toContain('chatId');
+    expect(predicate('telegram')).toContain('chatId');
   });
 
-  it('leaves the published list of every other connector untouched', () => {
-    const published = Object.fromEntries(getManifestEntries().map((e) => [e.id, e.requiredConfig]));
+  it('names in the slack predicate what the bind writes, and no retired field', () => {
+    // The bind (`routes/installables.ts`, Slack OAuth commit) writes `chatId` and
+    // `botTokenRef`. The predicate used to name `botToken` (retired by TASK-124)
+    // and `channelId` (no Slack writer), which is why a bound row failed its own
+    // completeness check (wren, 74256).
+    expect(predicate('slack')).toEqual(['botTokenRef', 'chatId']);
+    expect(predicate('slack')).not.toContain('botToken');
+    expect(predicate('slack')).not.toContain('channelId');
+  });
 
-    expect(published.groupme).toEqual(['botId', 'groupId']);
-    expect(published.x).toEqual(['accessToken', 'username']);
-    expect(published.instagram).toEqual(['accessToken', 'igUserId']);
+  it('keeps every predicate non-empty, so nothing reads as complete before it is bound', () => {
+    Object.entries(manifests).forEach(([ , manifest ]) => {
+      expect(manifest.requiredConfig.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('filters the same way through buildCatalogEntries', async () => {
+    const entries = await buildCatalogEntries({});
+    const discord = entries.find((entry) => entry.id === 'discord');
+    const slack = entries.find((entry) => entry.id === 'slack');
+
+    expect(discord.requiredConfig).toEqual(['serverId', 'channelId']);
+    expect(slack.requiredConfig).toEqual([]);
+    expect(slack.configSchema.required).toEqual([]);
+    expect(slack.configSchema.properties).toEqual({});
   });
 });

@@ -383,8 +383,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
 
     // `isSupplied` must be the EXACT complement of the manifest's missing test
-    // (`missingFrom` in `routes/integrations.ts` counts `undefined`/`null`/`''`
-    // as missing, and
+    // (`getMissingRequiredFields` counts `undefined`/`null`/`''` as missing, and
     // nothing else). Two tests that are merely similar leave a third state, and
     // it is the dangerous one: not "missing", so the write proceeds; not
     // "supplied", so this guard never judges it — and it reaches the

@@ -25,9 +25,9 @@ export const isDiscordSnowflake = (value: unknown): boolean => (
 // anything, so it is left to the manifest's required-field check rather than
 // refused here.
 //
-// This must be the EXACT COMPLEMENT of that check — `missingFrom`
-// (`routes/integrations.ts`) counts `undefined`/`null`/`''` as missing, and
-// nothing else. Two tests that are merely similar leave a third state, and
+// This must be the EXACT COMPLEMENT of that check — `getMissingRequiredFields`
+// counts `undefined`/`null`/`''` as missing, and nothing else. Two tests that
+// are merely similar leave a third state, and
 // it is the dangerous one: a value that is not "missing" to the manifest, so the
 // write proceeds, and not "supplied" to this guard, so its shape is never
 // judged — and it then reaches the `discord.com/api/...` URL unjudged. A
@@ -38,9 +38,10 @@ export const isDiscordSnowflake = (value: unknown): boolean => (
 //
 // It stays a VALUE test, not a key-presence test, and that is load-bearing on
 // the live path: the consent callback posts `botToken: ''`
-// (`DiscordCallback.tsx:100`) alongside real ids, and `getMissingCallerFields`
-// counts `''` as missing, so a caller-supplied `''` still fails that check while
-// a key-presence test here would refuse every real bind.
+// (`DiscordCallback.tsx:100`) alongside real ids, and `getMissingRequiredFields`
+// reports `''` as missing while `resolveEffectiveConfig` re-injects discord's
+// token from the environment. Refusing on key presence would 400 every real
+// bind.
 export const isSupplied = (value: unknown): boolean => (
   value !== undefined && value !== null && value !== ''
 );
