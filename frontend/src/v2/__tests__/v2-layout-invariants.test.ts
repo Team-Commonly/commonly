@@ -1788,9 +1788,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // If one row ever needs the detail hidden on phones, add that selector to the
     // list below on purpose rather than re-introducing an exception chain.
     const NAMED_DETAIL_HIDE_CASES: string[] = [];
-    const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
-    // Positive control: the block was actually found (a missing marker would
-    // otherwise make the assertion below pass against one trailing character).
+    // Bounded to the one block that carries the row, through the brace-balanced
+    // helper: a raw slice from the connectors marker to EOF spans ten later
+    // `@media` blocks (~2,125 lines), so the first legitimate hide in a narrower
+    // block would redden this with a message naming a block it is not in
+    // (vera 73735).
+    const phone760 = mediaBlockContaining(v2, '.v2-connector-row--not-yet .v2-connector-row__details');
+    // Positive control: the block was actually found (an empty return would
+    // otherwise let the assertion below pass against nothing at all).
     expect(phone760).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
     const hidingRules = phone760
       .split('}')

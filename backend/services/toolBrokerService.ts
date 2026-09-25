@@ -307,7 +307,7 @@ const commentIssue: ToolDefinition = {
 
 const closeIssue: ToolDefinition = {
   name: 'github.close_issue',
-  description: 'Close an issue in the connected GitHub repository.',
+  description: 'Close an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   // Closing an issue is reversible (it can be reopened). Agent text is a
@@ -339,7 +339,7 @@ const closeIssue: ToolDefinition = {
 
 const mergePullRequest: ToolDefinition = {
   name: 'github.merge_pull_request',
-  description: 'Merge a pull request in the connected GitHub repository.',
+  description: 'Merge a pull request in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   irreversible: true,
