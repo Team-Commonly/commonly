@@ -193,9 +193,18 @@ const V2LandingPage: React.FC = () => {
 
   // TASK-154. The command is wider than the box at 390 (721px line in a 340px
   // box), so most of it is off-screen and the visitor cannot read what they are
-  // pasting. The button writes the constant itself — never the rendered text,
-  // which carries the `$` and follows the truncation — so the copied string is
-  // the one `SELF_HOST_COMMAND` names and stays in step with the README.
+  // pasting. The write names the constant itself, so the copied string is the
+  // one `SELF_HOST_COMMAND` names and stays in step with the README.
+  //
+  // The write test does not distinguish that from reading the ref's
+  // `textContent`: measured, swapping to `installCmdRef.current.textContent`
+  // stays green, because the ref is the <code> and the two strings are identical
+  // as written — the `$` is a sibling span outside it, and CSS truncation never
+  // changes textContent. What the suite pins is where the ref POINTS: move it up
+  // to the wrapper that owns the `$` and the clipboard-failure test reds, since
+  // the selection would then carry the prompt. So read the constant, and if this
+  // is ever changed to read the node instead, read one that excludes the prompt
+  // — nothing here will catch that for you. (#1868, sprint-review.)
   const copyInstallCommand = async () => {
     try {
       await navigator.clipboard.writeText(SELF_HOST_COMMAND);
