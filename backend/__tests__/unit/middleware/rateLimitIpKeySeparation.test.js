@@ -43,11 +43,13 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRat
 const ENTRY_NODE_ENV = process.env.NODE_ENV;
 
 // The app only mounts pg-messages/pg-status when PG_HOST is truthy AND the
-// connect resolves truthy (server.ts:67,378-400). That condition is already met
-// here: setup.js sets PG_HOST to the literal string 'undefined' in in-memory
-// mode, which is TRUTHY, so the mount in this file comes from the connect mocks
-// below and needs no PG_HOST handling. Measured: PG_HOST is "undefined" at
-// module scope, in a file that never touches it.
+// connect resolves truthy (server.ts:67,378-400), so this file sets it rather
+// than inheriting it: setup.js used to leave the truthy STRING 'undefined' in
+// PG_HOST (TASK-128 deletes the key instead), and a probe that silently needs
+// that accident drops to 82 instances the day it is fixed. No restore machinery
+// is needed — process.env is per test FILE (measured), so this assignment cannot
+// reach any other suite.
+process.env.PG_HOST = 'probe';
 jest.mock('../../../config/db', () => jest.fn());
 jest.mock('../../../config/db-pg', () => {
   const actual = jest.requireActual('../../../config/db-pg');
