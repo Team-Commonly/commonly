@@ -295,3 +295,69 @@ describe('Slack installable OAuth routes', () => {
     expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref');
   });
 });
+
+// The suite above hands the routes plain objects, where an absent pendingBind
+// is absent. Production hands them a Mongoose document, and `config.pendingBind`
+// is a nested schema path: it hydrates as `{}` on a row that has no bind. Read
+// by truthiness, that refused every new Slack install from #1537 on. These
+// tests go through the real model so the route sees what `findOne` returns.
+describe('Slack routes on a hydrated Integration document', () => {
+  const RealIntegration = jest.requireActual('../../../models/Integration');
+  const hydrated = (config) => RealIntegration.hydrate({
+    _id: '64b64c48c4f37a6b2f34c333',
+    installationId: 'install-1',
+    type: 'slack',
+    status: 'pending',
+    isActive: true,
+    config,
+  });
+  const freshInstall = () => hydrated({
+    connectCode: 'c'.repeat(32),
+    connectCodeExpiresAt: new Date(Date.now() + 60_000),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    InstallableInstallation.findOne.mockResolvedValue({ _id: 'install-1', targetId: ownerId, status: 'active' });
+  });
+
+  test('the hydrated shape this guards: a row with no bind still carries a truthy pendingBind', () => {
+    // If a schema change ever stops this, the tests below stop proving anything.
+    expect(freshInstall().config.pendingBind).toBeTruthy();
+  });
+
+  test('a fresh install with no bind gets an authorize URL', async () => {
+    const doc = freshInstall();
+    Integration.findOne.mockResolvedValue(doc);
+    Integration.findOneAndUpdate.mockResolvedValue(doc);
+
+    const response = await request(app).post('/api/installables/slack/authorize-url');
+
+    expect(response.status).toBe(200);
+    expect(response.body.authorizeUrl).toContain(`state=${'c'.repeat(32)}`);
+  });
+
+  test('a row that holds a bind is still refused as already authorized', async () => {
+    Integration.findOne.mockResolvedValue(hydrated({
+      pendingBind: {
+        chatId: 'D1', botTokenRef: 'secret-ref', expiresAt: new Date(Date.now() + 60_000),
+      },
+    }));
+
+    const response = await request(app).post('/api/installables/slack/authorize-url');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('slack_already_authorized');
+  });
+
+  test.each(['confirm', 'reject'])('%s with no bind is named as missing and writes nothing', async (verb) => {
+    Integration.findOne.mockResolvedValue(freshInstall());
+
+    const response = await request(app).post(`/api/installables/slack/${verb}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('slack_bind_missing');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(connectorSecrets.revoke).not.toHaveBeenCalled();
+  });
+});
