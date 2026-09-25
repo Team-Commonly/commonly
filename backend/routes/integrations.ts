@@ -3,6 +3,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
+const { resolveDiscordBotToken } = require('../utils/discordBotToken');
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const adminAuth = require('../middleware/adminAuth');
@@ -140,7 +142,8 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = {}) => {
   if (type !== 'discord') return config;
-  return { ...config, botToken: config.botToken || process.env.DISCORD_BOT_TOKEN };
+  // env-first for every read, including this validation one (TASK-124).
+  return { ...config, botToken: resolveDiscordBotToken(config.botToken) };
 };
 
 const getMissingRequiredFields = (type: string, config: unknown): string[] => {
@@ -432,7 +435,10 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord') {
       const webhookResponse = await axios.post(`https://discord.com/api/channels/${config.channelId}/webhooks`, { name: 'Commonly Bot', avatar: null }, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' } });
       const webhook = webhookResponse.data as { id: string; token: string };
-      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`, webhookId: webhook.id, botToken: process.env.DISCORD_BOT_TOKEN, permissions: config.permissions || ['read_messages', 'send_messages'] });
+      // No botToken copy. The token is instance-wide and read from the
+      // environment on every use; storing it here is what made a rotation miss
+      // integrations that already existed (TASK-124).
+      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
       integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';

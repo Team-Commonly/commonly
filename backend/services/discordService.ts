@@ -12,6 +12,8 @@ const DiscordCommandService = require('./discordCommandService');
 const summarizerService = require('./summarizerService');
 // eslint-disable-next-line global-require
 const config = require('../config/discord');
+// eslint-disable-next-line global-require
+const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 
 interface FetchMessagesOptions {
   channelId?: string;
@@ -459,7 +461,7 @@ class DiscordService {
     try {
       return DiscordService.fetchMessages({
         channelId: (this.integration as IntegrationDoc | null)?.config?.channelId,
-        botToken: (this.integration as IntegrationDoc | null)?.config?.botToken || process.env.DISCORD_BOT_TOKEN,
+        botToken: resolveDiscordBotToken((this.integration as IntegrationDoc | null)?.config?.botToken),
         ...options,
       });
     } catch (error) {
@@ -475,7 +477,7 @@ class DiscordService {
 
       const response = await axios.get(url, {
         headers: {
-          Authorization: `Bot ${discordIntegration.platformIntegration?.['botToken']}`,
+          Authorization: `Bot ${resolveDiscordBotToken(discordIntegration.platformIntegration?.['botToken'])}`,
           'Content-Type': 'application/json',
         },
       });
@@ -508,7 +510,7 @@ class DiscordService {
       const discordIntegration = this.integration as IntegrationDoc;
       const botResponse = await axios.get(`${(config as Record<string, unknown>).baseUrl}/users/@me`, {
         headers: {
-          Authorization: `Bot ${discordIntegration.platformIntegration?.['botToken']}`,
+          Authorization: `Bot ${resolveDiscordBotToken(discordIntegration.platformIntegration?.['botToken'])}`,
           'Content-Type': 'application/json',
         },
       });

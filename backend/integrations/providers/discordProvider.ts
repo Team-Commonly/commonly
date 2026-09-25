@@ -2,6 +2,8 @@
 const DiscordService = require('../../services/discordService');
 // eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
+// eslint-disable-next-line global-require
+const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 
 interface IntegrationDoc {
   _id: unknown;
@@ -50,10 +52,11 @@ function buildEffectiveConfig(integration: IntegrationDoc): DiscordConfig {
   return {
     ...integration?.config,
     ...(platformConfig as Record<string, unknown>),
-    botToken:
-      (integration?.config?.botToken as string | undefined)
-      || (platformConfig as { botToken?: string }).botToken
-      || process.env.DISCORD_BOT_TOKEN,
+    // env-first: a stored copy never wins over DISCORD_BOT_TOKEN (TASK-124).
+    botToken: resolveDiscordBotToken(
+      integration?.config?.botToken,
+      (platformConfig as { botToken?: string }).botToken,
+    ),
   };
 }
 

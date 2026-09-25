@@ -426,4 +426,77 @@ describe('DiscordService', () => {
       );
     });
   });
+
+  // TASK-124: the header that leaves the process must carry the env token, not
+  // a copy stored on the row when the integration was connected. The row below
+  // is a legacy one - it carries the copy, which is exactly the state all three
+  // production documents were in when a rotation failed to reach them.
+  describe('TASK-124 — the token on the wire comes from the environment', () => {
+    const ENV_TOKEN = 'env-token-after-rotation';
+    const STORED_TOKEN = 'stored-token-from-before-rotation';
+    const savedEnv = process.env.DISCORD_BOT_TOKEN;
+
+    // Built per test: `mockIntegration` is assigned in the outer beforeEach, so
+    // capturing it at describe-definition time would spread undefined.
+    const legacyRow = () => ({
+      ...mockIntegration,
+      platformIntegration: {
+        ...mockIntegration.platformIntegration,
+        botToken: STORED_TOKEN,
+      },
+    });
+
+    afterEach(() => {
+      if (savedEnv === undefined) delete process.env.DISCORD_BOT_TOKEN;
+      else process.env.DISCORD_BOT_TOKEN = savedEnv;
+    });
+
+    it('sends the env token in the Authorization header, not the stored copy', async () => {
+      process.env.DISCORD_BOT_TOKEN = ENV_TOKEN;
+      discordService.integration = legacyRow();
+      axios.get.mockResolvedValue({ data: [] });
+
+      await discordService.getChannels();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `/guilds/${legacyRow().platformIntegration.serverId}/channels`,
+        ),
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: `Bot ${ENV_TOKEN}` }),
+        }),
+      );
+    });
+
+    it('falls back to the stored copy only when the env var is absent', async () => {
+      delete process.env.DISCORD_BOT_TOKEN;
+      discordService.integration = legacyRow();
+      axios.get.mockResolvedValue({ data: [] });
+
+      await discordService.getChannels();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: `Bot ${STORED_TOKEN}` }),
+        }),
+      );
+    });
+
+    it('passes the env token to fetchMessages over config.botToken', async () => {
+      process.env.DISCORD_BOT_TOKEN = ENV_TOKEN;
+      discordService.integration = {
+        ...mockIntegration,
+        config: { ...mockIntegration.config, botToken: STORED_TOKEN },
+      };
+      const fetchSpy = jest.spyOn(DiscordService, 'fetchMessages').mockResolvedValue([]);
+
+      await discordService.fetchMessages({ limit: 5 });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ botToken: ENV_TOKEN, channelId: 'channel123' }),
+      );
+      fetchSpy.mockRestore();
+    });
+  });
 });
