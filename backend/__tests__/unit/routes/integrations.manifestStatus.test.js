@@ -129,4 +129,38 @@ describe('manifest predicate drives status (TASK-140)', () => {
     expect(byId.telegram.requiredConfig).toEqual([]);
     expect(byId.discord.configSchema.required).toEqual([ 'serverId', 'channelId' ]);
   });
+
+  it('strips every verification credential a body tries to set, and stores the rest of the patch', async () => {
+    // TASK-141: a row that carries its own `signingSecret`/`appToken`/`secretToken`
+    // is ingress a caller picked, because the legacy Slack route takes no auth.
+    // The PATCH is also the witness that the strip is a strip and not a refusal:
+    // a caller-supplied key (`channelName`) still lands.
+    const row = await Integration.create({
+      podId: pod._id,
+      type: 'slack',
+      config: boundSlackConfig(),
+      status: 'connected',
+      createdBy: user._id,
+      isActive: true,
+    });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${row._id}`)
+      .set('x-test-user', String(user._id))
+      .send({
+        config: {
+          channelName: 'slack-dm-renamed',
+          signingSecret: 'body-planted-secret',
+          appToken: 'body-planted-app-token',
+          secretToken: 'body-planted-telegram-token',
+        },
+      });
+
+    expect(res.status).toBe(200);
+    const stored = await Integration.findById(row._id).lean();
+    expect(stored.config.channelName).toBe('slack-dm-renamed');
+    expect(stored.config.signingSecret).toBeUndefined();
+    expect(stored.config.appToken).toBeUndefined();
+    expect(stored.config.secretToken).toBeUndefined();
+  });
 });

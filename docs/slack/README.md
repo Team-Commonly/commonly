@@ -2,20 +2,27 @@
 
 ## Status
 - ⚠️ Legacy in-platform provider (will move to external service).
-- ✅ Provider implemented (`backend/integrations/providers/slackProvider.js`)
+- ✅ Provider implemented (`backend/integrations/providers/slackProvider.ts`)
 - ✅ Webhook: `POST /api/webhooks/slack/:integrationId`
 - Ingest-only: receives channel message events via Events API; no outbound send wired yet.
 
 External service stub lives at `external/commonly-provider-services/slack-service/`.
 
 ## Required App Setup
-1) Create a Slack App (workspace-level is fine for v1).
+1) Create a Slack App (workspace-level is fine for v1). One app serves the
+   instance: its credentials live in the backend environment, never on an
+   integration row (step 5).
 2) Add bot scopes: `channels:history`, `channels:read`, `users:read` (omit write scopes until we enable outbound).
 3) Enable Events API:
    - Request URL: `https://<your-host>/api/webhooks/slack/<integrationId>`
    - Subscribe to events: `message.channels` (add more if needed later).
 4) Install the app to the workspace; invite the bot to target channels.
-5) Capture the Bot Token (`xoxb-...`) and Signing Secret; paste both into the integration config UI (to be added).
+5) Capture the Bot Token (`xoxb-...`) and Signing Secret, and set them on the
+   INSTANCE: `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` in the backend
+   environment (add `SLACK_APP_TOKEN` if you use an app-level token). A
+   `signingSecret` sent in an integration body is stripped
+   (`SERVER_OWNED_CONFIG_KEYS`), and every reader takes the instance's value —
+   pasting a per-row secret verifies nothing (TASK-141).
 
 ## Verification
 - Commonly computes `v0:{timestamp}:{rawBody}` HMAC-SHA256 with the signing secret and compares to `X-Slack-Signature`.
@@ -28,7 +35,10 @@ External service stub lives at `external/commonly-provider-services/slack-servic
 
 ## UI
 - Sidebar Apps quick-add uses a simple "Add Slack" redirect flow (no inline config fields).
-- The redirect/callback flow is responsible for returning the bot token + signing secret + channel details.
+- The redirect/callback flow is responsible for returning the bot token (stored
+  as an opaque `botTokenRef` on the row) + the channel details. It does not
+  return a signing secret: the instance's `SLACK_SIGNING_SECRET` verifies every
+  event.
 
 ## Limitations (v1)
 - No outbound `chat.postMessage` yet.

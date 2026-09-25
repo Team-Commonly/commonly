@@ -191,9 +191,10 @@ confirmation card. Writes with `confirm` park; that is by design.
 | `CONNECTOR_SECRET_KEYS`, `CONNECTOR_SECRET_ACTIVE_KEY` | `connectorSecrets.ts` | envelope-encryption key ring for connector credentials at rest (ADR-025 finding 5) |
 
 The legacy ingest-only integration (`docs/slack/README.md`, `POST
-/api/webhooks/slack/:integrationId`, `slack-bot-token`) keeps working
-untouched; it reads a per-integration signing secret from its own row and
-falls back to the same env.
+/api/webhooks/slack/:integrationId`, `slack-bot-token`) still accepts events, but
+it no longer owns its credential: it verifies with `SLACK_SIGNING_SECRET` only (a
+per-row `signingSecret` is stripped from a request body), and an inactive row
+answers `404` like an unknown id (TASK-141).
 
 ### 2.2 Reuse the existing app
 

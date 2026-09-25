@@ -36,7 +36,17 @@
  * KEY with an empty value, which is the shape the live bind writes
  * (`DiscordCallback.tsx` posts `botToken: ''`). The resolver still consults it as
  * a fallback, so this script reports on it — secrets and empty keys counted
- * apart, because `$exists` answers the wrong question — and never writes it.
+ * apart, because `$exists` answers the wrong question — and never writes it
+ * unless `--unset-empty` is passed.
+ *
+ * `--unset-empty` removes that key from a row that holds no value, which is the
+ * only residue of the retired write path: no writer can put it back (TASK-139
+ * strips it from a body), so the key sits on those rows forever, and an
+ * `$exists` census reads "2 rows carry `config.botToken`" for a field with no
+ * writer — the reading that produced a wrong claim on 2026-09-25. Removing it
+ * changes no reader: `''` and absent are equivalent at every one (`isSupplied`,
+ * the env-first discord resolver, `slackProvider`), and no code tests the key's
+ * presence (TASK-141).
  *
  * Idempotent: a second run finds nothing to clear. Run with `--apply` to write;
  * the default is a dry run that logs each distinct copy as a digest, never the
@@ -58,6 +68,12 @@ const INTEGRATION_COLLECTION = 'integrations';
 const NON_EMPTY_STRING = { $type: 'string', $ne: '' };
 const STORED_COPY = { botToken: NON_EMPTY_STRING };
 
+/**
+ * The `--unset-empty` target, scoped by `type` so it cannot reach another
+ * connector's row: an empty copy of the retired Discord token field.
+ */
+const EMPTY_CONFIG_HOLDER = { type: 'discord', 'config.botToken': '' };
+
 export interface DiscordBotTokenClearResult {
   /** Documents holding a non-empty stored copy. */
   candidates: number;
@@ -77,6 +93,8 @@ export interface DiscordBotTokenClearResult {
    * count should stop growing while the rows already carrying it stay counted.
    */
   integrationConfigEmptyHolders: number;
+  /** Empty holders `--unset-empty` removed the key from (0 on a dry run). */
+  integrationConfigEmptyCleared: number;
 }
 
 const describeCopy = (token: string): string => {
@@ -85,7 +103,7 @@ const describeCopy = (token: string): string => {
 };
 
 export async function clearDiscordBotTokenCopies(
-  { apply = false }: { apply?: boolean } = {},
+  { apply = false, unsetEmpty = false }: { apply?: boolean; unsetEmpty?: boolean } = {},
 ): Promise<DiscordBotTokenClearResult> {
   const collection = mongoose.connection.collection(DISCORD_COLLECTION);
   const rows = await collection
@@ -123,16 +141,23 @@ export async function clearDiscordBotTokenCopies(
       digests,
       integrationConfigCopies,
       integrationConfigEmptyHolders,
+      integrationConfigEmptyCleared: 0,
     };
   }
 
   const result = await collection.updateMany(STORED_COPY, { $unset: { botToken: '' } });
+  // Reported apart from the count above so a run shows both the pre-state and
+  // the write it made: the counts are read before this step on purpose.
+  const emptyClear = unsetEmpty
+    ? await integrationCollection.updateMany(EMPTY_CONFIG_HOLDER, { $unset: { 'config.botToken': '' } })
+    : { modifiedCount: 0 };
   return {
     candidates: rows.length,
     cleared: result.modifiedCount,
     digests,
     integrationConfigCopies,
     integrationConfigEmptyHolders,
+    integrationConfigEmptyCleared: emptyClear.modifiedCount,
   };
 }
 
@@ -146,6 +171,7 @@ export async function clearDiscordBotTokenCopies(
 export const formatReport = (
   result: DiscordBotTokenClearResult,
   apply: boolean,
+  unsetEmpty = false,
 ): string[] => {
   const lines = [
     `[clear-discord-bot-token] ${apply ? 'APPLY' : 'DRY-RUN'} `
@@ -156,12 +182,19 @@ export const formatReport = (
     '[clear-discord-bot-token] Integration.config.botToken empty holders '
     + `(a key with no value; the live bind writes ''): ${result.integrationConfigEmptyHolders}`,
   ];
+  if (unsetEmpty) {
+    lines.push('[clear-discord-bot-token] --unset-empty '
+      + (apply
+        ? `removed the key from ${result.integrationConfigEmptyCleared} empty holder(s)`
+        : `would remove the key from ${result.integrationConfigEmptyHolders} empty holder(s)`));
+  }
   if (!apply) lines.push('DRY RUN — nothing written. Re-run with --apply.');
   return lines;
 };
 
 async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
+  const unsetEmpty = process.argv.includes('--unset-empty');
   const mongoUri = process.env.MONGO_URI;
   if (!mongoUri) {
     console.error('MONGO_URI is required');
@@ -170,8 +203,8 @@ async function main(): Promise<void> {
 
   await mongoose.connect(mongoUri);
   try {
-    const result = await clearDiscordBotTokenCopies({ apply });
-    formatReport(result, apply).forEach((line) => console.log(line));
+    const result = await clearDiscordBotTokenCopies({ apply, unsetEmpty });
+    formatReport(result, apply, unsetEmpty).forEach((line) => console.log(line));
   } finally {
     await mongoose.disconnect();
   }

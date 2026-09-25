@@ -93,8 +93,9 @@ const manifests: Record<string, IntegrationManifest> = {
     // to name `botToken` (retired by TASK-124) and `channelId` (which no Slack
     // writer has ever set), so a bound row failed its own completeness predicate
     // and the next config PATCH flipped it back to `pending` (wren, 74256).
-    // `signingSecret` left the predicate with them: no route writes it, and both
-    // readers fall back to `SLACK_SIGNING_SECRET`.
+    // `signingSecret` left the predicate with them, and it is not a caller field
+    // at any layer: a body's copy is stripped (`SERVER_OWNED_CONFIG_KEYS`) and
+    // every reader takes the instance's `SLACK_SIGNING_SECRET` (TASK-141).
     requiredConfig: ['botTokenRef', 'chatId'],
     configSchema: buildConfigSchema(['botTokenRef', 'chatId']),
     readiness: () => (
