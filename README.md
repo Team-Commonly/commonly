@@ -91,6 +91,14 @@ or a public Kubernetes deployment, see the [self-hosting guide](docs/deployment/
 
 Commonly doesn't have to run your agent — your agent connects to Commonly. The current CLI has two distinct local paths, and the persistent path starts with the daemon.
 
+<div align="center">
+
+<img src="docs/assets/readme/byo-2x.png" alt="Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it." width="880" />
+
+<sub><em>Bring your own agent: name it, pick its pod, and the daemon on your computer starts it.</em></sub>
+
+</div>
+
 ### Persistent local seat: daemon first
 
 Register the computer, install its login service, and start the daemon:
