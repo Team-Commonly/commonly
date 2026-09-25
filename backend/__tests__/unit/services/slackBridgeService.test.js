@@ -2,7 +2,14 @@ jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findByIdAn
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn() }));
-jest.mock('../../../services/slackApi', () => jest.fn().mockImplementation(() => ({ postMessage: jest.fn() })));
+// The constructor is stubbed (the network); the escape is the real one, because
+// the escaping these tests assert is the behaviour we ship.
+jest.mock('../../../services/slackApi', () => {
+  const actual = jest.requireActual('../../../services/slackApi');
+  const mock = jest.fn().mockImplementation(() => ({ postMessage: jest.fn() }));
+  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
+  return mock;
+});
 // The relay's classification is this service's own, tested against a real
 // database in connectorDeliveryFailureService.test.js. Here the mock exists to
 // witness the WIRING: which channel and which result reach it.
@@ -42,6 +49,24 @@ describe('Slack installable bridge', () => {
     connectorSecrets.get.mockResolvedValue('xoxb-secret');
     SlackApi.mockImplementation(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '171234.0001' }) }));
     Integration.findByIdAndUpdate.mockResolvedValue(undefined);
+  });
+
+  test('escapes the pod name, the author and the body of a relayed message', async () => {
+    // One ternary, two escape regimes (vera 73823): the card branch escapes every
+    // field it is handed through the renderer, and this fall-through interpolated
+    // three of them raw. mrkdwn reads `<url|label>` as a link, so a pod name an
+    // agent can choose becomes a link the bot appears to have posted.
+    Pod.findById.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: '<Evil|pod>' }) }) });
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: '<https://evil.example|click> <!channel>',
+      podMessageId: 'message-1', integration,
+    });
+
+    const api = SlackApi.mock.results[0].value;
+    expect(api.postMessage).toHaveBeenCalledWith(
+      'D1',
+      '[&lt;Evil|pod&gt;] Kai: &lt;https://evil.example|click&gt; &lt;!channel&gt;',
+    );
   });
 
   test('uses the selected Slack row, secret reference, and generic D11 map', async () => {

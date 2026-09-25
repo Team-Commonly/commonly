@@ -18,6 +18,11 @@ import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
 
 const RELAY_MAP_CAP = 100;
+
+// One implementation, in slackApi.ts one step above the call that posts it. This
+// file and decisionCardReconcileService each carried their own copy, which is how
+// an escaped call site came to sit beside an unescaped one in the same ternary.
+const escapeSlackMrkdwn = SlackApi.escapeSlackMrkdwn;
 const OUTBOUND_TEXT_CAP = 900;
 const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
@@ -74,13 +79,9 @@ const truncateWithEllipsis = (value: string, limit: number): string => {
   return `${value.slice(0, limit - 1)}…`;
 };
 
-// Slack mrkdwn treats these as control characters: escaping keeps agent-authored
-// card fields from creating links, mentions, or other markup in a human's DM.
-const escapeSlackMrkdwn = (raw: string): string => String(raw)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;');
-
+// Every field this renderer is handed goes through the shared escape: mrkdwn
+// reads &, < and > as markup, so an agent-authored card could otherwise create
+// links and mentions in a human's DM.
 export const renderSlackDecisionCard = (opts: {
   card: DecisionRelayCard;
   displayName: string;
@@ -227,7 +228,11 @@ export const relayAgentMessageToSlack = async (opts: {
       : `${base}/v2/pods/${podId}`;
     const text = opts.card
       ? renderSlackDecisionCard({ card: opts.card, displayName, agentUsername, link })
-      : `[${podName}] ${displayName || agentUsername}: ${String(content).slice(0, OUTBOUND_TEXT_CAP)}`;
+      // One ternary, two escape regimes: the card renderer escapes every field it
+      // is handed, this fall-through used to interpolate three of them raw. Slice
+      // before escaping — the other order can cut a `&amp;` in half.
+      : `[${escapeSlackMrkdwn(podName)}] ${escapeSlackMrkdwn(displayName || agentUsername)}: `
+        + escapeSlackMrkdwn(String(content).slice(0, OUTBOUND_TEXT_CAP));
     const result = await new SlackApi(token).postMessage(String(integration.config!.chatId), text);
     if (!result.ok || !result.ts) {
       // Bound channel. Only an `ok: false` classifies — a missing `ts` on an

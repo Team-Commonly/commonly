@@ -435,7 +435,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     const livePod = await Pod.findById(confirmed.podId).select('name').lean();
     await new SlackApi(token).postMessage(
       pending.chatId,
-      `[${String(livePod?.name || 'Commonly')}] connected`,
+      // Same escape the relay uses, and for the same reason: the pod name is
+      // owner-authored text landing in mrkdwn.
+      `[${SlackApi.escapeSlackMrkdwn(livePod?.name || 'Commonly')}] connected`,
     );
   } catch (error) {
     console.warn('[slack-oauth] connected marker could not be sent:', (error as Error).message);

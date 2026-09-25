@@ -22,9 +22,16 @@ jest.mock('../../../services/telegramConnectCode', () => ({
   mintConnectCode: jest.fn(() => ({ connectCode: 'r'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000) })),
 }));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(), put: jest.fn(), revoke: jest.fn() }));
-jest.mock('../../../services/slackApi', () => jest.fn().mockImplementation(() => ({
-  openConversation: jest.fn(),
-})));
+// Same reason as slackBridgeService.test.js: the constructor is stubbed, the
+// escape is real — the connect marker's escaping is what this file asserts.
+jest.mock('../../../services/slackApi', () => {
+  const actual = jest.requireActual('../../../services/slackApi');
+  const mock = jest.fn().mockImplementation(() => ({
+    openConversation: jest.fn(),
+  }));
+  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
+  return mock;
+});
 jest.mock('../../../services/slackOAuthService', () => {
   class SlackOAuthConfigurationError extends Error { constructor() { super('not configured'); this.code = 'slack_oauth_not_configured'; } }
   class SlackOAuthExchangeError extends Error { constructor() { super('exchange failed'); this.code = 'slack_oauth_exchange_failed'; } }
@@ -230,7 +237,9 @@ describe('Slack installable OAuth routes', () => {
     Pod.findById
       .mockResolvedValueOnce({ createdBy: { toString: () => 'another' }, members: [ownerId] })
       .mockReturnValueOnce({
-        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Launch' }) }),
+        // Purposefully hostile: this name is interpolated into the marker a
+        // human reads in Slack, and mrkdwn would draw `<...>` as markup.
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: '<Evil|pod>' }) }),
       });
     Integration.findOneAndUpdate.mockResolvedValue({
       ...integration,
@@ -252,7 +261,7 @@ describe('Slack installable OAuth routes', () => {
     );
     expect(JSON.stringify(response.body)).not.toContain('secret-ref');
     expect(JSON.stringify(response.body)).not.toContain('nonce-never-return');
-    expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[Launch] connected');
+    expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[&lt;Evil|pod&gt;] connected');
   });
 
   test('rejects a pending Slack bind and revokes its secret reference', async () => {

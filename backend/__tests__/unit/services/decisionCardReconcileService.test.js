@@ -1,6 +1,13 @@
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
-jest.mock('../../../services/slackApi', () => jest.fn());
+// The constructor is stubbed (the network); the escape is the real one, since the
+// reconcile service now shares the helper with the bridge.
+jest.mock('../../../services/slackApi', () => {
+  const actual = jest.requireActual('../../../services/slackApi');
+  const mock = jest.fn();
+  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
+  return mock;
+});
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(async () => 'slack-token') }));
 
 const mongoose = require('mongoose');

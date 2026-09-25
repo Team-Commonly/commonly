@@ -61,10 +61,11 @@ interface IntegrationDoc {
   };
 }
 
-const escapeSlack = (value: unknown): string => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;');
+// One implementation, in slackApi.ts beside the call that posts it. The local
+// name stays so the call site below reads as it did; the behaviour is the shared
+// helper's, `??` rather than `||`, so a missing value renders as nothing while a
+// legitimate 0 or false still renders as itself.
+const escapeSlack = SlackApi.escapeSlackMrkdwn;
 
 const memberIdFor = (integration: IntegrationDoc): string | null => {
   const linked = integration.config?.linkedUserId;
