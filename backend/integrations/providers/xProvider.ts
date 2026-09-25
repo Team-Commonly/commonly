@@ -1,7 +1,7 @@
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
-const { manifests } = require('../manifests');
+const { manifests, manifestForValidation } = require('../manifests');
 
 interface XConfig {
   accessToken?: string;
@@ -263,7 +263,7 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
   return {
     async validateConfig() {
       try {
-        validateRequiredConfig(config, manifests.x);
+        validateRequiredConfig(config, manifestForValidation(manifests.x));
       } catch (err) {
         const e = err as { message?: string };
         throw new ValidationError(e.message || 'Validation failed');

@@ -11,7 +11,7 @@ const groupmeService = require('../../services/groupmeService');
 // eslint-disable-next-line global-require
 const Summary = require('../../models/Summary');
 // eslint-disable-next-line global-require
-const { manifests } = require('../manifests');
+const { manifests, manifestForValidation } = require('../manifests');
 
 interface GroupMePayload {
   system?: boolean;
@@ -112,7 +112,7 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
     async validateConfig() {
       validateRequiredConfig(
         { ...config, botId: config.botId || process.env.GROUPME_BOT_ID },
-        manifests.groupme,
+        manifestForValidation(manifests.groupme),
       );
     },
 

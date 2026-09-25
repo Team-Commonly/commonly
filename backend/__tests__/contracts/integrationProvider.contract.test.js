@@ -71,7 +71,10 @@ const minimalConfigByType = {
     botToken: 'token-1',
   },
   slack: {
-    botToken: 'xoxb-token',
+    // The bot credential is the opaque ref the OAuth bind writes
+    // (`serverOwnedConfig`); the manifest publishes only what a caller supplies
+    // (TASK-140).
+    botTokenRef: 'secret-ref-fixture',
     signingSecret: 'secret',
     channelId: 'C123',
   },

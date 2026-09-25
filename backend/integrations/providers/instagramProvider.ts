@@ -1,7 +1,7 @@
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
-const { manifests } = require('../manifests');
+const { manifests, manifestForValidation } = require('../manifests');
 
 interface InstagramConfig {
   accessToken?: string;
@@ -129,7 +129,7 @@ function createInstagramProvider(integration: { _id: unknown; config?: Instagram
   return {
     async validateConfig() {
       try {
-        validateRequiredConfig(config, manifests.instagram);
+        validateRequiredConfig(config, manifestForValidation(manifests.instagram));
       } catch (err) {
         const e = err as { message?: string };
         throw new ValidationError(e.message || 'Validation failed');

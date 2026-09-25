@@ -25,7 +25,7 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { buildCatalogEntries } = require('../integrations/catalog');
 // eslint-disable-next-line global-require
-const { manifests } = require('../integrations/manifests');
+const { manifests, manifestForValidation } = require('../integrations/manifests');
 // eslint-disable-next-line global-require
 const registry = require('../integrations');
 // eslint-disable-next-line global-require
@@ -42,6 +42,8 @@ import { Types } from 'mongoose';
 import {
   invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
 } from '../utils/discordBinding';
+// eslint-disable-next-line global-require
+const { SERVER_OWNED_CONFIG_KEYS } = require('../utils/serverOwnedConfigKeys');
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -49,55 +51,11 @@ import {
   listIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
-// Bridge attribution + binding fields are server-owned. linkedUserId is the
-// identity every inbound live-relay message is AUTHORED as; chatId/chatType
-// are written only by the /commonly-enable webhook (the code is the proof);
-// connectCode is minted here. Accepting any of them from a client body lets a
-// caller name someone else as the author or bind a chat without a code.
-const SERVER_OWNED_CONFIG_KEYS = [
-  'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
-  // GitHub App connection identity is administrator-owned. A member may not
-  // retarget an existing row that a grant already references.
-  'installationId', 'owner', 'repo',
-  // OAuth callback and connectorSecrets own Slack identity and its opaque
-  // credential reference. Accepting either from a browser body defeats D6.
-  'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
-  // The token itself, one layer in from the opaque ref above: it is read as a
-  // credential by `providers/slackProvider`, by `routes/registry/helpers` (Slack
-  // and Telegram, each with an env fallback) and by the Discord resolver's
-  // legacy fallback, and its only writer is a caller's body — Slack's live bind
-  // stores `botTokenRef` and Telegram's runtime reads the env var. Left
-  // unstripped, a caller can satisfy a manifest's `botToken` requirement with a
-  // value no provider echoes and can drive their own row to `status:
-  // 'connected'` with a junk token. The two Discord refusals are kept and still
-  // run FIRST (they precede this strip on both routes), so a supplied Discord
-  // token is a 400 rather than a silent 200.
-  'botToken',
-  // The Discord channel webhook URL is a bearer credential of its own — the URL
-  // embeds the webhook's token, so posting to it posts AS that channel — and the
-  // server derives it from the Discord API on both writers (`routes/integrations`
-  // at connect, `services/discordService` on a backfill). No browser sends it, and
-  // a caller-planted value would be read as the legacy fallback in
-  // `utils/discordWebhookUrl`. `webhookUrlRef` is the pointer to the encrypted
-  // copy: like the Slack ref above, accepting it from a body would let a caller
-  // point their row at another row's secret.
-  'webhookUrl', 'webhookUrlRef',
-  // An administrator's pause is projected from the parent installation. An
-  // owner's normal config write must never lift that stop.
-  'adminPause',
-  // A receipt proves this channel was shown the card. Owners may configure
-  // gates, but cannot invent, retarget, or close receipts from a browser.
-  'cards',
-  // Routing state is written by the bridges, never by a browser: relayMap is
-  // the reply window, messageBuffer the recent-lines digest a bridge reads to
-  // answer context, and webhookListenerEnabled a runtime switch the Discord
-  // gateway reads. A body that sets any of the three names a destination or
-  // starts a listener the caller was never granted.
-  'relayMap', 'messageBuffer', 'webhookListenerEnabled',
-];
+// Bridge attribution + binding fields are server-owned; the list lives in
+// `utils/serverOwnedConfigKeys.ts` so the manifest contract reads the same one.
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
-  SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  SERVER_OWNED_CONFIG_KEYS.forEach((k: string) => { delete next[k]; });
   return next;
 };
 
@@ -170,22 +128,56 @@ const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = 
   return { ...config, botToken: resolveDiscordBotToken(config.botToken) };
 };
 
-const getMissingRequiredFields = (type: string, config: unknown): string[] => {
-  const manifest = (manifests as Record<string, { requiredConfig?: string[] }>)[type];
-  if (!manifest?.requiredConfig?.length) return [];
-  const effectiveConfig = resolveEffectiveConfig(type, config as Record<string, unknown>);
-  return manifest.requiredConfig.filter((field) => {
-    const value = (effectiveConfig as Record<string, unknown>)?.[field];
-    return value === undefined || value === null || value === '';
-  });
+// A manifest splits its requirements in two (TASK-140):
+//   · `requiredConfig`     — what a caller supplies. Published in the catalog,
+//                            and the only list a caller-facing message may name.
+//   · `serverOwnedConfig`  — what the server resolves from the environment or a
+//                            bind writes. `SERVER_OWNED_CONFIG_KEYS` strips it
+//                            from every request body, so naming it in a 400
+//                            would ask for a field the same route refuses.
+// Both are checked, so `status` still means "this connector is configured";
+// only the first is ever echoed back to a caller.
+const manifestRequirementList = (type: string, key: 'requiredConfig' | 'serverOwnedConfig'): string[] => {
+  const manifest = (manifests as Record<string, Record<string, unknown>>)[type];
+  const list = manifest?.[key];
+  return Array.isArray(list) ? (list as string[]) : [];
 };
 
-const isManifestComplete = (type: string, config: unknown) => getMissingRequiredFields(type, config).length === 0;
+const missingFrom = (fields: string[], config: Record<string, unknown>): string[] => fields.filter((field) => {
+  const value = config?.[field];
+  return value === undefined || value === null || value === '';
+});
+
+const getMissingCallerFields = (type: string, config: unknown): string[] => missingFrom(
+  manifestRequirementList(type, 'requiredConfig'),
+  resolveEffectiveConfig(type, config as Record<string, unknown>),
+);
+
+const getMissingServerOwnedFields = (type: string, config: unknown): string[] => missingFrom(
+  manifestRequirementList(type, 'serverOwnedConfig'),
+  resolveEffectiveConfig(type, config as Record<string, unknown>),
+);
+
+const isManifestComplete = (type: string, config: unknown) => (
+  getMissingCallerFields(type, config).length === 0 && getMissingServerOwnedFields(type, config).length === 0
+);
+
+// A server-owned field that is absent is not the caller's mistake, and saying so
+// in the caller's own error shape is what made "Missing required fields:
+// botToken" unexplainable — the field is refused on the same request (TASK-140).
+const serverConfigMissing = (type: string, fields: string[]) => ({
+  message: `Server-managed configuration is missing for ${type}: ${fields.join(', ')}. These fields are set by the server (an environment credential, or the connector's own bind), never by a request body.`,
+  code: 'server_config_missing',
+  missing: fields,
+});
 
 const validateManifestIfComplete = (type: string, config: unknown) => {
   const manifest = (manifests as Record<string, unknown>)[type];
   if (!manifest || !isManifestComplete(type, config)) return;
-  validateRequiredConfig(resolveEffectiveConfig(type, config as Record<string, unknown>), manifest);
+  validateRequiredConfig(
+    resolveEffectiveConfig(type, config as Record<string, unknown>),
+    manifestForValidation(manifest as Parameters<typeof manifestForValidation>[0]),
+  );
 };
 
 async function canDeleteIntegration(integration: { createdBy?: { toString: () => string }; podId?: unknown } | null, userId: string): Promise<boolean> {
@@ -449,9 +441,11 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // streaming outbound. The creator IS the authenticated caller, so the
     // defaulted case is stamped exactly like an explicit liveRelay:true.
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
-    const missingRequired = getMissingRequiredFields(type, nextConfig);
-    if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
-    if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    const missingRequired = getMissingCallerFields(type, nextConfig);
+    const missingServerOwned = getMissingServerOwnedFields(type, nextConfig);
+    const wantsConnected = (req.body as { status?: string })?.status === 'connected';
+    if ((type === 'discord' || wantsConnected) && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    if ((type === 'discord' || wantsConnected) && missingServerOwned.length) return res.status(400).json(serverConfigMissing(type, missingServerOwned));
     validateManifestIfComplete(type, nextConfig);
     const integration = new Integration({ podId, type, config: nextConfig, createdBy: req.user?.id, status: 'pending' });
     await integration.save();
@@ -754,8 +748,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       }
       nextConfig.linkedUserId = req.user?.id;
     }
-    const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);
-    if (missingRequired.length && status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    const missingRequired = getMissingCallerFields(integration.type || '', nextConfig);
+    const missingServerOwned = getMissingServerOwnedFields(integration.type || '', nextConfig);
+    if (status === 'connected' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    if (status === 'connected' && missingServerOwned.length) return res.status(400).json(serverConfigMissing(integration.type || '', missingServerOwned));
     validateManifestIfComplete(integration.type || '', nextConfig);
     const update: Record<string, unknown> = {};
     // Do not replace a snapshot of config: cards/relayMap may have been
