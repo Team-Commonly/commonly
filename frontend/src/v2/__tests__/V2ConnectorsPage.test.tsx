@@ -361,7 +361,7 @@ describe('V2ConnectorsPage', () => {
     expect(slackWindow.opener).toBeNull();
   });
 
-  it('keeps a Slack authorization failure generic in the selected aside', async () => {
+  it('keeps an un-coded Slack authorization failure generic — the fallback, row and aside (Row C control)', async () => {
     mockGets([{
       _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
       config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
@@ -375,7 +375,70 @@ describe('V2ConnectorsPage', () => {
       {},
       expect.objectContaining({ withCredentials: true }),
     ));
-    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+    // A refusal with no body still gets the generic sentence — the fallback the
+    // named codes must not have replaced.
+    const shown = await screen.findAllByText('Could not begin Slack authorization. Try again in a moment.');
+    expect(shown.length).toBeGreaterThan(0);
+  });
+
+  it('names a refused Slack authorize on the row that asked, not only at the page foot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_already_authorized', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(row).not.toBeNull();
+    // The code's own copy, not the server sentence the same body also carries.
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    expect(within(row).queryByText(/Upstream wording/)).toBeNull();
+    // ...and beside the button in the selected row's aside.
+    const aside = document.querySelector('.v2-connectors__aside') as HTMLElement;
+    expect(within(aside).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    // Placement is the defect (Row C): the page-level slot used to be the only one.
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
+  });
+
+  it('uses the server sentence when the refusal code is not one the page knows (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 503, data: { code: 'slack_upstream_unavailable', error: 'Slack refused the handshake.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    await waitFor(() => expect(within(row).getByRole('alert')).toHaveTextContent('Slack refused the handshake.'));
+  });
+
+  it('names a failed Slack confirm on the row, not in the page slot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_bind_expired', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm connection' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/installables/slack/confirm', {}, expect.anything()));
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack authorization expired. Start again.');
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
   });
 
   it('moves Slack confirmation and rejection to the selected aside', async () => {
