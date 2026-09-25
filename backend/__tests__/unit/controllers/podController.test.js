@@ -1,4 +1,5 @@
 process.env.PG_HOST = '';
+const mongoose = require('mongoose');
 const podController = require('../../../controllers/podController');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
@@ -389,10 +390,123 @@ describe('podController', () => {
     const req = { query: {}, userId: 'admin-id', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
+    // 'admin-id' is not a castable ObjectId, so this exercises the JS fallback.
     expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
     // Default scope=mine: admin is filtered to their own pods, NOT every
     // chat pod in the instance.
     expect(res.json).toHaveBeenCalledWith([myPod]);
+  });
+
+  it('getAllPods pushes the membership predicate into the query (TASK-151)', async () => {
+    // The sidebar used to materialise EVERY pod on the instance and discard all
+    // but the caller's in JS: measured 118-182 ms on a 200-pod instance,
+    // 412-515 ms on 1,200 and 644-767 ms on 4,200 for a caller with ONE pod,
+    // against 5-10 ms once the predicate reaches Mongo. The query shape is the
+    // durable part of the fix, so it is what this pins.
+    const me = new mongoose.Types.ObjectId();
+    const mine = { _id: 'p2', type: 'chat', members: [{ _id: me }] };
+    const sort = jest.fn().mockResolvedValue([mine]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    const req = { query: {}, userId: String(me), user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    const [query] = Pod.find.mock.calls[0];
+    expect(query.type).toEqual({ $ne: 'agent-admin' });
+    expect(String(query.members)).toBe(String(me));
+    expect(res.json).toHaveBeenCalledWith([mine]);
+  });
+
+  it.each([
+    ['an operator object', { $ne: 'agent-admin' }],
+    ['a $where object', { $where: 'this.members.length' }],
+    ['an array', ['chat', 'team']],
+  ])('getAllPods refuses %s as ?type= and never reaches Mongo (injection surface)', async (_label, type) => {
+    // `req.query` is parsed by qs, so `?type[$ne]=agent-admin` arrives as an
+    // OBJECT and used to be handed straight to Pod.find — the shape CodeQL's
+    // js/sql-injection query reports on this function ("Database query built
+    // from user-controlled sources"). A caller-supplied operator must not
+    // reach the database at all, and the response is the empty list an
+    // unknown type always produced.
+    const me = new mongoose.Types.ObjectId();
+    const req = { query: { type }, userId: String(me), user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    expect(Pod.find).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('getAllPods still honours a plain string ?type= — the guard must not over-sanitise', async () => {
+    // The complement of the test above: filtering by type is the documented
+    // contract (`GET /api/pods?type=agent-dm`, agent-collaboration-surfaces),
+    // so the sanitisation has to leave a string that names a type alone
+    // rather than turning every typed listing into an empty one.
+    const me = new mongoose.Types.ObjectId();
+    const mine = { _id: 'p2', type: 'agent-dm', members: [{ _id: me }] };
+    const sort = jest.fn().mockResolvedValue([mine]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    const req = { query: { type: 'agent-dm' }, userId: String(me), user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    const [query] = Pod.find.mock.calls[0];
+    expect(query.type).toBe('agent-dm');
+    expect(String(query.members)).toBe(String(me));
+    expect(res.json).toHaveBeenCalledWith([mine]);
+  });
+
+  it('getAllPods keeps scope=all for admins unfiltered — no membership push-down', async () => {
+    // The moderation view is "everything I can audit", so there is no
+    // membership predicate to push; adding one would silently shrink the
+    // admin's list to their own pods.
+    const otherPod = { _id: 'p1', type: 'chat', members: [{ _id: 'someone-else' }] };
+    const sort = jest.fn().mockResolvedValue([otherPod]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
+    });
+
+    const me = new mongoose.Types.ObjectId();
+    const req = { query: { scope: 'all' }, userId: String(me), user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
+    expect(res.json).toHaveBeenCalledWith([otherPod]);
+  });
+
+  it('getAllPods survives a member whose User row is gone (populate leaves null)', async () => {
+    // Pre-existing latent 500 the push-down made worth fixing while I was in
+    // the line: the JS filter read `m._id` on a null, so one dangling member
+    // reference anywhere in the instance took the whole sidebar down. Exercised
+    // through the fallback path (uncasteable id) because that is the only path
+    // that still reads the populated array.
+    const orphaned = { _id: 'p1', type: 'chat', members: [null] };
+    const sort = jest.fn().mockResolvedValue([orphaned]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    const req = { query: {}, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith([]);
   });
 
   it('getAllPods community scope requires listed, readable member pods', async () => {

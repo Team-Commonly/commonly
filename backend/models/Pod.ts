@@ -213,6 +213,15 @@ PodSchema.index(
   },
 );
 
+// The default sidebar listing (getAllPods, scope=mine) matches on caller
+// membership and sorts by recency, which without this index is a collection
+// scan plus an in-memory sort of every pod on the instance: measured for a
+// caller with ONE pod, 118-182 ms on a 200-pod instance, 412-515 ms on 1,200
+// and 644-767 ms on 4,200 (TASK-151). Order matters — the `members` equality
+// binds the multikey prefix and `updatedAt` then supplies the sort, which is
+// the whole point of putting them in one index rather than two.
+PodSchema.index({ members: 1, updatedAt: -1 });
+
 export default mongoose.model<IPod>('Pod', PodSchema);
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -140,7 +140,6 @@
   "routes/pods.ts DELETE /:id/members/:memberId [unlimited]",
   "routes/pods.ts DELETE /announcement/:id [unlimited]",
   "routes/pods.ts DELETE /external-link/:id [unlimited]",
-  "routes/pods.ts GET / [unlimited]",
   "routes/pods.ts GET /:id/children [unlimited]",
   "routes/pods.ts GET /:id/context [unlimited]",
   "routes/pods.ts GET /:id/context/assets/:assetId [unlimited]",
