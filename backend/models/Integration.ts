@@ -73,6 +73,9 @@ export interface IIntegration extends Document {
     channelName?: string;
     channelUrl?: string;
     webhookUrl?: string;
+    // The pointer to the encrypted copy, written by the Discord writers. `webhookUrl`
+    // beside it is the legacy plaintext the migration unsets.
+    webhookUrlRef?: string;
     botToken?: string;
     signingSecret?: string;
     secretToken?: string;
@@ -216,6 +219,12 @@ const IntegrationSchema = new Schema<IIntegration>(
       channelName: String,
       channelUrl: String,
       webhookUrl: String,
+      // The pointer to the encrypted webhook URL (the connector-secret envelope).
+      // Declared, not forgotten: `config` is a STRICT subdocument, so a `$set` of
+      // an undeclared path here is dropped in silence — the row would keep no ref
+      // at all and every reader would fall through to a plaintext field that the
+      // migration had already unset (TASK-124 part 2).
+      webhookUrlRef: String,
       botToken: String,
       signingSecret: String,
       secretToken: String,

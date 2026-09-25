@@ -47,7 +47,7 @@ jest.mock('../../../models/Integration', () => {
 
   function Integration(data) {
     Object.assign(this, data);
-    this._id = data._id || 'integration-new';
+    this._id = data._id || '6a8f6de1a1dccf2e02f31459';
     this.save = jest.fn().mockResolvedValue(this);
     lastInstance = this;
   }
@@ -92,6 +92,18 @@ jest.mock('../../../services/discordService', () => {
 
 jest.mock('../../../services/discordMultiCommandService', () => ({
   runDiscordCommandForIntegrations: jest.fn(),
+}));
+
+// The create path encrypts the webhook URL. This suite is about binding
+// containment, not the envelope, so the envelope is stubbed here — leaving it
+// real would have the route await a Mongo write against no connection (the
+// suites that own that behaviour are integration.discordTokenCopy and the
+// connectorSecrets unit file).
+jest.mock('../../../services/connectorSecrets', () => ({
+  put: jest.fn(async () => 'secret-ref-1'),
+  get: jest.fn(),
+  revoke: jest.fn(),
+  listWithUnavailableKey: jest.fn(),
 }));
 
 const axios = require('axios');
@@ -140,12 +152,24 @@ const podIdsQuery = (rows) => {
 };
 
 describe('Discord binding containment (TASK-123 a)', () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+
+  afterAll(() => {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActiveKey;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.FRONTEND_URL = 'https://app.example.test';
     process.env.DISCORD_BOT_TOKEN = 'bot-secret';
     process.env.DISCORD_CLIENT_ID = 'client-id';
     process.env.DISCORD_CLIENT_SECRET = 'client-secret';
+    // The create path encrypts the webhook URL (TASK-124 part 2), so a connector
+    // secret ring is part of the deployment this route runs against.
+    process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
     podIdsQuery([{ _id: 'pod-1' }]);
     Pod.findById.mockResolvedValue({ _id: 'pod-1', members: [MEMBER], createdBy: MEMBER });
     User.findById.mockResolvedValue({ _id: MEMBER, role: 'member' });
@@ -333,6 +357,12 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       expect(res.status).toBe(201);
       expect(Integration.__getLastInstance().config).not.toHaveProperty('botToken');
+      // The URL the create path derived is encrypted, not written to the row: the
+      // strip above must not have eaten the ref the reader resolves through.
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { 'config.webhookUrlRef': 'secret-ref-1' } },
+      );
       expect(axios.post).toHaveBeenCalledWith(
         `https://discord.com/api/channels/${CHANNEL}/webhooks`,
         { name: 'Commonly Bot', avatar: null },
@@ -410,7 +440,36 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(stored.config).not.toHaveProperty('botToken');
       expect(stored.config.channelId).toBe('C012345');
     });
+
+    it('drops a caller-supplied webhookUrl and webhookUrlRef from the stored config', async () => {
+      // Both names join the server-owned list with this change: the URL is a
+      // bearer credential the server derives from the Discord API on both
+      // writers, and the ref is a pointer a caller must not be able to aim at
+      // another row's secret. A planted `config.webhookUrl` would also be picked
+      // up as the resolver's legacy fallback.
+      const res = await post({
+        podId: 'pod-1',
+        type: 'discord',
+        config: {
+          serverId: GUILD,
+          channelId: CHANNEL,
+          webhookUrl: 'https://discord.com/api/webhooks/999/caller-token',
+          webhookUrlRef: 'somebody-elses-ref',
+        },
+      });
+
+      expect(res.status).toBe(201);
+      const stored = Integration.__getLastInstance();
+      expect(stored.config).not.toHaveProperty('webhookUrl');
+      expect(stored.config).not.toHaveProperty('webhookUrlRef');
+      // The ref on the row is the one the server wrote from the envelope.
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { 'config.webhookUrlRef': 'secret-ref-1' } },
+      );
+    });
   });
+
 
   describe('PATCH /api/integrations/:id', () => {
     const patch = (body) => request(app)

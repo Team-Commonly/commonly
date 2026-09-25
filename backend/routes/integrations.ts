@@ -15,6 +15,10 @@ const DiscordIntegration = require('../models/DiscordIntegration');
 // eslint-disable-next-line global-require
 const DiscordService = require('../services/discordService');
 // eslint-disable-next-line global-require
+const connectorSecrets = require('../services/connectorSecrets');
+// eslint-disable-next-line global-require
+const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
+// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
@@ -69,6 +73,15 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // run FIRST (they precede this strip on both routes), so a supplied Discord
   // token is a 400 rather than a silent 200.
   'botToken',
+  // The Discord channel webhook URL is a bearer credential of its own — the URL
+  // embeds the webhook's token, so posting to it posts AS that channel — and the
+  // server derives it from the Discord API on both writers (`routes/integrations`
+  // at connect, `services/discordService` on a backfill). No browser sends it, and
+  // a caller-planted value would be read as the legacy fallback in
+  // `utils/discordWebhookUrl`. `webhookUrlRef` is the pointer to the encrypted
+  // copy: like the Slack ref above, accepting it from a body would let a caller
+  // point their row at another row's secret.
+  'webhookUrl', 'webhookUrlRef',
   // An administrator's pause is projected from the parent installation. An
   // owner's normal config write must never lift that stop.
   'adminPause',
@@ -446,10 +459,20 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord') {
       const webhookResponse = await axios.post(`https://discord.com/api/channels/${config.channelId}/webhooks`, { name: 'Commonly Bot', avatar: null }, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' } });
       const webhook = webhookResponse.data as { id: string; token: string };
-      // No botToken copy. The token is instance-wide and read from the
-      // environment on every use; storing it here is what made a rotation miss
-      // integrations that already existed (TASK-124).
-      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
+      // The webhook URL is a bearer credential (it embeds the token), so it goes
+      // into the connector-secret envelope and the row keeps only the ref — the
+      // shape the Slack bind already uses for its bot token. `webhookId` is not a
+      // secret and stays on the platform document. No botToken copy either: that
+      // token is instance-wide and read from the environment on every use, and
+      // storing it is what made a rotation miss integrations that already existed
+      // (TASK-124).
+      const webhookUrlRef = await connectorSecrets.put(
+        String(integration._id),
+        DISCORD_WEBHOOK_URL,
+        `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`,
+      );
+      await Integration.findByIdAndUpdate(integration._id, { $set: { 'config.webhookUrlRef': webhookUrlRef } });
+      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
       integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';
