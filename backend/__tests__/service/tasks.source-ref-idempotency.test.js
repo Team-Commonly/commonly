@@ -139,6 +139,39 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
     expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(1);
   });
 
+  it('clears the assignee when a same-pair reopen is submitted without one', async () => {
+    // The gap sprint-review measured (73815, 2026-09-25): every other reopen
+    // case passes an assignee, so the half the tool description warns about was
+    // documented in three places and pinned nowhere. `existing.assignee =
+    // assignee || undefined` (tasksApi.ts:290) means an OMITTED assignee clears
+    // the row's — a later change that made reopen preserve it would leave the
+    // tool description, task-board.mdx and guides.json all wrong with the rest
+    // of this file green.
+    const existing = await seedTask({
+      status: 'done',
+      completedAt: new Date(),
+      assignee: 'ux-lead',
+    });
+    // Positive control: the field we assert cleared is genuinely set before the
+    // request, so a pass cannot come from the seed never carrying it.
+    expect((await Task.findById(existing._id)).assignee).toBe('ux-lead');
+
+    const response = await postTask({
+      title: 'Existing task',
+      sourceRef: 'external:ticket:697',
+    }).expect(200);
+
+    expect(response.body).toMatchObject({ alreadyExists: true, reopened: true });
+    // The route assigns `undefined`, Mongoose `$unset`s the path, and hydration
+    // hands the String path back as its null default — so the two readers
+    // disagree on the sentinel (undefined in the response's in-memory doc, null
+    // on reload) while agreeing on the fact. Assert the fact, both ways round:
+    // the old assignee is gone, on the response AND in the store.
+    const reloaded = await Task.findById(existing._id);
+    expect([null, undefined]).toContain(response.body.task.assignee);
+    expect([null, undefined]).toContain(reloaded.assignee);
+  });
+
   it('does not reopen a completed row when the submitted title differs', async () => {
     // TASK-163, reproduced live 2026-09-25T08:09Z: a create with a done row's
     // ref put that row back to pending under a title its caller never chose,
