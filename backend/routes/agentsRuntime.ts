@@ -1075,6 +1075,12 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // and we explicitly choose stricter behavior on the new endpoint.
       const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
       const existing = await User.findOne({
+        // Bot rows only (TASK-133 b, wren 73994): the derived name is plain
+        // lowercase, so a person's row matches the username branch below — and
+        // the §3.7 co-pod check runs AFTER `getOrCreateAgentUser`, so the probe
+        // would hand the identity service a person to adopt. The legacy /room
+        // probe carries the same term for the same reason; a miss is a 404.
+        isBot: true,
         $or: [
           { 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
           { username: expectedUsername },

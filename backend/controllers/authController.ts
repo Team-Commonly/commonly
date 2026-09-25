@@ -378,6 +378,24 @@ exports.register = async (req: any, res: any) => {
       return res.status(400).json({ error: 'Username, email, and password are required.' });
     }
 
+    // Reserved for agents (TASK-133 b). A row that takes an agent's derived name
+    // or its address IS the row an install would adopt, and registration is the
+    // only moment it can be defended: once it exists, the install's choice is
+    // between adopting it and failing closed. Refused here with a 409 the
+    // frontend can show, rather than as a refused install much later.
+    const reservedIdentity = await AgentIdentityService.resolveAccountNameConflict({
+      username: normalizedUsername,
+      email: normalizedEmail,
+    });
+    if (reservedIdentity) {
+      return res.status(409).json({
+        error: reservedIdentity === 'agent_email_reserved'
+          ? 'That email address is reserved for agents.'
+          : 'That username is reserved for agents.',
+        code: reservedIdentity,
+      });
+    }
+
     // Check if email or username already exists
     const existingUser = await User.findOne({
       $or: [

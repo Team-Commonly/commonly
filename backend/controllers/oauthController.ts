@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const User = require('../models/User');
 const OAuthLoginState = require('../models/OAuthLoginState');
+const AgentIdentityService = require('../services/agentIdentityService');
 const {
   isInviteOnlyRegistrationEnabled,
   redeemInvitationCode,
@@ -158,11 +159,14 @@ const generateUsername = async (hint: string, email: string) => {
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^[-.]+|[-.]+$/g, '')
     .slice(0, 30) || 'user';
-  if (!await User.exists({ username: base })) return base;
+  // A derived agent name is not free either (TASK-133 b): it has no User row to
+  // collide with, so `User.exists` answers no while the install would derive the
+  // same name and adopt whatever row holds it.
+  if (!AgentIdentityService.isReservedAgentUsername(base) && !await User.exists({ username: base })) return base;
   for (let i = 0; i < 5; i += 1) {
     const candidate = `${base}-${crypto.randomBytes(2).toString('hex')}`;
     // eslint-disable-next-line no-await-in-loop
-    if (!await User.exists({ username: candidate })) return candidate;
+    if (!AgentIdentityService.isReservedAgentUsername(candidate) && !await User.exists({ username: candidate })) return candidate;
   }
   return `${base}-${crypto.randomBytes(6).toString('hex')}`;
 };
@@ -250,6 +254,11 @@ exports.oauthCallback = async (req: any, res: any) => {
     if (!profile.providerId) return loginErrorRedirect(res, 'provider_error');
     // Linking by email is only safe when the provider vouches for it.
     if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified');
+    // The derived agent address is a reserved namespace, and a provider-asserted
+    // one would create the agent-marked row an install adopts (TASK-133 b).
+    if (AgentIdentityService.isReservedAgentEmail(profile.email)) {
+      return loginErrorRedirect(res, 'email_reserved');
+    }
 
     let user = await User.findOne({
       'authProviders.provider': provider,
