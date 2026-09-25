@@ -255,6 +255,12 @@ exports.oauthCallback = async (req: any, res: any) => {
       'authProviders.provider': provider,
       'authProviders.providerId': profile.providerId,
     });
+    // The provider arm matches a linked identity, and a converted agent row keeps
+    // whatever the person had linked — so this arm can land on a bot row whose
+    // email no longer matches anything. The email arm below already refuses bots;
+    // this is the same refusal on the path that does not consult the email
+    // (TASK-133).
+    if (user?.isBot) return loginErrorRedirect(res, 'bot_account');
 
     if (!user) {
       user = await User.findOne({ email: profile.email });
@@ -344,6 +350,15 @@ exports.exchangeOAuthCode = async (req: any, res: any) => {
 
     const user = await User.findById(stateRow.userId);
     if (!user) return res.status(400).json({ error: 'User not found.' });
+    // The state row records who signed in a moment ago; the account can have
+    // become an agent since, and this is the fifth place a user session is minted
+    // (`{ id }`, 7 days) with no bot term on it (TASK-133).
+    if (user.isBot) {
+      return res.status(403).json({
+        error: 'Agent accounts authenticate with their runtime token.',
+        code: 'BOT_ACCOUNT',
+      });
+    }
 
     return res.json(issueSession(user));
   } catch (err: any) {

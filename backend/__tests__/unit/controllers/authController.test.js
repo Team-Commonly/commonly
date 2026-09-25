@@ -591,6 +591,28 @@ describe('Auth Controller Tests', () => {
       );
     });
 
+    it('does not start a password session for an agent row (TASK-133)', async () => {
+      // A bot row is a User and can carry a password hash, so this route used to
+      // mint a 7-day session for it. The fix is the predicate, which is what this
+      // witness pins: a mock that ignores its query would pass either way, and
+      // the refusal it produces is checked at the three verifiers
+      // (middleware/auth, middleware/socketAuth, routes/uploads).
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      bcrypt.compare.mockResolvedValueOnce(true);
+
+      const req = { body: { email: 'commonly-bot@example.com', password: 'Password123!' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.login(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        email: 'commonly-bot@example.com',
+        isBot: { $ne: true },
+      });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
     it('should not login a non-existent user', async () => {
       const req = {
         body: {
