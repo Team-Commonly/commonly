@@ -31,7 +31,7 @@ interface UpdateIntegrationBody {
 exports.createIntegration = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
-      podId, serverId, serverName, channelId, channelName, webhookUrl, botToken,
+      podId, serverId, serverName, channelId, channelName, webhookUrl,
     } = req.body as CreateIntegrationBody;
 
     const discordIntegration = await DiscordIntegration.create({
@@ -40,7 +40,10 @@ exports.createIntegration = async (req: AuthRequest, res: Response): Promise<voi
       channelId,
       channelName,
       webhookUrl,
-      botToken,
+      // A client-supplied `botToken` is deliberately NOT persisted: a stored
+      // copy would shadow a later DISCORD_BOT_TOKEN rotation, which is the
+      // defect TASK-124 closes. The field stays on the request type so older
+      // callers do not 400; it is simply ignored.
     });
 
     const integration = await Integration.create({
@@ -83,7 +86,7 @@ exports.getIntegration = async (req: AuthRequest, res: Response): Promise<void> 
 exports.updateIntegration = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = req.params.id || req.params.integrationId;
-    const { serverName, channelName, webhookUrl, botToken } = req.body as UpdateIntegrationBody;
+    const { serverName, channelName, webhookUrl } = req.body as UpdateIntegrationBody;
 
     const integration = await Integration.findById(id).populate('platformIntegration') as {
       platformIntegration?: { _id: unknown };
@@ -97,7 +100,8 @@ exports.updateIntegration = async (req: AuthRequest, res: Response): Promise<voi
     if (serverName !== undefined) update.serverName = serverName;
     if (channelName !== undefined) update.channelName = channelName;
     if (webhookUrl !== undefined) update.webhookUrl = webhookUrl;
-    if (botToken !== undefined) update.botToken = botToken;
+    // `botToken` is accepted on the body and ignored for the same reason as on
+    // create: persisting it would re-create the copy TASK-124 removes.
 
     const discordIntegration = await DiscordIntegration.findByIdAndUpdate(
       integration.platformIntegration?._id,

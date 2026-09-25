@@ -5,6 +5,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { PRESET_DEFINITIONS } = require('./presets');
+const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -245,7 +246,7 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       || `${type}-${id}`,
     ).trim();
     if (type === 'discord') {
-      const token = String(config.botToken || process.env.DISCORD_BOT_TOKEN || '').trim();
+      const token = String(resolveDiscordBotToken(config.botToken) || '').trim();
       if (!id || !token) return;
       channels.discord.push({
         accountId: id,

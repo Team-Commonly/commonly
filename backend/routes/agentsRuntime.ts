@@ -43,6 +43,7 @@ const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
@@ -3435,13 +3436,14 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
     let messages = [];
 
     if (integration.type === 'discord') {
-      if (!integration.config?.botToken) {
+      const botToken = resolveDiscordBotToken(integration.config?.botToken);
+      if (!botToken) {
         return res.status(400).json({ message: 'Discord integration missing botToken' });
       }
       const DiscordService = require('../services/discordService');
       messages = await DiscordService.fetchMessages({
         channelId: integration.config.channelId,
-        botToken: integration.config.botToken,
+        botToken,
         limit,
         before,
         after,
