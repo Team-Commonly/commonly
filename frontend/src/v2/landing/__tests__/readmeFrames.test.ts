@@ -14,6 +14,10 @@
  * carries at least two pixels per rendered pixel, which is what makes an 880
  * wide frame legible on a retina display. The PNG's own IHDR is the instrument
  * — no restated dimension is compared against another restated dimension.
+ *
+ * The caption's `<sub>` is pinned for the same reason: the only renderer that
+ * matters strips `style`, so a caption that keeps its shape but loses its tag
+ * silently returns to 16px body text. Frames 2-5 copy this caption shape.
  */
 import fs from 'fs';
 import path from 'path';
@@ -78,12 +82,23 @@ describe('README frames', () => {
     expect(openAt).toBeGreaterThanOrEqual(0);
     expect(README.slice(openAt, frame.at)).not.toContain('</div>');
 
-    // Captioned: an <em> under it, still inside that same block.
+    // Captioned: a <sub><em> under it, still inside that same block. The <sub>
+    // is load-bearing rather than decoration. GitHub strips `style`, so the
+    // artboard's 14px muted caption arrives as 16px body text in full
+    // foreground unless a tag GitHub keeps does the sizing: at 16px the hero
+    // caption is 866px in the front page's 838px column and breaks so that
+    // line 2 holds only "card." (ux-lead, #1870, measured on github.com at
+    // 1280-1920). <sub> is on GitHub's supported formatting list and renders
+    // at 75%, 12px, which puts the same caption on one 680px line.
     const closeAt = README.indexOf('</div>', frame.at);
-    const emAt = README.indexOf('<em>', frame.at);
+    const emAt = README.indexOf('<sub><em>', frame.at);
     expect(closeAt).toBeGreaterThan(frame.at);
     expect(emAt).toBeGreaterThan(frame.at);
     expect(emAt).toBeLessThan(closeAt);
+    // The caption must be THIS frame's: a <sub><em> found past the block's own
+    // </div> belongs to a later frame, and would otherwise stand in for this one.
+    expect(README.slice(frame.at, emAt)).not.toContain('</div>');
+    expect(README.slice(emAt, closeAt)).toContain('</em></sub>');
     expect(proseLength(README.slice(emAt, closeAt))).toBeGreaterThan(20);
 
     // A frame is an image of something, so it needs real alt text.
