@@ -54,6 +54,13 @@ afterEach(async () => {
 });
 
 describe('classification', () => {
+  it('sorts Telegram-shaped and Slack-shaped results to their own classifier', () => {
+    expect(deliveryFailures.classifyDeliveryFailure({ success: false, errorCode: 403 }))
+      .toBe(deliveryFailures.TELEGRAM_BLOCKED_REASON);
+    expect(deliveryFailures.classifyDeliveryFailure({ ok: false, error: 'not_in_channel' }))
+      .toBe(deliveryFailures.SLACK_BOT_REMOVED_REASON);
+    expect(deliveryFailures.classifyDeliveryFailure(null)).toBeNull();
+  });
   it('is permanent for a 403 and for a 400 whose description says the chat is gone', () => {
     expect(deliveryFailures.classifyTelegramDeliveryFailure({ success: false, errorCode: 403 }))
       .toBe(deliveryFailures.TELEGRAM_BLOCKED_REASON);
@@ -84,6 +91,63 @@ describe('classification', () => {
     ].forEach((result) => {
       expect(deliveryFailures.classifyTelegramDeliveryFailure(result)).toBeNull();
     });
+  });
+});
+
+describe('Slack classification', () => {
+  it('is permanent for the three errors that mean the channel is unreachable', () => {
+    expect(deliveryFailures.classifySlackDeliveryFailure({ ok: false, error: 'channel_not_found' }))
+      .toBe(deliveryFailures.SLACK_CHANNEL_GONE_REASON);
+    expect(deliveryFailures.classifySlackDeliveryFailure({ ok: false, error: 'not_in_channel' }))
+      .toBe(deliveryFailures.SLACK_BOT_REMOVED_REASON);
+    expect(deliveryFailures.classifySlackDeliveryFailure({ ok: false, error: 'is_archived' }))
+      .toBe(deliveryFailures.SLACK_CHANNEL_ARCHIVED_REASON);
+  });
+
+  it('never flips for app-level auth, transient, or content errors', () => {
+    [
+      // The shared bot app, the analogue of Telegram's 401: one connector must
+      // not be marked broken because the app itself was revoked.
+      { ok: false, error: 'invalid_auth' },
+      { ok: false, error: 'token_revoked' },
+      { ok: false, error: 'account_inactive' },
+      { ok: false, error: 'ratelimited' },
+      { ok: false, error: 'msg_too_long' },
+      { ok: false, error: 'invalid_blocks' },
+      { ok: false, error: 'internal_error' },
+      { ok: false },
+      { ok: true, ts: '1.1' },
+      null,
+    ].forEach((result) => {
+      expect(deliveryFailures.classifySlackDeliveryFailure(result)).toBeNull();
+    });
+  });
+
+  it('flips through the shared entry point, which sorts the two providers by shape', async () => {
+    const integration = await makeIntegration({ type: 'slack', config: { chatId: 'C123' } });
+
+    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(
+      integration, 'C123', { ok: false, error: 'is_archived' },
+    );
+
+    expect(flipped).toBe(true);
+    const stored = await storedIntegration(integration._id);
+    expect(stored.status).toBe('error');
+    expect(stored.errorMessage).toBe(deliveryFailures.SLACK_CHANNEL_ARCHIVED_REASON);
+    expect(stored.config.chatId).toBeUndefined();
+    expect(await Activity.find({ action: 'connector_delivery_failed' }).lean()).toHaveLength(1);
+  });
+
+  it('refuses an inbound channel for Slack too — the guard is not per provider', async () => {
+    const integration = await makeIntegration({ type: 'slack', config: { chatId: 'C123' } });
+
+    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(
+      integration, 'C999', { ok: false, error: 'channel_not_found' },
+    );
+
+    expect(flipped).toBe(false);
+    expect((await storedIntegration(integration._id)).config.chatId).toBe('C123');
+    expect(await Activity.countDocuments({})).toBe(0);
   });
 });
 

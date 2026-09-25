@@ -3,12 +3,19 @@ jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn() }));
 jest.mock('../../../services/slackApi', () => jest.fn().mockImplementation(() => ({ postMessage: jest.fn() })));
+// The relay's classification is this service's own, tested against a real
+// database in connectorDeliveryFailureService.test.js. Here the mock exists to
+// witness the WIRING: which channel and which result reach it.
+jest.mock('../../../services/connectorDeliveryFailureService', () => ({
+  noteBoundChatDeliveryFailure: jest.fn().mockResolvedValue(false),
+}));
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const SlackApi = require('../../../services/slackApi');
+const deliveryFailures = require('../../../services/connectorDeliveryFailureService');
 const {
   relayAgentMessageToSlack,
   relaySlackMessageToPod,
@@ -54,6 +61,45 @@ describe('Slack installable bridge', () => {
         }),
       }),
     }));
+  });
+
+  test('a permanent Slack failure is classified against the channel the relay targeted', async () => {
+    // `not_in_channel` is Slack's version of Telegram's 403: the bot was removed
+    // and every future relay to that channel fails the same way. The relay
+    // swallows its own errors (it warns rather than throwing), so the observable
+    // effects are the classification and the relay map that must not be written.
+    const api = { postMessage: jest.fn().mockResolvedValue({ ok: false, error: 'not_in_channel' }) };
+    SlackApi.mockImplementation(() => api);
+    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: 'Hello from the pod',
+      podMessageId: 'message-1', integration,
+    });
+
+    expect(deliveryFailures.noteBoundChatDeliveryFailure).toHaveBeenCalledWith(
+      integration, 'D1', { ok: false, error: 'not_in_channel' },
+    );
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(warned.mock.calls[0][0]).toContain('not_in_channel');
+  });
+
+  test('a missing ts on a successful send is not treated as a delivery failure', async () => {
+    // `!result.ts` warns in the same branch as `!result.ok`, but it says nothing
+    // about whether the channel is reachable — only `ok: false` may flip.
+    const api = { postMessage: jest.fn().mockResolvedValue({ ok: true }) };
+    SlackApi.mockImplementation(() => api);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: 'Hello from the pod',
+      podMessageId: 'message-1', integration,
+    });
+
+    expect(deliveryFailures.noteBoundChatDeliveryFailure).toHaveBeenCalledWith(
+      integration, 'D1', { ok: true },
+    );
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   test('routes a Slack thread reply to the agent whose relayed message was quoted', () => {

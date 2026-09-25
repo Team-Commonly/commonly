@@ -153,6 +153,55 @@ describe('decision card closure fan-out', () => {
     expect((await Integration.findById(sibling._id)).config.cards[0].closedAt).toEqual(expect.any(Date));
   });
 
+  test('a permanent Slack delivery failure names the reason on the connector and unsets its channel', async () => {
+    const origin = await Integration.create({
+      podId, scope: 'user', type: 'slack', createdBy: ownerId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(ownerId), chatType: 'im', chatId: 'origin', teamId: 'T1',
+        botTokenRef: 'origin-ref', gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, externalMessageId: '1.1', sentAt: new Date() }],
+      },
+    });
+    const gone = await Integration.create({
+      podId, scope: 'user', type: 'slack', createdBy: memberId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(memberId), chatType: 'im', chatId: 'gone', teamId: 'T1',
+        botTokenRef: 'gone-ref', gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, externalMessageId: '4.4', sentAt: new Date() }],
+      },
+    });
+    // `channel_not_found` is permanent: the bot cannot reach this channel again
+    // until someone re-authorizes, which the unset below is what re-allows.
+    const goneSend = jest.fn(async () => ({ ok: false, error: 'channel_not_found' }));
+    SlackApi.mockImplementation(() => ({ postMessage: goneSend }));
+
+    await fanoutDecisionClosure(
+      { _id: new mongoose.Types.ObjectId(), podId, messageId: cardId, ruling: { value: 'A', byUsername: 'Sam' } },
+      { via: 'workspace', integrationId: origin._id },
+    );
+
+    // One send, so the flip below cannot be a row that was merely swept up. The
+    // closure id passed above is skipped by the fan-out, so `gone` is the only
+    // receipt holder that receives text.
+    expect(goneSend).toHaveBeenCalledTimes(1);
+
+    // Delivery is deliberately detached (`void Promise.allSettled`), so the flip
+    // lands after the call returns. Poll for it rather than assert into a race.
+    const deadline = Date.now() + 3000;
+    let stored = await Integration.findById(gone._id);
+    while (stored.status !== 'error' && Date.now() < deadline) {
+      /* eslint-disable no-await-in-loop -- polling a detached write, bounded below */
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      stored = await Integration.findById(gone._id);
+      /* eslint-enable no-await-in-loop */
+    }
+
+    expect(stored.status).toBe('error');
+    expect(stored.errorMessage).toBe('Slack stopped delivering: this channel no longer exists.');
+    expect(stored.config.chatId).toBeUndefined();
+    expect((await Integration.findById(origin._id)).status).toBe('connected');
+  });
+
   test('rechecks mute and gate at ruling time but still closes their receipts', async () => {
     const held = await Integration.create({
       podId, scope: 'user', type: 'telegram', createdBy: memberId, isActive: true, status: 'connected',

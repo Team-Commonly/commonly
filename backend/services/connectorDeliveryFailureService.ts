@@ -20,11 +20,44 @@ import Activity from '../models/Activity';
 const TELEGRAM_BLOCKED_REASON = 'Telegram stopped delivering: the bot was blocked or removed from this chat.';
 const TELEGRAM_CHAT_GONE_REASON = 'Telegram stopped delivering: this chat no longer exists.';
 
+// Slack reports the same three situations in its own vocabulary (wren 73779).
+const SLACK_CHANNEL_GONE_REASON = 'Slack stopped delivering: this channel no longer exists.';
+const SLACK_BOT_REMOVED_REASON = 'Slack stopped delivering: the bot is not in this channel.';
+const SLACK_CHANNEL_ARCHIVED_REASON = 'Slack stopped delivering: this channel was archived.';
+
+/**
+ * Slack's permanent errors. `invalid_auth`, `token_revoked` and `account_inactive`
+ * are deliberately absent: they are the shared bot app, the analogue of
+ * Telegram's 401, and they must never mark one connector as needing attention.
+ * Everything else (`ratelimited`, `msg_too_long`, `invalid_blocks`,
+ * `internal_error`) is transient or content.
+ */
+const PERMANENT_SLACK_ERRORS: { [error: string]: string } = {
+  channel_not_found: SLACK_CHANNEL_GONE_REASON,
+  not_in_channel: SLACK_BOT_REMOVED_REASON,
+  is_archived: SLACK_CHANNEL_ARCHIVED_REASON,
+};
+
 interface DeliveryResult {
   success?: boolean;
   errorCode?: number;
   description?: string;
 }
+
+interface SlackDeliveryResult {
+  ok?: boolean;
+  error?: string;
+}
+
+/**
+ * Slack's own `error` string → a named reason, or null when the failure says
+ * nothing about this connector. See PERMANENT_SLACK_ERRORS for what is excluded
+ * and why.
+ */
+const classifySlackDeliveryFailure = (result?: SlackDeliveryResult | null): string | null => {
+  if (!result || result.ok !== false) return null;
+  return PERMANENT_SLACK_ERRORS[String(result.error || '').toLowerCase()] || null;
+};
 
 /**
  * Telegram's own error_code/description → a named reason, or null when the
@@ -90,23 +123,34 @@ const flipConnectorOnPermanentDeliveryFailure = async ({
 };
 
 /**
- * Call this only from a send that targeted the connector's own bound chat.
+ * The two providers report failure in their own shapes — `{success: false,
+ * errorCode}` and `{ok: false, error}` — and the call sites hand over whatever
+ * their provider returned, so the entry point sorts them by shape rather than
+ * making every caller name its provider.
+ */
+const classifyDeliveryFailure = (result?: (DeliveryResult & SlackDeliveryResult) | null): string | null => (
+  result && result.ok === false ? classifySlackDeliveryFailure(result) : classifyTelegramDeliveryFailure(result)
+);
+
+/**
+ * Call this only from a send that targeted the connector's own bound chat — for
+ * either provider, since both store it in `config.chatId`.
  *
- * `sentToChatId` is compared against the stored one on purpose: the four sites
- * that may flip all send to `integration.config.chatId`, and the receive-side
- * replies in the Telegram webhook send to the chat the update came from. Passing
- * an inbound chat here is the griefing lever, and it returns false instead of
+ * `sentToChatId` is compared against the stored one on purpose: the sites that
+ * may flip all send to `integration.config.chatId`, and the receive-side replies
+ * in the Telegram webhook send to the chat the update came from. Passing an
+ * inbound chat here is the griefing lever, and it returns false instead of
  * flipping someone else's working connector.
  */
 const noteBoundChatDeliveryFailure = async (
   integration: { _id?: unknown; config?: { chatId?: unknown } } | null | undefined,
   sentToChatId: unknown,
-  result?: DeliveryResult | null,
+  result?: (DeliveryResult & SlackDeliveryResult) | null,
 ): Promise<boolean> => {
   const boundChatId = integration?.config?.chatId;
   if (!boundChatId || !sentToChatId || String(boundChatId) !== String(sentToChatId)) return false;
 
-  const reason = classifyTelegramDeliveryFailure(result);
+  const reason = classifyDeliveryFailure(result);
   if (!reason) return false;
 
   return flipConnectorOnPermanentDeliveryFailure({
@@ -117,9 +161,14 @@ const noteBoundChatDeliveryFailure = async (
 };
 
 export {
+  classifyDeliveryFailure,
+  classifySlackDeliveryFailure,
   classifyTelegramDeliveryFailure,
   flipConnectorOnPermanentDeliveryFailure,
   noteBoundChatDeliveryFailure,
   TELEGRAM_BLOCKED_REASON,
   TELEGRAM_CHAT_GONE_REASON,
+  SLACK_BOT_REMOVED_REASON,
+  SLACK_CHANNEL_ARCHIVED_REASON,
+  SLACK_CHANNEL_GONE_REASON,
 };

@@ -8,6 +8,7 @@ const Pod = require('../models/Pod');
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('./connectorSecrets');
+const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { shouldEscalate } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -136,7 +137,9 @@ const replyNoActivePod = async (integration: SlackIntegrationDoc): Promise<void>
   if (!chatId || !botTokenRef) return;
   try {
     const token = await connectorSecrets.get(String(botTokenRef));
-    await new SlackApi(token).postMessage(String(chatId), NO_ACTIVE_POD_REPLY);
+    // Bound channel, so this is one of the sends that may flip the connector.
+    const sent = await new SlackApi(token).postMessage(String(chatId), NO_ACTIVE_POD_REPLY);
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
   } catch (error) {
     console.warn('[slack-bridge] could not send no-active-pod reply:', (error as Error).message);
   }
@@ -227,6 +230,9 @@ export const relayAgentMessageToSlack = async (opts: {
       : `[${podName}] ${displayName || agentUsername}: ${String(content).slice(0, OUTBOUND_TEXT_CAP)}`;
     const result = await new SlackApi(token).postMessage(String(integration.config!.chatId), text);
     if (!result.ok || !result.ts) {
+      // Bound channel. Only an `ok: false` classifies — a missing `ts` on an
+      // otherwise successful send says nothing about reachability.
+      await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, result);
       throw new Error(`chat.postMessage failed: ${String(result.error || 'unknown error')}`);
     }
     await Integration.findByIdAndUpdate(integration._id, {
@@ -336,7 +342,10 @@ export const relaySlackMessageToPod = async (opts: {
       const sent = await new SlackApi(token).postMessage(
         String(config.chatId), escapeSlackMrkdwn(cardReply.confirmation), undefined, cardReply.externalMessageId,
       );
-      if (!sent.ok) console.warn('[slack-bridge] card confirmation was not sent');
+      if (!sent.ok) {
+        console.warn('[slack-bridge] card confirmation was not sent');
+        await deliveryFailures.noteBoundChatDeliveryFailure(integration, config.chatId, sent);
+      }
     } catch (error) {
       console.warn('[slack-bridge] card confirmation failed:', (error as Error).message);
     }

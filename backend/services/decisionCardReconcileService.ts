@@ -120,7 +120,13 @@ const sendClosingLine = async (
     undefined,
     card.externalMessageId,
   );
-  if (!sent?.ok) throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  if (!sent?.ok) {
+    // Same split as the Telegram half above: bound channel, so a permanent
+    // failure (removed, archived, gone) is this connector's, not an inbound
+    // sender's.
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+    throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  }
 };
 
 /**
