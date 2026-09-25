@@ -15,6 +15,15 @@
  * resolver (the old image read the plaintext field directly, so clearing first
  * would break it), and it is idempotent: a second run finds no plaintext left.
  *
+ * The destructive half is the `$unset`, and the only thing that keeps it safe is
+ * its ORDER: per row, the `put` completes before either plaintext is cleared. So
+ * a failure of any kind — an unusable key ring, a transient write error — leaves
+ * that row's plaintext exactly where it was, and a re-run both retries it and
+ * reports what already moved as `alreadyEncrypted`. There is deliberately no
+ * separate ring pre-flight: `listWithUnavailableKey` lists refs whose key is
+ * missing from the ring, it cannot fail, and a call that cannot fail is not a
+ * guard. The ordering is, and two witnesses in the suite hold it there.
+ *
  * Both plaintext stores are read, because a row connected before this change can
  * hold either: the platform document's `webhookUrl` (the writer that derived it
  * from the Discord API) and the legacy `Integration.config.webhookUrl` (which a
@@ -82,11 +91,6 @@ export async function encryptDiscordWebhookUrls(
     .find({}, { projection: { _id: 1, integrationId: 1, webhookUrl: 1 } })
     .toArray();
 
-  // Fail before the first write if the ring cannot encrypt anything: an --apply
-  // that unset a plaintext and could not store a ref would destroy the only copy
-  // of a live credential.
-  if (apply) await connectorSecrets.listWithUnavailableKey();
-
   let candidates = 0;
   let migrated = 0;
   let alreadyEncrypted = 0;
@@ -118,6 +122,9 @@ export async function encryptDiscordWebhookUrls(
 
     if (!apply) continue;
 
+    // Order matters, and it is the whole of the protection: a `put` that throws
+    // leaves this row's plaintext in both stores for the next attempt. Never move
+    // an `$unset` above this line.
     const webhookUrlRef = await connectorSecrets.put(
       String(row.integrationId),
       DISCORD_WEBHOOK_URL,

@@ -131,10 +131,69 @@ describe('encrypt-discord-webhook-url', () => {
     expect(await get(integration.config.webhookUrlRef)).toBe(URL_C);
   });
 
-  it('refuses to write anything when the key ring is unusable', async () => {
-    // The destructive half of this migration is the $unset. A run that cannot
-    // encrypt must not reach it: losing the plaintext without storing a ref
-    // leaves the live credential unrecoverable.
+  it('a failed put leaves both plaintexts in place and reports nothing migrated', async () => {
+    // vera's hold on #1898: the ordering that prevents data loss was unwitnessed.
+    // The destructive half of this migration is the $unset, and the only thing
+    // between a failed put and an unrecoverable credential is that the $unset
+    // comes second. This is the ordering witness in its simplest shape.
+    const secrets = require('../../../services/connectorSecrets');
+    const { integrationId, platformId } = await seedPair({
+      platform: { webhookUrl: URL_A },
+      config: { webhookUrl: URL_A },
+    });
+    const putSpy = jest.spyOn(secrets, 'put')
+      .mockRejectedValue(new Error('ring exploded'));
+
+    await expect(encryptDiscordWebhookUrls({ apply: true })).rejects.toThrow('ring exploded');
+
+    const integration = await integrationRows().findOne({ _id: integrationId });
+    expect(integration.config).not.toHaveProperty('webhookUrlRef');
+    expect(integration.config.webhookUrl).toBe(URL_A);
+    expect((await discordRows().findOne({ _id: platformId })).webhookUrl).toBe(URL_A);
+    // A re-run still sees exactly one candidate: the count of what actually moved
+    // is 0, so the operator sees the same work waiting rather than a lost row.
+    expect(await encryptDiscordWebhookUrls({ apply: false }))
+      .toMatchObject({ candidates: 1, migrated: 0, alreadyEncrypted: 0 });
+    putSpy.mockRestore();
+  });
+
+  it('clears a row only after its own ref is stored, so one failure cannot strand the rest', async () => {
+    // Same invariant, one row further in: the run must complete row 1 all the way
+    // (or the test would pass vacuously) and leave row 2 whole when its put fails.
+    const secrets = require('../../../services/connectorSecrets');
+    const realPut = secrets.put;
+    const putSpy = jest.spyOn(secrets, 'put')
+      .mockImplementationOnce(realPut)
+      .mockRejectedValueOnce(new Error('ring exploded on the second row'));
+    const first = await seedPair({ platform: { webhookUrl: URL_A } });
+    const second = await seedPair({ platform: { webhookUrl: URL_B } });
+
+    await expect(encryptDiscordWebhookUrls({ apply: true }))
+      .rejects.toThrow('ring exploded on the second row');
+
+    const rows = await Promise.all([first, second].map(async ({ integrationId, platformId }) => ({
+      integration: await integrationRows().findOne({ _id: integrationId }),
+      platform: await discordRows().findOne({ _id: platformId }),
+    })));
+    const moved = rows.filter((row) => row.integration.config.webhookUrlRef);
+    const whole = rows.filter((row) => !row.integration.config.webhookUrlRef);
+
+    expect(moved).toHaveLength(1);
+    expect(moved[0].platform).not.toHaveProperty('webhookUrl');
+    expect(await get(moved[0].integration.config.webhookUrlRef))
+      .toMatch(/^https:\/\/discord\.com\/api\/webhooks\//);
+    // The other row is untouched: no ref, and its URL is exactly where it was.
+    expect(whole).toHaveLength(1);
+    expect(whole[0].platform.webhookUrl).toMatch(/^https:\/\/discord\.com\/api\/webhooks\//);
+    putSpy.mockRestore();
+  });
+
+  it('an unusable key ring hits the same ordering, not a pre-flight', async () => {
+    // The ring-shaped instance of the property above. Note what does NOT protect
+    // this: the script used to call `listWithUnavailableKey()` first, which lists
+    // refs whose key is missing and cannot itself fail — deleting it reddens
+    // nothing, which is how vera found the ordering unwitnessed in the first
+    // place. The empty ring makes the real `put` throw, and the $unsets never run.
     process.env.CONNECTOR_SECRET_KEYS = '';
     const { integrationId, platformId } = await seedPair({ platform: { webhookUrl: URL_A } });
 
