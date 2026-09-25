@@ -5,7 +5,8 @@
 // predicate is enforced HERE from the daemon credential's server-side
 // machineId — never from a caller-supplied value.
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
@@ -38,7 +39,7 @@ const bindingRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 binding ops per 60s' });

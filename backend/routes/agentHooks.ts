@@ -1,6 +1,7 @@
 export {};
 
 import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 
 const express = require('express');
@@ -26,7 +27,7 @@ const hookRateLimit = rateLimit({
     const token = String(req.header('x-commonly-agent-token') || req.header('authorization') || '').trim();
     return token
       ? `token:${createHash('sha256').update(token).digest('hex')}`
-      : `ip:${req.ip || 'unknown'}`;
+      : cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: any, res: any) => res.status(429).json({
     code: 'rate_limited',
