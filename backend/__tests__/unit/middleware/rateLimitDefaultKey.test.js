@@ -23,9 +23,11 @@
  *
  * KNOWN LIMIT OF THIS FILE, stated rather than left implicit: the general scan
  * asserts a `keyGenerator` is PRESENT, not that it is the Cloudflare one — some
- * limiters legitimately key on a token or a composite. The seven sites this
- * change fixed are therefore ALSO pinned by name to the exact expression, which
- * is what makes `keyGenerator: (req) => req.ip` red rather than green.
+ * limiters legitimately key on a token or a composite. The seven sites TASK-110
+ * fixed — and, since TASK-125, `routes/users.ts`'s profile-write ingress cap —
+ * are therefore ALSO pinned by name to the exact expression, which is what makes
+ * `keyGenerator: (req) => req.ip` red rather than green. That eighth site is the
+ * one TASK-110's census missed by checking only that A key was set.
  *
  * SCOPE: `backend/**` `.ts` and `.js`, excluding `__tests__`, `node_modules`
  * and `coverage`. A limiter constructed from a variable is FLAGGED rather than
@@ -116,7 +118,7 @@ const findConfigs = (rawSource) => {
   return found;
 };
 
-/** The seven sites the TASK-110 ruling fixed, pinned to the exact expression. */
+/** Pinned to the exact expression: the seven TASK-110 fixed, then TASK-125's. */
 const PINNED = [
   ['routes/pods.ts', 'podAdminRateLimit'],
   ['routes/pods.ts', 'agentStatesRateLimit'],
@@ -125,6 +127,7 @@ const PINNED = [
   ['routes/registry/provision.ts', 'provisionRateLimit'],
   ['routes/admin/pods.ts', 'adminPodsRateLimit'],
   ['routes/billing.ts', 'checkoutLimit'],
+  ['routes/users.ts', 'profileWriteIngressLimit'],
 ];
 
 describe('rate limiters never take express-rate-limit\'s default (req.ip) key', () => {
@@ -165,6 +168,13 @@ describe('rate limiters never take express-rate-limit\'s default (req.ip) key', 
     // Vacuity floor: 74 configs on the day this landed (TASK-110, 2026-09-23).
     expect(configs).toBeGreaterThanOrEqual(60);
     expect(violations).toEqual([]);
+  });
+
+  // Vacuity floor for the pinned list itself: a row deleted from `PINNED` is
+  // otherwise a silent coverage loss, because `it.each` over a shorter array
+  // reports fewer passes and no failures. Growth is fine; shrinkage reddens.
+  it('keeps pinning every site the list names', () => {
+    expect(PINNED.length).toBeGreaterThanOrEqual(8);
   });
 
   it.each(PINNED)('pins %s %s to the Cloudflare key expression', (relPath, name) => {
