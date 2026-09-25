@@ -141,14 +141,25 @@ export class AgentUsernameConflictError extends Error {
  * A row an agent install may adopt: one that already carries agent markers.
  * `isBot` alone is not the test — the branch this guards exists precisely for
  * rows written before that flag, so the markers have to be the ones an install
- * itself writes: the derived agent address, `botType`, or `botMetadata`.
+ * itself writes: the derived agent address, `botType`, or `botMetadata.agentName`.
+ *
+ * The leaf, not the container (vera 73985): `botMetadata`'s sub-paths carry
+ * defaults (`officialAgent: false`, `machineId: null`, `requestedMachineId:
+ * null`), so Mongoose materialises the object on EVERY document —
+ * `Boolean(row.botMetadata)` is true for an ordinary person's row and the
+ * refusal below could never fire. `agentName` is the leaf this writer always
+ * sets (`getOrCreateAgentUser`, create and upgrade arms alike).
  */
 export const isAgentOwnedRow = (
-  row: { email?: string | null; botType?: string | null; botMetadata?: unknown },
+  row: {
+    email?: string | null;
+    botType?: string | null;
+    botMetadata?: { agentName?: string | null } | null;
+  },
   agentEmail: string,
 ): boolean => String(row.email || '').toLowerCase() === agentEmail.toLowerCase()
   || Boolean(row.botType)
-  || Boolean(row.botMetadata);
+  || Boolean(row.botMetadata?.agentName);
 
 interface AgentTypeConfig {
   officialDisplayName: string;

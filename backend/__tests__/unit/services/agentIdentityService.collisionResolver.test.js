@@ -143,6 +143,45 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(byBotMetadata.isBot).toBe(true);
   });
 
+  // The arms are judged on a REAL User document, not an object literal: the
+  // container `botMetadata` is materialised on every row by its sub-path
+  // defaults, so `Boolean(botMetadata)` reads true for a person and the refusal
+  // never fires in production (vera 73985). A nested-path guard witnessed only
+  // against literals misses exactly that, so this test builds the document the
+  // service actually holds.
+  test('on a hydrated User document, a person row is not agent-owned and is refused (TASK-133 a)', async () => {
+    const RealUser = jest.requireActual('../../../models/User');
+    const person = new RealUser({ username: 'scout-9-scout', email: 'person@example.com', isBot: false });
+
+    // The container is always present; the leaf this writer sets is not.
+    expect(person.botMetadata).toBeTruthy();
+    expect(person.botMetadata.agentName).toBeUndefined();
+    expect(
+      AgentIdentityService.isAgentOwnedRow(person, 'scout-9-scout@agents.commonly.local'),
+    ).toBe(false);
+
+    // A legacy agent row written by this service carries the leaf, so it is
+    // still adopted.
+    const legacy = new RealUser({
+      username: 'scout-5-scout',
+      email: 'scout-5-scout@agents.commonly.local',
+      isBot: false,
+      botMetadata: { agentName: 'scout-5' },
+    });
+    expect(
+      AgentIdentityService.isAgentOwnedRow(legacy, 'scout-5-scout@agents.commonly.local'),
+    ).toBe(true);
+
+    // And the refusal itself runs on that document shape: the mock's findOne
+    // copy keeps the materialised container and no leaf, which is what a real
+    // person row looks like to this branch.
+    mockExisting = person;
+    await expect(
+      AgentIdentityService.getOrCreateAgentUser('scout-9', { instanceId: 'scout', displayName: 'Scout' }),
+    ).rejects.toThrow(/refusing to adopt the existing non-agent account/);
+    expect(mockSaved).toHaveLength(0);
+  });
+
   test('refuses to adopt an account no agent install wrote, instead of converting a person into a bot (TASK-133 a)', async () => {
     mockExisting = {
       _id: 'person-id',
