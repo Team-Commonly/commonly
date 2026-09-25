@@ -24,9 +24,10 @@
  *
  * The A,A,B sequence is deliberate: two requests cannot separate "different
  * buckets" from "not counting at all", so A2 is the instrument's own control.
- * The two fixtures prove the instrument discriminates on the stub itself: a
- * deliberately raw-`req.ip` limiter must COLLAPSE and a
- * `cloudflareIpRateLimitKeyGenerator` one must SEPARATE. A stub that separates
+ * The two fixtures prove the instrument discriminates on the stub itself: one
+ * keyed the way the 21 swapped sites were — `req.ip ? ipKeyGenerator(req.ip) :
+ * 'anon'`, the spelling at `middleware/ipRateLimit.ts:54` — must COLLAPSE, and
+ * one keyed on `cloudflareIpRateLimitKeyGenerator` must SEPARATE. A stub that separates
  * everything handed to it would pass all 84 and establish nothing.
  */
 /* eslint-disable import/no-unresolved, import/extensions */
@@ -34,6 +35,7 @@ const fs = require('fs');
 const express = require('express');
 const request = require('supertest');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
@@ -43,7 +45,7 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRat
 const ENTRY_NODE_ENV = process.env.NODE_ENV;
 
 // The app only mounts pg-messages/pg-status when PG_HOST is truthy AND the
-// connect resolves truthy (server.ts:67,378-400), so this file sets it rather
+// connect resolves truthy (server.ts:68,378-400), so this file sets it rather
 // than inheriting it: setup.js used to leave the truthy STRING 'undefined' in
 // PG_HOST (TASK-128 deletes the key instead), and a probe that silently needs
 // that accident drops to 82 instances the day it is fixed. No restore machinery
@@ -169,13 +171,20 @@ describe('TASK-126 ip key separation', () => {
     expect(distinct.size).toBe(walked.length);
   });
 
-  it('negative control: the instrument catches a raw req.ip limiter on a stub', async () => {
+  it('negative control: the instrument catches a limiter keyed the way the swapped sites were', async () => {
+    // The defect's own spelling, not a cousin of it (vera 73704): the 21 sites
+    // keyed `req.ip ? ipKeyGenerator(req.ip) : 'anon'`. A bare `req.ip` collapses
+    // on this stub for the same reason — no `trust proxy`, so both requests carry
+    // the loopback socket address — but it also hands express-rate-limit's IPv6
+    // key validation a raw value, which would make this control measure a second
+    // thing. The form below is what was actually there, so the fixture proves the
+    // defect rather than a paraphrase of it.
     const raw = rateLimit({
       windowMs: 60000,
       max: 5,
       standardHeaders: true,
       legacyHeaders: false,
-      keyGenerator: (req) => req.ip,
+      keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'anon'),
     });
     const rec = await observe(raw, 250);
     expect(rec.r2).toBe(rec.r1 - 1);
