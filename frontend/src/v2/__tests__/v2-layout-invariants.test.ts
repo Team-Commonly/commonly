@@ -48,29 +48,6 @@ const teamPhoneBlock = (css: string): string => {
   }
 };
 
-// Every `@media (max-width: N)` block whose `N >= minWidth`, brace-balanced.
-// A 390-wide phone matches every block with a max-width at or above 390, so a
-// guard that reads one block can be green while the same defect lives in
-// another one (vera 73747: a 760-only scan cannot see the 640 blocks).
-const mediaBlocksMatchingMinWidth = (css: string, minWidth: number): string[] => {
-  const blocks: string[] = [];
-  const marker = /@media \(max-width: (\d+)px\)/g;
-  let match = marker.exec(css);
-  while (match !== null) {
-    const at = match.index;
-    const open = css.indexOf('{', at);
-    let depth = 0;
-    let end = open;
-    for (let i = open; i < css.length; i += 1) {
-      if (css[i] === '{') depth += 1;
-      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-    }
-    if (Number(match[1]) >= minWidth) blocks.push(css.slice(at, end + 1));
-    match = marker.exec(css);
-  }
-  return blocks;
-};
-
 // The `@media (max-width: 760px)` block that carries `selector`, wherever it
 // sits in the sheet. A phone override is indented inside a media query, so
 // `ruleBody` (which prefers a line-start selector) silently returns the desktop
@@ -1801,7 +1778,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
-  it('a phone at 390 keeps the connector row\'s reason: no media block matching 390 hides __detail (eng lead 73726, vera 73747)', () => {
+  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere (eng lead 73726, vera 73776)', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
     // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
@@ -1811,21 +1788,32 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // If one row ever needs the detail hidden on phones, add that selector to the
     // list below on purpose rather than re-introducing an exception chain.
     const NAMED_DETAIL_HIDE_CASES: string[] = [];
-    // Every block a 390-wide phone matches, not just the 760 one: the hide that
-    // caused this lived in the 760 block, but a hide in the 640 block would
-    // reproduce the identical defect at the identical viewport while a 760-only
-    // scan stayed green (vera 73747). All 30 max-width blocks in the file are
-    // >= 390, so this reads the sheet's phone overrides rather than one of them.
-    const phoneBlocks = mediaBlocksMatchingMinWidth(v2, 390);
-    // Floor, so a regex that stopped matching cannot pass by scanning nothing.
-    expect(phoneBlocks.length).toBeGreaterThanOrEqual(25);
-    const phoneUnion = phoneBlocks.join('\n');
-    // Positive control: the scan reached the block that carries the row, so an
-    // empty or mis-sliced union cannot make the assertion below vacuous.
-    expect(phoneUnion).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
-    const hidingRules = phoneBlocks
-      .flatMap((block) => block.split('}'))
-      .filter((rule) => rule.includes('.v2-connector-row__detail') && /display:\s*none/.test(rule))
+    // Scope is the whole sheet, deliberately rather than by accident. Three
+    // rounds of this guard each picked the wrong media set — unbounded, then
+    // 760-only, then every `max-width >= 390` — because a 390 phone matches
+    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`
+    // (vera 73776). The claim is not about a viewport: no rule in this sheet may
+    // hide the reason, and NAMED_DETAIL_HIDE_CASES is the deliberate exception
+    // list. So this reads the whole file and no media-picking predicate is left
+    // to get wrong.
+    //
+    // Controls first, so an empty or mis-typed scan cannot make the assertion
+    // below vacuous: the sheet was read, it carries the class, and it carries the
+    // not-yet row's details wrapper.
+    expect(v2).toContain('.v2-connector-row__detail');
+    expect(v2).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
+    // Every hiding mechanism a declaration can use, not just the one that
+    // caused this. `display:none` was the defect; `visibility:hidden` is the
+    // same loss through a different property, and neither hides the rule from a
+    // reader who greps for the class.
+    //
+    // The class test below is a substring on purpose (vera 73782):
+    // `.v2-connector-row__detail` also matches `.v2-connector-row__details`, the
+    // wrapper the reason sits inside, and hiding that wrapper loses the reason
+    // just as completely. Do not tighten it to an exact-selector match.
+    const hidingRules = v2
+      .split('}')
+      .filter((rule) => rule.includes('.v2-connector-row__detail') && /(display:\s*none|visibility:\s*hidden)/.test(rule))
       .filter((rule) => !NAMED_DETAIL_HIDE_CASES.some((named) => rule.includes(named)));
     expect(hidingRules).toEqual([]);
   });
