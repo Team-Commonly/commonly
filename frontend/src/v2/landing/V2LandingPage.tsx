@@ -33,7 +33,11 @@ const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
 const X_LABEL = '@sam_commonly';
-const SELF_HOST_COMMAND = 'git clone github.com/Team-Commonly/commonly && docker compose up';
+// Kept identical to the README's Quick Start block (README.md, "Quick Start —
+// local installation"). The clone needs the scheme and a directory to enter
+// before install.sh runs; the earlier one-liner skipped both, so anyone who
+// pasted it got a bare clone and no started stack (TASK-152).
+const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
 const ADR_COUNT = 15;
 // Issue #708 records the provenance for every affiliation AND the source +
 // license of every logo file (Wikimedia PD-textlogo / official brand assets).
@@ -201,7 +205,6 @@ const V2LandingPage: React.FC = () => {
     t('landing.hero.terms.claudeCode'),
     t('landing.hero.terms.cursor'),
     t('landing.hero.terms.codex'),
-    t('landing.hero.terms.openClaw'),
     t('landing.hero.terms.wholeTeam'),
   ];
 
