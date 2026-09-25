@@ -43,6 +43,10 @@ interface Connector {
   installationId?: string;
   type: string;
   status: string;
+  // The named reason the connector needs attention, written by whichever send
+  // failed permanently. Optional: rows that predate it, and failures we do not
+  // classify, fall back to the generic line below.
+  errorMessage?: string | null;
   scope?: 'user' | 'pod';
   isActive?: boolean;
   createdAt?: string;
@@ -613,7 +617,7 @@ const V2ConnectorsPage: React.FC = () => {
         actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
-        line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
+        line: connector.errorMessage || t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
         when: ageLine('since', connector.updatedAt || connector.createdAt),
       };

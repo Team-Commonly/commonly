@@ -449,6 +449,22 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByRole('button', { name: /Really remove/ })).toBeInTheDocument();
   });
 
+  it('names the reason a connector needs attention when the server sent one', async () => {
+    // The row's line is the only place a person sees why relaying stopped. A
+    // classified permanent failure writes `errorMessage`; the generic sentence
+    // is the fallback for everything else, not a replacement for it.
+    const reason = 'Telegram stopped delivering: the bot was blocked or removed from this chat.';
+    mockGets([{
+      _id: 'i-tg-error', installationId: 'install-tg-u1', type: 'telegram', status: 'error', errorMessage: reason,
+      config: { chatTitle: 'Ops chat', liveRelay: true },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+    expect(screen.queryByText('The connection dropped.')).toBeNull();
+  });
+
   it('derives the installable lifecycle target from the connector row type', () => {
     expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
