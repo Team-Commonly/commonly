@@ -19,6 +19,103 @@ const MessageClaimService = require('../../../services/messageClaimService');
 
 const CAS = /INSERT INTO message_claims[\s\S]*ON CONFLICT \(message_id\) DO UPDATE[\s\S]*message_claims\.state = 'declined'[\s\S]*message_claims\.expires_at < NOW\(\)/;
 
+/** Remove one pair of parens, and only when it wraps the whole expression. */
+const stripOuterParens = (group) => {
+  const t = group.trim();
+  if (!t.startsWith('(') || !t.endsWith(')')) return t;
+  let depth = 0;
+  for (let i = 0; i < t.length; i += 1) {
+    if (t[i] === '(') depth += 1;
+    else if (t[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return i === t.length - 1 ? t.slice(1, -1) : t;
+    }
+  }
+  return t;
+};
+
+/**
+ * Evaluates the shipped prune predicate against a row.
+ *
+ * Driven by the SQL TEXT the service actually issued and the values it bound —
+ * not by a copy of the predicate — so an edit to the statement moves the answer
+ * here. That is what keeps the two lapsed-lease witnesses separable under a
+ * single mutation: the "collects an abandoned lease" witness reddens when the
+ * new branch is removed, while the "a young lapsed lease survives" witness
+ * stays green under that same removal (the row still survives) and reddens only
+ * when the retention is dropped.
+ *
+ * It walks the predicate — split at top-level OR, then at top-level AND, then a
+ * truth test — understanding only the atoms this one statement uses: `state IN
+ * (…)`, `state = '…'`, `expires_at < NOW()` and `expires_at < NOW() -
+ * make_interval(secs => $n)`. Nesting and parenthesisation are followed rather
+ * than guessed at, because splitting flatly on `OR` made an unparenthesised
+ * statement look like a behavioural difference when it is display-only. An atom
+ * it cannot read throws instead of answering: a predicate this instrument does
+ * not understand must not be reported as a pass OR as a kill.
+ */
+const pruneCollects = (sql, params, row, now = new Date()) => {
+  const where = sql.match(/DELETE FROM message_claims\s+WHERE\s+([\s\S]+)$/);
+  if (!where) throw new Error(`no prune predicate in: ${sql}`);
+  const expr = where[1].replace(/\s+/g, ' ').trim();
+
+  const atomHolds = (atom) => {
+    const stateList = atom.match(/^state IN \(([^)]*)\)$/);
+    if (stateList) {
+      return stateList[1].split(',').map((s) => s.trim().replace(/'/g, '')).includes(row.state);
+    }
+    const stateEq = atom.match(/^state = '([^']+)'$/);
+    if (stateEq) return row.state === stateEq[1];
+    const lapsed = atom.match(/^expires_at < NOW\(\)(?: - make_interval\(secs => \$(\d+)\))?$/);
+    if (lapsed) {
+      const windowSeconds = lapsed[1] ? Number(params[Number(lapsed[1]) - 1]) : 0;
+      return row.expiresAt < new Date(now.getTime() - windowSeconds * 1000);
+    }
+    throw new Error(`prune evaluator does not understand: ${atom}`);
+  };
+
+  function evalAtom(clause) {
+    const inner = stripOuterParens(clause);
+    if (inner !== clause.trim()) return evalExpr(inner);
+    return atomHolds(clause.trim());
+  }
+  function evalAnd(clause) {
+    return splitTopLevel(clause, 'AND').every((c) => evalAtom(c));
+  }
+  function evalExpr(clause) {
+    return splitTopLevel(clause, 'OR').some((c) => evalAnd(c));
+  }
+
+  return evalExpr(expr);
+};
+
+/** Split on a keyword only where it is not inside parens, so `state IN (…)` stays one atom. */
+const splitTopLevel = (expr, keyword) => {
+  const token = ` ${keyword} `;
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    if (expr[i] === '(') depth += 1;
+    else if (expr[i] === ')') depth -= 1;
+    else if (depth === 0 && expr.startsWith(token, i)) {
+      parts.push(expr.slice(start, i));
+      i += token.length - 1;
+      start = i + 1;
+    }
+  }
+  parts.push(expr.slice(start));
+  return parts;
+};
+
+/** The prune the service issued on this call, with the values it bound. */
+const pruneStatement = async () => {
+  pool.query.mockResolvedValue({ rows: [] });
+  await MessageClaimService.claim({ messageId: 'prune-me', podId: 'p1', agentName: 'ux-lead' });
+  const call = pool.query.mock.calls.find(([sql]) => /DELETE FROM message_claims/.test(sql));
+  return { sql: call[0], params: call[1] };
+};
+
 describe('messageClaimService', () => {
   beforeEach(() => {
     pool.query.mockReset();
@@ -57,6 +154,67 @@ describe('messageClaimService', () => {
 
     await MessageClaimService.claim({ messageId: 'prune-me', podId: 'p1', agentName: 'ux-lead' });
     expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(true);
+  });
+
+  test('a lease that lapsed past the retention window is collected — the row no outcome ever reached', async () => {
+    // TASK-121. The terminal branch cannot see this row: its `expires_at` is the
+    // 90s lease that simply ran out rather than a release clock, so before this
+    // branch existed it was permanent storage — the CAS treats an expired claim
+    // as absent, so the seat that abandoned it never revisits the row and it
+    // never becomes terminal.
+    const { sql, params } = await pruneStatement();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(true);
+  });
+
+  test('a lease that lapsed inside the retention window survives, so a delayed re-offer still finds its history', async () => {
+    // The window is the protection, not decoration: the CAS reuses the row in
+    // place and its SET never touches `declined_by`, so collecting at lapse
+    // would hand the next seat a row with the chain's attempted seats wiped.
+    // Five minutes past a 90s lease is inside the three-requeue/ten-minute chain
+    // the retention is sized for — double it by construction.
+    const { sql, params } = await pruneStatement();
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    // The control that keeps this witness from being vacuously green: the same
+    // evaluator, against the same statement, must still collect a terminal row.
+    expect(pruneCollects(sql, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(true);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: fiveMinutesAgo })).toBe(false);
+  });
+
+  test('a live lease is not collected — this witness kills the comparison, not the window', async () => {
+    // Deliberately insensitive to the retention: a future `expires_at` fails
+    // `< NOW() - anything`, so no mutation of the window can redden it. Its kill
+    // set is the comparison direction, which is why it stays a witness rather
+    // than being demoted to a tripwire.
+    const { sql, params } = await pruneStatement();
+    const live = new Date(Date.now() + 90 * 1000);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: live })).toBe(false);
+  });
+
+  test('a clause appended to the whole prune binds BOTH branches — the outer wrap is the protection, not the per-branch parens', async () => {
+    // Wren's review finding, and a correction of this PR's own claim. Per-branch
+    // parens do NOT scope an appended clause: OR is the top-level operator
+    // whether or not its operands are wrapped, so `(T) OR (C) AND x` parses as
+    // `(T) OR ((C) AND x)`. The wrap around the whole disjunction is what makes
+    // an appended clause bind to both branches — the edit the service comment
+    // anticipates when a pod scope is added.
+    //
+    // The appended clause matches no row (`state = 'never'`), so under the
+    // protection nothing is collected and without it the terminal row still is.
+    // Removing the outer wrap therefore reddens this witness BY NAME, which is
+    // what moves the parens from the tripwire they were to a kill.
+    const { sql, params } = await pruneStatement();
+    const scoped = `${sql} AND state = 'never'`;
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    expect(pruneCollects(scoped, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(false);
+    expect(pruneCollects(scoped, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(false);
+    // Control, so that a predicate collecting nothing cannot pass this: both rows
+    // against the same statement WITHOUT the appended clause.
+    expect(pruneCollects(sql, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(true);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(true);
   });
 
   test('the CAS also lets the current holder win — renewal is the same call', async () => {
