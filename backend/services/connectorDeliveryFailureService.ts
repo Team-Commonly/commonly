@@ -115,6 +115,11 @@ interface FlipInput {
  * its only writer, and the page renders the message only when it is set; a
  * writer that does not set it falls back to the generic sentence instead of
  * printing our stack text in a connector row (vera 73848).
+ *
+ * Stated, not defaulted: a `$set` that omits this key leaves the row's stored
+ * value in place, so omitting the flag is only safe on a row that has never
+ * carried one. `externalFeedService` names `errorMessageUserFacing: false` for
+ * exactly that reason — absence would be a claim it could not make.
  */
 const userFacingError = (reason: string) => ({
   status: 'error',

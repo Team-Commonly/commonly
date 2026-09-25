@@ -435,11 +435,15 @@ async function syncExternalFeeds(): Promise<FeedSyncResult[]> {
             $set: {
               status: 'error',
               // Diagnostic, not copy. This is a provider's error text or a raw
-              // exception message, so `errorMessageUserFacing` stays unset and
-              // the Connectors page shows its generic sentence for these rows —
-              // the detail is kept here for whoever debugs the feed instead of
-              // being printed in someone's connector list (vera 73848).
+              // exception message, so the detail is kept here for whoever debugs
+              // the feed rather than printed in someone's connector list (vera
+              // 73848). The flag is stated instead of left out because a `$set`
+              // that omits a key inherits the row's stored value: omitting it is
+              // only safe on a row that has never carried one, and naming it
+              // `false` is what makes the page's generic sentence this row's
+              // outcome no matter what it carried before.
               errorMessage: detail,
+              errorMessageUserFacing: false,
               lastSync: new Date(),
             },
           });
