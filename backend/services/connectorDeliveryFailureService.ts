@@ -1,11 +1,10 @@
 import Integration from '../models/Integration';
-import Activity from '../models/Activity';
 
 // Row D: a permanent delivery failure used to change nothing at all — the
-// integration stayed `connected`, `errorMessage` stayed null, no Activity row
-// was written and the relay kept running, so replies vanished while the page
-// said the connector was fine. The fix is to classify the failure at the call
-// site that sent it and flip the connector only for the chats it owns.
+// integration stayed `connected`, `errorMessage` stayed null and the relay kept
+// running, so replies vanished while the page said the connector was fine. The
+// fix is to classify the failure at the call site that sent it and flip the
+// connector only for the chats it owns.
 //
 // Classification lives at the call site, not inside sendMessage (wren 73777):
 // a Telegram chat id has two provenances — the connector's own bound chat, and
@@ -87,7 +86,10 @@ interface FlipInput {
 }
 
 /**
- * One matched update, then an Activity row only if it matched (wren 73779).
+ * One matched update and nothing else. The Activity row that 73779 attached to
+ * this was withdrawn in 73792 — V2 renders none: the frontend never calls
+ * /api/activity/feed, the recap keeps agent actors, and needs-you reads only
+ * AttentionItem, so the row would have been written and never read.
  *
  * The match on `config.chatId` is the race guard: if the connector was
  * re-bound between the send and this call, the update matches nothing and no
@@ -110,15 +112,6 @@ const flipConnectorOnPermanentDeliveryFailure = async ({
     { new: true },
   );
   if (!matched) return false;
-
-  await Activity.create({
-    type: 'pod_event',
-    actor: { id: null, name: 'Commonly', type: 'system', verified: true },
-    action: 'connector_delivery_failed',
-    content: `${reason} Relaying is stopped until this connector is reconnected.`,
-    podId: matched.podId,
-    sourceType: 'event',
-  });
   return true;
 };
 

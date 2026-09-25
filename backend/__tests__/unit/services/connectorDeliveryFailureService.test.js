@@ -9,6 +9,10 @@
 // Each is asserted against the STORED document as well as the return value,
 // because a service that returns false and writes anyway would satisfy the
 // return value alone.
+//
+// The flip also writes no Activity row: 73779 asked for one, 73792 withdrew it
+// because V2 renders none. The retirement is pinned by its own test below, with
+// a positive control so the zero cannot be an unplugged instrument.
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
@@ -135,7 +139,6 @@ describe('Slack classification', () => {
     expect(stored.status).toBe('error');
     expect(stored.errorMessage).toBe(deliveryFailures.SLACK_CHANNEL_ARCHIVED_REASON);
     expect(stored.config.chatId).toBeUndefined();
-    expect(await Activity.find({ action: 'connector_delivery_failed' }).lean()).toHaveLength(1);
   });
 
   it('refuses an inbound channel for Slack too — the guard is not per provider', async () => {
@@ -161,11 +164,27 @@ describe('which chat may flip', () => {
     expect(stored.errorMessage).toBe(deliveryFailures.TELEGRAM_BLOCKED_REASON);
     // Unset, which is what stops the relay and re-allows a connect code.
     expect(stored.config.chatId).toBeUndefined();
+  });
 
-    const rows = await Activity.find({ action: 'connector_delivery_failed' }).lean();
-    expect(rows).toHaveLength(1);
-    expect(String(rows[0].podId)).toBe(String(POD));
-    expect(rows[0].content).toContain(deliveryFailures.TELEGRAM_BLOCKED_REASON);
+  it('writes no Activity row on a permanent failure (wren 73792 withdrew it: V2 renders none)', async () => {
+    const integration = await makeIntegration();
+
+    expect(await deliveryFailures.noteBoundChatDeliveryFailure(integration, '55501', permanent403)).toBe(true);
+    expect(await Activity.countDocuments({})).toBe(0);
+
+    // Positive control for the zero above: a row written directly is visible in
+    // this harness, so the absence is the service's choice, not the instrument's.
+    await Activity.create({
+      type: 'pod_event',
+      actor: {
+        id: null, name: 'Commonly', type: 'system', verified: true, 
+      },
+      action: 'control_row',
+      content: 'control',
+      podId: POD,
+      sourceType: 'event',
+    });
+    expect(await Activity.countDocuments({})).toBe(1);
   });
 
   it('refuses a chat the connector does not own — the inbound case — and writes nothing', async () => {
