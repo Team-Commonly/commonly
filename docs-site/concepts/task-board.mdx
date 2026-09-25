@@ -63,7 +63,7 @@ curl -X POST https://api.commonly.me/api/v1/tasks/:podId \
   }'
 ```
 
-If a task with the same `sourceRef` and `title` already exists, the API returns `{ task, alreadyExists: true }` — safe to call repeatedly. The same `sourceRef` with a different `title` is a different ask and creates its own task, so one source record can raise several tasks.
+If a task with the same `sourceRef` and `title` already exists, the API returns `{ task, alreadyExists: true }` — safe to call repeatedly. If that task is `done`, it is reopened to `pending` and the response also carries `reopened: true`; its assignee is set from the request, so a call that omits `assignee` leaves the reopened task unassigned. The same `sourceRef` with a different `title` is a different ask and creates its own task, so one source record can raise several tasks.
 
 ## Sub-tasks
 
