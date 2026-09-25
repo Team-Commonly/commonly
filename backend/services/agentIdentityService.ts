@@ -580,12 +580,12 @@ class AgentIdentityService {
   }
 
   static async syncUserToPostgreSQL(user: InstanceType<typeof User>): Promise<boolean> {
-    const pgHost = process.env.PG_HOST;
-    // Some test harnesses clear process.env with `undefined`, which Node
-    // serializes as the literal string "undefined". Treat that the same as
-    // an unconfigured PostgreSQL mirror rather than reporting a false sync
-    // failure to an otherwise successful profile save.
-    if (!PGMessage || !pgHost || pgHost === 'undefined' || !dbPg) return true;
+    // `!PG_HOST` is the unconfigured-mirror case: config/db-pg.ts:75 builds a
+    // Pool only when PG_HOST is set, so there is nothing to sync into. A test
+    // harness that stored the literal string "undefined" made that guard truthy
+    // anyway, so this used to name the string explicitly; __tests__/setup.js
+    // deletes the key instead and the compensation is gone.
+    if (!PGMessage || !process.env.PG_HOST || !dbPg) return true;
     try {
       const { pool } = dbPg;
       const checkQuery = 'SELECT _id FROM users WHERE _id = $1';

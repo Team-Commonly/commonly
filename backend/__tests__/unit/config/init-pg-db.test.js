@@ -1,4 +1,11 @@
+/* eslint-disable import/no-unresolved, import/extensions */
 jest.mock('fs');
+// The unit under test is initializeDatabase; its pool dependency is stubbed. This
+// suite previously reached for a REAL Pool object, which existed only because
+// setup.js left PG_HOST as the truthy string 'undefined' and db-pg.ts:75 built a
+// Pool for that host — so it broke the moment the harness stopped lying about the
+// host, not because initializeDatabase changed (TASK-128).
+jest.mock('../../../config/db-pg', () => ({ pool: { connect: jest.fn() } }));
 const fs = require('fs');
 const { pool } = require('../../../config/db-pg');
 
