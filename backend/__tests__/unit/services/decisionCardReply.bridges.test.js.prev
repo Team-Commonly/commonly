@@ -9,20 +9,8 @@ jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn
 jest.mock('../../../services/messageAgentDeliveryService', () => ({ deliverMessageToAgents: jest.fn(async () => ({})) }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn(async () => ({})) }));
 jest.mock('../../../services/attentionItemService', () => ({ resolve: jest.fn(async () => {}), recordDecision: jest.fn() }));
-// Stub the network, keep the behaviour: the bridge escapes through this module's
-// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
-jest.mock('../../../services/telegramService', () => ({
-  ...jest.requireActual('../../../services/telegramService'),
-  sendMessage: jest.fn(),
-}));
-// Constructor stubbed (the network), the escape real: the renderer the bridges
-// share calls it, so a bare stub would leave it undefined.
-jest.mock('../../../services/slackApi', () => {
-  const actual = jest.requireActual('../../../services/slackApi');
-  const mock = jest.fn();
-  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
-  return mock;
-});
+jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
+jest.mock('../../../services/slackApi', () => jest.fn());
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(async () => 'token') }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 jest.mock('../../../services/threadRootResolver', () => ({ resolveThreadRoot: jest.fn(async () => 600) }));

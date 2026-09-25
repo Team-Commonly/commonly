@@ -1,10 +1,5 @@
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
-// Stub the network, keep the behaviour: the bridge escapes through this module's
-// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
-jest.mock('../../../services/telegramService', () => ({
-  ...jest.requireActual('../../../services/telegramService'),
-  sendMessage: jest.fn(),
-}));
+jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 // The constructor is stubbed (the network); the escape is the real one, since the
 // reconcile service now shares the helper with the bridge.
 jest.mock('../../../services/slackApi', () => {

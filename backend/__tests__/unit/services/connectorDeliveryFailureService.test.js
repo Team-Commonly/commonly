@@ -1,3 +1,5 @@
+/* eslint-disable global-require, import/no-unresolved, import/extensions --
+   the requires must follow jest.mock, and this corpus resolves TS through the TS parser */
 // Row D: a permanent delivery failure must name itself on the connector, and
 // only the connector that owns the chat may be flipped.
 //
@@ -126,9 +128,7 @@ describe('Slack classification', () => {
   it('flips through the shared entry point, which sorts the two providers by shape', async () => {
     const integration = await makeIntegration({ type: 'slack', config: { chatId: 'C123' } });
 
-    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(
-      integration, 'C123', { ok: false, error: 'is_archived' },
-    );
+    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(integration, 'C123', { ok: false, error: 'is_archived' });
 
     expect(flipped).toBe(true);
     const stored = await storedIntegration(integration._id);
@@ -141,9 +141,7 @@ describe('Slack classification', () => {
   it('refuses an inbound channel for Slack too — the guard is not per provider', async () => {
     const integration = await makeIntegration({ type: 'slack', config: { chatId: 'C123' } });
 
-    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(
-      integration, 'C999', { ok: false, error: 'channel_not_found' },
-    );
+    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(integration, 'C999', { ok: false, error: 'channel_not_found' });
 
     expect(flipped).toBe(false);
     expect((await storedIntegration(integration._id)).config.chatId).toBe('C123');

@@ -1,3 +1,5 @@
+/* eslint-disable global-require, import/no-unresolved, import/extensions --
+   the requires must follow jest.mock, and this corpus resolves TS through the TS parser */
 // The Slack escape lives beside the one call that posts it (wren 73822), and its
 // signature is the thing that had to be reconciled rather than copied: the bridge
 // carried `(raw: string) => String(raw)` and the reconcile service
