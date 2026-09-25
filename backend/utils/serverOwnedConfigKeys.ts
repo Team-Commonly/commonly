@@ -11,9 +11,9 @@
  *
  * Invariants, both guarded by
  * `__tests__/unit/integrations/manifestCallerContract.test.js`:
- *   · no manifest's `requiredConfig` names a key in this list (a published lie);
- *   · every manifest's `serverOwnedConfig` names a key in this list (a hidden
- *     caller-suppliable field, which is the same defect mirrored).
+ *   · the published projection (`integrations/catalog`) names no key in this list
+ *     — the predicate may, because a bind or the environment writes it;
+ *   · every key a route strips is in this list, and it is the only copy.
  */
 
 // Bridge attribution + binding fields are server-owned. linkedUserId is the
@@ -31,15 +31,22 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
   // The token itself, one layer in from the opaque ref above: it is read as a
   // credential by `providers/slackProvider`, by `routes/registry/helpers` (Slack
-  // and Telegram, each with an env fallback) and by the Discord resolver's
-  // legacy fallback, and its only writer is a caller's body — Slack's live bind
-  // stores `botTokenRef` and Telegram's runtime reads the env var. Left
-  // unstripped, a caller can drive their own row to `status: 'connected'` with a
-  // value no provider echoes, and plant a legacy fallback that a later
-  // rotation no longer reaches. The two Discord refusals are kept and still run
-  // FIRST (they precede this strip on both routes), so a supplied Discord token
-  // is a 400 rather than a silent 200.
+  // and Telegram, env-only since TASK-140) and by the Discord resolver's legacy
+  // fallback. No row-level writer remains: a body's value is refused (Discord,
+  // 400) or stripped (every type) ahead of this list, and
+  // `scripts/clear-discord-bot-token.ts` only `$unset`s. The entry stays so a
+  // supplied value can never drive a row to `status: 'connected'` with a value no
+  // provider echoes, and so the two Discord refusals keep running FIRST on both
+  // routes — a supplied Discord token is a 400, not a silent 200.
   'botToken',
+  // Inbound-verification credentials: `signingSecret` is Slack's
+  // event-signature key, `appToken` its app-level (socket-mode) key, and
+  // `secretToken` Telegram's webhook key. All three are the INSTANCE's — every
+  // reader takes them from the environment (TASK-141) — so a body-supplied copy
+  // only plants a verification key that outlives the access that set it. The
+  // legacy Slack route takes no auth at all and answers an inactive row like an
+  // unknown id, so the strip and the env-only read are the whole boundary.
+  'signingSecret', 'appToken', 'secretToken',
   // The Discord channel webhook URL is a bearer credential of its own — the URL
   // embeds the webhook's token, so posting to it posts AS that channel — and the
   // server derives it from the Discord API on both writers (`routes/integrations`

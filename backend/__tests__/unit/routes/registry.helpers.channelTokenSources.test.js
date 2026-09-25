@@ -19,7 +19,10 @@
  */
 const { buildOpenClawIntegrationChannels } = require('../../../routes/registry/helpers');
 
-const ENV_KEYS = ['SLACK_BOT_TOKEN', 'TELEGRAM_BOT_TOKEN'];
+const ENV_KEYS = [
+  'SLACK_BOT_TOKEN', 'TELEGRAM_BOT_TOKEN',
+  'SLACK_APP_TOKEN', 'SLACK_SIGNING_SECRET', 'TELEGRAM_SECRET_TOKEN',
+];
 const saved = {};
 
 const telegramRow = (config = {}) => ([{ _id: 'tg-1', type: 'telegram', config: { chatTitle: 'ops', ...config } }]);
@@ -30,6 +33,9 @@ describe('buildOpenClawIntegrationChannels — token sources', () => {
     ENV_KEYS.forEach((key) => { saved[key] = process.env[key]; });
     process.env.SLACK_BOT_TOKEN = 'xoxb-instance';
     process.env.TELEGRAM_BOT_TOKEN = 'tg-instance';
+    process.env.SLACK_APP_TOKEN = 'xapp-instance';
+    process.env.SLACK_SIGNING_SECRET = 'slack-secret-instance';
+    process.env.TELEGRAM_SECRET_TOKEN = 'tg-secret-instance';
   });
 
   afterEach(() => {
@@ -64,6 +70,38 @@ describe('buildOpenClawIntegrationChannels — token sources', () => {
 
     expect(channels.telegram).toEqual([]);
     expect(channels.slack).toEqual([]);
+  });
+
+  it('binds the instance verification credentials even when the row carries old copies', () => {
+    const channels = buildOpenClawIntegrationChannels(slackRow({
+      appToken: 'xapp-stale-row-copy',
+      signingSecret: 'slack-secret-stale-row-copy',
+    }));
+
+    expect(channels.slack[0].appToken).toBe('xapp-instance');
+    expect(channels.slack[0].signingSecret).toBe('slack-secret-instance');
+  });
+
+  it('binds the instance telegram webhook secret even when the row carries an old copy', () => {
+    const channels = buildOpenClawIntegrationChannels(telegramRow({ secretToken: 'tg-secret-stale-row-copy' }));
+
+    expect(channels.telegram[0].webhookSecret).toBe('tg-secret-instance');
+  });
+
+  it('leaves every verification credential absent when the environment has none, whatever the row holds', () => {
+    delete process.env.SLACK_APP_TOKEN;
+    delete process.env.SLACK_SIGNING_SECRET;
+    delete process.env.TELEGRAM_SECRET_TOKEN;
+
+    const slack = buildOpenClawIntegrationChannels(slackRow({
+      appToken: 'xapp-stale-row-copy',
+      signingSecret: 'slack-secret-stale-row-copy',
+    }));
+    const telegram = buildOpenClawIntegrationChannels(telegramRow({ secretToken: 'tg-secret-stale-row-copy' }));
+
+    expect(slack.slack[0].appToken).toBeUndefined();
+    expect(slack.slack[0].signingSecret).toBeUndefined();
+    expect(telegram.telegram[0].webhookSecret).toBeUndefined();
   });
 
   it('keeps the retained channel binding the row still supplies', () => {

@@ -19,6 +19,7 @@
 const mockGet = jest.fn();
 const mockHistory = jest.fn();
 const mockSlackApi = jest.fn((token) => ({ token, history: mockHistory }));
+const crypto = require('crypto');
 
 jest.mock('../../../services/connectorSecrets', () => ({ get: (...args) => mockGet(...args) }));
 jest.mock('../../../services/slackApi', () => mockSlackApi);
@@ -95,5 +96,68 @@ describe('slackProvider — the row shape the bind writes', () => {
     await expect(row.syncRecent({ hours: 1 })).rejects.toThrow(/chat binding/);
     expect(mockHistory).not.toHaveBeenCalled();
     await expect(row.health()).resolves.toMatchObject({ ok: false });
+  });
+
+  it('verifies an event with the instance secret, not the row copy, when the row carries one', async () => {
+    process.env.SLACK_SIGNING_SECRET = 'instance-secret';
+    const payload = { type: 'url_verification', challenge: 'ch-1' };
+    const timestamp = Math.floor(Date.now() / 1000);
+    const raw = JSON.stringify(payload);
+    const signature = `v0=${crypto.createHmac('sha256', 'instance-secret')
+      .update(`v0:${timestamp}:${raw}`).digest('hex')}`;
+
+    // The row carries a DIFFERENT, planted copy: the legacy route already
+    // verified the request with the instance secret, so this handler must agree
+    // with it rather than with the row (TASK-141 — before this it 401'd here).
+    const provider = createSlackProvider({
+      _id: 'i-planted',
+      config: { chatId: 'D0123', signingSecret: 'row-planted-secret' },
+    });
+    const { events } = provider.getWebhookHandlers();
+    const res = {
+      code: null, body: null,
+      status(code) { this.code = code; return this; },
+      send(payloadOut) { this.body = payloadOut; return this; },
+      sendStatus(code) { this.code = code; return this; },
+    };
+
+    await events({
+      headers: { 'x-slack-request-timestamp': String(timestamp), 'x-slack-signature': signature },
+      body: payload,
+      rawBody: raw,
+    }, res);
+
+    expect(res.code).toBe(200);
+    expect(res.body).toBe('ch-1');
+    delete process.env.SLACK_SIGNING_SECRET;
+  });
+
+  it('fails closed when the instance secret is unset, whatever the row holds', async () => {
+    delete process.env.SLACK_SIGNING_SECRET;
+    const payload = { type: 'url_verification', challenge: 'ch-2' };
+    const timestamp = Math.floor(Date.now() / 1000);
+    const raw = JSON.stringify(payload);
+    const signature = `v0=${crypto.createHmac('sha256', 'row-planted-secret')
+      .update(`v0:${timestamp}:${raw}`).digest('hex')}`;
+
+    const provider = createSlackProvider({
+      _id: 'i-planted-2',
+      config: { chatId: 'D0123', signingSecret: 'row-planted-secret' },
+    });
+    const { events } = provider.getWebhookHandlers();
+    const res = {
+      code: null, body: null,
+      status(code) { this.code = code; return this; },
+      send(payloadOut) { this.body = payloadOut; return this; },
+      sendStatus(code) { this.code = code; return this; },
+    };
+
+    await events({
+      headers: { 'x-slack-request-timestamp': String(timestamp), 'x-slack-signature': signature },
+      body: payload,
+      rawBody: raw,
+    }, res);
+
+    expect(res.code).toBe(401);
   });
 });

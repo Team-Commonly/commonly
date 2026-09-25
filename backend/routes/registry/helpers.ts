@@ -262,8 +262,12 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       // gateway a value no other reader echoes is how a rotation misses rows
       // that already exist (TASK-124, one hop further out — TASK-140).
       const botToken = String(process.env.SLACK_BOT_TOKEN || '').trim();
-      const appToken = String(config.appToken || process.env.SLACK_APP_TOKEN || '').trim();
-      const signingSecret = String(config.signingSecret || process.env.SLACK_SIGNING_SECRET || '').trim();
+      // The instance's, not the row's (TASK-141): same rule as `botToken` above.
+      // A row copy has had no writer since the key joined
+      // `SERVER_OWNED_CONFIG_KEYS`, and preferring one would hand the gateway a
+      // verification key that no other reader echoes.
+      const appToken = String(process.env.SLACK_APP_TOKEN || '').trim();
+      const signingSecret = String(process.env.SLACK_SIGNING_SECRET || '').trim();
       if (!id || !botToken) return;
       channels.slack.push({
         accountId: id,
@@ -282,7 +286,9 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       // both provisioners). This was the only reader that preferred a per-row
       // copy (TASK-140, Wren 74155).
       const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-      const webhookSecret = String(config.secretToken || process.env.TELEGRAM_SECRET_TOKEN || '').trim();
+      // The instance's, not the row's (TASK-141): `secretToken` is stripped from
+      // a body like the two Slack keys above.
+      const webhookSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
       if (!id || !botToken) return;
       channels.telegram.push({
         accountId: id,

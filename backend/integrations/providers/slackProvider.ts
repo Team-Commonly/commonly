@@ -77,8 +77,12 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
           const ts = req.headers['x-slack-request-timestamp'];
           const sig = req.headers['x-slack-signature'];
           const raw = req.rawBody || JSON.stringify(req.body || {});
+          // Env only (TASK-141): the legacy route that calls this handler has
+          // already verified against `SLACK_SIGNING_SECRET`, so reading the row's
+          // copy here made the two checks disagree — an env-signed event passed
+          // the route and was 401'd here.
           if (!verifySlackSignature({
-            signingSecret: config.signingSecret,
+            signingSecret: process.env.SLACK_SIGNING_SECRET,
             timestamp: ts,
             signature: sig,
             rawBody: raw,
