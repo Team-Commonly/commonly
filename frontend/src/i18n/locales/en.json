@@ -1398,11 +1398,11 @@
       "starting": "Starting…",
       "live": "Listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
-      "noteByo": "Appears in the pod once your runtime connects with the token."
+      "noteByo": "Appears in the pod once your runtime connects with the token.",
+      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."
     },
     "persona": {
-      "hiring": "Hiring",
-      "none": "No colleague selected — this is the blank-agent path."
+      "hiring": "Hiring"
     },
     "machine": {
       "online": "online",

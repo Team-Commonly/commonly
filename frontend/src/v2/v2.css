@@ -5959,11 +5959,6 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-surface);
 }
-.v2-byo__persona--none {
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--v2-text-tertiary);
-}
 .v2-byo__persona-body { min-width: 0; flex: 1; }
 .v2-byo__persona-title {
   font-size: 14px;
