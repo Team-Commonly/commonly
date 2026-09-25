@@ -43,6 +43,7 @@ const DiscordIntegration = require('../../../models/DiscordIntegration');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const integrationRoutes = require('../../../routes/integrations');
+const { get: getConnectorSecret } = require('../../../services/connectorSecrets');
 
 const GUILD = '123456789012345678';
 const CHANNEL = '123456789012345679';
@@ -57,6 +58,8 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
   let pod;
   let creator;
   const savedEnv = process.env.DISCORD_BOT_TOKEN;
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
 
   const post = (body) => request(app)
     .post('/api/integrations')
@@ -77,6 +80,10 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
 
   beforeEach(async () => {
     process.env.DISCORD_BOT_TOKEN = ENV_TOKEN;
+    // The create path now encrypts the webhook URL, so the key ring is part of
+    // the deployment it runs against — the same dependency the Slack bind has.
+    process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
     await Integration.deleteMany({});
     await DiscordIntegration.deleteMany({});
     axios.post.mockReset();
@@ -86,6 +93,11 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
   afterEach(() => {
     if (savedEnv === undefined) delete process.env.DISCORD_BOT_TOKEN;
     else process.env.DISCORD_BOT_TOKEN = savedEnv;
+  });
+
+  afterAll(() => {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActiveKey;
   });
 
   it('creates the connector without persisting the token, and the row still saves', async () => {
@@ -104,8 +116,16 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
     // so the absence assertion below cannot pass on a row that was never made.
     expect(row).not.toBeNull();
     expect(row.webhookId).toBe('wh-1');
-    expect(row.webhookUrl).toContain('/wh-1/');
     expect(row.serverId).toBe(GUILD);
+    // The claim this change adds: the URL the create path derived is encrypted,
+    // not stored. No plaintext on the platform row, the ref on the Integration
+    // row, and the ref resolves back to the URL the Discord API returned — so
+    // "it is gone from the row" is not the same as "it is gone".
+    expect(row.webhookUrl).toBeUndefined();
+    const integrationRow = await Integration.findById(row.integrationId).lean();
+    expect(integrationRow.config.webhookUrlRef).toBeTruthy();
+    expect(await getConnectorSecret(integrationRow.config.webhookUrlRef))
+      .toBe('https://discord.com/api/webhooks/wh-1/wh-token');
     // The claim: no copy of the instance-wide token is stored on the row.
     expect(row.botToken).toBeUndefined();
   });
@@ -122,6 +142,9 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
     expect(res.status).toBe(201);
     expect(res.body.platformIntegration).not.toHaveProperty('botToken');
     expect(res.body.platformIntegration).not.toHaveProperty('webhookUrl');
+    // The pointer to the encrypted URL is a secret-config key, so it does not
+    // ride out either.
+    expect(res.body.integration.config).not.toHaveProperty('webhookUrlRef');
   });
 
   it('still requires a token to connect: with the env var absent the create is refused', async () => {

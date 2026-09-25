@@ -25,6 +25,14 @@ jest.mock('../../../models/DiscordIntegration', () => ({
 jest.mock('../../../models/DiscordSummaryHistory', () => jest.fn().mockImplementation(() => ({
   save: jest.fn(),
 })));
+// The envelope is stubbed: this suite witnesses the CALL, not the cryptography
+// (connectorSecrets' own unit file and the resolver's pin that).
+jest.mock('../../../services/connectorSecrets', () => ({
+  get: jest.fn(),
+  put: jest.fn(),
+  revoke: jest.fn(),
+  listWithUnavailableKey: jest.fn(),
+}));
 jest.mock('../../../services/discordCommandService');
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
 jest.mock('../../../config/discord');
@@ -33,6 +41,8 @@ jest.mock('axios');
 const axios = require('axios');
 const DiscordService = require('../../../services/discordService');
 const Integration = require('../../../models/Integration');
+const DiscordIntegration = require('../../../models/DiscordIntegration');
+const connectorSecrets = require('../../../services/connectorSecrets');
 const DiscordCommandService = require('../../../services/discordCommandService');
 const AgentEventService = require('../../../services/agentEventService');
 
@@ -41,6 +51,11 @@ jest.mock('../../../config/discord', () => ({
   botToken: 'test-bot-token',
   clientId: 'test-client-id',
   applicationId: 'test-app-id',
+  webhookName: 'Commonly Bot',
+  webhookAvatar: null,
+  // Needed by sendMessage, which the TASK-124 part 2 cases below exercise.
+  messageRateLimit: { timeWindow: 60_000, maxMessages: 10 },
+  errors: { RATE_LIMITED: 'Rate limited' },
 }));
 
 describe('DiscordService', () => {
@@ -149,6 +164,35 @@ describe('DiscordService', () => {
           lastSync: expect.any(Date),
         },
       );
+    });
+
+    it('backfills a missing webhook as an encrypted ref, not as a plaintext URL', async () => {
+      // The second writer of the URL (TASK-124 part 2). It used to $set the URL
+      // straight onto the platform row, which is the plaintext-at-rest state the
+      // migration removes — so this path had to move with the connect path.
+      connectorSecrets.put.mockResolvedValue('ref-backfill');
+      discordService.integration = {
+        ...mockIntegration,
+        config: { ...mockIntegration.config },
+        platformIntegration: { serverId: 'guild123', channelId: 'channel123', _id: 'platform-1' },
+      };
+      discordService.createWebhook = jest.fn()
+        .mockResolvedValue({ url: 'https://discord.com/api/webhooks/5/token', id: 'wh-5' });
+
+      await expect(discordService.connect()).resolves.toBe(true);
+
+      expect(connectorSecrets.put).toHaveBeenCalledWith(
+        'integration123',
+        expect.objectContaining({ kind: 'discord-webhook-url' }),
+        'https://discord.com/api/webhooks/5/token',
+      );
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        'integration123',
+        { $set: { 'config.webhookUrlRef': 'ref-backfill' } },
+      );
+      // Only the id reaches the platform document; it is not a secret.
+      expect(DiscordIntegration.findByIdAndUpdate)
+        .toHaveBeenCalledWith('platform-1', { webhookId: 'wh-5' });
     });
 
     it('should handle connection errors', async () => {
@@ -497,6 +541,58 @@ describe('DiscordService', () => {
         expect.objectContaining({ botToken: ENV_TOKEN, channelId: 'channel123' }),
       );
       fetchSpy.mockRestore();
+    });
+  });
+
+  describe('TASK-124 part 2 — the outbound URL is resolved, never the ref', () => {
+    const WEBHOOK_URL = 'https://discord.com/api/webhooks/999/resolved';
+
+    beforeEach(() => {
+      Integration.find = jest.fn().mockReturnValue({ count: jest.fn().mockResolvedValue(0) });
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    });
+
+    it('decrypts the ref and posts to the URL, not to the pointer', async () => {
+      connectorSecrets.get.mockResolvedValue(WEBHOOK_URL);
+      discordService.integration = {
+        ...mockIntegration,
+        config: { ...mockIntegration.config, webhookUrlRef: 'ref-1' },
+        platformIntegration: { ...mockIntegration.platformIntegration, webhookUrl: undefined },
+      };
+
+      await expect(discordService.sendMessage('hello')).resolves.toBe(true);
+
+      expect(connectorSecrets.get).toHaveBeenCalledWith('ref-1');
+      expect(global.fetch).toHaveBeenCalledWith(WEBHOOK_URL, expect.anything());
+    });
+
+    it('still posts from the legacy plaintext copy when no ref exists', async () => {
+      discordService.integration = { ...mockIntegration, config: { ...mockIntegration.config } };
+
+      await expect(discordService.sendMessage('hello')).resolves.toBe(true);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        mockIntegration.platformIntegration.webhookUrl,
+        expect.anything(),
+      );
+    });
+
+    it('fails loudly on an unreadable ref instead of falling back to the plaintext copy', async () => {
+      // The substitution this guards: a revoked or rotated secret with a stale
+      // plaintext still on the row would keep sending to a URL nothing manages,
+      // and a wrong webhook URL does not fail — it authenticates as another
+      // connector (vera 74141).
+      connectorSecrets.get.mockRejectedValue(new Error('key ring unavailable'));
+      discordService.integration = {
+        ...mockIntegration,
+        config: { ...mockIntegration.config, webhookUrlRef: 'ref-1' },
+      };
+
+      // sendMessage rethrows (its catch logs and re-raises), so the failure is
+      // visible to the caller rather than swallowed as a `false` return.
+      await expect(discordService.sendMessage('hello')).rejects.toThrow('key ring unavailable');
+
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });

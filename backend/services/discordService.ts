@@ -14,6 +14,12 @@ const summarizerService = require('./summarizerService');
 const config = require('../config/discord');
 // eslint-disable-next-line global-require
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
+// eslint-disable-next-line global-require
+const { resolveDiscordWebhookUrl, hasDiscordWebhookUrl } = require('../utils/discordWebhookUrl');
+// eslint-disable-next-line global-require
+const connectorSecrets = require('./connectorSecrets');
+// eslint-disable-next-line global-require
+const { DISCORD_WEBHOOK_URL } = require('./connectorSecretKinds');
 
 interface FetchMessagesOptions {
   channelId?: string;
@@ -50,6 +56,10 @@ interface IntegrationDoc {
     channelId?: string;
     botToken?: string;
     serverId?: string;
+    // The pointer to the encrypted webhook URL. `webhookUrl` beside it is the
+    // legacy plaintext copy; both are resolved by `utils/discordWebhookUrl`.
+    webhookUrlRef?: string;
+    webhookUrl?: string;
     webhookListenerEnabled?: boolean;
     messageBuffer?: BufferedMessage[];
     lastSummaryAt?: Date;
@@ -316,15 +326,28 @@ class DiscordService {
         throw new Error(config.errors.CHANNEL_NOT_FOUND);
       }
 
-      if (!(this.integration as IntegrationDoc).platformIntegration?.webhookUrl) {
+      if (!hasDiscordWebhookUrl(
+        (this.integration as IntegrationDoc).config?.webhookUrlRef,
+        (this.integration as IntegrationDoc).platformIntegration?.webhookUrl,
+        (this.integration as IntegrationDoc).config?.webhookUrl,
+      )) {
         const webhook = await this.createWebhook(channel.id) as { url: string; id: string };
 
+        // The URL is a credential (it embeds the webhook's own token), so the
+        // backfill stores it exactly like the connect path does: encrypted in
+        // the connector-secret envelope, with only the ref on the row. The
+        // platform document keeps `webhookId`, which is not a secret.
+        const webhookUrlRef = await connectorSecrets.put(
+          String(this.integrationId),
+          DISCORD_WEBHOOK_URL,
+          webhook.url,
+        );
+        await Integration.findByIdAndUpdate(this.integrationId, {
+          $set: { 'config.webhookUrlRef': webhookUrlRef },
+        });
         await DiscordIntegration.findByIdAndUpdate(
           (this.integration as IntegrationDoc).platformIntegration?._id,
-          {
-            webhookUrl: webhook.url,
-            webhookId: webhook.id,
-          },
+          { webhookId: webhook.id },
         );
       }
 
@@ -384,7 +407,15 @@ class DiscordService {
 
   async sendMessage(message: string): Promise<boolean> {
     try {
-      if (!(this.integration as IntegrationDoc).platformIntegration?.webhookUrl) {
+      // Resolved through the one precedence definition: the encrypted ref wins,
+      // the two legacy plaintext stores are fallbacks. An unresolvable ref throws
+      // rather than falling back — see utils/discordWebhookUrl.
+      const webhookUrl = await resolveDiscordWebhookUrl(
+        (this.integration as IntegrationDoc).config?.webhookUrlRef,
+        (this.integration as IntegrationDoc).platformIntegration?.webhookUrl,
+        (this.integration as IntegrationDoc).config?.webhookUrl,
+      );
+      if (!webhookUrl) {
         throw new Error('Webhook URL not found');
       }
 
@@ -401,7 +432,7 @@ class DiscordService {
       }
 
       const response = await fetch(
-        (this.integration as IntegrationDoc).platformIntegration?.webhookUrl as string,
+        webhookUrl,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
