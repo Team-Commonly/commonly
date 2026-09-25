@@ -213,6 +213,12 @@ describe('installable connector projection', () => {
     const failed = await InstallableInstallation.findOne({ installableId: 'telegram' });
     const inactive = await Integration.findOne({ installationId: String(failed._id) });
     expect(failed.status).toBe('error');
+    // `markProjectionFailure` stores the projector's own exception text verbatim
+    // — stack-adjacent detail like `connect ECONNREFUSED <addr>:443` — so it is
+    // the writer that must say `false`. The catalog row renders this field only
+    // when the flag is true, and the row belongs to the installer, not to us
+    // (TASK-131, vera 73848).
+    expect(failed.errorMessageUserFacing).toBe(false);
     expect(inactive.isActive).toBe(false);
     expect(inactive.config.connectCode).toBeUndefined();
 
@@ -595,8 +601,16 @@ describe('installable connector projection', () => {
 
     const reconciled = await sweep(new Date());
     expect(reconciled.errored).toBe(2);
-    expect((await InstallableInstallation.findById(installing._id)).status).toBe('error');
-    expect((await InstallableInstallation.findById(activating._id)).status).toBe('error');
+    const expiring = await InstallableInstallation.findById(installing._id);
+    const expired = await InstallableInstallation.findById(activating._id);
+    expect(expiring.status).toBe('error');
+    expect(expired.status).toBe('error');
+    // Both reasons are our own constants, written for the person reading the
+    // Connectors page, so the writer states that beside the message. Without it
+    // the catalog row falls back to the generic sentence and the operator loses
+    // the only sentence that says what to do (TASK-131).
+    expect(expiring.errorMessageUserFacing).toBe(true);
+    expect(expired.errorMessageUserFacing).toBe(true);
   });
 
   it('makes a missing active projection a retriable parent error', async () => {
@@ -609,6 +623,9 @@ describe('installable connector projection', () => {
     expect(reconciled.staleComponents).toBe(1);
     expect(parent.status).toBe('error');
     expect(parent.errorMessage).toBe('projection missing');
+    // The reconciler's own constant: a message written for a person, so it
+    // carries the flag the page requires before rendering (TASK-131).
+    expect(parent.errorMessageUserFacing).toBe(true);
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
 
     const retried = await install({ installableId: 'telegram', installedBy: userId, podId });

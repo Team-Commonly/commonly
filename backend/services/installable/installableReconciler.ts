@@ -1,5 +1,5 @@
 import type { IInstallableInstallation } from '../../models/InstallableInstallation';
-import { INSTALL_LOCK_TTL_MS } from './installableInstallationService';
+import { INSTALL_LOCK_TTL_MS, userFacingInstallationError } from './installableInstallationService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const InstallableInstallation = require('../../models/InstallableInstallation');
@@ -58,7 +58,7 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
 
     const result = await InstallableInstallation.updateOne(
       { _id: installation._id, status: installation.status, claimId },
-      { $set: { status: 'error', errorMessage: 'install lock expired' } },
+      { $set: userFacingInstallationError('install lock expired') },
     );
     errored += result.modifiedCount || 0;
   }
@@ -87,8 +87,7 @@ const sweepActiveInstallations = async (): Promise<{ staleComponents: number; cl
       { _id: installation._id, status: 'active' },
       {
         $set: {
-          status: 'error',
-          errorMessage: 'projection missing',
+          ...userFacingInstallationError('projection missing'),
           'components.$[].status': 'stale',
         },
       },

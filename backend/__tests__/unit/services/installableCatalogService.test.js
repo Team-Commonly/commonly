@@ -40,6 +40,46 @@ const githubTool = () => ({
 describe('installable catalog service', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it('carries the flag beside the message, so the page can tell a reason from an exception', async () => {
+    mockInstallables([
+      { installableId: 'telegram', name: 'Telegram', description: 'Telegram description' },
+      { installableId: 'slack', name: 'Slack', description: 'Slack description' },
+    ]);
+    InstallableInstallation.find.mockReturnValue(lean([
+      {
+        _id: installationId,
+        installableId: 'telegram',
+        status: 'error',
+        errorMessage: 'projection missing',
+        // The reconciler's own constant: a writer declared it readable.
+        errorMessageUserFacing: true,
+        targetId: userId,
+        installedBy: userId,
+        components: [],
+      },
+      {
+        _id: '6a8f6dc7a1dccf2e02f31099',
+        installableId: 'slack',
+        status: 'error',
+        // `markProjectionFailure`'s raw exception: the same field, a different
+        // kind of string, and the flag is what separates them.
+        errorMessage: 'connect ECONNREFUSED 10.4.4.7:443',
+        targetId: userId,
+        installedBy: userId,
+        components: [],
+      },
+    ]));
+    Integration.find.mockReturnValue(lean([]));
+
+    const catalog = await catalogFor(userId);
+    const byId = Object.fromEntries(catalog.installables.map((entry) => [entry.installableId, entry.installation]));
+
+    expect(byId.telegram.errorMessageUserFacing).toBe(true);
+    expect(byId.slack.errorMessageUserFacing).toBe(false);
+    // The message still travels — the page, not the mapper, decides what to show.
+    expect(byId.slack.errorMessage).toBe('connect ECONNREFUSED 10.4.4.7:443');
+  });
+
   it('returns provider readiness and the caller parent without leaking private fields', async () => {
     mockInstallables([
       { installableId: 'telegram', name: 'Telegram', description: 'Telegram description' },
@@ -90,6 +130,9 @@ describe('installable catalog service', () => {
         installation: {
           status: 'error',
           errorMessage: 'projection missing',
+          // The mapper hands over the provenance with the message, so the page
+          // never has to guess from the shape of the string (TASK-131).
+          errorMessageUserFacing: false,
           boundPodId: podId,
           claimedAt: '2026-09-05T00:00:00.000Z',
           updatedAt: '2026-09-05T00:01:00.000Z',

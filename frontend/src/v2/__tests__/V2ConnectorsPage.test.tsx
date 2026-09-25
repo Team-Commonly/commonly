@@ -530,6 +530,36 @@ describe('V2ConnectorsPage', () => {
       });
     };
 
+    it('TASK-131: a catalog failure prints the generic sentence, not the raw exception that wrote the row', async () => {
+      // The catalogue half reads `InstallableInstallation.errorMessage`, whose
+      // projection-failure writer stores `error.message` verbatim. Same rule as
+      // the pod-scoped half: a value in the field is not permission to render
+      // it, and the flag is absent on this fixture.
+      const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: raw } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText('Setup didn’t finish.')).length).toBeGreaterThan(0);
+      expect(screen.queryByText(raw)).toBeNull();
+    });
+
+    it('TASK-131: a catalog message written for a person still renders verbatim', async () => {
+      // The reconciler's own constants — `projection missing`, `install lock
+      // expired` — are written for the person reading this row, and the flag the
+      // builder sets beside them is what keeps them readable once the generic
+      // sentence became the fallback.
+      const reason = 'projection missing';
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: reason, errorMessageUserFacing: true } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+      expect(screen.queryByText('Setup didn’t finish.')).toBeNull();
+    });
+
     // Tools plan (Sam's option A, two lists): a tool Installable shares the
     // catalogue response but belongs to the Tools page, never to this one.
     it('a tool Installable in the catalogue never renders as a channel row', async () => {
@@ -680,7 +710,17 @@ describe('V2ConnectorsPage', () => {
 
     it('offers Retry on an error parent, posting the bound pod, and Remove in the aside', async () => {
       mockCatalog([entry({
-        installation: { status: 'error', errorMessage: 'projection missing', boundPodId: 'p2', updatedAt: new Date().toISOString(), components: [] },
+        // `projection missing` is the reconciler's own constant, and since
+        // TASK-131 it travels with the flag that says so: the row's line renders
+        // a message only when a writer declared it was written for a person.
+        installation: {
+          status: 'error',
+          errorMessage: 'projection missing',
+          errorMessageUserFacing: true,
+          boundPodId: 'p2',
+          updatedAt: new Date().toISOString(),
+          components: [],
+        },
       })]);
       axios.post.mockResolvedValue({ data: { status: 'installing' } });
       axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
