@@ -11,7 +11,7 @@ interface PgConfig {
   host: string | undefined;
   port: number | string;
   database: string | undefined;
-  ssl?: { rejectUnauthorized: boolean; ca: string } | false;
+  ssl?: { rejectUnauthorized: boolean; ca?: string } | false;
   // Pool sizing — see #454 (2026-05-26 incident). pg.Pool defaults to
   // max=10 and connectionTimeoutMillis=0 (wait forever). On any traffic
   // surge — e.g. the hourly summarizer fanning out 60 summary.request
@@ -67,12 +67,20 @@ const pgConfig: PgConfig = {
  *    `{ ca: '' }` was "configured". That is not a local-only shape: any instance
  *    whose CA secret materializes empty lands here, and the mode it lands in
  *    both forces TLS and gives Node nothing to verify against.
- * 3. A read error silently disabled SSL, which is the opposite of failing
- *    closed. Left as-is (a missing CA must not stop the pod from booting), but
- *    now it is reported with its reason rather than looking like a decision.
  *
  * Unset `PG_SSL_ENABLED` keeps the old default (on), so dev and prod — which set
  * it to "true" and mount a real CA — behave exactly as before.
+ *
+ * UNUSABLE CA DOES NOT MEAN NO TLS (sprint-review, msg 74244 on #1901 — their
+ * point, and correct). The first cut of this function returned `ssl: false` for
+ * a missing / empty / unreadable CA, which fixed the kind cluster by turning a
+ * loud failed handshake into a successful PLAINTEXT connection — a security
+ * direction change, in the file whose whole job is transport security. A
+ * configured `PG_SSL_CA_PATH` with an unusable file is a misconfiguration, not
+ * a request for plaintext: TLS stays required with no custom CA, so the
+ * handshake fails and readiness reports it. Unset `PG_SSL_CA_PATH` is the one
+ * plaintext path, matching the pre-existing behaviour, and `PG_SSL_ENABLED`
+ * remains the explicit way to ask for it.
  */
 export const resolvePgSsl = (
   // `Record<string, string | undefined>` rather than a narrow object type:
@@ -81,28 +89,37 @@ export const resolvePgSsl = (
   // whole contract anyway.
   env: Record<string, string | undefined>,
   readCaFile: (p: string) => { exists: boolean; content: string },
-): { ssl: false | { rejectUnauthorized: boolean; ca: string }; reason: string } => {
+): { ssl: false | { rejectUnauthorized: boolean; ca?: string }; reason: string } => {
   const enabled = String(env.PG_SSL_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
   if (!enabled) {
     return { ssl: false, reason: 'PG_SSL_ENABLED=false' };
   }
-  if (!env.PG_SSL_CA_PATH) {
+  const caPath = (env.PG_SSL_CA_PATH || '').trim();
+  if (!caPath) {
     return { ssl: false, reason: 'no PG_SSL_CA_PATH' };
   }
+  // The CA path is configured, so TLS was asked for; an unusable file is the
+  // misconfiguration, never a reason to go plaintext. Verified against the
+  // system store instead of a custom CA: a public CA still connects, anything
+  // else fails loudly here rather than reading chat in the clear.
+  const keepTls = (why: string) => ({
+    ssl: { rejectUnauthorized: true },
+    reason: `${why} — keeping TLS on with no custom CA instead of downgrading to plaintext`,
+  });
   let ca: { exists: boolean; content: string };
   try {
-    ca = readCaFile(env.PG_SSL_CA_PATH);
+    ca = readCaFile(caPath);
   } catch (err) {
     const e = err as { message?: string };
-    return { ssl: false, reason: `CA file unreadable at ${env.PG_SSL_CA_PATH}: ${e.message}` };
+    return keepTls(`CA file unreadable at ${caPath}: ${e.message}`);
   }
   if (!ca.exists) {
-    return { ssl: false, reason: `CA file not found at ${env.PG_SSL_CA_PATH}` };
+    return keepTls(`CA file not found at ${caPath}`);
   }
   if (!ca.content.trim()) {
-    return { ssl: false, reason: `CA file at ${env.PG_SSL_CA_PATH} is empty` };
+    return keepTls(`CA file at ${caPath} is empty`);
   }
-  return { ssl: { rejectUnauthorized: true, ca: ca.content }, reason: `CA loaded from ${env.PG_SSL_CA_PATH}` };
+  return { ssl: { rejectUnauthorized: true, ca: ca.content }, reason: `CA loaded from ${caPath}` };
 };
 
 const sslDecision = resolvePgSsl(process.env, (caPath) => {
