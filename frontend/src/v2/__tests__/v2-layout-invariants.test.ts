@@ -2120,3 +2120,138 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
 });
+
+// The landing hero demo (TASK-147) is the product's own four-column workspace
+// shrunk into a landing page, so its two failure modes are the ones jsdom
+// cannot see: content clipped by the stage's fixed 720px height once the
+// columns stack, and a transcript that collapses to nothing when the stage
+// stops being a fixed-height grid. Both were reasoned about from the CSS and
+// neither can be reproduced in a render test.
+describe('the landing hero demo (TASK-147)', () => {
+  const demo = read('../landing/demo-workspace.css');
+  const landing = read('../landing/v2-landing.css');
+  const landingPage = read('../landing/V2LandingPage.tsx');
+  const component = read('../landing/DemoWorkspace.tsx');
+
+  // demo-workspace.css carries exactly one phone block (v2.css carries many,
+  // which is why it needs a different helper there).
+  // Match an at-rule by its FULL text, never by a prefix: `@media (max-width:
+  // 760px)` is a prefix of the 641-760 query beside it, so a prefix match reads
+  // whichever the file happens to put first and the guard quietly asserts on the
+  // wrong block.
+  const mediaAt = (css: string, atRule: string): string => {
+    const at = css.indexOf(atRule);
+    if (at < 0) return '';
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    return css.slice(at, end + 1);
+  };
+
+  const phoneBlock = (css: string): string => mediaAt(css, '@media (max-width: 760px) {');
+
+  test('the demo is the workspace at its own canvas, not a smaller invention', () => {
+    expect(ruleBody(demo, '.v2-demo')).toContain('max-width: 1312px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 212px minmax(0, 1fr) 272px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('height: 720px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('background: var(--v2-page-bg)');
+    // The demo is the product's page, so it sits on the app's canvas colour.
+    expect(cssVariable(read('../v2.css'), '--v2-page-bg')).toBe('#eef0f4');
+  });
+
+  test('a phone stacks the columns and lets the stage grow instead of clipping them', () => {
+    const phone = phoneBlock(demo);
+    expect(phone).toContain('.v2-demo__stage');
+    expect(phone).toMatch(/\.v2-demo__stage \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+    // `height: auto` is the load-bearing half: .v2-demo has overflow:hidden, so
+    // a stage that kept 720px while the columns stacked would cut off whatever
+    // did not fit — silently, and only on a phone.
+    expect(phone).toMatch(/\.v2-demo__stage \{[^}]*height: auto;/);
+  });
+
+  test('the transcript keeps a floor on a phone so the thread is never empty', () => {
+    const phone = phoneBlock(demo);
+    // .v2-demo__log is flex:1 / min-height:0, which needs a sized parent; on a
+    // phone the stage is auto-height, so without this floor the hero's thread
+    // renders as a blank strip.
+    expect(phone).toMatch(/\.v2-demo__log \{[^}]*min-height: 300px;/);
+  });
+
+  test('the active pod row keeps its tint on a phone, where a later rule would clear it', () => {
+    const phone = phoneBlock(demo);
+    // ux-lead's 390 gate (#1855, at 62ceda24) measured the strip painting the
+    // open pod like its neighbours. The cause is order, not a missing rule: the
+    // phone row rule below has the same specificity as the desktop --active rule
+    // and comes later, so its surface colour wins and the rail loses its only
+    // position cue at exactly the width where the strip IS the navigation.
+    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod \{[^}]*background: var\(--v2-surface\);/);
+    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod--active \{[^}]*background: var\(--v2-accent-soft\);/);
+    // Order IS the defect, so order is what this guard has to see. The two rules
+    // are the same specificity (0,2,1), so the tint survives only because
+    // --active sits later in the block: move it above the row rule with every
+    // declaration unchanged and the active pod repaints white. sprint-review
+    // measured exactly that in a browser at 390 — 86 parsed rules either way, so
+    // it is the cascade, not a parse break — and this suite stayed green until
+    // this pair. (Textual presence alone cannot see it.)
+    const rowAt = phone.indexOf('.v2-root button.v2-demo__pod {');
+    const activeAt = phone.indexOf('.v2-root button.v2-demo__pod--active {');
+    expect(rowAt).toBeGreaterThanOrEqual(0);
+    expect(activeAt).toBeGreaterThan(rowAt);
+    // And hover cannot wipe it either — hover outranks the active rule, which is
+    // the opposite of the product, where .v2-pods__item:hover is weaker than
+    // .v2-root button.v2-pods__item--active.
+    expect(demo).toMatch(/\.v2-root button\.v2-demo__pod--active:hover \{[^}]*background: var\(--v2-accent-soft\);/);
+  });
+
+  test('the inspector is one column at 390 and two only from 641 up', () => {
+    // At 390 the two columns are ~156px against a board row that needs ~230, so
+    // every row title truncated to an ellipsis with nothing left to read
+    // (ux-lead, #1855 gate at 62ceda24).
+    const twoUp = mediaAt(demo, '@media (max-width: 760px) and (min-width: 641px)');
+    expect(twoUp).toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    expect(twoUp).toMatch(/\.v2-demo__needs \{[^}]*grid-column: 1 \/ -1;/);
+    // The phone block itself must not turn the inspector back into a grid: it
+    // covers widths the 640 rule below also covers, and it comes first, so the
+    // two-column layout would win at 390 as surely as it did before the fix.
+    expect(phoneBlock(demo)).not.toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns/);
+    // Below 641 it is the base flex column again, with needs hoisted to the top.
+    expect(ruleBody(demo, '.v2-demo__inspector')).toContain('flex-direction: column');
+    const oneUp = mediaAt(demo, '@media (max-width: 640px) {');
+    expect(oneUp).toMatch(/\.v2-demo__needs \{ order: -1; \}/);
+  });
+
+  test('the hero is the product, not the video it replaced', () => {
+    expect(landingPage).toContain('<DemoWorkspace />');
+    expect(landingPage).not.toContain('/media/demo-2x.mp4');
+    expect(landingPage).not.toContain('demoVideoRef');
+    // The demo explains its own honesty limit in its chrome, and the component
+    // renders that line unconditionally (the phone layout keeps it wrapping on
+    // its own row rather than letting it scroll out of the pod strip).
+    expect(component).toContain('sample workspace · replies are scripted');
+    expect(phoneBlock(read('../landing/demo-workspace.css'))).toMatch(
+      /\.v2-demo__sample \{[^}]*flex: 1 1 100%;/,
+    );
+  });
+
+  test('the active pod row follows the component, not the board that drew it filled', () => {
+    // ux-lead's carry note on #1841: the design board paints the active pod row
+    // cobalt-filled, while the live rail uses a tint plus a 3px accent mark.
+    // The build follows the component — a filled row here would be the landing
+    // showing a product that does not exist.
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).toContain('background: var(--v2-accent-soft)');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).not.toContain('background: var(--v2-accent);');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('width: 3px');
+    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('background: var(--v2-accent);');
+  });
+
+  test('the hero demo keeps the letterboxed screenshot chrome out of its card', () => {
+    // The feature rows still use the framed-screenshot chrome with window dots;
+    // the live demo is not a screenshot, so its card has no dots bar.
+    expect(ruleBody(landing, '.v2-landing__shot-bar')).toContain('height: 32px');
+    expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
+  });
+});

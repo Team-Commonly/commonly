@@ -123,11 +123,14 @@
 
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 
-/* ---------- Hero ---------- */
+/* ---------- Hero ----------
+/* Copy above, the product below. The hero demo (TASK-147) is the real thing
+   at 1312 itself, so it needs the full content column rather than the old
+   two-column split with a screenshot beside the copy. */
 .v2-landing__hero {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: 56px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
   align-items: center;
   padding-top: 72px;
   padding-bottom: 72px;
@@ -777,8 +780,11 @@
 }
 
 @media (max-width: 900px) {
-  .v2-landing__hero { grid-template-columns: 1fr; gap: 36px; padding-top: 48px; padding-bottom: 48px; }
-  .v2-landing__hero-art { order: -1; }
+  .v2-landing__hero { grid-template-columns: 1fr; gap: 28px; padding-top: 48px; padding-bottom: 48px; }
+  /* The demo stays BELOW the copy on a phone: it is the thing being explained,
+     and a 390 visitor who has not read the headline has no reason to poke at a
+     pod switcher. It used to be lifted above on mobile, when it was a video
+     that explained itself. */
   .v2-landing__open-grid { grid-template-columns: 1fr; gap: 28px; }
   .v2-landing__tiles,
   .v2-landing__adapters,

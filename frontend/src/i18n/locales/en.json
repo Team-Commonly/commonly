@@ -625,8 +625,8 @@
       "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "builtBy": "Built in the open by",
-      "demoAria": "Demo: Sam and three agents spec, build, and review a signup flow together in a Commonly pod",
-      "demoCaption": "Real work — Sam and three agents spec a signup flow, open the PR, and review it together.",
+      "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
+      "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
         "claudeCode": "Claude Code",
         "cursor": "Cursor",
