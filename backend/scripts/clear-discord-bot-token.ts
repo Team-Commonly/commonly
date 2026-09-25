@@ -16,15 +16,27 @@
  * Ordering matters, and it is the reason this is a separate step: the pre-#1889
  * build still READ the stored copy on two paths (`discordService.ts` fetchMessages
  * and getChannels, with no env fallback). Clearing before that build is replaced
- * would break those paths on the old image. Sequence: merge -> deploy ->
- * acceptance read (`GET /api/agents/runtime/pods/:podId/integrations/:integrationId/messages`
- * returns 200 where it 400s today) -> this script.
+ * would break those paths on the old image. Sequence: merge -> deploy -> this
+ * script.
+ *
+ * The acceptance for that deploy is the test tier (the resolver's own unit test
+ * pins the precedence; four of the seven call sites pin the call) plus one named
+ * future event: the next real Discord connect takes the create path #1889
+ * changed, and its row will not carry a copy. It is deliberately NOT the
+ * agent-runtime messages route. That route returns 403 first (pod match, then the
+ * `integration:messages:read` scope) and otherwise 404 from a `findOne` requiring
+ * `config.agentAccessEnabled: true`, which no live row sets — all of it ABOVE the
+ * resolver, so the route reads identically on both revisions and discriminates
+ * nothing. Measured 2026-09-25 after it was proposed as the instrument; the rule
+ * this earned is review-checklist rule 36.
  *
  * Scope is deliberately narrow. It touches `discord_integrations.botToken` only.
  * `Integration.config.botToken` is a different store, in a different collection,
- * that was never written (measured live: absent on all three discord rows); the
- * resolver still consults it as a fallback, so this script reports on it and
- * never writes it.
+ * that holds no secret: measured live 2026-09-25, its two discord rows carry the
+ * KEY with an empty value, which is the shape the live bind writes
+ * (`DiscordCallback.tsx` posts `botToken: ''`). The resolver still consults it as
+ * a fallback, so this script reports on it — secrets and empty keys counted
+ * apart, because `$exists` answers the wrong question — and never writes it.
  *
  * Idempotent: a second run finds nothing to clear. Run with `--apply` to write;
  * the default is a dry run that logs each distinct copy as a digest, never the
@@ -38,8 +50,13 @@ const mongoose = require('mongoose');
 const DISCORD_COLLECTION = 'discord_integrations';
 const INTEGRATION_COLLECTION = 'integrations';
 
-/** A stored copy is a non-empty string. Absent, null and '' are not copies. */
-const STORED_COPY = { botToken: { $type: 'string', $ne: '' } };
+/**
+ * A delivered copy is a non-empty string. Absent, `null` and `''` are not
+ * copies, in either store — one definition, used for the write predicate and
+ * for the count of the other store, so the two cannot drift apart again.
+ */
+const NON_EMPTY_STRING = { $type: 'string', $ne: '' };
+const STORED_COPY = { botToken: NON_EMPTY_STRING };
 
 export interface DiscordBotTokenClearResult {
   /** Documents holding a non-empty stored copy. */
@@ -48,8 +65,15 @@ export interface DiscordBotTokenClearResult {
   cleared: number;
   /** One digest per candidate: identifies a copy without reproducing it. */
   digests: string[];
-  /** `Integration.config.botToken` holders — reported, never written. */
+  /** `Integration.config.botToken` holding a non-empty string — a secret at rest, reported, never written. */
   integrationConfigCopies: number;
+  /**
+   * `Integration.config.botToken` present as a KEY with no value.
+   * The live Discord bind writes exactly this shape (`botToken: ''`,
+   * `DiscordCallback.tsx`), so it is the normal state of that store and not a
+   * finding — which is why it is reported apart from the secrets above.
+   */
+  integrationConfigEmptyHolders: number;
 }
 
 const describeCopy = (token: string): string => {
@@ -67,12 +91,27 @@ export async function clearDiscordBotTokenCopies(
   const digests = rows.map((row: { botToken: string }) => describeCopy(row.botToken));
 
   // The other store. Never written by any writer, and still the resolver's
-  // fallback, so this count is a report rather than a target: a non-zero value
-  // means some row's authority is a config field, which is worth knowing before
-  // the env token is the only source anyone has.
-  const integrationConfigCopies = await mongoose.connection
-    .collection(INTEGRATION_COLLECTION)
-    .countDocuments({ type: 'discord', 'config.botToken': { $exists: true } });
+  // fallback, so these counts are a report rather than a target: a non-zero
+  // SECRET count means some row's authority is a config field, which is worth
+  // knowing before the env token is the only source anyone has.
+  //
+  // Reported as two numbers because `$exists` is a KEY test, not a value test,
+  // and one `$exists` count answers the wrong question here. Measured on the
+  // production store 2026-09-25: a single `$exists` count read **2** on a run
+  // whose prediction was 0, both row values being `''` — the shape the live
+  // bind writes — so an empty key looked like an unaccounted credential and
+  // stopped a correct run. Secrets and empty keys are counted apart.
+  const integrationCollection = mongoose.connection.collection(INTEGRATION_COLLECTION);
+  const integrationConfigCopies = await integrationCollection.countDocuments({
+    type: 'discord', 'config.botToken': NON_EMPTY_STRING,
+  });
+  const integrationConfigKeys = await integrationCollection.countDocuments({
+    type: 'discord', 'config.botToken': { $exists: true },
+  });
+  const integrationConfigEmptyHolders = Math.max(
+    0,
+    integrationConfigKeys - integrationConfigCopies,
+  );
 
   if (!apply) {
     return {
@@ -80,6 +119,7 @@ export async function clearDiscordBotTokenCopies(
       cleared: 0,
       digests,
       integrationConfigCopies,
+      integrationConfigEmptyHolders,
     };
   }
 
@@ -89,8 +129,33 @@ export async function clearDiscordBotTokenCopies(
     cleared: result.modifiedCount,
     digests,
     integrationConfigCopies,
+    integrationConfigEmptyHolders,
   };
 }
+
+/**
+ * The operator-facing report, returned as lines rather than printed inline so the
+ * wording itself is witnessable: the misleading line here — a single count of
+ * `Integration.config.botToken` "holders", answered by `$exists` — is what made a
+ * correct run look anomalous on 2026-09-25 and stopped an `--apply` that was
+ * about to be right.
+ */
+export const formatReport = (
+  result: DiscordBotTokenClearResult,
+  apply: boolean,
+): string[] => {
+  const lines = [
+    `[clear-discord-bot-token] ${apply ? 'APPLY' : 'DRY-RUN'} `
+    + `candidates=${result.candidates} cleared=${result.cleared}`,
+    ...result.digests.map((copy) => `  stored copy ${copy}`),
+    '[clear-discord-bot-token] Integration.config.botToken secrets at rest '
+    + `(reported, never written): ${result.integrationConfigCopies}`,
+    '[clear-discord-bot-token] Integration.config.botToken empty holders '
+    + `(a key with no value; the live bind writes ''): ${result.integrationConfigEmptyHolders}`,
+  ];
+  if (!apply) lines.push('DRY RUN — nothing written. Re-run with --apply.');
+  return lines;
+};
 
 async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
@@ -103,16 +168,7 @@ async function main(): Promise<void> {
   await mongoose.connect(mongoUri);
   try {
     const result = await clearDiscordBotTokenCopies({ apply });
-    console.log(
-      `[clear-discord-bot-token] ${apply ? 'APPLY' : 'DRY-RUN'} `
-      + `candidates=${result.candidates} cleared=${result.cleared}`,
-    );
-    result.digests.forEach((copy) => console.log(`  stored copy ${copy}`));
-    console.log(
-      '[clear-discord-bot-token] Integration.config.botToken holders '
-      + `(reported, never written): ${result.integrationConfigCopies}`,
-    );
-    if (!apply) console.log('DRY RUN — nothing written. Re-run with --apply.');
+    formatReport(result, apply).forEach((line) => console.log(line));
   } finally {
     await mongoose.disconnect();
   }

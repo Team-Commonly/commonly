@@ -7,6 +7,7 @@ import mongoose from 'mongoose';
 
 const {
   clearDiscordBotTokenCopies,
+  formatReport,
 } = require('../../../scripts/clear-discord-bot-token');
 const {
   setupMongoDb,
@@ -113,21 +114,64 @@ describe('clear-discord-bot-token', () => {
     expect(second.digests).toEqual([]);
   });
 
-  it('reports the other store and never writes it', async () => {
+  it('reports the other store as secrets and empty keys apart, and never writes it', async () => {
     await seedStoredCopies();
+    // The live shapes, measured on the production store 2026-09-25: one row
+    // holding a secret, one carrying the KEY with an empty value — which is what
+    // the live bind writes (`DiscordCallback.tsx` posts `botToken: ''`) — and one
+    // without the key at all. A single `$exists` count reported the empty key as
+    // a holder (it read 2 on a run whose prediction was 0) and turned a normal
+    // state into an unaccounted credential.
     await integrationRows().insertMany([
       { type: 'discord', scope: 'user', config: { botToken: COPY_A, chatId: 'c1' } },
-      { type: 'discord', scope: 'user', config: { chatId: 'c2' } },
+      { type: 'discord', scope: 'user', config: { botToken: '', chatId: 'c2' } },
+      { type: 'discord', scope: 'user', config: { chatId: 'c3' } },
     ]);
 
     const dry = await clearDiscordBotTokenCopies({ apply: false });
     const applied = await clearDiscordBotTokenCopies({ apply: true });
 
     expect(dry.integrationConfigCopies).toBe(1);
+    expect(dry.integrationConfigEmptyHolders).toBe(1);
     expect(applied.integrationConfigCopies).toBe(1);
+    expect(applied.integrationConfigEmptyHolders).toBe(1);
     // Integration.config is the resolver's fallback read, not a copy this step
-    // owns: it must survive the clear.
+    // owns: both shapes must survive the clear, including the empty key.
     expect(await integrationRows().countDocuments({ 'config.botToken': COPY_A })).toBe(1);
+    expect(await integrationRows().countDocuments({ 'config.botToken': '' })).toBe(1);
+  });
+
+  it('prints the other store as two labelled lines, not one count', () => {
+    const lines = formatReport({
+      candidates: 3,
+      cleared: 0,
+      digests: ['f8cbe9180815 (72 chars)'],
+      integrationConfigCopies: 0,
+      integrationConfigEmptyHolders: 2,
+    }, false);
+
+    // The line that misled the operator on 2026-09-25 said "holders", was answered
+    // by `$exists`, and printed 2 for two empty keys. Secrets and keys are now two
+    // lines with different nouns, and the empty-key line says why it can be normal.
+    expect(lines).toContain(
+      '[clear-discord-bot-token] Integration.config.botToken secrets at rest '
+      + '(reported, never written): 0',
+    );
+    expect(lines).toContain(
+      '[clear-discord-bot-token] Integration.config.botToken empty holders '
+      + "(a key with no value; the live bind writes ''): 2",
+    );
+    expect(lines.filter((line) => line.includes('holders'))).toHaveLength(1);
+    expect(lines[0]).toBe('[clear-discord-bot-token] DRY-RUN candidates=3 cleared=0');
+    expect(lines[1]).toBe('  stored copy f8cbe9180815 (72 chars)');
+    expect(lines).toContain('DRY RUN — nothing written. Re-run with --apply.');
+    expect(formatReport({
+      candidates: 3,
+      cleared: 3,
+      digests: [],
+      integrationConfigCopies: 0,
+      integrationConfigEmptyHolders: 0,
+    }, true)).not.toContain('DRY RUN — nothing written. Re-run with --apply.');
   });
 
   it('identifies each copy without reproducing it', async () => {
