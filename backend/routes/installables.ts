@@ -18,6 +18,10 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
+const { SLACK_BOT_TOKEN } = require('../services/connectorSecretKinds');
+// eslint-disable-next-line global-require
+const connectorDeliveryFailures = require('../services/connectorDeliveryFailureService');
+// eslint-disable-next-line global-require
 const {
   catalogFor,
   providerReadiness,
@@ -106,6 +110,17 @@ const ownedSlackIntegration = async (userId: string): Promise<{ installation: an
   return integration ? { installation, integration } : null;
 };
 
+/**
+ * Whether the OAuth callback has stored a Slack bind on this row.
+ *
+ * `config.pendingBind` is a nested schema path, so a hydrated document carries
+ * it as `{}` even when the stored row has none: its truthiness says nothing.
+ * Judge by the secret reference the callback always writes into a bind. The
+ * `$exists` filters in the CAS updates below read the stored row and are right
+ * as they are.
+ */
+const hasPendingBind = (config: any): boolean => Boolean(config?.pendingBind?.botTokenRef);
+
 const slackError = (res: Res, status: number, code: string, error: string): void => {
   res.status(status).json({ code, error });
 };
@@ -166,7 +181,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
     if (!owned.integration.isActive) {
       return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
     }
-    if (owned.integration.config?.chatId || owned.integration.config?.pendingBind) {
+    if (owned.integration.config?.chatId || hasPendingBind(owned.integration.config)) {
       return slackError(res, 409, 'slack_already_authorized', 'Slack is already awaiting confirmation or connected.');
     }
     // OAuth state expires after ten minutes. Re-mint it here, rather than
@@ -309,7 +324,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
     const { accessToken, ...binding } = await exchangeCode(code);
     const dm = await new SlackApi(accessToken).openConversation(binding.slackUserId);
     if (!dm.ok || !dm.channel?.id) throw new SlackOAuthExchangeError();
-    const botTokenRef = await connectorSecrets.put(String(integration._id), 'slack', accessToken);
+    const botTokenRef = await connectorSecrets.put(String(integration._id), SLACK_BOT_TOKEN, accessToken);
     const committed = await Integration.findOneAndUpdate(
       {
         _id: integration._id,
@@ -372,7 +387,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   const owned = await ownedSlackIntegration(userId);
   if (!owned) return slackError(res, 404, 'slack_installation_not_found', 'Slack installation not found.');
   const pending = owned.integration.config?.pendingBind;
-  if (!pending) return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to confirm.');
+  if (!hasPendingBind(owned.integration.config)) {
+    return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to confirm.');
+  }
   if (new Date(pending.expiresAt) <= new Date()) {
     const cleared = await Integration.findOneAndUpdate(
       { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
@@ -401,6 +418,12 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     {
       $set: {
         status: 'connected',
+        // A reconnect is the only thing that proves this connector works again,
+        // so it is the only thing that clears the reason an earlier flip left on
+        // the row — the same shape as the Telegram bind (wren 73838). The flag
+        // goes with the message: it is what the page reads before rendering it.
+        errorMessage: null,
+        errorMessageUserFacing: false,
         'config.teamId': pending.teamId,
         'config.teamName': pending.teamName,
         'config.slackUserId': pending.slackUserId,
@@ -420,10 +443,25 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   try {
     const token = await connectorSecrets.get(pending.botTokenRef);
     const livePod = await Pod.findById(confirmed.podId).select('name').lean();
-    await new SlackApi(token).postMessage(
+    const sent = await new SlackApi(token).postMessage(
       pending.chatId,
-      `[${String(livePod?.name || 'Commonly')}] connected`,
+      // Same escape the relay uses, and for the same reason: the pod name is
+      // owner-authored text landing in mrkdwn.
+      `[${SlackApi.escapeSlackMrkdwn(livePod?.name || 'Commonly')}] connected`,
     );
+    // The marker goes to the chat this confirm just stored, so by 73777's own
+    // test this is a bound-chat send — the twin of the Telegram bind
+    // confirmation. A permanent refusal means the connector is bound to a DM
+    // the bot cannot post in, which is exactly the state the page has to name
+    // (wren 73837). It still cannot cost a good bind: only channel_not_found,
+    // not_in_channel and is_archived classify as permanent.
+    if (await connectorDeliveryFailures.noteBoundChatDeliveryFailure(confirmed, pending.chatId, sent)) {
+      const flipped = await Integration.findById(confirmed._id);
+      return res.json({
+        status: flipped?.status ?? 'error',
+        integration: publicIntegration(flipped || confirmed),
+      });
+    }
   } catch (error) {
     console.warn('[slack-oauth] connected marker could not be sent:', (error as Error).message);
   }
@@ -436,7 +474,9 @@ router.post('/slack/reject', writeIntegrationsRateLimit, auth, async (req: AuthR
   const owned = await ownedSlackIntegration(userId);
   if (!owned) return slackError(res, 404, 'slack_installation_not_found', 'Slack installation not found.');
   const pending = owned.integration.config?.pendingBind;
-  if (!pending) return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to reject.');
+  if (!hasPendingBind(owned.integration.config)) {
+    return slackError(res, 409, 'slack_bind_missing', 'There is no Slack authorization to reject.');
+  }
   const rejected = await Integration.findOneAndUpdate(
     { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
     { $unset: { 'config.pendingBind': 1 } },

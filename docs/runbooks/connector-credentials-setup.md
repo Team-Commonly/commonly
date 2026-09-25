@@ -389,3 +389,92 @@ For any connector credential that lands in `api-keys`:
 6. Only then the provider-side step that depends on the deployed secret
    (Slack `request_url`; GitHub Connection create; Discord webhook enable).
 7. Post outcomes to the pod record by name and length, never by value.
+8. Rotating the ring is not a stand-up: the order is §5 — append, flip the
+   active id, rewrap to zero, then drop the old key.
+
+---
+
+## 5. Rotating the connector-secret key ring
+
+**Use this when** the value behind `commonly-dev-connector-secret-keys` has to
+change: a scheduled rotation, or a key you believe was exposed. §2.4 has the
+format and the refusal modes; this section is the **order**, which is the part
+that loses data.
+
+Every `ConnectorSecret` row is encrypted under the key id it was written with,
+and it is decrypted with **the ring as it stands**. So the ring value is
+**appended to, never replaced**: replace `k1:…` with `k2:…` and `k1` leaves the
+ring while rows still name it, so those rows stop decrypting and whatever reads
+one fails at use rather than at boot. `CONNECTOR_SECRET_ACTIVE_KEY` is the same
+trap one step later — it must name a key present in the ring or `parseKeyRing`
+refuses (§2.4), which is a failing connector instead of a failing start.
+
+Rotation is four steps in this order. It is the order the rewrap script's own
+header states, which is why that header exists:
+
+1. **Append the new key.** Generate it as in §2.4 and set
+   `commonly-dev-connector-secret-keys` to `k1:<old>,k2:<new>`, leaving
+   `commonly-dev-connector-secret-active-key` on `k1`. Force-sync (§0.1) or wait
+   out the 1h ESO refresh, then confirm from the pod that the ring names two ids
+   — by count, never by value.
+2. **Point the active key at the new id.** Set
+   `commonly-dev-connector-secret-active-key` to `k2` and force-sync again. New
+   writes encrypt under `k2`; existing rows still decrypt, because `k1` is still
+   in the ring. Nothing has been rewritten yet.
+
+   Before going on, confirm from the pod that the active id is now `k2`:
+
+   ```bash
+   kubectl exec -n <namespace> deploy/backend -- printenv CONNECTOR_SECRET_ACTIVE_KEY
+   ```
+
+   Until that reads `k2`, step 3 has nothing to do — and reports success for that
+   reason. (`CONNECTOR_SECRET_ACTIVE_KEY` is the key **id**, a label;
+   `CONNECTOR_SECRET_KEYS` holds the ring and is never printed, here or anywhere
+   else on this page.)
+3. **Rewrap until it reports zero.** In the backend pod, which carries
+   `MONGO_URI` and the ring (the script exits if either is missing):
+
+   ```bash
+   # dry run: lists the rows still under a non-active key
+   kubectl exec -n <namespace> deploy/backend -- node dist/scripts/rewrap-connector-secrets.js
+   # re-encrypt them under the active key
+   kubectl exec -n <namespace> deploy/backend -- node dist/scripts/rewrap-connector-secrets.js --apply
+   ```
+
+   The dry run's count is the **pre-state** — note it. The acceptance check is
+   the apply line, and it is **two numbers**: `rewrapped <the dry-run count>;
+   remaining under non-active keys: 0`. `remaining: 0` on its own does not
+   distinguish a completed rewrap from one that never started — it is satisfied
+   by "everything was rewrapped" and by "nothing needed it", and the second one
+   is the disaster: the operator goes on to step 4 and drops `k1` while the rows
+   still name it. A `rewrapped 0` against a non-zero dry-run count means the pod
+   is still on the old active id; go back to step 2.
+
+   The dry run is also the weaker of the two instruments. It selects on `keyId`
+   and never decrypts, so a row whose key has already left the ring still reads
+   as merely "needing rewrap" — the reassuring output is not evidence that the
+   old key is still present. The loss surfaces only when `--apply` calls
+   `rewrap()`, which decrypts before it writes (`getKey` throws
+   `ConnectorSecretKeyMissing` first): fail-safe, nothing is written, but that is
+   also why step 1 confirms the ring names both ids.
+
+   Re-running is safe: `rewrap()` returns early on a row already under
+   the active key, and compare-and-sets every rewrite it does make.
+4. **Only now drop the old key.** Remove `k1` from
+   `commonly-dev-connector-secret-keys` and force-sync. Dropping it at step 1 or
+   2 instead is the failure this section exists to prevent.
+
+Two properties of this surface are worth knowing before you start, because both
+are quiet rather than loud:
+
+- **`optional: true` on both env refs** (`templates/core/backend-deployment.yaml`)
+  means a ring that disappears from the `api-keys` mapping still starts the pod —
+  with no ring. §0.1's freeze does not cover this pair: it is a *missing*
+  `remoteRef` that fails the sync, and an `optional: true` ref that resolves to
+  nothing is simply absent. That is recoverable for as long as Secret Manager
+  holds the value, and invisible until something reads a connector credential.
+- **`api-keys` maps both at `latest`** (no `version:` on the `remoteRef`), so the
+  one irreversible act is destroying the Secret Manager version carrying the old
+  id: the key material is then gone, and rows naming it can never be rewrapped.
+  Append, rewrap to zero, destroy — in that order.

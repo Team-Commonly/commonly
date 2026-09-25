@@ -1778,6 +1778,46 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
+  it('nothing in v2.css hides the connector row\'s reason, at 390 or anywhere (eng lead 73726, vera 73776)', () => {
+    // Show is the default. This rule used to hide __detail for every state except
+    // two enumerated ones, so the not-yet row that IS available
+    // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
+    // "read, or read and write" and a stranger saw a "not granted" kicker with
+    // nothing under it. The two reason strings are already render-asserted in
+    // V2ConnectorTools.test.tsx:280/:317 — this is the half jsdom cannot see.
+    // If one row ever needs the detail hidden on phones, add that selector to the
+    // list below on purpose rather than re-introducing an exception chain.
+    const NAMED_DETAIL_HIDE_CASES: string[] = [];
+    // Scope is the whole sheet, deliberately rather than by accident. Three
+    // rounds of this guard each picked the wrong media set — unbounded, then
+    // 760-only, then every `max-width >= 390` — because a 390 phone matches
+    // `max-width` blocks *and* `@media (hover: none)` / `(pointer: coarse)`
+    // (vera 73776). The claim is not about a viewport: no rule in this sheet may
+    // hide the reason, and NAMED_DETAIL_HIDE_CASES is the deliberate exception
+    // list. So this reads the whole file and no media-picking predicate is left
+    // to get wrong.
+    //
+    // Controls first, so an empty or mis-typed scan cannot make the assertion
+    // below vacuous: the sheet was read, it carries the class, and it carries the
+    // not-yet row's details wrapper.
+    expect(v2).toContain('.v2-connector-row__detail');
+    expect(v2).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
+    // Every hiding mechanism a declaration can use, not just the one that
+    // caused this. `display:none` was the defect; `visibility:hidden` is the
+    // same loss through a different property, and neither hides the rule from a
+    // reader who greps for the class.
+    //
+    // The class test below is a substring on purpose (vera 73782):
+    // `.v2-connector-row__detail` also matches `.v2-connector-row__details`, the
+    // wrapper the reason sits inside, and hiding that wrapper loses the reason
+    // just as completely. Do not tighten it to an exact-selector match.
+    const hidingRules = v2
+      .split('}')
+      .filter((rule) => rule.includes('.v2-connector-row__detail') && /(display:\s*none|visibility:\s*hidden)/.test(rule))
+      .filter((rule) => !NAMED_DETAIL_HIDE_CASES.some((named) => rule.includes(named)));
+    expect(hidingRules).toEqual([]);
+  });
+
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
     // Direction A (2026-09-19): three tracks — the age moved into the kicker.
     expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
@@ -1798,8 +1838,39 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px)');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
     const connectors = ruleBody(v2, '.v2-connectors');
-    expect(connectors).toContain('min-height: calc(100vh - 86px)');
+    // TASK-156, inverting #1547: a list card is as tall as its rows. The page
+    // scrolls; no card holds empty space. ux-lead measured 564px of card around
+    // 262px of rows at 1200, and a Tools card of 718px around one 86px row with
+    // the GitHub grant open.
+    expect(connectors).not.toContain('min-height');
     expect(connectors).not.toContain('max-width');
+    const connectorsContent = ruleBody(v2, '.v2-connectors__content');
+    expect(connectorsContent).toContain('align-items: start');
+    expect(connectorsContent).not.toContain('flex: 1');
+    expect(ruleBody(v2, '.v2-connectors__rows')).not.toContain('flex: 1');
+    // sprint-review's #1869 note: ruleBody reads the FIRST line-start match, so a
+    // second `.v2-connectors { min-height: … }` written later in the sheet passes
+    // every assertion above while the browser paints the stretch again — equal
+    // specificity, later rule wins. Scan EVERY declaration block by selector, so
+    // position cannot hide one. Matching is on the last compound's class tokens
+    // (so `.v2-root .v2-connectors` counts, and `.v2-connectors__content` does
+    // not); a rule scoped some other way is still not covered.
+    const layoutBlocks = (className: string) =>
+      Array.from(v2.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+        .filter(([, sels]) =>
+          sels
+            .split(',')
+            .some((sel) => (sel.trim().split(/\s+/).pop() ?? '').split('.').includes(className)),
+        )
+        .map(([, , body]) => body);
+    // Non-vacuous: each selector's scan must still find the rule it is about.
+    for (const cls of ['v2-connectors', 'v2-connectors__content', 'v2-connectors__rows']) {
+      expect(layoutBlocks(cls).length).toBeGreaterThan(0);
+    }
+    // A list card is as tall as its rows wherever the rule is written.
+    expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
+    expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
+    expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
@@ -1833,15 +1904,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-tools__trail-line')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-tools__count strong')).toContain('font-size: 22px');
     expect(ruleBody(v2, '.v2-tools__count span')).toContain('font-size: 11px');
-    expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; \}/);
     expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\); gap: 24px;/);
-    expect(connectorCss).toMatch(/@media \(max-width: 1010px\) \{[\s\S]*?\.v2-connectors__rows \{ flex: none; \}/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connector-row \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\);/);
-    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
+    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ gap: 24px; margin: -12px -18px 0;/);
+    // The Tools list opt-out is dead once nothing stretches. Matched as a regex on
+    // the Connectors section, not through ruleBody: with the rule gone ruleBody
+    // returns '' and would have passed this assertion without reading anything.
+    expect(connectorCss).not.toMatch(/\.v2-tools \{[^}]*flex: none/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
-    expect(connectorCss).toMatch(/\.v2-connector-row:not\(.v2-connector-row--dead\):not\(.v2-connector-row--not-enabled\) \.v2-connector-row__detail \{ display: none; \}/);
+    // The phone block used to hide __detail behind an exception list — whose
+    // presence was pinned HERE, which is why the shape survived until a third
+    // state fell outside it (eng lead 73726). The inverted shape (show, hide no
+    // row) is pinned by the test above this one; the enumerating rule is gone.
+    expect(connectorCss).not.toContain('v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail');
   });
 
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
@@ -2384,5 +2461,371 @@ describe('the landing hero demo (TASK-147)', () => {
     // the live demo is not a screenshot, so its card has no dots bar.
     expect(ruleBody(landing, '.v2-landing__shot-bar')).toContain('height: 32px');
     expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
+  });
+
+  test('a row refusal takes a line of its own, under the row that raised it (Row C)', () => {
+    // A refused Slack authorize now renders inside its row (V2ConnectorsPage).
+    // jsdom cannot see this: the row is a 140px / minmax(150px, 1fr) / 120px
+    // grid, so without the span the message would be squeezed into the name or
+    // act track instead of reading as one line — the TASK-029 failure mode.
+    const v2 = read('../v2.css');
+    const refusal = ruleBody(v2, '.v2-connector-row__refusal');
+    expect(refusal).toContain('grid-column: 1 / -1');
+    expect(refusal).toContain('overflow-wrap: anywhere');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The authenticated shell's height chain (TASK-157).
+//
+// Both defects this block covers are cascade outcomes, not missing text: the
+// desktop one is the content div auto-placing into the `auto` banner row instead
+// of the `1fr` row, and the phone one is a 0,2,0 `height: 100vh` sitting LATER in
+// the sheet than every 0,2,0 `height: 100%` that should bound it. Presence cannot
+// see either — `not.toContain('100vh')` passes while a duplicate rule at EOF
+// repaints the phone, and `toContain('grid-row: 2')` passes while a later rule
+// resets it to auto. So this block parses the sheet into rules carrying their
+// at-rule context, specificity and document order, and asserts on the WINNER of
+// the small cascade it can resolve — the same move as the #1868 specificity
+// comparison, one level up. (ux-lead measured the defect in a browser at 390 and
+// 1200; jsdom has no layout engine, so what is pinned here is the cascade, never
+// the rendered box.)
+//
+// Stated limits, so the next reader does not over-read this: the parser handles
+// simple selectors, max-/min-width conditions, and the `height` / `grid-row`
+// declarations asserted on. It does not resolve percentages against containing
+// blocks, does not model `!important`, and treats unmodelled media features
+// (hover, prefers-reduced-motion) as applying — the conservative direction for a
+// guard whose job is to catch a rule that WINS. The chain matcher at the end of
+// this block walks the descendant axis for class-only compounds, and treats `>`
+// as descendant; every chain it is asked about is single-child, so the two agree.
+describe('the authenticated shell keeps its panes inside the banner row (TASK-157)', () => {
+  const v2 = read('../v2.css');
+
+  type ParsedRule = {
+    selector: string;
+    body: string;
+    media: string[];
+    order: number;
+    classes: string[];
+    specificity: number[];
+  };
+
+  const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const classTokens = (compound: string): string[] => (
+    compound.match(/\.[A-Za-z0-9_-]+/g) ?? []
+  ).map((token) => token.slice(1));
+
+  const lastCompound = (selector: string): string => (
+    selector.split(/\s+|>/).filter(Boolean).pop() ?? ''
+  );
+
+  // (ids, classes/attributes/pseudo-classes, elements). Enough for this sheet:
+  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0 and no id or `!important` is
+  // involved.
+  const specificityOf = (selector: string): number[] => {
+    const ids = (selector.match(/#[A-Za-z0-9_-]+/g) ?? []).length;
+    const classes = (selector.match(/\.[A-Za-z0-9_-]+/g) ?? []).length
+      + (selector.match(/\[[^\]]*\]/g) ?? []).length
+      + ((selector.match(/:(?!:)[a-z-]+/g) ?? []).length);
+    const elements = (selector
+      .replace(/::?[a-z-]+(\([^)]*\))?/g, ' ')
+      .replace(/[.#][A-Za-z0-9_-]+/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .match(/\b[a-z][a-z0-9-]*\b/g) ?? []).length;
+    return [ids, classes, elements];
+  };
+
+  const parseCascade = (css: string): ParsedRule[] => {
+    const rules: ParsedRule[] = [];
+    let order = 0;
+    const walk = (text: string, media: string[]): void => {
+      let i = 0;
+      while (i < text.length) {
+        const open = text.indexOf('{', i);
+        if (open < 0) return;
+        const head = text.slice(i, open).trim();
+        let depth = 1;
+        let j = open + 1;
+        while (j < text.length && depth > 0) {
+          if (text[j] === '{') depth += 1;
+          else if (text[j] === '}') depth -= 1;
+          j += 1;
+        }
+        const inner = text.slice(open + 1, j - 1);
+        if (head.startsWith('@')) {
+          walk(inner, media.concat([head]));
+        } else {
+          const parts = head.split(',');
+          let p = 0;
+          while (p < parts.length) {
+            const selector = parts[p].trim();
+            if (selector) {
+              rules.push({
+                selector,
+                body: inner,
+                media,
+                order,
+                classes: classTokens(lastCompound(selector)),
+                specificity: specificityOf(selector),
+              });
+              order += 1;
+            }
+            p += 1;
+          }
+        }
+        i = j;
+      }
+    };
+    walk(stripComments(css), []);
+    return rules;
+  };
+
+  const declarations = (body: string): Record<string, string> => {
+    const found: Record<string, string> = {};
+    body.split(';').forEach((entry) => {
+      const at = entry.indexOf(':');
+      if (at < 0) return;
+      found[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+    });
+    return found;
+  };
+
+  // A rule applies at a width unless an at-rule it sits inside rules that width
+  // out. Conditions the guard does not model are treated as applying.
+  const appliesAt = (rule: ParsedRule, width: number): boolean => rule.media.every((at) => {
+    const max = at.match(/max-width:\s*(\d+)px/);
+    const min = at.match(/min-width:\s*(\d+)px/);
+    if (max && width > Number(max[1])) return false;
+    if (min && width < Number(min[1])) return false;
+    return true;
+  });
+
+  const outranks = (a: ParsedRule, b: ParsedRule): boolean => {
+    for (let i = 0; i < 3; i += 1) {
+      if (a.specificity[i] !== b.specificity[i]) return a.specificity[i] > b.specificity[i];
+    }
+    return a.order > b.order;
+  };
+
+  const winnerOf = (rules: ParsedRule[]): ParsedRule => rules.reduce(
+    (best, rule) => (outranks(rule, best) ? rule : best),
+  );
+
+  const rules = parseCascade(v2);
+
+  // The main content pane is rendered as `class="v2-pane v2-pane--main"`, so a
+  // rule can only match it if its last compound requires no other class.
+  const MAIN_PANE = new Set(['v2-pane', 'v2-pane--main']);
+  const mainPaneRules = rules.filter((rule) => rule.classes.length > 0
+    && rule.classes.every((token) => MAIN_PANE.has(token)));
+
+  const BOUNDED_PANE_SELECTOR = '.v2-authenticated-shell__content .v2-shell .v2-pane';
+
+  test('the authenticated content always takes the shell\'s second grid row', () => {
+    const contentRules = rules.filter(
+      (rule) => rule.classes.includes('v2-authenticated-shell__content')
+        && declarations(rule.body)['grid-row'] !== undefined,
+    );
+    // Non-vacuity: the assertions below are about a winner, and a winner chosen
+    // from an empty set asserts nothing.
+    expect(contentRules.length).toBeGreaterThan(0);
+    const winner = winnerOf(contentRules);
+    expect(declarations(winner.body)['grid-row']).toBe('2');
+    expect(winner.selector).toContain('v2-authenticated-shell__content');
+  });
+
+  test('no pane of the authenticated shell takes the viewport height on a phone', () => {
+    const atPhone = mainPaneRules.filter((rule) => declarations(rule.body)['height'] !== undefined
+      && appliesAt(rule, 390));
+    const viewportHeight = atPhone.filter(
+      (rule) => /^100(?:\.0)?(?:vh|dvh|svh)$/.test(declarations(rule.body)['height']),
+    );
+    const bounded = atPhone.filter((rule) => declarations(rule.body)['height'] === '100%');
+    // Non-vacuity, both directions: a filter shaped "every 100vh rule is outranked"
+    // passes loudest when no 100vh rule is found, and a fix that deleted the
+    // bounding rule would otherwise pass by having nothing to compare.
+    expect(viewportHeight.length).toBeGreaterThan(0);
+    expect(bounded.length).toBeGreaterThan(0);
+
+    viewportHeight.forEach((rule) => {
+      const dominator = bounded.find((candidate) => outranks(candidate, rule));
+      // Named, not counted: a bare `dominated: false` reports that something is
+      // wrong without saying which rule now wins the phone.
+      expect({
+        selector: rule.selector,
+        height: declarations(rule.body)['height'],
+        outrankedBy: dominator ? dominator.selector : null,
+      }).toEqual({
+        selector: rule.selector,
+        height: declarations(rule.body)['height'],
+        outrankedBy: expect.any(String),
+      });
+    });
+
+    const winner = winnerOf(atPhone);
+    expect(declarations(winner.body)['height']).toBe('100%');
+    expect(winner.selector).toBe(BOUNDED_PANE_SELECTOR);
+  });
+
+  test('the bounded pane rule stays a phone rule', () => {
+    // It must not apply at desktop, where the pane keeps its 16px gutter
+    // (`.v2-authenticated-shell .v2-pane--main { height: calc(100% - 16px) }`).
+    //
+    // Stated on purpose: this requires the SPECIFICITY-scoped form, not merely a
+    // rule that happens to win. A same-specificity `.v2-shell .v2-pane {
+    // height: 100% }` added after the 100vh rule also bounds the phone today —
+    // and is the shape that has failed twice here, because the next rule written
+    // later takes the width back. Measured as m7 in the mutation campaign: it reds
+    // this pair deliberately.
+    const scoped = rules.filter((rule) => rule.selector === BOUNDED_PANE_SELECTOR);
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.filter((rule) => appliesAt(rule, 390)).length).toBeGreaterThan(0);
+    expect(scoped.filter((rule) => appliesAt(rule, 1200))).toHaveLength(0);
+  });
+
+  test('the selectors this guard ranks are the ones the components render', () => {
+    // The chain the winning selector walks: content div > shell > pane. Checked
+    // against the components so the guard cannot pass on a chain the app does
+    // not build.
+    expect(read('../V2App.tsx')).toContain('v2-authenticated-shell__content');
+    expect(read('../components/V2Layout.tsx')).toContain("'v2-shell'");
+    expect(read('../components/V2Thread.tsx')).toContain('"v2-pane v2-pane--main"');
+    expect(read('../components/V2FeaturePage.tsx')).toContain('v2-pane v2-pane--main');
+  });
+
+  // ---- the phone pods list: the tab bar has to stay reachable -----------------
+  //
+  // ux-lead's design gate failed the first head here (390, `/v2`, verified user):
+  // 0 of 4 tabs hit-testable, on a short list and a long one. The height chain
+  // asserted above is still true under the fix — the aside is still `100%` —
+  // because what changed is the BOX that percentage resolves against, and the
+  // aside's stacking. So the same parser is asked two different questions: what
+  // wins `padding-bottom` on the list shell, and what wins `z-index` on the list
+  // aside. Neither is visible to a presence check.
+
+  // Class-only compounds. Anything carrying a pseudo or an attribute is skipped
+  // rather than mis-ranked, which is the honest direction: the alternative is a
+  // matcher that guesses.
+  const MODELABLE_COMPOUND = /^[A-Za-z0-9_.-]+$/;
+
+  // Outermost first; each entry is the class set of one rendered element.
+  const LIST_CHAIN = [
+    ['v2-authenticated-shell__content'],
+    ['v2-shell', 'v2-shell--list'],
+    ['v2-pane', 'v2-pods-aside', 'v2-pods-aside--page'],
+  ];
+  const TAB_BAR = [['v2-mobile-tabs']];
+
+  const matchesChain = (selector: string, chain: string[][]): boolean => {
+    const compounds = selector.split(/\s*>\s*|\s+/).filter(Boolean);
+    if (compounds.length === 0 || !compounds.every((c) => MODELABLE_COMPOUND.test(c))) {
+      return false;
+    }
+    let from = 0;
+    let i = 0;
+    while (i < compounds.length) {
+      const wanted = classTokens(compounds[i]);
+      let found = -1;
+      let j = from;
+      while (j < chain.length) {
+        const rendered = chain[j];
+        let all = true;
+        let k = 0;
+        while (k < wanted.length) {
+          if (!rendered.includes(wanted[k])) { all = false; break; }
+          k += 1;
+        }
+        if (all) { found = j; break; }
+        j += 1;
+      }
+      if (found < 0) return false;
+      from = found + 1;
+      i += 1;
+    }
+    return true;
+  };
+
+  const chainRules = (chain: string[][], width: number): ParsedRule[] => rules.filter(
+    (rule) => appliesAt(rule, width) && matchesChain(rule.selector, chain),
+  );
+
+  // `padding-bottom`, or the `padding` shorthand it may be written as. A guard
+  // that read only the longhand would pass while the shorthand took the space
+  // back — and the shorthand is how this rule is written.
+  const bottomPadding = (body: string): string | undefined => {
+    const found = declarations(body);
+    if (found['padding-bottom'] !== undefined) return found['padding-bottom'];
+    if (found.padding === undefined) return undefined;
+    const parts = found.padding.split(/\s+/).filter(Boolean);
+    // 2 values are vertical|horizontal, 3 are top|horizontal|bottom, 4 are
+    // top|right|bottom|left — so the bottom is the LAST value in 3- and 4-value
+    // form, and the first in 1- and 2-value form. Getting this wrong reads a
+    // `padding: 0 0 56px` as no reservation at all, which is how it was caught.
+    const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
+    const at = bottomIndex[parts.length];
+    return at === undefined ? undefined : parts[at];
+  };
+
+  test('the phone list reserves the tab bar\'s own height inside its box', () => {
+    const shellRules = chainRules(LIST_CHAIN, 390)
+      .filter((rule) => bottomPadding(rule.body) !== undefined);
+    // Non-vacuity, both parts: a winner of an empty set asserts nothing, and the
+    // specificity claim below needs a one-class competitor to be about.
+    expect(shellRules.length).toBeGreaterThan(1);
+    const oneClass = shellRules.filter((rule) => rule.specificity[1] <= 1);
+    expect(oneClass.length).toBeGreaterThan(0);
+
+    const barRules = chainRules(TAB_BAR, 390)
+      .filter((rule) => declarations(rule.body)['height'] !== undefined);
+    expect(barRules.length).toBeGreaterThan(0);
+    const barHeight = declarations(winnerOf(barRules).body)['height'];
+
+    const winner = winnerOf(shellRules);
+    // Derived, not restated: the reserved space must equal the bar it reserves,
+    // so a bar that grows reds this without anyone editing two numbers.
+    expect(bottomPadding(winner.body)).toBe(barHeight);
+    expect(bottomPadding(winner.body)).toMatch(/^[1-9]\d*px$/);
+    // …and it has to win on SPECIFICITY rather than on coming later. A one-class
+    // rule of the same name below it takes the padding back — the shape that has
+    // failed twice in this sheet, and why ux-lead's spec asks for the two-class
+    // selector. Mutation m4 reds this line and only this line.
+    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass).specificity[1]);
+  });
+
+  test('the list aside does not stack over the tab bar', () => {
+    const asideRules = chainRules(LIST_CHAIN, 390)
+      .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
+    // Non-vacuity: the reset needs something to beat. The drawer rule that
+    // stacks the aside at 60 must be in the set, or this ranks a winner among
+    // rules that never disagreed.
+    expect(asideRules.length).toBeGreaterThan(1);
+    expect(asideRules.map((rule) => declarations(rule.body)['z-index'])).toContain('60');
+
+    const barRules = chainRules(TAB_BAR, 390)
+      .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
+    expect(barRules.length).toBeGreaterThan(0);
+    const barZ = Number(declarations(winnerOf(barRules).body)['z-index']);
+    expect(Number.isNaN(barZ)).toBe(false);
+
+    const aside = winnerOf(asideRules);
+    const z = declarations(aside.body)['z-index'];
+    // `auto` never forms a stacking context; any number at or above the bar's own
+    // z-index paints over it. The bar is fixed, so being under it in paint order
+    // is the whole of being tappable.
+    const stacks = z !== 'auto' && Number(z) >= barZ;
+    // Named, not boolean: a bare `stacks: true` says something is wrong without
+    // saying which rule now wins the list.
+    expect({ selector: aside.selector, z, stacks }).toEqual({
+      selector: aside.selector, z, stacks: false,
+    });
+  });
+
+  test('the list chain this guard ranks is the chain the components render', () => {
+    const layout = read('../components/V2Layout.tsx');
+    expect(layout).toContain('v2-shell v2-shell--list');
+    expect(layout).toContain('<V2MobileTabs');
+    expect(read('../components/V2PodsSidebar.tsx')).toContain("' v2-pods-aside--page'");
   });
 });

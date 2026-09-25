@@ -47,13 +47,33 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 
 | row | code exists | known state |
 |---|---|---|
-| Telegram | yes | Connect flow stable per the Connectors lane; C1 needs a real Telegram user account for the check |
-| Slack | yes | Install flow (authorize URL) stable per the Connectors lane; C1 needs a dedicated Slack workspace for the check |
+| Telegram | yes | Walked 2026-09-25 (below). Bind and inbound green on a simulated chat; **red** in C5/C10: a failed delivery back to the chat is only logged, so the connector keeps saying connected while replies vanish (Row D). C1 with a real account still needs one |
+| Slack | yes | Walked 2026-09-25 (below). **Was red for everyone** in C1: every new install was refused at Authorize in Slack from #1537 on, the "stable" note here was wrong. Fixed by #1875; the page still names nothing after a refused authorize (Row C). The OAuth leg needs a Slack workspace |
 | Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
-| GitHub (app) | yes | **red**: disabled on commonly.me until the GitHub App credentials are set (TASK-033 hold). The Tools page (#1669) has never been walked with an admin GitHub App connection. The header reads `1 agents` |
+| GitHub (app) | yes | Walked 2026-09-25 (below). Live on our own repository since 09-18. **red** in C1 (a team cannot connect its own repository until per-person GitHub), C2 at 390 (the row hides its reason), and C3 (no hosted runtime receives the broker). C8 green |
 | next app | no | Sam's decision; see below |
+
+## Walk of 2026-09-25
+
+Stranger account `eng-smoke-09255bfe` (role user), builds `9a32fca5`, `0e142135` and `f536fa11`. Evidence: `docs/design/evidence/slack-authorize-409/` and the rows filed in the Connectors lane.
+
+**GitHub.** One connection (the instance admin's, on `Team-Commonly/commonly`) and one room grant, which expired 2026-09-25 11:32Z. Only the connection's owner can grant, so since it lapsed no agent on commonly.me can use GitHub until the owner grants again.
+
+| cell | result |
+|---|---|
+| C0 | green. The catalogue lists `github` as available with its tools; the Tools row renders at 1200 and 390 with no horizontal overflow |
+| C1 | red by design until per-person GitHub. Creating the connection is admin-only, yet the catalogue says available and each tool's description names "the Commonly repository", which a stranger reads as usable |
+| C2 | red at 390. The row's only reason ("install the GitHub App first") is hidden below 760 px, since the row is not classed not-enabled (`v2.css`), so a phone shows "not granted" with no reason and no action |
+| C3 | red by construction. No hosted runtime receives the grant broker; only the daemon's assignment route projects it |
+| C4 | not verified on the shipped build, and now unverifiable until someone grants again. The host ran cli 0.1.64 against a published 0.1.74 until this walk (upgraded to 0.1.74 at 08:01Z). The C4 pod is invite-only, and no member asked the seat before the grant lapsed |
+| C8 | green. An agent outside the grant's audience called it and got `not_in_audience`, recorded as a refused row in `tool_calls` |
+| C9 | expiry green; revoke and rotation not walked. The same out-of-audience call made at 11:33:39Z, after the grant's 11:32:51Z expiry, got `grant_expired` with no one acting, recorded as a refused row. Expiry is checked before audience, so this shows the expiry itself |
+
+**Slack.** Add, then Connect, installs the connector, and the row offers Authorize in Slack. Pressing it returned `409 slack_already_authorized` for every new install: `config.pendingBind` is a nested schema path, so a hydrated document carries it as `{}` and the route read it by truthiness. The route tests mocked the model with plain objects, where an absent key is absent, so they could not see it. #1875 judges a bind by the secret reference the callback always writes and tests the routes through a hydrated document. Re-walked on `f536fa11` at 1200 and 390: Authorize now opens `slack.com/oauth/v2/authorize` with a client id, our callback, a state and the DM scopes, and a forged callback is refused with `invalid_state`. Before the fix, after the 409 the page names nothing at either width (C10 red, Row C).
+
+**Telegram.** The bot's webhook points at the API, with nothing pending and no recorded error. Add, then Connect, shows `/commonly-enable` with a code that expires in 10 minutes. A simulated private chat, posted inside the cluster so the webhook secret never left it, bound with the code; a message from it landed in the pod as the linked user, and Scout answered in 6 seconds. The bot's confirmation and Scout's relayed reply both failed with `400 chat not found`, which the sender logs and returns and nothing reads: the connector stayed connected with no error (C5 and C10 red, Row D). A real user who blocks the bot gets the same silence. The simulated connector was removed afterwards.
 
 ## Cross-cutting reds
 

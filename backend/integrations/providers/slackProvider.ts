@@ -5,6 +5,8 @@ const { manifests } = require('../manifests');
 // eslint-disable-next-line global-require
 const SlackApi = require('../../services/slackApi');
 // eslint-disable-next-line global-require
+const connectorSecrets = require('../../services/connectorSecrets');
+// eslint-disable-next-line global-require
 const { normalizeSlackMessage } = require('./slackNormalizer');
 // eslint-disable-next-line global-require
 const { normalizeBufferMessage } = require('../normalizeBufferMessage');
@@ -37,6 +39,30 @@ try {
 
 function createSlackProvider(integration: { _id: unknown; config?: Record<string, unknown>; [key: string]: unknown }): SlackProvider {
   const config = integration?.config || {};
+
+  // The token is no longer on the row. `config.botToken` has had no writer since
+  // TASK-139 (a request body may not set it, and the OAuth bind stores the opaque
+  // `botTokenRef` — `routes/installables.ts`), while `SLACK_BOT_TOKEN` is the
+  // instance's. Resolving through the ref keeps this provider reading the store
+  // the live bridge reads (`slackBridgeService`), so a bound row is not called
+  // unconfigured because a legacy field is absent.
+  //
+  // Census 2026-09-25 (TASK-140): neither method below has a live caller.
+  // `registry.get('slack', …)` is reached for `getWebhookHandlers`
+  // (`routes/webhooks/slack.ts`), for `ingestEvent` (`routes/integrations.ts`)
+  // and for `publishPost`, which Slack does not implement (400); the only
+  // `.health()` / `.syncRecent()` / `.validateConfig()` callers are the
+  // X and Instagram admin test routes and the Discord-only sync job. No live
+  // path reports a bound Slack row as unhealthy — this keeps that true if one
+  // is ever wired, which is the failure the old field reads invited.
+  const boundChat = (): string => String(config.chatId || config.channelId || '').trim();
+
+  const tokenFor = async (): Promise<string | undefined> => {
+    const ref = config.botTokenRef;
+    if (ref) return connectorSecrets.get(String(ref));
+    const legacy = String(config.botToken || process.env.SLACK_BOT_TOKEN || '').trim();
+    return legacy || undefined;
+  };
 
   return {
     async validateConfig() {
@@ -109,9 +135,15 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
     },
 
     async syncRecent({ hours = 1 } = {}): Promise<unknown> {
-      const api = new SlackApi(config.botToken as string);
+      const chat = boundChat();
+      const token = await tokenFor();
+      // Both are required before Slack is called at all: without them `history`
+      // was invoked with `undefined`, and a Slack error came back as "the sync
+      // failed" rather than "this row has no binding".
+      if (!token || !chat) throw new ValidationError('Slack connector is missing its bot token or chat binding');
+      const api = new SlackApi(token);
       const oldest = `${(Date.now() - hours * 3600 * 1000) / 1000}`;
-      const hist = await api.history(config.channelId as string, oldest, undefined, 200) as { messages?: unknown[] };
+      const hist = await api.history(chat, oldest, undefined, 200) as { messages?: unknown[] };
       const messages = (hist.messages || [])
         .map(normalizeSlackMessage)
         .filter(Boolean)
@@ -125,7 +157,16 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
     },
 
     async health(): Promise<{ ok: boolean; error?: string }> {
-      return { ok: !!config.botToken && !!config.channelId };
+      const chat = boundChat();
+      if (!chat) return { ok: false, error: 'Slack connector has no chat binding' };
+      try {
+        if (!await tokenFor()) return { ok: false, error: 'Slack connector has no bot token' };
+      } catch (error) {
+        // A ref that cannot be resolved (a revoked row, an unreadable ring) is
+        // the honest reason, not "no token".
+        return { ok: false, error: (error as Error).message };
+      }
+      return { ok: true };
     },
   };
 }

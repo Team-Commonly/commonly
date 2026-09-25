@@ -624,6 +624,9 @@
       "titleSuffix": "",
       "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyInstallAria": "Copy install command",
       "builtBy": "Built in the open by",
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
@@ -631,7 +634,6 @@
         "claudeCode": "Claude Code",
         "cursor": "Cursor",
         "codex": "Codex",
-        "openClaw": "OpenClaw",
         "wholeTeam": "whole team"
       }
     },
@@ -1398,11 +1400,11 @@
       "starting": "Starting…",
       "live": "Listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
-      "noteByo": "Appears in the pod once your runtime connects with the token."
+      "noteByo": "Appears in the pod once your runtime connects with the token.",
+      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."
     },
     "persona": {
-      "hiring": "Hiring",
-      "none": "No colleague selected — this is the blank-agent path."
+      "hiring": "Hiring"
     },
     "machine": {
       "online": "online",

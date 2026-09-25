@@ -19,8 +19,12 @@
  *
  * TASK-115 adds a fourth: the poll reads the VERSION DOCUMENT (2.4KB,
  * `cf-cache-status: DYNAMIC`), not the packument (130KB, `cache-control:
- * public, max-age=300` — the same 300s as the budget, so the old form raced a
- * cache rather than propagation: 31 E404s then success, Vera 71761-71763).
+ * public, max-age=300`). The old form raced a cache rather than propagation —
+ * 31 E404s then success, Vera 71761-71763 — and the reason is the endpoint, not
+ * the number: a packument read answers from the CDN's copy, so it reports the
+ * cache's age instead of the publish's state at any budget. The 300s TTL and
+ * the budget happened to match when that was measured; the budget in force is
+ * printed at startup now, and the forbidden form would be just as wrong.
  * The `curl` stub therefore answers ONLY the version URL, and a request for the
  * packument fails loudly — that is what makes the endpoint a property under
  * test instead of a detail of the implementation.
@@ -94,6 +98,10 @@ const stubSource = [
  * budget are about.
  *   STUB_FAILS_UNTIL=n        the first n version-document reads 404
  *   STUB_NEVER_PUBLISHED=1    every such read 404s
+ *   STUB_VERSION_ABSENT_AFTER=n  the first n reads serve the document and every
+ *                             later read 404s — the inverse of STUB_FAILS_UNTIL,
+ *                             and the only way to model a registry that flaps to
+ *                             absent AFTER a live reading (TASK-117a)
  *   STUB_LATEST               the version the version-document reports
  *   STUB_TAG_LATEST           what latest points at in the dist-tags document
  *                             (defaults to STUB_LATEST, i.e. the tag moved)
@@ -162,6 +170,10 @@ const curlSource = [
   '  echo "curl: (56) The requested URL returned error: 404" >&2',
   '  exit 56',
   'fi',
+  'if [ "${STUB_VERSION_ABSENT_AFTER:-0}" != "0" ] && [ "$n" -gt "${STUB_VERSION_ABSENT_AFTER}" ]; then',
+  '  echo "curl: (56) The requested URL returned error: 404" >&2',
+  '  exit 56',
+  'fi',
   "printf '{\"name\":\"%s\",\"version\":\"%s\"}\\n' \"$name\" \"${STUB_LATEST:-0.0.0}\"",
   'exit 0',
   '',
@@ -227,9 +239,9 @@ describe('npm publish read-back', () => {
 
   test('the poll reads the uncached version document, not the edge-cached packument', () => {
     // TASK-115. `npm view pkg@version version` fetches the 130KB packument,
-    // which is served `public, max-age=300` — the same 300s as this loop's
-    // budget — so a copy cached just before the publish stays stale for the
-    // whole run. The version document is `cf-cache-status: DYNAMIC`. The stub
+    // which is served `public, max-age=300`, so a copy cached just before the
+    // publish can stay stale by itself. The version document is
+    // `cf-cache-status: DYNAMIC`. The stub
     // refuses the packument outright, so this fails if the endpoint regresses.
     const { dir, log } = withStub();
     const result = runScript(withEnv(dir, log, {
@@ -262,7 +274,7 @@ describe('npm publish read-back', () => {
   describe('the tag must move with the version', () => {
     // The budget is a fixture, not a duration: these rows are about which claim
     // was outstanding at exhaustion, so they spend it in busy-second units
-    // instead of waiting out the 300s the real job uses.
+    // instead of waiting out the budget the real job uses.
     const run = (extra) => {
       const { dir, log } = withStub();
       return {
@@ -375,6 +387,71 @@ describe('npm publish read-back', () => {
   // An exact count made the only required check flake red for every open PR,
   // because the assertion was about the runner's speed rather than about this
   // script's decision. What the contract promises is that the budget stops the
+  test('a version read that flaps absent AFTER a live reading is reported as a flap, not as a live version with a stale tag', () => {
+    // TASK-117(a). `last_tag_state` was assigned only inside the live-read
+    // branch, so it survived a later read that saw no version — and the messages
+    // attached to that later read then described the earlier one. Two outputs
+    // went wrong in the same direction: the retry line announced a live version
+    // for a read that had just 404'd, and the exhaustion banner asserted "is live,
+    // but latest still pointed at X ... the tag did NOT move" about a version the
+    // run had not seen since its first attempt. The fix clears the state on a
+    // failed read and gives the earlier finding its own clause.
+    //
+    // STUB_VERSION_ABSENT_AFTER is the one harness knob this needed:
+    // STUB_FAILS_UNTIL models absent-then-live, and this defect is live-then-absent.
+    const { dir, log } = withStub();
+    const result = runScript(withEnv(dir, log, {
+      STUB_LATEST: WANT,
+      STUB_TAG_BEHIND_FOR: '99',
+      STUB_TAG_BEHIND_VALUE: '0.0.0',
+      STUB_VERSION_ABSENT_AFTER: '1',
+      // Budget 5, not 1: with a 1s budget a slow first attempt spends it before
+      // the second read happens, so the witness would redden on a loaded machine
+      // with nothing wrong — measured, while running a mutation ledger: two
+      // unrelated mutations appeared to redden this test, and the cause was the
+      // budget, not either mutation. Interval 0 keeps it cheap.
+      READBACK_TIMEOUT_SECONDS: '5',
+      READBACK_INTERVAL_SECONDS: '0',
+    }));
+
+    const all = result.stdout + result.stderr;
+    // Scoped per attempt, because the first retry line is CORRECT: attempt 1 did
+    // see the version, so "is live and latest still points at …" describes it.
+    // A first draft of this witness banned that pattern globally and reddened on
+    // the correct line — the assertion was the artifact, not the code. What the
+    // defect produced was a live-version claim attached to a read that saw no
+    // version, so that is what is asserted:
+    const retryLines = all.split('\n').filter((l) => l.startsWith('\u00b7 '));
+    expect(retryLines.length).toBeGreaterThanOrEqual(2);
+    expect(retryLines[0]).toMatch(/is live and latest still points at/);
+    retryLines.slice(1).forEach((line) => { expect(line).not.toMatch(/is live/); });
+    // The banner's form of the same claim — the one that named a tag that did not
+    // move for a run that never saw the version after its first read.
+    expect(all).not.toMatch(/is live, but latest still pointed at/);
+    // The earlier finding is not discarded — it is attributed to the read it came
+    // from, which is the whole point of keeping the state split in two. The
+    // elapsed second is matched as a number rather than pinned: it is read from
+    // the clock at the first live attempt, so on a loaded machine that attempt
+    // lands at 1s, and pinning `0s` made this witness fail with the code correct.
+    expect(all).toMatch(/WAS served at \d+s, when the dist-tags read said 'behind'/);
+    expect(all).toMatch(/flapping registry rather than an unpropagated publish/);
+    expect(all).toMatch(/is not visible on the registry/);
+  });
+
+  test('every temp the script creates is named by the single EXIT trap', () => {
+    // TASK-117(b). Two traps existed: the first named three temps and was written
+    // before the fourth was allocated, so the second silently replaced it. Nothing
+    // leaked — the survivor names all four — but the cleanup rule only held if a
+    // reader noticed the replacement. Parsed rather than listed, so a temp added
+    // later is covered by this test rather than by whoever reviews it.
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    const temps = [...source.matchAll(/^(\w+)=\$\(mktemp\)$/gm)].map((m) => m[1]);
+    const traps = source.match(/^trap '.*' EXIT$/gm) || [];
+    expect(temps.length).toBeGreaterThan(0);
+    expect(traps).toHaveLength(1);
+    temps.forEach((name) => { expect(traps[0]).toContain(`"$${name}"`); });
+  });
+
   // loop within one interval of expiring, which is what is asserted here — and
   // the slow row keeps a strict assertion by pinning the cost profile that the
   // fast row is racing.
@@ -483,7 +560,85 @@ describe('npm publish read-back', () => {
     expect(fs.existsSync(`${log}.attempts`)).toBe(false);
   });
 
+  test('the budget in force is the value the script prints — and the number is stated in one place, so a re-tune cannot leave a copy behind', () => {
+    // TASK-116 follow-up, recut after wren 73043 and vera 73057. The first
+    // version asserted the printed value against a literal AND added an
+    // agreement check for three sites — and left six prose restatements outside
+    // it, every one shaped like the value then in force. Vera reproduced it:
+    // re-tune the value, update the three checked sites, and the suite stays green with six stale
+    // copies of the number, including the name of this test. Fewer copies beats
+    // more assertions, so this now states the number in ONE place in the script
+    // (the default it binds) plus the usage line that documents it, and asserts
+    // there is no third — every other mention points at the printed line.
+    //
+    // The two witnesses are not duplicates of one claim: this one is "the number
+    // has one home and the prose agrees with the value in force"; the floor below
+    // is "the default did not regress to seconds-scale". Neither implies the
+    // other.
+    //
+    // The run is KILLED rather than allowed to finish, because the default
+    // budget is ten minutes and the registry never serves WANT here. The line
+    // under test is printed before the first read, so the kill ends the
+    // observation window rather than being the assertion.
+    const { dir, log } = withStub();
+    const result = runScript(withEnv(dir, log, {
+      STUB_NEVER_PUBLISHED: '1',
+      STUB_LATEST: REGISTRY_SERVES,
+      STUB_SLEEP_SECONDS: '0',
+    }), { timeoutMs: 3000 });
+
+    expect(result.stdout).toMatch(/read-back budget: \d+s total, \d+s between polls/);
+
+    // The printed line is the source of truth, and the one documented copy must
+    // agree with it. Nothing here pins the number itself: a deliberate re-tune
+    // that updates both the default and its usage stays green, which is the
+    // point — this witness is about agreement, not about the value.
+    const effective = /read-back budget: (\d+)s total, (\d+)s between polls/.exec(result.stdout);
+    expect(effective).not.toBeNull();
+
+    const scriptText = fs.readFileSync(SCRIPT, 'utf8');
+    const budgetDoc = /total wall-clock budget, default (\d+)/.exec(scriptText);
+    const intervalDoc = /gap between polls, default (\d+)/.exec(scriptText);
+    expect(budgetDoc).not.toBeNull();
+    expect(intervalDoc).not.toBeNull();
+    expect(budgetDoc[1]).toBe(effective[1]);
+    expect(intervalDoc[1]).toBe(effective[2]);
+
+    // And the number itself is stated in exactly two places, both of them
+    // read at runtime or by a human who runs the script: the default it binds
+    // and the usage line that documents that default. A third copy is the
+    // defect this row exists to kill — prose restating the budget that nothing
+    // reads — so it fails HERE, naming the line that was added, instead of
+    // going stale silently at the next re-tune. Built from the value in force,
+    // so a deliberate re-tune that updates both stays green: this is a count,
+    // not a pin.
+    const numeric = new RegExp(`(?<![\\d])${effective[1]}(?![\\d])`);
+    const budgetCopies = scriptText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => numeric.test(line));
+    expect(budgetCopies).toEqual([
+      `#   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default ${effective[1]}`,
+      `TIMEOUT_SECONDS="\${READBACK_TIMEOUT_SECONDS:-${effective[1]}}"`,
+    ]);
+
+    // The workflow states none of them: it names the variable and the script
+    // prints the value. One copy one file over is the same defect, so the count
+    // there is asserted too rather than left to prose discipline.
+    const workflowCopies = fs
+      .readFileSync(WORKFLOW, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => numeric.test(line));
+    expect(workflowCopies).toEqual([]);
+  });
+
   test('the default budget is minutes, not the ~60s that produced the false negative', () => {
+    // The invariant as a FLOOR, and the older of the two witnesses: it reddens
+    // only on a regression toward the ~60s window that produced the false
+    // negative, not on a change to the value in force. That is its whole kill
+    // set, and it is why it stays beside the assertion above rather than being
+    // replaced by it.
     const source = fs.readFileSync(SCRIPT, 'utf8');
     const timeout = /READBACK_TIMEOUT_SECONDS:-(\d+)/.exec(source);
     const interval = /READBACK_INTERVAL_SECONDS:-(\d+)/.exec(source);

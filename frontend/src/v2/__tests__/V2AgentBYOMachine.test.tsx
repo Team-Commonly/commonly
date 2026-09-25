@@ -77,6 +77,27 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
+  test('the preview note names the daemon machine in "on my computer" mode (#TASK-163)', async () => {
+    // Before TASK-163 the note read "Appears in the pod once your runtime
+    // connects with the token" in EVERY non-hosted mode, and this mode issues
+    // no token at all — ux-lead measured it drawing README frame 5. The name
+    // is derived once from machines+machineId, so this pins that it FOLLOWS
+    // the picker rather than merely being present.
+    const second = { id: 'm2', machineId: 'mach-b', name: 'Studio', status: 'online', agentStates: [] };
+    mockGet({ machines: [machineRow, second] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+
+    // Default mode is 'byo', where the token wording is still correct.
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once your runtime connects with the token.');
+
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Sam’s MacBook starts it.');
+
+    fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Studio starts it.');
+  });
+
   test('no machines — no card, and the one-paste setup panel shows instead', async () => {
     mockGet({ machines: [] });
     renderPage();

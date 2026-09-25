@@ -26,10 +26,17 @@
 # `npm view <pkg>@<version> version` fetches the whole packument — 130KB for
 # @commonlyai/cli — and filters locally, and that endpoint is served through a
 # CDN with `cache-control: public, max-age=300`: a copy cached moments before
-# the publish stays stale for almost exactly as long as this loop is willing to
-# wait (the budget default is also 300s), which showed up as 31 E404s followed
-# by success with no propagation delay involved (Vera 71761-71763: the cache
-# headers, the 300s/300s coincidence, and the endpoint). The
+# the publish stays stale for almost exactly as long as the loop was willing to
+# wait, which showed up as 31 E404s followed by success with no propagation
+# delay involved (Vera 71761-71763: the cache headers, the 300s/300s
+# coincidence with the budget as it then stood, and the endpoint).
+#
+# That coincidence is worth keeping straight, because it is not why the cached
+# form is wrong: a packument read answers from the CDN's copy rather than from
+# the registry, so at ANY budget it reports the cache's age instead of the
+# publish's state — wrong and green, not merely slow. The budget in force is
+# printed at startup (below) and the forbidden form would still be wrong for the
+# same reason. The
 # version document is `cf-cache-status: DYNAMIC` — not edge-cached at all,
 # 2.4KB — so it answers the question this check actually means to ask. `curl`
 # also sidesteps the runner's local npm cache, which `--prefer-online` only
@@ -58,7 +65,7 @@
 # Env:
 #   NAME                            package name, e.g. @commonlyai/cli   (required)
 #   WANT                            the version just published           (required)
-#   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default 300
+#   READBACK_TIMEOUT_SECONDS        total wall-clock budget, default 600
 #   READBACK_INTERVAL_SECONDS       gap between polls, default 10
 #   READBACK_REGISTRY_URL           registry base, default https://registry.npmjs.org
 #
@@ -67,12 +74,27 @@
 # the stub-driven tests never reach it — but this is the one script that runs
 # after a publish has already happened, so its dependencies belong here.
 #
+# The budget in force is printed at startup — raised from 300 on 2026-09-24,
+# TASK-116 follow-up: vera 72706, the two live samples in 72701. Two real publishes took 102s and 165s —
+# a ~3x margin and then ~1.8x — and the decision was taken on the cost
+# asymmetry rather than on a third sample, because the two failure modes are not
+# symmetric. An undersized budget fails as a RED on a good publish, which is the
+# exact defect this script was recut to remove, and its second-order cost is
+# worse than the first: a check that has cried wolf over a slow registry gets
+# read as noise, and the next red — the publish that never landed — is waved
+# through with it. An oversized budget costs wall-clock on a rare slow publish
+# and nothing on any other push. `npm-publish.yml` sets no `timeout-minutes` at
+# all, so the job runs GitHub's 360-minute default and the budget in force sits
+# inside it with room; a budget raised past its enclosing timeout fails as a cancelled job,
+# which is the least legible red there is.
+#
 # The budget is measured on a CLOCK, not by adding up the gaps. Summing the
 # intervals made the budget depend on an env var the caller controls: at
 # READBACK_INTERVAL_SECONDS=0 the loop could never reach the timeout (789
 # attempts in 8s, still reporting 0s, killed by an external alarm — Vera 71347),
 # and at any interval it undercounted by every `npm view` round-trip, so the
-# "after 300s" in the failure line was not what happened. Both matter here: this
+# "after 300s" the failure line printed at the time was not what happened. Both
+# matter here: this
 # runs inside a release job, where a loop that cannot terminate is not a red step
 # but a run held to the six-hour limit.
 #
@@ -83,7 +105,7 @@ set -euo pipefail
 
 : "${NAME:?NAME is required (package name, e.g. @commonlyai/cli)}"
 : "${WANT:?WANT is required (the version just published)}"
-TIMEOUT_SECONDS="${READBACK_TIMEOUT_SECONDS:-300}"
+TIMEOUT_SECONDS="${READBACK_TIMEOUT_SECONDS:-600}"
 INTERVAL_SECONDS="${READBACK_INTERVAL_SECONDS:-10}"
 
 # The version document, not the packument: `npm view` reads the package named
@@ -103,7 +125,6 @@ DIST_TAGS_URL="$REGISTRY_URL/-/package/$ENCODED_NAME/dist-tags"
 stderr_file=$(mktemp)
 tag_file=$(mktemp)
 tag_err=$(mktemp)
-trap 'rm -f "$stderr_file" "$tag_file" "$tag_err"' EXIT
 
 # Read `latest` from the uncached dist-tags document. Echoes the tag (empty when
 # there is none) and leaves the HTTP status in DT_STATUS, because the three
@@ -119,6 +140,12 @@ trap 'rm -f "$stderr_file" "$tag_file" "$tag_err"' EXIT
 # subshell, so a variable assigned inside would never reach the caller — which is
 # exactly how the first draft of this read a 401 as an empty tag.
 tag_status_file=$(mktemp)
+# One trap, after every temp exists. There were two before this fold: the first
+# named three temps and was written before `tag_status_file` was allocated, so a
+# reader had to notice that the second silently replaced it. Nothing leaked
+# either way — the survivor names all four — but a cleanup rule that only holds
+# if the reader counts traps is one edit away from the leak it was written to
+# prevent.
 trap 'rm -f "$stderr_file" "$tag_file" "$tag_err" "$tag_status_file"' EXIT
 read_latest_tag() {
   status=$(curl -sS -o "$tag_file" -w '%{http_code}' "$DIST_TAGS_URL" 2>"$tag_err" || true)
@@ -130,6 +157,18 @@ read_latest_tag() {
 }
 tag_status() { cat "$tag_status_file"; }
 
+# The effective budget, printed once before the poll starts.
+#
+# Seven prose restatements carried this number because nothing could read the
+# value in force: every behavioural case in the suite sets
+# READBACK_TIMEOUT_SECONDS explicitly, and the one witness that touched the
+# default asserted a floor (`>= 300`), whose kill set is "the default stopped
+# being minutes" rather than "the default is this value". A number duplicated
+# across prose has no witness, so a change to it could not redden anything.
+# This line is that witness, and it is also the first thing an operator wants
+# when a read-back goes red: how long it actually waited.
+echo "read-back budget: ${TIMEOUT_SECONDS}s total, ${INTERVAL_SECONDS}s between polls (READBACK_TIMEOUT_SECONDS / READBACK_INTERVAL_SECONDS override)"
+
 started_at=$(date +%s)
 attempt=0
 body=''
@@ -138,6 +177,11 @@ body=''
 # served at all.
 last_tag=''
 last_tag_state=''
+# The first read that saw the version live, and what the tag read said at that
+# moment. Kept so a LATER read that no longer sees the version can be reported as
+# the flap it is, rather than silently reusing the earlier finding.
+saw_live_at=''
+saw_live_tag_state=''
 while :; do
   attempt=$((attempt + 1))
   body=$(curl -fsS "$DOC_URL" 2>"$stderr_file" || true)
@@ -160,6 +204,22 @@ while :; do
     else
       last_tag_state="behind"
     fi
+    if [ -z "$saw_live_at" ]; then
+      saw_live_at="$elapsed"
+      saw_live_tag_state="${last_tag_state:-none}"
+    fi
+  else
+    # THIS read did not see the version, so whatever it might report about the
+    # tag would be about a different read. Measured shape this prevents: a live
+    # read with `latest` behind (setting the state), then a version read that
+    # flaps to absent, left `last_tag_state=behind` in place — so the retry line
+    # for the absent read announced a live version, and the exhaustion banner
+    # asserted "is live, but latest still pointed at X ... the tag did NOT move"
+    # about a read that saw no version at all. Clearing here makes every message
+    # describe the read it is attached to; the earlier finding is preserved in
+    # `saw_live_at` and has its own clause in the banner.
+    last_tag_state=''
+    last_tag=''
   fi
 
   if [ "$elapsed" -ge "$TIMEOUT_SECONDS" ]; then
@@ -206,6 +266,15 @@ if [ "$last_tag_state" = "unreadable" ]; then
   diagnose
   exit 1
 fi
-echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DOC_URL. The publish step reported success, so check what the registry is actually serving below before re-running."
+# A version that answered on an earlier read and not on the final one is a flap,
+# and naming it is the difference between one correct diagnosis and two wrong
+# ones: without this clause the message below reads as "never published", and
+# with the pre-fold stale state the message ABOVE asserted a live version and an
+# unmoved tag about a read that saw no version.
+flap_clause=''
+if [ -n "$saw_live_at" ]; then
+  flap_clause=" It WAS served at ${saw_live_at}s, when the dist-tags read said '${saw_live_tag_state:-none}'; later reads did not see it, so this is a flapping registry rather than an unpropagated publish."
+fi
+echo "::error::$NAME@$WANT is not visible on the registry after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DOC_URL.${flap_clause} The publish step reported success, so check what the registry is actually serving below before re-running."
 diagnose
 exit 1

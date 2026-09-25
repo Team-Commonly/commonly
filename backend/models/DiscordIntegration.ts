@@ -20,7 +20,8 @@ export interface IDiscordIntegration extends Document {
   serverName: string;
   channelId: string;
   channelName: string;
-  webhookUrl: string;
+  /** Legacy plaintext. Migrated rows carry only `config.webhookUrlRef`. */
+  webhookUrl?: string;
   webhookId: string;
   botToken: string;
   permissions: DiscordPermission[];
@@ -39,9 +40,20 @@ const DiscordIntegrationSchema = new Schema<IDiscordIntegration>(
     serverName: { type: String, required: true },
     channelId: { type: String, required: true },
     channelName: { type: String, required: true },
-    webhookUrl: { type: String, required: true },
+    // Optional since TASK-124: the URL is a bearer credential (it embeds the
+    // webhook's own token), so writers put it in the connector-secret envelope
+    // and store the ref at `Integration.config.webhookUrlRef`. This field stays
+    // declared because rows connected before the migration still carry one, and
+    // `utils/discordWebhookUrl` reads it as a FALLBACK behind the ref. The
+    // migration (`scripts/encrypt-discord-webhook-url`) unsets it.
+    webhookUrl: { type: String, required: false },
     webhookId: { type: String, required: true },
-    botToken: { type: String, required: true },
+    // Optional: no writer sets it any more (TASK-124). Legacy rows still carry
+    // a value, which is why the field stays declared rather than removed —
+    // Mongoose reads stored data for a declared-but-optional path, and the
+    // toJSON transform below keeps it out of every response. The token's
+    // authority is DISCORD_BOT_TOKEN; this is only a fallback for those rows.
+    botToken: { type: String, required: false },
     permissions: [
       {
         type: String,
@@ -68,6 +80,9 @@ DiscordIntegrationSchema.index({ integrationId: 1 }, { unique: true });
 DiscordIntegrationSchema.index({ serverId: 1, channelId: 1 });
 DiscordIntegrationSchema.index({ webhookId: 1 });
 
+// Fires only when a plaintext URL is present, so a migrated row (ref only) is
+// not validated against a value it no longer stores. The ref is opaque on
+// purpose and must never be format-checked here.
 DiscordIntegrationSchema.pre<IDiscordIntegration>('save', function (next) {
   if (this.webhookUrl && !this.webhookUrl.includes('discord.com/api/webhooks/')) {
     return next(new Error('Invalid Discord webhook URL format'));
@@ -83,9 +98,13 @@ DiscordIntegrationSchema.virtual('recentMessages').get(function (this: IDiscordI
 
 // The record joins onto Integration as `platformIntegration` and rides out
 // through every list that populates it (admin Apps list, pod list, create).
-// botToken is the instance-wide DISCORD_BOT_TOKEN and webhookUrl carries the
-// webhook's secret; both stay server-only in every JSON response. Server code
-// reads them off the document, never off its JSON.
+// webhookUrl carries the webhook's secret and stays server-only in every JSON
+// response — the plaintext copy where it survives the migration and the
+// `config.webhookUrlRef` pointer to the encrypted one, which is stripped by
+// `toPublicIntegrationConfig`; `botToken` is deleted for the same reason and
+// because it is a legacy field no writer sets any more (TASK-124). Server code
+// reads the token from the environment and the webhook URL through
+// `utils/discordWebhookUrl`, never off this document's JSON.
 DiscordIntegrationSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc: unknown, returned: Record<string, unknown>) => {
