@@ -1,5 +1,6 @@
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import { Types } from 'mongoose';
 import Integration from '../models/Integration';
@@ -52,7 +53,7 @@ const grantRateLimit = rateLimit({
   keyGenerator: (req: express.Request): string => {
     const authHeader = req.get('Authorization') || req.get('x-auth-token');
     if (authHeader) return `grant:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req, res) => res.status(429).json({ message: 'rate limit exceeded: 60 grant operations per 60s' }),
 });

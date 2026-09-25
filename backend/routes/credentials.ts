@@ -5,7 +5,8 @@ import express from 'express';
 import { Types } from 'mongoose';
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognizes the limiter (same pattern as routes/messages.ts).
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
 
@@ -28,7 +29,7 @@ const credentialRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 60 credential ops per 60s' });
