@@ -170,11 +170,15 @@ describe('rate limiters never take express-rate-limit\'s default (req.ip) key', 
     expect(violations).toEqual([]);
   });
 
-  // Vacuity floor for the pinned list itself: a row deleted from `PINNED` is
+  // Vacuity guard for the pinned list itself: a row deleted from `PINNED` is
   // otherwise a silent coverage loss, because `it.each` over a shorter array
-  // reports fewer passes and no failures. Growth is fine; shrinkage reddens.
+  // reports fewer passes and no failures. Exact rather than a floor (wren
+  // 73921): `PINNED` is a curated list, so adding or dropping a site is a
+  // deliberate act and should be a visible edit to this number. The
+  // `configs >= 60` floor above stays loose because it counts scanned code,
+  // which grows with the tree rather than by decision.
   it('keeps pinning every site the list names', () => {
-    expect(PINNED.length).toBeGreaterThanOrEqual(8);
+    expect(PINNED).toHaveLength(8);
   });
 
   it.each(PINNED)('pins %s %s to the Cloudflare key expression', (relPath, name) => {
