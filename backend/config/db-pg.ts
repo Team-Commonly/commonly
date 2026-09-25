@@ -48,28 +48,72 @@ const pgConfig: PgConfig = {
   connectionTimeoutMillis: parsePoolInt(process.env.PG_POOL_CONNECT_TIMEOUT_MS, 5000),
 };
 
-if (process.env.PG_SSL_CA_PATH) {
+/**
+ * Decide the pool's SSL configuration from the environment.
+ *
+ * THREE THINGS THIS USED TO GET WRONG, all in the same direction — SSL on for
+ * a server that has none, which fails the connect where the failure is
+ * permanent and silent (TASK-168, 2026-09-25):
+ *
+ * 1. `PG_SSL_ENABLED` was never read. The chart sets it (`false` locally, `true`
+ *    in dev/prod) and the local secrets file even carries the comment "Empty
+ *    cert — not used when PG_SSL_ENABLED=false", but the decision was made by
+ *    the presence of the PATH alone. So the kind smoke cluster — which mounts
+ *    the local placeholder secret and disables SSL on purpose — put the pool in
+ *    SSL mode against an in-cluster Postgres without TLS. It never connected,
+ *    which nothing noticed until the readiness gate started reporting it.
+ * 2. An EMPTY CA file counted as a CA. `fs.existsSync` was the whole test, and
+ *    the local placeholder secret is a zero-byte `ca.pem` under a real path, so
+ *    `{ ca: '' }` was "configured". That is not a local-only shape: any instance
+ *    whose CA secret materializes empty lands here, and the mode it lands in
+ *    both forces TLS and gives Node nothing to verify against.
+ * 3. A read error silently disabled SSL, which is the opposite of failing
+ *    closed. Left as-is (a missing CA must not stop the pod from booting), but
+ *    now it is reported with its reason rather than looking like a decision.
+ *
+ * Unset `PG_SSL_ENABLED` keeps the old default (on), so dev and prod — which set
+ * it to "true" and mount a real CA — behave exactly as before.
+ */
+export const resolvePgSsl = (
+  // `Record<string, string | undefined>` rather than a narrow object type:
+  // `process.env` is a `ProcessEnv`, which shares no properties with a literal
+  // shape under this tsconfig (TS2559), and the two keys this reads are the
+  // whole contract anyway.
+  env: Record<string, string | undefined>,
+  readCaFile: (p: string) => { exists: boolean; content: string },
+): { ssl: false | { rejectUnauthorized: boolean; ca: string }; reason: string } => {
+  const enabled = String(env.PG_SSL_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+  if (!enabled) {
+    return { ssl: false, reason: 'PG_SSL_ENABLED=false' };
+  }
+  if (!env.PG_SSL_CA_PATH) {
+    return { ssl: false, reason: 'no PG_SSL_CA_PATH' };
+  }
+  let ca: { exists: boolean; content: string };
   try {
-    const caPath = process.env.PG_SSL_CA_PATH;
-    console.log(`Using CA certificate from: ${caPath}`);
-    if (fs.existsSync(caPath)) {
-      pgConfig.ssl = {
-        rejectUnauthorized: true,
-        ca: fs.readFileSync(caPath).toString() as string,
-      };
-      console.log('SSL configuration added with CA certificate');
-    } else {
-      console.warn(`CA certificate file not found at: ${caPath}`);
-      pgConfig.ssl = false;
-    }
+    ca = readCaFile(env.PG_SSL_CA_PATH);
   } catch (err) {
     const e = err as { message?: string };
-    console.error('Error loading CA certificate:', e.message);
-    pgConfig.ssl = false;
+    return { ssl: false, reason: `CA file unreadable at ${env.PG_SSL_CA_PATH}: ${e.message}` };
   }
+  if (!ca.exists) {
+    return { ssl: false, reason: `CA file not found at ${env.PG_SSL_CA_PATH}` };
+  }
+  if (!ca.content.trim()) {
+    return { ssl: false, reason: `CA file at ${env.PG_SSL_CA_PATH} is empty` };
+  }
+  return { ssl: { rejectUnauthorized: true, ca: ca.content }, reason: `CA loaded from ${env.PG_SSL_CA_PATH}` };
+};
+
+const sslDecision = resolvePgSsl(process.env, (caPath) => {
+  if (!fs.existsSync(caPath)) return { exists: false, content: '' };
+  return { exists: true, content: fs.readFileSync(caPath).toString() };
+});
+pgConfig.ssl = sslDecision.ssl;
+if (sslDecision.ssl) {
+  console.log(`SSL enabled — ${sslDecision.reason}`);
 } else {
-  console.log('No CA certificate path provided, SSL disabled');
-  pgConfig.ssl = false;
+  console.log(`SSL disabled — ${sslDecision.reason}`);
 }
 
 const pool: unknown = pgConfig.host ? new Pool(pgConfig) : null;
@@ -140,6 +184,6 @@ const connectPG = async (): Promise<unknown> => {
   }
 };
 
-module.exports = { pool, connectPG };
+module.exports = { pool, connectPG, resolvePgSsl };
 
 export {};

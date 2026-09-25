@@ -4,7 +4,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
 const { pool: pgPool } = require('../config/db-pg');
-// The mount probe, not the boot block's flag — see pgBootService.pathIsMounted
+// The mount probe, not the boot block's flag — see pgBootService.routerIsMounted
 // for why those are two different facts (TASK-168).
 // eslint-disable-next-line global-require
 const { pgRoutesAreMounted } = require('../services/pgBootService');
