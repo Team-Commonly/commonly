@@ -103,6 +103,11 @@ describe('server pg boot routes', () => {
     await new Promise((resolve) => { setTimeout(resolve, 30); });
 
     await request(app).get('/api/pg/messages').expect(404);
+    // What readiness reads: server.ts wires the probe to the route table, so
+    // this is the assertion that the gate is wired to the truth rather than to
+    // the boot block's own bookkeeping (TASK-168 acceptance 2).
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    expect(require('../../services/pgBootService').pgRoutesAreMounted()).toBe(false);
   });
 
   it('retries the boot connect and mounts the message routes when a later attempt succeeds', async () => {
@@ -119,6 +124,11 @@ describe('server pg boot routes', () => {
     await request(app).get('/api/pg/messages').expect(200);
     expect(mockConnectPG).toHaveBeenCalledTimes(2);
     expect(mockInitPGDB).toHaveBeenCalledTimes(1);
+    // The same probe the readiness gate calls, after the mount: a pod that
+    // recovers must flip without a restart, which is the half of the incident
+    // that needed a human.
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    expect(require('../../services/pgBootService').pgRoutesAreMounted()).toBe(true);
   });
 
   it('does not mount the message routes when the schema initialization fails', async () => {
@@ -131,6 +141,20 @@ describe('server pg boot routes', () => {
     await new Promise((resolve) => { setTimeout(resolve, 30); });
 
     await request(app).get('/api/pg/messages').expect(404);
+  });
+
+  it('wires the readiness probe to the route table, not to the boot flag (TASK-168)', () => {
+    // The states reachable in this file cannot tell the two apart — when PG is
+    // missing, the flag and the route table are both false; when it works, both
+    // are true. The distinction lily demanded ("readiness must not reuse that
+    // block's outcome as its own evidence; assert the mount") therefore needs a
+    // structural read: a rewiring to `pgAvailable` would keep every case above
+    // green while restoring exactly the blindness that caused the outage, since
+    // `/api/health` already said postgresql: healthy while /api/pg/messages 404'd.
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const serverSource = require('fs').readFileSync(require('path').join(__dirname, '../../server.ts'), 'utf8');
+    expect(serverSource).toContain('setPgMountProbe(() => routerIsMounted(app, pgMessageRoutes))');
+    expect(serverSource).not.toMatch(/setPgMountProbe\(\s*\(\)\s*=>\s*(pgAvailable|pgBootState)/);
   });
 });
 

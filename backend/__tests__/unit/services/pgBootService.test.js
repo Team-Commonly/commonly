@@ -11,7 +11,9 @@
  * so these run in milliseconds and assert the retry SHAPE (how many attempts,
  * what delay between them) rather than just the end state.
  */
-const { createPgBoot } = require('../../../services/pgBootService');
+const {
+  createPgBoot, routerIsMounted, setPgMountProbe, pgRoutesAreMounted,
+} = require('../../../services/pgBootService');
 
 const makeState = () => ({
   mounted: false,
@@ -183,5 +185,68 @@ describe('pgBootService — boot connect retries (TASK-168)', () => {
     await new Promise((resolve) => { setImmediate(resolve); });
 
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The readiness gate reads the route table, not the boot block's own flag
+ * (TASK-168 acceptance 2, lily's 20:57Z scope note). These cases use fake
+ * Express shapes — a Layer is `{ regexp, handle }` or `{ route: { path } }` —
+ * because what is under test is the walk, not Express.
+ */
+describe('pgBootService — the route-table probe (TASK-168)', () => {
+  const layer = (handle) => ({ handle });
+  const appWith = (...layers) => ({ _router: { stack: layers } });
+
+  it('finds the mounted router in the app stack', () => {
+    const pgMessages = { name: 'pg-messages' };
+    expect(routerIsMounted(appWith(layer(pgMessages)), pgMessages)).toBe(true);
+  });
+
+  it('returns false when that router is absent, which is the incident', () => {
+    const pgMessages = { name: 'pg-messages' };
+    const pgStatus = { name: 'pg-status' };
+    expect(routerIsMounted(appWith(layer({ stack: [layer(pgStatus)] })), pgMessages)).toBe(false);
+    expect(routerIsMounted({}, pgMessages)).toBe(false);
+    expect(routerIsMounted(null, pgMessages)).toBe(false);
+    // Not a path question: a router with the same shapes but a different
+    // identity is not this router.
+    expect(routerIsMounted(appWith(layer({ name: 'pg-messages' })), pgMessages)).toBe(false);
+  });
+
+  it('finds a router mounted inside another router', () => {
+    const pgMessages = { name: 'pg-messages' };
+    expect(routerIsMounted(appWith(layer({ stack: [layer(pgMessages)] })), pgMessages)).toBe(true);
+  });
+
+  it('answers from the live table, so a late mount flips it without a restart', () => {
+    const pgMessages = { name: 'pg-messages' };
+    const app = appWith(layer({ name: 'health' }));
+    setPgMountProbe(() => routerIsMounted(app, pgMessages));
+    expect(pgRoutesAreMounted()).toBe(false);
+
+    // The retry mounts the same router object into the same app.
+    app._router.stack.push(layer(pgMessages));
+    expect(pgRoutesAreMounted()).toBe(true);
+    setPgMountProbe(() => false);
+  });
+
+  it('does not accept a boot flag as evidence of the mount', () => {
+    // lily, TASK-168: "readiness must not reuse that block's outcome as its own
+    // evidence; assert the mount." A pod whose boot block believes it is fine
+    // while the route table disagrees is exactly the 2026-09-25 shape —
+    // /api/health said postgresql: healthy while /api/pg/messages 404'd — so the
+    // probe's answer must not move when the flag does.
+    const pgMessages = { name: 'pg-messages' };
+    const app = appWith(layer({ name: 'health' }));
+    const state = makeState();
+    state.mounted = true;
+    setPgMountProbe(() => routerIsMounted(app, pgMessages));
+
+    expect(pgRoutesAreMounted()).toBe(false);
+
+    app._router.stack.push(layer(pgMessages));
+    expect(pgRoutesAreMounted()).toBe(true);
+    setPgMountProbe(() => false);
   });
 });

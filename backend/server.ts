@@ -66,6 +66,7 @@ const Pod = require('./models/Pod');
 const User = require('./models/User');
 const AgentMentionService = require('./services/agentMentionService');
 const { createPgBoot } = require('./services/pgBootService');
+const { setPgMountProbe, routerIsMounted } = require('./services/pgBootService');
 
 // Global flag to track PostgreSQL availability
 let pgAvailable = false;
@@ -401,6 +402,10 @@ app.use('/api/pg/status', pgStatusRoutes);
 // backoff, the late mount and the state the health route reads all live in
 // services/pgBootService.ts (TASK-168).
 if (process.env.PG_HOST) {
+  // Readiness asks the route table, not this block's own bookkeeping (TASK-168):
+  // it checks that this very router is on the app, so a pod that mounts PG late
+  // starts passing its readiness probe without being restarted.
+  setPgMountProbe(() => routerIsMounted(app, pgMessageRoutes));
   createPgBoot({
     // Mounted only after a connect AND a schema initialization both succeed.
     // Until then the route is absent rather than present-and-500ing, which is

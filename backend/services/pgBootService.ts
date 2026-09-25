@@ -103,6 +103,54 @@ const messageOf = (error: unknown): string => {
   return e?.message || String(error);
 };
 
+/** The route the readiness gate is about: absent means this pod has no chat. */
+export const PG_MESSAGE_PATH = '/api/pg/messages';
+
+/**
+ * Is this exact router on the app's route table, right now?
+ *
+ * This is deliberately NOT `pgBootState.mounted`. The boot block and the route
+ * table are two different facts, and on 2026-09-25 they disagreed in the way
+ * that matters: `/api/health` reported `postgresql: healthy` during the outage
+ * because the lazily-created pool answered `SELECT 1` the moment the transient
+ * passed, while `/api/pg/messages` stayed unmounted and chat history 404'd.
+ * Readiness has to assert the route it depends on, from the route table, rather
+ * than trust a flag set by the code that was supposed to mount it (lily,
+ * TASK-168, 20:57Z: "readiness must not reuse that block's outcome as its own
+ * evidence; assert the mount").
+ *
+ * Identity rather than a path string, on purpose: matching a mount prefix means
+ * parsing Express's Layer regexp back into a path, which is the kind of
+ * archaeology that silently mis-reads when the router moves. The router object
+ * IS the thing being mounted, so asking whether that object is in the stack is
+ * the same question with no translation step — and it stays correct if the path
+ * ever changes.
+ */
+export const routerIsMounted = (app: unknown, router: unknown): boolean => {
+  if (!router) return false;
+  const walk = (candidate: any): boolean => {
+    const stack = (candidate && candidate.stack) || [];
+    return stack.some((layer: any) => {
+      if (layer.handle === router) return true;
+      return Boolean(layer.handle && layer.handle.stack) && walk(layer.handle);
+    });
+  };
+  const root = (app as { _router?: unknown; router?: unknown })?._router
+    || (app as { router?: unknown })?.router;
+  return walk(root);
+};
+
+// The probe is installed by server.ts, which owns the app. Kept as a function
+// rather than a snapshot so it answers from the live route table every time the
+// readiness probe asks — a pod that mounts PG later starts answering true.
+let mountProbe: (() => boolean) | null = null;
+
+export const setPgMountProbe = (fn: () => boolean): void => {
+  mountProbe = fn;
+};
+
+export const pgRoutesAreMounted = (): boolean => (mountProbe ? mountProbe() : false);
+
 export const createPgBoot = (deps: PgBootDeps): PgBootHandle => {
   const state = deps.state || pgBootState;
   const defaultLog = (level: 'info' | 'warn' | 'error'): LogFn => (message, error) => {

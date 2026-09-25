@@ -4,6 +4,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
 const { pool: pgPool } = require('../config/db-pg');
+// The mount probe, not the boot block's flag — see pgBootService.pathIsMounted
+// for why those are two different facts (TASK-168).
+// eslint-disable-next-line global-require
+const { pgRoutesAreMounted } = require('../services/pgBootService');
 
 interface Res {
   status: (n: number) => Res;
@@ -165,6 +169,27 @@ router.get('/ready', async (_req: unknown, res: Res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ status: 'not_ready', reason: 'MongoDB not connected' });
+    }
+
+    // The gate that was missing on 2026-09-25 (TASK-168). A pod whose boot
+    // connect timed out has no PG routes at all: /api/pg/messages 404s, so chat
+    // history cannot load and socket writes fall to Mongo. It used to answer
+    // ready anyway (this handler returned 200 for a PG probe failure), so during
+    // a rollout it took 100% of the traffic while the pod it replaced was
+    // healthy. Readiness now fails until the routes are actually mounted, which
+    // is a fact about the route table rather than about a connection attempt —
+    // and it stops failing the moment the retry mounts them, with no restart.
+    //
+    // What it deliberately does NOT gate: PG's liveness after a successful
+    // mount. A blip then leaves the pod ready and degraded on purpose, because
+    // failing every pod's readiness would turn partial degradation into a full
+    // API outage (values.yaml, readinessProbe).
+    if (process.env.PG_HOST && !pgRoutesAreMounted()) {
+      return res.status(503).json({
+        status: 'not_ready',
+        reason: 'PostgreSQL routes are not mounted on this pod',
+        timestamp: new Date().toISOString(),
+      });
     }
 
     if (process.env.PG_HOST && pgPool) {
