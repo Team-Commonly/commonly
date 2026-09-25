@@ -2429,4 +2429,15 @@ describe('the landing hero demo (TASK-147)', () => {
     expect(ruleBody(landing, '.v2-landing__shot-bar')).toContain('height: 32px');
     expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
   });
+
+  test('a row refusal takes a line of its own, under the row that raised it (Row C)', () => {
+    // A refused Slack authorize now renders inside its row (V2ConnectorsPage).
+    // jsdom cannot see this: the row is a 140px / minmax(150px, 1fr) / 120px
+    // grid, so without the span the message would be squeezed into the name or
+    // act track instead of reading as one line — the TASK-029 failure mode.
+    const v2 = read('../v2.css');
+    const refusal = ruleBody(v2, '.v2-connector-row__refusal');
+    expect(refusal).toContain('grid-column: 1 / -1');
+    expect(refusal).toContain('overflow-wrap: anywhere');
+  });
 });
