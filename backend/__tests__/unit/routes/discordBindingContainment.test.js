@@ -313,9 +313,10 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // The live bind posts `botToken: ''` (`DiscordCallback.tsx:100`). A
       // key-presence check refuses this and breaks every real bind, so the
       // refusal has to be a VALUE test and this payload has to be the witness:
-      // the empty token is filled from the environment by
-      // `resolveEffectiveConfig`, and `getMissingRequiredFields` reports `''` as
-      // missing, so it is neither refused here nor lost.
+      // `''` is not supplied, so no 400, and the shared strip then drops the key
+      // rather than storing an empty holder — while `resolveEffectiveConfig`
+      // fills the token from the environment for the manifest check, so the row
+      // is created and nothing is lost by dropping it.
       const res = await post({
         podId: 'pod-1',
         type: 'discord',
@@ -331,6 +332,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
       });
 
       expect(res.status).toBe(201);
+      expect(Integration.__getLastInstance().config).not.toHaveProperty('botToken');
       expect(axios.post).toHaveBeenCalledWith(
         `https://discord.com/api/channels/${CHANNEL}/webhooks`,
         { name: 'Commonly Bot', avatar: null },
@@ -387,12 +389,16 @@ describe('Discord binding containment (TASK-123 a)', () => {
       });
     });
 
-    it('CONTROL: a Slack write carrying a botToken is untouched by the Discord refusal', async () => {
-      // The load-bearing assertion. `SERVER_OWNED_CONFIG_KEYS` is applied to
-      // every type, and `resolveEffectiveConfig` returns early for all of them,
-      // so a shared-list version of this fix strips Slack's token with nothing
-      // to inject it back and 400s here. This control fails on that version and
-      // passes on the Discord-scoped one; nothing else in the file can see it.
+    it('CONTROL: a non-Discord write carrying a botToken stores the row without the token', async () => {
+      // The load-bearing assertion for the strip: `SERVER_OWNED_CONFIG_KEYS` is
+      // applied to every type, and `resolveEffectiveConfig` returns early for all
+      // of them, so this is the field's only closure on Slack. The write is
+      // still accepted (the strip is silent, and the `botToken` refusal above is
+      // Discord-scoped), and the caller's value is gone from the stored config.
+      // Nothing loses a credential it had: Slack's live bind stores
+      // `botTokenRef`, and its readers fall back to `SLACK_BOT_TOKEN`. This test
+      // previously asserted the opposite — that the caller's token was stored —
+      // which is the state the strip removes.
       const res = await post({
         podId: 'pod-1',
         type: 'slack',
@@ -401,7 +407,8 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       expect(res.status).toBe(201);
       const stored = Integration.__getLastInstance();
-      expect(stored.config.botToken).toBe('xoxb-caller');
+      expect(stored.config).not.toHaveProperty('botToken');
+      expect(stored.config.channelId).toBe('C012345');
     });
   });
 
@@ -449,6 +456,21 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       expect(res.status).toBe(200);
       expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
+    });
+
+    it('CONTROL: a non-Discord PATCH carrying a botToken drops it instead of storing it', async () => {
+      // PATCH is the field's second writer: the strip runs on `config` before
+      // `incoming` is built, so the key never reaches the `config.<key>` update
+      // path that persists every other incoming key. Asserted on the update
+      // payload, which is where a stored credential would show up.
+      Integration.findById.mockResolvedValue(discordRow({ type: 'slack', config: { channelId: 'C012345' } }));
+      Integration.findByIdAndUpdate.mockResolvedValue(discordRow({ type: 'slack' }));
+
+      const res = await patch({ config: { botToken: 'xoxb-patch' } });
+
+      expect(res.status).toBe(200);
+      const update = Integration.findByIdAndUpdate.mock.calls[0][1];
+      expect(Object.keys(update).filter((key) => key.includes('botToken'))).toEqual([]);
     });
   });
 });
