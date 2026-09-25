@@ -69,7 +69,7 @@ jobs:
             echo "· no parent commit on this ref; nothing to compare"
           fi
 
-          node scripts/verify-numbered-rules.js "${args[@]}"
+          node scripts/verify-numbered-rules.js --file docs/development/review-checklist.md "${args[@]}"
 
   review-checklist:
     name: Rule numbers are unique, cited, and stable
@@ -103,7 +103,7 @@ jobs:
 
           if ! git cat-file -e "FETCH_HEAD:docs/development/review-checklist.md" 2>/dev/null; then
             echo "· main does not carry the file yet; only the in-file checks apply"
-            node scripts/verify-numbered-rules.js
+            node scripts/verify-numbered-rules.js --file docs/development/review-checklist.md
             exit 0
           fi
           git show "FETCH_HEAD:docs/development/review-checklist.md" > /tmp/main.md
@@ -122,4 +122,11 @@ jobs:
             git show "FETCH_HEAD:scripts/verify-numbered-rules.js" > "$bin/verify-numbered-rules.js"
           fi
 
-          node "$bin/verify-numbered-rules.js" --previous /tmp/main.md
+          # --file is passed explicitly rather than defaulted: the checker is
+          # loaded from a temp dir, and a default resolved from ITS location
+          # rather than the checkout is a bug this guard shipped with for one
+          # run (ENOENT /tmp/docs/development/review-checklist.md, run
+          # 36137344359).
+          node "$bin/verify-numbered-rules.js" \
+            --file docs/development/review-checklist.md \
+            --previous /tmp/main.md

@@ -58,8 +58,14 @@ const argValue = (name, fallback) => {
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
 };
 
-const ROOT = path.join(__dirname, '..');
-const FILE = argValue('--file', path.join(ROOT, 'docs', 'development', 'review-checklist.md'));
+// Resolved from the working directory, not from __dirname: the CI job loads
+// this script from a temp dir (so that a PR branched before the guard landed
+// still runs the checker from main — see the workflow), and __dirname there
+// would point the file lookup at /tmp. The first run of this guard redded on
+// exactly that: ENOENT /tmp/docs/development/review-checklist.md.
+const ROOT = process.cwd();
+const DEFAULT = path.join('docs', 'development', 'review-checklist.md');
+const FILE = path.resolve(argValue('--file', DEFAULT));
 const PREVIOUS = argValue('--previous', null);
 
 // A rule begins with its literal number followed by a bold lead. Nothing else
