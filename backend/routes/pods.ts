@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -60,7 +60,7 @@ const podJoinRateLimitKey = (req: any) => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 const podFocusRateLimit = rateLimit({
