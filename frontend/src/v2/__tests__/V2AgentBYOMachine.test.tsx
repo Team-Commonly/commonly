@@ -194,4 +194,29 @@ describe('BYO on-my-computer mode', () => {
       config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', model: 'opus' } }),
     }), expect.anything());
   });
+
+  test('every avatar the route renders is under the one carrier the square rule is scoped to (TASK-166 item 7)', async () => {
+    // The rule is `.v2-byo__layout .v2-avatar` — a descendant selector, so its
+    // correctness is a DOM fact, not a CSS one: it goes silently dead the day an
+    // avatar moves outside that div (the TASK-160 shape, a rule that matches
+    // nothing). jsdom matches selectors even without a layout engine, so this is
+    // testable here; what stays ux-lead's browser gate is the rendered box (the
+    // 4px square and the cobalt dot), which jsdom structurally cannot see.
+    mockGet();
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-preview')).toBeInTheDocument());
+
+    const matched = container.querySelectorAll('.v2-byo__layout .v2-avatar');
+    const page = container.querySelectorAll('.v2-feature__body .v2-avatar');
+    expect(matched.length).toBeGreaterThan(0);
+    // Both directions, scoped to the page's own content: an avatar inside the
+    // page but outside the carrier keeps the global round radius while its
+    // neighbours are square — the defect item 7 exists to prevent.
+    expect(page.length).toBe(matched.length);
+    // Non-vacuity for that scoping, and the named exception: the rail's account
+    // avatar is chrome outside the page body, still round with a green lens. The
+    // row leaves it alone on purpose (it is a pre-existing consumer on every
+    // route), so this asserts the exclusion is real rather than an empty set.
+    expect(container.querySelectorAll('.v2-rail__account .v2-avatar').length).toBe(1);
+  });
 });

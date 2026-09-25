@@ -2476,6 +2476,209 @@ describe('the landing hero demo (TASK-147)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bring your own agent, onto Signal (TASK-166).
+//
+// Seven items from ux-lead's spec on the row, all of the same shape: something
+// the artboard draws and the component does not. Ink acts (1), the chosen card
+// is marked by a 2px border rather than the focus ring used as a halo (2), meta
+// is mono 500 at 11px and lowercase (3, 4), radius 4 on controls and 6 on cards
+// (5, 6), and the avatar is a 4px square with a cobalt live dot (7).
+//
+// Items 1–6 are presence lines. The reason they can be, rather than a cascade
+// comparison: `button.v2-byo__mode` and `button.v2-byo__submit` are already
+// rooted at `.v2-root`, so the bare reset at `v2.css:201` cannot outrank them
+// the way it did the landing pill in TASK-159. That trap is pre-avoided in this
+// component, not merely untested here.
+//
+// Item 7 gets three assertions, because each of its failure modes is invisible
+// to a presence line:
+//   (a) the square must WIN over `.v2-avatar`'s `border-radius: 50%`. It does so
+//       on specificity — (0,2,0) against (0,1,0) — with no help from document
+//       order, and the guard compares specificity while proving BOTH rules were
+//       read, since a comparison against an empty body asserts nothing.
+//   (b) the rule must match something. All four `<V2Avatar` call sites on this
+//       route sit inside the `.v2-byo__layout` element, and that containment is
+//       tag-counted rather than found by the first `</div>`: the first close
+//       after the opening tag ends `__main`, while the aside sits outside it.
+//       A descendant selector whose carrier moves out of the block goes
+//       silently dead, which is the TASK-160 shape (a rule that matches
+//       nothing).
+//   (c) neither new rule may overreach. The online dot keeps its own 50% radius,
+//       and the pressed card must not declare a shadow — the focus ring is
+//       `:focus-visible`'s (v2.css:383), and a ring on the pressed state is what
+//       this item exists to remove.
+// ---------------------------------------------------------------------------
+describe('Bring your own agent onto Signal (TASK-166)', () => {
+  const v2 = read('../v2.css');
+  const byo = read('../components/V2AgentBYO.tsx');
+  const en = read('../../i18n/locales/en.json');
+
+  // `ruleBody` returns the block from the selector line onward, and these rules
+  // carry comments of their own — both would otherwise be parsed as declarations
+  // (the selector's `:hover` and the prose's colons each take the first ':' of
+  // their fragment). So the selector prefix and comments come off first.
+  const cssDeclarations = (body: string): Record<string, string> => {
+    const open = body.indexOf('{');
+    const inner = (open === -1 ? body : body.slice(open + 1))
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const found: Record<string, string> = {};
+    inner.split(';').forEach((entry) => {
+      const at = entry.indexOf(':');
+      if (at < 0) return;
+      found[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+    });
+    return found;
+  };
+
+  // Specificity as [ids, classes+attributes+pseudo-classes, elements]. Only the
+  // item-7 selectors are asked about, so this walk stays simple: `:pseudo`
+  // counts as a class, `::pseudo` does not, and an element is a name beginning a
+  // compound. Floors, not a parser — the guard says which rule it ranks.
+  const specificity = (selector: string): number[] => {
+    const withoutPseudoElements = selector.replace(/::[a-z-]+/g, '');
+    const ids = (withoutPseudoElements.match(/#[A-Za-z0-9_-]+/g) ?? []).length;
+    const classes = (
+      withoutPseudoElements.match(/\.[A-Za-z0-9_-]+|\[[^\]]+\]|:[a-z-]+/g) ?? []
+    ).length;
+    const elements = (
+      withoutPseudoElements.match(/(?:^|[\s>+~])([a-z][A-Za-z0-9-]*)/g) ?? []
+    ).length;
+    return [ids, classes, elements];
+  };
+
+  const outranks = (a: number[], b: number[]): boolean => {
+    for (let i = 0; i < 3; i += 1) {
+      if (a[i] !== b[i]) return a[i] > b[i];
+    }
+    // A tie is resolved by document order in the sheet; the item-7 pair is not
+    // a tie, and this guard would rather not claim to model the tie it does not
+    // depend on.
+    return false;
+  };
+
+  test('the submit button is ink, at radius 4 (item 1)', () => {
+    const submit = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__submit'));
+    expect(submit.background).toBe('var(--v2-ink)');
+    expect(submit['border-radius']).toBe('4px');
+    // Non-vacuity: the rule was read, not returned empty.
+    expect(ruleBody(v2, '.v2-root button.v2-byo__submit')).toContain('cursor: pointer');
+    const hover = cssDeclarations(
+      ruleBody(v2, '.v2-root button.v2-byo__submit:hover:not(:disabled)'),
+    );
+    expect(hover.background).toBe('var(--v2-ink-hover)');
+    expect(hover['border-color']).toBe('var(--v2-ink-hover)');
+  });
+
+  test('the chosen mode card is a 2px accent border that holds its box (item 2)', () => {
+    const base = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__mode'));
+    expect(base['border-radius']).toBe('4px');
+    // The 1px-per-side compensation is derived from the base shorthand, so it is
+    // pinned to it rather than restated as a magic number.
+    expect(base.padding).toBe('16px 18px 14px');
+
+    const pressed = cssDeclarations(
+      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
+    );
+    expect(pressed.border).toBe('2px solid var(--v2-accent)');
+    expect(pressed.padding).toBe('15px 17px 13px');
+    // (c) the ring belongs to :focus-visible, and a ring here is the defect.
+    expect(pressed['box-shadow']).toBeUndefined();
+    expect(
+      selectorRuleBody(v2, '.v2-root button:focus-visible'),
+    ).toContain('box-shadow: var(--v2-focus-ring)');
+  });
+
+  test('the mode kicker is mono 500 at 11px, lowercase, cobalt only when chosen (item 3)', () => {
+    const kicker = cssDeclarations(ruleBody(v2, '.v2-byo__mode-kicker'));
+    expect(kicker.font).toBe('500 11px/16px var(--v2-font-mono)');
+    expect(kicker['text-transform']).toBeUndefined();
+    expect(kicker.color).toBe('var(--v2-text-muted)');
+    const chosen = cssDeclarations(
+      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
+    );
+    expect(chosen.color).toBe('var(--v2-accent-text)');
+    // The caps were data, not only CSS, so the data is where they must not come
+    // back from: a lowercase transform over zh-CN copy would be the wrong fix.
+    expect(en).toContain('"recommended": "recommended"');
+    expect(en).toContain('"yours": "your machine"');
+  });
+
+  test('the preview label is mono 500 at 11px with no caps transform (item 4)', () => {
+    const label = cssDeclarations(ruleBody(v2, '.v2-byo__preview-label'));
+    expect(label.font).toBe('500 11px/16px var(--v2-font-mono)');
+    expect(label['text-transform']).toBeUndefined();
+    expect(label.color).toBe('var(--v2-text-muted)');
+  });
+
+  test('controls take radius 4 and cards radius 6 (items 5 and 6)', () => {
+    expect(cssDeclarations(ruleBody(v2, '.v2-byo__input'))['border-radius']).toBe('4px');
+    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-card'))['border-radius']).toBe('6px');
+  });
+
+  test('the BYO avatar wins its radius against the global round one (item 7a)', () => {
+    const square = ruleBody(v2, '.v2-byo__layout .v2-avatar');
+    const round = ruleBody(v2, '.v2-avatar');
+    // Non-vacuity: both rules were read, and each declares the very property
+    // being overridden. A specificity comparison against an empty body would
+    // pass while .v2-avatar no longer sets a radius at all.
+    expect(round).toContain('border-radius: 50%');
+    expect(round).toContain('border: 2px solid var(--v2-surface)');
+    expect(square).toContain('border-radius: 4px');
+    expect(square).toContain('border: 0');
+    expect(square).toContain('box-shadow: none');
+
+    const qualified = specificity('.v2-byo__layout .v2-avatar');
+    const bare = specificity('.v2-avatar');
+    expect(outranks(qualified, bare)).toBe(true);
+    // Named, so a future reader sees WHICH axis the winner comes from rather
+    // than a bare `true`: equal ids and elements, one more class.
+    expect({ qualified, bare }).toEqual({ qualified: [0, 2, 0], bare: [0, 1, 0] });
+    // `--lg`/`--md` set size only; if one ever restates a radius, the square
+    // stops applying at that size and this guard should be the thing that says so.
+    expect(ruleBody(v2, '.v2-avatar--lg')).not.toContain('border-radius');
+    expect(ruleBody(v2, '.v2-avatar--md')).not.toContain('border-radius');
+  });
+
+  test('the live dot is cobalt, and stays round (item 7b)', () => {
+    const dot = cssDeclarations(ruleBody(v2, '.v2-byo__layout .v2-avatar__online'));
+    const baseDot = ruleBody(v2, '.v2-avatar__online');
+    // Non-vacuity: the base rule it overrides is read, and it is the green one.
+    expect(baseDot).toContain('background: var(--v2-success)');
+    expect(baseDot).toContain('border-radius: 50%');
+    expect(dot.background).toBe('var(--v2-accent)');
+    // (c) a square dot is invisible in a screenshot and would be a silent
+    // regression, so the new rule may not touch the radius.
+    expect(dot['border-radius']).toBeUndefined();
+  });
+
+  test('the square rule has every avatar on the route inside its carrier (item 7c)', () => {
+    const open = byo.indexOf('<div className="v2-byo__layout">');
+    expect(open).toBeGreaterThan(-1);
+    const tag = /<div\b[^>]*>|<\/div>/g;
+    tag.lastIndex = open;
+    let depth = 0;
+    let end = -1;
+    for (let m = tag.exec(byo); m !== null; m = tag.exec(byo)) {
+      if (m[0].startsWith('</')) {
+        depth -= 1;
+        if (depth === 0) { end = m.index + m[0].length; break; }
+      } else if (!m[0].endsWith('/>')) {
+        depth += 1;
+      }
+    }
+    expect(end).toBeGreaterThan(open);
+    const layout = byo.slice(open, end);
+    const avatars = (src: string): number => (src.match(/<V2Avatar\b/g) ?? []).length;
+    // Every avatar the route renders is inside the block the selector is scoped
+    // to. Both directions are asserted: one outside the block would be a rule
+    // that silently does not apply to it, and the route's whole population is
+    // these four (persona context, the two result cards, the preview).
+    expect(avatars(layout)).toBe(4);
+    expect(avatars(byo)).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The authenticated shell's height chain (TASK-157).
 //
 // Both defects this block covers are cascade outcomes, not missing text: the
