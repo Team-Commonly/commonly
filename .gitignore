@@ -1,5 +1,6 @@
 # Common ignored files
 *.bak
+*.prev
 *.log
 .DS_Store
 npm-debug.log
@@ -30,7 +31,6 @@ dist/
 # Ignore runtime-generated agent data and state
 external/clawdbot-state/
 external/commonly-bot-state/
-*.bak
 
 # _external/clawdbot is a git submodule — tracked, not ignored
 # Ignore any other dirs that may appear under _external/
