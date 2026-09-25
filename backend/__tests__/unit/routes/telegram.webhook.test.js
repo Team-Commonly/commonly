@@ -326,7 +326,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     const until = new Date(update.$set['config.relayMutedUntil']).getTime();
-    expect(until).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60_000 + 5000);
+    expect(until).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60000 + 5000);
     expect(until).toBeGreaterThan(Date.now());
   });
 
