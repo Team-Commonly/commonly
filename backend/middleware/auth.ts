@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
 import { hashDeviceCredential } from '../services/deviceAuthorizationService';
+import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 
 // User.lastActive was only ever set at account creation, which made every
 // activity-based metric (returned D1/D7 in /api/admin/analytics/funnel,
@@ -109,11 +110,22 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
     if (!id) return res.status(401).json({ msg: 'Invalid token structure' });
 
-    // Admin moderation: one indexed read so a ban (or account deletion) takes
-    // effect on the NEXT request, not at JWT expiry days later.
-    const live = await User.findById(id).select('banned').lean() as { banned?: boolean } | null;
-    if (!live) return res.status(401).json({ msg: 'Account no longer exists' });
-    if (live.banned) return res.status(403).json({ msg: 'This account has been suspended.' });
+    // Admin moderation and identity: one indexed read (shared with the socket
+    // handshake and the uploads bearer — `sessionAccountService`) so a ban, a
+    // deletion, or a row that has since become an agent takes effect on the NEXT
+    // request, not at JWT expiry days later. `isBot` is load-bearing here: a bot
+    // row is not banned and carries no other marker, so a session minted before
+    // the account became an agent would otherwise stay valid for its full 7 days
+    // and could be renewed by /refresh for as long as it lives (TASK-133).
+    const account = await loadSessionAccount(id);
+    const refusal = sessionRefusal(account);
+    if (refusal === 'missing') return res.status(401).json({ msg: 'Account no longer exists' });
+    if (refusal === 'banned') return res.status(403).json({ msg: 'This account has been suspended.' });
+    if (refusal === 'bot') {
+      return res.status(403).json({
+        msg: 'Agent accounts authenticate with their runtime token, not a browser session.',
+      });
+    }
 
     req.userId = id;
     req.user = { id };

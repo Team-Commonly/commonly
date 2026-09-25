@@ -209,6 +209,32 @@ describe('OAuth Controller', () => {
       expect(ensureUserInCommunityPod).toHaveBeenCalledWith(existing._id);
     });
 
+    it('refuses a bot row found by its linked provider (TASK-133)', async () => {
+      // A converted account keeps whatever the person had linked, so the provider
+      // arm can land on a bot row whose email no longer matches anything. The
+      // email arm below already refused bots; this is the arm that never consults
+      // the email.
+      const bot = await User.create({
+        username: 'converted-human',
+        email: 'someone-else@example.com',
+        isBot: true,
+        authProviders: [{ provider: 'github', providerId: '4242', email: 'older@example.com' }],
+      });
+      await seedState();
+      mockGithubProfile();
+      const res = mockRes();
+
+      await oauthController.oauthCallback(callbackReq(), res);
+
+      expect(res.redirect).toHaveBeenCalledWith(
+        'https://app.test.local/v2/login?oauthError=bot_account',
+      );
+      expect(jwt.sign).not.toHaveBeenCalled();
+      expect(String((await User.findById(bot._id))._id)).toBe(String(bot._id));
+      // No second row was minted for the provider identity either.
+      expect(await User.countDocuments({})).toBe(1);
+    });
+
     it('enforces the invite gate for brand-new signups', async () => {
       process.env.REGISTRATION_INVITE_ONLY = 'true';
       await seedState(); // no invitationCode captured at /start
@@ -352,6 +378,37 @@ describe('OAuth Controller', () => {
       const res2 = mockRes();
       await oauthController.exchangeOAuthCode({ body: { code: 'one-time-code' } }, res2);
       expect(res2.status).toHaveBeenCalledWith(400);
+    });
+
+    it('refuses to issue a session for an account that is an agent (TASK-133)', async () => {
+      // The state row records who signed in moments ago; the row can have become
+      // an agent since, and this is the fifth place a `{ id }` 7-day session is
+      // minted.
+      const bot = await User.create({
+        username: 'converted-human',
+        email: 'converted@example.com',
+        password: 'hashed-pass',
+        isBot: true,
+        verified: true,
+      });
+      await OAuthLoginState.create({
+        provider: 'github',
+        state: 'state-bot',
+        userId: bot._id,
+        exchangeCode: 'bot-code',
+        exchangeExpiresAt: new Date(Date.now() + 60000),
+        expiresAt: new Date(Date.now() + 60000),
+      });
+
+      const res = mockRes();
+      await oauthController.exchangeOAuthCode({ body: { code: 'bot-code' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Agent accounts authenticate with their runtime token.',
+        code: 'BOT_ACCOUNT',
+      });
+      expect(jwt.sign).not.toHaveBeenCalled();
     });
 
     it('rejects an expired exchange code', async () => {

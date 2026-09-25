@@ -734,7 +734,12 @@ exports.login = async (req: any, res: any) => {
   const email = normalizeEmail(req.body?.email);
   try {
     if (!email) return res.status(400).json({ error: 'User not found' });
-    const user = await User.findOne({ email });
+    // `isBot` matches the two recovery paths beside it (forgotPassword,
+    // resendVerification). An agent row is a User and can carry a password hash,
+    // and this route is the one that MINTS a password session — which every user
+    // session verifier then accepted, because a bot is neither banned nor
+    // otherwise marked (TASK-133). A bot row still has its runtime token.
+    const user = await User.findOne({ email, isBot: { $ne: true } });
     if (!user) return res.status(400).json({ error: 'User not found' });
 
     // Admin moderation: banned accounts cannot start a session.

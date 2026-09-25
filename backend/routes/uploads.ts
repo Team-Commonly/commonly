@@ -42,6 +42,7 @@ const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 import { getObjectStore } from '../services/objectStore';
+import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 
 interface AuthReq {
   userId?: string;
@@ -302,6 +303,12 @@ router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res)
 //   (a) a valid `?t=<token>` minted by GET /:fileName/url (the frontend
 //       already mints these via getSignedAttachmentUrl before rendering), or
 //   (b) a Bearer token whose user canReadAttachment (owner / pod member).
+//
+// A Bearer token is a user session, so it is verified against the live row the
+// same way the HTTP middleware and the socket handshake verify theirs: a session
+// whose account has since become an agent is not a person's read any more
+// (TASK-133). `authorizePodFile` used to check the signature and the ACL and
+// never read the row, so `canReadAttachment` decided on behalf of a bot user.
 // Un-scoped files (avatars, profile pictures — File.podId null) are always
 // allowed, matching how they render in public post feeds. Returns true when
 // the read is permitted.
@@ -323,7 +330,9 @@ const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean
     try {
       const decoded = jwt.verify(bearer, process.env.JWT_SECRET as string) as Record<string, unknown>;
       const uid = (decoded.id || (decoded.user as Record<string, unknown>)?.id) as string | undefined;
-      if (uid && await canReadAttachment(fileName, uid)) return true;
+      if (uid && !sessionRefusal(await loadSessionAccount(uid)) && await canReadAttachment(fileName, uid)) {
+        return true;
+      }
     } catch {
       // invalid bearer — fall through to unauthorized
     }
