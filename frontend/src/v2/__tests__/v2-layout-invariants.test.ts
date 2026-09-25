@@ -2386,3 +2386,222 @@ describe('the landing hero demo (TASK-147)', () => {
     expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The authenticated shell's height chain (TASK-157).
+//
+// Both defects this block covers are cascade outcomes, not missing text: the
+// desktop one is the content div auto-placing into the `auto` banner row instead
+// of the `1fr` row, and the phone one is a 0,2,0 `height: 100vh` sitting LATER in
+// the sheet than every 0,2,0 `height: 100%` that should bound it. Presence cannot
+// see either — `not.toContain('100vh')` passes while a duplicate rule at EOF
+// repaints the phone, and `toContain('grid-row: 2')` passes while a later rule
+// resets it to auto. So this block parses the sheet into rules carrying their
+// at-rule context, specificity and document order, and asserts on the WINNER of
+// the small cascade it can resolve — the same move as the #1868 specificity
+// comparison, one level up. (ux-lead measured the defect in a browser at 390 and
+// 1200; jsdom has no layout engine, so what is pinned here is the cascade, never
+// the rendered box.)
+//
+// Stated limits, so the next reader does not over-read this: the parser handles
+// simple selectors, max-/min-width conditions, and the `height` / `grid-row`
+// declarations asserted on. It does not resolve percentages against containing
+// blocks, does not model `!important`, and treats unmodelled media features
+// (hover, prefers-reduced-motion) as applying — the conservative direction for a
+// guard whose job is to catch a rule that WINS.
+describe('the authenticated shell keeps its panes inside the banner row (TASK-157)', () => {
+  const v2 = read('../v2.css');
+
+  type ParsedRule = {
+    selector: string;
+    body: string;
+    media: string[];
+    order: number;
+    classes: string[];
+    specificity: number[];
+  };
+
+  const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const classTokens = (compound: string): string[] => (
+    compound.match(/\.[A-Za-z0-9_-]+/g) ?? []
+  ).map((token) => token.slice(1));
+
+  const lastCompound = (selector: string): string => (
+    selector.split(/\s+|>/).filter(Boolean).pop() ?? ''
+  );
+
+  // (ids, classes/attributes/pseudo-classes, elements). Enough for this sheet:
+  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0 and no id or `!important` is
+  // involved.
+  const specificityOf = (selector: string): number[] => {
+    const ids = (selector.match(/#[A-Za-z0-9_-]+/g) ?? []).length;
+    const classes = (selector.match(/\.[A-Za-z0-9_-]+/g) ?? []).length
+      + (selector.match(/\[[^\]]*\]/g) ?? []).length
+      + ((selector.match(/:(?!:)[a-z-]+/g) ?? []).length);
+    const elements = (selector
+      .replace(/::?[a-z-]+(\([^)]*\))?/g, ' ')
+      .replace(/[.#][A-Za-z0-9_-]+/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .match(/\b[a-z][a-z0-9-]*\b/g) ?? []).length;
+    return [ids, classes, elements];
+  };
+
+  const parseCascade = (css: string): ParsedRule[] => {
+    const rules: ParsedRule[] = [];
+    let order = 0;
+    const walk = (text: string, media: string[]): void => {
+      let i = 0;
+      while (i < text.length) {
+        const open = text.indexOf('{', i);
+        if (open < 0) return;
+        const head = text.slice(i, open).trim();
+        let depth = 1;
+        let j = open + 1;
+        while (j < text.length && depth > 0) {
+          if (text[j] === '{') depth += 1;
+          else if (text[j] === '}') depth -= 1;
+          j += 1;
+        }
+        const inner = text.slice(open + 1, j - 1);
+        if (head.startsWith('@')) {
+          walk(inner, media.concat([head]));
+        } else {
+          const parts = head.split(',');
+          let p = 0;
+          while (p < parts.length) {
+            const selector = parts[p].trim();
+            if (selector) {
+              rules.push({
+                selector,
+                body: inner,
+                media,
+                order,
+                classes: classTokens(lastCompound(selector)),
+                specificity: specificityOf(selector),
+              });
+              order += 1;
+            }
+            p += 1;
+          }
+        }
+        i = j;
+      }
+    };
+    walk(stripComments(css), []);
+    return rules;
+  };
+
+  const declarations = (body: string): Record<string, string> => {
+    const found: Record<string, string> = {};
+    body.split(';').forEach((entry) => {
+      const at = entry.indexOf(':');
+      if (at < 0) return;
+      found[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+    });
+    return found;
+  };
+
+  // A rule applies at a width unless an at-rule it sits inside rules that width
+  // out. Conditions the guard does not model are treated as applying.
+  const appliesAt = (rule: ParsedRule, width: number): boolean => rule.media.every((at) => {
+    const max = at.match(/max-width:\s*(\d+)px/);
+    const min = at.match(/min-width:\s*(\d+)px/);
+    if (max && width > Number(max[1])) return false;
+    if (min && width < Number(min[1])) return false;
+    return true;
+  });
+
+  const outranks = (a: ParsedRule, b: ParsedRule): boolean => {
+    for (let i = 0; i < 3; i += 1) {
+      if (a.specificity[i] !== b.specificity[i]) return a.specificity[i] > b.specificity[i];
+    }
+    return a.order > b.order;
+  };
+
+  const winnerOf = (rules: ParsedRule[]): ParsedRule => rules.reduce(
+    (best, rule) => (outranks(rule, best) ? rule : best),
+  );
+
+  const rules = parseCascade(v2);
+
+  // The main content pane is rendered as `class="v2-pane v2-pane--main"`, so a
+  // rule can only match it if its last compound requires no other class.
+  const MAIN_PANE = new Set(['v2-pane', 'v2-pane--main']);
+  const mainPaneRules = rules.filter((rule) => rule.classes.length > 0
+    && rule.classes.every((token) => MAIN_PANE.has(token)));
+
+  const BOUNDED_PANE_SELECTOR = '.v2-authenticated-shell__content .v2-shell .v2-pane';
+
+  test('the authenticated content always takes the shell\'s second grid row', () => {
+    const contentRules = rules.filter(
+      (rule) => rule.classes.includes('v2-authenticated-shell__content')
+        && declarations(rule.body)['grid-row'] !== undefined,
+    );
+    // Non-vacuity: the assertions below are about a winner, and a winner chosen
+    // from an empty set asserts nothing.
+    expect(contentRules.length).toBeGreaterThan(0);
+    const winner = winnerOf(contentRules);
+    expect(declarations(winner.body)['grid-row']).toBe('2');
+    expect(winner.selector).toContain('v2-authenticated-shell__content');
+  });
+
+  test('no pane of the authenticated shell takes the viewport height on a phone', () => {
+    const atPhone = mainPaneRules.filter((rule) => declarations(rule.body)['height'] !== undefined
+      && appliesAt(rule, 390));
+    const viewportHeight = atPhone.filter(
+      (rule) => /^100(?:\.0)?(?:vh|dvh|svh)$/.test(declarations(rule.body)['height']),
+    );
+    const bounded = atPhone.filter((rule) => declarations(rule.body)['height'] === '100%');
+    // Non-vacuity, both directions: a filter shaped "every 100vh rule is outranked"
+    // passes loudest when no 100vh rule is found, and a fix that deleted the
+    // bounding rule would otherwise pass by having nothing to compare.
+    expect(viewportHeight.length).toBeGreaterThan(0);
+    expect(bounded.length).toBeGreaterThan(0);
+
+    viewportHeight.forEach((rule) => {
+      const dominator = bounded.find((candidate) => outranks(candidate, rule));
+      // Named, not counted: a bare `dominated: false` reports that something is
+      // wrong without saying which rule now wins the phone.
+      expect({
+        selector: rule.selector,
+        height: declarations(rule.body)['height'],
+        outrankedBy: dominator ? dominator.selector : null,
+      }).toEqual({
+        selector: rule.selector,
+        height: declarations(rule.body)['height'],
+        outrankedBy: expect.any(String),
+      });
+    });
+
+    const winner = winnerOf(atPhone);
+    expect(declarations(winner.body)['height']).toBe('100%');
+    expect(winner.selector).toBe(BOUNDED_PANE_SELECTOR);
+  });
+
+  test('the bounded pane rule stays a phone rule', () => {
+    // It must not apply at desktop, where the pane keeps its 16px gutter
+    // (`.v2-authenticated-shell .v2-pane--main { height: calc(100% - 16px) }`).
+    //
+    // Stated on purpose: this requires the SPECIFICITY-scoped form, not merely a
+    // rule that happens to win. A same-specificity `.v2-shell .v2-pane {
+    // height: 100% }` added after the 100vh rule also bounds the phone today —
+    // and is the shape that has failed twice here, because the next rule written
+    // later takes the width back. Measured as m7 in the mutation campaign: it reds
+    // this pair deliberately.
+    const scoped = rules.filter((rule) => rule.selector === BOUNDED_PANE_SELECTOR);
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.filter((rule) => appliesAt(rule, 390)).length).toBeGreaterThan(0);
+    expect(scoped.filter((rule) => appliesAt(rule, 1200))).toHaveLength(0);
+  });
+
+  test('the selectors this guard ranks are the ones the components render', () => {
+    // The chain the winning selector walks: content div > shell > pane. Checked
+    // against the components so the guard cannot pass on a chain the app does
+    // not build.
+    expect(read('../V2App.tsx')).toContain('v2-authenticated-shell__content');
+    expect(read('../components/V2Layout.tsx')).toContain("'v2-shell'");
+    expect(read('../components/V2Thread.tsx')).toContain('"v2-pane v2-pane--main"');
+    expect(read('../components/V2FeaturePage.tsx')).toContain('v2-pane v2-pane--main');
+  });
+});

@@ -403,6 +403,14 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-authenticated-shell__content {
+  /* Row 2 always, not by auto-placement. Row 1 is the `auto` row the banner
+     sits in, so a verified user (no banner) has the content as the FIRST grid
+     child and auto-placement put it in that row instead: the inset card then
+     sized to its own content and any page shorter than the viewport ended
+     178-195px above the bottom gutter instead of 14 (TASK-157, ux-lead at
+     1200). Row 1 collapses to 0 with nothing in it, which is the same layout
+     the banner variant already produced. */
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -10039,6 +10047,21 @@ body.modern-ui.v2-canvas {
 
   .v2-shell .v2-pane {
     height: 100vh;
+  }
+
+  /* A pane INSIDE the authenticated shell is bounded by the shell's content box,
+     not by the viewport: that box has already had the verify-email banner
+     subtracted from it, so a 100vh pane overflows below the fold by the banner's
+     height. With its own `overflow: hidden` the pod header then sits under the
+     banner — the back button, the title and the inspector toggle all untappable,
+     and there is nothing to scroll (TASK-157, ux-lead at 390, ux-lead's P1).
+     Ranked (0,3,0) against the (0,2,0) rule above so it wins on specificity, not
+     on coming later: the same lesson as #1868, where a tie resolved by file
+     order silently erased a component's own declarations. The 100vh rule itself
+     stays — it is the right height outside this shell — and this guard is what
+     keeps it from winning here. */
+  .v2-authenticated-shell__content .v2-shell .v2-pane {
+    height: 100%;
   }
 
   .v2-pods-aside {
