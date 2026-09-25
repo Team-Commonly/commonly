@@ -1,5 +1,6 @@
 import User from '../models/User';
 import Pod from '../models/Pod';
+import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
@@ -112,10 +113,39 @@ const buildAgentUsername = (agentType: string, instanceId: string): string => {
   return `${normalized}-${instance}`;
 };
 
+/**
+ * The address every derived agent identity is issued. It is a reserved
+ * namespace, not a mailbox: nothing can deliver to `.local`, yet a registration
+ * that takes one is a *usable* account (login mints for `verified: false`), and
+ * the row it creates is agent-marked by address, so an install adopts it.
+ */
+export const AGENT_ADDRESS_DOMAIN = 'agents.commonly.local';
+
 const buildAgentEmail = (agentType: string, instanceId: string): string => {
   const username = buildAgentUsername(agentType, instanceId);
-  return `${username || 'agent'}@agents.commonly.local`;
+  return `${username || 'agent'}@${AGENT_ADDRESS_DOMAIN}`;
 };
+
+/**
+ * Names an install derives for itself when it has no instance id: the
+ * `AGENT_TYPES` keys, normalized the way `buildAgentUsername` normalizes them.
+ *
+ * Deliberately NOT a shape rule (wren 73988): `openclaw-pixel` is a legitimate
+ * human handle, and its row carries no agent marker, so `getOrCreateAgentUser`
+ * refuses it rather than flipping a person (TASK-133 a). Refusing the shape
+ * would refuse real people to close a case (a) already closes.
+ */
+export const isReservedAgentUsername = (username: unknown): boolean => {
+  const candidate = normalizeSegment(username);
+  if (!candidate) return false;
+  return Object.keys(AGENT_TYPES).some((type) => buildAgentUsername(type, '') === candidate);
+};
+
+/** The derived address namespace, matched as a domain rather than a self-host. */
+export const isReservedAgentEmail = (email: unknown): boolean => (
+  typeof email === 'string'
+  && email.trim().toLowerCase().endsWith(`@${AGENT_ADDRESS_DOMAIN}`)
+);
 
 /**
  * Refused rather than resolved: the username a derived agent identity maps to is
@@ -125,8 +155,19 @@ const buildAgentEmail = (agentType: string, instanceId: string): string => {
  * owner would be locked out of the account they registered with, and the flip is
  * not something they can undo from the UI.
  */
+/** The refusal's declared code: callers identify it structurally. */
+export const AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict';
+
 export class AgentUsernameConflictError extends Error {
-  readonly code = 'agent_username_conflict';
+  readonly code = AGENT_USERNAME_CONFLICT_CODE;
+
+  /**
+   * Carried on the error so a caller that only has the thrown value can answer
+   * without re-deriving the mapping (routes/registry/install.ts returns it
+   * verbatim). The message is what gets surfaced, so it names the username and
+   * not the id — `existingUserId` stays a field for logs and tests.
+   */
+  readonly status = 409;
 
   constructor(
     public readonly username: string,
@@ -478,6 +519,20 @@ class AgentIdentityService {
       if (!isAgentOwnedRow(agentUser, buildAgentEmail(resolvedType, instanceId))) {
         throw new AgentUsernameConflictError(username, String(agentUser._id));
       }
+      // Revoke what the row brought (TASK-133 b, wren 74014). An adopted row can
+      // carry credentials no agent ever issued: a person mints an apiToken from
+      // their own session (`routes/auth.ts` POST /api-token/generate) and a CLI
+      // device bearer (`deviceAuthorizationService`), and adoption keeps both —
+      // `routes/registry/tokens.ts` then hands the apiToken back as the agent's
+      // user token, with nothing in the response to say it was a stranger's.
+      // Two writes, because the token is not the only bearer the row can hold.
+      // No runtime token is affected: `agentRuntimeAuth` only authenticates one
+      // on a bot row, and every writer flips before it issues.
+      agentUser.revokeApiToken();
+      agentUser.apiTokenScopes = [];
+      for (const deviceToken of agentUser.deviceTokens || []) {
+        if (!deviceToken.revokedAt) deviceToken.revokedAt = new Date();
+      }
       // Upgrade existing user to bot if not already marked
       agentUser.isBot = true;
       agentUser.botType = (typeConfig?.botType || options.botType || 'agent') as typeof agentUser.botType;
@@ -535,6 +590,35 @@ class AgentIdentityService {
     }
 
     return agentUser;
+  }
+
+  /**
+   * One predicate for every human registration path (TASK-133 b, wren
+   * 73987/73988): the sync name rules first (reserved address, `AGENT_TYPES`
+   * keys), then the names an `AgentRegistry` row claims. Verified before the
+   * row exists beats refusing at install, which is where the same collision
+   * would otherwise land as a 409 the operator cannot act on.
+   *
+   * The registry match is by exact name in two forms — as written (lowercased)
+   * and normalized — because a scoped row stores its scope (`@acme/scout`) while
+   * its derived username strips it (`acmescout`). A scoped package whose
+   * normalized form is reached by a *differently spelled* candidate is out of
+   * reach of an exact match and rides the (a) refusal instead: a refused
+   * install, never a flip.
+   */
+  static async resolveAccountNameConflict(account: {
+    username?: unknown;
+    email?: unknown;
+  }): Promise<'agent_email_reserved' | 'agent_username_reserved' | null> {
+    if (isReservedAgentEmail(account.email)) return 'agent_email_reserved';
+    if (isReservedAgentUsername(account.username)) return 'agent_username_reserved';
+    const candidate = normalizeSegment(account.username);
+    if (!candidate) return null;
+    const asWritten = String(account.username || '').trim().toLowerCase();
+    const claimed = await AgentRegistry.exists({
+      agentName: { $in: [asWritten, candidate].filter(Boolean) },
+    });
+    return claimed ? 'agent_username_reserved' : null;
   }
 
   static getAgentTypes(): Record<string, AgentTypeConfig> {

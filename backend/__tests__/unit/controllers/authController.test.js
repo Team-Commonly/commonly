@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
 const WaitlistRequest = require('../../../models/WaitlistRequest');
+const { AgentRegistry } = require('../../../models/AgentRegistry');
 
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
@@ -460,6 +461,66 @@ describe('Auth Controller Tests', () => {
       expect(saveMock).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(201);
     });
+    it('refuses a registration that takes an agent type name (TASK-133 b)', async () => {
+      const req = {
+        body: { username: 'claude-code', email: 'person@example.com', password: 'Password123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      // Refused before the row exists, which is the only moment the namespace
+      // can be defended: an install's alternative is failing closed much later.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_username_reserved',
+      }));
+      expect(await User.countDocuments({ username: 'claude-code' })).toBe(0);
+    });
+
+    it('refuses the derived agent address (TASK-133 b)', async () => {
+      const req = {
+        body: {
+          username: 'person',
+          email: 'person@agents.commonly.local',
+          password: 'Password123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_email_reserved',
+      }));
+      expect(await User.countDocuments({ email: 'person@agents.commonly.local' })).toBe(0);
+    });
+
+    it('refuses a name an AgentRegistry row claims (TASK-133 b)', async () => {
+      await AgentRegistry.create({
+        agentName: 'pixel-helper',
+        displayName: 'Pixel Helper',
+        description: 'a pod helper',
+        manifest: { name: 'pixel-helper', version: '1.0.0' },
+      });
+
+      const req = {
+        body: { username: 'Pixel-Helper', email: 'person@example.com', password: 'Password123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      // Case-insensitive, because the User index is (strength-2 collation) and
+      // registration stores the username verbatim.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_username_reserved',
+      }));
+      expect(await User.countDocuments({ username: 'Pixel-Helper' })).toBe(0);
+    });
+
   });
 
   describe('login', () => {

@@ -40,6 +40,14 @@ jest.mock('../../../models/User', () => {
         mockSaved.push(JSON.parse(JSON.stringify(this)));
         return this;
       };
+      // The real row is a hydrated document, so the schema method is on it. The
+      // upgrade arm revokes what an adopted row brought (TASK-133 b), and a
+      // fixture that is a bare copy would throw instead of revoking. Mirrors
+      // `userSchema.methods.revokeApiToken` in models/User.ts.
+      doc.revokeApiToken = function revokeApiToken() {
+        this.apiToken = undefined;
+        this.apiTokenCreatedAt = undefined;
+      };
       return doc;
     }
     return null;
@@ -200,6 +208,7 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       .then(() => null, (e) => e);
     expect(err).toBeInstanceOf(AgentIdentityService.AgentUsernameConflictError);
     expect(err.code).toBe('agent_username_conflict');
+    expect(err.status).toBe(409);
     expect(err.username).toBe('scout-9-scout');
     expect(err.existingUserId).toBe('person-id');
 
@@ -208,6 +217,46 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     // is the instrument that would show a conversion, not the fixture itself.)
     expect(mockSaved).toHaveLength(0);
     expect(mockExisting.isBot).toBe(false);
+  });
+
+  test('an adopted row loses the credentials it arrived with (TASK-133 b)', async () => {
+    // The row is agent-marked, so (a) adopts it rather than refusing. Adoption is
+    // not the only thing that happens to it: a person can mint an apiToken from
+    // their own session and a CLI device bearer from the device flow, and both
+    // would otherwise survive into the agent's identity — `routes/registry/
+    // tokens.ts` hands a surviving apiToken back as the agent's user token, with
+    // nothing in the response to say a stranger minted it.
+    mockExisting = {
+      _id: 'squatter-id',
+      username: 'scout-7-scout',
+      email: 'scout-7-scout@agents.commonly.local',
+      isBot: false,
+      botMetadata: { agentName: 'scout-7' },
+      apiToken: 'cm_brought_by_the_row',
+      apiTokenCreatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      apiTokenScopes: ['messages:write'],
+      deviceTokens: [
+        { tokenHash: 'hash-open', label: 'cli', createdAt: new Date('2026-09-01T00:00:00.000Z') },
+        { tokenHash: 'hash-closed', label: 'old cli', revokedAt: new Date('2026-08-01T00:00:00.000Z') },
+      ],
+    };
+
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('scout-7', {
+      instanceId: 'scout',
+      displayName: 'Scout',
+    });
+
+    // Identity kept, credential lost.
+    expect(agentUser.isBot).toBe(true);
+    expect(agentUser.apiToken).toBeUndefined();
+    expect(agentUser.apiTokenCreatedAt).toBeUndefined();
+    expect(agentUser.apiTokenScopes).toEqual([]);
+
+    const [openToken, closedToken] = agentUser.deviceTokens;
+    expect(openToken.revokedAt).toBeTruthy();
+    // A sweep of OPEN entries, not a re-stamp of the list: an already-revoked
+    // bearer keeps the stamp it had.
+    expect(String(closedToken.revokedAt).startsWith('2026-08-01')).toBe(true);
   });
 
   test('new install with no peers — bare displayName is kept', async () => {
