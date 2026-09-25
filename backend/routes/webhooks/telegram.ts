@@ -8,6 +8,8 @@ const registry = require('../../integrations');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
 const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
+const { escapeHtml } = telegramService;
+const deliveryFailures = require('../../services/connectorDeliveryFailureService');
 const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
 const {
   claimDelivery: claimWebhookDelivery,
@@ -159,8 +161,13 @@ const handleEnableCommand = async (chat: any, code: any) => {
     return;
   }
 
-  await Integration.findByIdAndUpdate(integration._id, {
+  // `errorMessage: null` because the working bind is the other state of the
+  // field the failure writes, and only a bind knows the connector works again
+  // (wren 73779). `new: true` is what the confirmation below classifies against:
+  // the chat id it compares is the one this update just stored.
+  const bound = await Integration.findByIdAndUpdate(integration._id, {
     status: 'connected',
+    errorMessage: null,
     $set: {
       'config.chatId': chatId,
       'config.chatTitle': chatTitle,
@@ -171,18 +178,25 @@ const handleEnableCommand = async (chat: any, code: any) => {
       'config.connectCode': '',
       'config.connectCodeExpiresAt': '',
     },
-  });
+  }, { new: true });
 
   const pod = await Pod.findById(integration.podId).lean();
   const podName = pod?.name || 'your pod';
 
-  await telegramService.sendMessage(
+  // Escaped because parse_mode is HTML: a pod named `A <b>` made Telegram reject
+  // this send with 400 "can't parse entities", which is a content failure and
+  // must never undo a bind (wren 73778).
+  const confirmation = await telegramService.sendMessage(
     botToken,
     chatId,
-    `✅ Connected this chat to <b>${podName}</b> in Commonly.\n`
+    `✅ Connected this chat to <b>${escapeHtml(podName)}</b> in Commonly.\n`
     + 'Agent messages from the pod will appear here. Too chatty? Send '
     + '/mode attention to only get what needs you. /help lists the rest.',
   );
+  // The one receive-side send that may flip: it targets the chat that was just
+  // bound, so a permanent failure means this bind is unusable. Undoing it clears
+  // the chat id, which is what lets the user mint a fresh code and reconnect.
+  await deliveryFailures.noteBoundChatDeliveryFailure(bound, chatId, confirmation);
 };
 
 const handleSummaryCommand = async (chat: any, integration: any) => {
