@@ -115,6 +115,89 @@ own `0600` temp. Note that systemd exposes `Environment=` to
 `systemctl --user show`, so a key in the unit is readable by anything running as
 that user — putting it in the unit is not a way to hide it from the account.
 
+The launchd half is the same exposure with different instruments, and only the
+systemd one was documented above: on macOS the plist's `EnvironmentVariables`
+dict is readable with `plutil -p` or `defaults read`, and by any process running
+as the same user. `0600` is what keeps that read away from *other* local users;
+it does not hide the key from your own account, and no mode can.
+
+Generalised past this file, the rule is a **mode invariant, not a credential-name
+check**: any generator that writes a unit carrying an environment dict writes it
+`0600` by construction. In this repo that generator is `writeServiceFile`, and a
+second one must call it rather than open its own file — otherwise the mode has to
+be argued again from scratch, which is how the first version got it wrong. The
+rule this replaces is worth naming because it looks equivalent and is not: a grep
+for `*_KEY|*_TOKEN|*_SECRET|*_PASSWORD` is a result about variable *names*, not a
+measurement of exposure. `*_DSN`, `*_URL` and `*_PROXY` routinely carry
+`user:pass@` and match none of those four suffixes, so zero hits says nothing
+about whether a secret is in the file.
+
+## Units this repo does not write
+
+This repo generates **two** units, both through `writeServiceFile`:
+`me.commonly.daemon.plist` (launchd) and `commonly-daemon.service` (systemd,
+`SYSTEMD_UNIT` in `cli/src/lib/daemon-service.js`). A machine running the fleet
+also carries units written by tooling outside this repository — same
+`EnvironmentVariables` shape, same `0600` question, and no CI here can guard
+them, so a grep in this repo would report a clean result about files it cannot
+see. They are operator tooling, and the part of this that *is* enforceable in
+repo is one line: a second writer of a unit file imports `writeServiceFile`
+(which owns the mode) instead of writing the file itself, asserted as a test on
+the import rather than a grep for a variable name (wren 72719: no board row for
+the units outside the repo, so the import rule is the guard that can exist).
+
+What an operator can run on the machine in question is a locator. It tests the
+mode rather than a name, so it stays true for a credential carried in a variable
+nobody thought of:
+
+```bash
+# macOS — units that are group- or other-readable AND carry an env dict
+command find ~/Library/LaunchAgents -name '*.plist' \( -perm -004 -o -perm -040 \) \
+  -exec grep -l EnvironmentVariables {} +
+
+# Linux
+command find ~/.config/systemd/user -name '*.service' \
+  \( -perm -004 -o -perm -040 \) -exec grep -l '^Environment[[:space:]]*=' {} +
+
+# what is actually answering as `find`, before trusting either result
+type -a find
+```
+
+Five details, each of which cost a measurement to learn:
+
+- **`-perm -004` alone misses group-readable `0640`** — the same exposure with a
+  narrower audience, and the plausible mistake of a generator trying to be
+  careful. `\( -perm -004 -o -perm -040 \)` finds both and still excludes `0600`.
+- **`-perm /044` is not portable:** stock BSD `find` rejects it outright
+  (`illegal mode string`). Some environments resolve `find` to a GNU-compatible
+  reimplementation (`bfs`) where `/044` *does* work, which is why the OR form is
+  the one to ship — it answers the same on both, and the command is meant to run
+  on whichever machine the operator has.
+- **`grep '^Environment='` misses `Environment =foo`** (vera 73011):
+  systemd.syntax ignores whitespace around `=`, so that spelling is legal and a
+  tighter anchor skips it — the file carries an env dict while the locator reports
+  nothing. `'^Environment[[:space:]]*='` closes that form. Same lesson as
+  `-perm -004` above, one line down: an anchor that is *nearly* right returns a
+  clean answer about the shape it did not anticipate.
+- **`command find`, not `find`:** a shell function named `find` wins over the
+  binary, so a bare `find` measures your shell instead of your system. `command`
+  bypasses functions and aliases both; a leading backslash does **not** — that
+  suppresses aliases only, which is the intuitive repair and the wrong one.
+- **`type -a find` is the diagnostic.** `command -v` prints a bare name with no
+  path for a function, which is only a signal if you already know to read it that
+  way; `type -a` names the function and its source file, and then the binary.
+  `-a` is a bash/ksh/zsh feature rather than POSIX, so in a shell that refuses it
+  (`dash`, Debian's `/bin/sh`) fall back to `command -v find` — the weaker read
+  this bullet warns about, which is the reason to run the locator from bash when
+  you can choose.
+
+It is a **locator, not a verdict**: `grep -l EnvironmentVariables` cannot see a
+secret carried outside the env dict — a `ProgramArguments` array holding
+`--token=…` is a real plist shape — so zero hits is a statement about this
+predicate, never about secrets. Group- or other-readable *and* carrying an env
+dict is the question worth asking; a clean answer to it is not a clean bill of
+health.
+
 ## What this does NOT cover
 
 - **A seat that overrides its provider.** `resolveProvider(environment)` honours
