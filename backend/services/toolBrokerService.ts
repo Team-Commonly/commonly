@@ -127,7 +127,7 @@ const providerArgsFromApprovedEnvelope = (
 
 const listIssues: ToolDefinition = {
   name: 'github.list_issues',
-  description: 'List open issues in the Commonly repository.',
+  description: 'List open issues in this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
   connectionType: 'github-app',
   inputSchema: {
@@ -152,7 +152,7 @@ const listIssues: ToolDefinition = {
 
 const createIssue: ToolDefinition = {
   name: 'github.create_issue',
-  description: 'Create an issue in the Commonly repository.',
+  description: 'Create an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   irreversible: true,
@@ -194,7 +194,7 @@ const createIssue: ToolDefinition = {
 
 const getIssue: ToolDefinition = {
   name: 'github.get_issue',
-  description: 'Fetch one issue from the Commonly repository.',
+  description: 'Fetch one issue from this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
   connectionType: 'github-app',
   inputSchema: {
@@ -218,7 +218,7 @@ const getIssue: ToolDefinition = {
 
 const getPullRequest: ToolDefinition = {
   name: 'github.get_pull_request',
-  description: 'Fetch one pull request from the Commonly repository.',
+  description: 'Fetch one pull request from this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
   connectionType: 'github-app',
   inputSchema: {
@@ -242,7 +242,7 @@ const getPullRequest: ToolDefinition = {
 
 const listPullRequestFiles: ToolDefinition = {
   name: 'github.list_pull_request_files',
-  description: 'List files changed by a pull request in the Commonly repository.',
+  description: 'List files changed by a pull request in this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
   connectionType: 'github-app',
   inputSchema: {
@@ -275,7 +275,7 @@ const listPullRequestFiles: ToolDefinition = {
 
 const commentIssue: ToolDefinition = {
   name: 'github.comment_on_issue',
-  description: 'Add a comment to an issue in the Commonly repository.',
+  description: 'Add a comment to an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   irreversible: true,

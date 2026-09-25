@@ -1778,6 +1778,27 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-connector__tile--telegram');
   });
 
+  it('a phone keeps the connector row\'s reason: nothing hides __detail in the 760 block (eng lead 73726)', () => {
+    // Show is the default. This rule used to hide __detail for every state except
+    // two enumerated ones, so the not-yet row that IS available
+    // (V2ConnectorTools.tsx:562) lost "install the GitHub App first" /
+    // "read, or read and write" and a stranger saw a "not granted" kicker with
+    // nothing under it. The two reason strings are already render-asserted in
+    // V2ConnectorTools.test.tsx:280/:317 — this is the half jsdom cannot see.
+    // If one row ever needs the detail hidden on phones, add that selector to the
+    // list below on purpose rather than re-introducing an exception chain.
+    const NAMED_DETAIL_HIDE_CASES: string[] = [];
+    const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
+    // Positive control: the block was actually found (a missing marker would
+    // otherwise make the assertion below pass against one trailing character).
+    expect(phone760).toContain('.v2-connector-row--not-yet .v2-connector-row__details');
+    const hidingRules = phone760
+      .split('}')
+      .filter((rule) => rule.includes('.v2-connector-row__detail') && /display:\s*none/.test(rule))
+      .filter((rule) => !NAMED_DETAIL_HIDE_CASES.some((named) => rule.includes(named)));
+    expect(hidingRules).toEqual([]);
+  });
+
   it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
     // Direction A (2026-09-19): three tracks — the age moved into the kicker.
     expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
@@ -1841,7 +1862,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
     expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
-    expect(connectorCss).toMatch(/\.v2-connector-row:not\(.v2-connector-row--dead\):not\(.v2-connector-row--not-enabled\) \.v2-connector-row__detail \{ display: none; \}/);
+    // The phone block used to hide __detail behind an exception list — whose
+    // presence was pinned HERE, which is why the shape survived until a third
+    // state fell outside it (eng lead 73726). The inverted shape (show, hide no
+    // row) is pinned by the test above this one; the enumerating rule is gone.
+    expect(connectorCss).not.toContain('v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail');
   });
 
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {

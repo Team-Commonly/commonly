@@ -9938,8 +9938,14 @@ body.modern-ui.v2-canvas {
   .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
   .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  /* Keep the not-enabled reason alongside its Ask affordance on phones. */
-  .v2-connector-row:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail { display: none; }
+  /* A phone keeps the row's REASON. This used to be a blanket hide with
+     enumerated exceptions (`:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled)`),
+     which silently swallowed every state the list had not anticipated: the
+     not-yet row that IS available (V2ConnectorTools.tsx:562) lost
+     "install the GitHub App first" / "read, or read and write", and a stranger
+     saw a "not granted" kicker with no reason under it (eng lead 73726).
+     Default is now SHOW; if one row ever needs its detail hidden on phones, hide
+     that named case here rather than re-introducing an exception list. */
   .v2-root button.v2-connector-row__action, .v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }
   /* Direction A at 390 (after the rule above so it wins): no tooltips, so the mode
      word rides the kicker; the gear is 44px in row 1 beside the name; a row's word
