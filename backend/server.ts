@@ -137,6 +137,7 @@ const socketConfig = require('./config/socket');
 const agentWebSocketService = require('./services/agentWebSocketService');
 const { bindSocketIO: bindAgentTypingSocketIO } = require('./services/agentTypingService');
 const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventService');
+const { bindSocketIO: bindConnectorEventSocketIO, joinUserRoom } = require('./services/connectorEventService');
 
 // Socket.io Redis adapter initialization is async in K8s mode
 (async () => {
@@ -145,6 +146,7 @@ const { bindSocketIO: bindTaskEventSocketIO } = require('./services/taskEventSer
     agentWebSocketService.init(io);
     bindAgentTypingSocketIO(io);
     bindTaskEventSocketIO(io);
+    bindConnectorEventSocketIO(io);
   } catch (error) {
     console.error('Failed to initialize Socket.io:', error);
     process.exit(1);
@@ -555,6 +557,16 @@ io.on('connection', (socket: any) => {
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );
   socket.data.joinedPods = new Set();
+
+  // The user's own room, joined once from the token the socket presented. It
+  // carries user-scoped invalidations (the Connectors page) to every client
+  // this user has open, and deliberately does NOT go through joinPod: that
+  // path also emits presence, which is a statement about pod membership a
+  // user-scoped invalidation should not make. Server-side only — the client
+  // never asks for this room and cannot name someone else's. The join sits in
+  // connectorEventService so the room name has one spelling and the guard is
+  // unit-tested (server.ts itself is not importable in a test).
+  joinUserRoom(socket);
 
   // Join a pod room
   socket.on('joinPod', async (podId: any) => {

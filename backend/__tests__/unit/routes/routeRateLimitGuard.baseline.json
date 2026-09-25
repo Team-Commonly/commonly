@@ -116,8 +116,6 @@
   "routes/integrations.ts GET /:id/stats [unlimited]",
   "routes/integrations.ts GET /admin/all [unlimited]",
   "routes/integrations.ts GET /catalog [unlimited]",
-  "routes/integrations.ts POST /:id/connect [unlimited]",
-  "routes/integrations.ts POST /:id/disconnect [unlimited]",
   "routes/integrations.ts POST /:id/ingest-tokens [unlimited]",
   "routes/integrations.ts POST /:id/send [unlimited]",
   "routes/integrations.ts POST /ingest [unlimited]",

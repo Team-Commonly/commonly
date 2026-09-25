@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
+import { useSocket } from '../../context/SocketContext';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
@@ -258,6 +259,7 @@ const V2ConnectorsPage: React.FC = () => {
   // when the tab comes back: a row that says `since 5m ago` is wrong twice
   // over if it is still saying it an hour later (TASK-131).
   const now = useRelativeNow();
+  const { socket, connected } = useSocket();
   const adding = addingType !== null;
   const podList = pods || [];
 
@@ -288,6 +290,25 @@ const V2ConnectorsPage: React.FC = () => {
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [load]);
+
+  // Another client of this user (a second tab, the Slack callback tab) can
+  // change what this page shows. The server sends a user-scoped invalidation to
+  // every socket this user has open, so a VISIBLE tab re-reads instead of
+  // waiting to be hidden and shown again (TASK-135). The reconnect read is the
+  // other half: an event that fired while the socket was down is not replayed.
+  useEffect(() => {
+    if (!socket || !connected) return undefined;
+    const onConnectorsUpdated = () => { void load(); };
+    socket.on('connectors_updated', onConnectorsUpdated);
+    return () => { socket.off('connectors_updated', onConnectorsUpdated); };
+  }, [socket, connected, load]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onConnect = () => { void load(); };
+    socket.on('connect', onConnect);
+    return () => { socket.off('connect', onConnect); };
+  }, [socket, load]);
 
   // The Slack callback resolves in its own tab. Consume its opaque result and
   // leave no state or error code in the browser URL.

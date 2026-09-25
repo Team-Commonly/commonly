@@ -18,6 +18,7 @@ import {
   RoomGrantError,
 } from '../services/roomGrantService';
 import type { RoomGrantCreateInput } from '../services/roomGrantService';
+import { emitConnectorsChanged } from '../services/connectorEventService';
 import { resolveBrokerFor } from '../services/installable/toolInstallables';
 import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
@@ -371,6 +372,9 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       brokerId: broker.brokerId,
     };
     const grant = await createGrant(grantInput);
+    // The Connectors page lists this grant; every other tab this user has open
+    // re-reads rather than waiting for a tab switch (TASK-135).
+    emitConnectorsChanged(userId, 'grant-created');
     return res.status(201).json(grant);
   } catch (error) {
     return handleError(res, error);
@@ -405,6 +409,12 @@ router.post(
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
     });
+    // Attenuation is agent-initiated, so the socket to invalidate is the
+    // connection owner's, not the caller's: an agent has no Connectors page.
+    // One lookup on an agent-only path, and a failure here must not fail the
+    // mint that already happened.
+    const connection = await findConnection(parent.connectionId).catch(() => null);
+    emitConnectorsChanged(connectionOwnerId(connection), 'grant-attenuated');
     return res.status(201).json(child);
   } catch (error) {
     return handleError(res, error);
@@ -422,6 +432,7 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
       return res.status(403).json({ error: 'access_denied' });
     }
     const revoked = await revokeGrant(grant.grantId, userId);
+    emitConnectorsChanged(userId, 'grant-revoked');
     return res.json({ grantId: grant.grantId, revoked });
   } catch (error) {
     return handleError(res, error);

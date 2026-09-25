@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
@@ -204,6 +205,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   // Grants and trail rows carry relative ages; they must advance while the
   // page sits open and be re-read when the tab comes back (TASK-131).
   const now = useRelativeNow();
+  // A second client of this user can mint or revoke a grant; the server's
+  // user-scoped invalidation makes this VISIBLE list re-read (TASK-135).
+  const { socket, connected } = useSocket();
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -249,6 +253,20 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [load]);
+
+  useEffect(() => {
+    if (!socket || !connected) return undefined;
+    const onConnectorsUpdated = () => { void load(); };
+    socket.on('connectors_updated', onConnectorsUpdated);
+    return () => { socket.off('connectors_updated', onConnectorsUpdated); };
+  }, [socket, connected, load]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onConnect = () => { void load(); };
+    socket.on('connect', onConnect);
+    return () => { socket.off('connect', onConnect); };
+  }, [socket, load]);
 
   useEffect(() => {
     if (!selectedId) { setTrail(null); return undefined; }
