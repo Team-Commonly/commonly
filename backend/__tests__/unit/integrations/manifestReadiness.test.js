@@ -1,6 +1,10 @@
 const { manifests } = require('../../../integrations/manifests');
+const { providerReadiness } = require('../../../services/installable/installableCatalogService');
 
 const READINESS_ENV = [
+  'DISCORD_BOT_TOKEN',
+  'DISCORD_CLIENT_ID',
+  'DISCORD_CLIENT_SECRET',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_SECRET_TOKEN',
   'TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED',
@@ -59,6 +63,42 @@ describe('installable connector manifest readiness', () => {
     delete process.env.TELEGRAM_SECRET_TOKEN;
     process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
     expect(manifests.telegram.readiness()).toEqual({ available: true });
+  });
+
+  // Discord is a shipping connector (routes/discord.ts; discordProvider.ts). It
+  // was absent from the channel catalog only because it declared no readiness(),
+  // which is the predicate providerInstallableIds() filters on — so the defect
+  // was a missing declaration, not a missing capability. These assert the
+  // consequence through the real service rather than through a re-implementation
+  // of its filter.
+  it('reports Discord as an answerable provider, not an unknown Installable', () => {
+    expect(providerReadiness('discord')).toEqual({ available: false, reason: 'not_configured' });
+
+    process.env.DISCORD_BOT_TOKEN = 'configured';
+    process.env.DISCORD_CLIENT_ID = 'configured';
+    process.env.DISCORD_CLIENT_SECRET = 'configured';
+
+    expect(providerReadiness('discord')).toEqual({ available: true });
+  });
+
+  it('requires all three of the keys the Discord install route reads', () => {
+    process.env.DISCORD_BOT_TOKEN = 'configured';
+    process.env.DISCORD_CLIENT_ID = 'configured';
+    expect(providerReadiness('discord')).toEqual({ available: false, reason: 'not_configured' });
+
+    process.env.DISCORD_CLIENT_SECRET = 'configured';
+    expect(providerReadiness('discord')).toEqual({ available: true });
+
+    process.env.DISCORD_CLIENT_SECRET = '   ';
+    expect(providerReadiness('discord')).toEqual({ available: false, reason: 'not_configured' });
+  });
+
+  it('leaves groupme undeclared, so this change cannot silently widen the catalog', () => {
+    process.env.DISCORD_BOT_TOKEN = 'configured';
+    process.env.DISCORD_CLIENT_ID = 'configured';
+    process.env.DISCORD_CLIENT_SECRET = 'configured';
+
+    expect(providerReadiness('groupme')).toBeNull();
   });
 
   it('describes Telegram as one chat connected to one pod', () => {

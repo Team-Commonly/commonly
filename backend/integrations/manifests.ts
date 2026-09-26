@@ -77,6 +77,20 @@ const manifests: Record<string, IntegrationManifest> = {
     // the same route refuses with `server_owned_config_key` (TASK-140).
     requiredConfig: ['serverId', 'channelId', 'botToken'],
     configSchema: buildConfigSchema(['serverId', 'channelId', 'botToken']),
+    // Discord is a shipping connector (routes/discord.ts: OAuth install-link,
+    // callback, binding, uninstall) and discordProvider.ts implements the same
+    // provider interface as slack/telegram — it was absent from the catalog only
+    // because it declared no readiness(), which is what
+    // providerInstallableIds() filters on. Gate on the three secrets that
+    // route actually reads, so the readiness answer tracks the install path
+    // rather than a second list that can drift from it.
+    readiness: () => (
+      hasConfiguration(
+        'DISCORD_BOT_TOKEN',
+        'DISCORD_CLIENT_ID',
+        'DISCORD_CLIENT_SECRET',
+      ) ? { available: true } : notConfigured()
+    ),
     catalog: {
       label: 'Discord',
       provider: 'discord',

@@ -29,6 +29,33 @@ const providerReadiness = (installableId: string): ProviderReadiness | null => {
   return typeof manifest?.readiness === 'function' ? manifest.readiness() : null;
 };
 
+// Declaring `readiness` is a claim about CAPABILITY; having a builtin active
+// Installable row is the claim about OFFERABILITY. They are different questions
+// and only one of them was being asked, which is how a provider could render as
+// connectable and then die on Add with `installable_not_found` (Vera 71152,
+// Wren 71169). `offeredByRoster` is the single decision; the two readers below
+// differ only in cardinality, because the catalog has the rows in hand and the
+// route has one id.
+const offeredByRoster = (installable: unknown): boolean => Boolean(installable);
+
+const providerLabel = (installableId: string): string => {
+  const manifest = (manifests as Record<string, { catalog?: { label?: string } }>)[installableId];
+  return manifest?.catalog?.label || installableId;
+};
+
+// The route's reader: one id, so one query. Exported because the install route
+// refuses on the same predicate the catalog advertises, and a guard that lives
+// only in the UI cannot stop the API being driven into a state the page will not
+// offer.
+const providerOffered = async (installableId: string): Promise<boolean> => {
+  const installable = await Installable.findOne({
+    installableId,
+    source: 'builtin',
+    status: 'active',
+  }).lean();
+  return offeredByRoster(installable);
+};
+
 // Mongoose's Integration toJSON transform is the normal guard. Lean catalog
 // reads bypass it, so they run the same strip explicitly: one key list, so a
 // credential can never be serialized here that toJSON would have dropped.
@@ -161,9 +188,13 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
       return {
         installableId,
         list: 'channels',
-        label: installable?.name || installableId,
+        // The row's name comes from the roster when there is one, and from the
+        // manifest's own catalog block when there is not. Falling back to the
+        // raw id is what put a lowercase `discord` on the page (Wren 71162).
+        label: installable?.name || providerLabel(installableId),
         description: installable?.description || '',
         available: readiness.available,
+        offered: offeredByRoster(installable),
         ...(readiness.reason ? { unavailableReason: readiness.reason } : {}),
         installation: publicInstallation(installation),
         integration: installation
@@ -174,6 +205,6 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
   };
 };
 
-module.exports = { catalogFor, providerReadiness, publicIntegration };
+module.exports = { catalogFor, providerReadiness, providerOffered, publicIntegration };
 
 export {};

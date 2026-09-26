@@ -24,6 +24,7 @@ const connectorDeliveryFailures = require('../services/connectorDeliveryFailureS
 // eslint-disable-next-line global-require
 const {
   catalogFor,
+  providerOffered,
   providerReadiness,
   publicIntegration,
 } = require('../services/installable/installableCatalogService');
@@ -564,6 +565,14 @@ router.post('/:installableId/install', writeIntegrationsRateLimit, auth, async (
   const readiness = providerReadiness(installableId);
   if (readiness && !readiness.available) {
     return res.status(422).json({ code: 'provider_not_configured' });
+  }
+  // Capability is not offerability (Wren 71174). Without this, a provider the
+  // instance has credentials for but has never rostered passes the readiness
+  // guard and dies further in as `installable_not_found` — the 404 a stranger
+  // met after the page showed them an Add button. Refused here, before the pod
+  // lookup, so the API cannot be driven into a state the UI will not offer.
+  if (!(await providerOffered(installableId))) {
+    return res.status(422).json({ code: 'provider_not_offered' });
   }
 
   try {

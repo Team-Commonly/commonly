@@ -5,6 +5,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
+import { PlatformGlyph } from '../icons/platforms';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -145,7 +146,12 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
     expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
+    // TASK-024: this row is "we have not built it", so it lists only providers
+    // with no manifest at all. Discord is a built connector and reaches the page
+    // through the catalog (available, or the not-enabled row when the instance
+    // lacks its credentials), so naming it here asserted something false.
+    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
+    expect(screen.queryByText('Discord · WhatsApp')).toBeNull();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
@@ -696,7 +702,91 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
     });
 
-    it('renders an unavailable provider with Ask and an available one with Choose a pod', async () => {
+    // TASK-024. Discord is a shipping connector (routes/discord.ts: install
+    // link, callback, binding, uninstall) that read as "we don't build this"
+    // because its manifest declared no readiness(), which is what the catalog
+    // filters on. Once it declares one the catalog owns every claim about it:
+    // configured -> a connectable row, not configured -> the not-enabled row
+    // that already exists for slack. The not-yet row must stop covering it.
+    const glyphPath = (type: string): string | null => {
+      const { container } = render(<PlatformGlyph type={type} />);
+      return container.querySelector('svg path')?.getAttribute('d') || null;
+    };
+
+    it('describes Discord only through the catalog, never as a provider we have not built', async () => {
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
+      ]);
+      renderPage();
+
+      const notEnabled = (await screen.findByText('Not enabled on this instance.')).closest('.v2-connector-row');
+      expect(notEnabled).toHaveClass('v2-connector-row--not-enabled');
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet).toHaveClass('v2-connector-row--not-yet');
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+
+      // The glyph tracks the label: the row is about WhatsApp now, and the two
+      // glyphs differ, so this cannot pass by comparing a value to itself.
+      const whatsapp = glyphPath('whatsapp');
+      expect(whatsapp).not.toBeNull();
+      expect(whatsapp).not.toBe(glyphPath('discord'));
+      expect(notYet.querySelector('svg path')?.getAttribute('d')).toBe(whatsapp);
+    });
+
+    it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
+      // Slack's line is in the map; Discord's is not. The point of the map is
+      // that Discord renders NO sentence rather than Slack's (Vera 71165).
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
+        entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
+      ]);
+      renderPage();
+
+      const discord = (await screen.findByText('Discord')).closest('.v2-connector-row') as HTMLElement;
+      expect(discord.textContent).not.toContain('one click in your workspace');
+      expect(discord.textContent).not.toContain('one message');
+      expect(within(discord).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+
+      const slack = screen.getByText('Slack').closest('.v2-connector-row') as HTMLElement;
+      expect(slack.textContent).toContain('one click in your workspace');
+
+      const notYet = screen.getByText(/Not yet\. Tell us which channel/).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+    });
+
+    it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
+      // The ruled middle state (Wren 71170/71174): this instance can use Discord
+      // and there is no builtin Installable row to install, so the row states the
+      // state and offers no action. Before this, the row rendered an Add whose
+      // click ended in 404 installable_not_found (Wren 71162/71163).
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+      ]);
+      renderPage();
+
+      const roster = (await screen.findByText('Not connectable yet.')).closest('.v2-connector-row') as HTMLElement;
+      expect(roster).toHaveClass('v2-connector-row--not-enabled');
+      expect(roster.textContent).toContain('Discord');
+      expect(roster.querySelector('svg path')?.getAttribute('d')).toBe(glyphPath('discord'));
+      expect(within(roster).queryByRole('button', { name: 'Add' })).toBeNull();
+      // The only action left is the Ask link the not-enabled row shares; there is
+      // no Add and no connect verb. `row.notEnabled` drives that link, so both
+      // no-action catalog states carry it.
+      const actions = roster.querySelectorAll('.v2-connector-row__action');
+      expect(actions).toHaveLength(1);
+      expect(actions[0].textContent).toBe('Ask');
+
+      // The Add verb itself must be gone, not merely unused: an offered provider
+      // is the only thing that may produce it, and there is none in this catalog.
+      expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
+      expect(await screen.findByText(/Not yet\. Tell us which channel/)).toBeInTheDocument();
+    });
+
+    it('renders an unavailable provider with a state line and an available one with Add', async () => {
       mockCatalog([
         entry(),
         entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
@@ -705,7 +795,9 @@ describe('V2ConnectorsPage', () => {
       renderPage();
 
       expect(await screen.findByText('Not enabled on this instance.')).toBeInTheDocument();
-      expect(screen.getByText('ask your operator')).toBeInTheDocument();
+      // Sam's 09-04 copy rule (Wren 71170): one state line, no "ask us", no
+      // explaining sentence. The detail slot is empty for this row now.
+      expect(screen.queryByText('ask your operator')).toBeNull();
       expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
       expect(screen.getByText(/not connected/)).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
@@ -714,7 +806,7 @@ describe('V2ConnectorsPage', () => {
       expect(ask).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
       expect(ask).toHaveClass('v2-connector-row__action--secondary');
       expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
-      expect(ask.closest('.v2-connector-row')?.querySelector('.v2-connector-row__detail')).toHaveTextContent('ask your operator');
+      expect(ask.closest('.v2-connector-row')?.querySelector('.v2-connector-row__detail')).toBeNull();
       const choosePod = screen.getAllByRole('button', { name: 'Add' });
       expect(choosePod).toHaveLength(1);
       fireEvent.click(choosePod[0]);
