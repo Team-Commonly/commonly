@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { getToolDefinitions, callTool } from '../services/toolBrokerService';
+import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
 // points. Requiring them here keeps this route compatible with the backend's
@@ -11,7 +11,9 @@ const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-unresolved, import/extensions
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-unresolved, import/extensions
-const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+const mcpTypes = require('@modelcontextprotocol/sdk/types.js');
+const { ListToolsRequestSchema, CallToolRequestSchema, McpError, ErrorCode } = mcpTypes;
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -61,14 +63,30 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
     { name: 'commonly-grant-broker', version: '0.1.0' },
     { capabilities: { tools: {} } },
   );
-  const definitions = getToolDefinitions();
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: definitions.map((definition) => ({
-      name: definition.name,
-      description: definition.description,
-      inputSchema: definition.inputSchema,
-    })),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    // The grant named in the URL decides the list, and it is checked with the
+    // same code a call runs: without this a token holding no grant at all was
+    // handed every definition (TASK-146). A refusal is a JSON-RPC error rather
+    // than an empty list, so a client cannot read "no tools" as "nothing here"
+    // when the truth is "this grant may not be used".
+    try {
+      const listed = await listToolsForGrant({ grantId: String(req.params.grantId), agentUserId });
+      return {
+        tools: listed.map((definition) => ({
+          name: definition.name,
+          description: definition.description,
+          inputSchema: definition.inputSchema,
+        })),
+      };
+    } catch (error) {
+      const refusal = error as { code?: string; message?: string };
+      const code = refusal.code || 'broker_error';
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${code}: ${refusal.message || 'Tool list refused for this grant'}`,
+      );
+    }
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     const tool = String(request.params?.name || '');
     const args = request.params?.arguments || {};
