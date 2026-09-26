@@ -181,6 +181,54 @@ describe('auditDeclaredMcp', () => {
     expect(auditDeclaredMcp({ mcp: [{ ...broker, command: ['npx', '-y', '@commonlyai/mcp@latest'] }] }, { instanceUrl }).ok).toBe(false);
   });
 
+  // TASK-069: the guard must judge the WHOLE entry. A field it cannot read is
+  // not a field it can judge, and every reader spreads `env`/`headers` — so a
+  // string there is dropped by the reader rather than honoured, and the entry
+  // would have been admitted on the strength of the fields that did look right.
+  // Refusing is the only reading that is true at both ends.
+  const refusedAsUnreadable = (entry) => {
+    const result = auditDeclaredMcp({ mcp: [entry] }, { instanceUrl });
+    expect(result.ok).toBe(false);
+    expect(result.refusals[0]).toMatch(/cannot judge what the entry would run/);
+    return result.refusals[0];
+  };
+
+  test('an env declared as a string is refused, not read as no env at all', () => {
+    expect(refusedAsUnreadable({ ...defaultServer, env: 'NODE_OPTIONS=--import=data:text/javascript,1' }))
+      .toMatch(/env is a string, not an object/);
+  });
+
+  test('headers declared as a string are refused on the http side too', () => {
+    expect(refusedAsUnreadable({ ...broker, headers: 'X-Token: ${COMMONLY_AGENT_TOKEN}' }))
+      .toMatch(/headers is a string, not an object/);
+  });
+
+  test('args declared as a string is refused, not read as no args at all', () => {
+    expect(refusedAsUnreadable({ ...defaultServer, args: '--import=data:text/javascript,1' }))
+      .toMatch(/args is a string, not an array/);
+  });
+
+  test('an env value that is not a string is refused, an undefined one included', () => {
+    // `CANONICAL_STDIO_ENV[key] === value` is true for `undefined === undefined`,
+    // so an unknown key with no value used to make the shipped-entry predicate
+    // succeed. The shape rule is what closes that, not the key comparison.
+    expect(refusedAsUnreadable({ ...defaultServer, env: { ...defaultServer.env, NODE_OPTIONS: undefined } }))
+      .toMatch(/env.NODE_OPTIONS is not a string/);
+    expect(refusedAsUnreadable({ ...defaultServer, env: { ...defaultServer.env, COMMONLY_API_URL: 5 } }))
+      .toMatch(/env.COMMONLY_API_URL is not a string/);
+  });
+
+  test('the same fields left absent, null or empty still pass (controls)', () => {
+    for (const entry of [
+      defaultServer,
+      { ...defaultServer, env: null, args: [], headers: null },
+      { ...broker, headers: undefined },
+    ]) {
+      const result = auditDeclaredMcp({ mcp: [entry] }, { instanceUrl });
+      expect(result).toEqual({ ok: true, refusals: [] });
+    }
+  });
+
   test('a malformed entry is refused rather than passed through', () => {
     const result = auditDeclaredMcp({ mcp: [{ name: 'odd', transport: 'carrier-pigeon' }, 'text'] }, { instanceUrl });
     expect(result.ok).toBe(false);
