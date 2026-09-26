@@ -90,11 +90,25 @@ TaskSchema.index({ podId: 1, taskId: 1 }, { unique: true });
 // index (name included) — this declaration matches it so boot-time
 // autoIndex neither conflicts nor recreates the broken sparse variant on
 // fresh installs.
+//
+// `sourceRef` is PROVENANCE, not identity (TASK-063). One source — a message,
+// a PR — can raise several asks with several owners, and keying on the ref
+// alone made the second ask adopt the first ask's row: it discarded the
+// caller's title and reopened that row instead, twice in production (TASK-052,
+// TASK-163), the second time on a row a merged PR had legitimately completed.
+// The identity of a create is therefore the (sourceRef, title) PAIR — a retry
+// of the same ask stays idempotent, a different title becomes its own row.
+//
+// The legacy index cannot enforce that, and autoIndex CREATES the declared
+// index but never DROPS an undeclared one, so an existing database keeps the
+// stricter ref-only index until scripts/migrate-task-source-ref-identity.ts
+// runs. Until then the route answers a second title under one ref with a named
+// 503 rather than a silent wrong row.
 TaskSchema.index(
-  { podId: 1, sourceRef: 1 },
+  { podId: 1, sourceRef: 1, title: 1 },
   {
     unique: true,
-    name: 'podId_1_sourceRef_1_partial',
+    name: 'podId_1_sourceRef_1_title_1_partial',
     partialFilterExpression: { sourceRef: { $type: 'string' } },
   },
 );

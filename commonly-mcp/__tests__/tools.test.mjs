@@ -231,6 +231,17 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     expect(url).toContain('status=pending');
   });
 
+  it('create_task documents the idempotency key, not just the fields it dedups on', () => {
+    // AX entry 69: `sourceRef` was an idempotency key the description never
+    // named, so callers read it as ordinary metadata and learned about the
+    // dedup from a self-contradictory response instead (TASK-063).
+    const desc = byName.commonly_create_task.description;
+    expect(desc).toMatch(/sourceRef.*title.*idempotency key/i);
+    expect(desc).toMatch(/different `title` is a different ask/i);
+    expect(desc).toMatch(/reopened to pending with `reopened: true`/);
+    expect(desc).toMatch(/omitting it leaves the reopened task unassigned/);
+  });
+
   it('create_task POSTs with the body fields verbatim', async () => {
     const fetchSpy = installFetch(async () => okResponse({ taskId: 'TASK-001' }));
     await byName.commonly_create_task.call({
