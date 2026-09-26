@@ -38,6 +38,8 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
+// eslint-disable-next-line global-require
+const { revokeConnectionGrants } = require('../services/roomGrantService');
 import { Types } from 'mongoose';
 import {
   invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
@@ -743,13 +745,31 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
-router.delete('/:id', auth, async (req: AuthReq, res: Res) => {
+router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown } | null;
+    const deletedBy = String(req.user?.id || '').trim();
+    // Fail closed on the identity rather than skipping the grants step and
+    // deleting anyway, which would reinstate the orphan this route was fixed to
+    // stop creating (Vera 74462). `auth` always sets a non-empty id, so this is
+    // unreachable today; it is here so it cannot become reachable in silence.
+    if (!deletedBy) return res.status(401).json({ message: 'Unauthorized' });
+    const integration = await Integration.findById(id) as {
+      type?: string;
+      createdBy?: { toString: () => string };
+      podId?: unknown;
+      installationId?: unknown;
+      config?: { installationId?: unknown };
+    } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
-    const canDelete = await canDeleteIntegration(integration, req.user?.id || '');
+    const canDelete = await canDeleteIntegration(integration, deletedBy);
     if (!canDelete) return res.status(403).json({ message: 'Access denied' });
+    // §10.5's grants step, and it has to run here: the deletion below removes
+    // the row, and the granter's own revoke route resolves ownership through
+    // `findConnection` (routes/grants.ts:421) — after the row is gone every
+    // grant on this connection answers 403 `access_denied`, so the removal
+    // would orphan them un-revoked (TASK-145).
+    await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
     if (integration.type === 'discord') await DiscordIntegration.findOneAndDelete({ integrationId: id });
