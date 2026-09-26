@@ -16,6 +16,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../../utils/mongoBinaryConfig');
 const jwt = require('jsonwebtoken');
 
 // Models
@@ -64,7 +65,7 @@ beforeAll(async () => {
   process.env.JWT_SECRET = JWT_SECRET;
 
   mongod = await MongoMemoryServer.create({
-    binary: { version: '7.0.11', skipMD5: true },
+    binary: { version: MONGO_BINARY_VERSION, downloadDir: MONGOMS_DOWNLOAD_DIR, skipMD5: true },
     instance: { dbName: 'cap-session-token-test' },
   });
   await mongoose.connect(mongod.getUri());
