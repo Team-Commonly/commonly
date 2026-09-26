@@ -287,10 +287,14 @@ const V2AgentBYO: React.FC = () => {
   // turns this page from a form into a decision about a teammate.
   const previewName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
   const previewPodName = pods.find((p) => p._id === (hosted?.podId || issued?.podId || podId))?.name || '';
-  const previewStatus: 'draft' | 'starting' | 'live' = (() => {
+  const previewStatus: 'draft' | 'waiting' | 'starting' | 'live' = (() => {
     if (hosted) return hostedState === 'running' ? 'live' : 'starting';
     if (placed) return placedState === 'running' ? 'live' : 'starting';
-    return issued && listenState === 'listening' ? 'live' : 'draft';
+    // A token has been issued and the agent has not checked in yet. That is not
+    // 'draft' — the install succeeded, and the page says so beside this rail.
+    // A timeout reads the same way: still waiting, not un-created.
+    if (!issued) return 'draft';
+    return listenState === 'listening' ? 'live' : 'waiting';
   })();
   const previewDisplayName = hosted?.agentName || placed?.agentName || issued?.agentName || previewName;
 
@@ -793,7 +797,7 @@ const V2AgentBYO: React.FC = () => {
             })}
           </p>
           <p
-            className={hostedState === 'running' ? 'v2-byo__memory-done' : 'v2-byo__listen-note'}
+            className={hostedState === 'running' ? 'v2-byo__live' : 'v2-byo__listen-note'}
             data-testid={`byo-hosted-${hostedState}`}
           >
             {t(`agentByo.hosted.${hostedState}`, { name: hosted.agentName })}
@@ -838,31 +842,37 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.runtimeToken')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{issued.token}</pre>
               <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
                 {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{issued.token}</pre>
           </div>
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.claudeCode')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{claudeSnippet}</pre>
               <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
                 {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{claudeSnippet}</pre>
           </div>
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.cursor')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{cursorSnippet}</pre>
               <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
                 {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{cursorSnippet}</pre>
           </div>
 
           {/*
@@ -876,6 +886,10 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__snippet v2-byo__snippet--listen">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.listen.title')}</span>
+            </div>
+            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{listenSnippet}</pre>
               <button
                 type="button"
                 onClick={() => copy('listen', listenSnippet)}
@@ -884,10 +898,8 @@ const V2AgentBYO: React.FC = () => {
                 {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
-            <pre className="v2-byo__pre">{listenSnippet}</pre>
             {listenState === 'listening' ? (
-              <p className="v2-byo__memory-done" data-testid="byo-listen-ok">
+              <p className="v2-byo__live" data-testid="byo-listen-ok">
                 {t('agentByo.listen.verified', { name: issued.agentName })}
               </p>
             ) : (

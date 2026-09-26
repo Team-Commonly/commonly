@@ -79,6 +79,14 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-cta-warning')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-ok')).not.toBeInTheDocument();
 
+    // The rail reads the same state as the page (TASK-169). It used to read
+    // "not created yet" while the page beside it said the install had
+    // succeeded — a token had already been issued, so that was false.
+    const rail = screen.getByTestId('byo-preview');
+    expect(rail.querySelector('.v2-byo__preview-status--waiting')).not.toBeNull();
+    expect(rail.querySelector('.v2-byo__preview-status--draft')).toBeNull();
+    expect(screen.getByText('not listening yet')).toBeInTheDocument();
+
     // First poll: a DIFFERENT (pre-existing) agent is connected — must NOT flip.
     axios.get.mockResolvedValueOnce({
       data: {
@@ -105,6 +113,9 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-cta-warning')).not.toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-waiting')).not.toBeInTheDocument();
+    // ...and the rail follows it out of waiting, since it reads the same state.
+    expect(rail.querySelector('.v2-byo__preview-status--live')).not.toBeNull();
+    expect(rail.querySelector('.v2-byo__preview-status--waiting')).toBeNull();
 
     // Polling stops after success — no further connection reads.
     const readsAfterFlip = axios.get.mock.calls.filter(

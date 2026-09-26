@@ -5763,6 +5763,17 @@ body.modern-ui.v2-canvas {
   font-size: 20px;
   margin: 0 0 4px 0;
 }
+/* The form's 18px gap is a field rhythm; the result's is a section rhythm, and
+   it only shows once the snippet cards stop being cards (item 6). Declared
+   separately so the form keeps 18 (ux-lead, TASK-169 render pass). */
+.v2-byo__result { gap: 28px; }
+/* An agent's name in mono is a mark (Signal rule 1), so the name carries the
+   accent — it is already named once in the sentence above it. */
+.v2-byo__result h2 code {
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
+  color: var(--v2-accent-text);
+}
 .v2-byo__field {
   display: flex;
   flex-direction: column;
@@ -5791,13 +5802,17 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
   color: var(--v2-text-tertiary);
 }
+/* §3 error — a white card with a border, ink text, no icon. The red fill was
+   the pre-Signal shape: it read as a state of the page rather than a message
+   beside the field it belongs to. */
 .v2-byo__error {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #fee2e2;
-  border: 1px solid #fca5a5;
-  color: #991b1b;
+  padding: 12px 16px;
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-primary);
   font-size: 13px;
+  line-height: 20px;
 }
 
 /* Optional memory import (retention plan Phase C) — lives inside the
@@ -5806,13 +5821,24 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  /* The padding outlived the card it was inset in (item 6). */
+  padding: 0;
 }
+.v2-byo__memory > p { margin: 0; }
 
-.v2-byo__memory-text {
-  font-family: 'SF Mono', Menlo, monospace;
+/* `.v2-root textarea` (v2.css:211) inherits the family and outranks a lone
+   class, so the 'SF Mono' stack never applied and this box rendered Plex Sans.
+   The selector carries the element for the same reason. */
+.v2-root textarea.v2-byo__memory-text {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
   resize: vertical;
+}
+
+/* The hint codes (MEMORY.md, CLAUDE.md) rendered in the UA monospace. */
+.v2-byo__layout code {
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
 }
 
 .v2-byo__memory-row {
@@ -5823,11 +5849,40 @@ body.modern-ui.v2-canvas {
   flex-wrap: wrap;
 }
 
+/* §3 connected/live is never green, and it is never a ✓ either — the mark is
+   the cobalt dot, which replaces the ✓ that used to open these lines (the dot
+   and the ✓ together marked the same line twice). `memory-done` keeps its name
+   because the memory line is a completed action, not a presence. */
 .v2-byo__memory-done {
-  padding: 12px;
+  padding: 0;
   margin: 0;
-  color: #1e6b2a;
+  color: var(--v2-text-primary);
   font-size: 13px;
+  line-height: 20px;
+}
+.v2-byo__memory-done code {
+  font-size: 12px;
+  color: var(--v2-accent-text);
+}
+.v2-byo__live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+/* Agent presence, which is what §3's live dot means — so cobalt, and the same
+   dot the preview rail shows one column over. (The Connectors dot is ink
+   because it reports connection state, not presence.) */
+.v2-byo__live::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-accent);
 }
 /* BYO decision layout (Sam 2026-08-30: "cloud agent vs byoa uiux"). Form on
    the left, live agent preview on the right — the page shows the teammate
@@ -5927,7 +5982,14 @@ body.modern-ui.v2-canvas {
 }
 /* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
    (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
-   11px is 2.6:1. */
+   11px is 2.6:1.
+   `waiting` shares the ring: a token has been issued and the agent has not
+   checked in, so the state is still "not yet" — but it is no longer "not
+   created", and the rail said so while the page beside it said the install
+   had succeeded (ux-lead, TASK-169). `waiting` is listed first on purpose:
+   `ruleBody` matches the selector on the line that touches the brace, so the
+   draft assertion keeps reading this block. */
+.v2-byo__preview-status--waiting .v2-byo__preview-dot,
 .v2-byo__preview-status--draft .v2-byo__preview-dot {
   box-sizing: border-box;
   background: transparent;
@@ -5956,6 +6018,23 @@ body.modern-ui.v2-canvas {
   .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
   .v2-byo__preview { display: none; }
 }
+@media (max-width: 760px) {
+  /* The shell already pads at this width, so the page's own padding landed on
+     top of it and squeezed the command block to 274px at 390. */
+  .v2-byo__layout { padding-left: 0; padding-right: 0; }
+  /* The Copy target is 30px tall by type; the ::after lifts it to a 44px
+     touch target at phone widths only (v2-landing.css:261-273 precedent). */
+  .v2-byo__copy { position: relative; }
+  .v2-byo__copy::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+}
 
 .v2-byo__result-hero {
   display: flex;
@@ -5974,18 +6053,18 @@ body.modern-ui.v2-canvas {
   gap: 2px;
   padding: 12px 14px;
   border: 1px solid var(--v2-border);
-  border-radius: 10px;
+  border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
 }
+/* Counts are data, and §3 sets data in mono. */
 .v2-byo__stat-value {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font: 500 18px/24px var(--v2-font-mono);
+  letter-spacing: 0;
   color: var(--v2-text-primary);
   font-variant-numeric: tabular-nums;
 }
 .v2-byo__stat-label {
-  font-size: 11px;
+  font: 500 11px/16px var(--v2-font-mono);
   color: var(--v2-text-tertiary);
 }
 
@@ -5998,7 +6077,7 @@ body.modern-ui.v2-canvas {
   padding: 12px 16px;
   margin-bottom: 16px;
   border: 1px solid var(--v2-border);
-  border-radius: 12px;
+  border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
 }
 .v2-byo__persona-body { min-width: 0; flex: 1; }
@@ -6098,7 +6177,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;
-  border-radius: 8px;
+  border-radius: var(--v2-radius);
   background: transparent;
   color: var(--v2-text-secondary);
   border: 1px solid var(--v2-border);
@@ -6109,43 +6188,61 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-byo__secondary:hover {
   background: var(--v2-surface-hover);
 }
+/* §4 command blocks. A snippet is a flat section of the page, not a card, and
+   Copy sits on the ink ground beside the command it copies rather than in the
+   head — the head is a label. */
 .v2-byo__snippet {
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--v2-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: none;
 }
 .v2-byo__snippet-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: var(--v2-surface-hover, #f9fafb);
-  border-bottom: 1px solid var(--v2-border);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 14px/20px var(--v2-font);
+  color: var(--v2-text-primary);
+}
+.v2-byo__snippet > p { margin: 0; }
+/* minmax(0, 1fr) is the fix for the clipped command: a fr column may not shrink
+   below its content's min-content width, and a nowrap command's is its full
+   width (the daemon command measured 771px in a 575px box). */
+.v2-byo__command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
 }
 .v2-root button.v2-byo__copy {
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: var(--v2-surface, #fff);
-  border: 1px solid var(--v2-border);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+  font: 600 12px/16px var(--v2-font);
   cursor: pointer;
 }
 .v2-root button.v2-byo__copy:hover {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: var(--v2-accent-strong);
+  border-color: var(--v2-accent-strong);
+  color: var(--v2-on-ink);
 }
 .v2-byo__pre {
   margin: 0;
-  padding: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: var(--v2-text-primary);
+  /* 5px centres the first line on the 30px Copy beside it. */
+  padding: 5px 0 0;
+  font: 500 14px/20px var(--v2-font-mono);
+  color: var(--v2-on-ink);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -6153,29 +6250,32 @@ body.modern-ui.v2-canvas {
 .v2-byo__add-computer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
+  gap: 10px;
+  padding: 18px;
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-md, 8px);
-  background: var(--v2-surface-hover, #f9fafb);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-bg-subtle);
 }
+.v2-byo__add-computer > p { margin: 0; }
 .v2-byo__add-computer-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
 }
 .v2-byo__add-computer-row code {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
-  background: var(--v2-surface, #fff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: var(--v2-text-primary);
-  overflow-x: auto;
-  white-space: nowrap;
+  padding: 5px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: 500 14px/20px var(--v2-font-mono);
+  color: var(--v2-on-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
 }
 .v2-byo__cta-row {
   display: flex;
@@ -6188,10 +6288,11 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 .v2-byo__footnote code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
   font-size: 12px;
   padding: 2px 6px;
-  background: var(--v2-surface-hover);
+  background: var(--v2-bg-subtle);
   border-radius: 4px;
 }
 
