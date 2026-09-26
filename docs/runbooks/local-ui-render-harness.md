@@ -102,6 +102,26 @@ navigation**, which is where the shell reads it. No login-page step, so login fl
 masquerade as a rendering failure. Rest of the local credential surface:
 `docs/development/local-credentials.md`.
 
+**An admin-gated page needs an admin viewer, and the harness cannot tell you it hasn't got one.**
+The bootstrap creates that user with the schema's default `role` (`user`) and never writes `role` on
+refresh — it touches `username`/`password`/`verified` only, and returns the existing row otherwise
+(`backend/services/localDevLoginService.ts:56-68`) — so a capture of any `ProtectedRoute requireAdmin`
+route (`frontend/src/v2/V2App.tsx:324-360`: `/v2/dev/api`, `/v2/admin/*`, the global integrations
+page) comes back as five words of prose — **"Admin access required"** — with the run line printing
+`403 GET …/api/auth/admin/check`. That is a *faithful* capture of the permission notice and a
+completely useless piece of evidence, which is the worst combination: nothing in the run line says
+"wrong page", and the same `non-2xx` line is the one you were told to read for the font 403s below.
+Shoot the page itself with
+
+```bash
+docker exec mongodb-dev mongosh "$MONGO_URI" --quiet \
+  --eval 'db.users.updateOne({email:"dev@commonly.local"},{$set:{role:"admin"}}).modifiedCount'
+```
+
+then **set it back to `user` when you are done**. The bootstrap will not do it for you in either
+direction, so the role persists across restarts (measured 2026-09-26, #1910) — which is what makes
+it convenient and also what leaves an admin local viewer behind for whoever runs the harness next.
+
 ## 3. Capture one side
 
 ```bash
@@ -117,7 +137,12 @@ v26 on `PATH`); the **backend and vite** are the two that need Node 20.
 
 **The `.txt` is the evidence; the PNG is the illustration.** A text-only agent cannot read a
 screenshot — a `diff` of two `.txt` files is quotable in a PR body, and a 403 or a console error
-names itself instead of looking like a layout bug.
+names itself instead of looking like a layout bug. **Keep the division straight in both
+directions:** the `.txt` is *content* evidence and says nothing about layout — for a `<pre>` (or any
+wrapping-free block) the dump is byte-identical at 390 and 1200, so two `.txt` files at two widths
+are one measurement taken twice and only the PNGs carry the width claim. Vera named that on #1910
+(2026-09-26) after the pair came back identical; the capture was right and the naming was the
+thing that could have misled.
 
 ### Flags the script enforces, and the two traps behind them
 
@@ -178,6 +203,21 @@ half, and for a below-the-fold row the only half a text-only reader can use) and
 A selector that never appears **fails and writes nothing** (exit 1, message names the
 selector) instead of shipping a screenshot of whatever was on screen — the failure mode that
 makes an evidence capture worth less than no capture.
+
+**A subject with no `id` or test hook is selectable by its text, including one click away.**
+`/v2/dev/api` (`frontend/src/components/ApiDevPage.tsx`) renders every endpoint as a collapsed
+`<Accordion className="api-dev-accordion">` — the class is stable, the instance is not, and an
+endpoint's example only exists in the DOM once its summary is clicked. Both halves then come from
+the same `:has-text` in one line:
+
+```bash
+SEL='.api-dev-accordion:has-text("/api/integrations/catalog")'
+node scripts/ui-evidence-shot.mjs --route /v2/dev/api --out /tmp/catalog.png \
+  --click "$SEL .api-dev-accordion-summary" --selector "$SEL" …
+```
+
+`:has-text` matches *ancestors containing* the text, so the endpoint's own path is the cheapest
+thing to match on; scope it to the class under test if two subjects can share a phrase.
 
 ## 4. Capture the before/after pair
 
