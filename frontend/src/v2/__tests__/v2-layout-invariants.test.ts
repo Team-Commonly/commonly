@@ -2760,6 +2760,214 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The rest of the BYO flow onto Signal (TASK-169).
+//
+// TASK-166 fixed the form; this is the same pass over the surfaces its gate did
+// not reach — the after-submit lines, the persona/stat/error cards and the
+// snippets. Values are ux-lead's, rendered at 1200 and 390 on #1897's head.
+//
+// Every item names the negative as well as the value, because each defect here
+// was a colour, a stack or a card that could come back beside the new value —
+// and a presence check on the new value cannot see that.
+//
+// Stated limit, as the block above: these read the sheet, not the render. The
+// heights ux-lead measured (359.1/375.0 at 1200, 214.5/223.9 at 390) are a
+// browser's answer and jsdom has no layout engine, so they are not asserted.
+describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
+  const v2 = read('../v2.css');
+  const byo = read('../components/V2AgentBYO.tsx');
+  const en = read('../../i18n/locales/en.json');
+  const zh = read('../../i18n/locales/zh-CN.json');
+
+  const decls = (body: string): Record<string, string> => {
+    const open = body.indexOf('{');
+    const inner = (open === -1 ? body : body.slice(open + 1)).replace(/\/\*[\s\S]*?\*\//g, '');
+    const out: Record<string, string> = {};
+    inner.split(';').forEach((entry) => {
+      const at = entry.indexOf(':');
+      if (at < 0) return;
+      out[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+    });
+    return out;
+  };
+
+  // Bodies of every rule whose selector is on the byo route, comments removed.
+  // The comments here describe the old values in words ('green', 'SF Mono'), so
+  // a raw `toContain` over the sheet would fail on prose rather than on a rule.
+  const byoRuleBodies = (): string[] => {
+    const out: string[] = [];
+    const re = /([^{}]+)\{([^{}]*)\}/g;
+    let m = re.exec(v2);
+    while (m) {
+      const selector = m[1].replace(/\/\*[\s\S]*?\*\//g, '');
+      if (selector.includes('.v2-byo__')) out.push(m[2].replace(/\/\*[\s\S]*?\*\//g, ''));
+      m = re.exec(v2);
+    }
+    return out;
+  };
+
+  test('item 1: the live line is a cobalt dot, and green is gone from the route', () => {
+    const dot = decls(ruleBody(v2, '.v2-byo__live::before'));
+    expect(dot.background).toBe('var(--v2-accent)');
+    expect(dot['border-radius']).toBe('50%');
+    // The hex, not the word: #1e6b2a was the only green literal on the route.
+    expect(byoRuleBodies().join('\n')).not.toContain('#1e6b2a');
+    // memory-done keeps its name and loses its padding and its green.
+    const done = decls(ruleBody(v2, '.v2-byo__memory-done'));
+    expect(done.color).toBe('var(--v2-text-primary)');
+    expect(done.padding).toBe('0');
+    // The two live lines wear the new class; the memory line does not.
+    expect(byo).toContain("hostedState === 'running' ? 'v2-byo__live'");
+    expect(byo).toContain('className="v2-byo__live" data-testid="byo-listen-ok"');
+    expect(byo).toContain('<p className="v2-byo__memory-done">');
+    // A dot plus a ✓ marks the same line twice, so the ✓ left the copy. Named
+    // keys, not a global scan: three other ✓ strings live outside this flow.
+    expect(en).toContain('"running": "{{name}} is listening."');
+    expect(en).toContain('"verified": "{{name}} is listening — mentions will wake it."');
+    expect(en).toContain('"doneLead": "Memory imported —"');
+    expect(zh).toContain('"running": "{{name}} 已在监听。"');
+    expect(zh).toContain('"verified": "{{name}} 已在监听 —— @提及 会唤醒它。"');
+    expect(zh).toContain('"doneLead": "记忆已导入——"');
+  });
+
+  test('item 2: stat cards are radius 6, and the counts are data in mono', () => {
+    expect(decls(ruleBody(v2, '.v2-byo__stat'))['border-radius']).toBe('var(--v2-radius-lg)');
+    expect(decls(ruleBody(v2, '.v2-byo__stat-value')).font).toBe('500 18px/24px var(--v2-font-mono)');
+    // Mono at 11px is legal only because the family is named in the same rule,
+    // which is also what let its type-floors allowlist entry leave that list.
+    expect(decls(ruleBody(v2, '.v2-byo__stat-label')).font).toBe('500 11px/16px var(--v2-font-mono)');
+  });
+
+  test('item 3: the secondary button is a control, radius 4', () => {
+    expect(decls(ruleBody(v2, '.v2-root button.v2-byo__secondary'))['border-radius'])
+      .toBe('var(--v2-radius)');
+  });
+
+  test('item 4: the persona card is a card, radius 6', () => {
+    expect(decls(ruleBody(v2, '.v2-byo__persona'))['border-radius']).toBe('var(--v2-radius-lg)');
+  });
+
+  test('item 5: an error is a bordered white card, not a red fill', () => {
+    const body = ruleBody(v2, '.v2-byo__error');
+    const err = decls(body);
+    expect(err.background).toBe('var(--v2-surface)');
+    expect(err.border).toBe('1px solid var(--v2-border)');
+    expect(err.color).toBe('var(--v2-text-primary)');
+    expect(err['border-radius']).toBe('var(--v2-radius-lg)');
+    ['#fee2e2', '#fca5a5', '#991b1b'].forEach((hex) => expect(body).not.toContain(hex));
+  });
+
+  test('item 6: commands are ink blocks with Copy in cobalt, and the cards are gone', () => {
+    const command = decls(ruleBody(v2, '.v2-byo__command'));
+    expect(command.background).toBe('var(--v2-ink)');
+    expect(command['border-radius']).toBe('var(--v2-radius-sm)');
+    // minmax(0, 1fr) is the clipping fix: a bare `1fr` may not shrink below the
+    // command's min-content width, which is what clipped the daemon line.
+    expect(command['grid-template-columns']).toBe('minmax(0, 1fr) auto');
+    const copy = decls(ruleBody(v2, '.v2-root button.v2-byo__copy'));
+    expect(copy.background).toBe('var(--v2-accent)');
+    expect(copy.color).toBe('var(--v2-on-ink)');
+    expect(copy['border-radius']).toBe('var(--v2-radius-sm)');
+    expect(decls(ruleBody(v2, '.v2-byo__pre')).color).toBe('var(--v2-on-ink)');
+    expect(decls(ruleBody(v2, '.v2-byo__add-computer-row')).background).toBe('var(--v2-ink)');
+    const addComputer = decls(ruleBody(v2, '.v2-byo__add-computer'));
+    expect(addComputer['border-radius']).toBe('var(--v2-radius-lg)');
+    expect(addComputer.background).toBe('var(--v2-bg-subtle)');
+    // Each snippet is a flat section, not a card.
+    expect(decls(ruleBody(v2, '.v2-byo__snippet')).border).toBe('0');
+    // Copy left the head, and the head is a label: five heads, no button in any.
+    const heads = byo.match(/<div className="v2-byo__snippet-head">[\s\S]*?<\/div>/g) ?? [];
+    expect(heads).toHaveLength(5);
+    heads.forEach((head) => expect(head).not.toContain('v2-byo__copy'));
+  });
+
+  test('item 7: the mono stack is the token, and the textarea outranks the shell', () => {
+    expect(decls(ruleBody(v2, '.v2-root textarea.v2-byo__memory-text'))['font-family'])
+      .toBe('var(--v2-font-mono)');
+    // Why the element is in the selector: `.v2-root textarea` inherits the
+    // family and outranks a lone class, so the old stack never applied at all.
+    expect(v2).toContain('.v2-root textarea {');
+    expect(decls(ruleBody(v2, '.v2-byo__footnote code'))['font-family']).toBe('var(--v2-font-mono)');
+    expect(decls(ruleBody(v2, '.v2-byo__layout code'))['font-family']).toBe('var(--v2-font-mono)');
+    const bodies = byoRuleBodies().join('\n');
+    expect(bodies).not.toContain('SF Mono');
+    expect(bodies).not.toContain('ui-monospace');
+  });
+
+  test('item 8: the agent name in a result heading is mono in cobalt', () => {
+    const rule = decls(ruleBody(v2, '.v2-byo__result h2 code'));
+    expect(rule['font-family']).toBe('var(--v2-font-mono)');
+    expect(rule.color).toBe('var(--v2-accent-text)');
+    // The three headings it covers, so it is not styling a name that left.
+    expect(byo.match(/<h2>[^<]*<code>\{/g) ?? []).toHaveLength(3);
+  });
+
+  test('the fourth preview state: waiting, once a token is issued and nothing has checked in', () => {
+    // waiting is listed FIRST on purpose. `ruleBody` matches the selector on the
+    // line touching the brace, so the existing draft assertion keeps reading
+    // this block; `selectorRuleBody` is what reaches the first line.
+    const waiting = decls(selectorRuleBody(v2, '.v2-byo__preview-status--waiting .v2-byo__preview-dot'));
+    expect(waiting.border).toBe('1px dashed var(--v2-border-strong)');
+    expect(waiting.background).toBe('transparent');
+    expect(decls(ruleBody(v2, '.v2-byo__preview-status--draft .v2-byo__preview-dot')).border)
+      .toBe('1px dashed var(--v2-border-strong)');
+    // The rail said "not created yet" while the page beside it said the install
+    // had succeeded; that is the state this adds.
+    expect(en).toContain('"waiting": "not listening yet"');
+    expect(zh).toContain('"waiting": "尚未监听"');
+    expect(byo).toContain("const previewStatus: 'draft' | 'waiting' | 'starting' | 'live'");
+    expect(byo).toContain("return listenState === 'listening' ? 'live' : 'waiting';");
+    // zh said the line would turn into a checkmark, and there is no checkmark.
+    expect(zh).not.toContain('变成对勾');
+  });
+
+  test('found while rendering: the phone block un-doubles padding and lifts Copy', () => {
+    // The shell already pads at this width, so the page's padding landed on top
+    // of it and squeezed the command block to 274px at 390.
+    expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
+    const phone = mediaBlockContaining(v2, '.v2-byo__copy');
+    expect(phone).toContain('.v2-byo__layout { padding-left: 0; padding-right: 0; }');
+    expect(phone).toContain('.v2-byo__copy::after');
+    expect(phone).toContain('height: 44px');
+  });
+
+  test('the render gate: result gaps are the authored 28, and the dot is on the first line', () => {
+    // A paragraph's user-agent margin does not collapse inside a flex column,
+    // so the authored 28 drew as 42 (28 + 1em) and the h2's 4px rode on the gap
+    // after it.
+    //
+    // The `>` is the scope, and what it buys is the NEXT paragraph, not today's.
+    // Every paragraph currently reachable under a result is a direct child of
+    // one of three containers that each zero their own `> p` — the result, the
+    // snippet, the memory block — so the child and descendant forms are
+    // indistinguishable at this head: swapping them in a browser moved nothing
+    // (sprint-review, 2026-09-26). The paragraph this guards is one added later
+    // inside some OTHER wrapper in a result: the descendant form would zero it
+    // silently, the child form leaves it alone. That is why the descendant form
+    // is the negative rather than the value.
+    expect(decls(ruleBody(v2, '.v2-byo__result > p')).margin).toBe('0');
+    expect(v2).not.toMatch(/\.v2-byo__result p\s*\{/);
+    // ...and this is why that negative passes today: the two containers the
+    // result nests are each zeroing their own direct children. If either goes,
+    // its paragraphs start relying on the result rule above and the swap stops
+    // being free — so the reasoning is pinned, not just written down.
+    expect(decls(ruleBody(v2, '.v2-byo__snippet > p')).margin).toBe('0');
+    expect(decls(ruleBody(v2, '.v2-byo__memory > p')).margin).toBe('0');
+    expect(decls(ruleBody(v2, '.v2-byo__result h2')).margin).toBe('0');
+    // The rhythm itself did not move to absorb the margin it was fighting.
+    expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
+    // A wrapped live line is the case: centred, the dot floats between the two
+    // lines at 390 rather than marking the first one.
+    const live = decls(ruleBody(v2, '.v2-byo__live'));
+    expect(live['align-items']).toBe('flex-start');
+    expect(live['align-items']).not.toBe('center');
+    // (20px line box − 7px dot) / 2: the dot marks the first line's optical
+    // centre, not the top of its line box.
+    expect(decls(ruleBody(v2, '.v2-byo__live::before'))['margin-top']).toBe('6.5px');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The authenticated shell's height chain (TASK-157).
 //
 // Both defects this block covers are cascade outcomes, not missing text: the
