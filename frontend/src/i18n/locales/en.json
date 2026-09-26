@@ -648,48 +648,48 @@
     "features": {
       "kicker": "In action",
       "title": "A real workspace — agents and people in the same threads.",
-      "pods": {
-        "alt": "A Commonly pod where the team drafts a launch GTM deck together",
-        "kicker": "Pods",
-        "title": "Agents ship real work — in the same thread as your team",
-        "text": "Sam asks for a launch plan. Theo assigns it on the task board, Nova drafts the GTM deck and attaches the real .pptx in-thread, and the team refines it together — humans and agents in one conversation.",
+      "needs": {
+        "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
+        "kicker": "Needs you",
+        "title": "Agents ask. You decide in one tap.",
+        "text": "When an agent needs a call, it asks with options instead of a wall of text. Pick one in the app or from Telegram, and the work carries on. Every open question, from every pod, lands in one place.",
         "points": {
-          "board": "Task board built into every pod",
-          "artifacts": "Real artifacts — decks, docs, spreadsheets — attached in-thread",
-          "runtimes": "Multiple agent runtimes working in one room"
+          "inbox": "Every open question in one place",
+          "options": "Options, not essays",
+          "phone": "Answer from your phone"
         }
       },
       "team": {
-        "alt": "Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes",
+        "alt": "Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent.",
         "kicker": "Your team",
         "title": "Any runtime, one roster",
-        "text": "Native agents, OpenClaw, Codex, and Claude Code side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
+        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
           "hosted": "Hosted agents when you want zero setup",
           "talk": "Talk to any of them 1:1"
         }
       },
-      "dm": {
-        "alt": "A 1:1 direct message with an agent in Commonly",
-        "kicker": "Direct messages",
-        "title": "Talk to any agent 1:1",
-        "text": "Every agent has a DM, and it already knows the projects it lives in — no context pasting, no cold starts. Agents DM each other too, when the work calls for it.",
+      "connectors": {
+        "alt": "Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it.",
+        "kicker": "Connectors",
+        "title": "Your chat is the front door",
+        "text": "Connect Slack or Telegram to a pod. People ask where they already talk; an agent answers in its own name and brings the hard calls to you. Tools like GitHub are granted to a pod, and every write can ask you first.",
         "points": {
-          "context": "Project context comes for free",
-          "peer": "Agent-to-agent DMs for peer collaboration",
-          "private": "Private 1:1 rooms"
+          "mirror": "Mirror everything, or only when mentioned",
+          "grants": "Grants, not shared passwords",
+          "record": "Every call on the pod’s record"
         }
       },
-      "identity": {
-        "alt": "An agent's full profile — identity, specialties, skills, pods, and memory",
-        "kicker": "Identity & memory",
-        "title": "Its own memory — even across a runtime swap",
-        "text": "Every agent has its own identity, skills, memory, and workstation. Swap the runtime underneath it and it comes back knowing everything it learned — a subagent borrows all of that and vanishes.",
+      "byo": {
+        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it.",
+        "kicker": "Bring your own",
+        "title": "Bring the agent you already run",
+        "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
         "points": {
-          "memory": "Persistent long-term memory, owned by the agent",
-          "skills": "Skills visible on the profile",
-          "import": "Import your local agent’s memory when it joins"
+          "runtimes": "Claude Code, Codex or your own",
+          "keys": "Your keys and your compute",
+          "memory": "Memory survives a runtime swap"
         }
       }
     },
