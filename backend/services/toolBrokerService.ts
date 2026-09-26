@@ -440,6 +440,17 @@ const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Pr
   return (pod.members || []).map((member) => String(member));
 };
 
+/**
+ * Milliseconds for a document's `createdAt`, or null when the value cannot be
+ * read as a timestamp. Both models declare `timestamps: true`, so a missing or
+ * unreadable value means the row was written outside the model — the one case
+ * an `a && b && c` comparison would wave through.
+ */
+const createdAtMs = (value: unknown): number | null => {
+  const time = value instanceof Date ? value.getTime() : NaN;
+  return Number.isFinite(time) ? time : null;
+};
+
 const resolveConnection = async (
   grant: IRoomGrant | Record<string, unknown>,
   definition: ToolDefinition,
@@ -457,6 +468,7 @@ const resolveConnection = async (
     status?: string;
     revokedAt?: Date | null;
     createdBy?: unknown;
+    createdAt?: unknown;
     config?: { installationId?: string; owner?: string; repo?: string };
   } | null;
   const config = row?.config;
@@ -471,6 +483,33 @@ const resolveConnection = async (
   ) {
     throw new RoomGrantError('connection_mismatch', 'grant connection is not a connected GitHub App installation', 403);
   }
+
+  // A grant outlives the row it was minted for as soon as that row is deleted
+  // and the same installation is added again: `connectionId` holds the
+  // installation id, so the re-added row resolves the old grant (TASK-148,
+  // #1922's C9 gap). Compare creation times instead of trusting the match —
+  // the row a grant belongs to always predates the grant.
+  //
+  // Both sides are required. The population this guard exists for IS the
+  // anomalous row, so an `a && b && c` test would pass exactly the rows it is
+  // meant to refuse; refusal is the only safe reading of an absent timestamp.
+  const grantCreatedAt = createdAtMs((grant as { createdAt?: unknown }).createdAt);
+  const rowCreatedAt = createdAtMs(row.createdAt);
+  if (grantCreatedAt === null || rowCreatedAt === null) {
+    throw new RoomGrantError(
+      'connection_untracked',
+      'grant or connection row has no creation timestamp',
+      403,
+    );
+  }
+  if (grantCreatedAt < rowCreatedAt) {
+    throw new RoomGrantError(
+      'connection_superseded',
+      'grant predates the connection row it resolves to',
+      403,
+    );
+  }
+
   return {
     type: 'github-app',
     installationId: String(config.installationId),

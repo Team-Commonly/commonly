@@ -39,10 +39,17 @@ jest.mock('../../../services/roomGrantService', () => {
 
 const broker = require('../../../services/toolBrokerService');
 
+// Both models write `createdAt` (timestamps: true) and the broker compares it
+// against the resolved row's, so the fixtures carry the fields a real row has;
+// the row always predates the grant minted for it (TASK-148).
+const GRANT_CREATED_AT = new Date('2026-01-02T00:00:00.000Z');
+const ROW_CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
+
 const grant = (overrides = {}) => ({
   grantId: 'grant-1', connectionId: 'connection-1', installationId: 'install-1',
   target: { kind: 'seat', id: 'agent-1' }, tools: ['github.create_issue'], writeMode: 'write',
-  audience: ['agent-1'], expiresAt: new Date(Date.now() + 60000), ...overrides,
+  audience: ['agent-1'], expiresAt: new Date(Date.now() + 60000), createdAt: GRANT_CREATED_AT,
+  ...overrides,
 });
 
 beforeEach(() => {
@@ -51,6 +58,7 @@ beforeEach(() => {
   mockRoomGrant.findOne.mockResolvedValue(grant());
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app', status: 'connected', createdBy: 'owner-1',
+    createdAt: ROW_CREATED_AT,
     config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
@@ -172,6 +180,7 @@ test('the envelope pins owner/repo and a changed connection refuses', async () =
 
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app', status: 'connected', createdBy: 'owner-1',
+    createdAt: ROW_CREATED_AT,
     config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'another-repo' },
   });
   await expect(broker.executeApprovedToolCall({
@@ -181,6 +190,32 @@ test('the envelope pins owner/repo and a changed connection refuses', async () =
   expect(require('../../../services/githubAppService').createIssue).not.toHaveBeenCalled();
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
     outcome: 'refused', reason: 'repo_mismatch', approvalId: 'approval-1',
+  }));
+});
+
+// The arm is inside `resolveConnection`, so the parked-write path inherits it.
+// Nothing else witnesses that: a caller-side placement keeps every
+// `callTool` witness green while this path loses the guard (Vera 74521).
+test('the approved envelope refuses a grant that predates the re-added connection row', async () => {
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({ code: 'approval_required' });
+  const proposed = mockProposeAction.mock.calls[0][0].toolCall;
+
+  // Same installationId, same owner/repo — the ONLY divergence is the row's
+  // age, so nothing else in the envelope check can answer for the refusal.
+  mockIntegration.findOne.mockResolvedValue({
+    type: 'github-app', status: 'connected', createdBy: 'owner-2',
+    createdAt: new Date(GRANT_CREATED_AT.getTime() + 60000),
+    config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
+  });
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
+    args: proposed.canonicalArgs, expectedArgsDigest: proposed.argsDigest, approvalId: 'approval-1',
+  })).rejects.toMatchObject({ code: 'connection_superseded' });
+  expect(require('../../../services/githubAppService').createIssue).not.toHaveBeenCalled();
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'connection_superseded', approvalId: 'approval-1',
   }));
 });
 
