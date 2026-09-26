@@ -43,6 +43,7 @@ const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
@@ -1075,6 +1076,12 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // and we explicitly choose stricter behavior on the new endpoint.
       const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
       const existing = await User.findOne({
+        // Bot rows only (TASK-133 b, wren 73994): the derived name is plain
+        // lowercase, so a person's row matches the username branch below — and
+        // the §3.7 co-pod check runs AFTER `getOrCreateAgentUser`, so the probe
+        // would hand the identity service a person to adopt. The legacy /room
+        // probe carries the same term for the same reason; a miss is a 404.
+        isBot: true,
         $or: [
           { 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
           { username: expectedUsername },
@@ -3429,13 +3436,14 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
     let messages = [];
 
     if (integration.type === 'discord') {
-      if (!integration.config?.botToken) {
+      const botToken = resolveDiscordBotToken(integration.config?.botToken);
+      if (!botToken) {
         return res.status(400).json({ message: 'Discord integration missing botToken' });
       }
       const DiscordService = require('../services/discordService');
       messages = await DiscordService.fetchMessages({
         channelId: integration.config.channelId,
-        botToken: integration.config.botToken,
+        botToken,
         limit,
         before,
         after,

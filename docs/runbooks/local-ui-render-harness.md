@@ -102,6 +102,38 @@ navigation**, which is where the shell reads it. No login-page step, so login fl
 masquerade as a rendering failure. Rest of the local credential surface:
 `docs/development/local-credentials.md`.
 
+**An admin-gated page needs an admin viewer, and the harness cannot tell you it hasn't got one.**
+The bootstrap creates that user with the schema's default `role` (`user`) and never writes `role` on
+refresh — it touches `username`/`password`/`verified` only, and returns the existing row otherwise
+(`backend/services/localDevLoginService.ts:56-68`) — so a capture of any `ProtectedRoute requireAdmin`
+route (`frontend/src/v2/V2App.tsx:324-360`: `/v2/dev/api`, `/v2/admin/*`, the global integrations
+page) comes back as a faithful picture of the permission notice —
+**"Admin access required. You do not have permission to view this page."**
+(`frontend/src/components/ProtectedRoute.tsx:59`) — while the run line prints
+`403 GET …/api/auth/admin/check`. A completely useless piece of evidence, which is the worst
+combination: nothing in the run line says "wrong page", and the same `non-2xx` line is the one you
+were told to read for the font 403s below. Shoot the page itself — **with the wrapper, from the repo
+root**: the operator's shell never sourced `.env` (every other step here loads it inside its own
+`bash -c`), so `$MONGO_URI` in a bare `docker exec` line expands to nothing.
+
+```bash
+( set -a; . ./.env; set +a; docker exec mongodb-dev mongosh "$MONGO_URI" --quiet \
+  --eval 'db.users.updateOne({email:"dev@commonly.local"},{$set:{role:"admin"}}).modifiedCount' )
+```
+
+and put the role back the same way when you are done:
+
+```bash
+( set -a; . ./.env; set +a; docker exec mongodb-dev mongosh "$MONGO_URI" --quiet \
+  --eval 'db.users.updateOne({email:"dev@commonly.local"},{$set:{role:"user"}}).modifiedCount' )
+```
+
+Drop the wrapper and `mongosh` falls back to `test` on localhost and the update dies with
+`MongoServerError: Command update requires authentication` (both arms measured 2026-09-26, #1911) —
+an error that reads like a broken database rather than an unsourced `.env`. The bootstrap writes the
+role in neither direction, so the flip persists across restarts: convenient, and also what leaves an
+admin local viewer behind for whoever runs the harness next.
+
 ## 3. Capture one side
 
 ```bash
@@ -117,7 +149,15 @@ v26 on `PATH`); the **backend and vite** are the two that need Node 20.
 
 **The `.txt` is the evidence; the PNG is the illustration.** A text-only agent cannot read a
 screenshot — a `diff` of two `.txt` files is quotable in a PR body, and a 403 or a console error
-names itself instead of looking like a layout bug.
+names itself instead of looking like a layout bug. **Keep the division straight in both directions:
+a `.txt` records *content*, and no `.txt` pair at two widths can be layout evidence — for any
+element, not just a `<pre>`.** `innerText` drops soft wraps entirely, so a paragraph 216px tall at
+390 and 72px at 1200 dumps byte-identical (wren measured that case on #1911, 2026-09-26); two `.txt`
+files at two widths are one measurement taken twice, and every width claim rests on the PNGs. The
+narrow version — "expected for a `<pre>`" — is what would let a wrapped-text capture be filed as
+width proof, which is the reading it has to block. (The one difference a `.txt` pair *can* show is
+CSS-hidden text, because `innerText` skips hidden subtrees — that is the tell in the collapse trap
+below.)
 
 ### Flags the script enforces, and the two traps behind them
 
@@ -178,6 +218,27 @@ half, and for a below-the-fold row the only half a text-only reader can use) and
 A selector that never appears **fails and writes nothing** (exit 1, message names the
 selector) instead of shipping a screenshot of whatever was on screen — the failure mode that
 makes an evidence capture worth less than no capture.
+
+**A subject with no `id` or test hook is selectable by its text — and `--click` can be the only
+thing between you and a passing run that photographed the wrong thing.** Same shape as the
+admin-gate trap in §2: nothing fails, and the evidence is still wrong. `/v2/dev/api`
+(`frontend/src/components/ApiDevPage.tsx`) renders every endpoint as an
+`<Accordion className="api-dev-accordion">` — the class is stable, the instance is not — and MUI
+5.17.1 keeps the collapsed details **mounted** inside `MuiCollapse-hidden` (`visibility: hidden`,
+`aria-expanded="false"`): the example JSON is in the DOM the whole time, 780 characters of
+`textContent` behind 0 characters of `innerText`. Without `--click` the run exits 0, prints no
+`non-2xx`, and captures the summary row alone — the catalog entry's selector dump is 94 characters
+collapsed against 881 opened (measured 2026-09-26). **If the `.txt` looks short, you photographed a
+collapsed card.** Both halves of the selector come from the same `:has-text` in one line:
+
+```bash
+SEL='.api-dev-accordion:has-text("/api/integrations/catalog")'
+node scripts/ui-evidence-shot.mjs --route /v2/dev/api --out /tmp/catalog.png \
+  --click "$SEL .api-dev-accordion-summary" --selector "$SEL" …
+```
+
+`:has-text` matches *ancestors containing* the text, so the endpoint's own path is the cheapest
+thing to match on; scope it to the class under test if two subjects can share a phrase.
 
 ## 4. Capture the before/after pair
 

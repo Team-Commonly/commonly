@@ -10,6 +10,7 @@ const Pod = require('../models/Pod');
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
+const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const SlackApi = require('./slackApi');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -60,10 +61,11 @@ interface IntegrationDoc {
   };
 }
 
-const escapeSlack = (value: unknown): string => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;');
+// One implementation, in slackApi.ts beside the call that posts it. The local
+// name stays so the call site below reads as it did; the behaviour is the shared
+// helper's, `??` rather than `||`, so a missing value renders as nothing while a
+// legitimate 0 or false still renders as itself.
+const escapeSlack = SlackApi.escapeSlackMrkdwn;
 
 const memberIdFor = (integration: IntegrationDoc): string | null => {
   const linked = integration.config?.linkedUserId;
@@ -104,7 +106,12 @@ const sendClosingLine = async (
       text,
       { replyToMessageId: card.tgMessageId, plainText: true },
     );
-    if (!sent?.success) throw new Error('Telegram ruling confirmation was not sent');
+    if (!sent?.success) {
+      // Bound chat: the closing line goes to the connector's own chat, so a
+      // permanent failure is the connector's, not an inbound sender's.
+      await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+      throw new Error('Telegram ruling confirmation was not sent');
+    }
     return;
   }
   const token = await connectorSecrets.get(String(integration.config?.botTokenRef));
@@ -114,7 +121,13 @@ const sendClosingLine = async (
     undefined,
     card.externalMessageId,
   );
-  if (!sent?.ok) throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  if (!sent?.ok) {
+    // Same split as the Telegram half above: bound channel, so a permanent
+    // failure (removed, archived, gone) is this connector's, not an inbound
+    // sender's.
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+    throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  }
 };
 
 /**

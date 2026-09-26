@@ -8,6 +8,8 @@ const registry = require('../../integrations');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
 const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
+const { escapeHtml } = telegramService;
+const deliveryFailures = require('../../services/connectorDeliveryFailureService');
 const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
 const {
   claimDelivery: claimWebhookDelivery,
@@ -159,8 +161,16 @@ const handleEnableCommand = async (chat: any, code: any) => {
     return;
   }
 
-  await Integration.findByIdAndUpdate(integration._id, {
+  // `errorMessage: null` because the working bind is the other state of the
+  // field the failure writes, and only a bind knows the connector works again
+  // (wren 73779). `new: true` is what the confirmation below classifies against:
+  // the chat id it compares is the one this update just stored.
+  const bound = await Integration.findByIdAndUpdate(integration._id, {
     status: 'connected',
+    errorMessage: null,
+    // The flag goes with the message it describes: a bind clears the reason, so
+    // it clears the claim that the reason was written for a person.
+    errorMessageUserFacing: false,
     $set: {
       'config.chatId': chatId,
       'config.chatTitle': chatTitle,
@@ -171,18 +181,25 @@ const handleEnableCommand = async (chat: any, code: any) => {
       'config.connectCode': '',
       'config.connectCodeExpiresAt': '',
     },
-  });
+  }, { new: true });
 
   const pod = await Pod.findById(integration.podId).lean();
   const podName = pod?.name || 'your pod';
 
-  await telegramService.sendMessage(
+  // Escaped because parse_mode is HTML: a pod named `A <b>` made Telegram reject
+  // this send with 400 "can't parse entities", which is a content failure and
+  // must never undo a bind (wren 73778).
+  const confirmation = await telegramService.sendMessage(
     botToken,
     chatId,
-    `✅ Connected this chat to <b>${podName}</b> in Commonly.\n`
+    `✅ Connected this chat to <b>${escapeHtml(podName)}</b> in Commonly.\n`
     + 'Agent messages from the pod will appear here. Too chatty? Send '
     + '/mode attention to only get what needs you. /help lists the rest.',
   );
+  // The one receive-side send that may flip: it targets the chat that was just
+  // bound, so a permanent failure means this bind is unusable. Undoing it clears
+  // the chat id, which is what lets the user mint a fresh code and reconnect.
+  await deliveryFailures.noteBoundChatDeliveryFailure(bound, chatId, confirmation);
 };
 
 const handleSummaryCommand = async (chat: any, integration: any) => {
@@ -295,10 +312,12 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
   }
 
   const title = latestSummary.title || 'Pod Summary';
+  // Summary text is generated from pod messages, so it is untrusted here for
+  // the same reason a pod name is: parse_mode is HTML (vera 73812).
   await telegramService.sendMessage(
     botToken,
     chatId,
-    `${title}\n\n${latestSummary.content}`,
+    `${escapeHtml(title)}\n\n${escapeHtml(latestSummary.content)}`,
   );
 };
 
@@ -355,9 +374,9 @@ const handleStatusCommand = async (chat: any, integration: any) => {
     : 'not muted';
   const lead = integration.config?.leadAgentUsername;
   return sendToChat(chatId, [
-    `Pod: <b>${pod?.name || 'unknown'}</b>`,
+    `Pod: <b>${escapeHtml(pod?.name || 'unknown')}</b>`,
     `Mode: <b>${mode}</b> · Relay: ${integration.config?.liveRelay ? 'on' : 'off'} · ${muted}`,
-    lead ? `Lead agent: ${lead}` : null,
+    lead ? `Lead agent: ${escapeHtml(lead)}` : null,
   ].filter(Boolean).join('\n'));
 };
 

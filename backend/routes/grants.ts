@@ -1,5 +1,6 @@
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import { Types } from 'mongoose';
 import Integration from '../models/Integration';
@@ -52,7 +53,7 @@ const grantRateLimit = rateLimit({
   keyGenerator: (req: express.Request): string => {
     const authHeader = req.get('Authorization') || req.get('x-auth-token');
     if (authHeader) return `grant:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req, res) => res.status(429).json({ message: 'rate limit exceeded: 60 grant operations per 60s' }),
 });
@@ -134,12 +135,24 @@ const resolveGranters = async (connectionIds: string[]): Promise<Map<string, str
  *                    through the identity's installations: that is an ordering
  *                    guess, and for an unbound seat no daemon is polling it
  *                    anyway (Vera 69881).
+ *  - `hosted`        the seat has no machine binding because it does not run on
+ *                    a daemon at all: it runs on the hosted tier, where the
+ *                    broker is handed to the run itself (TASK-132) and there is
+ *                    no confinement layer to judge — nothing to confine (wren
+ *                    73742). Without this, such a seat read as `unbound`, which
+ *                    says the grant reaches nobody; that stopped being true the
+ *                    moment a hosted run could redeem it.
  *  - `not_evaluated` the grant names a pod, not a seat. The refusal is a
  *                    property of each seat that redeems it and the projection
  *                    applies it per seat, so there is no single verdict to
  *                    report here.
  */
-export type GrantBrokerRefusalScope = 'seat' | 'not_installed' | 'unbound' | 'not_evaluated';
+export type GrantBrokerRefusalScope =
+  | 'seat'
+  | 'not_installed'
+  | 'unbound'
+  | 'hosted'
+  | 'not_evaluated';
 
 export interface GrantBrokerConfinement {
   refusal: GrantBrokerRefusal | null;
@@ -177,13 +190,36 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
     : [];
   const ownersByMachine = new Map(machines.map((machine: any) => [String(machine.machineId), machine.ownerUserId]));
   const entries = new Map<string, any>();
+
+  // Which seats are reached by a hosted run? Built from the same projection the
+  // daemon reads, lazily — a workspace whose seat grants are all bound never
+  // pays for it — and read through the same `sourced` rule, so this verdict
+  // cannot disagree with what the run actually receives.
+  let hostedSeats: Set<string> | null = null;
+  const seatIsHosted = async (key: string): Promise<boolean> => {
+    if (!hostedSeats) {
+      hostedSeats = new Set<string>();
+      const byIdentity = await projectSeatEnvironments();
+      for (const [seatKey, entry] of byIdentity) {
+        const runtime = entry.runtime as { runtimeType?: unknown } | null;
+        if (String(runtime?.runtimeType || '').toLowerCase() === 'native') hostedSeats.add(seatKey);
+      }
+    }
+    return hostedSeats.has(key);
+  };
+
   for (const grant of seatGrants) {
     const seat: any = seatsById.get(String(grant.target.id));
     const meta = seat?.botMetadata || {};
     const identity = typeof meta.agentName === 'string' ? meta.agentName.trim() : '';
     const owner = typeof meta.machineId === 'string' ? ownersByMachine.get(meta.machineId) : undefined;
     if (!identity || !owner) {
-      confinements.set(grant.grantId, { refusal: null, scope: 'unbound' });
+      const key = identity ? seatEnvironmentKey(identity, meta.instanceId) : '';
+      // eslint-disable-next-line no-await-in-loop -- one cached scan, only for seats that have no binding
+      const hosted = key ? await seatIsHosted(key) : false;
+      confinements.set(grant.grantId, hosted
+        ? { refusal: null, scope: 'hosted' }
+        : { refusal: null, scope: 'unbound' });
       continue;
     }
     const key = seatEnvironmentKey(identity, meta.instanceId);

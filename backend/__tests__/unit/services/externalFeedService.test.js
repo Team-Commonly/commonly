@@ -232,6 +232,11 @@ describe('externalFeedService', () => {
         $set: expect.objectContaining({
           status: 'error',
           errorMessage: 'invalid_request',
+          // Named, not omitted (wren 73858): a `$set` that leaves a key out
+          // inherits the row's stored value, so silence here would keep a stale
+          // `true` from an earlier human-authored reason and print this
+          // provider text in the user's connector list.
+          errorMessageUserFacing: false,
         }),
       }),
     );

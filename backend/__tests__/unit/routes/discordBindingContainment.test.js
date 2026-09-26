@@ -47,7 +47,7 @@ jest.mock('../../../models/Integration', () => {
 
   function Integration(data) {
     Object.assign(this, data);
-    this._id = data._id || 'integration-new';
+    this._id = data._id || '6a8f6de1a1dccf2e02f31459';
     this.save = jest.fn().mockResolvedValue(this);
     lastInstance = this;
   }
@@ -92,6 +92,18 @@ jest.mock('../../../services/discordService', () => {
 
 jest.mock('../../../services/discordMultiCommandService', () => ({
   runDiscordCommandForIntegrations: jest.fn(),
+}));
+
+// The create path encrypts the webhook URL. This suite is about binding
+// containment, not the envelope, so the envelope is stubbed here — leaving it
+// real would have the route await a Mongo write against no connection (the
+// suites that own that behaviour are integration.discordTokenCopy and the
+// connectorSecrets unit file).
+jest.mock('../../../services/connectorSecrets', () => ({
+  put: jest.fn(async () => 'secret-ref-1'),
+  get: jest.fn(),
+  revoke: jest.fn(),
+  listWithUnavailableKey: jest.fn(),
 }));
 
 const axios = require('axios');
@@ -140,12 +152,24 @@ const podIdsQuery = (rows) => {
 };
 
 describe('Discord binding containment (TASK-123 a)', () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+
+  afterAll(() => {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActiveKey;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.FRONTEND_URL = 'https://app.example.test';
     process.env.DISCORD_BOT_TOKEN = 'bot-secret';
     process.env.DISCORD_CLIENT_ID = 'client-id';
     process.env.DISCORD_CLIENT_SECRET = 'client-secret';
+    // The create path encrypts the webhook URL (TASK-124 part 2), so a connector
+    // secret ring is part of the deployment this route runs against.
+    process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
     podIdsQuery([{ _id: 'pod-1' }]);
     Pod.findById.mockResolvedValue({ _id: 'pod-1', members: [MEMBER], createdBy: MEMBER });
     User.findById.mockResolvedValue({ _id: MEMBER, role: 'member' });
@@ -313,9 +337,10 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // The live bind posts `botToken: ''` (`DiscordCallback.tsx:100`). A
       // key-presence check refuses this and breaks every real bind, so the
       // refusal has to be a VALUE test and this payload has to be the witness:
-      // the empty token is filled from the environment by
-      // `resolveEffectiveConfig`, and `getMissingRequiredFields` reports `''` as
-      // missing, so it is neither refused here nor lost.
+      // `''` is not supplied, so no 400, and the shared strip then drops the key
+      // rather than storing an empty holder — while `resolveEffectiveConfig`
+      // fills the token from the environment for the manifest check, so the row
+      // is created and nothing is lost by dropping it.
       const res = await post({
         podId: 'pod-1',
         type: 'discord',
@@ -331,6 +356,13 @@ describe('Discord binding containment (TASK-123 a)', () => {
       });
 
       expect(res.status).toBe(201);
+      expect(Integration.__getLastInstance().config).not.toHaveProperty('botToken');
+      // The URL the create path derived is encrypted, not written to the row: the
+      // strip above must not have eaten the ref the reader resolves through.
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { 'config.webhookUrlRef': 'secret-ref-1' } },
+      );
       expect(axios.post).toHaveBeenCalledWith(
         `https://discord.com/api/channels/${CHANNEL}/webhooks`,
         { name: 'Commonly Bot', avatar: null },
@@ -387,12 +419,16 @@ describe('Discord binding containment (TASK-123 a)', () => {
       });
     });
 
-    it('CONTROL: a Slack write carrying a botToken is untouched by the Discord refusal', async () => {
-      // The load-bearing assertion. `SERVER_OWNED_CONFIG_KEYS` is applied to
-      // every type, and `resolveEffectiveConfig` returns early for all of them,
-      // so a shared-list version of this fix strips Slack's token with nothing
-      // to inject it back and 400s here. This control fails on that version and
-      // passes on the Discord-scoped one; nothing else in the file can see it.
+    it('CONTROL: a non-Discord write carrying a botToken stores the row without the token', async () => {
+      // The load-bearing assertion for the strip: `SERVER_OWNED_CONFIG_KEYS` is
+      // applied to every type, and `resolveEffectiveConfig` returns early for all
+      // of them, so this is the field's only closure on Slack. The write is
+      // still accepted (the strip is silent, and the `botToken` refusal above is
+      // Discord-scoped), and the caller's value is gone from the stored config.
+      // Nothing loses a credential it had: Slack's live bind stores
+      // `botTokenRef`, and its readers fall back to `SLACK_BOT_TOKEN`. This test
+      // previously asserted the opposite — that the caller's token was stored —
+      // which is the state the strip removes.
       const res = await post({
         podId: 'pod-1',
         type: 'slack',
@@ -401,9 +437,39 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       expect(res.status).toBe(201);
       const stored = Integration.__getLastInstance();
-      expect(stored.config.botToken).toBe('xoxb-caller');
+      expect(stored.config).not.toHaveProperty('botToken');
+      expect(stored.config.channelId).toBe('C012345');
+    });
+
+    it('drops a caller-supplied webhookUrl and webhookUrlRef from the stored config', async () => {
+      // Both names join the server-owned list with this change: the URL is a
+      // bearer credential the server derives from the Discord API on both
+      // writers, and the ref is a pointer a caller must not be able to aim at
+      // another row's secret. A planted `config.webhookUrl` would also be picked
+      // up as the resolver's legacy fallback.
+      const res = await post({
+        podId: 'pod-1',
+        type: 'discord',
+        config: {
+          serverId: GUILD,
+          channelId: CHANNEL,
+          webhookUrl: 'https://discord.com/api/webhooks/999/caller-token',
+          webhookUrlRef: 'somebody-elses-ref',
+        },
+      });
+
+      expect(res.status).toBe(201);
+      const stored = Integration.__getLastInstance();
+      expect(stored.config).not.toHaveProperty('webhookUrl');
+      expect(stored.config).not.toHaveProperty('webhookUrlRef');
+      // The ref on the row is the one the server wrote from the envelope.
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { 'config.webhookUrlRef': 'secret-ref-1' } },
+      );
     });
   });
+
 
   describe('PATCH /api/integrations/:id', () => {
     const patch = (body) => request(app)
@@ -449,6 +515,21 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
       expect(res.status).toBe(200);
       expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
+    });
+
+    it('CONTROL: a non-Discord PATCH carrying a botToken drops it instead of storing it', async () => {
+      // PATCH is the field's second writer: the strip runs on `config` before
+      // `incoming` is built, so the key never reaches the `config.<key>` update
+      // path that persists every other incoming key. Asserted on the update
+      // payload, which is where a stored credential would show up.
+      Integration.findById.mockResolvedValue(discordRow({ type: 'slack', config: { channelId: 'C012345' } }));
+      Integration.findByIdAndUpdate.mockResolvedValue(discordRow({ type: 'slack' }));
+
+      const res = await patch({ config: { botToken: 'xoxb-patch' } });
+
+      expect(res.status).toBe(200);
+      const update = Integration.findByIdAndUpdate.mock.calls[0][1];
+      expect(Object.keys(update).filter((key) => key.includes('botToken'))).toEqual([]);
     });
   });
 });

@@ -1,6 +1,7 @@
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognises the limiter on the POST route — same pattern as uploads.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const express = require('express');
@@ -40,7 +41,7 @@ interface RateLimitRes {
 // for a minute straight) and tight enough to blunt a runaway client looping
 // on a flaky send. Keyed on the Authorization header (hashed) so each user's
 // bearer token gets its own bucket — NAT'd users sharing one office IP don't
-// collide. Falls back to the IPv6-safe ipKeyGenerator for the rare unauth
+// collide. Falls back to the Cloudflare-aware key helper for the rare unauth
 // path. Applied as the FIRST middleware on POST so CodeQL's
 // js/missing-rate-limiting query sees it.
 const sendMessageRateLimit = rateLimit({
@@ -53,7 +54,7 @@ const sendMessageRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 60 messages per 60s' });
@@ -73,7 +74,7 @@ const readMessageRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 240 message reads per 60s' });
@@ -100,7 +101,7 @@ const reactionRateLimit = rateLimit({
     if (authHeader) {
       return `rxn:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: RateLimitRes) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 reactions per 60s' });

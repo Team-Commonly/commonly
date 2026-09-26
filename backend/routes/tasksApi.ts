@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -100,7 +101,7 @@ const taskWriteRateLimitKey = (req: Request): string => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 // Create and claim were limited; complete, updates and patch were not, though
