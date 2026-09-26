@@ -299,17 +299,37 @@ const ApiDevPage = () => {
                     requiresAuth: true,
                     exampleInput: null,
                     exampleOutput: {
+                        // `requiredConfig` is the manifest's completeness
+                        // predicate MINUS every server-owned key the same route
+                        // refuses or strips (`backend/integrations/catalog.ts`).
+                        // Slack's predicate is `['botTokenRef','chatId']` and
+                        // Telegram's is `['chatId']` — all of them the
+                        // instance's, so a caller supplies nothing — while
+                        // Discord's `['serverId','channelId','botToken']`
+                        // publishes the two the consent callback returns.
                         entries: [
                             {
                                 id: "slack",
-                                requiredConfig: ["botToken", "signingSecret", "channelId"],
+                                requiredConfig: [],
                                 catalog: {
                                     label: "Slack",
                                     category: "chat",
-                                    capabilities: ["webhook", "summary"]
+                                    capabilities: ["webhook", "summary", "commands"]
                                 },
                                 stats: {
                                     activeIntegrations: 2
+                                }
+                            },
+                            {
+                                id: "discord",
+                                requiredConfig: ["serverId", "channelId"],
+                                catalog: {
+                                    label: "Discord",
+                                    category: "chat",
+                                    capabilities: ["webhook", "gateway", "summary", "commands"]
+                                },
+                                stats: {
+                                    activeIntegrations: 1
                                 }
                             }
                         ]
