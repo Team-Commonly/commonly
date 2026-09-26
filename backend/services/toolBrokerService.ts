@@ -4,6 +4,7 @@ import Integration from '../models/Integration';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
 import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
 import {
+  assertGrantToolAllowed,
   assertGrantUsable,
   getGrantLineage,
   RoomGrantError,
@@ -520,6 +521,75 @@ const resolveConnection = async (
 };
 
 /**
+ * The grant-load preamble every broker path needs: the grant is read fresh, so
+ * revocation and membership are never cached. Membership is deliberately NOT
+ * part of this load — `currentMemberIds` can refuse (`invalid_target`,
+ * `target_not_found`) and each caller must run its own cheap checks first, in
+ * the order it already had.
+ */
+const loadGrantForAgent = async (input: {
+  grantId: string;
+  agentUserId: string;
+}): Promise<IRoomGrant | Record<string, unknown>> => {
+  if (!input.agentUserId) throw new RoomGrantError('agent_identity_required', 'agent identity is required', 403);
+  const grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
+  if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
+  return grant;
+};
+
+/**
+ * The definitions a grant may actually call, for the MCP `tools/list` surface.
+ * Listing has to answer what calling would allow and no more, so it runs the
+ * same checks `callTool` runs instead of a second copy of them: the grant-level
+ * checks through `assertGrantUsable` (existence, revocation, expiry, lineage,
+ * audience), then the per-tool rule through the same `assertGrantToolAllowed`
+ * that function delegates to. Names are matched raw — the sanitized spelling
+ * `grantBrokerProjectionService` uses exists for LiteLLM function names, and
+ * this surface calls tools by definition name.
+ *
+ * A grant whose connection no longer resolves refuses here too, with the code
+ * the call would give, rather than offering tools every call would reject.
+ *
+ * Deliberate boundary: the list reflects the grant and its connection, not
+ * per-call spend state (`budget_exhausted`). Spend is re-checked on every call
+ * and is not a property of the grant.
+ */
+export const listToolsForGrant = async (input: {
+  grantId: string;
+  agentUserId: string;
+}): Promise<ToolDefinition[]> => {
+  const grant = await loadGrantForAgent(input);
+  await assertGrantUsable({
+    grant,
+    agentUserId: input.agentUserId,
+    currentMemberIds: await currentMemberIds(grant),
+  });
+
+  const allowed = getToolDefinitions().filter((definition) => {
+    try {
+      assertGrantToolAllowed(grant, {
+        tool: definition.name,
+        requiredWriteMode: definition.requiredWriteMode,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // One resolution per connection type: the row is a property of the grant, not
+  // of the individual tool, and the refusal code (`connection_superseded`, ...)
+  // is the same for every tool on it.
+  const byConnectionType = new Map<string, ToolDefinition>();
+  for (const definition of allowed) {
+    if (!byConnectionType.has(definition.connectionType)) byConnectionType.set(definition.connectionType, definition);
+  }
+  for (const definition of byConnectionType.values()) await resolveConnection(grant, definition);
+
+  return allowed;
+};
+
+/**
  * Approval cards share the grant's target audience. A pod grant can post to
  * that pod directly; a seat grant must use the private room between the
  * granter and the seat so no third party can observe its credentials or
@@ -618,9 +688,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   let grant: IRoomGrant | Record<string, unknown> | undefined;
 
   try {
-    if (!input.agentUserId) throw new RoomGrantError('agent_identity_required', 'agent identity is required', 403);
-    grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
-    if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
+    grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
 
     const members = await currentMemberIds(grant);
@@ -819,6 +887,7 @@ export default {
   callTool,
   executeApprovedToolCall,
   getToolDefinitions,
+  listToolsForGrant,
   TOOL_DEFINITIONS,
 };
 

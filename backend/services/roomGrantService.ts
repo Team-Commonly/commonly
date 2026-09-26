@@ -395,6 +395,31 @@ export const revokeGrant = async (grantId: string, revokedBy: string): Promise<n
   return RoomGrant.revokeCascade(id, actor);
 };
 
+/**
+ * The per-tool half of `assertGrantUsable`, split out so a surface that has to
+ * answer "what would this grant be allowed to call" can ask the same question
+ * per candidate without re-running the grant-level checks or a lineage query
+ * per tool (TASK-146). `assertGrantUsable` delegates here, so the call path and
+ * the list path cannot drift into two definitions of the same rule.
+ */
+export const assertGrantToolAllowed = (
+  grant: IRoomGrant | Record<string, unknown>,
+  options: Pick<GrantUsabilityOptions, 'tool' | 'requiredWriteMode'>,
+): void => {
+  if (options.tool !== undefined) {
+    const tools = (readGrantValue<string[]>(grant, 'tools') || []).map(String);
+    if (!tools.includes(options.tool)) {
+      throw new RoomGrantError('tool_not_allowed', `tool is not allowed by this grant: ${options.tool}`, 403);
+    }
+  }
+  if (options.requiredWriteMode !== undefined) {
+    const actualMode = readGrantValue<RoomGrantWriteMode>(grant, 'writeMode');
+    if (WRITE_MODE_RANK[options.requiredWriteMode] > WRITE_MODE_RANK[actualMode]) {
+      throw new RoomGrantError('write_mode_not_allowed', 'tool requires a stronger write mode than this grant', 403);
+    }
+  }
+};
+
 export const assertGrantUsable = async (
   options: GrantUsabilityOptions,
 ): Promise<IRoomGrant | Record<string, unknown>> => {
@@ -417,18 +442,7 @@ export const assertGrantUsable = async (
     throw new RoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
   }
 
-  if (options.tool !== undefined) {
-    const tools = (readGrantValue<string[]>(grant, 'tools') || []).map(String);
-    if (!tools.includes(options.tool)) {
-      throw new RoomGrantError('tool_not_allowed', `tool is not allowed by this grant: ${options.tool}`, 403);
-    }
-  }
-  if (options.requiredWriteMode !== undefined) {
-    const actualMode = readGrantValue<RoomGrantWriteMode>(grant, 'writeMode');
-    if (WRITE_MODE_RANK[options.requiredWriteMode] > WRITE_MODE_RANK[actualMode]) {
-      throw new RoomGrantError('write_mode_not_allowed', 'tool requires a stronger write mode than this grant', 403);
-    }
-  }
+  assertGrantToolAllowed(grant, options);
   return grant;
 };
 
