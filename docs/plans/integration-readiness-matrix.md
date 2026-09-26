@@ -47,12 +47,12 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 
 | row | code exists | known state |
 |---|---|---|
-| Telegram | yes | Walked 2026-09-25 (below). Bind and inbound green on a simulated chat; **red** in C5/C10: a failed delivery back to the chat is only logged, so the connector keeps saying connected while replies vanish (Row D). C1 with a real account still needs one |
-| Slack | yes | Walked 2026-09-25 (below). **Was red for everyone** in C1: every new install was refused at Authorize in Slack from #1537 on, the "stable" note here was wrong. Fixed by #1875; the page still names nothing after a refused authorize (Row C). The OAuth leg needs a Slack workspace |
+| Telegram | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). C1 is green to the external boundary: the code is shown, and a real chat is what completes it. Inbound and sender identity (C5) were shown on a simulated chat on `0e142135`; with #1878 live a simulated chat fails at its first send, so C5 on the current build needs a real chat. A dead chat is a named failure on the row since #1878, shown on `5561a1dd` (C10 for that case) |
+| Slack | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). **Was red for everyone** in C1 from #1537 until #1875: every new install was refused at Authorize in Slack, and the "stable" note here was wrong. C1 is now green to the external boundary: Authorize reaches Slack's OAuth page, and the OAuth leg needs a Slack workspace. The page naming a refused authorize (#1890, Row C) shipped and has not been walked, since no refusal can be triggered without corrupting a row |
 | Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
-| GitHub (app) | yes | Walked 2026-09-25 (below). Live on our own repository since 09-18. **red** in C1 (a team cannot connect its own repository until per-person GitHub), C2 at 390 (the row hides its reason), and C3 (no hosted runtime receives the broker). C8 green |
+| GitHub (app) | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). Live on our own repository since 09-18. **red** in C1 until per-person GitHub: a team cannot connect its own repository. C2 at 390 is green since #1874, shown on `5561a1dd`. C3 (a hosted agent gets the broker, #1880) shipped and has not been walked. C8 was green on `9a32fca5`. C3, C4 and C8 on the current build wait on a new grant; the only grant lapsed 2026-09-25 11:32Z |
 | next app | no | Sam's decision; see below |
 
 ## Walk of 2026-09-25
@@ -77,7 +77,7 @@ Stranger account `eng-smoke-09255bfe` (role user), builds `9a32fca5`, `0e142135`
 
 ## Re-walk of 2026-09-26 on `5561a1dd`
 
-Fresh stranger account, created 2026-09-25 through the ordinary signup, with no prior connectors. At 1200 and 390, the Connectors page shows no horizontal overflow and no failed API call.
+Fresh stranger account `eng-smoke-20ba7c6d`, created 2026-09-25 through the ordinary signup, with no prior connectors. The backend pod on `5561a1dd` started 2026-09-26 12:40:39Z; the page walk ran 12:43:51Z to 12:44:16Z and the Telegram simulation right after it, all on that one pod. "Green to the external boundary" means every step on our side passed and the remaining step happens in the other service. It is not green, and it must keep a distinct mark when it is transcribed into the table above. At 1200 and 390, the Connectors page shows no horizontal overflow and no failed API call.
 
 | row | result on this build |
 |---|---|
