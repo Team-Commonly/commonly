@@ -2934,10 +2934,25 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
   test('the render gate: result gaps are the authored 28, and the dot is on the first line', () => {
     // A paragraph's user-agent margin does not collapse inside a flex column,
     // so the authored 28 drew as 42 (28 + 1em) and the h2's 4px rode on the gap
-    // after it. The `>` is the scope and not a style: a paragraph nested in a
-    // snippet keeps its own rhythm, so the descendant form is the negative.
+    // after it.
+    //
+    // The `>` is the scope, and what it buys is the NEXT paragraph, not today's.
+    // Every paragraph currently reachable under a result is a direct child of
+    // one of three containers that each zero their own `> p` — the result, the
+    // snippet, the memory block — so the child and descendant forms are
+    // indistinguishable at this head: swapping them in a browser moved nothing
+    // (sprint-review, 2026-09-26). The paragraph this guards is one added later
+    // inside some OTHER wrapper in a result: the descendant form would zero it
+    // silently, the child form leaves it alone. That is why the descendant form
+    // is the negative rather than the value.
     expect(decls(ruleBody(v2, '.v2-byo__result > p')).margin).toBe('0');
     expect(v2).not.toMatch(/\.v2-byo__result p\s*\{/);
+    // ...and this is why that negative passes today: the two containers the
+    // result nests are each zeroing their own direct children. If either goes,
+    // its paragraphs start relying on the result rule above and the swap stops
+    // being free — so the reasoning is pinned, not just written down.
+    expect(decls(ruleBody(v2, '.v2-byo__snippet > p')).margin).toBe('0');
+    expect(decls(ruleBody(v2, '.v2-byo__memory > p')).margin).toBe('0');
     expect(decls(ruleBody(v2, '.v2-byo__result h2')).margin).toBe('0');
     // The rhythm itself did not move to absorb the margin it was fighting.
     expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
