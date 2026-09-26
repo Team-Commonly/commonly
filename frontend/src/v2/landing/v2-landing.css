@@ -185,16 +185,31 @@
 }
 .v2-landing__badge svg { font-size: 16px; color: var(--v2-accent); }
 
-/* Hero install line */
+/* Hero install line. The horizontal scroll lives on the inner wrapper, not the
+   box, so the Copy control beside it stays visible at every width and scroll
+   position — at 390 the box is 340 wide against a 721 command, so only 37 of 86
+   characters show and `cd commonly && ./install.sh` is entirely off-screen
+   (TASK-154, measured by ux-lead on the live hero). */
 .v2-landing__install {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 24px;
-  padding: 12px 16px;
+  padding: 8px 16px;
+  /* The line stays 46px tall: the copy pill is taller than the command text, so
+     its height comes out of this padding, and min-height pins the box against a
+     future pill/line-height change rather than letting the row grow. */
+  min-height: 46px;
   background: var(--v2-surface-tint);
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
+}
+.v2-landing__install-scroll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
 }
 .v2-landing__install-prompt { color: var(--v2-accent); font-family: var(--v2-font-mono); font-weight: 700; }
@@ -203,6 +218,59 @@
   font-size: 13px;
   color: var(--v2-text-primary);
   white-space: nowrap;
+}
+/* The BYO add-computer pill (.v2-byo__copy), restated under this surface's own
+   name: the two are styled separately even though the shape is the same.
+   Qualified as `.v2-root button.` exactly as .v2-byo__copy is, because the v2
+   button reset (`.v2-root button:not(.MuiButtonBase-root)`, v2.css:201) is
+   (0,2,1) and clears padding, border, background and colour: unqualified, this
+   rule is (0,1,0) and lost all four, so the pill computed as bare 27×18 text
+   with a 27×44 phone target (ux-lead's design gate on #1868; a scratch build
+   then measured the pill at 49.1×28, zh 46.5×28, and the target at 47.1×44).
+   Same tier as the reset, and this sheet loads after v2.css — the landing page
+   is a lazy route, so its chunk's CSS follows the shell's. */
+.v2-root button.v2-landing__install-copy {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--v2-surface, #fff);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.v2-root button.v2-landing__install-copy:hover {
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+/* The Copied state is announced by a live region, not read from the button's own
+   label swap, so it is out of flow and silent to sighted users. */
+.v2-landing__install-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 760px) {
+  /* A thumb-sized target (44px) without growing the visible pill: the extension
+     is transparent and stays inside the box's own padding. */
+  .v2-landing__install-copy { position: relative; }
+  .v2-landing__install-copy::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
 }
 .v2-landing__hero-by { margin-top: 20px; font-size: 13px; color: var(--v2-text-tertiary); }
 .v2-landing__hero-by a { color: var(--v2-accent); text-decoration: none; }

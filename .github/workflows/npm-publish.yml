@@ -142,7 +142,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
 
-      # The poll, its budget (READBACK_TIMEOUT_SECONDS, default 300) and the
+      # The poll, its budget (READBACK_TIMEOUT_SECONDS; the script prints the
+      # value in force, which is the single place this number is stated) and the
       # failure diagnostics live in the script, not inline here — a workflow
       # body cannot be exercised by the suite, and this loop went red on two
       # good publishes (cli 0.1.65 run 35498255344, 0.1.66 run 35804128707)

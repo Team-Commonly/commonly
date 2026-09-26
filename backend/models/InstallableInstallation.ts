@@ -135,6 +135,14 @@ export interface IInstallableInstallation extends Document {
   claimId?: string;
   claimedAt?: Date;
   errorMessage?: string;
+  /**
+   * Whether `errorMessage` was written for a person. Two kinds of string land
+   * in that field — the reconciler's human-authored constants, and
+   * `markProjectionFailure`'s raw exception message — and the Connectors page
+   * renders them through one branch, so only a flagged message is printed
+   * (vera 73848). Set together with the message by the builders below.
+   */
+  errorMessageUserFacing?: boolean;
   staleSince?: Date;
   /** Canonical pause state; Integration.config.adminPause is its projection. */
   adminPause?: IInstallationAdminPause;
@@ -230,6 +238,7 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
     claimId: { type: String },
     claimedAt: { type: Date },
     errorMessage: { type: String },
+    errorMessageUserFacing: { type: Boolean, default: false },
     staleSince: { type: Date },
     adminPause: {
       reason: { type: String },

@@ -84,7 +84,6 @@
   "routes/dev.ts GET /llm/status [unlimited]",
   "routes/dev.ts POST /agents/events [unlimited]",
   "routes/discord.ts GET /binding/:podId [unlimited]",
-  "routes/discord.ts GET /channels/:guildId [unlimited]",
   "routes/discord.ts GET /health [unlimited]",
   "routes/discord.ts GET /install-link/:podId [unlimited]",
   "routes/discord.ts POST /interactions [unlimited]",

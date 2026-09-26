@@ -22,8 +22,9 @@ const DiscordService = require('../services/discordService');
 const { runDiscordCommandForIntegrations } = require('../services/discordMultiCommandService');
 // Static import keeps the destructive route visible to CodeQL's rate-limit
 // query while sharing the connector write bucket with its sibling routes.
-import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
+import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
+import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -91,9 +92,33 @@ async function handleInstallationEvent(interaction: { id?: string; guild_id?: st
   }
 }
 
-router.get('/channels/:guildId', auth, async (req: AuthReq, res: Res) => {
+// Rate-limited ahead of auth, the shape `installables.ts:140` uses for its
+// catalog route. Mounted first, the limiter refuses an over-budget caller before
+// `auth`'s lookups as well as the handler's two, which is what CodeQL's
+// `js/missing-rate-limiting` asks for.
+router.get('/channels/:guildId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { guildId } = req.params || {};
+    // Shape BEFORE authority: an id in a shape Discord would not accept is
+    // refused rather than looked up, so no unvalidated value reaches the URL
+    // below. The lookup is not the guard — it is what a well-formed id still has
+    // to pass.
+    if (!isDiscordSnowflake(guildId)) return res.status(400).json(invalidDiscordIdError('guildId'));
+    // Authority: the caller must belong to a pod bound to this guild. The request
+    // carries the guild and the server carries the token, so the binding is what
+    // scopes the answer to the caller's own pod.
+    // `_id` only: the route needs the caller's pod ids, not the hydrated
+    // documents.
+    const callerPods = await Pod.find({ $or: [{ members: req.user?.id }, { createdBy: req.user?.id }] })
+      .select('_id')
+      .lean();
+    const podIds = (callerPods || []).map((pod: { _id: unknown }) => pod._id);
+    const binding = podIds.length
+      ? await Integration.findOne({ type: 'discord', 'config.serverId': guildId, podId: { $in: podIds } })
+      : null;
+    // One answer for a guild that is bound elsewhere and one that does not
+    // exist: the route must not become an oracle for either.
+    if (!binding) return res.status(404).json({ message: 'Guild not found' });
     const response = await axios.get(`https://discord.com/api/guilds/${guildId}/channels`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
     const textChannels = (response.data as Array<{ type: number; id: string; name: string; topic?: string }>)
       .filter((channel) => channel.type === 0)
@@ -297,6 +322,13 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     if (!code) return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=No authorization code received`);
     const podId = state?.replace('pod_', '');
     if (!podId) return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=Invalid state parameter`);
+    // Unauthenticated route, so `guild_id` here is request-tainted input on a URL
+    // built with the instance bot token. Refused before the code exchange: a
+    // malformed id must not reach Discord at all, and the same value is forwarded
+    // to the page, which posts it back to the integration write.
+    if (isSupplied(guildId) && !isDiscordSnowflake(guildId)) {
+      return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=Invalid guild id`);
+    }
     await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback` }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
     let serverName = 'Unknown Server';
     if (guildId) {

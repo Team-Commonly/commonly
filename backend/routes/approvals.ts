@@ -4,7 +4,8 @@
 // the service as defense in depth.
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognises the limiter on the POST route — same pattern as messages.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import type { Request } from 'express';
 
@@ -30,7 +31,7 @@ const approvalResolveLimit = rateLimit({
     if (authHeader) {
       return `apr:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req, res) => res.status(429).json({ error: 'rate limit exceeded: 30 approval decisions per 60s' }),
 });

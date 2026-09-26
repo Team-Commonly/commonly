@@ -132,6 +132,10 @@ const V2AgentBYO: React.FC = () => {
   // daemon on the chosen machine adopts, provisions, and starts the agent.
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [machineId, setMachineId] = useState<string>('');
+  // One lookup, two readers (TASK-163): the preview note and the placement
+  // payload must name the SAME machine, so it is derived once here rather
+  // than restated at each call site.
+  const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
   // Model choice for the on-my-computer path. Aliases, not version-pinned
   // ids: the seat runs on the USER's own CLI install, whose model ids move —
   // 'opus'/'sonnet'/'haiku' stay valid across releases. Empty = the
@@ -364,7 +368,7 @@ const V2AgentBYO: React.FC = () => {
       setPlaced({
         agentName: cleanName,
         machineId,
-        machineName: machines.find((m) => m.machineId === machineId)?.name || machineId,
+        machineName: selectedMachineName,
       });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
@@ -600,11 +604,6 @@ const V2AgentBYO: React.FC = () => {
             </div>
             <div className="v2-byo__persona-line">{personaCard.oneLiner}</div>
           </div>
-        </div>
-      )}
-      {!issued && !hosted && !personaCard && (
-        <div className="v2-byo__persona v2-byo__persona--none" data-testid="byo-persona-none">
-          <span>{t('agentByo.persona.none')}</span>
         </div>
       )}
       {!issued && !hosted && !placed && (
@@ -992,7 +991,14 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
         <p className="v2-byo__preview-note">
-          {mode === 'hosted' ? t('agentByo.preview.noteHosted') : t('agentByo.preview.noteByo')}
+          {mode === 'hosted'
+            ? t('agentByo.preview.noteHosted')
+            : mode === 'machine'
+              // "On my computer" issues no runtime token — the daemon on the
+              // chosen machine starts the seat. Saying "token" here described
+              // the wrong path (TASK-163, found drawing README frame 5).
+              ? t('agentByo.preview.noteMachine', { machine: selectedMachineName })
+              : t('agentByo.preview.noteByo')}
         </p>
       </aside>
       </div>

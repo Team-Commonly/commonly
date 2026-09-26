@@ -434,7 +434,16 @@ async function syncExternalFeeds(): Promise<FeedSyncResult[]> {
           await Integration.findByIdAndUpdate(integration._id, {
             $set: {
               status: 'error',
+              // Diagnostic, not copy. This is a provider's error text or a raw
+              // exception message, so the detail is kept here for whoever debugs
+              // the feed rather than printed in someone's connector list (vera
+              // 73848). The flag is stated instead of left out because a `$set`
+              // that omits a key inherits the row's stored value: omitting it is
+              // only safe on a row that has never carried one, and naming it
+              // `false` is what makes the page's generic sentence this row's
+              // outcome no matter what it carried before.
               errorMessage: detail,
+              errorMessageUserFacing: false,
               lastSync: new Date(),
             },
           });
