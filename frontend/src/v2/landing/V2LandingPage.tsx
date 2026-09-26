@@ -17,10 +17,13 @@ import '../v2.css';
 import './v2-landing.css';
 import './demo-workspace.css';
 
-import yourTeamImg from '../../assets/landing/your-team.png';
-import realEngineeringImg from '../../assets/landing/real-engineering.png';
-import agentDmImg from '../../assets/landing/agent-dm.png';
-import agentIdentityImg from '../../assets/landing/agent-identity.png';
+// The four feature frames are the README's frames, copied byte for byte: the
+// frontend build context cannot reach docs/, and a copy that drifts from its
+// source fails landingFrames.test.ts.
+import activityImg from '../../assets/landing/activity.png';
+import teamImg from '../../assets/landing/team.png';
+import connectorsImg from '../../assets/landing/connectors.png';
+import byoImg from '../../assets/landing/byo.png';
 
 // Public v2 landing. Positioning: the open-source workspace where your agents
 // and team share one memory — the open alternative to closed, per-seat /
@@ -439,19 +442,19 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__features">
             <FeatureRow
-              img={realEngineeringImg}
-              alt={t('landing.features.pods.alt')}
-              kicker={t('landing.features.pods.kicker')}
-              title={t('landing.features.pods.title')}
-              text={t('landing.features.pods.text')}
+              img={activityImg}
+              alt={t('landing.features.needs.alt')}
+              kicker={t('landing.features.needs.kicker')}
+              title={t('landing.features.needs.title')}
+              text={t('landing.features.needs.text')}
               points={[
-                t('landing.features.pods.points.board'),
-                t('landing.features.pods.points.artifacts'),
-                t('landing.features.pods.points.runtimes'),
+                t('landing.features.needs.points.inbox'),
+                t('landing.features.needs.points.options'),
+                t('landing.features.needs.points.phone'),
               ]}
             />
             <FeatureRow
-              img={yourTeamImg}
+              img={teamImg}
               alt={t('landing.features.team.alt')}
               kicker={t('landing.features.team.kicker')}
               title={t('landing.features.team.title')}
@@ -463,27 +466,27 @@ const V2LandingPage: React.FC = () => {
               ]}
             />
             <FeatureRow
-              img={agentDmImg}
-              alt={t('landing.features.dm.alt')}
-              kicker={t('landing.features.dm.kicker')}
-              title={t('landing.features.dm.title')}
-              text={t('landing.features.dm.text')}
+              img={connectorsImg}
+              alt={t('landing.features.connectors.alt')}
+              kicker={t('landing.features.connectors.kicker')}
+              title={t('landing.features.connectors.title')}
+              text={t('landing.features.connectors.text')}
               points={[
-                t('landing.features.dm.points.context'),
-                t('landing.features.dm.points.peer'),
-                t('landing.features.dm.points.private'),
+                t('landing.features.connectors.points.mirror'),
+                t('landing.features.connectors.points.grants'),
+                t('landing.features.connectors.points.record'),
               ]}
             />
             <FeatureRow
-              img={agentIdentityImg}
-              alt={t('landing.features.identity.alt')}
-              kicker={t('landing.features.identity.kicker')}
-              title={t('landing.features.identity.title')}
-              text={t('landing.features.identity.text')}
+              img={byoImg}
+              alt={t('landing.features.byo.alt')}
+              kicker={t('landing.features.byo.kicker')}
+              title={t('landing.features.byo.title')}
+              text={t('landing.features.byo.text')}
               points={[
-                t('landing.features.identity.points.memory'),
-                t('landing.features.identity.points.skills'),
-                t('landing.features.identity.points.import'),
+                t('landing.features.byo.points.runtimes'),
+                t('landing.features.byo.points.keys'),
+                t('landing.features.byo.points.memory'),
               ]}
             />
           </div>
