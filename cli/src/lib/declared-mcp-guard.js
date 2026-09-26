@@ -82,20 +82,27 @@ export const isShippedCommonlyMcpEntry = (server) => {
 // than honoured — the next consumer that parses the string instead would honour
 // it, and this guard would have admitted the entry on the strength of its other
 // fields (TASK-069: judge the whole entry, not selected fields). `args` is read
-// only through `Array.isArray`, so a string there is dropped the same way.
+// only through `Array.isArray`, and `cwd` through `typeof === 'string'` in
+// `executionShape`, so a value of the wrong type there is dropped the same way —
+// and for `cwd` that drop is load-bearing: the normalised shape then equals an
+// installed entry that declares NO cwd, so the entry is admitted as one the
+// operator already installed (Vera, hold on #1915).
 // Fail closed: an unreadable shape is a refusal, never an absence.
 const unreadableField = (server) => {
   for (const key of ['env', 'headers']) {
     const value = server[key];
     if (value === undefined || value === null) continue;
     if (typeof value !== 'object' || Array.isArray(value)) {
-      return `${key} is a ${typeof value}, not an object`;
+      return `${key} is of type ${typeof value}, not an object`;
     }
     const badValue = Object.entries(value).find(([, v]) => typeof v !== 'string');
     if (badValue) return `${key}.${badValue[0]} is not a string`;
   }
+  if (server.cwd !== undefined && server.cwd !== null && typeof server.cwd !== 'string') {
+    return `cwd is of type ${typeof server.cwd}, not a string`;
+  }
   if (server.args === undefined || server.args === null) return null;
-  if (!Array.isArray(server.args)) return `args is a ${typeof server.args}, not an array`;
+  if (!Array.isArray(server.args)) return `args is of type ${typeof server.args}, not an array`;
   if (server.args.some((a) => typeof a !== 'string')) return 'args carries a non-string';
   return null;
 };

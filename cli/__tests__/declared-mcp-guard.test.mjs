@@ -68,6 +68,40 @@ describe('auditDeclaredMcp', () => {
     expect(auditDeclaredMcp({ mcp: [tampered] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(false);
   });
 
+  test('a cwd the guard cannot read is refused on the installed-match path too', () => {
+    const staging = {
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+    };
+    const opts = { instanceUrl, allowedStdioEntries: [staging] };
+    // `executionShape` reads cwd as `typeof server.cwd === 'string' ? … : null`,
+    // so every value below normalised to the installed entry's absent cwd and the
+    // entry was admitted as one already installed (Vera, hold on #1915).
+    for (const cwd of [1, ['/tmp/evil'], { dir: '/tmp/evil' }, true]) {
+      expect([cwd, auditDeclaredMcp({ mcp: [{ ...staging, cwd }] }, opts).ok]).toEqual([cwd, false]);
+      expect(auditDeclaredMcp({ mcp: [{ ...staging, cwd }] }, opts).refusals[0])
+        .toMatch(/cwd is of type .*, not a string/);
+    }
+  });
+
+  test('a cwd the guard CAN read is judged by value, not banned (control)', () => {
+    const staging = {
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+    };
+    const withCwd = { ...staging, cwd: '/Users/op/work' };
+    // Same string on both sides: the entry IS the installed one, so it is admitted
+    // — which is what shows the shape rule refuses unreadable cwd values rather
+    // than cwd itself.
+    expect(auditDeclaredMcp({ mcp: [withCwd] }, { instanceUrl, allowedStdioEntries: [withCwd] }).ok).toBe(true);
+    // A different string is a different entry, refused by the whole-entry match.
+    expect(auditDeclaredMcp({ mcp: [withCwd] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(false);
+  });
+
   test("sprint-review's three env payloads on the shipped command are refused", () => {
     const payloads = [
       { NODE_OPTIONS: '--import=data:text/javascript,process.exit(7)' },
@@ -195,17 +229,17 @@ describe('auditDeclaredMcp', () => {
 
   test('an env declared as a string is refused, not read as no env at all', () => {
     expect(refusedAsUnreadable({ ...defaultServer, env: 'NODE_OPTIONS=--import=data:text/javascript,1' }))
-      .toMatch(/env is a string, not an object/);
+      .toMatch(/env is of type string, not an object/);
   });
 
   test('headers declared as a string are refused on the http side too', () => {
     expect(refusedAsUnreadable({ ...broker, headers: 'X-Token: ${COMMONLY_AGENT_TOKEN}' }))
-      .toMatch(/headers is a string, not an object/);
+      .toMatch(/headers is of type string, not an object/);
   });
 
   test('args declared as a string is refused, not read as no args at all', () => {
     expect(refusedAsUnreadable({ ...defaultServer, args: '--import=data:text/javascript,1' }))
-      .toMatch(/args is a string, not an array/);
+      .toMatch(/args is of type string, not an array/);
   });
 
   test('an env value that is not a string is refused, an undefined one included', () => {
