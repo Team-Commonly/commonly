@@ -5776,7 +5776,7 @@ body.modern-ui.v2-canvas {
 .v2-byo__input {
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--v2-surface, #fff);
   font-size: 14px;
   color: var(--v2-text-primary);
@@ -5841,6 +5841,29 @@ body.modern-ui.v2-canvas {
   align-items: start;
   padding: 8px 24px 40px;
 }
+/* Signal rule 4 — avatars are a 4px square frame. All four avatars on this
+   route are in scope together (the persona context, the placed and hosted
+   result cards, and the preview) because they show the same agent a click
+   apart: a square preview that turns round after "Add to this computer" reads
+   as two different things. The square is also what UNCLIPS the online dot —
+   at 50% the base class's `overflow: hidden` cuts the 9px dot to a lens
+   (ux-lead measured 13 device px at DPR 2, against 68 once square), so the
+   cobalt rule below must land in the same scope, or the dot goes full green.
+   (0,2,0) over `.v2-avatar`'s (0,1,0): this wins on specificity, with no
+   dependency on document order. */
+.v2-byo__layout .v2-avatar {
+  border-radius: 4px;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Signal §3 — connected/live is a solid cobalt dot, never green. Same
+   (0,2,0) scope as the square; `.v2-avatar__online` carries its own 50%
+   radius, so this rule must never declare one (the dot stays round). */
+.v2-byo__layout .v2-avatar__online {
+  background: var(--v2-accent);
+}
+
 .v2-byo__main { min-width: 0; }
 .v2-byo__preview {
   position: sticky;
@@ -5851,11 +5874,11 @@ body.modern-ui.v2-canvas {
   margin-top: 24px;
 }
 .v2-byo__preview-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  /* Signal rule 3 — meta is IBM Plex Mono 500 because it is data; the caps
+     were a CSS transform over an en literal that is already sentence case. */
   color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  letter-spacing: 0;
 }
 .v2-byo__preview-card {
   display: flex;
@@ -5864,7 +5887,7 @@ body.modern-ui.v2-canvas {
   gap: 6px;
   padding: 28px 20px 22px;
   border: 1px solid var(--v2-border);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--v2-surface);
   text-align: center;
 }
@@ -5880,17 +5903,21 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
   color: var(--v2-text-tertiary);
 }
+/* The status line is Signal §3 in one row, and it has to agree with the avatar
+   dot beside it: since item 7 makes that dot cobalt, a green success pill next
+   to it reads as two different states of the same agent. So it is not a pill
+   at all — it is the team card's mono 11/16 muted line, with the dot carrying
+   the state (ux-lead's #1897 gate, measured at 1200/390). */
 .v2-byo__preview-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface-hover);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-muted);
 }
 .v2-byo__preview-dot {
   width: 7px;
@@ -5898,12 +5925,27 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-text-muted);
 }
-.v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-warning); }
-.v2-byo__preview-status--live {
-  color: var(--v2-success-text);
-  background: var(--v2-success-soft);
+/* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
+   (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
+   11px is 2.6:1. */
+.v2-byo__preview-status--draft .v2-byo__preview-dot {
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px dashed var(--v2-border-strong);
 }
-.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-success); }
+/* §3 working — the team card's working line (v2.css:12113–12122), same colour
+   and same pulse, so "an agent is starting" reads identically in both places. */
+.v2-byo__preview-status--starting { color: var(--v2-accent-text); }
+.v2-byo__preview-status--starting .v2-byo__preview-dot {
+  background: var(--v2-accent);
+  animation: v2-team-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-byo__preview-status--starting .v2-byo__preview-dot { animation: none; }
+}
+/* §3 connected / live — cobalt dot, muted text, no success colour and no fill. */
+.v2-byo__preview-status--live { color: var(--v2-text-muted); }
+.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-accent); }
 .v2-byo__preview-note {
   font-size: 12px;
   line-height: 1.5;
@@ -5973,7 +6015,8 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 /* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
-   the accent border + focus ring marks the pressed card. */
+   the pressed card is marked by a 2px accent border, and the focus ring is
+   the keyboard affordance only (Signal rules 1 and 4). */
 .v2-byo__modes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -5987,19 +6030,27 @@ body.modern-ui.v2-canvas {
   text-align: left;
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--v2-surface, #fff);
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
 }
+/* Signal rule 3 — meta is mono 500 at 11px and lowercase; the caps lived in
+   en.json, which now carries lowercase strings, so no transform is needed
+   (and a transform over zh-CN copy would be wrong). */
 .v2-byo__mode-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  color: var(--v2-accent-text);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  letter-spacing: 0;
 }
 .v2-byo__mode-kicker--quiet { color: var(--v2-text-muted); }
+
+/* The chosen card is the row's one cobalt mark (Signal rule 1); the modifier
+   above is what the untouched cards wear. */
+.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
+  color: var(--v2-accent-text);
+}
 .v2-byo__mode-meta {
   font-size: 11px;
   color: var(--v2-text-muted);
@@ -6009,8 +6060,14 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 .v2-root button.v2-byo__mode[aria-pressed="true"] {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
+  /* 2px border in place of the 1px one, with 1px less padding per side so the
+     card holds its box: the base shorthand is `16px 18px 14px`, not uniform,
+     so the `.v2-team-card--needsYou` precedent's single `15px` does not
+     transfer (it would also lose 2px of width). No shadow — the focus ring
+     belongs to `:focus-visible` (v2.css:383), which is why this rule must not
+     declare one and the guard says so negatively. */
+  border: 2px solid var(--v2-accent);
+  padding: 15px 17px 13px;
 }
 .v2-byo__mode-title {
   font-size: 15px;
@@ -6018,19 +6075,21 @@ body.modern-ui.v2-canvas {
   letter-spacing: -0.01em;
 }
 .v2-root button.v2-byo__submit {
+  /* Signal rule 2 — ink acts. A filled control inside the app is ink on white;
+     cobalt fills a control in exactly one place, a decision card's primary. */
   align-self: flex-start;
   padding: 10px 18px;
-  border-radius: 8px;
-  background: var(--v2-accent);
-  color: #fff;
-  border: 1px solid var(--v2-accent);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  border: 1px solid var(--v2-ink);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
 }
 .v2-root button.v2-byo__submit:hover:not(:disabled) {
-  background: var(--v2-accent-strong);
-  border-color: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
 }
 .v2-root button.v2-byo__submit:disabled {
   opacity: 0.6;

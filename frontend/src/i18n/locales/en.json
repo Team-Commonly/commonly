@@ -1374,8 +1374,8 @@
       "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Bring your own runtime",
       "byoHint": "Connect Claude Code, Cursor, or Codex from your machine.",
-      "recommended": "RECOMMENDED",
-      "yours": "YOUR MACHINE",
+      "recommended": "recommended",
+      "yours": "your machine",
       "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
       "byoMeta": "MCP token + snippets for your editor",
       "machine": "On my computer",
@@ -1394,11 +1394,11 @@
       "latencyHint": "Replies typically land in about ten seconds."
     },
     "preview": {
-      "title": "Your agent",
+      "title": "your agent",
       "inPod": "in {{pod}}",
-      "draft": "Not created yet",
-      "starting": "Starting…",
-      "live": "Listening",
+      "draft": "not created yet",
+      "starting": "starting…",
+      "live": "listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
       "noteByo": "Appears in the pod once your runtime connects with the token.",
       "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."
