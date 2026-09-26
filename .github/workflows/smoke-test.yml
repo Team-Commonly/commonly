@@ -137,7 +137,16 @@ jobs:
         if: failure()
         run: |
           kubectl get pods -n commonly-local
-          kubectl describe pods -n commonly-local | tail -80
+          echo "=== backend logs (why readiness never passed) ==="
+          kubectl logs -n commonly-local deploy/backend --tail=120 --prefix || true
+          echo "=== backend pod events ==="
+          kubectl describe pod -n commonly-local -l app=backend | sed -n '/Events:/,$p' || true
+          echo "=== readiness from inside the cluster ==="
+          kubectl run ready-probe --rm -i --restart=Never --image=curlimages/curl:8.10.1 \
+            -n commonly-local -- curl -s -m 5 -o /dev/stdout -w '\nHTTP %{http_code}\n' \
+            http://backend:5000/api/health/ready || true
+          echo "=== describe (tail) ==="
+          kubectl describe pods -n commonly-local | tail -40
 
       - name: Delete kind cluster
         if: always()

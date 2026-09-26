@@ -41,6 +41,7 @@ const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
+const pgStatusRoutes = require('./routes/pg-status');
 const statsRoutes = require('./routes/stats');
 const emailRoutes = require('./routes/email');
 const showcaseRoutes = require('./routes/showcase');
@@ -52,22 +53,26 @@ const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 const adminUsersRoutes = require('./routes/admin/users');
 const adminAnalyticsRoutes = require('./routes/admin/analytics');
 const adminInstallableRoutes = require('./routes/admin/installables');
-// Conditionally load PostgreSQL routes and models
+// Conditionally load the PostgreSQL message routes and models. `/api/pg/status`
+// is deliberately NOT in here: it is mounted for every configuration,
+// including PG_HOST unset, where its own `!pool` branch answers
+// available:false — so keeping it conditional would only re-introduce the
+// placeholder handlers the mount site below deletes (TASK-168).
 let pgMessageRoutes: any;
-let pgStatusRoutes: any;
 let PGMessage: any;
 let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
 const User = require('./models/User');
 const AgentMentionService = require('./services/agentMentionService');
+const { createPgBoot } = require('./services/pgBootService');
+const { setPgMountProbe, routerIsMounted } = require('./services/pgBootService');
 
 // Global flag to track PostgreSQL availability
 let pgAvailable = false;
 
 if (process.env.PG_HOST) {
   pgMessageRoutes = require('./routes/pg-messages');
-  pgStatusRoutes = require('./routes/pg-status');
   PGMessage = require('./models/pg/Message');
   _PGPod = require('./models/pg/Pod');
 }
@@ -374,102 +379,82 @@ if (process.env.NODE_ENV !== 'test') {
   }
 }
 
-// Connect to PostgreSQL if configured (for chat functionality)
+// PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
+// checkStatus reads the pool and the schema itself, so it answers
+// available:false while PG is unreachable or schema.sql has not been applied
+// yet, and true once it has — correct in every state this pod can be in,
+// including the mount-retry window below. It replaces five copies of a dummy
+// `{ available: false }` handler, one per failure branch, none of which could
+// tell the truth after a late mount. Its POST /sync-user is only ever called
+// by the frontend after a GET said available:true (SocketContext.tsx:45-49),
+// i.e. only when the pool is up.
+app.use('/api/pg/status', pgStatusRoutes);
+
+// Connect to PostgreSQL if configured (for chat functionality).
+//
+// A boot-time connect failure used to be permanent: `connectPG()` ran once, a
+// null result disabled every PG-backed route for the pod's whole life, and
+// nothing gated traffic on it. On 2026-09-25 that reached production — a
+// transient PG connect timeout at boot left the only replica serving without
+// chat history, /api/pg/messages 404ing, socket writes going to Mongo and the
+// retention + cleanup crons never started, until a human did a rollout
+// restart. PG itself was healthy (331ms from that same pod). The retry with
+// backoff, the late mount and the state the health route reads all live in
+// services/pgBootService.ts (TASK-168).
 if (process.env.PG_HOST) {
-  console.log('Attempting to connect to PostgreSQL for chat functionality...');
-  connectPG()
-    .then((pgPool: any) => {
-      if (pgPool) {
-        // Initialize PostgreSQL database
-        initializePGDB()
-          .then((success: any) => {
-            if (success) {
-              // Set global flag that PostgreSQL is available
-              pgAvailable = true;
-              // Register PostgreSQL routes for chat functionality
-              // '/api/pg/pods' is deliberately NOT mounted. It exposed an
-              // unauthorized shadow copy of the pod API: getAllPods returned
-              // every pod on the instance with no membership filter, joinPod
-              // had no join-policy check at all (a non-member could join a
-              // private pod and get a 200), and deletePod gated on a
-              // created_by value that the sync path let a requester claim.
-              // It had zero callers anywhere in the repo — the frontend uses
-              // /api/pods, and only /api/pg/messages + /api/pg/status are live
-              // (ChatRoom, SocketContext). Removed rather than patched.
-              app.use('/api/pg/messages', pgMessageRoutes);
-              app.use('/api/pg/status', pgStatusRoutes);
-              console.log(
-                'PostgreSQL routes registered for chat functionality',
-              );
-              // Kick off the daily 30-day message retention cron. Kept out
-              // of schedulerService.ts on purpose so other tracks can edit
-              // that file without stomping on this cron.
-              if (process.env.NODE_ENV !== 'test') {
-                try {
-                  const { initPgRetention } = require('./services/pgRetentionService');
-                  initPgRetention();
-                } catch (retentionErr: any) {
-                  console.error(
-                    '[pg-retention] failed to initialize:',
-                    retentionErr?.message || retentionErr,
-                  );
-                }
-                try {
-                  require('./services/agentInstallationCleanupService').initInstallationCleanup();
-                } catch (cleanupErr: any) {
-                  console.error(
-                    '[installation-cleanup] failed to initialize:',
-                    cleanupErr?.message || cleanupErr,
-                  );
-                }
-              }
-            } else {
-              pgAvailable = false;
-              console.warn(
-                'PostgreSQL database initialization failed, chat functionality will use MongoDB',
-              );
-              // Register a dummy status endpoint to indicate PostgreSQL is not available
-              app.use('/api/pg/status', (req: any, res: any) => {
-                res.json({ available: false });
-              });
-            }
-          })
-          .catch((err: any) => {
-            pgAvailable = false;
-            console.error('Error initializing PostgreSQL database:', err);
-            // Register a dummy status endpoint to indicate PostgreSQL is not available
-            app.use('/api/pg/status', (req: any, res: any) => {
-              res.json({ available: false });
-            });
-          });
-      } else {
-        pgAvailable = false;
-        console.warn(
-          'PostgreSQL connection failed, chat functionality will use MongoDB',
-        );
-        // Register a dummy status endpoint to indicate PostgreSQL is not available
-        app.use('/api/pg/status', (req: any, res: any) => {
-          res.json({ available: false });
-        });
+  // Readiness asks the route table, not this block's own bookkeeping (TASK-168):
+  // it checks that this very router is on the app, so a pod that mounts PG late
+  // starts passing its readiness probe without being restarted.
+  setPgMountProbe(() => routerIsMounted(app, pgMessageRoutes));
+  createPgBoot({
+    // Mounted only after a connect AND a schema initialization both succeed.
+    // Until then the route is absent rather than present-and-500ing, which is
+    // the honest answer: the capability really is absent, and a caller that
+    // gets 404 must not be told the pod is fine.
+    mountRoutes: () => {
+      app.use('/api/pg/messages', pgMessageRoutes);
+    },
+    connect: connectPG,
+    initialize: initializePGDB,
+    onMounted: () => {
+      pgAvailable = true;
+      // Kick off the daily 30-day message retention cron. Kept out
+      // of schedulerService.ts on purpose so other tracks can edit
+      // that file without stomping on this cron.
+      if (process.env.NODE_ENV !== 'test') {
+        try {
+          const { initPgRetention } = require('./services/pgRetentionService');
+          initPgRetention();
+        } catch (retentionErr: any) {
+          console.error(
+            '[pg-retention] failed to initialize:',
+            retentionErr?.message || retentionErr,
+          );
+        }
+        try {
+          require('./services/agentInstallationCleanupService').initInstallationCleanup();
+        } catch (cleanupErr: any) {
+          console.error(
+            '[installation-cleanup] failed to initialize:',
+            cleanupErr?.message || cleanupErr,
+          );
+        }
       }
-    })
+    },
+  })
+    .start()
     .catch((err: any) => {
-      pgAvailable = false;
-      console.error('Error connecting to PostgreSQL:', err);
-      // Register a dummy status endpoint to indicate PostgreSQL is not available
-      app.use('/api/pg/status', (req: any, res: any) => {
-        res.json({ available: false });
-      });
+      // start() does not reject by construction — it converts every failure
+      // into state + a scheduled retry. This catch exists so a future edit
+      // that breaks that property degrades into a logged warning instead of
+      // an unhandled rejection at boot.
+      console.error('Error starting the PostgreSQL boot retry:', err?.message || err);
     });
 } else {
   pgAvailable = false;
   console.log(
     'PostgreSQL connection not configured. Chat functionality will use MongoDB.',
   );
-  // Register a dummy status endpoint to indicate PostgreSQL is not available
-  app.use('/api/pg/status', (req: any, res: any) => {
-    res.json({ available: false });
-  });
 }
 
 // Sentry's Express error handler must be registered after application routes.
