@@ -6,7 +6,7 @@
 
 ## 1. Three facts the page cannot see today
 
-1. **Parent state is invisible.** There is no `GET` on `/api/installables`. The page lists `Integration` rows from `/api/integrations/user/all` and infers the parent from `installationId`. A parent whose projection failed (`status: 'error'`, no Integration row), whose lock expired (`errorMessage: 'install lock expired'`), or whose Integration went missing (`components[].status: 'stale'`) shows **nothing** — and the next Connect returns a typed 409 the user cannot act on. The invisible-error class we closed inside the substrate is still open at the surface.
+1. **Parent state is invisible.** There is no `GET` on `/api/installables`. The page lists `Integration` rows from `/api/integrations/user/all` and infers the parent from `installationId`. A parent whose projection failed (`status: 'error'`, no Integration row), whose lock expired (`errorMessage: 'Setup was interrupted before it finished. Try again.'`), or whose Integration went missing (`components[].status: 'stale'`) shows **nothing** — and the next Connect returns a typed 409 the user cannot act on. The invisible-error class we closed inside the substrate is still open at the surface.
 2. **The page carries the provider list.** `ADD_PLATFORMS` in `V2ConnectorsPage.tsx` says Telegram and Slack are self-serve. The instance knows better: Slack is self-serve only if `slackOAuthService` and the `ConnectorSecret` key ring are configured, Telegram only if the bot token is. A self-hosted instance without Slack secrets shows an *Authorize in Slack* button that fails at `authorize-url` with a configuration error. Vera asked for the flag at 63278.
 3. **One pod per connector.** `Integration.podId` is required and is the single pod the connector relays. ADR-025 D8 says the private chat is the user's attention surface for **every** pod they are in, gated per pod. Phase 1 wrote the picked pod as "the first gate row" and stopped.
 
@@ -33,7 +33,7 @@
       "available": true,
       "installation": {
         "status": "error",
-        "errorMessage": "install lock expired",
+        "errorMessage": "Setup was interrupted before it finished. Try again.",
         "boundPodId": "66f…",
         "claimedAt": "2026-09-04T20:01:12Z",
         "updatedAt": "2026-09-04T20:02:12Z",
@@ -62,7 +62,7 @@
 | `error` | any | hollow `#98a2b3` | the parent's `errorMessage` as an ink sentence, else "Setup didn't finish." | `retry, or remove it` | `since {rel}` | **Retry** (ink) → `POST …/install { podId: boundPodId }`. The service's claim filter already admits `status: 'error'`; the parent is reclaimed in place, no second row. **Remove** is the bordered secondary in the aside (§2 D4) → `DELETE`, which `claimUninstall` accepts from `error` |
 | `active`, Integration present | per [#1542 §2](connectors-page-signal-diff.md) | as there | as there | as there | as there | Manage / Show code / New code / Authorize in Slack / Confirm — unchanged |
 | `active`, Integration present, `podId` unset (the owner left the active pod; D3 prune) | live | `#e4e7ec` solid (idle) | **{chat title}** {kind} · not linked to a pod | `your messages have nowhere to go` | `added {rel}` | **Pick a pod** (ink) → selects the row and opens the aside's gate list (D4) |
-| `active`, Integration missing or `isActive: false`, or any `components[].status: 'stale'` | — | hollow | The channel record is gone. | `retry rebuilds it` | `since {rel}` | **Retry** (ink) — same POST; `installAttempt` re-projects. The reconciler's stale-marking (`sweepActive`) is what makes this row honest; it should also set `status: 'error'`, `errorMessage: 'projection missing'` so the parent and the page agree (one-line change in `installableReconciler.ts`) |
+| `active`, Integration missing or `isActive: false`, or any `components[].status: 'stale'` | — | hollow | The channel record is gone. | `retry rebuilds it` | `since {rel}` | **Retry** (ink) — same POST; `installAttempt` re-projects. The reconciler's stale-marking (`sweepActive`) is what makes this row honest; it should also set `status: 'error'`, `errorMessage: "This connector's channel is gone. Retry to rebuild it."` so the parent and the page agree (one-line change in `installableReconciler.ts`) |
 | `uninstalling`, within TTL | any | cobalt pulsing | Removing… | `waiting for the server` | `started {rel}` | none |
 | `uninstalling`, past TTL | any | cobalt pulsing | Removal is taking longer than it should. | `the server let go of it` | `started {rel}` | **Retry remove** (bordered) → `DELETE` again; `claimUninstall` re-claims a stale `uninstalling` |
 | `paused` (written only by the admin lever, §2 D3) | any | hollow | Paused by an administrator. {reason} | `ask your operator` | `paused {rel}` from `adminPause.at` | none for the owner — Resume is the admin's, so the owner is never shown a control that will 403 |
@@ -101,7 +101,7 @@ The page renders the gate list **only when the row carries `config.gates`**; a P
 
 | PR | what | size | depends on |
 |---|---|---|---|
-| A | catalog route + `readiness()` per manifest + install refusal `provider_not_configured` + reconciler `projection missing` | S | — |
+| A | catalog route + `readiness()` per manifest + install refusal `provider_not_configured` + reconciler channel-gone reason | S | — |
 | B | page: rows keyed by catalog, D2 state table, Retry / Remove / Cancel wired, poll on the catalog | M | A. **Folds into Kai's Signal restyle (TASK-007)** if that PR is still open — it re-keys the rows anyway; two PRs that both rewrite the row grid is one too many |
 | C | D8 schema: `scope`, optional `podId`, `config.gates`, outbound inversion, inbound on `podId` + membership at receive with the chat reply, PATCH gate and `podId` writes, migration script, reconciler prune (gates and the active pod); the admin pause/resume verbs with `paused` in the partial index, `liveClaimStatuses` and `statusForClaim`, the two owner-verb refusals, and the two sweep branches | M–L | — (backend only; the page ignores `gates` until D) |
 | D | page: gate list in the aside, `active` tag + Make active, the *not linked* row, per-pod overrides, Remove at the foot | S | B, C |
@@ -114,7 +114,7 @@ A and C are independent and can run in parallel. B before C is fine: the page sh
 2. **Error row → Retry.** Force a projection failure (projector throws) → parent `error`, no Integration; catalog shows the error row; `POST install` with the same `podId` reclaims the **same** parent `_id` (count of parents for that user stays 1) and reaches `active`.
 3. **Cancel is TTL-honest.** Parent stuck `installing` with `claimedAt` 30 s old → `DELETE` answers 409 `install_in_progress`; at 61 s → `DELETE` answers 202 `uninstalling` and the parent's `claimId` changes. The page shows no Cancel at 30 s and shows it at 61 s (the row's `claimedAt` drives it, no client clock trick — inject the clock).
 4. **Remove from error.** Parent `error` → `DELETE` → `uninstalled`; the catalog entry returns to `installation: null`; the orphan-secret sweep revokes any `ConnectorSecret` the failed attempt left.
-5. **Projection missing.** Delete a live Integration under an `active` parent → the 5-minute sweep marks the parent `error` `projection missing`; catalog shows the row; Retry re-projects with the same `installationId`.
+5. **Projection missing.** Delete a live Integration under an `active` parent → the 5-minute sweep marks the parent `error` `This connector's channel is gone. Retry to rebuild it.`; catalog shows the row; Retry re-projects with the same `installationId`.
 6. **Gates route outbound.** User in pods A and B, `gates[A].enabled: true`, `gates[B]` absent → an escalation in B reaches the channel **zero** times, in A once. Flip B on → once. User leaves A → the prune drops `gates[A]` within one sweep and outbound from A stops immediately (membership is checked at send).
 6b. **Leaving the active pod is heard, not swallowed.** User in pods A and B, `podId: A`, `gates[A]` and `gates[B]` enabled; user leaves A. A bare message typed before the sweep → no pod post (membership fails at receive) and one reply in the chat (*This connector has no active pod. Choose one in Commonly first.*); the sweep unsets `gates[A]` **and** `podId` within five minutes; a bare message after the sweep gets the same reply, still no post; the page shows the *not linked to a pod* row with **Pick a pod**; `PATCH { podId: B }` from the owner → the next bare message posts in B; the same PATCH from the pod-B creator → 403; `PATCH { podId: C }` for a pod the owner is not in → 403. Switching `gates[B]` off while `podId: B` changes nothing inbound: the owner's next message still posts in B.
 7. **Gate write is membership-gated.** `PATCH` with a `gates` key for a pod the caller is not a member of → 403, no write; other keys in the same body are also refused (all-or-nothing).

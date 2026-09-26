@@ -23,6 +23,10 @@ interface ConnectorGate {
 
 interface ConnectorConfig {
   chatTitle?: string;
+  // A linked Slack stores its workspace name here (slackOAuthService), never in
+  // chatTitle — so without this the row read "Slack · linked to …" beside the
+  // word Slack (TASK-156).
+  teamName?: string;
   connectCode?: string;
   connectCodeExpiresAt?: string;
   liveRelay?: boolean;
@@ -43,6 +47,13 @@ interface Connector {
   installationId?: string;
   type: string;
   status: string;
+  // A reason this connector needs attention. Two writers share the field: our
+  // own classifier, and externalFeedService, which copies a provider's error
+  // text or a raw `err.message` in here. `errorMessageUserFacing` is what tells
+  // them apart, and only a message written for a person is rendered — the field
+  // holding a value is not permission to show it (vera 73848).
+  errorMessage?: string | null;
+  errorMessageUserFacing?: boolean;
   scope?: 'user' | 'pod';
   isActive?: boolean;
   createdAt?: string;
@@ -53,7 +64,13 @@ interface Connector {
 
 interface CatalogInstallation {
   status: string;
+  // The same pair the pod-scoped half reads, and the same rule: the field
+  // holding a value is not permission to show it. A catalog failure is
+  // `markProjectionFailure`'s raw exception message unless a writer says
+  // otherwise, so the flag decides and the generic sentence is the fallback
+  // (TASK-131, vera 73848).
   errorMessage?: string;
+  errorMessageUserFacing?: boolean;
   boundPodId?: string;
   claimedAt?: string;
   updatedAt?: string;
@@ -84,6 +101,7 @@ interface InstallResponse {
 
 interface InstallErrorResponse {
   code?: string;
+  error?: string;
   boundPodId?: string;
 }
 
@@ -151,6 +169,19 @@ export const installableLifecyclePath = (type: string): string => (
 const installErrorResponse = (error: unknown): { status?: number; data?: InstallErrorResponse } => (
   (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
 );
+
+// Row C: the Slack authorize and bind verbs refuse with a `code` the server
+// already sends (`slackError` in backend/routes/installables.ts), so the row
+// can say which refusal it was rather than one generic apology. An unlisted
+// code falls back to the server's own sentence, then to the generic copy.
+const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string }> = {
+  slack_already_authorized: { key: 'connectors.slackAlreadyAuthorized', defaultValue: 'Slack is already awaiting confirmation or connected.' },
+  slack_authorization_unavailable: { key: 'connectors.slackAuthorizationUnavailable', defaultValue: 'Slack authorization is no longer available.' },
+  slack_installation_not_found: { key: 'connectors.slackInstallationNotFound', defaultValue: 'Slack installation not found.' },
+  slack_bind_missing: { key: 'connectors.slackBindMissing', defaultValue: 'There is no Slack authorization to confirm.' },
+  slack_bind_expired: { key: 'connectors.slackBindExpired', defaultValue: 'Slack authorization expired. Start again.' },
+  slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
+};
 
 const connectorPodId = (connector: Connector | null | undefined): string | null => {
   if (!connector || !connector.podId) return null;
@@ -222,6 +253,9 @@ const V2ConnectorsPage: React.FC = () => {
   const [expandedGate, setExpandedGate] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Row C: a refusal raised by a row's own button belongs on that row, not
+  // only in the page-level slot at the foot of the page.
+  const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
@@ -461,11 +495,22 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const authorizeSlack = async (connector: Connector) => {
+  // The refusal is named from the response body, not swallowed: a bare catch
+  // here is what hid `slack_already_authorized` from the row (Row C).
+  const refusalCopy = (requestError: unknown, fallbackKey: string, fallbackDefault: string): string => {
+    const { data } = installErrorResponse(requestError);
+    const known = data?.code ? SLACK_REFUSALS[data.code] : undefined;
+    if (known) return t(known.key, { defaultValue: known.defaultValue });
+    if (data?.error) return data.error;
+    return t(fallbackKey, { defaultValue: fallbackDefault });
+  };
+
+  const authorizeSlack = async (connector: Connector, rowKey: string) => {
     if (busyId) return;
     const authorizationWindow = window.open('', '_blank');
     setBusyId(connector._id);
     setError(null);
+    setRowRefusal(null);
     try {
       const result = await api.post<SlackAuthorizeResponse>(
         '/api/installables/slack/authorize-url',
@@ -479,27 +524,30 @@ const V2ConnectorsPage: React.FC = () => {
       } else {
         window.location.assign(result.authorizeUrl);
       }
-    } catch {
+    } catch (requestError) {
       authorizationWindow?.close();
-      setError(t('connectors.slackAuthorizeError', {
-        defaultValue: 'Could not begin Slack authorization. Try again in a moment.',
-      }));
+      setRowRefusal({
+        key: rowKey,
+        message: refusalCopy(requestError, 'connectors.slackAuthorizeError', 'Could not begin Slack authorization. Try again in a moment.'),
+      });
     } finally {
       setBusyId(null);
     }
   };
 
-  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject') => {
+  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject', rowKey: string) => {
     if (busyId) return;
     setBusyId(connector._id);
     setError(null);
+    setRowRefusal(null);
     try {
       await api.post(`/api/installables/slack/${action}`, {});
       await load();
-    } catch {
-      setError(t('connectors.slackBindError', {
-        defaultValue: 'Could not update the Slack connection. Try again in a moment.',
-      }));
+    } catch (requestError) {
+      setRowRefusal({
+        key: rowKey,
+        message: refusalCopy(requestError, 'connectors.slackBindError', 'Could not update the Slack connection. Try again in a moment.'),
+      });
     } finally {
       setBusyId(null);
     }
@@ -605,7 +653,7 @@ const V2ConnectorsPage: React.FC = () => {
     const started = ageLine('started', connector.createdAt);
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
-    const title = connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type;
+    const title = connector.config?.chatTitle || connector.config?.teamName || TYPE_LABELS[connector.type] || connector.type;
 
     if (connector.status === 'error') {
       return {
@@ -613,7 +661,9 @@ const V2ConnectorsPage: React.FC = () => {
         actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
-        line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
+        line: connector.errorMessageUserFacing && connector.errorMessage
+          ? connector.errorMessage
+          : t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
         pulse: false,
         when: ageLine('since', connector.updatedAt || connector.createdAt),
       };
@@ -811,7 +861,9 @@ const V2ConnectorsPage: React.FC = () => {
         actionLabel: t('connectors.retry', { defaultValue: 'Retry' }),
         detail: t('connectors.retryOrRemove', { defaultValue: 'retry, or remove it' }),
         dot: 'empty',
-        line: installation.errorMessage || t('connectors.setupFailed', { defaultValue: 'Setup didn’t finish.' }),
+        line: installation.errorMessageUserFacing && installation.errorMessage
+          ? installation.errorMessage
+          : t('connectors.setupFailed', { defaultValue: 'Setup didn’t finish.' }),
         pulse: false,
         when: since,
       };
@@ -930,8 +982,8 @@ const V2ConnectorsPage: React.FC = () => {
     }
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
-    if (action === 'authorize') return authorizeSlack(connector);
-    if (action === 'confirm') return resolveSlackBind(connector, 'confirm');
+    if (action === 'authorize') return authorizeSlack(connector, item.key);
+    if (action === 'confirm') return resolveSlackBind(connector, 'confirm', item.key);
     return undefined;
   };
 
@@ -1002,6 +1054,9 @@ const V2ConnectorsPage: React.FC = () => {
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
             {t('tools.ask', { defaultValue: 'Ask' })}
           </a>
+        )}
+        {rowRefusal?.key === item.key && (
+          <p className="v2-connector-row__refusal" role="alert">{rowRefusal.message}</p>
         )}
       </article>
     );
@@ -1229,10 +1284,10 @@ const V2ConnectorsPage: React.FC = () => {
                   user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
                 })}</p>
                 <div className="v2-connector-aside__actions">
-                  <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm'); }}>
+                  <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key); }}>
                     {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
                   </button>
-                  <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject'); }}>
+                  <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>
                     {t('connectors.slackReject', { defaultValue: 'This is not me' })}
                   </button>
                 </div>
@@ -1241,10 +1296,15 @@ const V2ConnectorsPage: React.FC = () => {
             {isSlack && !pendingBind && connector.status !== 'error' && (
               <>
                 <p>{row.line}</p>
-                <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void authorizeSlack(connector); }}>
+                <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void authorizeSlack(connector, item.key); }}>
                   {t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' })}
                 </button>
               </>
+            )}
+            {/* Row C: one place for the aside's refusal, so it shows for the
+                authorize verb and for a confirm/reject refusal alike. */}
+            {isSlack && rowRefusal?.key === item.key && (
+              <p className="v2-connector-aside__refusal" role="alert">{rowRefusal.message}</p>
             )}
             {connector.status === 'error' && (
               <>

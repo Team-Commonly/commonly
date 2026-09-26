@@ -403,6 +403,14 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-authenticated-shell__content {
+  /* Row 2 always, not by auto-placement. Row 1 is the `auto` row the banner
+     sits in, so a verified user (no banner) has the content as the FIRST grid
+     child and auto-placement put it in that row instead: the inset card then
+     sized to its own content and any page shorter than the viewport ended
+     178-195px above the bottom gutter instead of 14 (TASK-157, ux-lead at
+     1200). Row 1 collapses to 0 with nothing in it, which is the same layout
+     the banner variant already produced. */
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -5768,7 +5776,7 @@ body.modern-ui.v2-canvas {
 .v2-byo__input {
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--v2-surface, #fff);
   font-size: 14px;
   color: var(--v2-text-primary);
@@ -5833,6 +5841,29 @@ body.modern-ui.v2-canvas {
   align-items: start;
   padding: 8px 24px 40px;
 }
+/* Signal rule 4 — avatars are a 4px square frame. All four avatars on this
+   route are in scope together (the persona context, the placed and hosted
+   result cards, and the preview) because they show the same agent a click
+   apart: a square preview that turns round after "Add to this computer" reads
+   as two different things. The square is also what UNCLIPS the online dot —
+   at 50% the base class's `overflow: hidden` cuts the 9px dot to a lens
+   (ux-lead measured 13 device px at DPR 2, against 68 once square), so the
+   cobalt rule below must land in the same scope, or the dot goes full green.
+   (0,2,0) over `.v2-avatar`'s (0,1,0): this wins on specificity, with no
+   dependency on document order. */
+.v2-byo__layout .v2-avatar {
+  border-radius: 4px;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Signal §3 — connected/live is a solid cobalt dot, never green. Same
+   (0,2,0) scope as the square; `.v2-avatar__online` carries its own 50%
+   radius, so this rule must never declare one (the dot stays round). */
+.v2-byo__layout .v2-avatar__online {
+  background: var(--v2-accent);
+}
+
 .v2-byo__main { min-width: 0; }
 .v2-byo__preview {
   position: sticky;
@@ -5843,11 +5874,11 @@ body.modern-ui.v2-canvas {
   margin-top: 24px;
 }
 .v2-byo__preview-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  /* Signal rule 3 — meta is IBM Plex Mono 500 because it is data; the caps
+     were a CSS transform over an en literal that is already sentence case. */
   color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  letter-spacing: 0;
 }
 .v2-byo__preview-card {
   display: flex;
@@ -5856,7 +5887,7 @@ body.modern-ui.v2-canvas {
   gap: 6px;
   padding: 28px 20px 22px;
   border: 1px solid var(--v2-border);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--v2-surface);
   text-align: center;
 }
@@ -5872,17 +5903,21 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
   color: var(--v2-text-tertiary);
 }
+/* The status line is Signal §3 in one row, and it has to agree with the avatar
+   dot beside it: since item 7 makes that dot cobalt, a green success pill next
+   to it reads as two different states of the same agent. So it is not a pill
+   at all — it is the team card's mono 11/16 muted line, with the dot carrying
+   the state (ux-lead's #1897 gate, measured at 1200/390). */
 .v2-byo__preview-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface-hover);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-muted);
 }
 .v2-byo__preview-dot {
   width: 7px;
@@ -5890,12 +5925,27 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-text-muted);
 }
-.v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-warning); }
-.v2-byo__preview-status--live {
-  color: var(--v2-success-text);
-  background: var(--v2-success-soft);
+/* §3 not yet — the dashed hollow dot the Connectors not-yet state uses
+   (v2.css:9797). The text stays muted rather than placeholder: #98a2b3 at
+   11px is 2.6:1. */
+.v2-byo__preview-status--draft .v2-byo__preview-dot {
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px dashed var(--v2-border-strong);
 }
-.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-success); }
+/* §3 working — the team card's working line (v2.css:12113–12122), same colour
+   and same pulse, so "an agent is starting" reads identically in both places. */
+.v2-byo__preview-status--starting { color: var(--v2-accent-text); }
+.v2-byo__preview-status--starting .v2-byo__preview-dot {
+  background: var(--v2-accent);
+  animation: v2-team-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-byo__preview-status--starting .v2-byo__preview-dot { animation: none; }
+}
+/* §3 connected / live — cobalt dot, muted text, no success colour and no fill. */
+.v2-byo__preview-status--live { color: var(--v2-text-muted); }
+.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-accent); }
 .v2-byo__preview-note {
   font-size: 12px;
   line-height: 1.5;
@@ -5951,11 +6001,6 @@ body.modern-ui.v2-canvas {
   border-radius: 12px;
   background: var(--v2-surface);
 }
-.v2-byo__persona--none {
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--v2-text-tertiary);
-}
 .v2-byo__persona-body { min-width: 0; flex: 1; }
 .v2-byo__persona-title {
   font-size: 14px;
@@ -5970,7 +6015,8 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 /* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
-   the accent border + focus ring marks the pressed card. */
+   the pressed card is marked by a 2px accent border, and the focus ring is
+   the keyboard affordance only (Signal rules 1 and 4). */
 .v2-byo__modes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -5984,19 +6030,27 @@ body.modern-ui.v2-canvas {
   text-align: left;
   padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--v2-surface, #fff);
   color: var(--v2-text-primary);
   cursor: pointer;
   transition: border-color 0.08s ease, background 0.08s ease;
 }
+/* Signal rule 3 — meta is mono 500 at 11px and lowercase; the caps lived in
+   en.json, which now carries lowercase strings, so no transform is needed
+   (and a transform over zh-CN copy would be wrong). */
 .v2-byo__mode-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  color: var(--v2-accent-text);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  letter-spacing: 0;
 }
 .v2-byo__mode-kicker--quiet { color: var(--v2-text-muted); }
+
+/* The chosen card is the row's one cobalt mark (Signal rule 1); the modifier
+   above is what the untouched cards wear. */
+.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
+  color: var(--v2-accent-text);
+}
 .v2-byo__mode-meta {
   font-size: 11px;
   color: var(--v2-text-muted);
@@ -6006,8 +6060,14 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 .v2-root button.v2-byo__mode[aria-pressed="true"] {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
+  /* 2px border in place of the 1px one, with 1px less padding per side so the
+     card holds its box: the base shorthand is `16px 18px 14px`, not uniform,
+     so the `.v2-team-card--needsYou` precedent's single `15px` does not
+     transfer (it would also lose 2px of width). No shadow — the focus ring
+     belongs to `:focus-visible` (v2.css:383), which is why this rule must not
+     declare one and the guard says so negatively. */
+  border: 2px solid var(--v2-accent);
+  padding: 15px 17px 13px;
 }
 .v2-byo__mode-title {
   font-size: 15px;
@@ -6015,19 +6075,21 @@ body.modern-ui.v2-canvas {
   letter-spacing: -0.01em;
 }
 .v2-root button.v2-byo__submit {
+  /* Signal rule 2 — ink acts. A filled control inside the app is ink on white;
+     cobalt fills a control in exactly one place, a decision card's primary. */
   align-self: flex-start;
   padding: 10px 18px;
-  border-radius: 8px;
-  background: var(--v2-accent);
-  color: #fff;
-  border: 1px solid var(--v2-accent);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  border: 1px solid var(--v2-ink);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
 }
 .v2-root button.v2-byo__submit:hover:not(:disabled) {
-  background: var(--v2-accent-strong);
-  border-color: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
 }
 .v2-root button.v2-byo__submit:disabled {
   opacity: 0.6;
@@ -9686,9 +9748,6 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 28px;
-  /* The channel list is the page's content card, not a short island in its
-     shell. The feature body is the inset pane less 28px/42px vertical pad. */
-  min-height: calc(100vh - 86px);
 }
 .v2-connectors__header h1 {
   margin: 0;
@@ -9706,9 +9765,9 @@ body.modern-ui.v2-canvas {
   line-height: 20px;
 }
 .v2-connectors__loading { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; }
-.v2-connectors__content { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: stretch; }
+.v2-connectors__content { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: start; }
 .v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
-.v2-connectors__rows { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
+.v2-connectors__rows { overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
 
 .v2-connector-row {
   display: grid;
@@ -9863,9 +9922,13 @@ body.modern-ui.v2-canvas {
 .v2-connector-code { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 14px; padding: 12px; border-radius: var(--v2-radius-sm); background: var(--v2-ink); }
 .v2-connector-code code { overflow-wrap: anywhere; color: var(--v2-on-ink); font-family: var(--v2-font-mono); font-size: 14px; line-height: 20px; }
 .v2-root button.v2-connector-code__copy { min-height: 30px; padding: 5px 9px; border: 1px solid var(--v2-accent); border-radius: var(--v2-radius-sm); background: var(--v2-accent); color: var(--v2-on-ink); font: 600 12px/16px var(--v2-font); cursor: pointer; }
+.v2-connector-row__refusal { grid-column: 1 / -1; margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface-tint); color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .v2-connectors__error { padding: 10px 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-ink); font-size: 13px; }
 
 .v2-connector-aside__note { margin-top: 12px !important; color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
+/* Row C: the refusal the row's own button earned, beside that button in the
+   aside (and on the row itself) — same bordered grammar as the page slot. */
+.v2-connector-aside__refusal { margin-top: 10px !important; padding: 8px 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface-tint); color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 /* D4 gate list: one row per pod the user is in. The switch is the gate
    (pod → me); the active tag marks where typed messages land (me → pod). */
 .v2-connector-gates { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--v2-border-soft); }
@@ -9890,8 +9953,8 @@ body.modern-ui.v2-canvas {
 
 /* Tools — the second list (tools plan §6). Rows reuse .v2-connector-row; the
    aside reuses the connector aside cards. Outcomes are words in muted mono,
-   never a coloured word. */
-.v2-tools { flex: none; }
+   never a coloured word. A list card is as tall as its rows (TASK-156): neither
+   list stretches, so the page scrolls instead of a card holding empty space. */
 .v2-tools__head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .v2-tools__title { margin: 0; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
 .v2-tools__count-line { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
@@ -9923,12 +9986,10 @@ body.modern-ui.v2-canvas {
 .v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
 .v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
 @media (max-width: 1010px) {
-  .v2-connectors { min-height: 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .v2-connectors__rows { flex: none; }
 }
 @media (max-width: 760px) {
-  .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
+  .v2-connectors { gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .v2-connector-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; padding: 14px 12px; }
   .v2-root button.v2-connector-row__selection { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
@@ -9938,8 +9999,14 @@ body.modern-ui.v2-canvas {
   .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
   .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  /* Keep the not-enabled reason alongside its Ask affordance on phones. */
-  .v2-connector-row:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail { display: none; }
+  /* A phone keeps the row's REASON. This used to be a blanket hide with
+     enumerated exceptions (`:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled)`),
+     which silently swallowed every state the list had not anticipated: the
+     not-yet row that IS available (V2ConnectorTools.tsx:562) lost
+     "install the GitHub App first" / "read, or read and write", and a stranger
+     saw a "not granted" kicker with no reason under it (eng lead 73726).
+     Default is now SHOW; if one row ever needs its detail hidden on phones, hide
+     that named case here rather than re-introducing an exception list. */
   .v2-root button.v2-connector-row__action, .v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }
   /* Direction A at 390 (after the rule above so it wins): no tooltips, so the mode
      word rides the kicker; the gear is 44px in row 1 beside the name; a row's word
@@ -10039,6 +10106,21 @@ body.modern-ui.v2-canvas {
 
   .v2-shell .v2-pane {
     height: 100vh;
+  }
+
+  /* A pane INSIDE the authenticated shell is bounded by the shell's content box,
+     not by the viewport: that box has already had the verify-email banner
+     subtracted from it, so a 100vh pane overflows below the fold by the banner's
+     height. With its own `overflow: hidden` the pod header then sits under the
+     banner — the back button, the title and the inspector toggle all untappable,
+     and there is nothing to scroll (TASK-157, ux-lead at 390, ux-lead's P1).
+     Ranked (0,3,0) against the (0,2,0) rule above so it wins on specificity, not
+     on coming later: the same lesson as #1868, where a tie resolved by file
+     order silently erased a component's own declarations. The 100vh rule itself
+     stays — it is the right height outside this shell — and this guard is what
+     keeps it from winning here. */
+  .v2-authenticated-shell__content .v2-shell .v2-pane {
+    height: 100%;
   }
 
   .v2-pods-aside {
@@ -10971,18 +11053,43 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__back { display: none; }
 
 @media (max-width: 760px) {
-  /* The list is a page: full width, no drawer, no backdrop. */
-  .v2-shell--list {
+  /* The list is a page: full width, no drawer, no backdrop.
+
+     The list is also the one route where the aside IS a page pane, so the
+     (0,3,0) bounding rule added for TASK-157 reaches it: the aside stops being
+     `calc(100vh - 56px)` and becomes 100% of the shell's content box. Two
+     consequences, both measured by ux-lead at 390 on both banner states
+     (2026-09-25), and both fixed here rather than in that rule — the bounding
+     rule is right for pod, Connectors, Agents and Settings:
+
+     1. Nothing reserved the tab bar inside the list's box, so the aside grew to
+        the full 844 and ran under the fixed bar: 0 of 4 tabs hit-testable, on a
+        short list and a long one, banner up or down. The bottom padding below
+        IS that reservation, and its value is the bar's own height — see the
+        guard, which compares the two rather than restating either. The two-class
+        selector is required: a one-class rule of the same name would take the
+        padding back off by document order.
+
+     2. The drawer's reset was incomplete — z-index stayed 60. `.v2-shell--list`
+        is a flex container, and a flex item with a z-index other than `auto`
+        forms a stacking context even while static, so the aside painted over
+        the bar (fixed, z 40) and the bar could be neither seen nor tapped.
+
+     `calc(100vh - 56px)` was dropped rather than kept as a fallback: the rule
+     above outranks it in every render of this shell, so it was already inert.
+     The banner state is fixed by the same padding — main failed the banner case
+     before this change. */
+  .v2-shell.v2-shell--list {
     display: flex;
     flex-direction: column;
     gap: 0;
-    padding: 0;
+    padding: 0 0 56px;
   }
 
   .v2-shell--list .v2-pods-aside--page {
     position: static;
+    z-index: auto;
     width: 100%;
-    height: calc(100vh - 56px);
     transform: none;
     box-shadow: none;
     border: 0;

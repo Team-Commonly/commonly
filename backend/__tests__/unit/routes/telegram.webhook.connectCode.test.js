@@ -9,7 +9,12 @@ jest.mock('../../../models/Pod');
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
-jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
+// Stub the network, keep the behaviour: the bridge escapes through this module's
+// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
+jest.mock('../../../services/telegramService', () => ({
+  ...jest.requireActual('../../../services/telegramService'),
+  sendMessage: jest.fn(),
+}));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../services/telegramBridgeService', () => ({ relayTelegramMessageToPod: jest.fn() }));
 jest.mock('../../../models/WebhookDelivery', () => ({

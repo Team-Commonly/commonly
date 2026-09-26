@@ -10,9 +10,11 @@
 // the budget is never reached.
 //
 // Bucket: `integrationsRateLimitKey` keys on the Authorization header when one
-// is present and on `req.ip` otherwise, so this flood cannot disturb the
-// token-keyed buckets other suites use. (`server.ts:94-101` records why `req.ip`
-// is a cloudflared pod address rather than the client in production.)
+// is present and on the Cloudflare-resolved address otherwise —
+// `cf-connecting-ip`, then `req.ip` (`middleware/ipRateLimit.ts:49`, TASK-125).
+// This flood sends neither header, so it lands on `req.ip` and cannot disturb
+// the token-keyed buckets other suites use. (`server.ts:94-101` records why
+// `req.ip` is a cloudflared pod address rather than the client in production.)
 const request = require('supertest');
 const express = require('express');
 

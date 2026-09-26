@@ -7,7 +7,8 @@
 import express from 'express';
 import crypto, { createHash } from 'crypto';
 import mongoose from 'mongoose';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
@@ -23,7 +24,7 @@ const inviteRateLimitKey = (req: any) => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 const inviteReadRateLimit = rateLimit({

@@ -207,12 +207,18 @@ router.post('/:integrationId', slackWebhookIpRateLimit, slackWebhookRateLimit, a
   try {
     const { integrationId } = req.params;
     const integration = await Integration.findById(integrationId);
-    if (!integration || integration.type !== 'slack') {
+    // An inactive row answers like an unknown id. This route takes no auth, so a
+    // row's own verification key would otherwise outlive the access that planted
+    // it; `/events` resolves only `isActive` rows for the same reason (TASK-141).
+    if (!integration || integration.type !== 'slack' || !integration.isActive) {
       return res.status(404).json({ error: 'Integration not found' });
     }
 
     const body = req.body || {};
-    const signingSecret = integration.config?.signingSecret || process.env.SLACK_SIGNING_SECRET;
+    // Env only: the instance's signing secret is the key Slack signs with, and a
+    // row-supplied copy has had no writer since it joined
+    // `SERVER_OWNED_CONFIG_KEYS` (TASK-141).
+    const signingSecret = process.env.SLACK_SIGNING_SECRET;
     const timestamp = header(req, 'x-slack-request-timestamp');
     const signature = header(req, 'x-slack-signature');
     const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(body);

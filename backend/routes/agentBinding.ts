@@ -5,13 +5,17 @@
 // predicate is enforced HERE from the daemon credential's server-side
 // machineId — never from a caller-supplied value.
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import {
-  GRANT_BROKER_AUTHORIZATION,
+  grantBrokerServer,
+  selectLiveGrantsForIdentities,
+} from '../services/grantBrokerProjectionService';
+import {
   projectSeatEnvironments,
   seatEnvironmentKey,
 } from '../services/seatEnvironmentProjection';
@@ -38,7 +42,7 @@ const bindingRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 binding ops per 60s' });
@@ -50,23 +54,17 @@ const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 
 type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
-type GrantTarget = { kind?: unknown; id?: unknown };
-type ActiveGrant = { grantId?: unknown; target?: GrantTarget; audience?: unknown[] };
 type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null; runtime?: unknown };
-
-const grantBrokerServer = (grantId: string, name: string): Record<string, unknown> => ({
-  name,
-  transport: 'http',
-  url: GRANT_BROKER_URL.replace('${COMMONLY_GRANT_ID}', encodeURIComponent(grantId)),
-  headers: { Authorization: GRANT_BROKER_AUTHORIZATION },
-});
 
 /**
  * Project live room grants into a daemon assignment. Grants are capabilities,
- * not installation config: querying them here means revoke and expiry take
- * effect on the next daemon poll without rewriting every AgentInstallation.
- * Pod grants additionally require the seat to remain a member of the target
- * pod (the grant's audience is a mint-time snapshot).
+ * not installation config: querying them means revoke and expiry take effect on
+ * the next daemon poll without rewriting every AgentInstallation. Which grants
+ * a seat has is not decided here — `selectLiveGrantsForIdentities` owns that
+ * predicate and the hosted run path (TASK-132) asks the same question, so a
+ * seat cannot be handed a capability one path projects and the other withholds.
+ * What stays here is the daemon's own shape: the environment-confined refusal
+ * and the MCP server naming.
  *
  * The grant is external reach, so it is only injected into an environment that
  * can confine it: a seat whose declaration no host would confine gets NO
@@ -85,39 +83,24 @@ const grantServersForIdentities = async (
     .filter(Boolean);
   if (!identityIds.length) return new Map();
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const RoomGrant = require('../models/RoomGrant');
-  const grants = await RoomGrant.find({
-    brokerId: GRANT_BROKER_ID,
-    revokedAt: null,
-    expiresAt: { $gt: new Date() },
-    audience: { $in: identityIds },
-  }).select('grantId target audience').lean() as ActiveGrant[];
-  if (!grants.length) return new Map();
-
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Pod = require('../models/Pod');
-  const podIds = Array.from(new Set(Array.from(entries.values()).flatMap((entry) => entry.podIds)))
-    .filter((id) => /^[a-f\d]{24}$/i.test(id));
-  const pods = podIds.length
-    ? await Pod.find({ _id: { $in: podIds } }).select('_id members').lean()
-    : [];
-  const podMembers = new Map<string, Set<string>>(
-    pods.map((pod: { _id: unknown; members?: unknown[] }) => [
-      String(pod._id),
-      new Set((pod.members || []).map((member) => String(member))),
-    ]),
-  );
+  // One predicate for both delivery paths (TASK-132): the daemon projects for
+  // every pod the seat is installed in, and a hosted run passes only its own
+  // pod. Neither path decides for itself what "live, audience, target" means.
+  const liveGrants = await selectLiveGrantsForIdentities({
+    identityIds,
+    podIds: Array.from(new Set(Array.from(entries.values()).flatMap((entry) => entry.podIds))),
+  });
+  if (!liveGrants.size) return new Map();
 
   const output = new Map<string, IdentityGrantProjection>();
   for (const identityId of identityIds) {
+    const grants = liveGrants.get(identityId) || [];
     const entry = identities
       .find((identity) => String(identity._id || '') === identityId);
     const meta = entry?.botMetadata || {};
     const key = `${normalize(meta.agentName)}\0${normalize(meta.instanceId) || 'default'}`;
     const assigned = entries.get(key);
     if (!assigned) continue;
-    const installedPods = new Set(assigned.podIds);
     const existingMcp = Array.isArray(assigned.environment?.mcp) ? assigned.environment.mcp : [];
     const usedNames = new Set(
       existingMcp
@@ -134,14 +117,7 @@ const grantServersForIdentities = async (
     let refused = false;
     for (const grant of grants) {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
-      const target = grant.target || {};
-      const targetId = String(target.id || '');
-      const inAudience = (grant.audience || []).map(String).includes(identityId);
-      const seatTarget = target.kind === 'seat' && targetId === identityId;
-      const podTarget = target.kind === 'pod'
-        && installedPods.has(targetId)
-        && podMembers.get(targetId)?.has(identityId);
-      if (!grantId || !inAudience || (!seatTarget && !podTarget)) continue;
+      if (!grantId) continue;
       if (refusal) {
         // The grant is live and applies to this seat; the seat cannot be held
         // to it, so it is withheld rather than projected unenforced.

@@ -228,6 +228,37 @@ jobs:
           fi
           echo "All four deployed workloads are live."
 
+      # A pod can be Ready and still unable to serve chat. The backend decides
+      # once at boot whether Postgres is available, and /ready answers 200 in
+      # that degraded state. On 2026-09-25 a transient connect timeout at boot
+      # left /api/pg/messages unmounted on the only replica, chat history 404
+      # for minutes, and this job green. Until readiness itself asserts it
+      # (TASK-168), ask the newest backend pod from the inside. Unauthenticated,
+      # a mounted /api/pg/messages answers 401 and an unmounted one 404.
+      - name: Verify the new backend serves chat
+        run: |
+          set -uo pipefail
+          POD=$(kubectl get pod -n "$NAMESPACE" -l app=backend \
+            -o jsonpath='{range .items[*]}{.status.startTime}{" "}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' \
+            | awk 'NF == 2' | sort | tail -1 | awk '{print $2}')
+          if [ -z "$POD" ]; then
+            echo "::error title=Chat check failed::no running backend pod found"
+            exit 1
+          fi
+          echo "Checking $POD"
+          for attempt in 1 2 3 4 5 6; do
+            STATUS=$(kubectl exec -n "$NAMESPACE" "$POD" -c backend -- curl -s http://localhost:5000/api/pg/status || true)
+            ROUTE=$(kubectl exec -n "$NAMESPACE" "$POD" -c backend -- curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/pg/messages/000000000000000000000000 || true)
+            echo "attempt $attempt: pg/status=$STATUS pg/messages=$ROUTE"
+            if [[ "$STATUS" == *'"available":true'* ]] && [ "$ROUTE" = "401" ]; then
+              echo "$POD serves chat."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
+          exit 1
+
       # Unhealthy workloads outside the deployed set are surfaced, never
       # failed on. Silence here is how litellm accumulated 561 restarts
       # without anyone noticing; failing on it is how five good deploys got

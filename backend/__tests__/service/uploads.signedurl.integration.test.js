@@ -181,6 +181,75 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
       .expect(404);
   });
 
+  it('serves a POD-SCOPED file to a Bearer member, and refuses a bot row on the same path (TASK-133)', async () => {
+    const owner = await makeUser();
+    const member = await makeUser();
+    const memberToken = generateTestToken(member._id);
+    const agent = await makeUser({
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'file-reader', instanceId: 'default' },
+    });
+    const agentToken = generateTestToken(agent._id);
+    const pod = await Pod.create({
+      name: 'member-and-agent attachment pod',
+      type: 'chat',
+      createdBy: owner._id,
+      members: [owner._id, member._id, agent._id],
+    });
+    await File.create({
+      fileName: 'member-readable.png',
+      originalName: 'member-readable.png',
+      contentType: 'image/png',
+      size: 10,
+      uploadedBy: owner._id,
+      podId: pod._id,
+    });
+
+    // The member's row is live and the ACL allows: no object bytes are seeded,
+    // so 404 proves authorization succeeded and the request reached the storage
+    // lookup. This is the read TASK-133 must not break, against a real row.
+    await request(app)
+      .get('/api/uploads/member-readable.png')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .expect(404);
+
+    // Same pod, same ACL answer, an agent row: refused by the live-row read
+    // before the ACL is consulted. Both halves run on real Mongo rows, so the
+    // members' read is not a mock agreeing with itself.
+    await request(app)
+      .get('/api/uploads/member-readable.png')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(403);
+  });
+
+  it('403s a Bearer whose id is not a usable account id at all, rather than 500ing', async () => {
+    const owner = await makeUser();
+    const pod = await Pod.create({
+      name: 'cast-error attachment pod',
+      type: 'chat',
+      createdBy: owner._id,
+      members: [owner._id],
+    });
+    await File.create({
+      fileName: 'cast-error.png',
+      originalName: 'cast-error.png',
+      contentType: 'image/png',
+      size: 10,
+      uploadedBy: owner._id,
+      podId: pod._id,
+    });
+
+    // The live-row read casts the id, so a signature-valid token carrying a
+    // non-ObjectId id throws a CastError. The route's catch must turn that into
+    // a refusal: this is the mechanism that took the unit suite red on CI, where
+    // the auth stub writes the literal string 'member-1' as `req.userId`.
+    await request(app)
+      .get('/api/uploads/cast-error.png')
+      .set('Authorization', `Bearer ${generateTestToken('member-1')}`)
+      .expect(403);
+  });
+
   it('matches a profile picture stored as an absolute URL (fix #4 — real substring regex)', async () => {
     const subject = await makeUser({
       profilePicture: 'https://api-dev.commonly.me/api/uploads/avatar.png',

@@ -297,7 +297,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
    * resolution follows, so `bound: false` is the unbound case.
    */
   const seedSeatGrant = async ({
-    adapter, sandbox, bound = true, machineOwner = null, seatId = null,
+    adapter, sandbox, bound = true, machineOwner = null, seatId = null, runtimeType = 'wrapper',
   }) => {
     await Promise.all([User.deleteMany({}), AgentInstallation.deleteMany({}), Machine.deleteMany({})]);
     const tag = Math.random().toString(36).slice(2, 8);
@@ -321,7 +321,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     await AgentInstallation.create({
       agentName: AGENT, instanceId: 'default', podId: new mongoose.Types.ObjectId(),
       version: '1.0.0', status: 'active', installedBy: installer._id,
-      config: { runtime: { runtimeType: 'wrapper', adapter }, environment },
+      config: { runtime: { runtimeType, adapter }, environment },
     });
     if (bound) {
       await Machine.create({ ownerUserId: machineOwner || installer._id, machineId, name: 'Mac' });
@@ -415,6 +415,18 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     expect(res.body.grantBrokerRefusalScope).toBe('unbound');
   });
 
+  test('a hosted seat reads as hosted, not unbound — the run redeems the broker itself (TASK-132)', async () => {
+    // Same shape as the unbound case — no machine binding — but the governing
+    // installation runs on the hosted tier. Before TASK-132 this seat could not
+    // reach the broker at all, so `unbound` was true; the hosted run path now
+    // hands it the broker, which makes `unbound` ("reaches nobody") false.
+    const { row } = await seedSeatGrant({ adapter: null, runtimeType: 'native', bound: false });
+    const res = await read(row.grantId);
+    expect(res.status).toBe(200);
+    expect(res.body.grantBrokerRefusal).toBeNull();
+    expect(res.body.grantBrokerRefusalScope).toBe('hosted');
+  });
+
   test('CONTROL: the same fixture, bound, reads as a judged seat — so unbound is about the binding', async () => {
     // Identical install, only the machine binding differs: this is what makes
     // the test above a statement about the binding rather than about a missing
@@ -424,6 +436,15 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     const res = await read(row.grantId);
     expect(res.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
+  });
+
+  test('CONTROL: a wrapped seat with no binding is still unbound — hosted turns on the runtime, not the absence', async () => {
+    // Without this pair the hosted case above could be passing for the wrong
+    // reason: having no machine binding, on its own, must keep reading unbound.
+    const { row } = await seedSeatGrant({ adapter: 'pi', runtimeType: 'wrapper', bound: false });
+    const res = await read(row.grantId);
+    expect(res.body.grantBrokerRefusal).toBeNull();
+    expect(res.body.grantBrokerRefusalScope).toBe('unbound');
   });
 
   test('a bound seat with no installation under its owner is reported as not installed', async () => {

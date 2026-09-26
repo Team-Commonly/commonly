@@ -6,7 +6,13 @@ jest.mock('../../../models/Pod');
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
-jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
+// `sendMessage` is stubbed because it is the network; `escapeHtml` must stay
+// real, because escaping is behaviour this route is responsible for and a mock
+// that dropped it turned every escaped send into a 500 (vera 73812).
+jest.mock('../../../services/telegramService', () => ({
+  ...jest.requireActual('../../../services/telegramService'),
+  sendMessage: jest.fn(),
+}));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../services/telegramBridgeService', () => ({
   relayTelegramMessageToPod: jest.fn(),
@@ -82,13 +88,50 @@ describe('Telegram webhook routes', () => {
           'config.chatId': '42',
           'config.chatType': 'group',
         }),
+        // The bind is the event that clears a named failure, and only a bind
+        // knows the connector works again (wren 73779). The flag is the pair's
+        // other half: it is what the page reads before rendering the message.
+        errorMessage: null,
+        errorMessageUserFacing: false,
       }),
+      // `new: true` is read back by the confirmation's classification: without
+      // it the doc in hand still carries the PRE-bind chat id, and a permanent
+      // failure of that confirmation could never undo the bind it just wrote.
+      { new: true },
     );
     expect(telegramService.sendMessage).toHaveBeenCalledWith(
       'bot-token',
       '42',
       expect.stringContaining('Connected'),
     );
+  });
+
+  it('escapes a pod name in the bind confirmation, which Telegram parses as HTML', async () => {
+    const integration = {
+      _id: 'integration-1',
+      podId: 'pod-1',
+      config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60000) },
+    };
+    Integration.findOne = jest.fn().mockResolvedValueOnce(integration).mockResolvedValueOnce(null);
+    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({ config: { chatId: '42' } });
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>ops</b>' }),
+    });
+
+    const res = await request(app)
+      .post('/api/webhooks/telegram')
+      .send({
+        message: {
+          text: '/commonly-enable abc123',
+          chat: { id: 42, title: 'Test Chat', type: 'group' },
+          from: { id: 7, first_name: 'Sam' },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).toContain('Connected this chat to <b>R&amp;D &lt;b&gt;ops&lt;/b&gt;</b>');
+    expect(text).not.toContain('<b>ops</b>');
   });
 
   it('posts integration summary on /summary', async () => {
@@ -285,7 +328,7 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     const until = new Date(update.$set['config.relayMutedUntil']).getTime();
-    expect(until).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60_000 + 5000);
+    expect(until).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60000 + 5000);
     expect(until).toBeGreaterThan(Date.now());
   });
 
@@ -308,6 +351,52 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(telegramService.sendMessage).toHaveBeenCalledWith(
       'bot-token', '42', expect.stringContaining('/mode'),
     );
+  });
+
+  it('/status escapes the pod name and the lead agent handle it reports', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue({
+      ...linked(),
+      config: {
+        ...linked().config,
+        leadAgentUsername: '<a href="https://evil.example">lead</a>',
+      },
+    });
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>chat</b>' }),
+    });
+
+    const res = await post('/status');
+
+    expect(res.status).toBe(200);
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    // Telegram HTML accepts <a href>, so an unescaped name renders a clickable
+    // link inside a message the user reads as the bot's own words.
+    expect(text).toContain('R&amp;D &lt;b&gt;chat&lt;/b&gt;');
+    expect(text).not.toContain('<b>chat</b>');
+    expect(text).toContain('&lt;a href="https://evil.example"&gt;lead&lt;/a&gt;');
+    expect(text).not.toContain('<a href');
+    // The formatting the route itself writes is untouched by the escaping.
+    expect(text).toContain('Pod: <b>');
+  });
+
+  it('/tldr escapes the summary title and body, which are generated from pod text', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(linked());
+    Summary.findOne.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          title: 'Sprint <script>alert(1)</script>',
+          content: 'Agent said <b>ship it</b> & left',
+        }),
+      }),
+    });
+
+    const res = await post('/tldr');
+
+    expect(res.status).toBe(200);
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(text).not.toContain('<script>');
+    expect(text).toContain('Agent said &lt;b&gt;ship it&lt;/b&gt; &amp; left');
   });
 
   it('commands never fall through to the live relay', async () => {

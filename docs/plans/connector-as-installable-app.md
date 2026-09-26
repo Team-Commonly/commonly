@@ -307,7 +307,7 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
 For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
-the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — fenced on the
+the sweep sets `status: 'error'` with `errorMessage: 'Setup was interrupted before it finished. Try again.'` — fenced on the
 `claimId` it read, so it cannot race a takeover that happened between its read and its write
 — and the row becomes the ordinary retryable case, and the board-facing state stops lying
 about work in progress. For a stale **`activating`** installation the sweep must **look
@@ -420,7 +420,7 @@ Unit (`backend/__tests__/unit/services/installable/`):
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
-   `error` with `'install lock expired'`. A stale `activating` row whose Integration is still
+   `error` with `'Setup was interrupted before it finished. Try again.'`. A stale `activating` row whose Integration is still
    inactive is swept to `error`; a stale `activating` row whose Integration is already active
    with a code is **completed to `active`**, the code unchanged, `mintConnectCode` not called
    — never demoted, so no redeemable code ever sits under an `error` parent.

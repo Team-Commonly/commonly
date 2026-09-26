@@ -1,0 +1,39 @@
+Connectors
+
+Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.
+
+Slack
+no pod · since just now
+Slack connection dropped.
+reconnect to resume
+Authorize in Slack
+Telegram
+no pod
+Not enabled on this instance.
+ask your operator
+Ask
+Discord · WhatsApp
+not yet
+Not yet. Tell us which channel you need and we build it next.
+Ask
+
+next step
+
+Slack connection dropped.
+
+Authorize in Slack
+What the channel sees
+
+Messages stay in the pod.
+
+Remove
+Tools
+1 granted
+All
+Granted
+Not yet
+GitHub
+kai routing check · granted 6d · every write asks first
+granted to Kai routing check
+localdev may use it
+Could not begin Slack authorization. Try again in a moment.

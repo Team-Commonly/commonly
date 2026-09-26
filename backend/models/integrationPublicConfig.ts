@@ -28,6 +28,9 @@ export const INTEGRATION_SECRET_CONFIG_KEYS = [
   'refreshToken',
   'webhookUrl',
   'botTokenRef',
+  // The pointer to the encrypted Discord webhook URL. Listed with the ref it
+  // parallels: a browser is given neither the secret nor its address.
+  'webhookUrlRef',
   'oauthStateNonce',
   'oauthStateClaimId',
 ] as const;

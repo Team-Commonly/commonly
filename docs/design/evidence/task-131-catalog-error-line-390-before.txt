@@ -1,0 +1,34 @@
+Connectors
+
+Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.
+
+Slack
+no pod · since 14m
+This connector's channel is gone. Retry to rebuild it.
+retry, or remove it
+Retry
+Telegram
+no pod · since 14m
+connect ECONNREFUSED 10.4.4.7:443
+retry, or remove it
+Retry
+Discord · WhatsApp
+not yet
+Not yet. Tell us which channel you need and we build it next.
+Ask
+
+next step
+
+This connector's channel is gone. Retry to rebuild it.
+
+Retry
+Remove
+Tools
+1 granted
+All
+Granted
+Not yet
+GitHub
+kai routing check · granted 6d · every write asks first
+granted to Kai routing check
+localdev may use it

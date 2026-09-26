@@ -17,7 +17,9 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const dailyDigestService = require('../services/dailyDigestService');
 // eslint-disable-next-line global-require
-const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');
+// eslint-disable-next-line global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const { createHash } = require('crypto');
 // eslint-disable-next-line global-require
@@ -49,7 +51,7 @@ const summariesRateLimitKey = (req: { get?: (h: string) => string | undefined; i
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 // Reads hit Mongo (and canViewPod adds per-pod lookups) — throttle so a

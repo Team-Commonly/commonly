@@ -24,6 +24,7 @@ const IntegrationModel = require('../models/Integration');
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
+const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { shouldEscalate } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -63,10 +64,10 @@ interface TelegramIntegrationDoc {
   };
 }
 
-const escapeHtml = (raw: string): string => String(raw)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;');
+// This escape moved into telegramService, beside the `parse_mode: 'HTML'` it
+// exists for, and is imported back: one Telegram escape for the whole backend
+// rather than a copy per module (wren 73790).
+const { escapeHtml } = telegramSend;
 
 export { shouldEscalate };
 
@@ -201,7 +202,9 @@ const replyNoActivePod = async (integration: TelegramIntegrationDoc): Promise<vo
   const chatId = integration.config?.chatId;
   if (!botToken || !chatId) return;
   try {
-    await telegramSend.sendMessage(botToken, chatId, NO_ACTIVE_POD_REPLY);
+    // Bound chat, so this is one of the four sends that may flip the connector.
+    const sent = await telegramSend.sendMessage(botToken, chatId, NO_ACTIVE_POD_REPLY);
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
   } catch (error) {
     console.warn('[tg-bridge] could not send no-active-pod reply:', (error as Error).message);
   }
@@ -284,7 +287,12 @@ export const relayAgentMessageToTelegram = async (opts: {
 
     const result = await telegramSend.sendMessage(botToken, chatId, text);
     const tgMessageId = result && result.messageId != null ? String(result.messageId) : null;
-    if (!tgMessageId) return;
+    if (!tgMessageId) {
+      // The silent half of row D: this used to return with no trace at all, so a
+      // blocked bot left the connector looking healthy while replies vanished.
+      await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, result);
+      return;
+    }
 
     await IntegrationModel.findByIdAndUpdate(integration._id, {
       $push: {
@@ -407,7 +415,10 @@ export const relayTelegramMessageToPod = async (opts: {
         process.env.TELEGRAM_BOT_TOKEN, integration.config?.chatId, cardReply.confirmation,
         { replyToMessageId: cardReply.externalMessageId, plainText: true },
       );
-      if (!sent?.success) console.warn('[tg-bridge] card confirmation was not sent');
+      if (!sent?.success) {
+        console.warn('[tg-bridge] card confirmation was not sent');
+        await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+      }
     } catch (error) {
       console.warn('[tg-bridge] card confirmation failed:', (error as Error).message);
     }

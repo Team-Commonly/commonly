@@ -47,13 +47,43 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 
 | row | code exists | known state |
 |---|---|---|
-| Telegram | yes | Connect flow stable per the Connectors lane; C1 needs a real Telegram user account for the check |
-| Slack | yes | Install flow (authorize URL) stable per the Connectors lane; C1 needs a dedicated Slack workspace for the check |
+| Telegram | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). C1 is green to the external boundary: the code is shown, and a real chat is what completes it. Inbound and sender identity (C5) were shown on a simulated chat on `0e142135`; with #1878 live a simulated chat fails at its first send, so C5 on the current build needs a real chat. A dead chat is a named failure on the row since #1878, shown on `5561a1dd` (C10 for that case) |
+| Slack | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). **Was red for everyone** in C1 from #1537 until #1875: every new install was refused at Authorize in Slack, and the "stable" note here was wrong. C1 is now green to the external boundary: Authorize reaches Slack's OAuth page, and the OAuth leg needs a Slack workspace. The page naming a refused authorize (#1890, Row C) shipped and has not been walked, since no refusal can be triggered without corrupting a row |
 | Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
-| GitHub (app) | yes | **red**: disabled on commonly.me until the GitHub App credentials are set (TASK-033 hold). The Tools page (#1669) has never been walked with an admin GitHub App connection. The header reads `1 agents` |
+| GitHub (app) | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). Live on our own repository since 09-18. **red** in C1 until per-person GitHub: a team cannot connect its own repository. C2 at 390 is green since #1874, shown on `5561a1dd`. C3 (a hosted agent gets the broker, #1880) shipped and has not been walked. C8 was green on `9a32fca5`. C3, C4 and C8 on the current build wait on a new grant; the only grant lapsed 2026-09-25 11:32Z |
 | next app | no | Sam's decision; see below |
+
+## Walk of 2026-09-25
+
+Stranger account `eng-smoke-09255bfe` (role user), builds `9a32fca5`, `0e142135` and `f536fa11`. Evidence: `docs/design/evidence/slack-authorize-409/` and the rows filed in the Connectors lane.
+
+**GitHub.** One connection (the instance admin's, on `Team-Commonly/commonly`) and one room grant, which expired 2026-09-25 11:32Z. Only the connection's owner can grant, so since it lapsed no agent on commonly.me can use GitHub until the owner grants again.
+
+| cell | result |
+|---|---|
+| C0 | green. The catalogue lists `github` as available with its tools; the Tools row renders at 1200 and 390 with no horizontal overflow |
+| C1 | red by design until per-person GitHub. Creating the connection is admin-only, yet the catalogue says available and each tool's description names "the Commonly repository", which a stranger reads as usable |
+| C2 | red at 390. The row's only reason ("install the GitHub App first") is hidden below 760 px, since the row is not classed not-enabled (`v2.css`), so a phone shows "not granted" with no reason and no action |
+| C3 | red by construction. No hosted runtime receives the grant broker; only the daemon's assignment route projects it |
+| C4 | not verified on the shipped build, and now unverifiable until someone grants again. The host ran cli 0.1.64 against a published 0.1.74 until this walk (upgraded to 0.1.74 at 08:01Z). The C4 pod is invite-only, and no member asked the seat before the grant lapsed |
+| C8 | green. An agent outside the grant's audience called it and got `not_in_audience`, recorded as a refused row in `tool_calls` |
+| C9 | expiry green; revoke and rotation not walked. The same out-of-audience call made at 11:33:39Z, after the grant's 11:32:51Z expiry, got `grant_expired` with no one acting, recorded as a refused row. Expiry is checked before audience, so this shows the expiry itself |
+
+**Slack.** Add, then Connect, installs the connector, and the row offers Authorize in Slack. Pressing it returned `409 slack_already_authorized` for every new install: `config.pendingBind` is a nested schema path, so a hydrated document carries it as `{}` and the route read it by truthiness. The route tests mocked the model with plain objects, where an absent key is absent, so they could not see it. #1875 judges a bind by the secret reference the callback always writes and tests the routes through a hydrated document. Re-walked on `f536fa11` at 1200 and 390: Authorize now opens `slack.com/oauth/v2/authorize` with a client id, our callback, a state and the DM scopes, and a forged callback is refused with `invalid_state`. Before the fix, after the 409 the page names nothing at either width (C10 red, Row C).
+
+**Telegram.** The bot's webhook points at the API, with nothing pending and no recorded error. Add, then Connect, shows `/commonly-enable` with a code that expires in 10 minutes. A simulated private chat, posted inside the cluster so the webhook secret never left it, bound with the code; a message from it landed in the pod as the linked user, and Scout answered in 6 seconds. The bot's confirmation and Scout's relayed reply both failed with `400 chat not found`, which the sender logs and returns and nothing reads: the connector stayed connected with no error (C5 and C10 red, Row D). A real user who blocks the bot gets the same silence. The simulated connector was removed afterwards.
+
+## Re-walk of 2026-09-26 on `5561a1dd`
+
+Fresh stranger account `eng-smoke-20ba7c6d`, created 2026-09-25 through the ordinary signup, with no prior connectors. The backend pod on `5561a1dd` started 2026-09-26 12:40:39Z; the page walk ran 12:43:51Z to 12:44:16Z and the Telegram simulation right after it, all on that one pod. "Green to the external boundary" means every step on our side passed and the remaining step happens in the other service. It is not green, and it must keep a distinct mark when it is transcribed into the table above. At 1200 and 390, the Connectors page shows no horizontal overflow and no failed API call.
+
+| row | result on this build |
+|---|---|
+| Slack | C0 green. C1 green up to the external boundary: Add, then Connect, installs; Authorize in Slack opens `slack.com/oauth/v2/authorize` with a client id, our callback, a state and the DM scopes. The OAuth leg waits on Sam's workspace |
+| Telegram | C0 green. C1 green up to the code: Connect shows `/commonly-enable` with a 10-minute code. A simulated private chat binds with the code, and its dead-chat confirmation turns the connector into a named failure ("Telegram stopped delivering: this chat no longer exists."), shown on the row with New code (C10 for this case). With #1878 live, a simulated chat now fails at its first send, so inbound and sender identity (C5) were last shown on `0e142135`, before that fix. Re-showing them needs a real chat |
+| GitHub | C0 green. C2 green at 390: the row shows its reason, and its copy names the instance's own repository. C3, C4 and C8 wait on a new grant; the only grant lapsed 2026-09-25 11:32Z |
 
 ## Cross-cutting reds
 
@@ -90,7 +120,11 @@ Recommendation: verify GroupMe and X inside the freeze, since they are existing 
 
 ## Decisions for Sam
 
-1. Release the GitHub App credentials on commonly.me, installed on our own repository only, and widen once the GitHub row is green.
-2. Provide a dedicated Slack workspace and a Telegram account on a spare number, for the automated C1 checks.
-3. Choose the next app.
-4. Read the #1826 renders, which unblock the Discord page row.
+1. Release the GitHub App credentials on commonly.me, installed on our own repository only, and widen once the GitHub row is green. **Done:** live on our repository since 09-18. The only room grant lapsed 2026-09-25 11:32Z, and a new grant from the connection's owner is what C3 and C4 now wait on.
+2. Provide a dedicated Slack workspace and a Telegram account on a spare number, for the automated C1 checks. **Ruled 2026-09-26:** the test accounts are set up by Sam in his own browser. Agents do not create accounts or enter credentials, so C1 with a real account waits on those sign-ins.
+3. Choose the next app. **Ruled 2026-09-26:** Linear, one build only, and only after Slack, GitHub and Telegram are green. No Linear code exists on main, so Wren scopes it first.
+4. Read the #1826 renders, which unblock the Discord page row. Open.
+
+**Goal scope, ruled 2026-09-26:** drive Slack, GitHub and Telegram to green across C0–C10 first. GroupMe and Discord come after them; X and Instagram are deprioritised.
+
+The three 2026-09-26 rulings were given in the Connectors session and recorded here from its relay.

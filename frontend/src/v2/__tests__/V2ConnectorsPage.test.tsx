@@ -82,6 +82,11 @@ const renderPage = () => render(
   </AuthContext.Provider>,
 );
 
+// The reconciler's own constant — the reason a person reads when the channel
+// record behind a connector is gone. It replaced the old 'projection missing'
+// wording in the TASK-131 copy pass (wren 73914, vera 73915).
+const REASON_CHANNEL_GONE = "This connector's channel is gone. Retry to rebuild it.";
+
 describe('V2ConnectorsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -144,6 +149,48 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
+  });
+
+  // TASK-156. A linked Slack stores its workspace in `teamName`
+  // (slackOAuthService) and never in `chatTitle`, so the row read "Slack ·
+  // linked to Ops" beside the word Slack. The workspace name belongs on the
+  // detail line, not in the name slot — the name stays the platform.
+  describe('the row names the Slack workspace (TASK-156)', () => {
+    const slackRow = (config, podId = { _id: 'p2', name: 'Ops' }) => ({
+      _id: 'i-slack',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'connected',
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      updatedAt: new Date().toISOString(),
+      config,
+      podId,
+    });
+
+    it('reads the teamName when the link carries no chatTitle', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Slack · linked to Ops')).toBeNull();
+      const row = screen.getByText('Acme · linked to Ops').closest('.v2-connector-row');
+      expect(row?.querySelector('.v2-connector-row__name')?.textContent).toContain('Slack');
+    });
+
+    it('reads the teamName on the not-linked variant too', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false }, null)]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · not linked to a pod')).toBeInTheDocument();
+    });
+
+    it('keeps chatTitle winning when the link carries both', async () => {
+      mockGets([slackRow({ chatTitle: 'Rewire crew', teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Rewire crew · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Acme · linked to Ops')).toBeNull();
+    });
   });
 
   it('offers a new code from the row and aside when the Telegram code has expired', async () => {
@@ -356,7 +403,7 @@ describe('V2ConnectorsPage', () => {
     expect(slackWindow.opener).toBeNull();
   });
 
-  it('keeps a Slack authorization failure generic in the selected aside', async () => {
+  it('keeps an un-coded Slack authorization failure generic — the fallback, row and aside (Row C control)', async () => {
     mockGets([{
       _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
       config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
@@ -370,7 +417,70 @@ describe('V2ConnectorsPage', () => {
       {},
       expect.objectContaining({ withCredentials: true }),
     ));
-    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+    // A refusal with no body still gets the generic sentence — the fallback the
+    // named codes must not have replaced.
+    const shown = await screen.findAllByText('Could not begin Slack authorization. Try again in a moment.');
+    expect(shown.length).toBeGreaterThan(0);
+  });
+
+  it('names a refused Slack authorize on the row that asked, not only at the page foot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_already_authorized', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(row).not.toBeNull();
+    // The code's own copy, not the server sentence the same body also carries.
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    expect(within(row).queryByText(/Upstream wording/)).toBeNull();
+    // ...and beside the button in the selected row's aside.
+    const aside = document.querySelector('.v2-connectors__aside') as HTMLElement;
+    expect(within(aside).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    // Placement is the defect (Row C): the page-level slot used to be the only one.
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
+  });
+
+  it('uses the server sentence when the refusal code is not one the page knows (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 503, data: { code: 'slack_upstream_unavailable', error: 'Slack refused the handshake.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    await waitFor(() => expect(within(row).getByRole('alert')).toHaveTextContent('Slack refused the handshake.'));
+  });
+
+  it('names a failed Slack confirm on the row, not in the page slot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_bind_expired', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm connection' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/installables/slack/confirm', {}, expect.anything()));
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack authorization expired. Start again.');
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
   });
 
   it('moves Slack confirmation and rejection to the selected aside', async () => {
@@ -449,6 +559,43 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByRole('button', { name: /Really remove/ })).toBeInTheDocument();
   });
 
+  it('names the reason a connector needs attention when the server sent one', async () => {
+    // The row's line is the only place a person sees why relaying stopped. A
+    // classified permanent failure writes `errorMessage`; the generic sentence
+    // is the fallback for everything else, not a replacement for it.
+    const reason = 'Telegram stopped delivering: the bot was blocked or removed from this chat.';
+    mockGets([{
+      _id: 'i-tg-error', installationId: 'install-tg-u1', type: 'telegram', status: 'error', errorMessage: reason,
+      // The flag is what makes the message readable to a person: it is set by
+      // connectorDeliveryFailureService, the writer that owns the pair.
+      errorMessageUserFacing: true,
+      config: { chatTitle: 'Ops chat', liveRelay: true },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+    expect(screen.queryByText('The connection dropped.')).toBeNull();
+  });
+
+  it('does not print a provider error text in a connector row, only a message written for a person (vera 73848)', async () => {
+    // `Integration.errorMessage` has an older writer: externalFeedService copies
+    // a provider's response, or a raw exception message, into it for the `x` and
+    // `instagram` rows. Those rows reach this same error branch, so a value in
+    // the field is not permission to render it — `errorMessageUserFacing` is,
+    // and it is absent here. The row still shows the generic sentence.
+    const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+    mockGets([{
+      _id: 'i-x-error', installationId: 'install-x-u1', type: 'x', status: 'error', errorMessage: raw,
+      config: { chatTitle: 'Feed' },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText('The connection dropped.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText(raw)).toBeNull();
+  });
+
   it('derives the installable lifecycle target from the connector row type', () => {
     expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
@@ -492,6 +639,35 @@ describe('V2ConnectorsPage', () => {
         return Promise.resolve({ data: [] });
       });
     };
+
+    it('TASK-131: a catalog failure prints the generic sentence, not the raw exception that wrote the row', async () => {
+      // The catalogue half reads `InstallableInstallation.errorMessage`, whose
+      // projection-failure writer stores `error.message` verbatim. Same rule as
+      // the pod-scoped half: a value in the field is not permission to render
+      // it, and the flag is absent on this fixture.
+      const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: raw } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText('Setup didn’t finish.')).length).toBeGreaterThan(0);
+      expect(screen.queryByText(raw)).toBeNull();
+    });
+
+    it('TASK-131: a catalog message written for a person still renders verbatim', async () => {
+      // The reconciler's own reasons are written for the person reading this row,
+      // and the flag the builder sets beside them is what keeps them readable once
+      // the generic sentence became the fallback.
+      const reason = REASON_CHANNEL_GONE;
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: reason, errorMessageUserFacing: true } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+      expect(screen.queryByText('Setup didn’t finish.')).toBeNull();
+    });
 
     // Tools plan (Sam's option A, two lists): a tool Installable shares the
     // catalogue response but belongs to the Tools page, never to this one.
@@ -643,13 +819,23 @@ describe('V2ConnectorsPage', () => {
 
     it('offers Retry on an error parent, posting the bound pod, and Remove in the aside', async () => {
       mockCatalog([entry({
-        installation: { status: 'error', errorMessage: 'projection missing', boundPodId: 'p2', updatedAt: new Date().toISOString(), components: [] },
+        // The reconciler's own reason, and since TASK-131 it travels with the flag
+        // that says so: the row's line renders a message only when a writer
+        // declared it was written for a person.
+        installation: {
+          status: 'error',
+          errorMessage: REASON_CHANNEL_GONE,
+          errorMessageUserFacing: true,
+          boundPodId: 'p2',
+          updatedAt: new Date().toISOString(),
+          components: [],
+        },
       })]);
       axios.post.mockResolvedValue({ data: { status: 'installing' } });
       axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
       renderPage();
 
-      expect((await screen.findAllByText('projection missing')).length).toBeGreaterThan(0);
+      expect((await screen.findAllByText(REASON_CHANNEL_GONE)).length).toBeGreaterThan(0);
       expect(screen.getByText('retry, or remove it')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
       await waitFor(() => expect(axios.post).toHaveBeenCalledWith(

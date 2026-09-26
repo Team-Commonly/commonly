@@ -3,6 +3,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
+const { resolveDiscordBotToken } = require('../utils/discordBotToken');
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const adminAuth = require('../middleware/adminAuth');
@@ -12,6 +14,10 @@ const Integration = require('../models/Integration');
 const DiscordIntegration = require('../models/DiscordIntegration');
 // eslint-disable-next-line global-require
 const DiscordService = require('../services/discordService');
+// eslint-disable-next-line global-require
+const connectorSecrets = require('../services/connectorSecrets');
+// eslint-disable-next-line global-require
+const { DISCORD_WEBHOOK_URL } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
@@ -43,35 +49,13 @@ import {
   listIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
 
-// Bridge attribution + binding fields are server-owned. linkedUserId is the
-// identity every inbound live-relay message is AUTHORED as; chatId/chatType
-// are written only by the /commonly-enable webhook (the code is the proof);
-// connectCode is minted here. Accepting any of them from a client body lets a
-// caller name someone else as the author or bind a chat without a code.
-const SERVER_OWNED_CONFIG_KEYS = [
-  'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
-  // GitHub App connection identity is administrator-owned. A member may not
-  // retarget an existing row that a grant already references.
-  'installationId', 'owner', 'repo',
-  // OAuth callback and connectorSecrets own Slack identity and its opaque
-  // credential reference. Accepting either from a browser body defeats D6.
-  'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
-  // An administrator's pause is projected from the parent installation. An
-  // owner's normal config write must never lift that stop.
-  'adminPause',
-  // A receipt proves this channel was shown the card. Owners may configure
-  // gates, but cannot invent, retarget, or close receipts from a browser.
-  'cards',
-  // Routing state is written by the bridges, never by a browser: relayMap is
-  // the reply window, messageBuffer the recent-lines digest a bridge reads to
-  // answer context, and webhookListenerEnabled a runtime switch the Discord
-  // gateway reads. A body that sets any of the three names a destination or
-  // starts a listener the caller was never granted.
-  'relayMap', 'messageBuffer', 'webhookListenerEnabled',
-];
+// The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
+// and this strip read the same one (TASK-140).
+// eslint-disable-next-line global-require
+const { SERVER_OWNED_CONFIG_KEYS } = require('../utils/serverOwnedConfigKeys');
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
-  SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  SERVER_OWNED_CONFIG_KEYS.forEach((k: string) => { delete next[k]; });
   return next;
 };
 
@@ -140,7 +124,8 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = {}) => {
   if (type !== 'discord') return config;
-  return { ...config, botToken: config.botToken || process.env.DISCORD_BOT_TOKEN };
+  // env-first for every read, including this validation one (TASK-124).
+  return { ...config, botToken: resolveDiscordBotToken(config.botToken) };
 };
 
 const getMissingRequiredFields = (type: string, config: unknown): string[] => {
@@ -432,7 +417,20 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord') {
       const webhookResponse = await axios.post(`https://discord.com/api/channels/${config.channelId}/webhooks`, { name: 'Commonly Bot', avatar: null }, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' } });
       const webhook = webhookResponse.data as { id: string; token: string };
-      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookUrl: `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`, webhookId: webhook.id, botToken: process.env.DISCORD_BOT_TOKEN, permissions: config.permissions || ['read_messages', 'send_messages'] });
+      // The webhook URL is a bearer credential (it embeds the token), so it goes
+      // into the connector-secret envelope and the row keeps only the ref — the
+      // shape the Slack bind already uses for its bot token. `webhookId` is not a
+      // secret and stays on the platform document. No botToken copy either: that
+      // token is instance-wide and read from the environment on every use, and
+      // storing it is what made a rotation miss integrations that already existed
+      // (TASK-124).
+      const webhookUrlRef = await connectorSecrets.put(
+        String(integration._id),
+        DISCORD_WEBHOOK_URL,
+        `https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`,
+      );
+      await Integration.findByIdAndUpdate(integration._id, { $set: { 'config.webhookUrlRef': webhookUrlRef } });
+      platformIntegration = new DiscordIntegration({ integrationId: integration._id, serverId: config.serverId, serverName: config.serverName, channelId: config.channelId, channelName: config.channelName, webhookId: webhook.id, permissions: config.permissions || ['read_messages', 'send_messages'] });
       await platformIntegration.save();
     } else if (['slack', 'groupme', 'telegram', 'messenger', 'whatsapp', 'x', 'instagram'].includes(type)) {
       integration.status = isManifestComplete(type, nextConfig) ? 'connected' : 'pending';

@@ -73,6 +73,9 @@ export interface IIntegration extends Document {
     channelName?: string;
     channelUrl?: string;
     webhookUrl?: string;
+    // The pointer to the encrypted copy, written by the Discord writers. `webhookUrl`
+    // beside it is the legacy plaintext the migration unsets.
+    webhookUrlRef?: string;
     botToken?: string;
     signingSecret?: string;
     secretToken?: string;
@@ -163,6 +166,14 @@ export interface IIntegration extends Document {
   lastSync?: Date | null;
   createdBy: Types.ObjectId;
   errorMessage?: string | null;
+  /**
+   * True when `errorMessage` was written by Commonly for the person reading the
+   * Connectors page, rather than copied out of a provider response. The page
+   * renders the message only when this is set, so the two writers of this field
+   * — our own classifier, and externalFeedService copying a provider's error
+   * text or a raw `err.message` — cannot be told apart by the reader's eye alone.
+   */
+  errorMessageUserFacing?: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -208,6 +219,12 @@ const IntegrationSchema = new Schema<IIntegration>(
       channelName: String,
       channelUrl: String,
       webhookUrl: String,
+      // The pointer to the encrypted webhook URL (the connector-secret envelope).
+      // Declared, not forgotten: `config` is a STRICT subdocument, so a `$set` of
+      // an undeclared path here is dropped in silence — the row would keep no ref
+      // at all and every reader would fall through to a plaintext field that the
+      // migration had already unset (TASK-124 part 2).
+      webhookUrlRef: String,
       botToken: String,
       signingSecret: String,
       secretToken: String,
@@ -328,6 +345,9 @@ const IntegrationSchema = new Schema<IIntegration>(
     lastSync: { type: Date, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     errorMessage: { type: String, default: null },
+    // Set by connectorDeliveryFailureService, the only writer that puts text on
+    // the Connectors page for a person to read (see the model interface).
+    errorMessageUserFacing: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true, collection: 'integrations' },

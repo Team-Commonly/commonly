@@ -4,7 +4,8 @@
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query can
 // trace the middleware; it cannot follow a limiter through a require() return
 // or a router.use wrapper. Same shape as routes/messages.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 
 interface TokenRateReq { get?: (name: string) => string | undefined; ip?: string }
@@ -23,7 +24,7 @@ const tokenRouteLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: TokenRateRes) => {
     res.status(429).json({ error: 'rate limit exceeded: 60 token requests per 60s' });

@@ -78,7 +78,12 @@ describe('installable Slack webhook signature and acknowledgement', () => {
   });
 
   test('authenticates and answers a legacy URL verification challenge before deduplication', async () => {
-    const legacyIntegration = { _id: 'integration-1', type: 'slack', config: { signingSecret } };
+    // `isActive` is load-bearing on this route since TASK-141: an inactive row
+    // answers 404 like an unknown id, so a fixture without it described a state
+    // the route now refuses.
+    const legacyIntegration = {
+      _id: 'integration-1', type: 'slack', isActive: true, config: { signingSecret },
+    };
     Integration.findById.mockResolvedValue(legacyIntegration);
     const body = { type: 'url_verification', challenge: 'challenge-1' };
     const response = await request(app)

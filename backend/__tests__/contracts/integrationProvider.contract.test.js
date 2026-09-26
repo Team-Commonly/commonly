@@ -71,9 +71,10 @@ const minimalConfigByType = {
     botToken: 'token-1',
   },
   slack: {
-    botToken: 'xoxb-token',
-    signingSecret: 'secret',
-    channelId: 'C123',
+    // The predicate names what the bind writes: the DM it opened and the opaque
+    // credential ref (TASK-140). The token itself is instance-wide.
+    botTokenRef: 'secret-ref-fixture',
+    chatId: 'D123',
   },
   groupme: {
     botId: 'bot-1',

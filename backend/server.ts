@@ -6,7 +6,6 @@ const _path = require('path');
 const dotenv = require('dotenv');
 const http = require('http');
 const socketIo = require('socket.io');
-const jwt = require('jsonwebtoken');
 const connectDB = require('./config/db');
 const { connectPG } = require('./config/db-pg');
 const initializePGDB = require('./config/init-pg-db');
@@ -17,6 +16,7 @@ const podRoutes = require('./routes/pods');
 const podInvitesRoutes = require('./routes/podInvites');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
+const { socketAuthMiddleware } = require('./middleware/socketAuth');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
@@ -476,31 +476,11 @@ if (process.env.PG_HOST) {
 // It is a no-op when SENTRY_DSN was absent during process startup.
 attachSentryErrorHandler(app);
 
-// Socket.io middleware for authentication
+// Socket.io middleware for authentication. The row read lives in
+// middleware/socketAuth.ts so it is the same one the HTTP middleware and the
+// uploads bearer perform, and so it can be witnessed (TASK-133).
 io.use((socket: any, next: any) => {
-  const { token } = socket.handshake.auth;
-  if (!token) {
-    console.error('Socket auth error: Token not provided');
-    return next(new Error('Authentication error: Token not provided'));
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Handle both token formats: { id: user._id } or { user: { id: user._id } }
-    const userId = decoded.id || (decoded.user && decoded.user.id);
-
-    if (!userId) {
-      console.error('Socket auth error: Invalid token structure');
-      return next(new Error('Authentication error: Invalid token structure'));
-    }
-
-    socket.userId = userId;
-    return next();
-  } catch (err: any) {
-    console.error('Socket auth error:', err.message);
-    return next(new Error('Authentication error: Invalid token'));
-  }
+  void socketAuthMiddleware(socket, next);
 });
 
 const emitPresence = async (podId: any) => {

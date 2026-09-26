@@ -56,7 +56,15 @@ const publicInstallation = (installation: any): unknown => {
   })) : [];
   return {
     status: installation.status,
-    ...(installation.errorMessage ? { errorMessage: installation.errorMessage } : {}),
+    // The message travels with its provenance. The page prints it only when this
+    // is true, so a raw exception from `markProjectionFailure` reaches the
+    // client and is deliberately not rendered (TASK-131).
+    ...(installation.errorMessage
+      ? {
+        errorMessage: installation.errorMessage,
+        errorMessageUserFacing: installation.errorMessageUserFacing === true,
+      }
+      : {}),
     ...(installation.boundPodId ? { boundPodId: String(installation.boundPodId) } : {}),
     ...(installation.claimedAt ? { claimedAt: installation.claimedAt } : {}),
     ...(installation.updatedAt ? { updatedAt: installation.updatedAt } : {}),

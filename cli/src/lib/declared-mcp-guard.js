@@ -76,6 +76,37 @@ export const isShippedCommonlyMcpEntry = (server) => {
 // True when a string still contains `${` after the known placeholders are
 // removed — a `${VAR}`, `${VAR:-default}` or any other expansion the CLI
 // would resolve from an environment this declaration does not own.
+// A field the guard cannot READ is not a field it can judge. `env` and
+// `headers` are spread by every reader (`{ ...server.env }`), so a STRING there
+// becomes single-character keys and the declaration is silently dropped rather
+// than honoured — the next consumer that parses the string instead would honour
+// it, and this guard would have admitted the entry on the strength of its other
+// fields (TASK-069: judge the whole entry, not selected fields). `args` is read
+// only through `Array.isArray`, and `cwd` through `typeof === 'string'` in
+// `executionShape`, so a value of the wrong type there is dropped the same way —
+// and for `cwd` that drop is load-bearing: the normalised shape then equals an
+// installed entry that declares NO cwd, so the entry is admitted as one the
+// operator already installed (Vera, hold on #1915).
+// Fail closed: an unreadable shape is a refusal, never an absence.
+const unreadableField = (server) => {
+  for (const key of ['env', 'headers']) {
+    const value = server[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      return `${key} is of type ${typeof value}, not an object`;
+    }
+    const badValue = Object.entries(value).find(([, v]) => typeof v !== 'string');
+    if (badValue) return `${key}.${badValue[0]} is not a string`;
+  }
+  if (server.cwd !== undefined && server.cwd !== null && typeof server.cwd !== 'string') {
+    return `cwd is of type ${typeof server.cwd}, not a string`;
+  }
+  if (server.args === undefined || server.args === null) return null;
+  if (!Array.isArray(server.args)) return `args is of type ${typeof server.args}, not an array`;
+  if (server.args.some((a) => typeof a !== 'string')) return 'args carries a non-string';
+  return null;
+};
+
 const hasForeignExpansion = (value) => {
   if (typeof value !== 'string') return false;
   let rest = value;
@@ -127,6 +158,11 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioEntries
     }
     const name = typeof server.name === 'string' && server.name ? server.name : `mcp[${index}]`;
     const transport = server.transport || 'stdio';
+    const unreadable = unreadableField(server);
+    if (unreadable) {
+      refusals.push(`'${name}': declares ${unreadable}, so this guard cannot judge what the entry would run; refusing it rather than reading the field as absent`);
+      return;
+    }
     // One shape per entry. The adapters classified by which field was present,
     // so `{transport:'http', url:<instance>, command:['sh','-c',…]}` passed an
     // origin check here and ran as stdio there with the token substituted

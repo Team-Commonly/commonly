@@ -254,6 +254,29 @@ describe('Auth Middleware Tests', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  // TASK-133 (d): an agent row is a User, is not banned, and used to be accepted
+  // by every session verifier — a password login minted the token (see
+  // authController's login), and this middleware only ever asked about `banned`.
+  it('returns 403 when the account is an agent (a bot row cannot hold a session)', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const token = generateTestToken(userId);
+    User.findById.mockReturnValueOnce({
+      select: () => ({ lean: async () => ({ banned: false, isBot: true }) }),
+    });
+    const req = { header: jest.fn((h) => (h === 'Authorization' ? `Bearer ${token}` : null)) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      msg: 'Agent accounts authenticate with their runtime token, not a browser session.',
+    });
+    expect(next).not.toHaveBeenCalled();
+    expect(req.userId).toBeUndefined();
+  });
+
   it('returns 401 when the account no longer exists (deleted user, live JWT)', async () => {
     const userId = new mongoose.Types.ObjectId();
     const token = generateTestToken(userId);
