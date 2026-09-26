@@ -9801,7 +9801,13 @@ body.modern-ui.v2-canvas {
    the word lives in title + aria-label. 44px under 760 for the thumb. */
 .v2-root button.v2-connector-row__action--icon { display: inline-grid; place-items: center; width: 32px; min-height: 32px; padding: 0; }
 .v2-root button.v2-connector-row__action--icon svg { width: 16px; height: 16px; }
-.v2-root button.v2-connector-aside__icon { display: inline-grid; place-items: center; width: 32px; min-height: 32px; padding: 0; }
+/* TASK-140: the Revoke ✕ is a SQUARE. It carries `--secondary` too, whose
+   `min-height: 36px` (below) applies at lower specificity, and min-height beats
+   height — so setting `height: 32px` alone measured 32×36 (ux-lead's gate on
+   #1799, computed style). The composed selector must therefore override the
+   MINIMUM, not just the height. Keep both: the height is the intent, the
+   min-height is what actually releases the 36px clamp. */
+.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 0; }
 .v2-root button.v2-connector-aside__icon svg { width: 16px; height: 16px; }
 
 .v2-connectors__add { margin-top: 24px; }
@@ -9961,7 +9967,7 @@ body.modern-ui.v2-canvas {
   /* The gear sits over the selection button's top-right; keep the kicker out from under it. */
   .v2-connector-row:has(.v2-connector-row__action--icon) .v2-root button.v2-connector-row__selection,
   .v2-root .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 52px; }
-  .v2-root button.v2-connector-aside__icon { width: 44px; min-height: 44px; }
+  .v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { width: 44px; height: 44px; min-height: 44px; }
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }
