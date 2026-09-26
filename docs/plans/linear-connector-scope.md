@@ -61,7 +61,7 @@ The grant, the broker's call order, the park predicate, approval, budget lineage
    - The top-level `installationId` is how a grant finds its row. The catalogue offers it as the `connectionId` (`installableCatalogService.ts:79`), and the mint and the broker look the row up by it (`routes/grants.ts:262`, `toolBrokerService.ts:449`). Its unique index (`Integration.ts:359`) holds §2's one-owner rule.
    - `config.installationId` is the one the broker requires and hands to the provider (`toolBrokerService.ts:468`, `:476`).
 
-   The mint copies the top-level value into the grant (`routes/grants.ts:309`). No other path writes either slot on a connection row, and `config.installationId` is server-owned (`utils/serverOwnedConfigKeys.ts:28`), so the two cannot diverge. Linear's ids are UUIDs, and every other occupant of the slot is an integer, like GitHub's, or the Mongo id of a channel row installed through the catalogue (`installableCatalogService.ts:149`), so a Linear id never collides with one in the index. A provider-neutral rename was considered and refused: it migrates the grant, the trail's column and the page's field list to rename fields whose meaning, which installation of our app this is, already fits.
+   The mint copies the top-level value into the grant (`routes/grants.ts:309`). The callback writes both slots in one save, from the one value Linear returned. No other code writes either slot on a connection row. The catalogue's projector writes the top-level slot too, but only on the Telegram and Slack channel rows it creates, where it holds the installation's Mongo id (`projectors/webhookProjector.ts:47`). Server-ownership (`utils/serverOwnedConfigKeys.ts:28`) keeps a request body out of `config.installationId`, and the update route takes no top-level `installationId` (`routes/integrations.ts:606`), so no request rewrites either slot later. Neither rule keeps the two copies equal, so test 3 asserts that the callback writes them together. Linear's ids are UUIDs, and every other occupant of the top-level slot is an integer, like GitHub's, or one of those Mongo ids, so a Linear id never collides with one in the index. A provider-neutral rename was considered and refused: it migrates the grant, the trail's column and the page's field list to rename fields whose meaning, which installation of our app this is, already fits.
 3. **The mint.** `routes/grants.ts:310` accepts `type` in `{github-app, linear-app}` and nothing else; its `installationId` copy then works unchanged (item 2). §10.0's boundary test lands with this change: `a channel connector row cannot be granted`, using a `telegram` row.
 4. **The catalogue.** `services/installable/toolInstallables.ts` registers one entry, `github`, in `TOOL_INSTALLABLES` and filters its tool names by `'github-app'` (`:58–69`). Linear adds a `linear` entry, ready when the OAuth client's env is set, and a builder that `scripts/seed-builtin-tools.ts` seeds beside GitHub's. `installableCatalogService` already reads the registry entry by entry, so the catalogue, the mint and the broker still read one list. The catalogue describes each connection by `owner`/`repo` (`publicConnection`, `installableCatalogService.ts:78`), the card's evidence of what a grant acts on. A Linear row has neither, so its card shows the workspace name, which the callback reads with the id and stores beside it.
 
@@ -101,19 +101,20 @@ Named tests, which the PRs list by name:
 
 1. `the mint accepts a linear-app row and refuses a channel row`
 2. `a second member connecting a connected Linear workspace is refused and nothing is stored`, including when the two callbacks race
-3. `two concurrent refreshes rotate once`: the loser neither marks the row nor revokes anything
-4. `OAuthApp revoked disconnects the row, and the next call on its grant is refused`
-5. `removing a linear-app row revokes its grants, then its token at Linear, then its material`
-6. `a RATELIMITED 400 is recorded as provider_rate_limited`
-7. `createAsUser is the calling agent, whatever the arguments say`
-8. `an approved call is refused when the row names another workspace`, the Linear twin of `repo_mismatch` in `toolBrokerApprovalService.test.js`
-9. `a grant's tool list names only the tools it allows`
-10. `ask_decision refuses a card from another asker or from a pod the grant does not cover`
-11. `a webhook with a bad signature, a stale timestamp or a replayed delivery writes nothing`, with a positive control: a delivery signed over its exact bytes is accepted
-12. `a reply from an unlinked Linear user rules nothing`
-13. `never returns the credential` over a `linear-app` connection, and `no integration response carries a credential` with both refs set
-14. `a card ruled in Commonly gets its closing line as a reply to its Linear comment`
-15. `after a revoke, a reply to an earlier card rules nothing and nothing is written to Linear`
+3. `a Linear connect writes Linear's organization id to both installationId slots`, whatever the request carries
+4. `two concurrent refreshes rotate once`: the loser neither marks the row nor revokes anything
+5. `OAuthApp revoked disconnects the row, and the next call on its grant is refused`
+6. `removing a linear-app row revokes its grants, then its token at Linear, then its material`
+7. `a RATELIMITED 400 is recorded as provider_rate_limited`
+8. `createAsUser is the calling agent, whatever the arguments say`
+9. `an approved call is refused when the row names another workspace`, the Linear twin of `repo_mismatch` in `toolBrokerApprovalService.test.js`
+10. `a grant's tool list names only the tools it allows`
+11. `ask_decision refuses a card from another asker or from a pod the grant does not cover`
+12. `a webhook with a bad signature, a stale timestamp or a replayed delivery writes nothing`, with a positive control: a delivery signed over its exact bytes is accepted
+13. `a reply from an unlinked Linear user rules nothing`
+14. `never returns the credential` over a `linear-app` connection, and `no integration response carries a credential` with both refs set
+15. `a card ruled in Commonly gets its closing line as a reply to its Linear comment`
+16. `after a revoke, a reply to an earlier card rules nothing and nothing is written to Linear`
 
 ## 7. What Sam provides, and what is open
 
