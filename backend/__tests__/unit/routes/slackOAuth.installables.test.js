@@ -185,7 +185,13 @@ describe('Slack installable OAuth routes', () => {
     expect(response.status).toBe(302);
     expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=pending`);
     expect(slackOAuth.exchangeCode).toHaveBeenCalledWith('slack-code');
-    expect(connectorSecrets.put).toHaveBeenCalledWith('integration-1', 'slack', 'xoxb-never-store-on-integration');
+    // The kind spec, not a bare provider string: it is the one definition of what
+    // this secret is and where its ref lives (TASK-124 part 2).
+    expect(connectorSecrets.put).toHaveBeenCalledWith(
+      'integration-1',
+      expect.objectContaining({ kind: 'slack-bot-token', provider: 'slack' }),
+      'xoxb-never-store-on-integration',
+    );
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
     expect(commit.$set['config.pendingBind']).toMatchObject({ teamId: 'T1', chatId: 'D1', botTokenRef: 'secret-ref' });
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');

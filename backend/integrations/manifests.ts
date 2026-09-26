@@ -6,6 +6,22 @@ export interface ProviderReadiness {
 
 interface IntegrationManifest {
   id: string;
+  /**
+   * The COMPLETENESS PREDICATE: every key a row must hold for
+   * `isManifestComplete` to call it configured (`routes/integrations.ts`), which
+   * is what sets a row's `status`. It names server-owned keys **by design** —
+   * a bind writes `botTokenRef`/`chatId`, the environment supplies `botToken` —
+   * because completeness is a fact about the row, not about who may send it.
+   *
+   * Do NOT "clean" this list down to the caller-supplied subset: an empty list
+   * reads as complete (`getMissingRequiredFields` returns `[]`), so a connector
+   * whose binding is written by a flow would be created `connected` before it is
+   * bound (wren, 74255).
+   *
+   * The catalog publishes this list MINUS `SERVER_OWNED_CONFIG_KEYS`
+   * (`catalog.ts`), so the published contract names only what a caller supplies
+   * while the predicate keeps naming what the row needs (TASK-140).
+   */
   requiredConfig: string[];
   configSchema: unknown;
   /** Runtime readiness for an installable provider, not legacy row config. */
@@ -52,6 +68,13 @@ const notConfigured = (): ProviderReadiness => ({ available: false, reason: 'not
 const manifests: Record<string, IntegrationManifest> = {
   discord: validateManifest({
     id: 'discord',
+    // `serverId`/`channelId` come from the consent callback (they name the guild
+    // and channel the caller authorised); `botToken` is instance-wide and
+    // resolved from the environment on every read, including the create-time 400
+    // that keeps a tokenless instance from saving a row it will 500 on. It is in
+    // the predicate for that reason and filtered out of the published payload
+    // (`catalog.ts`) — a client that followed the old published list sent a key
+    // the same route refuses with `server_owned_config_key` (TASK-140).
     requiredConfig: ['serverId', 'channelId', 'botToken'],
     configSchema: buildConfigSchema(['serverId', 'channelId', 'botToken']),
     catalog: {
@@ -65,8 +88,16 @@ const manifests: Record<string, IntegrationManifest> = {
   }),
   slack: validateManifest({
     id: 'slack',
-    requiredConfig: ['botToken', 'signingSecret', 'channelId'],
-    configSchema: buildConfigSchema(['botToken', 'signingSecret', 'channelId']),
+    // The predicate names WHAT THE BIND WRITES — `chatId` (the DM it opens) and
+    // the opaque `botTokenRef` — because that is what a bound row holds. It used
+    // to name `botToken` (retired by TASK-124) and `channelId` (which no Slack
+    // writer has ever set), so a bound row failed its own completeness predicate
+    // and the next config PATCH flipped it back to `pending` (wren, 74256).
+    // `signingSecret` left the predicate with them, and it is not a caller field
+    // at any layer: a body's copy is stripped (`SERVER_OWNED_CONFIG_KEYS`) and
+    // every reader takes the instance's `SLACK_SIGNING_SECRET` (TASK-141).
+    requiredConfig: ['botTokenRef', 'chatId'],
+    configSchema: buildConfigSchema(['botTokenRef', 'chatId']),
     readiness: () => (
       hasConfiguration(
         'SLACK_CLIENT_ID',
@@ -100,6 +131,12 @@ const manifests: Record<string, IntegrationManifest> = {
   }),
   telegram: validateManifest({
     id: 'telegram',
+    // Nothing here is the caller's: the row is bound by the connect code the
+    // create route mints (`mintConnectCode`) and the `/start` that proves the
+    // chat, which is why `chatId` is stripped from a body. The predicate still
+    // names it — the row is not configured until a chat is bound — while the
+    // published list is empty, which is exactly the difference the filter keeps
+    // (`catalog.ts`; wren 74255).
     requiredConfig: ['chatId'],
     configSchema: buildConfigSchema(['chatId']),
     readiness: () => (

@@ -26,8 +26,8 @@ export const isDiscordSnowflake = (value: unknown): boolean => (
 // refused here.
 //
 // This must be the EXACT COMPLEMENT of that check — `getMissingRequiredFields`
-// (`routes/integrations.ts:146-154`) counts `undefined`/`null`/`''` as missing,
-// and nothing else. Two tests that are merely similar leave a third state, and
+// counts `undefined`/`null`/`''` as missing, and nothing else. Two tests that
+// are merely similar leave a third state, and
 // it is the dangerous one: a value that is not "missing" to the manifest, so the
 // write proceeds, and not "supplied" to this guard, so its shape is never
 // judged — and it then reaches the `discord.com/api/...` URL unjudged. A
@@ -55,11 +55,14 @@ export const invalidDiscordIdError = (field: string) => ({
 // Server-owned: the instance credential is resolved from the environment on
 // every read (`resolveEffectiveConfig`), so a stored copy is never needed and a
 // request-supplied one would replace the instance's own token with the
-// caller's. Discord-scoped at the call sites, NOT added to the shared
-// SERVER_OWNED_CONFIG_KEYS list — that list is applied to every type, and
-// `resolveEffectiveConfig` returns early for all of them, so stripping
-// slack's `botToken` there leaves a manifest-required field with no value to
-// inject and 400s every Slack write.
+// caller's. The refusal is Discord-scoped and runs BEFORE the shared strip on
+// both routes, so a supplied Discord token is a 400 rather than a silent 200;
+// `botToken` is also in `SERVER_OWNED_CONFIG_KEYS`
+// (`utils/serverOwnedConfigKeys.ts`), which is what drops it for every other
+// type. An earlier revision of this comment argued the token could not join that
+// list because stripping it would leave a manifest-required field with no value
+// to inject — false twice over by 2026-09-25: #1896 had already applied the strip
+// to Slack, and TASK-140 removed the manifest requirement it named.
 export const serverOwnedConfigError = (field: string) => ({
   message: `${field} is server-owned and cannot be set from a request body`,
   code: 'server_owned_config_key',

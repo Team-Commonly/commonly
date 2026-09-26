@@ -220,6 +220,19 @@ describe('OAuth Controller', () => {
         isBot: true,
         authProviders: [{ provider: 'github', providerId: '4242', email: 'older@example.com' }],
       });
+      // The environment leaks rows into this DB: finishWorkspaceOnboarding is
+      // fired with `void` off the response path (authController.ts:338), so a
+      // previous test's Guide (a scout-* agent) can land after that test's clear
+      // and during this one — measured as 1 extra row on 5 runs of this file and
+      // 2 on a sixth. Minted here so the count below is measured in the state the
+      // leakage produces on every run, not only when the timing exposes it.
+      await User.create({
+        username: 'scout-ufixture',
+        email: 'scout-ufixture@agents.commonly.local',
+        password: 'hashed-pass',
+        isBot: true,
+        botType: 'agent',
+      });
       await seedState();
       mockGithubProfile();
       const res = mockRes();
@@ -231,8 +244,10 @@ describe('OAuth Controller', () => {
       );
       expect(jwt.sign).not.toHaveBeenCalled();
       expect(String((await User.findById(bot._id))._id)).toBe(String(bot._id));
-      // No second row was minted for the provider identity either.
-      expect(await User.countDocuments({})).toBe(1);
+      // No second row was minted for the provider identity either — scoped to the
+      // identity this test names, not to every row: a bare count asserts the
+      // timing of the guide rows minted above rather than this test's subject.
+      expect(await User.countDocuments({ 'authProviders.providerId': '4242' })).toBe(1);
     });
 
     it('enforces the invite gate for brand-new signups', async () => {

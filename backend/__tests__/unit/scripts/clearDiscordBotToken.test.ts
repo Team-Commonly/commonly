@@ -137,9 +137,59 @@ describe('clear-discord-bot-token', () => {
     expect(applied.integrationConfigCopies).toBe(1);
     expect(applied.integrationConfigEmptyHolders).toBe(1);
     // Integration.config is the resolver's fallback read, not a copy this step
-    // owns: both shapes must survive the clear, including the empty key.
+    // owns: both shapes must survive the clear, including the empty key — the
+    // empty-key removal is opt-in (`--unset-empty`, TASK-141), so the default run
+    // is still a report only.
     expect(await integrationRows().countDocuments({ 'config.botToken': COPY_A })).toBe(1);
     expect(await integrationRows().countDocuments({ 'config.botToken': '' })).toBe(1);
+  });
+
+  it('removes the key from an empty holder under --unset-empty, and touches nothing else', async () => {
+    await seedStoredCopies();
+    await integrationRows().insertMany([
+      { type: 'discord', scope: 'user', config: { botToken: '', chatId: 'c2' } },
+      { type: 'discord', scope: 'user', config: { botToken: COPY_A, chatId: 'c1' } },
+      // Another connector's row, and a row without the key: neither may move.
+      { type: 'telegram', scope: 'user', config: { botToken: '', chatId: 't1' } },
+      { type: 'discord', scope: 'user', config: { chatId: 'c3' } },
+    ]);
+
+    const dry = await clearDiscordBotTokenCopies({ apply: false, unsetEmpty: true });
+    expect(dry.integrationConfigEmptyCleared).toBe(0);
+    expect(await integrationRows().countDocuments({ type: 'discord', 'config.botToken': '' })).toBe(1);
+
+    const applied = await clearDiscordBotTokenCopies({ apply: true, unsetEmpty: true });
+
+    expect(applied.integrationConfigEmptyCleared).toBe(1);
+    expect(await integrationRows().countDocuments({ type: 'discord', 'config.botToken': '' })).toBe(0);
+    // The secret at rest is still reported, not written.
+    expect(await integrationRows().countDocuments({ 'config.botToken': COPY_A })).toBe(1);
+    // The other type's empty copy and the row that never carried the key survive.
+    expect(await integrationRows().countDocuments({ type: 'telegram', 'config.botToken': '' })).toBe(1);
+    expect(await integrationRows().countDocuments({ type: 'discord', 'config.botToken': { $exists: true } })).toBe(1);
+  });
+
+  it('names the flag in the report only when it was asked for', () => {
+    const result = {
+      candidates: 0,
+      cleared: 0,
+      digests: [],
+      integrationConfigCopies: 0,
+      integrationConfigEmptyHolders: 2,
+      integrationConfigEmptyCleared: 2,
+    };
+
+    const without = formatReport(result, true, false);
+    const dry = formatReport({ ...result, integrationConfigEmptyCleared: 0 }, false, true);
+    const applied = formatReport(result, true, true);
+
+    expect(without.some((line) => line.includes('--unset-empty'))).toBe(false);
+    expect(dry).toContain(
+      '[clear-discord-bot-token] --unset-empty would remove the key from 2 empty holder(s)',
+    );
+    expect(applied).toContain(
+      '[clear-discord-bot-token] --unset-empty removed the key from 2 empty holder(s)',
+    );
   });
 
   it('prints the other store as two labelled lines, not one count', () => {
@@ -160,7 +210,7 @@ describe('clear-discord-bot-token', () => {
     );
     expect(lines).toContain(
       '[clear-discord-bot-token] Integration.config.botToken empty holders '
-      + "(a key with no value; the live bind writes ''): 2",
+      + '(a key with no value; stripped before save, so nothing writes it): 2',
     );
     expect(lines.filter((line) => line.includes('holders'))).toHaveLength(1);
     expect(lines[0]).toBe('[clear-discord-bot-token] DRY-RUN candidates=3 cleared=0');

@@ -162,6 +162,7 @@ describe('server route precedence', () => {
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    delete process.env.PG_HOST;
   });
 
   it('routes pod invite lists before the pods catch-all route', async () => {
@@ -209,6 +210,7 @@ describe('server websocket authorization helpers', () => {
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    delete process.env.PG_HOST;
   });
 
   it('treats string and ObjectId-like members as valid pod members', () => {
