@@ -27,8 +27,8 @@ The flow is the authorization code grant with `state` and PKCE (`S256`); Linear 
 What differs from the GitHub App row:
 
 - **A member does the intake, not an admin.** GitHub's row comes from the admin-only `POST /api/integrations/github-app`, which is why GitHub's C1 is red by design. Linear's row comes from the OAuth callback, for whoever started the flow, so a stranger can connect their own workspace without an operator (C1). This builds the connect route family that §10.2 path 1 specifies and no provider has built yet: `GET /api/integrations/connect/:provider/start`, then Linear, then `…/callback`, with a single-use state nonce bound to the caller (the shape Slack's connect flow keeps in `config.oauthStateNonce`, `routes/installables.ts`) and rate-limited like `oauthLimiter`. Linear's agent documentation says that installing an `actor=app` app into a workspace needs admin permissions. The C1 walk confirms this; if it holds, C1's stranger is the admin of their own workspace.
-- **One workspace has one owner.** `config.organizationId` identifies the row, as `installationId` identifies the App row. A repeat connect by the same member refreshes the row. A different member connecting an already-connected workspace is refused with `409 already_connected`, and nothing from that callback is stored. `createdBy` is never reassigned; otherwise a second connect would take over the granter's power to revoke.
-- **Rotation is unattended (C9).** The access token lives 24 hours. Each refresh returns a new refresh token, and Linear allows a 30-minute grace period for reusing the old one. The broker refreshes behind §10.3's `refreshGeneration` fence: one refresher per generation, and the losers re-read and never mark the row. Both tokens sit behind `connectorSecrets` refs, as two new kinds in `connectorSecretKinds.ts`, one for `config.credentialRef` and one for `config.refreshTokenRef`. A ref path that module does not name is a secret the orphan sweep deletes ten minutes after it is written.
+- **One workspace has one owner.** The Linear organization id is the row's top-level `installationId`, the slot that identifies the GitHub App row (§4, item 2, says why the slot is reused rather than renamed). A repeat connect by the same member refreshes the row. A different member connecting an already-connected workspace is refused with `409 already_connected`, and nothing from that callback is stored. When two callbacks race, the slot's unique index gives the same answer, as a duplicate key on insert. `createdBy` is never reassigned; otherwise a second connect would take over the granter's power to revoke. Whether the refused callback's token is then revoked at Linear waits on a measurement (§7), because revoking it must not touch the first connection.
+- **Rotation is unattended (C9).** The access token lives 24 hours. Each refresh returns a new refresh token, and Linear allows a 30-minute grace period for reusing the old one. The broker refreshes behind §10.3's `refreshGeneration` fence: one refresher per generation, and the losers re-read and never mark the row. A repeat connect replaces the pair through the same fence, so it cannot interleave with a refresh. Both tokens sit behind `connectorSecrets` refs, as two new kinds in `connectorSecretKinds.ts`, one for `config.credentialRef` and one for `config.refreshTokenRef`. A ref path that module does not name is a secret the orphan sweep deletes ten minutes after it is written.
 - **Either side can revoke (C9, C10).** Removing the row runs §10.5's order: revoke the grants, delete the material, then call `POST https://api.linear.app/oauth/revoke`. When a Linear admin uninstalls the app, Linear sends `OAuthApp revoked`. The row becomes `disconnected` with that reason, and the next call on any grant on it is refused with `connection_mismatch`. If the webhook is missed, the next refresh's `invalid_grant` catches it, and only the holder of the refresh generation may turn that into `status: 'error'`.
 
 ## 3. Tool surface, v1
@@ -46,17 +46,18 @@ This follows GitHub's table in §2 of the grants plan. No tool requires `write`,
 Not in v1: changing an issue's state (it needs `write`), projects, cycles, documents and labels.
 
 - **Attribution.** `createAsUser` is the calling agent's display label (`agentIdentityService.resolveAgentDisplayLabel`), set by the server and never taken from an argument. Linear honours it only in `actor=app` mode. `displayIconUrl` is the agent's avatar.
-- **Destination.** The approval envelope pins `organizationId`, plus `teamId` on a create, the way `pinConnectionRepository` pins `owner`/`repo` today. An approved call is refused with `workspace_mismatch` if the row points somewhere else by the time it runs.
+- **Destination.** The approval envelope pins the row's organization, the way `pinConnectionRepository` pins `owner`/`repo` today. An approved call is refused with `workspace_mismatch`, as GitHub's is with `repo_mismatch`, if the row names another workspace by the time it runs. The team and the issue are arguments, so the approved envelope binds them already.
 - **Rate limits.** Linear signals a rate limit as **HTTP 400** with `RATELIMITED` in the GraphQL errors, not as 429. A status-code classifier would read it as the agent's bad argument. The tool records it as a `failed` trail row with `reason: 'provider_rate_limited'`, and the page names it (C10). The limit is 5,000 requests and 2,000,000 complexity points per hour per app user, and it is shared by every grant on one workspace. One query may cost at most 10,000 points, which is what bounds the page size.
 - **Hosted runs.** They get the read tools only (`grantBrokerProjectionService.ts:180`, TASK-132's v1 limit). So C3 passes on `list_issues` and `get_issue`, while the write half of C5 and all of C6 are walked on a daemon seat (C4), unless hosted writes lift first.
 
 ## 4. How the confinement carries over
 
-The grant, the broker's call order, the park predicate, approval, budget lineage and the `ToolCall` trail do not change. Three places hard-code GitHub today, and each widens by type, the extension §10.1 already names:
+The grant, the broker's call order, the park predicate, approval, budget lineage and the `ToolCall` trail do not change. Four places assume GitHub today. Items 1, 3 and 4 widen by type, the extension §10.1 already names. Item 2, the grant's `installationId`, is filled rather than widened:
 
-1. **The broker's types.** `ToolDefinition.connectionType` and `ToolConnection` (`toolBrokerService.ts:15–33`) accept only `'github-app'`. They become a union, and `resolveConnection` (`:443`) dispatches to a per-provider resolver that checks its own config keys (`organizationId` for Linear) and supplies the credential. The definitions move to `backend/tools/github/` and `backend/tools/linear/`, the move the grants plan's §4 reserved for the second provider.
-2. **The mint.** `routes/grants.ts:310` accepts `type` in `{github-app, linear-app}` and nothing else, and copies the row's `organizationId` the way it copies `installationId` today. §10.0's boundary test lands with this change: `a channel connector row cannot be granted`, using a `telegram` row.
-3. **The catalogue.** `scripts/seed-builtin-tools.ts` projects a second builtin tool Installable from the Linear definitions, so the catalogue, the mint and the broker still read one list.
+1. **The broker's types.** `ToolDefinition.connectionType` and `ToolConnection` (`toolBrokerService.ts:15–33`) accept only `'github-app'`. They become a union, and `resolveConnection` (`:443`) dispatches to a per-provider resolver that checks its own row shape and supplies the credential through §10.3's `credentialFor`. The definitions move to `backend/tools/github/` and `backend/tools/linear/`, the move the grants plan's §4 reserved for the second provider.
+2. **The grant and the trail.** `RoomGrant.installationId` is required (`models/RoomGrant.ts:74`), attenuation copies it to the child (`roomGrantService.ts:378`), and the trail stores it (`ToolCall.ts:66`). The Linear row puts its organization id in the same top-level `installationId` slot, because an `actor=app` authorization is Linear's installation of the app into one workspace. So the grant, the trail and the page's field list take it unchanged, and the slot's unique index (`Integration.ts:359`) holds §2's one-owner rule. GitHub's ids are integers and Linear's are UUIDs, so the two never collide in that index. A provider-neutral rename was considered and refused: it migrates the grant, the trail's column and the page's field list to rename a field whose meaning, which installation of our app this is, already fits.
+3. **The mint.** `routes/grants.ts:310` accepts `type` in `{github-app, linear-app}` and nothing else; its `installationId` copy then works unchanged (item 2). §10.0's boundary test lands with this change: `a channel connector row cannot be granted`, using a `telegram` row.
+4. **The catalogue.** `scripts/seed-builtin-tools.ts` projects a second builtin tool Installable from the Linear definitions, so the catalogue, the mint and the broker still read one list.
 
 C8 is then GitHub's walk again. A call from an agent outside the audience is refused with `not_in_audience`, and a call after expiry is refused with `grant_expired`; both are recorded as refused rows. The matrix's open cross-cutting row applies to Linear as it does to GitHub: the broker accepts any agent token in the audience, so withholding the broker from a seat is a convenience, not a boundary. C2 at 390 is the GitHub row's page defect, and Linear's row inherits whatever fix turns GitHub green.
 
@@ -64,7 +65,7 @@ C8 is then GitHub's walk again. A call from an agent outside the audience is ref
 
 The shape is [decision-card-in-channel.md](decision-card-in-channel.md) D2–D4, with the grant in front.
 
-- **Out.** `linear.ask_decision({ decisionId, issueId })` takes ids only. The broker refuses the call unless the card is `pending`, the caller is its asker, and its pod is one the grant covers. It renders D2's numbered-options text from the `DecisionRequest` row, never from arguments, and posts it as a comment. Because it is a comment, it parks for the granter's approval like any other. The granter approves each relay before the card reaches Linear; the walk records whether that step undoes the point of the loop. Exempting cards from the floor is Sam's call and is not assumed here. The comment id goes into the row's durable `config.cards` list (D3) as `externalMessageId`, so `decisionCardReconcileService` closes and sweeps Linear cards the way it does Telegram's and Slack's.
+- **Out.** `linear.ask_decision({ decisionId, issueId })` takes ids only. The broker refuses the call unless the card is `pending`, the caller is its asker, and its pod is one the grant covers. It renders D2's numbered-options text from the `DecisionRequest` row, never from arguments, and posts it as a comment. Because it is a comment, it parks for the granter's approval like any other. The granter approves each relay before the card reaches Linear; the walk records whether that step undoes the point of the loop. Exempting cards from the floor is Sam's call and is not assumed here. The comment id goes into the row's durable `config.cards` list (D3) as `externalMessageId`. `decisionCardReconcileService`'s closure stamp and retention sweep read `config.cards` on any row, so they cover Linear's cards unchanged. Its closing line to a card ruled elsewhere is limited to Telegram and Slack (`decisionCardReconcileService.ts:83`), and it gains a Linear branch that replies to the card comment.
 - **In.** A reply to that comment arrives as a Comment webhook. The webhook is configured on the OAuth app, so every workspace that authorizes gets one without the `admin` scope. The route:
   - verifies `Linear-Signature` (HMAC-SHA256 of the raw body);
   - checks that `webhookTimestamp` is within 60 seconds;
@@ -73,7 +74,8 @@ The shape is [decision-card-in-channel.md](decision-card-in-channel.md) D2–D4,
 
   Then it follows D3's order: the card first (the replied-to comment is in *this* row's `cards`), then the identity, then the verb.
 - **The identity is the new part.** The webhook names a Linear user, but `chooseDecision` needs a Commonly human who is a member of the card's pod. D3's rule holds: the caller is a linked user, never anything derived from the message. So a member links their Linear user once, starting from Commonly, through a `read`-only `actor=user` authorization that reads `viewer { id }` and then revokes the token it used. One Linear user maps to at most one Commonly user on an instance, so a second claim on a linked Linear identity is refused. A reply from an unlinked Linear user rules nothing, and the bridge answers in Linear with the link. The call is `chooseDecision({ …, origin: { via: 'linear', integrationId } })`, and `DecisionOrigin.via` (`decisionRequestService.ts:72`) gains `'linear'`.
-- **Answers in Linear** are D3 and D4's lines, verbatim: `✓ Ruled`, `Already ruled …`, and the verb-outcome table. The bridge posts them as the app, in its own voice rather than an agent's, as a reply to the card comment.
+- **Answers in Linear** are D3 and D4's lines, verbatim: `✓ Ruled`, `Already ruled …`, and the verb-outcome table. The bridge posts them as the app, in its own voice rather than an agent's, as a reply to the card comment. They do not park: they are the card's own lifecycle, which the granter approved with the card, and they carry only its outcome.
+- **A revoke closes the loop in both directions.** Every line the bridge writes to Linear, and every reply it acts on, needs the row `connected` and a live grant on it that covers the card's pod. The channel predicate the Telegram and Slack branches use (`liveRelay`, gates, `chatId`) does not apply to a Connection. After the granter revokes, a reply to an earlier card rules nothing and gets no answer, and the decision can still be ruled in Commonly.
 
 Linear's own agent-session `select` elicitation is the native form of this card. It is left for later: it needs `app:mentionable`, a session per issue and a 10-second acknowledgement contract on the inbound side, and it buys nothing C6 needs that a reply to a comment does not.
 
@@ -81,25 +83,27 @@ Linear's own agent-session `select` elicitation is the native form of this card.
 
 | # | piece | proves |
 |---|---|---|
-| 1 | The provider seam (§4.1–4.2). The definitions move, `ToolConnection` becomes a union, and the mint accepts by set. GitHub's tests pass unchanged | a second provider breaks nothing |
+| 1 | The provider seam (§4, items 1–3). The definitions move, `ToolConnection` becomes a union, and the mint accepts by set. GitHub's tests pass unchanged | a second provider breaks nothing |
 | 2 | Connect and remove (§2): the OAuth route family, the `linear-app` row, the two secret kinds, the refresh fence, the removal order and the `OAuthApp revoked` webhook | C1, C2, C9 and C10, up to the first call |
 | 3 | The tools (§3) and the second builtin Installable | C3 (reads, hosted), C4 and C8 |
-| 4 | C6 (§5): `ask_decision`, the comment webhook and the identity link | C5 and C6 |
+| 4 | C6 (§5): `ask_decision`, the comment webhook, the identity link and the closing-line branch | C5 and C6 |
 | 5 | The matrix walk: stranger session, 1200 and 390, deployed build | the row |
 
 Named tests, which the PRs list by name:
 
 1. `the mint accepts a linear-app row and refuses a channel row`
-2. `a second member connecting a connected Linear workspace is refused and nothing is stored`
+2. `a second member connecting a connected Linear workspace is refused and nothing is stored`, including when the two callbacks race
 3. `two concurrent refreshes rotate once`: the loser neither marks the row nor revokes anything
 4. `OAuthApp revoked disconnects the row, and the next call on its grant is refused`
 5. `a RATELIMITED 400 is recorded as provider_rate_limited`
 6. `createAsUser is the calling agent, whatever the arguments say`
-7. `an approved call is refused when the row's organizationId changed`
+7. `an approved call is refused when the row names another workspace`, the Linear twin of `repo_mismatch` in `toolBrokerApprovalService.test.js`
 8. `ask_decision refuses a card from another asker or from a pod the grant does not cover`
 9. `a webhook with a bad signature, a stale timestamp or a replayed delivery writes nothing`
 10. `a reply from an unlinked Linear user rules nothing`
 11. `never returns the credential` over a `linear-app` connection, and `no integration response carries a credential` with both refs set
+12. `a card ruled in Commonly gets its closing line as a reply to its Linear comment`
+13. `after a revoke, a reply to an earlier card rules nothing and nothing is written to Linear`
 
 ## 7. What Sam provides, and what is open
 
@@ -108,7 +112,7 @@ Named tests, which the PRs list by name:
   - whether the Comment webhook carries `parentId` (the documented example does not show it; the resolver can read `comment(id) { parent { id } }` instead);
   - whether an app-level webhook's signing secret is per app or per workspace;
   - whether `Linear-Delivery` stays stable across a retry;
-  - whether a second authorization of an already-connected workspace changes the first connection's tokens;
+  - whether a second authorization of an already-connected workspace changes the first connection's tokens, and so whether a refused callback's token may be revoked (§2);
   - whether one app can authorize in both actor modes without the user-mode revoke touching the app-mode install.
 
 Sources, read 2026-09-26 from Linear's developer documentation: OAuth 2.0 authentication, OAuth actor authorization, webhooks, rate limiting, agents, agent interaction, and agent signals (`linear.app/developers/…`).
