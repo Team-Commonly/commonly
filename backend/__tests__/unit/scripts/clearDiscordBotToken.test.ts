@@ -210,7 +210,7 @@ describe('clear-discord-bot-token', () => {
     );
     expect(lines).toContain(
       '[clear-discord-bot-token] Integration.config.botToken empty holders '
-      + "(a key with no value; the live bind writes ''): 2",
+      + '(a key with no value; stripped before save, so nothing writes it): 2',
     );
     expect(lines.filter((line) => line.includes('holders'))).toHaveLength(1);
     expect(lines[0]).toBe('[clear-discord-bot-token] DRY-RUN candidates=3 cleared=0');
