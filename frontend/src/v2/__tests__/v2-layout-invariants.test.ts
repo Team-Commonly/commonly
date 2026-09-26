@@ -2930,6 +2930,26 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     expect(phone).toContain('.v2-byo__copy::after');
     expect(phone).toContain('height: 44px');
   });
+
+  test('the render gate: result gaps are the authored 28, and the dot is on the first line', () => {
+    // A paragraph's user-agent margin does not collapse inside a flex column,
+    // so the authored 28 drew as 42 (28 + 1em) and the h2's 4px rode on the gap
+    // after it. The `>` is the scope and not a style: a paragraph nested in a
+    // snippet keeps its own rhythm, so the descendant form is the negative.
+    expect(decls(ruleBody(v2, '.v2-byo__result > p')).margin).toBe('0');
+    expect(v2).not.toMatch(/\.v2-byo__result p\s*\{/);
+    expect(decls(ruleBody(v2, '.v2-byo__result h2')).margin).toBe('0');
+    // The rhythm itself did not move to absorb the margin it was fighting.
+    expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
+    // A wrapped live line is the case: centred, the dot floats between the two
+    // lines at 390 rather than marking the first one.
+    const live = decls(ruleBody(v2, '.v2-byo__live'));
+    expect(live['align-items']).toBe('flex-start');
+    expect(live['align-items']).not.toBe('center');
+    // (20px line box − 7px dot) / 2: the dot marks the first line's optical
+    // centre, not the top of its line box.
+    expect(decls(ruleBody(v2, '.v2-byo__live::before'))['margin-top']).toBe('6.5px');
+  });
 });
 
 // ---------------------------------------------------------------------------

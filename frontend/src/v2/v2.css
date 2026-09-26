@@ -5761,12 +5761,19 @@ body.modern-ui.v2-canvas {
 }
 .v2-byo__result h2 {
   font-size: 20px;
-  margin: 0 0 4px 0;
+  margin: 0;
 }
 /* The form's 18px gap is a field rhythm; the result's is a section rhythm, and
    it only shows once the snippet cards stop being cards (item 6). Declared
    separately so the form keeps 18 (ux-lead, TASK-169 render pass). */
 .v2-byo__result { gap: 28px; }
+/* A <p> keeps its user-agent margin inside a flex column, and flex gaps do not
+   collapse it — so the authored 28 was drawing as 42 (28 + the paragraph's 1em)
+   and the h2's 4px rode on top of the next gap. The `>` is load-bearing: it
+   zeroes the result's own flex children and leaves a paragraph nested inside a
+   snippet its own rhythm. (ux-lead's TASK-169 render gate measured 28 at 1200
+   and 390 with exactly these declarations.) */
+.v2-byo__result > p { margin: 0; }
 /* An agent's name in mono is a mark (Signal rule 1), so the name carries the
    accent — it is already named once in the sentence above it. */
 .v2-byo__result h2 code {
@@ -5866,7 +5873,9 @@ body.modern-ui.v2-canvas {
 }
 .v2-byo__live {
   display: flex;
-  align-items: center;
+  /* The dot marks presence on the FIRST line. Centred, it floats between the
+     two lines once the sentence wraps at 390 (ux-lead's render gate). */
+  align-items: flex-start;
   gap: 8px;
   margin: 0;
   color: var(--v2-text-primary);
@@ -5879,6 +5888,9 @@ body.modern-ui.v2-canvas {
 .v2-byo__live::before {
   content: '';
   flex: none;
+  /* (20px line box − 7px dot) / 2, so the dot's centre lands on the first
+     line's optical centre rather than at the top of its line box. */
+  margin-top: 6.5px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
