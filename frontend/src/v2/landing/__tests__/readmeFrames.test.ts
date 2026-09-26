@@ -133,6 +133,11 @@ describe('README frames', () => {
     const closeAt = README.indexOf('</div>', README.indexOf(`<img src="${HERO}"`));
     const caption = README.slice(README.indexOf('<em>', README.indexOf(`<img src="${HERO}"`)), closeAt);
     expect(caption).toContain('<a href="https://commonly.me">commonly.me</a>');
-    expect(caption).toContain('pick an option on the card');
+    // The caption's WORDS are deliberately not pinned here (TASK-161, folding
+    // in the defect sprint-review found on #1870: this test, named for the
+    // link, also held the literal phrase "pick an option on the card", so a
+    // caption reword red a test named for something else). Length is owned by
+    // the per-frame prose floor above; the link is owned here. Adding a phrase
+    // assertion back to this test re-creates the coupling.
   });
 });
