@@ -33,8 +33,10 @@
  * Scope is deliberately narrow. It touches `discord_integrations.botToken` only.
  * `Integration.config.botToken` is a different store, in a different collection,
  * that holds no secret: measured live 2026-09-25, its two discord rows carry the
- * KEY with an empty value, which is the shape the live bind writes
- * (`DiscordCallback.tsx` posts `botToken: ''`). The resolver still consults it as
+ * KEY with an empty value, which is the shape the retired write path left:
+ * `DiscordCallback.tsx` still posts `botToken: ''` in the request, but the API
+ * strips it before the row is saved (TASK-139), so nothing has written this key
+ * to a row since. The resolver still consults it as
  * a fallback, so this script reports on it — secrets and empty keys counted
  * apart, because `$exists` answers the wrong question — and never writes it
  * unless `--unset-empty` is passed.
@@ -119,8 +121,8 @@ export async function clearDiscordBotTokenCopies(
   // Reported as two numbers because `$exists` is a KEY test, not a value test,
   // and one `$exists` count answers the wrong question here. Measured on the
   // production store 2026-09-25: a single `$exists` count read **2** on a run
-  // whose prediction was 0, both row values being `''` — the shape the live
-  // bind writes — so an empty key looked like an unaccounted credential and
+  // whose prediction was 0, both row values being `''` — the shape the retired
+  // write path left — so an empty key looked like an unaccounted credential and
   // stopped a correct run. Secrets and empty keys are counted apart.
   const integrationCollection = mongoose.connection.collection(INTEGRATION_COLLECTION);
   const integrationConfigCopies = await integrationCollection.countDocuments({
@@ -180,7 +182,7 @@ export const formatReport = (
     '[clear-discord-bot-token] Integration.config.botToken secrets at rest '
     + `(reported, never written): ${result.integrationConfigCopies}`,
     '[clear-discord-bot-token] Integration.config.botToken empty holders '
-    + `(a key with no value; the live bind writes ''): ${result.integrationConfigEmptyHolders}`,
+    + `(a key with no value; stripped before save, so nothing writes it): ${result.integrationConfigEmptyHolders}`,
   ];
   if (unsetEmpty) {
     lines.push('[clear-discord-bot-token] --unset-empty '
