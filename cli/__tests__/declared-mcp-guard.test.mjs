@@ -4,7 +4,7 @@
 // server with the token placeholder in its headers receives the seat token.
 // The daemon refuses both shapes before they reach a token file (Vera, P0,
 // Connectors 69500, 2026-09-18).
-import { auditDeclaredMcp, isShippedCommonlyMcpCommand, isShippedCommonlyMcpEntry } from '../src/lib/declared-mcp-guard.js';
+import { auditDeclaredMcp, isShippedCommonlyMcpCommand, isShippedCommonlyMcpEntry, isShippedGrantBrokerEntry } from '../src/lib/declared-mcp-guard.js';
 
 const instanceUrl = 'https://api.commonly.me';
 const defaultServer = {
@@ -253,10 +253,12 @@ describe('auditDeclaredMcp', () => {
   });
 
   test('the same fields left absent, null or empty still pass (controls)', () => {
+    // The http side is NOT in this list: a broker without its one Authorization
+    // header is refused as a whole entry (TASK-150), since the admitted set has
+    // to equal the shipped one.
     for (const entry of [
       defaultServer,
       { ...defaultServer, env: null, args: [], headers: null },
-      { ...broker, headers: undefined },
     ]) {
       const result = auditDeclaredMcp({ mcp: [entry] }, { instanceUrl });
       expect(result).toEqual({ ok: true, refusals: [] });
@@ -267,5 +269,84 @@ describe('auditDeclaredMcp', () => {
     const result = auditDeclaredMcp({ mcp: [{ name: 'odd', transport: 'carrier-pigeon' }, 'text'] }, { instanceUrl });
     expect(result.ok).toBe(false);
     expect(result.refusals).toHaveLength(2);
+  });
+});
+
+// TASK-150. The origin rule admitted ANY same-origin http/sse url, and this
+// repo answers 3xx from same-origin GET routes: the oauth start and callback,
+// the Discord and global-integration redirects, the Slack callback. A
+// declaration naming one of them left the machine on the hop, and Claude Code
+// follows a cross-origin redirect (codex refuses one). So the guard admits the
+// ONE http entry the server ships — the grant broker — as a whole entry.
+describe('TASK-150: only the shipped grant broker is admitted on the http side', () => {
+  const oauthStart = {
+    name: 'oauth',
+    transport: 'http',
+    url: '${COMMONLY_API_URL}/api/auth/oauth/google/start',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+  };
+  const refused = (entry, opts = { instanceUrl }) => {
+    const result = auditDeclaredMcp({ mcp: [entry] }, opts);
+    expect(result.ok).toBe(false);
+    expect(result.refusals).toHaveLength(1);
+    return result.refusals[0];
+  };
+
+  test('a same-origin GET route that redirects is refused (the headline case)', () => {
+    // Admitted on the origin rule alone before this change: same scheme, host
+    // and port, with the token header the client sends on the first leg.
+    expect(refused(oauthStart)).toMatch(/is not the one http server this instance ships/);
+    expect(refused(oauthStart)).toMatch(/oauth\/google\/start/);
+  });
+
+  test('its `http` spelling and its `sse` spelling are refused too', () => {
+    expect(refused({ ...oauthStart, url: 'https://api.commonly.me/api/auth/oauth/google/start' }))
+      .toMatch(/not the one http server/);
+    expect(refused({ ...oauthStart, transport: 'sse' })).toMatch(/'sse' is not admitted at all/);
+    // `sse` is refused wherever it points, including at the broker's own path:
+    // nothing ships it, and its GET is the method every 3xx site answers.
+    expect(refused({ ...broker, transport: 'sse' })).toMatch(/'sse' is not admitted at all/);
+  });
+
+  test('the suffix and the alias stay admitted (controls: the shipped entry, not a name or a spelling)', () => {
+    // The projection suffixes `name` when one seat holds several grants.
+    expect(auditDeclaredMcp({ mcp: [{ ...broker, name: `${broker.name}-${'grant_4df79b67'}` }] }, { instanceUrl }))
+      .toEqual({ ok: true, refusals: [] });
+    expect(auditDeclaredMcp({ mcp: [{ ...broker, url: '${COMMONLY_INSTANCE_URL}/api/mcp/grants/grant_4df79b67' }] }, { instanceUrl }))
+      .toEqual({ ok: true, refusals: [] });
+    expect(isShippedGrantBrokerEntry(broker, instanceUrl)).toBe(true);
+  });
+
+  test('a url carrying more than the grants path is refused: query, fragment, userinfo, extra segment, non-id', () => {
+    for (const url of [
+      '${COMMONLY_API_URL}/api/mcp/grants/g1?next=https://attacker.test',
+      '${COMMONLY_API_URL}/api/mcp/grants/g1#frag',
+      'https://x@api.commonly.me/api/mcp/grants/g1',
+      '${COMMONLY_API_URL}/api/mcp/grants/g1/extra',
+      '${COMMONLY_API_URL}/api/mcp/grants/',
+      '${COMMONLY_API_URL}/api/mcp/grants/g%20x',
+    ]) {
+      expect(refused({ ...broker, url })).toMatch(/not the one http server/);
+      expect(isShippedGrantBrokerEntry({ ...broker, url }, instanceUrl)).toBe(false);
+    }
+  });
+
+  test('the headers are matched exactly: an added one and a missing one both refuse the entry', () => {
+    expect(refused({ ...broker, headers: { ...broker.headers, 'X-Token': 'x ${COMMONLY_AGENT_TOKEN}' } }))
+      .toMatch(/not the one http server/);
+    expect(refused({ ...broker, headers: undefined })).toMatch(/not the one http server/);
+    expect(refused({ ...broker, headers: {} })).toMatch(/not the one http server/);
+    expect(refused({ ...broker, headers: { Authorization: 'Bearer literal-token' } }))
+      .toMatch(/not the one http server/);
+  });
+
+  test('a field the projection does not ship refuses the entry rather than travelling with it', () => {
+    expect(refused({ ...broker, cwd: '/tmp' })).toMatch(/not the one http server/);
+    expect(isShippedGrantBrokerEntry({ ...broker, cwd: '/tmp' }, instanceUrl)).toBe(false);
+  });
+
+  test('an instance url the guard cannot parse is refused, not admitted (fail closed)', () => {
+    expect(auditDeclaredMcp({ mcp: [broker] }, { instanceUrl: 'not a url' }).ok).toBe(false);
+    expect(isShippedGrantBrokerEntry(broker, 'not a url')).toBe(false);
   });
 });

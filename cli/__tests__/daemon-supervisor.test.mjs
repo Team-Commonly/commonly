@@ -215,9 +215,19 @@ describe('tick', () => {
   });
 
   test('a declared environment with another mcp server gets the baseline appended', async () => {
+    // The fixture is the shape the server actually ships (`grantBrokerServer`):
+    // transport `http`, the grants url, and the one Authorization placeholder.
+    // A url-only http entry is a shape no producer emits, and since TASK-150
+    // the guard refuses it as a whole entry — the merge being tested here is
+    // about a declared entry the instance DOES ship.
     const environment = {
       model: 'opus',
-      mcp: [{ name: 'room-grants', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1' }],
+      mcp: [{
+        name: 'room-grants',
+        transport: 'http',
+        url: '${COMMONLY_API_URL}/api/mcp/grants/g1',
+        headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+      }],
     };
     const { supervisor, saveToken } = makeHarness({
       rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus' }, environment })],
