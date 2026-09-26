@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -33,7 +33,11 @@ const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
 const X_LABEL = '@sam_commonly';
-const SELF_HOST_COMMAND = 'git clone github.com/Team-Commonly/commonly && docker compose up';
+// Kept identical to the README's Quick Start block (README.md, "Quick Start —
+// local installation"). The clone needs the scheme and a directory to enter
+// before install.sh runs; the earlier one-liner skipped both, so anyone who
+// pasted it got a bare clone and no started stack (TASK-152).
+const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
 const ADR_COUNT = 15;
 // Issue #708 records the provenance for every affiliation AND the source +
 // license of every logo file (Wikimedia PD-textlogo / official brand assets).
@@ -188,6 +192,42 @@ const V2LandingPage: React.FC = () => {
   // hasn't asked for reduced motion — so no-JS, old browsers, and
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
+  const [installCopied, setInstallCopied] = useState(false);
+  const installCmdRef = useRef<HTMLElement | null>(null);
+
+  // TASK-154. The command is wider than the box at 390 (721px line in a 340px
+  // box), so most of it is off-screen and the visitor cannot read what they are
+  // pasting. The write names the constant itself, so the copied string is the
+  // one `SELF_HOST_COMMAND` names and stays in step with the README.
+  //
+  // The write test does not distinguish that from reading the ref's
+  // `textContent`: measured, swapping to `installCmdRef.current.textContent`
+  // stays green, because the ref is the <code> and the two strings are identical
+  // as written — the `$` is a sibling span outside it, and CSS truncation never
+  // changes textContent. What the suite pins is where the ref POINTS: move it up
+  // to the wrapper that owns the `$` and the clipboard-failure test reds, since
+  // the selection would then carry the prompt. So read the constant, and if this
+  // is ever changed to read the node instead, read one that excludes the prompt
+  // — nothing here will catch that for you. (#1868, sprint-review.)
+  const copyInstallCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(SELF_HOST_COMMAND);
+      setInstallCopied(true);
+      window.setTimeout(() => setInstallCopied(false), 1500);
+    } catch {
+      // No clipboard (non-HTTPS, sandbox, denied permission). Selecting the
+      // command lets the OS copy menu do it — the one outcome that must never
+      // happen is a click that appears to work and does nothing.
+      const node = installCmdRef.current;
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (node && selection) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+  };
   // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
   // registration opened (2026-07-03: invite codes gate cloud agents, not
   // signup) the label is "Get started", not "Request access" — the old copy
@@ -201,7 +241,6 @@ const V2LandingPage: React.FC = () => {
     t('landing.hero.terms.claudeCode'),
     t('landing.hero.terms.cursor'),
     t('landing.hero.terms.codex'),
-    t('landing.hero.terms.openClaw'),
     t('landing.hero.terms.wholeTeam'),
   ];
 
@@ -295,8 +334,24 @@ const V2LandingPage: React.FC = () => {
             </div>
 
             <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
-              <span className="v2-landing__install-prompt">$</span>
-              <code className="v2-landing__install-cmd">{SELF_HOST_COMMAND}</code>
+              {/* The scroll region is this wrapper, not the box, so the Copy
+                  control beside it is visible at every width and scroll
+                  position (TASK-154). */}
+              <div className="v2-landing__install-scroll">
+                <span className="v2-landing__install-prompt">$</span>
+                <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+              </div>
+              <button
+                type="button"
+                className="v2-landing__install-copy"
+                onClick={copyInstallCommand}
+                aria-label={t('landing.hero.copyInstallAria')}
+              >
+                {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
+              </button>
+              <span className="v2-landing__install-status" role="status" aria-live="polite">
+                {installCopied ? t('landing.hero.copied') : ''}
+              </span>
             </div>
 
             <div className="v2-landing__hero-by">

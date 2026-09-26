@@ -2,7 +2,10 @@
 // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged on this
 // page with the persona silently dropped. Pinned: a ?persona= param renders
 // a context card, names the agent after the persona, and the
-// install request records the choice; the bare entry says nobody was picked.
+// install request records the choice. The bare entry renders no persona
+// block at all: TASK-163 removed the "No colleague selected" notice, which
+// described a catalog choice this page cannot offer (nothing in src links
+// ?persona= since #1534), while the ?persona= reader above stays live.
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -77,22 +80,26 @@ describe('BYO persona carry-through', () => {
     expect(context).toHaveTextContent(card.oneLiner);
     // Agent name field is seeded from the persona, not the generic default.
     expect(screen.getByDisplayValue(`sam-${card.key}`)).toBeInTheDocument();
-    expect(screen.queryByTestId('byo-persona-none')).toBeNull();
   });
 
-  test('the bare entry says no colleague was selected without linking to the retired catalog', async () => {
+  test('the bare entry renders no persona block, and does not link to the retired catalog', async () => {
     mockGet();
-    renderPage();
-    await waitFor(() => expect(screen.getByTestId('byo-persona-none')).toBeInTheDocument());
-    expect(screen.getByText('No colleague selected — this is the blank-agent path.')).toBeInTheDocument();
+    const { container } = renderPage();
+    // Absence IS the assertion here (TASK-163). The old notice rendered on
+    // every entry without ?persona=, and its testid is gone with it, so a
+    // queryByTestId('byo-persona-none') would now be vacuously null — hence
+    // the class query plus the positive proof that the page still rendered.
+    await waitFor(() => expect(screen.getByDisplayValue('sam-agent')).toBeInTheDocument());
+    expect(container.querySelector('.v2-byo__persona')).toBeNull();
     expect(screen.queryByRole('button', { name: /browse colleagues/i })).toBeNull();
-    expect(screen.getByDisplayValue('sam-agent')).toBeInTheDocument();
   });
 
   test('an unknown persona key falls back to the bare entry, not a crash', async () => {
     window.history.pushState({}, '', '/v2/agents/byo?persona=not-a-real-persona');
     mockGet();
-    renderPage();
-    await waitFor(() => expect(screen.getByTestId('byo-persona-none')).toBeInTheDocument());
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByDisplayValue('sam-agent')).toBeInTheDocument());
+    expect(container.querySelector('.v2-byo__persona')).toBeNull();
+    expect(container.querySelector('.v2-byo__form')).toBeInTheDocument();
   });
 });

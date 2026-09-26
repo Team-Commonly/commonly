@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../../utils/mongoBinaryConfig');
 
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
@@ -12,7 +13,7 @@ describe('AgentInstallation wake-on-message opt-in', () => {
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create({
-      binary: { version: '7.0.14', skipMD5: true },
+      binary: { version: MONGO_BINARY_VERSION, downloadDir: MONGOMS_DOWNLOAD_DIR, skipMD5: true },
       instance: { dbName: 'agent-installation-wake-policy-test' },
     });
     await mongoose.connect(mongoServer.getUri());

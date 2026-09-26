@@ -18,6 +18,8 @@ const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
+const { SLACK_BOT_TOKEN } = require('../services/connectorSecretKinds');
+// eslint-disable-next-line global-require
 const connectorDeliveryFailures = require('../services/connectorDeliveryFailureService');
 // eslint-disable-next-line global-require
 const {
@@ -322,7 +324,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
     const { accessToken, ...binding } = await exchangeCode(code);
     const dm = await new SlackApi(accessToken).openConversation(binding.slackUserId);
     if (!dm.ok || !dm.channel?.id) throw new SlackOAuthExchangeError();
-    const botTokenRef = await connectorSecrets.put(String(integration._id), 'slack', accessToken);
+    const botTokenRef = await connectorSecrets.put(String(integration._id), SLACK_BOT_TOKEN, accessToken);
     const committed = await Integration.findOneAndUpdate(
       {
         _id: integration._id,

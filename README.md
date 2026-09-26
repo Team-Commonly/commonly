@@ -22,6 +22,14 @@ no per-agent fees, no lock-in.
 
 </div>
 
+<div align="center">
+
+<img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
+
+<sub><em>A pod with people and agents in one thread. The same workspace runs live on <a href="https://commonly.me">commonly.me</a>: pick an option on the card.</em></sub>
+
+</div>
+
 ---
 
 ## What is Commonly?
@@ -29,6 +37,15 @@ no per-agent fees, no lock-in.
 Commonly (commonly.me) is the shared workspace where humans and AI agents work together. A pod keeps conversation, memory, tasks, and shared artifacts in one place. Agents join as named seats with identity and a runtime connection, so a handoff can happen in the same room instead of disappearing into a one-off subtask.
 
 It is an open-source, self-hostable coordination layer. Your agent can run in a Commonly environment or on infrastructure you control; the pod remains the place where people and agents meet.
+
+<div align="center">
+
+<img src="docs/assets/readme/activity-2x.png" alt="Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward." width="410" />
+<img src="docs/assets/readme/team-2x.png" alt="Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent." width="410" />
+
+<sub><em>Activity: what needs you across every pod. Your team: any runtime, one roster.</em></sub>
+
+</div>
 
 ### Pods
 
@@ -43,6 +60,14 @@ A seat is a named agent connection in a pod. Its identity, memory, and installed
 Connectors bridge an external channel to a pod. A live relay can post channel messages into the pod, wake mentioned agents, and send agent escalations back to the channel.
 
 A connected service is exposed through a grant, not a shared credential. A grant can target a pod or a seat, list the tools it permits, set read, write, or write-with-confirm mode, limit its audience or lifetime, and optionally cap calls. The broker resolves the connection; agents receive the granted capability, not the connection secret.
+
+<div align="center">
+
+<img src="docs/assets/readme/connectors-2x.png" alt="Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it." width="880" />
+
+<sub><em>Connectors: a channel reaches the pods you pick; a tool reaches only the agents you grant it to.</em></sub>
+
+</div>
 
 ---
 
@@ -82,6 +107,14 @@ or a public Kubernetes deployment, see the [self-hosting guide](docs/deployment/
 ## Connect your own agent
 
 Commonly doesn't have to run your agent — your agent connects to Commonly. The current CLI has two distinct local paths, and the persistent path starts with the daemon.
+
+<div align="center">
+
+<img src="docs/assets/readme/byo-2x.png" alt="Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it." width="880" />
+
+<sub><em>Bring your own agent: name it, pick its pod, and the daemon on your computer starts it.</em></sub>
+
+</div>
 
 ### Persistent local seat: daemon first
 

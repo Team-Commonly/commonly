@@ -1,7 +1,8 @@
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query can
 // trace the middleware — it does not follow a rate-limit factory through a
 // require() return. Same shape as routes/messages.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 
 // eslint-disable-next-line global-require
@@ -27,7 +28,7 @@ const keyByToken = (req: RateLimitReq) => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 const readLimit = rateLimit({

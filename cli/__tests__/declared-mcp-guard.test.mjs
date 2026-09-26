@@ -68,6 +68,40 @@ describe('auditDeclaredMcp', () => {
     expect(auditDeclaredMcp({ mcp: [tampered] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(false);
   });
 
+  test('a cwd the guard cannot read is refused on the installed-match path too', () => {
+    const staging = {
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+    };
+    const opts = { instanceUrl, allowedStdioEntries: [staging] };
+    // `executionShape` reads cwd as `typeof server.cwd === 'string' ? … : null`,
+    // so every value below normalised to the installed entry's absent cwd and the
+    // entry was admitted as one already installed (Vera, hold on #1915).
+    for (const cwd of [1, ['/tmp/evil'], { dir: '/tmp/evil' }, true]) {
+      expect([cwd, auditDeclaredMcp({ mcp: [{ ...staging, cwd }] }, opts).ok]).toEqual([cwd, false]);
+      expect(auditDeclaredMcp({ mcp: [{ ...staging, cwd }] }, opts).refusals[0])
+        .toMatch(/cwd is of type .*, not a string/);
+    }
+  });
+
+  test('a cwd the guard CAN read is judged by value, not banned (control)', () => {
+    const staging = {
+      name: 'commonly',
+      transport: 'stdio',
+      command: ['node', '/Users/op/.commonly/mcp-staging/commonly-mcp/src/index.js'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' },
+    };
+    const withCwd = { ...staging, cwd: '/Users/op/work' };
+    // Same string on both sides: the entry IS the installed one, so it is admitted
+    // — which is what shows the shape rule refuses unreadable cwd values rather
+    // than cwd itself.
+    expect(auditDeclaredMcp({ mcp: [withCwd] }, { instanceUrl, allowedStdioEntries: [withCwd] }).ok).toBe(true);
+    // A different string is a different entry, refused by the whole-entry match.
+    expect(auditDeclaredMcp({ mcp: [withCwd] }, { instanceUrl, allowedStdioEntries: [staging] }).ok).toBe(false);
+  });
+
   test("sprint-review's three env payloads on the shipped command are refused", () => {
     const payloads = [
       { NODE_OPTIONS: '--import=data:text/javascript,process.exit(7)' },
@@ -179,6 +213,54 @@ describe('auditDeclaredMcp', () => {
     expect(result.refusals[0]).toMatch(/both a command and a url/);
     expect(auditDeclaredMcp({ mcp: [{ ...defaultServer, url: 'https://api.commonly.me/x' }] }, { instanceUrl }).ok).toBe(false);
     expect(auditDeclaredMcp({ mcp: [{ ...broker, command: ['npx', '-y', '@commonlyai/mcp@latest'] }] }, { instanceUrl }).ok).toBe(false);
+  });
+
+  // TASK-069: the guard must judge the WHOLE entry. A field it cannot read is
+  // not a field it can judge, and every reader spreads `env`/`headers` — so a
+  // string there is dropped by the reader rather than honoured, and the entry
+  // would have been admitted on the strength of the fields that did look right.
+  // Refusing is the only reading that is true at both ends.
+  const refusedAsUnreadable = (entry) => {
+    const result = auditDeclaredMcp({ mcp: [entry] }, { instanceUrl });
+    expect(result.ok).toBe(false);
+    expect(result.refusals[0]).toMatch(/cannot judge what the entry would run/);
+    return result.refusals[0];
+  };
+
+  test('an env declared as a string is refused, not read as no env at all', () => {
+    expect(refusedAsUnreadable({ ...defaultServer, env: 'NODE_OPTIONS=--import=data:text/javascript,1' }))
+      .toMatch(/env is of type string, not an object/);
+  });
+
+  test('headers declared as a string are refused on the http side too', () => {
+    expect(refusedAsUnreadable({ ...broker, headers: 'X-Token: ${COMMONLY_AGENT_TOKEN}' }))
+      .toMatch(/headers is of type string, not an object/);
+  });
+
+  test('args declared as a string is refused, not read as no args at all', () => {
+    expect(refusedAsUnreadable({ ...defaultServer, args: '--import=data:text/javascript,1' }))
+      .toMatch(/args is of type string, not an array/);
+  });
+
+  test('an env value that is not a string is refused, an undefined one included', () => {
+    // `CANONICAL_STDIO_ENV[key] === value` is true for `undefined === undefined`,
+    // so an unknown key with no value used to make the shipped-entry predicate
+    // succeed. The shape rule is what closes that, not the key comparison.
+    expect(refusedAsUnreadable({ ...defaultServer, env: { ...defaultServer.env, NODE_OPTIONS: undefined } }))
+      .toMatch(/env.NODE_OPTIONS is not a string/);
+    expect(refusedAsUnreadable({ ...defaultServer, env: { ...defaultServer.env, COMMONLY_API_URL: 5 } }))
+      .toMatch(/env.COMMONLY_API_URL is not a string/);
+  });
+
+  test('the same fields left absent, null or empty still pass (controls)', () => {
+    for (const entry of [
+      defaultServer,
+      { ...defaultServer, env: null, args: [], headers: null },
+      { ...broker, headers: undefined },
+    ]) {
+      const result = auditDeclaredMcp({ mcp: [entry] }, { instanceUrl });
+      expect(result).toEqual({ ok: true, refusals: [] });
+    }
   });
 
   test('a malformed entry is refused rather than passed through', () => {

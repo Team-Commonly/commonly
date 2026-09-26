@@ -5,7 +5,7 @@ This folder holds platform-agnostic guidance for third‑party chat integrations
 Contents:
 - `INTEGRATION_CONTRACT.md` — required interface/contract every provider must implement.
 - `COMMONLY_APP_PLATFORM.md` — design draft for user-installable “Commonly Apps” (GitHub-App style).
-- `TELEGRAM` (see `docs/telegram/README.md`) — universal bot webhook ingest with optional secret token.
+- `TELEGRAM` (see `docs/telegram/README.md`) — universal bot webhook ingest, gated on the required instance webhook secret token.
 - `X` (see `docs/x/README.md`) — poll X posts into pods for summaries + feed.
 - `INSTAGRAM` (see `docs/instagram/README.md`) — poll Instagram Graph API media into pods.
 - Code scaffold lives in `packages/integration-sdk/` for open-sourcing the contract and registry.

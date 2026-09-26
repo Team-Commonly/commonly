@@ -48,6 +48,26 @@ jest.mock('../../routes/pg-messages', () => {
   return ex.Router();
 });
 
+// The PG-status route is mounted inside the `connectPG().then` chain in
+// server.ts, so its arrival is asynchronous. Waiting a fixed number of turns
+// encodes that chain's current shape instead of the thing under assertion: one
+// macrotask turn is enough while every step of the chain is a microtask, and it
+// stops being enough the moment the chain awaits anything that actually yields
+// (a retry delay, a real client, one added setImmediate). Await the mount.
+const pgStatus = async (app) => {
+  const deadline = Date.now() + 2000;
+  for (let attempt = 0; Date.now() < deadline && attempt < 200; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await request(app).get('/api/pg/status');
+    if (res.status !== 404) return res;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => { setImmediate(resolve); });
+  }
+  // Never mounted: request it once more so the assertion below reports what the
+  // route really answers instead of a loop artifact.
+  return request(app).get('/api/pg/status');
+};
+
 describe('server pg status route', () => {
   afterEach(() => {
     jest.resetModules();
@@ -69,11 +89,7 @@ describe('server pg status route', () => {
     mockInitPGDB.mockResolvedValue(true);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    // wait for async initialization
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
+    const res = await pgStatus(app);
     expect(res.body).toEqual({ available: true });
   });
 
@@ -82,10 +98,7 @@ describe('server pg status route', () => {
     mockConnectPG.mockResolvedValue(null);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
+    const res = await pgStatus(app);
     expect(res.body).toEqual({ available: false });
   });
 
@@ -95,10 +108,7 @@ describe('server pg status route', () => {
     mockInitPGDB.mockResolvedValue(false);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
+    const res = await pgStatus(app);
     expect(res.body).toEqual({ available: false });
   });
 
@@ -108,10 +118,7 @@ describe('server pg status route', () => {
     mockInitPGDB.mockRejectedValue(new Error('fail'));
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const { app } = require('../../server');
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-    const res = await request(app).get('/api/pg/status');
+    const res = await pgStatus(app);
     expect(res.body).toEqual({ available: false });
   });
 });
@@ -120,6 +127,7 @@ describe('server route precedence', () => {
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    delete process.env.PG_HOST;
   });
 
   it('routes pod invite lists before the pods catch-all route', async () => {
@@ -167,6 +175,7 @@ describe('server websocket authorization helpers', () => {
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    delete process.env.PG_HOST;
   });
 
   it('treats string and ObjectId-like members as valid pod members', () => {

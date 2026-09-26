@@ -11,6 +11,13 @@ const Pod = require('../../models/Pod');
 const ConnectorSecret = require('../../models/ConnectorSecret');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('../connectorSecrets');
+// The kinds registry is the single definition of where each kind's ref lives and
+// what its unavailability is called. Both sweeps below read it — the orphan
+// sweep's keep-condition was a literal `botTokenRef` pair, which revoked a
+// Discord webhook secret ten minutes after it was written (vera 74130), and the
+// unavailable sweep named Slack for any provider (vera 74131).
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { allRefPaths, kindSpec, rowReferencesSecret } = require('../connectorSecretKinds');
 // The user-facing half of the error state: this module marks a row it cannot
 // decrypt, and the reason is written for the person reading the Connectors page
 // — the same flag the delivery-failure flip sets, so it comes from that service
@@ -255,48 +262,62 @@ const sweepExpiredSlackBinds = async (now: Date): Promise<number> => {
 const sweepOrphanedConnectorSecrets = async (now: Date): Promise<number> => {
   const secrets = await ConnectorSecret.find({
     createdAt: { $lte: new Date(now.getTime() - ORPHAN_SECRET_GRACE_MS) },
-  }).select('_id integrationId createdAt').lean() as Array<{
+  }).select('_id integrationId kind createdAt').lean() as Array<{
     _id: unknown;
     integrationId: unknown;
+    kind?: string;
     createdAt: Date;
   }>;
+  // Every path any kind can store a ref at, selected once: the keep-condition is
+  // data drawn from the kinds registry, not a field name written here.
+  const select = ['isActive', ...allRefPaths()].join(' ');
   let revoked = 0;
   for (const secret of secrets) {
+    const spec = kindSpec(String(secret.kind ?? ''));
+    if (!spec) {
+      // An unrecognized kind is KEPT, not revoked. Nothing here knows where its
+      // ref lives, and "the sweep cannot find a reference" is not evidence that
+      // none exists — deleting on that reasoning is exactly how a Discord secret
+      // was being deleted while its row still pointed at it.
+      console.warn(
+        `[installable-reconciler] connector secret ${String(secret._id)} has unrecognized kind `
+        + `'${String(secret.kind)}'; kept`,
+      );
+      continue;
+    }
     const integration = await Integration.findById(secret.integrationId)
-      .select('isActive config.botTokenRef config.pendingBind.botTokenRef').lean() as {
-        isActive?: boolean;
-        config?: { botTokenRef?: string; pendingBind?: { botTokenRef?: string } };
-      } | null;
+      .select(select).lean() as Record<string, unknown> | null;
     const ref = String(secret._id);
-    if (
-      integration?.isActive === true
-      && (integration.config?.botTokenRef === ref || integration.config?.pendingBind?.botTokenRef === ref)
-    ) continue;
+    if (integration?.isActive === true && rowReferencesSecret(integration, spec, ref)) continue;
     await connectorSecrets.revoke(ref);
     revoked += 1;
   }
   return revoked;
 };
 
-const sweepUnavailableSlackSecretKeys = async (): Promise<number> => {
+const sweepUnavailableConnectorSecretKeys = async (): Promise<number> => {
   const secretCount = await ConnectorSecret.countDocuments();
   if (!secretCount) return 0;
-  let unavailable: Array<{ integrationId: unknown }>;
+  let unavailable: Array<{ integrationId: unknown; kind?: string }>;
   try {
     unavailable = await connectorSecrets.listWithUnavailableKey();
   } catch (error) {
     // A malformed or wholly absent ring makes every stored secret unreadable.
     // That is an error state, not an invitation to keep attempting sends.
     console.error('[installable-reconciler] connector secret key ring unavailable:', (error as Error).message);
-    unavailable = await ConnectorSecret.find({}).select('integrationId').lean();
+    unavailable = await ConnectorSecret.find({}).select('integrationId kind').lean();
   }
   for (const secret of unavailable) {
     const integration = await Integration.findById(secret.integrationId)
       .select('installationId').lean() as { _id: unknown; installationId?: string } | null;
     if (integration) {
+      // The reason names THIS secret's kind, so a Discord owner is not told that
+      // a Slack secret is unavailable (the string is user-facing: it is written
+      // through `userFacingError` and rendered on the Connectors page).
+      const spec = kindSpec(String(secret.kind ?? ''));
       await connectorDeliveryFailures.markConnectorUnavailable(
         integration,
-        'Slack connector secret key is unavailable',
+        spec ? spec.unavailableReason : 'Connector credential is unavailable',
       );
     }
   }
@@ -314,7 +335,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
   deactivated: number;
   expiredSlackBinds: number;
   orphanedSecrets: number;
-  unavailableSlackSecretKeys: number;
+  unavailableConnectorSecretKeys: number;
 }> => {
   const locks = await sweepStaleLocks(now);
   const active = await sweepActiveInstallations();
@@ -324,7 +345,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
   const deactivated = await sweepUninstalledInstallations();
   const expiredSlackBinds = await sweepExpiredSlackBinds(now);
   const orphanedSecrets = await sweepOrphanedConnectorSecrets(now);
-  const unavailableSlackSecretKeys = await sweepUnavailableSlackSecretKeys();
+  const unavailableConnectorSecretKeys = await sweepUnavailableConnectorSecretKeys();
   const result = {
     ...locks,
     staleComponents: active.staleComponents,
@@ -335,7 +356,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
     deactivated,
     expiredSlackBinds,
     orphanedSecrets,
-    unavailableSlackSecretKeys,
+    unavailableConnectorSecretKeys,
   };
   console.log('[installable-reconciler] sweep', result);
   return result;

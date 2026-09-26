@@ -2,13 +2,18 @@
 const DiscordService = require('../../services/discordService');
 // eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
+// eslint-disable-next-line global-require
+const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
+// eslint-disable-next-line global-require
+const { resolveDiscordWebhookUrl } = require('../../utils/discordWebhookUrl');
 
 interface IntegrationDoc {
   _id: unknown;
-  config?: Record<string, unknown>;
+  config?: Record<string, unknown> & { webhookUrlRef?: string; webhookUrl?: string };
   platformIntegration?: {
     toObject?: () => Record<string, unknown>;
     botToken?: string;
+    webhookUrl?: string;
     [key: string]: unknown;
   };
 }
@@ -50,10 +55,11 @@ function buildEffectiveConfig(integration: IntegrationDoc): DiscordConfig {
   return {
     ...integration?.config,
     ...(platformConfig as Record<string, unknown>),
-    botToken:
-      (integration?.config?.botToken as string | undefined)
-      || (platformConfig as { botToken?: string }).botToken
-      || process.env.DISCORD_BOT_TOKEN,
+    // env-first: a stored copy never wins over DISCORD_BOT_TOKEN (TASK-124).
+    botToken: resolveDiscordBotToken(
+      integration?.config?.botToken,
+      (platformConfig as { botToken?: string }).botToken,
+    ),
   };
 }
 
@@ -64,8 +70,19 @@ function createDiscordProvider(integration: IntegrationDoc): DiscordProvider {
     async validateConfig() {
       try {
         validateRequiredConfig(config, manifests.discord);
-        if (config.webhookUrl) {
-          await DiscordService.validateConfig(config);
+        // The URL is encrypted, so it is resolved here rather than carried in
+        // `config`: on a migrated row the merged plaintext is gone and the ref
+        // is the only store, and a presence check on the merged value would
+        // silently skip validation altogether. Resolution can throw (an
+        // unreadable key ring, a revoked ref) and the catch below turns that
+        // into the ValidationError this method already speaks.
+        const webhookUrl = await resolveDiscordWebhookUrl(
+          integration?.config?.webhookUrlRef,
+          integration?.platformIntegration?.webhookUrl,
+          integration?.config?.webhookUrl,
+        );
+        if (webhookUrl) {
+          await DiscordService.validateConfig({ ...config, webhookUrl });
         }
       } catch (err) {
         const e = err as { message?: string };

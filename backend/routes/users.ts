@@ -1,6 +1,6 @@
 // ESM imports keep CodeQL's missing-rate-limiting dataflow connected to the
 // DB-backed polling route below (same established pattern as messages.ts).
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
@@ -35,7 +35,7 @@ const agentConnectionReadLimit = rateLimit({
     if (authHeader) {
       return `agent-connection:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: 60 agent connection reads per 60s',
@@ -76,7 +76,7 @@ const profileWriteUserLimit = rateLimit({
   }) => {
     const userId = req.userId || req.user?.id || req.user?._id;
     if (userId) return `profile-write:${String(userId)}`;
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: 30 profile writes per 15 minutes',

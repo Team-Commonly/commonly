@@ -1,6 +1,7 @@
 import express from 'express';
 import { createHash } from 'crypto';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { Types } from 'mongoose';
 import {
   listMachinesForOwner,
@@ -32,7 +33,7 @@ const machineRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: express.Response) => {
     res.status(429).json({ message: 'rate limit exceeded: 60 machine requests per 60s' });

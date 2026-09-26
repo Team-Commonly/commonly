@@ -22,6 +22,7 @@ const {
 const { sweep } = require('../../../services/installable/installableReconciler');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
+const { DISCORD_WEBHOOK_URL, SLACK_BOT_TOKEN } = require('../../../services/connectorSecretKinds');
 const telegramService = require('../../../services/telegramService');
 const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
 const {
@@ -422,6 +423,55 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('revokes the connection\'s grants when the installation is uninstalled (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
+  it('revokes the grants on the retired-manifest tombstone path too (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+    // A retired manifest leaves `installable` null, which is the branch that
+    // tombstones the connection instead of unprojecting it.
+    await Installable.deleteMany({ installableId: 'telegram' });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
   it('refuses install and uninstall while an administrator has paused the parent without writing either row', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -480,7 +530,7 @@ describe('installable connector projection', () => {
   it('revokes Slack’s envelope secret when the installation is uninstalled', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       { $set: { 'config.botTokenRef': ref } },
@@ -715,7 +765,7 @@ describe('installable connector projection', () => {
   it('expires a pending Slack bind, revokes its encrypted token, and leaves a retryable active card', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       {
@@ -741,7 +791,7 @@ describe('installable connector projection', () => {
   });
 
   it('does not sweep a freshly written orphaned secret before a callback can commit its bind', async () => {
-    const ref = await put(new mongoose.Types.ObjectId().toString(), 'slack', 'xoxb-secret');
+    const ref = await put(new mongoose.Types.ObjectId().toString(), SLACK_BOT_TOKEN, 'xoxb-secret');
     const now = new Date();
 
     const fresh = await sweep(now);
@@ -760,7 +810,7 @@ describe('installable connector projection', () => {
   it('keeps a Slack projection visible but error-gated when its secret key disappears from the ring', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       {
@@ -779,11 +829,97 @@ describe('installable connector projection', () => {
     const integration = await Integration.findById(installed.integration._id);
     const parent = await InstallableInstallation.findById(installed.installation._id);
 
-    expect(reconciled.unavailableSlackSecretKeys).toBe(1);
+    expect(reconciled.unavailableConnectorSecretKeys).toBe(1);
     expect(integration.isActive).toBe(true);
     expect(integration.status).toBe('error');
     expect(integration.errorMessage).toMatch(/secret key/i);
     expect(parent.components.every((component) => component.status === 'active')).toBe(true);
+  });
+
+  const seedDiscordConnectorWithSecret = async () => {
+    const integration = await Integration.create({
+      podId: new mongoose.Types.ObjectId(),
+      type: 'discord',
+      status: 'connected',
+      isActive: true,
+      createdBy: new mongoose.Types.ObjectId(),
+      config: { serverId: 'srv', channelId: 'chan' },
+    });
+    const ref = await put(
+      String(integration._id),
+      DISCORD_WEBHOOK_URL,
+      'https://discord.com/api/webhooks/1/token',
+    );
+    await Integration.updateOne(
+      { _id: integration._id },
+      { $set: { 'config.webhookUrlRef': ref } },
+    );
+    return { integrationId: integration._id, ref };
+  };
+
+  const backdateSecret = async (ref) => {
+    const now = new Date();
+    await ConnectorSecret.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(ref) },
+      { $set: { createdAt: new Date(now.getTime() - (10 * 60_000) - 1) } },
+    );
+    return now;
+  };
+
+  it('keeps a Discord webhook secret past the grace window while its row still points at it', async () => {
+    // Blocker 1 (vera 74130): the keep-condition was a literal `botTokenRef`
+    // pair, so this secret matched neither path, the sweep revoked it ten
+    // minutes after the write, and the connector's webhook stopped resolving.
+    const { ref } = await seedDiscordConnectorWithSecret();
+    const now = await backdateSecret(ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
+  });
+
+  it('names the Discord webhook, not a Slack key, when a Discord secret is unreadable', async () => {
+    // Blocker 2 (vera 74131): the reason string is written through
+    // `userFacingError` and rendered verbatim on the Connectors page, so a
+    // Slack-named sentence reached Discord owners.
+    const { integrationId, ref } = await seedDiscordConnectorWithSecret();
+    process.env.CONNECTOR_SECRET_KEYS = `k2:${Buffer.alloc(32, 2).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k2';
+
+    const reconciled = await sweep(new Date());
+    const integration = await Integration.findById(integrationId);
+
+    expect(reconciled.unavailableConnectorSecretKeys).toBe(1);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
+    expect(integration.status).toBe('error');
+    expect(integration.errorMessage).toBe('Discord connector webhook is unavailable');
+    expect(integration.errorMessageUserFacing).toBe(true);
+  });
+
+  it('keeps a secret whose kind it cannot place instead of deleting the ref it never looked for', async () => {
+    // Fail-closed on an unrecognized kind: this build does not know where that
+    // ref lives, and "the sweep found no reference" is not evidence that none
+    // exists — the reasoning that produced blocker 1 in the first place.
+    const integration = await Integration.create({
+      podId: new mongoose.Types.ObjectId(),
+      type: 'discord',
+      status: 'connected',
+      isActive: true,
+      createdBy: new mongoose.Types.ObjectId(),
+      config: { serverId: 'srv', channelId: 'chan' },
+    });
+    const ref = await put(
+      String(integration._id),
+      { kind: 'future-credential', provider: 'future' },
+      'material',
+    );
+    const now = await backdateSecret(ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
   });
 
   it('completes a stale activating row with its already-active, same-generation projection', async () => {
