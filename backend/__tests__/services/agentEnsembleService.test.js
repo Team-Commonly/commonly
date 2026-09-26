@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../utils/mongoBinaryConfig');
 const AgentEnsembleService = require('../../services/agentEnsembleService');
 const AgentEnsembleState = require('../../models/AgentEnsembleState');
 const Pod = require('../../models/Pod');
@@ -37,7 +38,8 @@ describe('AgentEnsembleService', () => {
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create({
       binary: {
-        version: '7.0.11',
+        version: MONGO_BINARY_VERSION,
+        downloadDir: MONGOMS_DOWNLOAD_DIR,
         skipMD5: true,
       },
       instance: {
