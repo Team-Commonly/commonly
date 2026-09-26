@@ -423,6 +423,55 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('revokes the connection\'s grants when the installation is uninstalled (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
+  it('revokes the grants on the retired-manifest tombstone path too (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+    // A retired manifest leaves `installable` null, which is the branch that
+    // tombstones the connection instead of unprojecting it.
+    await Installable.deleteMany({ installableId: 'telegram' });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
   it('refuses install and uninstall while an administrator has paused the parent without writing either row', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });

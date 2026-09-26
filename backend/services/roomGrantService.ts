@@ -432,6 +432,61 @@ export const assertGrantUsable = async (
   return grant;
 };
 
+/**
+ * Removal's grants step (tools plan §10.5), the one place a connection's own
+ * grants are ended. It has to run while the connection row still exists: the
+ * granter's revoke route resolves ownership through `findConnection`
+ * (`routes/grants.ts:421`), so once removal has deleted the row every grant on
+ * it answers 403 `access_denied` and can never be revoked (TASK-145).
+ *
+ * A connection is addressed in three ways and a grant stores whichever
+ * identifier it was minted with, so all three are matched: the row's `_id`,
+ * its top-level `installationId` (GitHub's installation id, Linear's
+ * organization id) and `config.installationId`. Other connections' grants are
+ * untouched.
+ */
+export const revokeConnectionGrants = async (options: {
+  connection?: {
+    _id?: unknown;
+    installationId?: unknown;
+    config?: { installationId?: unknown };
+  } | null;
+  revokedBy: string;
+}): Promise<number> => {
+  const identifiers = new Set<string>();
+  const connection = options.connection;
+  if (connection?._id) identifiers.add(String(connection._id));
+  // Both slots independently: they are written together today, but the
+  // top-level one is request-supplied on some rows and the config one is
+  // server-owned, so a grant may have been minted against either (Vera 74451).
+  if (connection?.installationId) identifiers.add(String(connection.installationId));
+  if (connection?.config?.installationId) identifiers.add(String(connection.config.installationId));
+  if (identifiers.size === 0) return 0;
+
+  const addressed = [...identifiers];
+  const grants = await RoomGrant.find({
+    $or: [
+      { connectionId: { $in: addressed } },
+      { installationId: { $in: addressed } },
+    ],
+  }).select('grantId').lean() as Array<{ grantId?: string }>;
+
+  let revoked = 0;
+  for (const grant of grants) {
+    if (!grant?.grantId) continue;
+    try {
+      // revokeGrant cascades the lineage and counts only the rows it moved, so
+      // a child reached twice or already revoked contributes nothing.
+      revoked += await revokeGrant(String(grant.grantId), options.revokedBy);
+    } catch (error) {
+      // A grant deleted between this read and that write is already gone;
+      // removal must not fail on it. Anything else is real.
+      if ((error as { code?: string })?.code !== 'grant_not_found') throw error;
+    }
+  }
+  return revoked;
+};
+
 export const getEffectiveAudience = effectiveAudience;
 
 export default {
@@ -439,6 +494,7 @@ export default {
   createGrant,
   attenuateGrant,
   revokeGrant,
+  revokeConnectionGrants,
   assertGrantUsable,
   getGrantLineage,
   effectiveAudience,
