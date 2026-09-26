@@ -1,4 +1,6 @@
 // @ts-nocheck
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import * as TestUtils from 'react-dom/test-utils';
@@ -89,4 +91,37 @@ test('the catalog example publishes only keys a caller may send', async () => {
   // `signingSecret` is stripped from a body, so a client that sent them was
   // answered with `server_owned_config_key`.
   expect(text).not.toMatch(/"botToken",\s*"signingSecret"/);
+});
+
+// Layout guard for TASK-143. jsdom has no layout engine, so it cannot see this
+// bug in either of the two ways it goes wrong: with no break opportunity the
+// path held the summary row wider than its own box and the accordion's
+// `overflow: hidden` clipped it (16 of 20 rows at 390x900, worst 135px); with
+// `overflow-wrap: anywhere` and no floor the row squeezed the path into a
+// column of single glyphs instead (9px wide, 33 lines, a 776px row). Both were
+// measured in Chromium on the live page; 0 of 20 rows clip by 700px, so the
+// narrow-width rule is cut at 768px. Only declarations can be pinned here --
+// including the class name the CSS rule needs on the Box, since a rule that
+// matches nothing would pass a CSS-only guard.
+test('gives the endpoint path its own line instead of squeezing or clipping it (TASK-143)', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'ApiDevPage.css'), 'utf8');
+  const blockAfter = (src, sel) => {
+    const i = src.indexOf(`${sel} {`);
+    expect(i).toBeGreaterThan(-1);
+    return src.slice(i, src.indexOf('}', i));
+  };
+
+  // Last-resort break, for a path wider than the line it was given.
+  expect(blockAfter(css, '.api-dev-endpoint-path')).toContain('overflow-wrap: anywhere');
+
+  const media = css.indexOf('@media (max-width: 767px)');
+  expect(media).toBeGreaterThan(-1);
+  const narrow = css.slice(media);
+  // The row wraps, so the siblings move down rather than squeezing the path...
+  expect(blockAfter(narrow, '.api-dev-accordion-row')).toContain('flex-wrap: wrap');
+  // ...and it is the path that gets the whole line, not the description or badge.
+  expect(blockAfter(narrow, '.api-dev-endpoint-path')).toContain('flex: 1 1 100%');
+  // The rule targets the flex Box by class, so the class has to be on it.
+  const tsx = fs.readFileSync(path.join(__dirname, 'ApiDevPage.tsx'), 'utf8');
+  expect(tsx).toContain('className="api-dev-accordion-row"');
 });

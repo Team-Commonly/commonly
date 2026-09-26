@@ -880,7 +880,7 @@ const ApiDevPage = () => {
                         return (
                         <Accordion key={endpoint.id} className="api-dev-accordion">
                             <AccordionSummary expandIcon={<ExpandMoreIcon />} className="api-dev-accordion-summary">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                                <Box className="api-dev-accordion-row" sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
                                     <Chip 
                                         label={endpoint.method} 
                                         color={getMethodColor(endpoint.method)}
