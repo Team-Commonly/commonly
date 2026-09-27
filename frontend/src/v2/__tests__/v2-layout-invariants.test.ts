@@ -1846,18 +1846,29 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(selector).toContain(':not(.v2-connector-row__action--secondary)');
     }
     // TASK-162 (3): line 3 is the consequence as TEXT beside the mark (the mode
-    // word moved onto the mark itself), and the not-yet names stack above 760.
-    expect(ruleBody(v2, '.v2-connector-row__detail--mark')).toContain('display: inline-flex');
+    // word moved onto the mark itself) and the not-yet names stack above 760.
     expect(ruleBody(v2, '.v2-connector-row__names')).toContain('flex-direction: column');
-    // Rule 3: the kicker is mono 11; rule 1: the mark is 16px and the mode word is hidden until 760; rule 2: the gear is 32 (44 on the phone).
+    // …and the mark SHARES the Tools glyph's rule rather than carrying a second
+    // rule of its own. The two rows had drifted 16 vs 14, gap 8 vs 6, secondary vs
+    // tertiary; a rule of its own can always drift again, so the guard counts the
+    // rules that mention the mark: the shared one and the ≤760 hide, nothing else.
+    const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const markRuleChunks = [...stripComments(v2).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selector]) => selector.includes('.v2-connector-row__mark'));
+    expect(markRuleChunks).toHaveLength(2);
+    const sharedMarkRule = markRuleChunks.find(([, selector]) => selector.includes('.v2-tools__mode'));
+    expect(sharedMarkRule?.[2]).toContain('display: inline-flex');
+    expect(sharedMarkRule?.[2]).toContain('vertical-align: -2px');
+    expect(sharedMarkRule?.[2]).toContain('color: var(--v2-text-tertiary)');
+    // Rule 3: the kicker is mono 11; rule 1 (as revised by the TASK-162 gate): the mode word is hidden until 760 and the mark's own 16px rule is GONE — its size now comes from the shared rule above plus the glyph's `size` prop; rule 2: the gear is 32 (44 on the phone).
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('font-size: 11px');
     expect(ruleBody(v2, '.v2-connector-row__kicker-mode')).toContain('display: none');
-    expect(ruleBody(v2, '.v2-connector-row__mark')).toContain('width: 16px');
+    expect(v2).not.toContain('width: 16px; height: 16px; color: var(--v2-text-secondary)');
     expect(ruleBody(v2, '.v2-root button.v2-connector-row__action--icon')).toContain('width: 32px');
     const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
     expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
-    expect(phone760).toContain('.v2-connector-row__names { flex-direction: row; flex-wrap: wrap; }');
+    expect(phone760).toContain('.v2-connector-row__names { display: block; }');
     expect(phone760).toContain('.v2-connector-row__name-sep { display: inline; }');
     expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
     // TASK-140: the aside's Revoke ✕ carries `--secondary` as well as `--icon`,

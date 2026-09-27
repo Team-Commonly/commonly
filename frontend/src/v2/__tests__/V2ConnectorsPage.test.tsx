@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
+import en from '../../i18n/locales/en.json';
 
 jest.mock('axios', () => {
   const mock = {
@@ -113,9 +114,28 @@ describe('V2ConnectorsPage', () => {
     // consequence is the visible words beside it, so line 3 is never a bare mark.
     expect(mark?.getAttribute('aria-label')).toMatch(/^(attention|mirror|relay off)$/);
     expect(mark?.getAttribute('title')).toBe(mark?.getAttribute('aria-label'));
-    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).toMatch(/every agent line|messages stay in the pod/);
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).toBe('messages stay in the pod');
+    // The mode word is NOT repeated on line 3: at ≤760 the kicker carries it, so
+    // 'relay off · messages stay in the pod' said it twice (TASK-162 UX gate).
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).not.toMatch(/^(attention|mirror|relay off) ·/);
     expect(row?.querySelector('.v2-connector-row__kicker-mode')?.textContent).toMatch(/attention|mirror|relay off/);
     expect(row?.querySelector('.v2-connector-row__when')).toBeNull();
+  });
+
+  it('TASK-162: line 3 never repeats the mode word the kicker already carries', async () => {
+    // The prefixes lived in the component's defaultValue, which is exactly where
+    // they could not be guarded: once the key exists in the catalog the catalog
+    // wins, so reverting the defaultValue changes nothing rendered. The copy now
+    // lives in en.json, so that is where the rule is asserted.
+    const kickerByRow: Array<[keyof typeof en.connectors, string]> = [
+      ['rowAttention', 'attention'],
+      ['rowMirror', 'mirror'],
+      ['rowRelayOff', 'relay off'],
+    ];
+    for (const [key, modeWord] of kickerByRow) {
+      expect(en.connectors[key]).toBeTruthy();
+      expect(en.connectors[key].startsWith(modeWord)).toBe(false);
+    }
   });
 
   it('TASK-162: the not-yet channel names are separate elements, with a separator that only shows at ≤760', async () => {

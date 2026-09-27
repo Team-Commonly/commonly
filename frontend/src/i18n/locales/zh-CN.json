@@ -1866,6 +1866,9 @@
     "kickerAttention": "提醒",
     "kickerMirror": "镜像",
     "kickerOff": "中继已关",
+    "rowAttention": "升级消息会回到频道",
+    "rowMirror": "智能体的每条消息都会回到频道",
+    "rowRelayOff": "消息只留在 Pod 内",
     "age": {
       "added": "{{age}}前添加",
       "started": "{{age}}前开始",
