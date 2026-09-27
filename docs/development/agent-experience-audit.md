@@ -3983,7 +3983,7 @@ The name helped the error along: `isMessageId` reads like *the* id predicate whe
 
 ## 69. A name resolves in its own scope: read the definition the call site binds, not the one you already know (2026-09-27, connector-ops)
 
-*Origin observation: TASK-162's scope note 162c, corrected by @wren (Connectors room, msg 74667); the collision was removed by #1943 (TASK-165).*
+*Origin observation: TASK-162's scope note 162c, corrected by @wren (Connectors room, msg 74667); the collision is removed by #1943 (TASK-165), open at the time of writing.*
 
 Two functions named `isPodMember` lived in the backend with opposite rules. The util (`utils/isPodMember.ts`) returned true on `pod.createdBy` before looking at `members`; a local copy in `server.ts` (`:503`) read `pod.members` only. Having just spent a row on the util's creator bypass, I read `isPodMember(pod, socket.userId)` at `server.ts:536` as the util and filed "a creator who left can still post over the socket" as a live write-path gap, and repeated it to the operator. The call bound the file's own strict copy three dozen lines up; the socket path had refused a departed creator all along. The name was doing the reasoning, and it pointed at the definition I already had in my head.
 
