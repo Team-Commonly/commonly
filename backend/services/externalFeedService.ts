@@ -3,6 +3,10 @@ const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
 const Post = require('../models/Post');
 // eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const { isListedPodMember } = require('../utils/isPodMember');
+// eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const registry = require('../integrations');
@@ -73,6 +77,8 @@ interface CuratorDispatch {
 interface FeedSyncResult {
   integrationId: unknown;
   success: boolean;
+  /** The owner is not a listed member of the target pod, so nothing was written. */
+  paused?: boolean;
   messageCount: number;
   createdPosts?: number;
   curatorEventsEnqueued?: number;
@@ -82,6 +88,39 @@ interface FeedSyncResult {
 
 function shouldPersistExternalFeedPosts(): boolean {
   return process.env.EXTERNAL_FEED_PERSIST_POSTS === '1';
+}
+
+const OWNER_LEFT_POD_MESSAGE = 'The account that authorized this connection is no longer a member of the pod it '
+  + 'syncs into, so nothing is being synced. Add that account back to the pod, then reconnect this feed.';
+
+/**
+ * A feed's owner can stop being a pod member without anyone touching the
+ * integration: `leavePod` filters them out of `members`, agent cleanup `$pull`s
+ * them, and the row kept syncing as them. This service read no membership at
+ * all before TASK-164, so a write could be attributed to an account the pod
+ * refused — the flag-on Post path wrote as `integration.createdBy`, and the
+ * default path handed their feed to the pod's curator agents.
+ *
+ * `isListedPodMember` is the predicate `createMessage` and the socket write path
+ * implement, so the feed is never more permissive than the pod it writes into.
+ * A missing pod pauses too: there is no surface left to write into, and silence
+ * would look like a healthy sync.
+ *
+ * `status: 'error'` takes the row out of the sync query (`status: 'connected'`),
+ * so this is written once per connection rather than on every tick, and the row
+ * keeps `isActive: true` so it stays on the owner's Connectors page. That page
+ * has no action for x/instagram, which is why the copy carries the next step
+ * itself, and why it is marked user-facing rather than diagnostic.
+ */
+async function pauseFeedForDepartedOwner(integrationId: unknown): Promise<void> {
+  await Integration.findByIdAndUpdate(integrationId, {
+    $set: {
+      status: 'error',
+      errorMessage: OWNER_LEFT_POD_MESSAGE,
+      errorMessageUserFacing: true,
+      lastSync: new Date(),
+    },
+  });
 }
 
 function getAttachmentUrl(attachments: NormalizedMessage['attachments'] = []): string {
@@ -312,6 +351,20 @@ async function syncExternalFeeds(): Promise<FeedSyncResult[]> {
   const results = await Promise.all(
     integrations.map(async (integration): Promise<FeedSyncResult> => {
       try {
+        // Before the provider call: a departed owner must make no provider
+        // request, advance no cursor, and write nothing on either path.
+        const pod = await Pod.findById(integration.podId).select('members').lean();
+        if (!pod || !isListedPodMember(pod, integration.createdBy)) {
+          await pauseFeedForDepartedOwner(integration._id);
+          return {
+            integrationId: integration._id,
+            success: false,
+            paused: true,
+            messageCount: 0,
+            content: OWNER_LEFT_POD_MESSAGE,
+          };
+        }
+
         const provider = registry.get(integration.type, integration);
         const sinceId = integration.config?.lastExternalId;
         const sinceTimestamp = integration.config?.lastExternalTimestamp;
