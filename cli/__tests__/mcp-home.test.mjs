@@ -197,8 +197,14 @@ describe('planMcpSpawn — what a spawn executes', () => {
     // not the `exists` check doing the work.
     const home = makeHome();
     const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
-    mkdirSync(join(home, '0.3.13', 'escape'), { recursive: true });
-    writeFileSync(join(home, '0.3.13', 'escape', 'evil.js'), '#!/usr/bin/env node\n');
+    // Derived from `pkgDir` with the same join the reader uses, and asserted to be
+    // outside it: the first draft of this arm placed the file at a path the join
+    // never resolves to, so the `exists` check — not the confinement — was doing
+    // the work and the mutation that removes the confinement SURVIVED.
+    const escapeTarget = join(pkgDir, '../../escape/evil.js');
+    mkdirSync(dirname(escapeTarget), { recursive: true });
+    writeFileSync(escapeTarget, '#!/usr/bin/env node\n');
+    expect(escapeTarget.startsWith(pkgDir)).toBe(false);
     mkdirSync(pkgDir, { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
       name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': '../../escape/evil.js' },
