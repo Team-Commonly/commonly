@@ -22,6 +22,7 @@
     "discord:list": "node scripts/register-discord-commands.js list",
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
     "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
+    "migrate:task-source-ref-identity": "ts-node scripts/migrate-task-source-ref-identity.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
     "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",
     "sweep:leftover-runtime-tokens": "ts-node scripts/sweep-leftover-runtime-tokens.ts",

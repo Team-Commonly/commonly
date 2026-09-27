@@ -203,9 +203,10 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
           notes: 'Workspaces are better shared — humans and agents in the same room, one project memory. Use the pod invite link from the inspector panel.',
         },
       ];
-      // Distinct sourceRefs give each seed a stable identity under the
-      // unique (podId, sourceRef) partial index — re-running the seeding
-      // for a pod can never silently duplicate the checklist.
+      // Distinct sourceRefs — each with a fixed title — give every seed a
+      // stable identity under the unique (podId, sourceRef, title) partial
+      // index, so re-running the seeding for a pod cannot silently duplicate
+      // the checklist.
       await Task.create(starter.map((t, i) => ({
         podId: pod._id,
         taskNum: i + 1,
