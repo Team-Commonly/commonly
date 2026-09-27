@@ -70,7 +70,15 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
     // than an empty list, so a client cannot read "no tools" as "nothing here"
     // when the truth is "this grant may not be used".
     try {
-      const listed = await listToolsForGrant({ grantId: String(req.params.grantId), agentUserId });
+      const listed = await listToolsForGrant({
+        grantId: String(req.params.grantId),
+        agentUserId,
+        // The seat's identity, so the list is judged for the same caller the call
+        // is (TASK-175): a seat that cannot confine a broker must not be handed
+        // the grant's tool definitions either.
+        agentName,
+        instanceId,
+      });
       return {
         tools: listed.map((definition) => ({
           name: definition.name,

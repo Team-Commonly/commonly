@@ -71,6 +71,10 @@ describe('MCP grant transport', () => {
     expect(mockListToolsForGrant).toHaveBeenCalledWith({
       grantId: 'grant-1',
       agentUserId: 'agent-a',
+      // The seat's identity, so the list is judged for the same caller the call
+      // is (TASK-175).
+      agentName: 'openclaw',
+      instanceId: 'aria',
     });
 
     const called = await request(app)

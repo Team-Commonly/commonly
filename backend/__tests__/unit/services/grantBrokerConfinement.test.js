@@ -121,6 +121,19 @@ describe('grant broker confinement predicate', () => {
     ['a padded adapter name', undefined, { adapter: ' pi ' }, 'adapter_cannot_confine'],
     ['a padded upper-case adapter name', undefined, { adapter: 'PI ' }, 'adapter_cannot_confine'],
     ['a normalised name that is not pi', undefined, { adapter: ' claude ' }, null],
+    // TASK-175: the adapter is `runtime.adapter` OR `runtime.runtimeType`. A
+    // hand-attached pi seat writes {runtimeType: 'pi', host: 'byo'} and no
+    // adapter key (cli/src/commands/agent.js:664, :688), so reading `adapter`
+    // alone admitted exactly the seat this rule exists to refuse.
+    ['a pi seat tagged only by runtimeType (the hand-attached shape)', undefined, { runtimeType: 'pi', host: 'byo' }, 'adapter_cannot_confine'],
+    ['a pi runtimeType in another case', undefined, { runtimeType: 'PI' }, 'adapter_cannot_confine'],
+    ['a declared adapter wins over a pi runtimeType, as it does in the daemon', undefined, { adapter: 'claude', runtimeType: 'pi', host: 'byo' }, null],
+    ['a claude-code runtimeType', undefined, { runtimeType: 'claude-code', host: 'byo' }, null],
+    ['a webhook connect-page seat', undefined, { runtimeType: 'webhook', host: 'byo' }, null],
+    // The arm that rejects "refuse anything without an adapter": undeclared, the
+    // daemon resolves only claude or codex (cli/src/commands/daemon.js:142), so
+    // failing closed here would refuse working claude seats.
+    ['a row naming neither adapter nor runtimeType', undefined, { host: 'byo' }, null],
   ])('decides %s', (_label, environment, runtime, expected) => {
     const refusal = grantBrokerRefusal(environment, runtime);
     if (expected === null) {

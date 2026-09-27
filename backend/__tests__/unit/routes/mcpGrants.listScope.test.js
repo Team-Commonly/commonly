@@ -31,6 +31,14 @@ jest.mock('../../../services/approvalActionService', () => ({
   proposeAction: jest.fn().mockResolvedValue({ ok: true, approvalId: 'approval-test' }),
 }));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentRoom: jest.fn() }));
+// The seat's own declaration is judged inside the broker call (TASK-175). This
+// suite is about what the URL's grant exposes, so the resolution is mocked; the
+// resolution is witnessed on memory Mongo in
+// __tests__/unit/services/seatGrantConfinement.test.js.
+const mockSeatConfinement = jest.fn();
+jest.mock('../../../services/seatGrantConfinement', () => ({
+  judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
+}));
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
   req.agentUser = {
     _id: 'agent-a',
@@ -104,6 +112,7 @@ const { getToolDefinitions } = require('../../../services/toolBrokerService');
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
   mockRoomGrant.findOne.mockResolvedValue(seatGrant());
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app',

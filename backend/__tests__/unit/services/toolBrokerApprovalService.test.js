@@ -21,6 +21,14 @@ jest.mock('../../../services/githubAppService', () => ({
 const mockProposeAction = jest.fn();
 jest.mock('../../../services/approvalActionService', () => ({ proposeAction: (...args) => mockProposeAction(...args) }));
 jest.mock('../../../services/dmService', () => mockDmService);
+// The seat's own declaration is judged inside `callTool`/`listToolsForGrant`
+// (TASK-175). This suite has no Mongo, so the RESOLUTION is mocked here and the
+// resolution itself is witnessed on memory Mongo in
+// `seatGrantConfinement.test.js` — this file witnesses where the check sits.
+const mockSeatConfinement = jest.fn();
+jest.mock('../../../services/seatGrantConfinement', () => ({
+  judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
+}));
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
     constructor(code, message, statusCode = 400, details) {
@@ -54,6 +62,7 @@ const grant = (overrides = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockRoomGrant.findOne.mockResolvedValue(grant());
   mockIntegration.findOne.mockResolvedValue({
