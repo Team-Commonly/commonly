@@ -12,6 +12,8 @@ const Pod = require('../../models/Pod');
 const registry = require('../../integrations');
 const SocialPolicyService = require('../../services/socialPolicyService');
 const GlobalModelConfigService = require('../../services/globalModelConfigService');
+// eslint-disable-next-line global-require
+const { isListedPodMember } = require('../../utils/isPodMember');
 const externalFeedService = require('../../services/externalFeedService');
 
 let PGPod = null;
@@ -115,6 +117,17 @@ const ensureGlobalSocialFeedPod = async (userId: any) => {
       createdBy: userId,
       tags: ['social', 'global', 'feeds'],
     });
+  } else if (!isListedPodMember(globalPod, userId)) {
+    // The requester is about to own a feed integration in this pod, and the
+    // sync refuses to write for an owner the pod does not list (TASK-164).
+    // Only the FIRST requester became a Mongo member (at creation); a second
+    // admin configuring the other feed type was mirrored into PG alone, so
+    // their first sync would pause a supported setup. Mongo `members` is what
+    // the predicate reads and what the pod's own write paths enforce; the PG
+    // mirror follows below. `createdBy` is deliberately untouched — it is the
+    // row's owner, not a membership record.
+    await Pod.updateOne({ _id: globalPod._id }, { $addToSet: { members: userId } });
+    globalPod = await Pod.findById(globalPod._id);
   }
 
   await ensureGlobalPodPostgresSync({ pod: globalPod, userId });
