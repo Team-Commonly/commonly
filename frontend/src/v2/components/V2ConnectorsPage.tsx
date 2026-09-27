@@ -727,8 +727,8 @@ const V2ConnectorsPage: React.FC = () => {
       const markLabel = relay
         ? (mirror
           ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-          : t('connectors.rowAttention', { defaultValue: 'attention · escalations reach the channel' }))
-        : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' });
+          : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' }))
+        : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
         action: (isTelegram || isSlack) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
@@ -1064,8 +1064,14 @@ const V2ConnectorsPage: React.FC = () => {
             </span>
             <strong>{row.line}</strong>
             {row.mark ? (
+              // TASK-162 (3): the consequence is the visible words; the mode word
+              // (mirror / attention / relay off) is what the glyph itself means,
+              // so it rides title + aria-label rather than being the only thing
+              // on the line. The glyph rides .v2-tools__mode's 14px rule (see
+              // v2.css): #1782 says the channel mark follows the Tools glyph.
               <span className="v2-connector-row__detail">
-                <span className="v2-connector-row__mark" title={row.mark.label} role="img" aria-label={row.mark.label}><MarkGlyph name={row.mark.name} /></span>
+                <span className="v2-connector-row__mark" title={row.mark.word} role="img" aria-label={row.mark.word}><MarkGlyph name={row.mark.name} size={14} /></span>
+                <span className="v2-connector-row__mark-text">{row.mark.label}</span>
               </span>
             ) : (
               <span className="v2-connector-row__detail">{row.detail}</span>
@@ -1486,7 +1492,14 @@ const V2ConnectorsPage: React.FC = () => {
                 <span className="v2-connector-row__name">
                   <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
                   <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="discord" /></span>
-                  <span>{UNAVAILABLE_PLATFORM_LABELS.join(' · ')}</span>
+                  <span className="v2-connector-row__names">
+                    {UNAVAILABLE_PLATFORM_LABELS.map((name, index) => (
+                      <React.Fragment key={name}>
+                        {index > 0 && <span className="v2-connector-row__name-sep" aria-hidden="true"> · </span>}
+                        <span className="v2-connector-row__name-item">{name}</span>
+                      </React.Fragment>
+                    ))}
+                  </span>
                 </span>
                 <span className="v2-connector-row__details">
                   <span className="v2-connector-row__kicker">{t('connectors.notYetKicker', { defaultValue: 'not yet' })}</span>

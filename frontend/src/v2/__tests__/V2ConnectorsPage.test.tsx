@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
+import en from '../../i18n/locales/en.json';
 
 jest.mock('axios', () => {
   const mock = {
@@ -109,9 +110,45 @@ describe('V2ConnectorsPage', () => {
     const mark = row?.querySelector('.v2-connector-row__mark');
     expect(mark).not.toBeNull();
     expect(mark).toHaveAttribute('role', 'img');
-    expect(mark?.getAttribute('aria-label')).toMatch(/attention|every agent line|relay off/);
+    // TASK-162 (3): the glyph carries the MODE WORD (what the mark means); the
+    // consequence is the visible words beside it, so line 3 is never a bare mark.
+    expect(mark?.getAttribute('aria-label')).toMatch(/^(attention|mirror|relay off)$/);
+    expect(mark?.getAttribute('title')).toBe(mark?.getAttribute('aria-label'));
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).toBe('messages stay in the pod');
+    // The mode word is NOT repeated on line 3: at ≤760 the kicker carries it, so
+    // 'relay off · messages stay in the pod' said it twice (TASK-162 UX gate).
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).not.toMatch(/^(attention|mirror|relay off) ·/);
     expect(row?.querySelector('.v2-connector-row__kicker-mode')?.textContent).toMatch(/attention|mirror|relay off/);
     expect(row?.querySelector('.v2-connector-row__when')).toBeNull();
+  });
+
+  it('TASK-162: line 3 never repeats the mode word the kicker already carries', async () => {
+    // The prefixes lived in the component's defaultValue, which is exactly where
+    // they could not be guarded: once the key exists in the catalog the catalog
+    // wins, so reverting the defaultValue changes nothing rendered. The copy now
+    // lives in en.json, so that is where the rule is asserted.
+    const kickerByRow: Array<[keyof typeof en.connectors, string]> = [
+      ['rowAttention', 'attention'],
+      ['rowMirror', 'mirror'],
+      ['rowRelayOff', 'relay off'],
+    ];
+    for (const [key, modeWord] of kickerByRow) {
+      expect(en.connectors[key]).toBeTruthy();
+      expect(en.connectors[key].startsWith(modeWord)).toBe(false);
+    }
+  });
+
+  it('TASK-162: the not-yet channel names are separate elements, with a separator that only shows at ≤760', async () => {
+    mockGets([]);
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector('.v2-connector-row--not-yet')).not.toBeNull());
+    const names = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
+    expect(names).not.toBeNull();
+    // Separate elements, not one joined string: above 760 they stack in the name
+    // track, so a joined string would be a single 140px-wide line that runs into
+    // the details column.
+    expect(Array.from(names!.querySelectorAll('.v2-connector-row__name-item')).map((item) => item.textContent)).toEqual(['Discord', 'WhatsApp']);
+    expect(names!.querySelectorAll('.v2-connector-row__name-sep')).toHaveLength(1);
   });
 
   it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
@@ -145,7 +182,10 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
     expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
+    // TASK-162 (2): the two not-yet names are separate elements that stack in the
+    // name track above 760 and join with ' · ' at ≤760 — no longer one string.
+    expect(screen.getByText('Discord')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);

@@ -9890,6 +9890,11 @@ body.modern-ui.v2-canvas {
   /* Direction A (2026-09-19): the age column is gone — it rides the mono kicker
      above line 1 — so the row is name · details · one act. */
   grid-template-columns: 140px minmax(150px, 1fr) 120px;
+  /* TASK-162 (2): the channel name and its details met at 0px — the 140px name
+     track ends exactly where the details track begins, so a name that fills its
+     track touches the sentence. A 12px gutter on BOTH row grids (here and the
+     selection button's inner grid below) keeps the two columns apart. */
+  column-gap: 12px;
   align-items: center;
   min-height: 82px;
   padding: 16px 18px;
@@ -9903,6 +9908,7 @@ body.modern-ui.v2-canvas {
   display: grid;
   grid-column: 1 / 3;
   grid-template-columns: 140px minmax(150px, 1fr);
+  column-gap: 12px;
   align-items: center;
   min-width: 0;
   padding: 0;
@@ -9941,14 +9947,26 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 /* Meta wraps to a second line; it never ellipsises (lily-shen, 64026). */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
+/* TASK-162 (3): line 3 used to be the bare 16px mark, its consequence words
+   reachable only through the glyph's tooltip — and at ≤760 the mark is hidden,
+   so line 3 disappeared entirely on a phone. The consequence is now TEXT beside
+   the mark; the mode word moved onto the mark itself (title + aria-label), and
+   the glyph itself follows #1782: it takes the Tools glyph's rule below (14px,
+   gap 6, tertiary, vertical-align -2px) rather than a 16px rule of its own,
+   because beside a 12/16 mono sentence a 16px mark grows the line box to 18px. */
+/* TASK-162 (2): the not-yet row lists two channels. Above 760 they stack in the
+   140px name track; at ≤760 they join with ' · ' (the separator is the only
+   element that switches, so nothing here depends on generated content). */
+.v2-connector-row__names { display: flex; flex-direction: column; }
+.v2-connector-row__name-sep { display: none; }
 .v2-connector-row__when { padding-right: 16px; }
 /* Direction A rule 3: `pod · verb age` in mono 11 above line 1, on every row. */
 .v2-connector-row__kicker { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; font-weight: 500; line-height: 16px; text-transform: lowercase; overflow-wrap: anywhere; }
 /* The mode word rides the kicker only where the glyph's tooltip cannot (≤760). */
 .v2-connector-row__kicker-mode { display: none; }
-/* Direction A rule 1: a category on the row is a 16px mark, the sentence in title + aria-label. */
-.v2-connector-row__mark { display: inline-flex; width: 16px; height: 16px; color: var(--v2-text-secondary); vertical-align: middle; }
-.v2-connector-row__mark svg { width: 16px; height: 16px; }
+/* Direction A rule 1 (as revised by TASK-162): a category on the row is a mark,
+   the sentence in title + aria-label — and the mark shares the Tools glyph's rule
+   (search `.v2-connector-row__mark, .v2-tools__mode`) so the two rows cannot drift. */
 .v2-root button.v2-connector-row__action,
 .v2-root a.v2-connector-row__action {
   justify-self: end;
@@ -9962,8 +9980,15 @@ body.modern-ui.v2-canvas {
   text-decoration: none;
   cursor: pointer;
 }
-.v2-root button.v2-connector-row__action:hover:not(:disabled),
-.v2-root a.v2-connector-row__action:hover { background: var(--v2-ink-hover); }
+/* TASK-162 (1): a hovered secondary action turned INK behind an ink glyph —
+   `.v2-root button....__action:hover:not(:disabled)` (0,4,1) outranks the
+   `--secondary:hover` tint (0,3,1), so the gear read as a solid black square
+   with an invisible glyph. Excluding secondary from the ink rule fixes it
+   WITHOUT relying on source order: raising the tint's specificity would work
+   only until someone moves a rule, and the `.v2-root` prefix that every
+   selector here carries makes order-fragile fixes easy to write by accident. */
+.v2-root button.v2-connector-row__action:hover:not(:disabled):not(.v2-connector-row__action--secondary),
+.v2-root a.v2-connector-row__action:hover:not(.v2-connector-row__action--secondary) { background: var(--v2-ink-hover); }
 .v2-root button.v2-connector-row__action:disabled { cursor: progress; opacity: 0.65; }
 .v2-root button.v2-connector-row__action--secondary,
 .v2-root a.v2-connector-row__action--secondary { border-color: var(--v2-border); background: var(--v2-surface); color: var(--v2-ink); }
@@ -10095,7 +10120,7 @@ body.modern-ui.v2-canvas {
 .v2-tools__trail-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 .v2-tools__trail-line > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .v2-tools__trail-when { flex: none; }
-.v2-tools__mode, .v2-tools__outcome { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
+.v2-tools__mode, .v2-tools__outcome, .v2-connector-row__mark { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
 .v2-tools__form { display: grid; gap: 14px; margin-top: 14px; }
 .v2-tools__field { display: grid; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
 .v2-tools__field > span:first-child, .v2-tools__field > legend { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; padding: 0; }
@@ -10134,6 +10159,8 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-connector-row__selection { grid-row: 1; }
   .v2-connector-row__kicker-mode { display: inline; }
   .v2-connector-row__mark { display: none; }
+  .v2-connector-row__names { display: block; }
+  .v2-connector-row__name-sep { display: inline; }
   .v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px; grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
   .v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon), .v2-root a.v2-connector-row__action { display: inline-flex; grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: center; min-height: 44px; margin-top: 8px; }
   /* The gear sits over the selection button's top-right; keep the kicker out from under it. */

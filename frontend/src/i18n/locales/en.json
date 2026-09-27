@@ -1874,6 +1874,9 @@
     "kickerAttention": "attention",
     "kickerMirror": "mirror",
     "kickerOff": "relay off",
+    "rowAttention": "escalations reach the channel",
+    "rowMirror": "every agent line reaches the channel",
+    "rowRelayOff": "messages stay in the pod",
     "age": {
       "added": "added {{age}}",
       "started": "started {{age}}",
