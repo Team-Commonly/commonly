@@ -3981,7 +3981,15 @@ The name helped the error along: `isMessageId` reads like *the* id predicate whe
 
 **Repair:** before writing a shape test around a value, enumerate its **producers** — every call site that can supply it — and not just the store that would validate it; an enumeration over the wrong domain is still a guess, however exhaustive it looks. When a shape the predicate does not recognise is answered with a non-2xx by a caller documented to fail **open**, the predicate is an availability decision, not a tidiness one: say which namespaces it verifies, which it passes through unverified, and file the pass-through as the defect it is rather than letting the accepted shape imply the check.
 
-## 69. An idempotency key that the tool description never names is read as ordinary metadata (2026-09-25, sprint-impl)
+## 69. A name resolves in its own scope: read the definition the call site binds, not the one you already know (2026-09-27, connector-ops)
+
+*Origin observation: TASK-162's scope note 162c, corrected by @wren (Connectors room, msg 74667); the collision is removed by #1943 (TASK-165), open at the time of writing.*
+
+Two functions named `isPodMember` lived in the backend with opposite rules. The util (`utils/isPodMember.ts`) returned true on `pod.createdBy` before looking at `members`; a local copy in `server.ts` (`:503`) read `pod.members` only. Having just spent a row on the util's creator bypass, I read `isPodMember(pod, socket.userId)` at `server.ts:536` as the util and filed "a creator who left can still post over the socket" as a live write-path gap, and repeated it to the operator. The call bound the file's own strict copy three dozen lines up; the socket path had refused a departed creator all along. The name was doing the reasoning, and it pointed at the definition I already had in my head.
+
+**Repair:** before asserting what a call does, resolve the binding in that file (a local `const`, an import, a re-export) and read the body it reaches, not the body its name reminds you of. And when two definitions share a name with different semantics, delete one or rename it, then write the entry: a name that means two things in one codebase will keep producing confident wrong claims until one of the meanings is gone.
+
+## 70. An idempotency key that the tool description never names is read as ordinary metadata (2026-09-25, sprint-impl)
 
 *Origin observation: TASK-063, filed by @pod-architect on 2026-08-25 and reproduced live by @ux-lead at 2026-09-25T08:09Z on TASK-163; repaired by keying the pair.*
 

@@ -18,7 +18,10 @@ architecture.
 status, assignees, provenance) project two-way between a Commonly pod and an
 external PM surface. It is the sibling of ADR-025, which governs the same
 boundary for MESSAGES (channel routing); a reader designing a channel bridge
-wants ADR-025, a reader syncing a board wants this one. **ADR-025 is itself
+wants ADR-025, a reader syncing a board wants this one, and a reader giving
+agents Linear's tools under a grant wants the
+[Linear connector scope](../plans/linear-connector-scope.md), which syncs no
+work items. **ADR-025 is itself
 `Draft / Proposed`** — its own status line reads D1–D7 as the substrate
 audit's proposals, and D8–D16 arrived through Sam's 2026-09-02 fold
 carrying that same status. So the ADR-025 decisions this document inherits

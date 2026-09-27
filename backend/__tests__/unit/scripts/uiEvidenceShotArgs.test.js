@@ -12,7 +12,7 @@
  */
 
 const {
-  KNOWN_FLAGS, parseArgs, refusalFor,
+  KNOWN_FLAGS, PAGE_SHOTS, parseArgs, pageShotFor, refusalFor,
 } = require('../../../../scripts/lib/ui-evidence-args');
 
 const refusal = (argv) => refusalFor(parseArgs(argv));
@@ -49,6 +49,18 @@ describe('ui-evidence-shot argument contract', () => {
     const { values, stray } = parseArgs(['--click']);
     expect(values.get('click')).toBe('true');
     expect(stray).toEqual([]);
+  });
+
+  test('--page-shot is a valued flag, and an unrecognised value is refused', () => {
+    // TASK-155: the capture a below-the-fold fix needs — `fullPage` paints the
+    // document, which here is viewport-high, so a before/after pair came out
+    // byte-identical while the rendered text differed. Refusing the value in the
+    // lib keeps the guard inside this suite, which needs no browser.
+    expect(refusal(['--route', '/v2/connectors', '--out', '/tmp/a.png', '--page-shot', 'viewport'])).toBeNull();
+    expect(pageShotFor(undefined)).toBe('full');
+    expect(pageShotFor('viewport')).toBe('viewport');
+    expect(pageShotFor('viewprt')).toBeNull();
+    expect(PAGE_SHOTS).toEqual(['full', 'viewport']);
   });
 
   test('an unknown flag is refused, and the message lists what is known', () => {

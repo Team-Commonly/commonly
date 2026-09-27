@@ -45,16 +45,20 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
   // connector is private to its owner, so a stale gate can never relay after
   // that owner leaves even before the reconciler prunes the key. Legacy rows
   // retain their pod-scoped selection until they are explicitly migrated.
+  //
+  // `pod.members` ALONE: identity with the predicate the bridges apply
+  // (connectorRelayPolicy.isListedPodMember). This selector used to union
+  // `pod.createdBy` in, so the two agreed on admitting a departed creator —
+  // agreement on the wrong answer, which is why that cell is in the suite's
+  // matrix rather than left to this comment (TASK-161, from TASK-160's ruling).
   if (!Types.ObjectId.isValid(podId)) return [];
-  const pod = await Pod.findById(podId).select('createdBy members').lean() as {
-    createdBy?: unknown;
+  const pod = await Pod.findById(podId).select('members').lean() as {
     members?: unknown[];
   } | null;
   if (!pod) return [];
-  const memberIds = Array.from(new Set([
-    pod.createdBy,
-    ...(pod.members || []),
-  ].filter(Boolean).map((id) => String(id)))).map((id) => new Types.ObjectId(id));
+  const memberIds = Array.from(new Set(
+    (pod.members || []).filter(Boolean).map((id) => String(id)),
+  )).map((id) => new Types.ObjectId(id));
   if (!memberIds.length) return [];
   const gateEnabledPath = `config.gates.${String(podId)}.enabled`;
   // A decision card must record why it was deliberately withheld. Ordinary

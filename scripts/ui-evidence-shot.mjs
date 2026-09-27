@@ -44,7 +44,9 @@ import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import uiEvidenceArgs from './lib/ui-evidence-args.js';
 
-const { KNOWN_FLAGS, parseArgs, refusalFor } = uiEvidenceArgs;
+const {
+  KNOWN_FLAGS, PAGE_SHOTS, parseArgs, pageShotFor, refusalFor,
+} = uiEvidenceArgs;
 
 const parsed = parseArgs(process.argv.slice(2));
 // A flag this script does not implement, or a value no flag asked for, must not be
@@ -85,6 +87,16 @@ for (const [name, value] of [['width', viewportWidth], ['height', viewportHeight
   }
 }
 const selector = args.get('selector');
+// TASK-155: `fullPage` is the right default and it is wrong for a page whose scroll
+// lives in an inner element (`v2-feature__body`): the document is viewport-high, so a
+// full-page shot of a panel below the fold paints the same pixels before and after a
+// change that scrolls it into view. `--page-shot viewport` captures what is on screen,
+// which is the only way to show that a fix moved anything for the user.
+const pageShot = pageShotFor(args.get('page-shot'));
+if (pageShot === null) {
+  console.error(`--page-shot must be one of ${PAGE_SHOTS.join(' | ')}, got ${args.get('page-shot')}`);
+  process.exit(2);
+}
 // Some surfaces only exist after an interaction: the grant aside on /v2/connectors is rendered
 // by clicking the row's Manage button, so a shot named for it without the click captures the row
 // list and calls it the aside. A click that never lands is an ERROR (see the waitFor below), for
@@ -161,15 +173,15 @@ const main = async () => {
     writeFileSync(selectorTextPath, scopeText);
     selectorChars = scopeText.length;
     // Context beside the scoped shot: what the scoped element sits inside.
-    await page.screenshot({ path: pagePath, fullPage: true });
+    await page.screenshot({ path: pagePath, fullPage: pageShot === 'full' });
   } else {
-    await page.screenshot({ path: outPath, fullPage: true });
+    await page.screenshot({ path: outPath, fullPage: pageShot === 'full' });
   }
   const text = await page.evaluate(() => (document.body && document.body.innerText) || '');
   writeFileSync(textPath, text);
 
   const sha = createHash('sha1').update(text).digest('hex').slice(0, 12);
-  console.log(`${outPath} | viewport ${viewportWidth}x${viewportHeight}@2x | auth ${presetToken ? 'token' : 'login'}${clickSelector ? ` | click ${clickSelector}` : ''} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | selector ${selector} ${selectorChars}ch`}`);
+  console.log(`${outPath} | viewport ${viewportWidth}x${viewportHeight}@2x | page-shot ${pageShot} | auth ${presetToken ? 'token' : 'login'}${clickSelector ? ` | click ${clickSelector}` : ''} | page ${text.length}ch innerText sha1=${sha}${selectorChars === null ? '' : ` | selector ${selector} ${selectorChars}ch`}`);
   console.log(`  text: ${textPath}`);
   if (selector) console.log(`  selector text: ${selectorTextPath}`);
   console.log(`  non-2xx: ${badResponses.length ? [...new Set(badResponses)].join(' | ') : 'none'}`);

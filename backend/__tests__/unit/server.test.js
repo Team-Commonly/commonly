@@ -178,13 +178,16 @@ describe('server websocket authorization helpers', () => {
     delete process.env.PG_HOST;
   });
 
-  it('treats string and ObjectId-like members as valid pod members', () => {
+  it('treats string and ObjectId-like members as valid pod members, and no creator', () => {
     jest.resetModules();
+    // The rule moved out of this module in TASK-165, so this arm now reads it
+    // where it lives; the socket path's own use of it is covered below, at the
+    // call site rather than at the definition.
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
-    const { isPodMember } = require('../../server');
+    const { isListedPodMember } = require('../../utils/isPodMember');
 
     expect(
-      isPodMember(
+      isListedPodMember(
         {
           members: [
             { toString: () => 'user-1' },
@@ -194,6 +197,61 @@ describe('server websocket authorization helpers', () => {
         'user-2',
       ),
     ).toBe(true);
+    expect(
+      isListedPodMember({ createdBy: { toString: () => 'user-3' }, members: [] }, 'user-3'),
+    ).toBe(false);
+  });
+
+  it('refuses a departed creator on the socket write path', async () => {
+    jest.resetModules();
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const Pod = require('../../models/Pod');
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { authorizeSocketPodAccess } = require('../../server');
+    // `leavePod` filters `members` and leaves `createdBy` in place, so this is
+    // the shape a departed creator has: still named by the pod, no longer listed.
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      createdBy: { toString: () => 'user-1' },
+      members: [],
+    });
+    const socket = {
+      userId: 'user-1',
+      emit: jest.fn(),
+    };
+
+    const result = await authorizeSocketPodAccess(socket, 'pod-1', 'post');
+
+    expect(result).toBeNull();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      message: 'Not authorized to post for this pod',
+    });
+  });
+
+  it('admits a populated member document, so the socket path runs the shared predicate', async () => {
+    jest.resetModules();
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const Pod = require('../../models/Pod');
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { authorizeSocketPodAccess } = require('../../server');
+    // The copy TASK-165 removed compared `member.toString()`, which on a
+    // populated document renders `[object Object]` — this member was refused by
+    // the socket path and admitted by `createMessage` at the same moment. The
+    // arm reddens if a local copy comes back.
+    const pod = {
+      _id: 'pod-1',
+      members: [{ _id: { toString: () => 'user-1' } }],
+    };
+    Pod.findById.mockResolvedValue(pod);
+    const socket = {
+      userId: 'user-1',
+      emit: jest.fn(),
+    };
+
+    const result = await authorizeSocketPodAccess(socket, 'pod-1', 'post');
+
+    expect(result).toBe(pod);
+    expect(socket.emit).not.toHaveBeenCalled();
   });
 
   it('rejects socket pod joins for non-members', async () => {

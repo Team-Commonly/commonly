@@ -122,10 +122,10 @@ Notes:
 
 - `DISCORD_BOT_TOKEN`
   - Enables the Commonly Discord bot path.
-- `SLACK_BOT_TOKEN`
-  - Enables Slack bot actions.
-- `SLACK_APP_TOKEN`
-  - Required for Slack Socket Mode.
+- Slack has no environment credentials: a workspace's bot token is stored per
+  install by the OAuth bind (`botTokenRef` → the connector-secret ring) and the
+  webhook path reads `SLACK_SIGNING_SECRET`. See
+  `docs/runbooks/connector-credentials-setup.md` §2.
 - `TELEGRAM_BOT_TOKEN`
   - Enables Telegram webhook/runtime flows.
 

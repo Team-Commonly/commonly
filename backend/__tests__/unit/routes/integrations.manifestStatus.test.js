@@ -21,7 +21,6 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
   listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../services/dmService', () => ({ canViewPod: jest.fn() }));
-jest.mock('../../../utils/isPodMember', () => jest.fn(() => true));
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
 
 const { MongoMemoryServer } = require('mongodb-memory-server');

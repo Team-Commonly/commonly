@@ -20,10 +20,23 @@
  *           `npm_config_registry` fetches the package from an attacker, and
  *           with a literal `COMMONLY_API_URL=https://attacker…` posts the
  *           token there (sprint-review, Sharpen 69526/69534).
- *   http  — the url, with ONLY the two instance placeholders resolved and
- *           nothing else expanded, must parse to the instance's own origin
- *           (scheme + host + port). The grant broker declares
- *           `${COMMONLY_API_URL}/api/mcp/grants/…`, so it passes.
+ *   http  — the ENTRY, `name` aside, must BE the one http server the instance
+ *           ships: the grant broker (`grantBrokerServer`,
+ *           backend/services/grantBrokerProjectionService.ts). `transport`
+ *           exactly `http`; the url, with ONLY the two instance placeholders
+ *           resolved and nothing else expanded, of our own origin at
+ *           `/api/mcp/grants/<id>`, with no query, hash or userinfo; headers
+ *           exactly the single Bearer token placeholder; and no other field.
+ *           `sse` is not admitted at all: nothing ships it, and its GET is the
+ *           method every 3xx route in this repo answers. Pinning the ORIGIN
+ *           alone was not enough — a same-origin url whose path is a GET route
+ *           that redirects (`/api/auth/oauth/*`, both Slack and Discord
+ *           callbacks) passed the origin check and let the client leave the
+ *           instance on the hop, and an added header would have travelled with
+ *           it (TASK-150). Matched exactly rather than folded: the set this
+ *           guard ADMITS has to equal the set that is TESTED for the absence of
+ *           a redirect, and folding case or collapsing slashes widens what is
+ *           admitted while narrowing what is withheld.
  * The rule is origin-based, not placeholder-based, because the claude CLI
  * expands `${VAR}` and `${VAR:-default}` in url and headers from its own
  * environment: `?t=${COMMONLY_AGENT_TOKEN:-}` is not the literal placeholder
@@ -31,6 +44,9 @@
  * environment is the operator's, so `?k=${GITHUB_TOKEN}` leaks too (Vera,
  * Connectors 69519). So any `${` other than the three known placeholders,
  * anywhere in an entry — url, headers, command, env — is refused outright.
+ *
+ * The guarantee is instance-specific: a self-hosted proxy that redirects
+ * `/api/mcp/grants/…` breaks it in a way no test in this repo can see.
  */
 
 const URL_PLACEHOLDERS = ['${COMMONLY_API_URL}', '${COMMONLY_INSTANCE_URL}'];
@@ -88,6 +104,60 @@ export const isShippedCommonlyMcpEntry = (server) => {
 // installed entry that declares NO cwd, so the entry is admitted as one the
 // operator already installed (Vera, hold on #1915).
 // Fail closed: an unreadable shape is a refusal, never an absence.
+// The one http entry the server ships: url and headers as `grantBrokerServer`
+// writes them (`GRANT_BROKER_URL` / `GRANT_BROKER_AUTHORIZATION`).
+const GRANT_BROKER_PATH = /^\/api\/mcp\/grants\/[A-Za-z0-9_-]+$/;
+const GRANT_BROKER_AUTHORIZATION = 'Bearer ${COMMONLY_AGENT_TOKEN}';
+
+const sameOriginAsInstance = (url, instanceUrl) => {
+  const origin = originOf(url, instanceUrl);
+  if (!origin) return false;
+  try {
+    return origin === new URL(instanceUrl).origin;
+  } catch {
+    return false;
+  }
+};
+
+// The url is judged by what a client would carry, not by the substring the
+// origin check happens to read: the path has to be the grants path with ONE id
+// segment, and a query, a hash or userinfo is a field the origin comparison
+// does not look at but the request does carry.
+const grantBrokerUrl = (url, instanceUrl) => {
+  if (!sameOriginAsInstance(url, instanceUrl)) return false;
+  let expanded = String(url);
+  for (const placeholder of URL_PLACEHOLDERS) expanded = expanded.split(placeholder).join(instanceUrl);
+  let parsed;
+  try {
+    parsed = new URL(expanded);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) return false;
+  return GRANT_BROKER_PATH.test(parsed.pathname);
+};
+
+/**
+ * The shipped grant broker, matched as a WHOLE entry (the http twin of
+ * `isShippedCommonlyMcpEntry`): `name` is identity — the projection suffixes it
+ * when one seat holds several grants — and every other field has to equal what
+ * `grantBrokerServer` writes, with no field added, because a field the client
+ * reads and this guard does not is exactly the shape the whole-entry rule
+ * exists to refuse (TASK-069).
+ */
+export const isShippedGrantBrokerEntry = (server, instanceUrl) => {
+  if (!server || typeof server !== 'object') return false;
+  if (server.transport !== 'http') return false;
+  const keys = Object.keys(server).filter((key) => key !== 'name').sort();
+  if (keys.join(',') !== 'headers,transport,url') return false;
+  const headers = server.headers;
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return false;
+  const headerKeys = Object.keys(headers);
+  if (headerKeys.length !== 1 || headerKeys[0] !== 'Authorization') return false;
+  if (headers.Authorization !== GRANT_BROKER_AUTHORIZATION) return false;
+  return grantBrokerUrl(server.url, instanceUrl);
+};
+
 const unreadableField = (server) => {
   for (const key of ['env', 'headers']) {
     const value = server[key];
@@ -195,9 +265,8 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioEntries
       return;
     }
     if (transport === 'http' || transport === 'sse') {
-      const origin = originOf(server.url, instanceUrl);
-      if (origin && instanceOrigin && origin === instanceOrigin) return;
-      refusals.push(`'${name}': ${transport} server ${JSON.stringify(server.url)} resolves to origin ${origin || '(unparseable)'}, not this instance (${instanceOrigin || instanceUrl}); a declared http server may only be the instance itself`);
+      if (transport === 'http' && isShippedGrantBrokerEntry(server, instanceUrl)) return;
+      refusals.push(`'${name}': declared ${transport} entry ${JSON.stringify(server.url)} is not the one http server this instance ships; a declaration is admitted only as the grant broker (transport 'http', url ${instanceOrigin || instanceUrl}/api/mcp/grants/<id> with no query or fragment, headers exactly {'Authorization': 'Bearer \${COMMONLY_AGENT_TOKEN}'}, and no other field), and 'sse' is not admitted at all`);
       return;
     }
     refusals.push(`'${name}': unknown transport ${JSON.stringify(transport)}`);

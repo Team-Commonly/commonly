@@ -232,7 +232,7 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
   });
 
   it('create_task documents the idempotency key, not just the fields it dedups on', () => {
-    // AX entry 69: `sourceRef` was an idempotency key the description never
+    // AX entry 70: `sourceRef` was an idempotency key the description never
     // named, so callers read it as ordinary metadata and learned about the
     // dedup from a self-contradictory response instead (TASK-063).
     const desc = byName.commonly_create_task.description;

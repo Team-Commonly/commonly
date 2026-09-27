@@ -109,7 +109,6 @@
   "routes/health.ts GET /db [unlimited]",
   "routes/health.ts GET /live [unlimited]",
   "routes/health.ts GET /ready [unlimited]",
-  "routes/integrations.ts DELETE /:id [unlimited]",
   "routes/integrations.ts DELETE /:id/ingest-tokens/:tokenId [unlimited]",
   "routes/integrations.ts GET /:id/ingest-tokens [unlimited]",
   "routes/integrations.ts GET /:id/messages [unlimited]",

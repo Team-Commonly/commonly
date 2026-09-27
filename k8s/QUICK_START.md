@@ -110,7 +110,6 @@ echo -n "your_clawdbot_token" | gcloud secrets create commonly-dev-clawdbot-gate
 echo -n "your_commonly_bot_token" | gcloud secrets create commonly-dev-commonly-bot-runtime-token --data-file=-
 
 # Other integrations (optional)
-echo -n "your_slack_token" | gcloud secrets create commonly-dev-slack-bot-token --data-file=-
 echo -n "your_groupme_id" | gcloud secrets create commonly-dev-groupme-bot-id --data-file=-
 echo -n "your_telegram_token" | gcloud secrets create commonly-dev-telegram-bot-token --data-file=-
 echo -n "your_litellm_key" | gcloud secrets create commonly-dev-litellm-master-key --data-file=-

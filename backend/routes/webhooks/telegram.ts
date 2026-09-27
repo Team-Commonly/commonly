@@ -10,7 +10,9 @@ const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
 const { escapeHtml } = telegramService;
 const deliveryFailures = require('../../services/connectorDeliveryFailureService');
-const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
+const {
+  isConnectCodeShape, isConnectCodeExpired, registerEnableAttempt,
+} = require('../../services/telegramConnectCode');
 const {
   claimDelivery: claimWebhookDelivery,
   releaseDelivery: releaseWebhookDelivery,
@@ -92,6 +94,22 @@ const handleEnableCommand = async (chat: any, code: any) => {
       botToken,
       chatId,
       'Usage: /commonly-enable &lt;code&gt; (get the code from Commonly)',
+    );
+    return;
+  }
+
+  // A malformed code is a typo, and a typo must not cost one of the chat's five
+  // tries — so this sits BEFORE the attempt counter, which is the whole point of
+  // the check. It does not make guessing free: only a well-formed code can ever
+  // match a minted one, and a well-formed guess still spends an attempt.
+  // Malformed input is left to the route's outer rate limiter
+  // (telegramWebhookRateLimit), because input that costs a regex is not worth a
+  // per-chat counter.
+  if (!isConnectCodeShape(code)) {
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      "That doesn't look like a connect code — copy it from Commonly.",
     );
     return;
   }
@@ -441,7 +459,14 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
     const command = rawCommand?.startsWith('/') ? normalizeCommand(rawCommand) : null;
 
     if (command === ENABLE_COMMAND || command === ENABLE_COMMAND_ALIAS) {
-      await handleEnableCommand(chat, args[0]);
+      // Everything after the command is the code, with whitespace removed and
+      // lowercased: the connectors page renders it grouped in fours (`1964 774b
+      // a58c …`) for readability, so a user who types or selects what they see
+      // sends it as several tokens, and a keyboard can capitalise one of them.
+      // Minted codes carry no whitespace of their own
+      // (telegramConnectCode.mintConnectCode), so joining cannot merge two
+      // codes into one — it can only reassemble the one that was displayed.
+      await handleEnableCommand(chat, args.join('').toLowerCase());
       return res.sendStatus(200);
     }
 

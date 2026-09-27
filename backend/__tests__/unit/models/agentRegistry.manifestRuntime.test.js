@@ -14,6 +14,7 @@
 // than in production.
 
 const { AgentRegistry } = require('../../../models/AgentRegistry');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../../utils/mongoBinaryConfig');
 
 const buildDoc = (runtime) => new AgentRegistry({
   agentName: 't043-native-app',
@@ -69,7 +70,7 @@ describe('the seeded manifest on a real row', () => {
   let mongoServer;
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create({
-      binary: { version: '7.0.14', skipMD5: true },
+      binary: { version: MONGO_BINARY_VERSION, downloadDir: MONGOMS_DOWNLOAD_DIR, skipMD5: true },
       instance: { dbName: 't043-manifest-runtime-test' },
     });
     await mongoose.connect(mongoServer.getUri());

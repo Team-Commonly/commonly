@@ -80,7 +80,6 @@ kubectl create secret generic api-keys \
   --from-literal=x-oauth-client-secret='' \
   --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
-  --from-literal=slack-bot-token='' \
   --from-literal=groupme-bot-id='' \
   --from-literal=telegram-bot-token='' \
   --from-literal=litellm-master-key=''
