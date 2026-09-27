@@ -40,12 +40,10 @@ describe('ActivityService.getUserFeed — pod membership', () => {
   it('selects the viewer\'s pods by membership, not by createdBy', async () => {
     await ActivityService.getUserFeed('caller-1', {});
 
-    expect(Pod.find).toHaveBeenCalledWith({
-      $or: [
-        { 'members.userId': 'caller-1' },
-        { members: 'caller-1' },
-      ],
-    });
+    // TASK-170: exact shape — `toHaveBeenCalledWith` on the whole object fails
+    // for an extra term as well as a missing one, so the dead spelling is kept
+    // out by this line rather than by a comment.
+    expect(Pod.find).toHaveBeenCalledWith({ members: 'caller-1' });
   });
 
   it('still reaches the aggregator for a member (control)', async () => {
