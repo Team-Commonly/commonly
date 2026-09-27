@@ -254,6 +254,30 @@ test('TASK-179: the grant line is one sentence per language, and an empty audien
   }
 });
 
+test('TASK-179: a seat grant names the seat in its sentence and the pod in the row it sits in', async () => {
+  // ux-lead's gate at 07873c19: one shared label put the seat's name where the
+  // row's location belongs, announcing a seat grant under Ops as 「View GitHub in
+  // Reed」. The sentence's subject and the row's location are different nouns, so
+  // they are two expressions, and this test fails if they are ever re-merged.
+  const seatGrant = { ...grantLive, grantId: 'grant_seat', target: { kind: 'seat', id: 'a1' }, effectiveAudience: ['a1'] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [] } });
+    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [seatGrant] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'reed', displayName: 'Reed', userId: 'a1' }] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  renderTools();
+
+  // Found by the pod's name: if the seat leaks back into the accessible name
+  // this query returns nothing, which is the fix's own control.
+  const row = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(row.querySelector('strong')?.textContent).toBe('granted to Reed by sam');
+  expect(row.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/^Ops · granted /);
+});
+
 test('the aside reads the grant and the trail: agents, allow-list under its mode, what asks first, three counts, outcomes as words', async () => {
   renderTools();
   fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));

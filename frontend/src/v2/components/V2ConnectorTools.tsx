@@ -491,6 +491,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
+    // What the grant was given TO, which is a seat when the target is a seat. It
+    // is not the row's location: the kicker and the accessible name both name the
+    // pod the row lives in, so a seat grant under Ops has a sentence reading
+    // `granted to Reed` in a row announced as `View GitHub in Ops`. Sharing one
+    // label between the two put the seat's name where the location belongs
+    // (TASK-179, ux-lead's gate at 07873c19) — two nouns, so two expressions.
     const targetLabel = grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id);
     // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
     const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
@@ -518,7 +524,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           type="button"
           className="v2-connector-row__selection"
           aria-pressed={isSelected}
-          aria-label={t('tools.viewGrant', { defaultValue: 'View {{tool}} in {{pod}}', tool: label, pod: targetLabel })}
+          aria-label={t('tools.viewGrant', { defaultValue: 'View {{tool}} in {{pod}}', tool: label, pod: podId ? podName(podId) : seatLabel(null, grant.target.id) })}
           onClick={() => { setSelectedId(isSelected ? null : grant.grantId); setDraft(null); setConfirmRevoke(null); }}
         >
           <span className="v2-connector-row__name">
