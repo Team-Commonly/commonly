@@ -25,6 +25,14 @@ jest.mock('../../../services/approvalActionService', () => ({
   proposeAction: jest.fn().mockResolvedValue({ ok: true, approvalId: 'approval-test' }),
 }));
 jest.mock('../../../services/dmService', () => mockDmService);
+// The seat's own declaration is judged inside `callTool`/`listToolsForGrant`
+// (TASK-175). This suite has no Mongo, so the RESOLUTION is mocked here and the
+// resolution itself is witnessed on memory Mongo in
+// `seatGrantConfinement.test.js` — this file witnesses where the check sits.
+const mockSeatConfinement = jest.fn();
+jest.mock('../../../services/seatGrantConfinement', () => ({
+  judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
+}));
 jest.mock('../../../services/githubAppService', () => mockGithub);
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
@@ -78,6 +86,7 @@ const seatGrant = (overrides = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
   mockToolCall.create.mockResolvedValue(undefined);
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app', status: 'connected',
@@ -110,6 +119,49 @@ describe('tool broker guard rails', () => {
       outcome: 'refused',
       reason: 'write_mode_not_allowed',
       agentUserId: 'agent-a',
+    }));
+  });
+
+  it('refuses the call when the CALLING seat cannot confine the broker (TASK-175)', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockSeatConfinement.mockResolvedValue({
+      refusal: {
+        code: 'grant_broker_unconfined',
+        decidedBy: 'server',
+        reason: 'adapter_cannot_confine',
+        detail: "the seat runs the 'pi' adapter, which confines on no host",
+      },
+      scope: 'seat',
+    });
+
+    await expect(callTool({
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      agentName: 'openclaw',
+      instanceId: 'aria',
+      tool: 'github.list_issues',
+      args: {},
+    })).rejects.toMatchObject({
+      code: 'grant_broker_unconfined',
+      statusCode: 403,
+      // The shared catch appends the trail id; the predicate's own `reason`
+      // travels on `details` and is asserted where the real error class is used
+      // (seatGrantConfinement.test.js, whose first arm checks it).
+      details: expect.objectContaining({ callId: expect.any(String) }),
+    });
+
+    // Judged for the caller the token names, not for the grant.
+    expect(mockSeatConfinement).toHaveBeenCalledWith({
+      agentName: 'openclaw', instanceId: 'aria', agentUserId: 'agent-a',
+    });
+    // A refusal is not a spendable call, and it IS trailed — the two things that
+    // say the check sits before the work rather than after it.
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      grantId: 'grant-1',
+      outcome: 'refused',
+      reason: 'grant_broker_unconfined',
     }));
   });
 

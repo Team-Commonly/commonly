@@ -202,6 +202,9 @@ describe('a hosted run in a granted pod', () => {
       agentUserId: SEAT,
       agentName: 'scout',
       instanceId: 'default',
+      // A hosted turn has no shell, web or file tools, so the
+      // seat-confinement refusal is out of scope for it (Wren, TASK-175).
+      hosted: true,
       tool: 'github.list_issues',
       args: { state: 'open' },
     });
