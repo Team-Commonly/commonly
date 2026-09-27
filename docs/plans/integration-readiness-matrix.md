@@ -48,7 +48,7 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 | row | code exists | known state |
 |---|---|---|
 | Telegram | yes | Walked live 2026-09-27 on `7ccc6ac2` with a real account (below). **C1 red**: the page shows the code grouped with spaces while the bot reads only the first word, so typing the command as displayed fails (TASK-153). C1 is also limited by design: binding is private-chat-only with one chat per pod, so one Telegram account links one pod (TASK-154, for Wren to scope). C10 green: both refusals are named, and since #1878 a dead chat is a named failure. Inbound and sender identity (C5) were shown on a simulated chat on `0e142135` |
-| Slack | yes | Walked live 2026-09-26/27 on `7ccc6ac2` with a real workspace (below). **C1, C3 and C5 green**: connect through consent, callback and confirm; a hosted agent's reply relays to Slack; a Slack mention reaches the agent and its answer comes back. C5 inbound was green only after two Slack app settings were fixed during the walk. Red for customers until the app was publicly distributed, which is now done. Open: a second authorize on a connected row returns 409 `slack_already_authorized`. Before #1875 (09-04 to 09-25), every new install was refused at Authorize |
+| Slack | yes | Walked live 2026-09-26/27 on `7ccc6ac2` with a real workspace (below). **C1, C3 and C5 green**: connect through consent, callback and confirm; a hosted agent's reply relays to Slack; a Slack mention reaches the agent and its answer comes back. C5 inbound was green only after two Slack app settings were fixed during the walk. Red for customers until the app was publicly distributed, which is now done. A second authorize on a connected row is refused with 409 `slack_already_authorized` (measured through the API); the refusal copy on the page (#1890, Row C) is still unwalked in the UI. Before #1875 (09-04 to 09-25), every new install was refused at Authorize |
 | Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
@@ -97,7 +97,7 @@ Walked by the Connectors session with Sam's real Commonly Slack workspace (Sam's
 | C5 inbound | was red, from two Slack app settings, not code: the App Home messages tab was unticked, and the Events Request URL was unverified. Both were fixed in the app settings with Sam's OK, and a DM now lands in the pod |
 | C3 | green: with Scout hired into the test pod, its intro relayed to Slack |
 | C5 both ways | green: "@scout … PONG" sent from Slack came back as "[Connector walk 0926] Scout: PONG" within about a minute |
-| second authorize | open: authorizing again on a connected row returns 409 `slack_already_authorized` |
+| second authorize | green, measured: at about 2026-09-27 00:05Z, `POST /api/installables/slack/authorize-url` from the page's own session on the connected row returned 409 `slack_already_authorized` (Connectors room, message 74576). A connected row refuses a second authorize by design. #1890's refused-authorize copy (Row C) is still unwalked in the UI; the 409 was observed through the API, so no refusal copy was rendered |
 
 The two C5 settings live in Slack's app configuration, which no test here can see. A new instance's operator has to set them too, so the Slack setup docs must name them.
 
