@@ -282,10 +282,16 @@ export const relayAgentMessageToTelegram = async (opts: {
     // authority for this send; the fallback preserves legacy direct rows.
     const integration = opts.integration ?? await findLiveIntegration(podId);
     if (!integration) return;
+    // TASK-160: the "why is this held" label reads the gate through the same
+    // predicate the relay itself uses, so a change to gate semantics cannot
+    // leave the reason a user is shown stale. The scope test stays because it
+    // asks a different question than the gate read does: the label means "this
+    // person's gate for that pod is off", not "this connector owns that pod",
+    // which is what the predicate's pod-scoped arm answers.
     const cardHoldReason = opts.card
       ? (integration.config?.adminPause
         ? 'paused'
-        : integration.scope === 'user' && integration.config?.gates?.[podId]?.enabled !== true
+        : integration.scope === 'user' && !isGatedPodTarget(integration, podId)
           ? 'gate_off'
           : null)
       : null;
