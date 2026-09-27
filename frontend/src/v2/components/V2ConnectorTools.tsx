@@ -107,6 +107,11 @@ interface GithubAppIntegrationResponse {
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
+// The two option sets the aside renders as buttons. They live here, not inline in the
+// JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
+// a JSX expression as copy — and these are ids, not words (TASK-164).
+const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
+const SEGMENTS = ['all', 'granted', 'not-yet'] as const;
 
 /** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
 export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
@@ -296,11 +301,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const entry = Object.entries(seats).find(([, rows]) => rows.some((row) => row.userId === grant.target.id));
     return entry ? entry[0] : null;
   };
+  // zh joins a list with 、 and en with ', ', so the separator is copy and not a
+  // literal at each join site (TASK-164).
+  const joinList = (items: string[]): string => items.join(t('tools.listSeparator', { defaultValue: ', ' }));
   const audienceLabels = (grant: ToolGrant): string => {
     const podId = grantPodId(grant);
     const labels = grant.effectiveAudience.map((id) => seatLabel(podId, id));
     if (labels.length === 0) return t('tools.nobody', { defaultValue: 'no agent' });
-    return labels.join(', ');
+    return joinList(labels);
   };
   const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
     .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
@@ -310,7 +318,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
     const list = irreversibleTools(entryFor(grant), grant.tools);
     return list.length
-      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: list.join(', ') })
+      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(list) })
       : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
   };
   const outcomeLabel = (outcome: ToolOutcome): string => ({
@@ -503,7 +511,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
       // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
-      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })}`;
+      // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
+      // that orders the clause differently needs the whole sentence (TASK-164). The
+      // rendered English is unchanged.
+      : t('tools.mayUse', { defaultValue: '{{agents}} may use it', agents: audienceLabels(grant) });
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
@@ -660,7 +671,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
       ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
       : draft.writeMode === 'write-with-confirm'
         ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
-        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: irreversible.join(', ') }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
+        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
         <section className="v2-connector-aside__card">
@@ -687,7 +698,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
-                {(['read', 'write-with-confirm', 'write'] as GrantWriteMode[]).map((mode) => (
+                {WRITE_MODES.map((mode) => (
                   <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
@@ -855,7 +866,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="v2-connector-aside__mode v2-tools__segment" role="group" aria-label={t('tools.filter', { defaultValue: 'Show' })}>
-            {(['all', 'granted', 'not-yet'] as const).map((key) => (
+            {SEGMENTS.map((key) => (
               <button
                 key={key}
                 type="button"
