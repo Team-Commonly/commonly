@@ -613,7 +613,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'administrator setup' })}</p>
           <h2>{t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}</h2>
-          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their rooms.' })}</p>
+          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their pods.' })}</p>
           <div className="v2-tools__form">
             <label className="v2-tools__field">
               <span>{t('tools.installationId', { defaultValue: 'installation ID' })}</span>
@@ -709,7 +709,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             </div>
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
-              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this room yet' })}</span>}
+              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
               {podSeats.map((seat) => seat.userId && (
                 <label key={seat.userId} className="v2-connector-aside__relay">
                   <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
