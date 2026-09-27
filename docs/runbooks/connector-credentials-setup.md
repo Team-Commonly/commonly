@@ -243,6 +243,11 @@ What to merge in, matched to what the code asks for:
 - `oauth_config.scopes.bot`: the five scopes above, added to whatever the
   legacy integration already has.
 - `features.slash_commands`: `/commonly` → `https://api.commonly.me/api/webhooks/slack/commands`.
+- `features.app_home`: `messages_tab_enabled: true` and
+  `messages_tab_read_only_enabled: false`. Without both, Slack answers the app's
+  Messages tab with "Sending messages to this app has been turned off" and no DM
+  ever reaches Commonly — hit on the 2026-09-26 walk, fixed by hand in the app
+  settings, and the reason this bullet exists.
 - `settings.event_subscriptions.request_url` → **not yet**, see §2.6.
 
 ### 2.4 The five Secret Manager names (behind `slack.oauth.enabled`)
@@ -313,16 +318,21 @@ events delivered over a websocket), turn it off once the HTTP `request_url`
 is verified: `settings.socket_mode_enabled: false` in the manifest. Socket
 mode and the HTTP Events API are alternative delivery paths for the same
 subscriptions; while socket mode is on, Slack delivers events only over the
-socket and disregards the Request URL, so the HTTP endpoint never sees them. Public distribution (so workspaces other than ours can
-install) is the step after that, and is a Slack review, not a code change.
+socket and disregards the Request URL, so the HTTP endpoint never sees them.
+**Then activate public distribution**, or only this app's own workspace can
+install the connector and every other customer's OAuth attempt dies at Slack:
+app settings → **Manage Distribution** → *Activate Public Distribution*, which
+asks for the "Remove Hard Coded Information" acknowledgement. It is a Slack
+review, not a code change.
 
 ### 2.8 Post-deploy acceptance
 
 Inside the new pod: the five variables present; `connectorSecrets` parses
 (one ring entry, 32 bytes, active id in the ring; print ok/fail only). Then
 the OAuth install from the Connectors page round-trips through the callback
-and lands a connector row, and `/commonly` in Slack reaches `/commands`
-signed.
+and lands a connector row, `/commonly` in Slack reaches `/commands` signed, and
+a DM from Slack lands in the pod (this last one is what §2.3's `features.app_home`
+entry decides — without it the app's Messages tab refuses to send).
 
 ---
 
