@@ -343,7 +343,8 @@ one per user). The projected Integration row keeps today's pod binding: the page
 becomes the **first gate row**, and its pod is written to `Integration.podId` — the "active pod"
 of D12, honestly labelled as the single pod this connector relays until D8 fans out. Relay
 behaviour is byte-for-byte today's. The `Integration.podId` write on install is gated by
-`isPodMember(pod, installer)` — the #1297 write gate, reused.
+`isConnectorTargetPod(pod, installer)` — the #1297 membership write gate, plus the
+type rule that keeps a target on the default listing (TASK-171).
 
 **Phase 2 — D8's schema (separate PR, after this lands).** `Integration.scope: 'user'`,
 `podId` optional under a conditional validator, `config.gates[podId]`, and the outbound lookup
@@ -378,11 +379,12 @@ plan leaves for the marketplace-unlock PR, and the `/browse` filter must admit `
 - `linkedUserId` is stamped from the installer, after the relay default, never from the body.
 - Connect code is minted server-side (`mintConnectCode`); the body cannot supply one, and it
   is minted only by the final activation write — never by a projector (§2 step 6).
-- The chosen pod is gated by `isPodMember` (write predicate, no admin read-bypass).
+- The chosen pod is gated by `isConnectorTargetPod` (write predicate: membership, no
+  admin read-bypass, and a type the default listing shows).
 - Install and uninstall both resolve their target from the caller's identity; neither accepts
   an installation id or a target from the body, so a caller can only ever act on their own row.
 - `grantedScopes` is descriptive, not enforced (Phase 1). Authorization is `auth` +
-  `isPodMember` + identity-derived targets, nothing else.
+  `isConnectorTargetPod` + identity-derived targets, nothing else.
 - The install and uninstall verbs sit behind the integrations write limiter's shared key.
 - The Installable row carries no secret; H3's credential reference is the only future home.
 - Enable-time refusal of a group bind, the string-`'true'` coercion, and the attempt limiter

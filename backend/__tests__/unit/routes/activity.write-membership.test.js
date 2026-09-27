@@ -66,8 +66,22 @@ describe('POST /api/activity/create — pod membership', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  it('allows the creator, who is not always listed in members', async () => {
-    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [] });
+  // TASK-166 inverted this arm. It used to assert that the creator was admitted
+  // with an empty `members` — i.e. that `createdBy` counted as membership. It
+  // now asserts the opposite: `createdBy` is who made the pod, and a creator
+  // `leavePod` has unlisted is subject to the same membership rule as everyone
+  // else (it is the rule `createMessage` and the relay have always applied).
+  it('refuses a creator who is no longer listed, and writes nothing', async () => {
+    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [OTHER] });
+    await request(app).post('/api/activity/create').send(body()).expect(403);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  // The control for the inversion: a creator who IS listed still writes. Without
+  // it, the arm above passes for a route that refuses every pod naming a
+  // creator.
+  it('still admits a creator who is also listed', async () => {
+    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [CALLER] });
     await request(app).post('/api/activity/create').send(body()).expect(200);
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -153,6 +167,12 @@ describe('POST /api/activity/seed/:podId — pod membership', () => {
   it('404s an unknown pod', async () => {
     const { app, seedPodActivities } = setup(null);
     await request(app).post('/api/activity/seed/pod-1').send({}).expect(404);
+    expect(seedPodActivities).not.toHaveBeenCalled();
+  });
+
+  it('refuses a creator who is no longer listed, and never reaches the seeder', async () => {
+    const { app, seedPodActivities } = setup({ _id: 'pod-1', createdBy: CALLER, members: [OTHER] });
+    await request(app).post('/api/activity/seed/pod-1').send({}).expect(403);
     expect(seedPodActivities).not.toHaveBeenCalled();
   });
 });

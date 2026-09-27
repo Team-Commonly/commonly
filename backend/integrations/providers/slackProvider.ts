@@ -42,10 +42,12 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
 
   // The token is no longer on the row. `config.botToken` has had no writer since
   // TASK-139 (a request body may not set it, and the OAuth bind stores the opaque
-  // `botTokenRef` — `routes/installables.ts`), while `SLACK_BOT_TOKEN` is the
-  // instance's. Resolving through the ref keeps this provider reading the store
-  // the live bridge reads (`slackBridgeService`), so a bound row is not called
-  // unconfigured because a legacy field is absent.
+  // `botTokenRef` — `routes/installables.ts`). The instance-wide
+  // `SLACK_BOT_TOKEN` fallback is retired as well (TASK-151), so the per-workspace
+  // OAuth bind is the only producer of a Slack token. Resolving through the ref
+  // keeps this provider reading the store the live bridge reads
+  // (`slackBridgeService`), so a bound row is not called unconfigured because a
+  // legacy field is absent.
   //
   // Census 2026-09-25 (TASK-140): neither method below has a live caller.
   // `registry.get('slack', …)` is reached for `getWebhookHandlers`
@@ -60,7 +62,9 @@ function createSlackProvider(integration: { _id: unknown; config?: Record<string
   const tokenFor = async (): Promise<string | undefined> => {
     const ref = config.botTokenRef;
     if (ref) return connectorSecrets.get(String(ref));
-    const legacy = String(config.botToken || process.env.SLACK_BOT_TOKEN || '').trim();
+    // The row's own stored copy is still honoured (a pre-TASK-139 row may carry
+    // one); the process environment is not read (TASK-151).
+    const legacy = String(config.botToken || '').trim();
     return legacy || undefined;
   };
 

@@ -13,6 +13,8 @@ jest.mock('../../../models/OAuthState', () => ({
 jest.mock('../../../models/Pod', () => ({
   findOne: jest.fn(),
   create: jest.fn(),
+  updateOne: jest.fn(),
+  findById: jest.fn(),
 }));
 
 jest.mock('../../../integrations', () => ({
@@ -61,7 +63,17 @@ function createRes() {
 describe('admin global integrations route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    Pod.findOne.mockResolvedValue({ _id: 'pod-global', name: 'Global Social Feed' });
+    Pod.findOne.mockResolvedValue({
+      _id: 'pod-global',
+      name: 'Global Social Feed',
+      members: ['admin-1'],
+    });
+    Pod.updateOne.mockResolvedValue({});
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-global',
+      name: 'Global Social Feed',
+      members: ['admin-1', 'admin-2'],
+    });
     GlobalModelConfigService.getConfig.mockResolvedValue({
       llmService: {
         provider: 'auto',
@@ -261,6 +273,76 @@ describe('admin global integrations route', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(Integration.create).not.toHaveBeenCalled();
+  });
+
+  it('lists a second admin in the global pod before their first sync (TASK-164)', async () => {
+    const handler = getRouteHandler('/x', 'post');
+    const req = {
+      userId: 'admin-2',
+      body: {
+        enabled: true,
+        accessToken: 'x-token',
+        username: 'commonly',
+        userId: 'x-user-id',
+      },
+    };
+    const res = createRes();
+    Integration.findOne.mockResolvedValueOnce(null);
+    Integration.create.mockResolvedValueOnce({
+      _id: 'x-int-2',
+      type: 'x',
+      status: 'connected',
+      config: {},
+    });
+
+    await handler(req, res);
+
+    // Only the first requester became a Mongo member (at pod creation), so a
+    // second admin's feed would pause on its first sync without this write.
+    expect(Pod.updateOne).toHaveBeenCalledWith(
+      { _id: 'pod-global' },
+      { $addToSet: { members: 'admin-2' } },
+    );
+    // The pod handed on is the refetched one, so its members match the write.
+    expect(Pod.findById).toHaveBeenCalledWith('pod-global');
+    expect(Integration.create).toHaveBeenCalledWith(expect.objectContaining({
+      createdBy: 'admin-2',
+      podId: 'pod-global',
+    }));
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      integration: expect.objectContaining({ _id: 'x-int-2' }),
+    });
+  });
+
+  it('does not re-add an admin the global pod already lists (control)', async () => {
+    const handler = getRouteHandler('/x', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: {
+        enabled: true,
+        accessToken: 'x-token',
+        username: 'commonly',
+        userId: 'x-user-id',
+      },
+    };
+    const res = createRes();
+    Integration.findOne.mockResolvedValueOnce(null);
+    Integration.create.mockResolvedValueOnce({
+      _id: 'x-int-3',
+      type: 'x',
+      status: 'connected',
+      config: {},
+    });
+
+    await handler(req, res);
+
+    expect(Pod.updateOne).not.toHaveBeenCalled();
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      integration: expect.objectContaining({ _id: 'x-int-3' }),
+    });
   });
 
   it('the admin Instagram save keeps the stored token when the body omits it', async () => {

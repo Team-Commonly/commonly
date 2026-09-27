@@ -64,7 +64,13 @@ describe('integration manifest validation', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'user-1' } });
+    // The pod lists the caller: a real pod lists its creator, and the
+    // connector sites read `pod.members` alone (TASK-161).
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      createdBy: { toString: () => 'user-1' },
+      members: [{ toString: () => 'user-1' }],
+    });
     User.findById.mockResolvedValue({ _id: 'user-1' });
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     Integration.findOne.mockResolvedValue(null);
@@ -208,5 +214,31 @@ describe('integration manifest validation', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.missing).toEqual(expect.arrayContaining(['channelId']));
+  });
+
+  it('refuses to create a connection for a pod the caller created and then left', async () => {
+    // TASK-161, from Vera 74671: `:393` is the write gate, and the population it
+    // exists to refuse is exactly the departed creator — the one person the
+    // permissive predicate admitted. Every other create arm here lists the
+    // caller in `members`, so before this arm the site had no witness at all:
+    // `createdBy` merely identifies the owner and must not stand in for it.
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      createdBy: { toString: () => 'user-1' },
+      members: [],
+    });
+    const before = Integration.__getLastInstance();
+
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({
+        podId: 'pod-1',
+        type: 'groupme',
+        config: { webhookListenerEnabled: true },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('Access denied');
+    expect(Integration.__getLastInstance()).toBe(before);
   });
 });

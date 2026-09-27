@@ -4,6 +4,7 @@ import Integration from '../models/Integration';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
 import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
 import {
+  assertGrantToolAllowed,
   assertGrantUsable,
   getGrantLineage,
   RoomGrantError,
@@ -440,6 +441,17 @@ const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Pr
   return (pod.members || []).map((member) => String(member));
 };
 
+/**
+ * Milliseconds for a document's `createdAt`, or null when the value cannot be
+ * read as a timestamp. Both models declare `timestamps: true`, so a missing or
+ * unreadable value means the row was written outside the model — the one case
+ * an `a && b && c` comparison would wave through.
+ */
+const createdAtMs = (value: unknown): number | null => {
+  const time = value instanceof Date ? value.getTime() : NaN;
+  return Number.isFinite(time) ? time : null;
+};
+
 const resolveConnection = async (
   grant: IRoomGrant | Record<string, unknown>,
   definition: ToolDefinition,
@@ -457,6 +469,7 @@ const resolveConnection = async (
     status?: string;
     revokedAt?: Date | null;
     createdBy?: unknown;
+    createdAt?: unknown;
     config?: { installationId?: string; owner?: string; repo?: string };
   } | null;
   const config = row?.config;
@@ -471,6 +484,33 @@ const resolveConnection = async (
   ) {
     throw new RoomGrantError('connection_mismatch', 'grant connection is not a connected GitHub App installation', 403);
   }
+
+  // A grant outlives the row it was minted for as soon as that row is deleted
+  // and the same installation is added again: `connectionId` holds the
+  // installation id, so the re-added row resolves the old grant (TASK-148,
+  // #1922's C9 gap). Compare creation times instead of trusting the match —
+  // the row a grant belongs to always predates the grant.
+  //
+  // Both sides are required. The population this guard exists for IS the
+  // anomalous row, so an `a && b && c` test would pass exactly the rows it is
+  // meant to refuse; refusal is the only safe reading of an absent timestamp.
+  const grantCreatedAt = createdAtMs((grant as { createdAt?: unknown }).createdAt);
+  const rowCreatedAt = createdAtMs(row.createdAt);
+  if (grantCreatedAt === null || rowCreatedAt === null) {
+    throw new RoomGrantError(
+      'connection_untracked',
+      'grant or connection row has no creation timestamp',
+      403,
+    );
+  }
+  if (grantCreatedAt < rowCreatedAt) {
+    throw new RoomGrantError(
+      'connection_superseded',
+      'grant predates the connection row it resolves to',
+      403,
+    );
+  }
+
   return {
     type: 'github-app',
     installationId: String(config.installationId),
@@ -478,6 +518,75 @@ const resolveConnection = async (
     repo: String(config.repo),
     ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
   };
+};
+
+/**
+ * The grant-load preamble every broker path needs: the grant is read fresh, so
+ * revocation and membership are never cached. Membership is deliberately NOT
+ * part of this load — `currentMemberIds` can refuse (`invalid_target`,
+ * `target_not_found`) and each caller must run its own cheap checks first, in
+ * the order it already had.
+ */
+const loadGrantForAgent = async (input: {
+  grantId: string;
+  agentUserId: string;
+}): Promise<IRoomGrant | Record<string, unknown>> => {
+  if (!input.agentUserId) throw new RoomGrantError('agent_identity_required', 'agent identity is required', 403);
+  const grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
+  if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
+  return grant;
+};
+
+/**
+ * The definitions a grant may actually call, for the MCP `tools/list` surface.
+ * Listing has to answer what calling would allow and no more, so it runs the
+ * same checks `callTool` runs instead of a second copy of them: the grant-level
+ * checks through `assertGrantUsable` (existence, revocation, expiry, lineage,
+ * audience), then the per-tool rule through the same `assertGrantToolAllowed`
+ * that function delegates to. Names are matched raw — the sanitized spelling
+ * `grantBrokerProjectionService` uses exists for LiteLLM function names, and
+ * this surface calls tools by definition name.
+ *
+ * A grant whose connection no longer resolves refuses here too, with the code
+ * the call would give, rather than offering tools every call would reject.
+ *
+ * Deliberate boundary: the list reflects the grant and its connection, not
+ * per-call spend state (`budget_exhausted`). Spend is re-checked on every call
+ * and is not a property of the grant.
+ */
+export const listToolsForGrant = async (input: {
+  grantId: string;
+  agentUserId: string;
+}): Promise<ToolDefinition[]> => {
+  const grant = await loadGrantForAgent(input);
+  await assertGrantUsable({
+    grant,
+    agentUserId: input.agentUserId,
+    currentMemberIds: await currentMemberIds(grant),
+  });
+
+  const allowed = getToolDefinitions().filter((definition) => {
+    try {
+      assertGrantToolAllowed(grant, {
+        tool: definition.name,
+        requiredWriteMode: definition.requiredWriteMode,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // One resolution per connection type: the row is a property of the grant, not
+  // of the individual tool, and the refusal code (`connection_superseded`, ...)
+  // is the same for every tool on it.
+  const byConnectionType = new Map<string, ToolDefinition>();
+  for (const definition of allowed) {
+    if (!byConnectionType.has(definition.connectionType)) byConnectionType.set(definition.connectionType, definition);
+  }
+  for (const definition of byConnectionType.values()) await resolveConnection(grant, definition);
+
+  return allowed;
 };
 
 /**
@@ -579,9 +688,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   let grant: IRoomGrant | Record<string, unknown> | undefined;
 
   try {
-    if (!input.agentUserId) throw new RoomGrantError('agent_identity_required', 'agent identity is required', 403);
-    grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
-    if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
+    grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
 
     const members = await currentMemberIds(grant);
@@ -780,6 +887,7 @@ export default {
   callTool,
   executeApprovedToolCall,
   getToolDefinitions,
+  listToolsForGrant,
   TOOL_DEFINITIONS,
 };
 

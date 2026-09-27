@@ -1331,23 +1331,11 @@ const applyOpenClawIntegrationChannels = (config: any, integrationChannels: any)
     config.channels.discord = config.channels.discord || {};
     config.channels.discord.token = config.channels.discord.token || defaultDiscordToken;
   }
-  const defaultSlackBotToken = String(process.env.SLACK_BOT_TOKEN || '').trim();
-  const defaultSlackAppToken = String(process.env.SLACK_APP_TOKEN || '').trim();
-  const defaultSlackSigningSecret = String(process.env.SLACK_SIGNING_SECRET || '').trim();
-  if (defaultSlackBotToken || defaultSlackAppToken || defaultSlackSigningSecret) {
-    config.channels.slack = config.channels.slack || {};
-    if (defaultSlackBotToken) {
-      config.channels.slack.botToken = config.channels.slack.botToken || defaultSlackBotToken;
-    }
-    if (defaultSlackAppToken) {
-      config.channels.slack.appToken = config.channels.slack.appToken || defaultSlackAppToken;
-    }
-    if (defaultSlackSigningSecret) {
-      config.channels.slack.signingSecret = (
-        config.channels.slack.signingSecret || defaultSlackSigningSecret
-      );
-    }
-  }
+  // Slack is deliberately absent (TASK-151): the instance-wide
+  // SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET fallback is
+  // retired. Whether this server can talk to Slack is decided at send time by
+  // the per-workspace OAuth bind, and the webhook path reads its own
+  // SLACK_SIGNING_SECRET directly (`routes/webhooks/slack.ts`).
   const defaultTelegramBotToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
   const defaultTelegramSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
   if (defaultTelegramBotToken || defaultTelegramSecret) {

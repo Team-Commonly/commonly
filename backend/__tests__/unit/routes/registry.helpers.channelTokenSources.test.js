@@ -1,6 +1,9 @@
 /**
  * TASK-140 item 3 — the token a runtime is handed comes from the environment for
- * Slack and Telegram, never from the row.
+ * Telegram, never from the row. For Slack it is now handed nothing at all
+ * (TASK-151): the instance-wide `SLACK_BOT_TOKEN` fallback is retired, and the
+ * env keys stay in `ENV_KEYS` below precisely so these cases prove the helper
+ * ignores them.
  *
  * `config.botToken` has no writer since TASK-139, and every live Telegram path
  * already reads `process.env.TELEGRAM_BOT_TOKEN` — the webhook route
@@ -52,11 +55,18 @@ describe('buildOpenClawIntegrationChannels — token sources', () => {
     expect(channels.telegram[0].botToken).toBe('tg-instance');
   });
 
-  it('binds the instance slack token even when the row carries an old copy', () => {
-    const channels = buildOpenClawIntegrationChannels(slackRow({ botToken: 'xoxb-stale-row-copy' }));
+  it('hands the gateway no slack channel at all (TASK-151)', () => {
+    const channels = buildOpenClawIntegrationChannels(slackRow({
+      botToken: 'xoxb-stale-row-copy',
+      appToken: 'xapp-stale-row-copy',
+      signingSecret: 'slack-secret-stale-row-copy',
+      channelId: 'C0456',
+    }));
 
-    expect(channels.slack).toHaveLength(1);
-    expect(channels.slack[0].botToken).toBe('xoxb-instance');
+    // `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` and `SLACK_SIGNING_SECRET` are all
+    // set by `beforeEach`, so a restored reader shows up here as a non-empty
+    // array. The key itself stays an array for consumers that iterate it.
+    expect(channels.slack).toEqual([]);
   });
 
   it('binds nothing for either type when only the retired stored copy exists', () => {
@@ -69,17 +79,22 @@ describe('buildOpenClawIntegrationChannels — token sources', () => {
     ]);
 
     expect(channels.telegram).toEqual([]);
+    // Slack is empty on both paths now: this half is no longer evidence of the
+    // env rule, only of the stored copy staying unread.
     expect(channels.slack).toEqual([]);
   });
 
-  it('binds the instance verification credentials even when the row carries old copies', () => {
+  it('hands the gateway no slack verification credential either (TASK-151)', () => {
+    // The signing secret is still an env var, and still verifies every webhook
+    // (`routes/webhooks/slack.ts` reads it directly) — it is simply no longer
+    // projected into a runtime's channel config. Cutting only the token lines
+    // out of `helpers.ts` leaves this case red.
     const channels = buildOpenClawIntegrationChannels(slackRow({
       appToken: 'xapp-stale-row-copy',
       signingSecret: 'slack-secret-stale-row-copy',
     }));
 
-    expect(channels.slack[0].appToken).toBe('xapp-instance');
-    expect(channels.slack[0].signingSecret).toBe('slack-secret-instance');
+    expect(channels.slack).toEqual([]);
   });
 
   it('binds the instance telegram webhook secret even when the row carries an old copy', () => {
@@ -99,8 +114,7 @@ describe('buildOpenClawIntegrationChannels — token sources', () => {
     }));
     const telegram = buildOpenClawIntegrationChannels(telegramRow({ secretToken: 'tg-secret-stale-row-copy' }));
 
-    expect(slack.slack[0].appToken).toBeUndefined();
-    expect(slack.slack[0].signingSecret).toBeUndefined();
+    expect(slack.slack).toEqual([]);
     expect(telegram.telegram[0].webhookSecret).toBeUndefined();
   });
 

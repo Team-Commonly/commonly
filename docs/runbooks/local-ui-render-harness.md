@@ -165,6 +165,7 @@ below.)
 | --- | --- |
 | `--width`, `--height` | a 390 shot is a **different layout**, not a smaller copy. Both default to 1440×900, and every run prints `viewport <w>x<h>@2x` so a capture names its own shape. |
 | `--click '<selector>'` | some surfaces only exist after an interaction. The grant aside on `/v2/connectors` is rendered by clicking the row's **Manage**, so a shot named for the aside without the click captures the row list and calls it the aside. The click waits for the control to be visible and **throws with the selector named** if it never appears — same rule as an unknown flag: a capture that silently did something else is worse than no capture. |
+| `--page-shot full\|viewport` | the PNG is the whole **document** by default. That is the wrong shape when the page scrolls inside an element: the document is viewport-high, so a full-page capture paints the same pixels before and after a change that scrolls a panel into view (TASK-155: the pair was byte-identical, `bcc794f0…`, while the rendered text differed). `viewport` captures what is on screen, which is what an "it is now visible" claim needs; the run line prints which mode was used. An unrecognised value is refused, not defaulted. |
 | `UI_TOKEN=<jwt>` (or `--token <jwt>`) | `POST /api/auth/login` is rate-limited to **20 attempts per 15 minutes**. A pair is captured run by run, so a five-shot batch starts returning 429 and the page dumps `Failed to load chat room. Please try again.` — which reads like a broken revision, not a spent login budget. Pass a token the caller already holds and the script skips the login entirely (`auth token` vs `auth login` in the run line). **Prefer the environment form**: `--token <jwt>` puts the JWT in the process table (`ps`) where any same-user process reads it, and in shell history; `UI_TOKEN` is the same value through a channel that neither shows (`UI_TOKEN="$TOK" node scripts/ui-evidence-shot.mjs …`). |
 | — | **an unknown flag is refused (exit 2), not ignored — and so are a value that belongs to no flag, a flag given twice, a flag given an empty value, and a flag with no value at all.** That is the defect this table was written for: the script had no `--width` at all, so `--width 390 --out x-390.png` wrote a silent 1440×900 capture under a `-390` name and the reviewer had no way to tell (2026-09-19). The rest are the same class one step over: `--width 390 400` used to run with 390 and never mention the 400; `--route=/v2/x?a=1&b=2` used to be cut at the second `=` into `/v2/x?a` and capture a different page; `--selector= "$SEL"` with `SEL` unset is an empty value, which the script treated as the flag being absent and silently captured the full page; and `--route $UNSET --out a.png` — a flag with no value — is the one path in this class that **invented** a value instead of dropping one, substituting the string `true` so the run navigated to a route literally named `true` under a file name that named the intended page (TASK-081). Check the run line: `viewport` and `auth` are printed on every capture for exactly this reason. |
 
@@ -214,6 +215,26 @@ artifacts come with it: `/tmp/trail.selector.txt` (`innerText` of the element �
 half, and for a below-the-fold row the only half a text-only reader can use) and
 `/tmp/trail.page.png` (the full page, so the scoped shot keeps its context). Without
 `--selector` nothing changes: one full-page PNG and one `.txt`.
+
+### Capturing what the user can see — `--page-shot viewport`
+
+`fullPage` also lies about **whether anything moved**. `/v2/connectors` scrolls inside
+`v2-feature__body`, not the document, so `documentElement.scrollHeight` equals the viewport
+height and a full-page capture paints the same pixels before and after a change that scrolls
+a panel into view — measured, TASK-155: the two shots were byte-identical (`bcc794f0…` on
+both sides) while the rendered text differed. Name the shot shape instead:
+
+```bash
+node scripts/ui-evidence-shot.mjs \
+  --route /v2/connectors --out /tmp/add-390.png --width 390 --height 844 \
+  --click '.v2-connectors__connect' --page-shot viewport \
+  --base-url http://localhost:3000 --api http://localhost:5050
+```
+
+The run line prints `page-shot full` or `page-shot viewport`, so one capture cannot be
+mistaken for the other. Use it when the claim is "this is now on screen"; `--selector`
+answers a different question ("what does this element contain") and crops away the
+surroundings that make an on-screen claim checkable.
 
 A selector that never appears **fails and writes nothing** (exit 1, message names the
 selector) instead of shipping a screenshot of whatever was on screen — the failure mode that

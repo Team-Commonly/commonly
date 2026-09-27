@@ -59,6 +59,10 @@ const { callTool } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { assertGrantUsable, getGrantLineage } = require('../../../services/roomGrantService');
 
+// The row a grant was minted for always predates the grant; the guard compares
+// these two, so both fixtures carry the field the models always write.
+const GRANT_CREATED_AT = new Date('2026-01-02T00:00:00.000Z');
+
 const seatGrant = (overrides = {}) => ({
   grantId: 'grant-1',
   installationId: 'install-1',
@@ -68,6 +72,7 @@ const seatGrant = (overrides = {}) => ({
   connectionId: 'connection-1',
   audience: ['agent-a'],
   expiresAt: new Date(Date.now() + 60000),
+  createdAt: GRANT_CREATED_AT,
   ...overrides,
 });
 
@@ -77,6 +82,7 @@ beforeEach(() => {
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app', status: 'connected',
     createdBy: 'owner-1',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
     config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockIntegration.findById.mockResolvedValue(null);
@@ -116,6 +122,67 @@ describe('tool broker guard rails', () => {
     await expect(callTool({
       grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
     })).rejects.toMatchObject({ code: 'connection_mismatch' });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+  });
+
+  // TASK-148. The guard is a comparison, so the control has to be a call that
+  // SUCCEEDS: a row older than its grant is the normal state, and a guard that
+  // refused it would take the broker offline for every seat.
+  it('resolves a grant whose connection row predates it', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).resolves.toBeDefined();
+    expect(mockGithub.listOpenIssues).toHaveBeenCalled();
+  });
+
+  // The re-add: the same installation id comes back as a NEW row, so
+  // `resolveConnection`'s installationId lookup finds a row young enough to
+  // postdate the grant that was minted for the deleted one.
+  it('refuses a grant that predates the connection row it resolves to', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue({
+      type: 'github-app',
+      status: 'connected',
+      createdBy: 'owner-2',
+      createdAt: new Date(GRANT_CREATED_AT.getTime() + 60000),
+      config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+    });
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).rejects.toMatchObject({ code: 'connection_superseded' });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused',
+      reason: 'connection_superseded',
+    }));
+  });
+
+  // Fail closed, on BOTH sides. A guard written as `a && b && c` would pass
+  // every row whose timestamp is absent — which is exactly the population that
+  // cannot be shown to belong to the grant.
+  it.each([
+    ['the grant', { createdAt: undefined }],
+    ['the connection row', null],
+    ['a non-Date timestamp on the grant', { createdAt: '2026-01-02T00:00:00.000Z' }],
+  ])('refuses when %s carries no readable creation timestamp', async (_label, grantOverride) => {
+    mockRoomGrant.findOne.mockResolvedValue(
+      grantOverride === null
+        ? seatGrant({ tools: ['github.list_issues'] })
+        : seatGrant({ tools: ['github.list_issues'], ...grantOverride }),
+    );
+    if (grantOverride === null) {
+      mockIntegration.findOne.mockResolvedValue({
+        type: 'github-app',
+        status: 'connected',
+        createdBy: 'owner-1',
+        createdAt: undefined,
+        config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+      });
+    }
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).rejects.toMatchObject({ code: 'connection_untracked' });
     expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
   });
 

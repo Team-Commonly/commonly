@@ -1,6 +1,7 @@
 process.env.PG_HOST = '';
 const mongoose = require('mongoose');
 const podController = require('../../../controllers/podController');
+const { DEFAULT_LISTING_HIDDEN_POD_TYPES } = require('../../../services/podListing');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
 const Post = require('../../../models/Post');
@@ -282,6 +283,69 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith(pod);
   });
 
+  // ── TASK-166: the creator cannot leave, everyone else still can ─────────
+  // TASK-170: these two arms build the pod from the REAL model rather than
+  // `members: ['creator', 'member']`. `leavePod` decides with
+  // `pod.members.includes(req.userId)`, and on a hydrated document mongoose's
+  // array wrapper casts the hex string so the comparison holds. Rewrite it as
+  // `[...pod.members].includes(req.userId)` — a reasonable-looking tightening —
+  // and it refuses every member, because spreading unwraps the wrapper into
+  // plain ObjectIds; with string members both spellings pass, so the fixtures
+  // this replaces could not see that edit. The arm below asserts the shape the
+  // fixture must have, instead of assuming it.
+  const CREATOR_ID = new mongoose.Types.ObjectId();
+  const MEMBER_ID = new mongoose.Types.ObjectId();
+  const hydratedPod = (members) => {
+    const RealPod = jest.requireActual('../../../models/Pod');
+    const doc = new RealPod({ _id: new mongoose.Types.ObjectId(), name: 'Pod', type: 'chat', createdBy: CREATOR_ID, members });
+    // Only the two methods the route reaches for are stubbed; everything the
+    // membership decision touches is the real document.
+    doc.save = jest.fn().mockResolvedValue(doc);
+    doc.populate = jest.fn().mockResolvedValue(doc);
+    return doc;
+  };
+
+  it('the hydrated fixture separates the wrapper predicate from a spread of it', () => {
+    // Fixture control, not production behaviour: it shows the difference the two
+    // arms below depend on. If this passes with a string-array fixture the arms
+    // are blind to the spread edit.
+    const pod = hydratedPod([CREATOR_ID, MEMBER_ID]);
+    expect(pod.members.isMongooseArray).toBe(true);
+    expect(pod.members.includes(String(MEMBER_ID))).toBe(true);
+    expect([...pod.members].includes(String(MEMBER_ID))).toBe(false);
+  });
+
+  it('leavePod refuses the creator with 409 creator_cannot_leave and keeps them listed', async () => {
+    const pod = hydratedPod([CREATOR_ID, MEMBER_ID]);
+    Pod.findById.mockResolvedValue(pod);
+    const req = { params: { id: String(pod._id) }, userId: String(CREATOR_ID) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.leavePod(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'creator_cannot_leave' }));
+    // The refusal is a non-event, not a silent success: nothing was unlisted
+    // and nothing was saved.
+    expect(pod.members.map(String)).toEqual([String(CREATOR_ID), String(MEMBER_ID)]);
+    expect(pod.save).not.toHaveBeenCalled();
+  });
+
+  // Positive control. The arm above is satisfied by a route that refuses
+  // everyone, which is exactly the shape the guard must not be.
+  it('leavePod still removes a non-creator member (control)', async () => {
+    const pod = hydratedPod([CREATOR_ID, MEMBER_ID]);
+    Pod.findById.mockResolvedValue(pod);
+    const req = { params: { id: String(pod._id) }, userId: String(MEMBER_ID) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.leavePod(req, res);
+
+    expect(pod.members.map(String)).toEqual([String(CREATOR_ID)]);
+    expect(pod.save).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(pod);
+  });
+
   // ── ADR-001 §3.10: agent-rooms are 1:1 DMs ──────────────────────────────
 
   it('joinPod rejects a third-person join on agent-room with 403', async () => {
@@ -391,7 +455,9 @@ describe('podController', () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     // 'admin-id' is not a castable ObjectId, so this exercises the JS fallback.
-    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
+    // The hidden set comes from `services/podListing.ts` (TASK-171) — the same
+    // constant the connector target predicate reads.
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] } });
     // Default scope=mine: admin is filtered to their own pods, NOT every
     // chat pod in the instance.
     expect(res.json).toHaveBeenCalledWith([myPod]);
@@ -416,7 +482,7 @@ describe('podController', () => {
     await podController.getAllPods(req, res);
 
     const [query] = Pod.find.mock.calls[0];
-    expect(query.type).toEqual({ $ne: 'agent-admin' });
+    expect(query.type).toEqual({ $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] });
     expect(String(query.members)).toBe(String(me));
     expect(res.json).toHaveBeenCalledWith([mine]);
   });
@@ -484,7 +550,7 @@ describe('podController', () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
 
-    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] } });
     expect(res.json).toHaveBeenCalledWith([otherPod]);
   });
 

@@ -35,9 +35,14 @@ const { hash, randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+const {
+  isConnectorTargetPod,
+  isListedPodMember,
+} = require('../services/connectorRelayPolicy');
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
+// eslint-disable-next-line global-require
+const { revokeConnectionGrants } = require('../services/roomGrantService');
 import { Types } from 'mongoose';
 import {
   invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
@@ -146,12 +151,18 @@ const validateManifestIfComplete = (type: string, config: unknown) => {
   validateRequiredConfig(resolveEffectiveConfig(type, config as Record<string, unknown>), manifest);
 };
 
+// TASK-168: `createdBy` records who made the pod and survives `leavePod`, so a
+// pod-creator arm that reads the field alone admits someone who has left — to act
+// on a pod whose channel they can no longer read. Every pod-creator arm in this
+// file therefore also requires listed membership, the strict rule this file
+// already imports from the connector policy (line 38). The admin and
+// integration-creator arms are untouched: neither ever claimed pod membership.
 async function canDeleteIntegration(integration: { createdBy?: { toString: () => string }; podId?: unknown } | null, userId: string): Promise<boolean> {
   const user = await User.findById(userId) as { role?: string } | null;
   if (!user) return false;
   if (user.role === 'admin') return true;
   const pod = await Pod.findById(integration?.podId) as { createdBy?: { toString: () => string } } | null;
-  if (pod && pod.createdBy?.toString() === userId) return true;
+  if (pod && pod.createdBy?.toString() === userId && isListedPodMember(pod, userId)) return true;
   if (integration?.createdBy?.toString() === userId) return true;
   return false;
 }
@@ -382,11 +393,17 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
     // Membership gate: an integration relays a pod's content outward and
-    // authors content into it — a WRITE, so it takes the strict predicate
-    // (members + creator; no admin read-bypass — #1302's isPodMember, not
-    // DMService.canViewPod). Plain findById: unit mocks resolve a bare doc.
+    // authors content into it — a WRITE, so it takes the strict predicate the
+    // pod's own write path runs: `pod.members` alone, no creator bypass and no
+    // admin read-bypass (TASK-161; DMService.canViewPod's admin clause exists
+    // for read observability, and would make "only members can write here"
+    // untrue). Plain findById: unit mocks resolve a bare doc.
     const targetPod = await Pod.findById(String(podId));
-    if (!targetPod || !isPodMember(targetPod, req.user?.id)) {
+    // The target predicate, not membership alone: a created connector makes this
+    // pod a relay target, and the pod types the default listing hides have no
+    // gate UI, so a connector pointed at one is invisible from the page that
+    // would show it (TASK-171).
+    if (!targetPod || !isConnectorTargetPod(targetPod, req.user?.id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
     const relay = readRelayFlags(stripServerOwnedConfig(config));
@@ -458,7 +475,8 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     let service: { connect: () => Promise<boolean> } | null = null;
     if (integration.type === 'discord') service = new DiscordService(id);
     else if (integration.type !== 'slack') return res.status(400).json({ message: 'Unsupported integration type' });
@@ -477,7 +495,8 @@ router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type !== 'discord') return res.status(400).json({ message: 'Unsupported integration type' });
     const service = new DiscordService(id);
     const disconnected = await service.disconnect();
@@ -495,7 +514,8 @@ router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     let service: { getStats: () => Promise<unknown> } | null = null;
     if (integration.type === 'discord') service = new DiscordService(id);
     else if (integration.type !== 'slack') return res.status(400).json({ message: 'Unsupported integration type' });
@@ -514,7 +534,8 @@ router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type === 'discord') {
       const service = new DiscordService(id);
       const messages = await service.fetchMessages({ limit, before });
@@ -535,7 +556,8 @@ router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type === 'discord') {
       const service = new DiscordService(id);
       const result = await service.sendMessage(message);
@@ -634,15 +656,17 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
         return res.status(400).json({ message: 'adminPause is managed by an administrator' });
       }
       // A user connector has one active inbound destination. Selecting it is
-      // an owner action, and it must be a pod that owner can still write to;
-      // otherwise a browser could redirect private inbound messages into a
-      // pod it merely knows the id of.
+      // an owner action, and it must be a pod that owner can still write to —
+      // the same strict membership `createMessage` checks, so a creator who
+      // left cannot aim private inbound messages at a pod that refuses them.
       if (podId !== undefined) {
         if (typeof podId !== 'string' || !isObjectIdKey(podId)) {
           return res.status(400).json({ message: 'podId must be a valid pod id' });
         }
         const activePod = await Pod.findById(podId);
-        if (!activePod || !isPodMember(activePod, requesterId)) {
+        // The active pod is a target too: bridges relay its content without a
+        // gate, so the same type rule applies as to any other target (TASK-171).
+        if (!activePod || !isConnectorTargetPod(activePod, requesterId)) {
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -665,7 +689,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
         // a mixed valid/invalid PATCH atomic: no valid gate is written first.
         for (const gatePodId of gatePodIds) {
           const gatePod = await Pod.findById(gatePodId);
-          if (!gatePod || !isPodMember(gatePod, requesterId)) {
+          // This is the site the row was opened for: the gate-key check had no
+          // type rule, so a listed owner could switch a gate on for a pod the
+          // Connectors page never offers (TASK-171).
+          if (!gatePod || !isConnectorTargetPod(gatePod, requesterId)) {
             return res.status(403).json({ message: 'Access denied' });
           }
         }
@@ -743,13 +770,31 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
-router.delete('/:id', auth, async (req: AuthReq, res: Res) => {
+router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown } | null;
+    const deletedBy = String(req.user?.id || '').trim();
+    // Fail closed on the identity rather than skipping the grants step and
+    // deleting anyway, which would reinstate the orphan this route was fixed to
+    // stop creating (Vera 74462). `auth` always sets a non-empty id, so this is
+    // unreachable today; it is here so it cannot become reachable in silence.
+    if (!deletedBy) return res.status(401).json({ message: 'Unauthorized' });
+    const integration = await Integration.findById(id) as {
+      type?: string;
+      createdBy?: { toString: () => string };
+      podId?: unknown;
+      installationId?: unknown;
+      config?: { installationId?: unknown };
+    } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
-    const canDelete = await canDeleteIntegration(integration, req.user?.id || '');
+    const canDelete = await canDeleteIntegration(integration, deletedBy);
     if (!canDelete) return res.status(403).json({ message: 'Access denied' });
+    // §10.5's grants step, and it has to run here: the deletion below removes
+    // the row, and the granter's own revoke route resolves ownership through
+    // `findConnection` (routes/grants.ts:421) — after the row is gone every
+    // grant on this connection answers 403 `access_denied`, so the removal
+    // would orphan them un-revoked (TASK-145).
+    await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
     if (integration.type === 'discord') await DiscordIntegration.findOneAndDelete({ integrationId: id });

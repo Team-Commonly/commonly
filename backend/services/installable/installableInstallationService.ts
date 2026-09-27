@@ -17,6 +17,8 @@ const Installable = require('../../models/Installable');
 const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { revokeConnectionGrants } = require('../roomGrantService');
 
 export const INSTALL_LOCK_TTL_MS = 60_000;
 
@@ -521,6 +523,17 @@ const unprojectInstallation = async (
   installedBy: Types.ObjectId,
   claimId: string,
 ): Promise<void> => {
+  // §10.5's grants step, once per uninstall rather than once per projector:
+  // both branches below tombstone the installable's connection row, and a
+  // tombstoned row leaves its grants live and unrevoked even though nothing
+  // can call them any more (TASK-145).
+  const connections = await Integration.find({ installationId: String(installation._id) })
+    .select('_id installationId config.installationId')
+    .lean() as Array<{ _id?: unknown; installationId?: unknown; config?: { installationId?: unknown } }>;
+  for (const connection of connections) {
+    await revokeConnectionGrants({ connection, revokedBy: String(installedBy) });
+  }
+
   if (installable) {
     for (const component of installable.components) {
       const projector = getProjector(component.type);

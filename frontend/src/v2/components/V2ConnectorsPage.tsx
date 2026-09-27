@@ -190,6 +190,17 @@ const connectorPodId = (connector: Connector | null | undefined): string | null 
 
 const groupCode = (code: string): string => (code.match(/.{1,4}/g) || [code]).join(' ');
 
+// Mirrors `PERSONAL_POD_TYPES` in `backend/services/podTypePolicyService.ts` —
+// private conversation surfaces, not rooms a channel should join by default.
+// `/api/pods` returns the caller's own 1:1 room first, so TASK-155 shipped with
+// the picker defaulting to "Scout (Default)", an agent-room. The pods stay in
+// the list (a DM is a legal target) — they just never become the default.
+const PERSONAL_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
+const defaultPodForChannel = (pods: V2Pod[]): string => (
+  (pods.find((pod) => !PERSONAL_POD_TYPES.has(String(pod.type))) || pods[0])?._id || ''
+);
+
 const codeIsLive = (connector: Connector): boolean => Boolean(
   connector.config?.connectCode
   && connector.config?.connectCodeExpiresAt
@@ -258,12 +269,22 @@ const V2ConnectorsPage: React.FC = () => {
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
   // when the tab comes back: a row that says `since 5m ago` is wrong twice
   // over if it is still saying it an hour later (TASK-131).
   const now = useRelativeNow();
   const adding = addingType !== null;
   const podList = pods || [];
+
+  // TASK-155: at 390 the aside sits below the fold of the page's own scroller
+  // (`v2-feature__body` is the scroller, not the document), so opening the form
+  // changed nothing on screen even once it moved into the panel. Focusing the
+  // picker scrolls it into view, and is where a keyboard user wants the cursor
+  // anyway. Keyed on the type so switching provider also lands on the picker.
+  useEffect(() => {
+    if (addingType) podPickerRef.current?.focus();
+  }, [addingType]);
 
   const load = useCallback(async () => {
     try {
@@ -340,13 +361,16 @@ const V2ConnectorsPage: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        // Membership is the only rule, and it is the server's: every pod that
-        // lists the user is one the install verb and a gate key would accept.
+        // The server decides this. A pod the user is listed in is a connector
+        // target UNLESS its type is one the default listing hides (`agent-admin`):
+        // installing into one, gating one, or making one active all 403, so this
+        // list — built from that same endpoint — offers exactly what those verbs
+        // accept (TASK-171).
         const data = await api.get<V2Pod[]>('/api/pods');
         const eligible = Array.isArray(data) ? data : [];
         if (!cancelled) {
           setPods(eligible);
-          setNewPodId((current) => current || eligible[0]?._id || '');
+          setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {
         // Keep the normal picker visible when membership cannot be read. A
@@ -397,7 +421,7 @@ const V2ConnectorsPage: React.FC = () => {
         message = installInProgressMessage(response.data.boundPodId);
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
         message = t('connectors.alreadyBound', {
-          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Remove it to bind a different pod.',
+          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through its gate switches — turn one on in the panel.',
           connector: typeLabel,
           pod: boundPodName(response.data.boundPodId),
         });
@@ -963,6 +987,12 @@ const V2ConnectorsPage: React.FC = () => {
     setSelectedKey(item.key);
     setConfirmRemove(null);
     setExpandedGate(null);
+    // TASK-155: while the form is open it owns the aside, so a row click or a
+    // row's gear has to close it — otherwise the click looks like it did
+    // nothing, which is the symptom this page was reported for pointed the
+    // other way. `runAction` calls this first and re-opens the form for
+    // `connect`, so Add is unaffected.
+    setAddingType(null);
   };
 
   const runAction = (item: ListItem, action: ConnectorAction) => {
@@ -1405,6 +1435,7 @@ const V2ConnectorsPage: React.FC = () => {
           ))}
         </div>
         <select
+          ref={podPickerRef}
           className="v2-connectors__select"
           value={newPodId}
           onChange={(event) => setNewPodId(event.target.value)}
@@ -1457,20 +1488,27 @@ const V2ConnectorsPage: React.FC = () => {
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
                 {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
-                {adding && selectedAside && renderAddForm()}
               </div>
             )}
           </section>
-          {selectedAside
-            || (adding && (
-              <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
-                <section className="v2-connector-aside__step">
-                  <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                  {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
-                  {renderAddForm(true)}
-                </section>
-              </aside>
-            ))}
+          {/*
+            TASK-155: the aside owns the add form, so the panel always changes
+            when a channel is being added. Before this, a selected row's detail
+            kept the aside and the form was rendered a second time in the left
+            column — clicking Add (or Connect a channel) with another row
+            selected left the panel on that row and put the picker somewhere
+            else, which reads as "Add did nothing". One form, in the panel the
+            page uses for the thing you are doing.
+          */}
+          {adding ? (
+            <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
+              <section className="v2-connector-aside__step">
+                <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
+                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
+                {renderAddForm(true)}
+              </section>
+            </aside>
+          ) : selectedAside}
         </div>
       )}
 

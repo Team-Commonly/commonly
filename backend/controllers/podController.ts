@@ -13,6 +13,7 @@ const {
   COMMUNITY_LISTING_QUERY,
   NON_LISTABLE_POD_TYPES,
   communityDiscoverQuery,
+  defaultListingTypeFilter,
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
@@ -189,8 +190,9 @@ exports.getAllPods = async (req: any, res: any) => {
       scopedCallerId = new mongoose.Types.ObjectId(rawCallerId);
     }
     if (hasUnusableType) return res.json([]);
-    // Exclude agent-admin DM pods from default listing; only show when
-    // explicitly requested and the caller is a member.
+    // The default listing hides the types no connector may target, from one
+    // constant (`services/podListing.ts`), so a type cannot be hidden here and
+    // still be gateable through the API (TASK-171).
     // Community and Discover are explicit, additive discovery scopes. Personal
     // pod types stay excluded even if a malformed/admin-created row has the
     // listing/read flags forced true.
@@ -208,7 +210,7 @@ exports.getAllPods = async (req: any, res: any) => {
           ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
           : { $nin: NON_LISTABLE_POD_TYPES },
       }
-      : (type ? { type } : { type: { $ne: 'agent-admin' } });
+      : defaultListingTypeFilter(type);
 
     // Membership filter — return only pods the requester belongs to.
     //
@@ -587,6 +589,19 @@ exports.leavePod = async (req: any, res: any) => {
 
     if (!pod) {
       return res.status(404).json({ msg: 'Pod not found' });
+    }
+
+    // TASK-166: the creator cannot leave. `createdBy` is written only at
+    // creation and nothing transfers it, while `removeMember` is gated on it
+    // with no admin fallback — so a creator who left would strand the pod with
+    // nobody able to remove a member. Refused rather than stripped: the field
+    // records who made the pod, and the membership readers no longer read it as
+    // membership.
+    if (String(pod.createdBy) === String(req.userId)) {
+      return res.status(409).json({
+        msg: 'A pod creator cannot leave their own pod.',
+        code: 'creator_cannot_leave',
+      });
     }
 
     // Check if user is a member

@@ -21,12 +21,13 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const IntegrationModel = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { shouldEscalate } = require('./connectorRelayPolicy');
+const {
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+} = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
@@ -41,6 +42,10 @@ export interface RelayMapEntry {
   tgMessageId: string;
   agentUsername: string;
   podMessageId?: string | null;
+  // ADR-025 D11: which pod's line this was. Absent on entries written before
+  // multi-pod routing shipped, and absent is not "the active pod" — it is
+  // "unknown", and unknown routes as it always has (see relayTelegramMessageToPod).
+  podId?: string | null;
 }
 
 interface TelegramIntegrationDoc {
@@ -121,22 +126,28 @@ export const renderTelegramDecisionCard = (opts: {
 // Prefix an inbound Telegram quote-reply with the @mention of the agent whose
 // relayed line was quoted, so the normal mention pipeline routes it. Pure —
 // unit-tested without any I/O.
+//
+// It also returns the pod the quoted line came from (ADR-025 D11). The caller
+// owns the decision — the map is data, and this function does no lookups — so a
+// `podId` here means "the quoted entry names a pod", not "routing to it is
+// allowed".
 export const routeReplyContent = (opts: {
   content: string;
   replyToTgMessageId?: string | null;
   relayMap?: RelayMapEntry[];
-}): { content: string; routedAgent: string | null } => {
+}): { content: string; routedAgent: string | null; podId: string | null } => {
   const { content, replyToTgMessageId, relayMap } = opts;
   if (!replyToTgMessageId || !Array.isArray(relayMap)) {
-    return { content, routedAgent: null };
+    return { content, routedAgent: null, podId: null };
   }
   const hit = relayMap.find((e) => String(e.tgMessageId) === String(replyToTgMessageId));
-  if (!hit || !hit.agentUsername) return { content, routedAgent: null };
+  if (!hit || !hit.agentUsername) return { content, routedAgent: null, podId: null };
+  const routedPodId = hit.podId ? String(hit.podId) : null;
   const mention = `@${hit.agentUsername}`;
   if (content.toLowerCase().includes(mention.toLowerCase())) {
-    return { content, routedAgent: hit.agentUsername };
+    return { content, routedAgent: hit.agentUsername, podId: routedPodId };
   }
-  return { content: `${mention} ${content}`, routedAgent: hit.agentUsername };
+  return { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
 const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationDoc | null> => {
@@ -168,9 +179,7 @@ const isRelayableIntegration = (
   integration: TelegramIntegrationDoc,
   podId: string,
 ): boolean => (
-  (integration.scope === 'user'
-    ? integration.config?.gates?.[String(podId)]?.enabled === true
-    : String(integration.podId) === String(podId))
+  isGatedPodTarget(integration, podId)
   && (integration.type === undefined || integration.type === 'telegram')
   && integration.isActive !== false
   && integration.config?.liveRelay === true
@@ -197,6 +206,16 @@ const isInboundRelayableIntegration = (
 
 const NO_ACTIVE_POD_REPLY = 'This connector has no active pod. Choose one in Commonly first.';
 
+// ADR-025 D11: a quote-reply whose pod is no longer reachable is refused in the
+// chat and posted nowhere. Naming the pod is the whole point — "your reply did
+// not go through" is unactionable, while "that line came from Launch" tells the
+// user which pod the fix is in. The label is escaped because this send is
+// `parse_mode: 'HTML'` and a pod name is agent-choosable.
+const routedPodRefusal = (podLabel: string): string => (
+  `⚠️ That line came from “${escapeHtml(podLabel)}”, which this chat no longer reaches. `
+  + 'Nothing was posted — open Commonly to reply there.'
+);
+
 const replyNoActivePod = async (integration: TelegramIntegrationDoc): Promise<void> => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = integration.config?.chatId;
@@ -207,6 +226,40 @@ const replyNoActivePod = async (integration: TelegramIntegrationDoc): Promise<vo
     await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
   } catch (error) {
     console.warn('[tg-bridge] could not send no-active-pod reply:', (error as Error).message);
+  }
+};
+
+// Same trust level as replyNoActivePod: a refusal that never reaches the chat
+// leaves the user believing their message was relayed.
+const replyRoutedPodRefused = async (
+  integration: TelegramIntegrationDoc,
+  podLabel: string,
+): Promise<void> => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = integration.config?.chatId;
+  if (!botToken || !chatId) return;
+  try {
+    const sent = await telegramSend.sendMessage(botToken, chatId, routedPodRefusal(podLabel));
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
+  } catch (error) {
+    console.warn('[tg-bridge] could not send routed-pod refusal:', (error as Error).message);
+  }
+};
+
+// The pod tag is cosmetic (ADR-025 D10): it tells a reader which pod a line came
+// from once more than one pod reaches this chat. Slack has carried it since its
+// bridge shipped; Telegram did not, which is half of what D10 names. A lookup
+// failure must not cost the relay, so it degrades to the id rather than to a
+// name that was never read — never to silence.
+const podNameForTag = async (podId: string): Promise<string> => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const Pod = require('../models/Pod');
+    const pod = await Pod.findById(podId).select('name').lean();
+    return String(pod?.name || podId);
+  } catch (error) {
+    console.warn('[tg-bridge] pod name lookup failed, tagging with the id:', (error as Error).message);
+    return podId;
   }
 };
 
@@ -230,10 +283,16 @@ export const relayAgentMessageToTelegram = async (opts: {
     // authority for this send; the fallback preserves legacy direct rows.
     const integration = opts.integration ?? await findLiveIntegration(podId);
     if (!integration) return;
+    // TASK-160: the "why is this held" label reads the gate through the same
+    // predicate the relay itself uses, so a change to gate semantics cannot
+    // leave the reason a user is shown stale. The scope test stays because it
+    // asks a different question than the gate read does: the label means "this
+    // person's gate for that pod is off", not "this connector owns that pod",
+    // which is what the predicate's pod-scoped arm answers.
     const cardHoldReason = opts.card
       ? (integration.config?.adminPause
         ? 'paused'
-        : integration.scope === 'user' && integration.config?.gates?.[podId]?.enabled !== true
+        : integration.scope === 'user' && !isGatedPodTarget(integration, podId)
           ? 'gate_off'
           : null)
       : null;
@@ -282,7 +341,7 @@ export const relayAgentMessageToTelegram = async (opts: {
     const body = escapeHtml(String(content).slice(0, OUTBOUND_TEXT_CAP));
     const text = opts.card
       ? renderTelegramDecisionCard({ card: opts.card, displayName, agentUsername, link })
-      : `<b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
+      : `[${escapeHtml(await podNameForTag(podId))}] <b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
         + `\n\n<a href="${link}">open in Commonly</a>`;
 
     const result = await telegramSend.sendMessage(botToken, chatId, text);
@@ -297,7 +356,7 @@ export const relayAgentMessageToTelegram = async (opts: {
     await IntegrationModel.findByIdAndUpdate(integration._id, {
       $push: {
         'config.relayMap': {
-          $each: [{ tgMessageId, agentUsername, podMessageId: podMessageId || null }],
+          $each: [{ tgMessageId, agentUsername, podMessageId: podMessageId || null, podId }],
           $slice: -RELAY_MAP_CAP,
         },
         ...(opts.card && podMessageId ? {
@@ -430,11 +489,50 @@ export const relayTelegramMessageToPod = async (opts: {
   }
   if (cardReply.lateReply) podId = cardReply.lateReply.podId;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
-  const { content: routedText, routedAgent } = routeReplyContent({
+  const routed = routeReplyContent({
     content: rawText,
     replyToTgMessageId: replyToTgMessageId != null ? String(replyToTgMessageId) : null,
     relayMap: cardReply.lateReply ? [] : integration.config?.relayMap,
   });
+  // ADR-025 D11: a quote-reply answers the line it quotes, so it belongs in THAT
+  // pod — not in whichever pod is this connector's active destination. The quoted
+  // pod is re-derived here rather than trusted from the map: the map is written
+  // at send time and an entry can outlive its gate, its pod, or the owner's
+  // membership (100-entry cap, owner-editable gates). Any failure refuses in the
+  // chat and posts nothing. Falling back to the active pod is the defect this
+  // rule exists for — the user's answer to B would be authored into A and the
+  // agent it names would wake there without B's thread.
+  //
+  // An entry with no `podId` is not this case. It was written before multi-pod
+  // routing shipped, carries no pod to check, and routes as it always has.
+  //
+  // The predicate is `isRoutedPodTarget` (gate + membership, one home in
+  // connectorRelayPolicy): the same rule the outbound relay and decision-card
+  // delivery read, so a fix to the rule reaches all of them. Note what it does
+  // NOT bound — the ACTIVE pod is exempt from the gate by design (see
+  // isInboundRelayableIntegration above), so this check applies only to the
+  // quoted pod, and only when it differs from the active one. The shared
+  // predicate answers gate + membership; the bridge's own predicate adds the
+  // protocol-health conditions only Telegram knows (liveRelay, chatType, chatId).
+  if (routed.podId && String(routed.podId) !== String(podId)) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const PodModel = require('../models/Pod');
+    const routedPod = await PodModel.findById(routed.podId).select('name type createdBy members').lean();
+    if (!isRoutedPodTarget({
+      integration,
+      pod: routedPod,
+      podId: routed.podId,
+      userId: linkedUserId,
+    }) || !isRelayableIntegration(integration, routed.podId)) {
+      console.warn(
+        `[tg-bridge] quote-reply refused — quoted pod ${routed.podId} is no longer routed to this chat`,
+      );
+      await replyRoutedPodRefused(integration, routedPod?.name ? String(routedPod.name) : `pod ${routed.podId}`);
+      return { relayed: false };
+    }
+    podId = String(routed.podId);
+  }
+  const { content: routedText, routedAgent } = routed;
 
   const senderName = [
     telegramMessage.from?.first_name,
@@ -456,7 +554,7 @@ export const relayTelegramMessageToPod = async (opts: {
   const socketConfig = require('../config/socket');
 
   const pod = await Pod.findById(podId).select('type createdBy members').lean();
-  if (!pod || !isPodMember(pod, linkedUserId)) {
+  if (!pod || !isListedPodMember(pod, linkedUserId)) {
     console.warn('[tg-bridge] inbound dropped — linked user is no longer a pod member');
     await replyNoActivePod(integration);
     return { relayed: false };

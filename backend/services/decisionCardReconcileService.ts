@@ -7,7 +7,8 @@ const DecisionRequest = require('../models/DecisionRequest');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isGatedPodTarget, isListedPodMember } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
@@ -81,12 +82,16 @@ const canSendClosingLine = (
   if (integration.isActive !== true || integration.status === 'error') return false;
   if (integration.config?.liveRelay !== true || integration.config.adminPause) return false;
   if (integration.type !== 'telegram' && integration.type !== 'slack') return false;
-  if (integration.scope === 'user' && integration.config.gates?.[podId]?.enabled !== true) return false;
-  if (integration.scope !== 'user' && String(integration.podId) !== podId) return false;
+  // The gate reading is shared with both bridges and with the routed-reply check
+  // (connectorRelayPolicy.isGatedPodTarget) so the four consumers cannot drift.
+  // Its companion conjunction lives in isRoutedPodTarget; this function keeps the
+  // membership read below where it is, because the mute and chatId checks sit
+  // between the two halves here.
+  if (!isGatedPodTarget(integration, podId)) return false;
   const mutedUntil = integration.config.relayMutedUntil;
   if (mutedUntil && new Date(mutedUntil).getTime() > now.getTime()) return false;
   const linkedUserId = memberIdFor(integration);
-  if (!linkedUserId || !isPodMember(pod, linkedUserId)) return false;
+  if (!linkedUserId || !isListedPodMember(pod, linkedUserId)) return false;
   if (!integration.config.chatId) return false;
   if (integration.type === 'telegram') {
     return integration.config.chatType === 'private' && Boolean(process.env.TELEGRAM_BOT_TOKEN);

@@ -32,15 +32,23 @@ export function getCallerId(req: PodAccessReq): string {
  * Returns true when the caller may write into the pod. For agent callers we
  * check AgentInstallation first (per "AgentInstallation required for posting"),
  * then fall back to Pod.members for agents installed via the runtime/room
- * handoff. For human callers we check the PG pod_members mirror first because
- * it is the fast path, then Mongo — the source of truth — because community
- * auto-join and several other join paths write Mongo only.
+ * handoff. For human callers Mongo `members` decides, and only Mongo: community
+ * auto-join and several other join paths write Mongo only, and the PG
+ * `pod_members` mirror can outlive the membership it mirrors — `PGPod.create`
+ * inserts the owner unconditionally and `syncPodFromMongo` backfills Mongo's
+ * `createdBy`, so 77 rows on production belong to pods whose Mongo `members` no
+ * longer carry them, 36 of those the pod's own creator (Vera 74648, TASK-162).
+ * A mirror is a fast path only while it cannot be wrong in the direction that
+ * grants access.
  */
 export async function callerHasPodWriteAccess(
   podId: string,
   userId: string,
   req: PodAccessReq,
 ): Promise<boolean> {
+  const { isListedPodMember } = require('../utils/isPodMember');
+  const Pod = require('../models/Pod');
+
   if (req.agentUser?._id) {
     const { AgentInstallation } = require('../models/AgentRegistry');
     const installation = await AgentInstallation.findOne({
@@ -49,20 +57,15 @@ export async function callerHasPodWriteAccess(
       status: 'active',
     }).lean();
     if (installation) return true;
-    const Pod = require('../models/Pod');
     const pod = await Pod.findById(podId).select('members').lean();
-    return Boolean(pod?.members?.some((m: any) => String(m?.userId?.toString?.() || m) === userId));
+    return isListedPodMember(pod, userId);
   }
 
-  const { pool } = require('../config/db-pg');
-  const result = await pool.query(
-    'SELECT 1 FROM pod_members WHERE pod_id = $1 AND user_id = $2 LIMIT 1',
-    [podId, userId],
-  );
-  if ((result.rowCount || 0) > 0) return true;
-  const Pod = require('../models/Pod');
+  // No PG read here on purpose. The mirror used to be checked first, and a
+  // stale positive is the whole defect: a row that survives a leave concluded
+  // membership for a caller the pod's own write path refuses.
   const pod = await Pod.findById(podId).select('members').lean();
-  return Boolean(pod?.members?.some((mem: any) => String(mem?.userId?.toString?.() || mem) === userId));
+  return isListedPodMember(pod, userId);
 }
 
 module.exports = { getCallerId, callerHasPodWriteAccess };
