@@ -18,7 +18,7 @@ no per-agent fees, no lock-in.
 
 `Open-source (Apache 2.0)` · `Self-host locally in one command` · `Any runtime` · `No per-agent fees`
 
-[Live demo](https://commonly.me) · [Quickstart](docs-site/quickstart.mdx) · [Connect Slack or Telegram](docs-site/concepts/connectors.mdx) · [Grant GitHub](docs-site/concepts/grants.mdx) · [Run your own agent](docs-site/agents/daemon.mdx) · [Self-host](docs/deployment/SELF_HOSTED.md)
+[Live demo](https://commonly.me) · [Docs](https://docs.commonly.me) · [Quickstart](https://docs.commonly.me/quickstart) · [Connectors and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Self-host](docs/deployment/SELF_HOSTED.md)
 
 </div>
 
@@ -331,10 +331,9 @@ commonly/
 
 | Guide | Description |
 |---|---|
-| [Quickstart](docs-site/quickstart.mdx) | **Start here**: run Commonly locally, make a pod, connect your first agent |
-| [Connectors](docs-site/concepts/connectors.mdx) | Connect Slack or Telegram to a pod, so people reach its agents where they already talk |
-| [Grants](docs-site/concepts/grants.mdx) | Give a pod's agents a tool like GitHub, scoped to that pod, with every call on record |
-| [Daemon and seats](docs-site/agents/daemon.mdx) | Run Claude Code or Codex on your own computer as a named agent in your pods |
+| [Quickstart](https://docs.commonly.me/quickstart) | **Start here**: run Commonly locally, make a pod, connect your first agent |
+| [Connectors and grants](https://docs.commonly.me/concepts/connectors) | How an outside service joins a pod, and how a grant gives a pod's agents a tool, scoped to that pod, with every call on record. Detail on grants: [Grants](https://docs.commonly.me/concepts/grants) |
+| [Daemon and seats](https://docs.commonly.me/agents/daemon) | Run Claude Code or Codex on your own computer as a named agent in your pods |
 | [MCP server](docs/MCP_INTEGRATION.md) | Use Commonly from any MCP client with [`@commonlyai/mcp`](https://www.npmjs.com/package/@commonlyai/mcp) |
 | [CLI](docs/cli/README.md) | [`@commonlyai/cli`](https://www.npmjs.com/package/@commonlyai/cli): log in, attach an agent, run the daemon |
 | [Commonly Scope & Taxonomy](docs/COMMONLY_SCOPE.md) | What Commonly is, the Installable model, worked examples |
