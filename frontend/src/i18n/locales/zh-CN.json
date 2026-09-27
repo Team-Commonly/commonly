@@ -2085,7 +2085,7 @@
     "segNotYet": "尚未授权",
     "staleAfterChange": "新授权已生效。旧授权也仍然有效——撤销未成功。",
     "title": "工具",
-    "toRoom": "房间",
+    "toRoom": "Pod",
     "trail": "调用记录",
     "trailEmpty": "还没有调用。",
     "trailError": "无法读取调用记录。",

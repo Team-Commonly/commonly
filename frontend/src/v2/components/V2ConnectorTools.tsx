@@ -681,7 +681,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <div className="v2-tools__form">
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
-                <span>{t('tools.toRoom', { defaultValue: 'room' })}</span>
+                <span>{t('tools.toRoom', { defaultValue: 'pod' })}</span>
                 <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
                   {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
                 </select>

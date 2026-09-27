@@ -2093,7 +2093,7 @@
     "segNotYet": "Not yet",
     "staleAfterChange": "The new grant is live. This old one still is too — its revoke did not go through.",
     "title": "Tools",
-    "toRoom": "room",
+    "toRoom": "pod",
     "trail": "trail",
     "trailEmpty": "No calls yet.",
     "trailError": "Could not read the trail.",
