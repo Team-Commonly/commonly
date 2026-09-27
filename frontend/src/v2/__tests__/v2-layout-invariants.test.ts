@@ -1822,6 +1822,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Direction A (2026-09-19): three tracks — the age moved into the kicker.
     expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 140px minmax(150px, 1fr) 120px');
     expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('grid-template-columns: 140px minmax(150px, 1fr)');
+    // TASK-162 (2): the name track ends exactly where the details track begins, so
+    // a name that fills it touches the sentence. The gutter has to be on BOTH row
+    // grids — the article's and the selection button's inner one.
+    expect(ruleBody(v2, '.v2-connector-row')).toContain('column-gap: 12px');
+    expect(ruleBody(v2, '.v2-root button.v2-connector-row__selection')).toContain('column-gap: 12px');
+    // TASK-162 (1): the ink hover must NOT claim a secondary action, or a hovered
+    // gear is ink behind an ink glyph. Asserted on the SELECTOR rather than on a
+    // computed style: jsdom resolves no :hover rules at all, so the cascade this
+    // bug lived in cannot be measured in-suite — only the shape that fixes it can.
+    const inkHoverChunks = [...v2.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => body.includes('var(--v2-ink-hover)'))
+      .flatMap(([, selector]) => selector.split(','))
+      .map((selector) => selector.trim())
+      .filter((selector) => selector.includes('.v2-connector-row__action:hover'));
+    // Split per SELECTOR, not per rule: both variants share one declaration block,
+    // so a rule-level check is satisfied by whichever selector kept the exclusion
+    // and reads green with the button — the gear that actually broke — still
+    // claiming secondary. Two separate assertions, one per line.
+    expect(inkHoverChunks).toHaveLength(2);
+    expect(inkHoverChunks.find((selector) => selector.includes('button.v2-connector-row__action:hover'))).toContain(':not(:disabled)');
+    for (const selector of inkHoverChunks) {
+      expect(selector).toContain(':not(.v2-connector-row__action--secondary)');
+    }
+    // TASK-162 (3): line 3 is the consequence as TEXT beside the mark (the mode
+    // word moved onto the mark itself), and the not-yet names stack above 760.
+    expect(ruleBody(v2, '.v2-connector-row__detail--mark')).toContain('display: inline-flex');
+    expect(ruleBody(v2, '.v2-connector-row__names')).toContain('flex-direction: column');
     // Rule 3: the kicker is mono 11; rule 1: the mark is 16px and the mode word is hidden until 760; rule 2: the gear is 32 (44 on the phone).
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('font-size: 11px');
@@ -1830,6 +1857,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-connector-row__action--icon')).toContain('width: 32px');
     const phone760 = v2.slice(v2.indexOf('@media (max-width: 760px) {\n  .v2-connectors {'));
     expect(phone760).toContain('.v2-connector-row__kicker-mode { display: inline; }');
+    expect(phone760).toContain('.v2-connector-row__names { flex-direction: row; flex-wrap: wrap; }');
+    expect(phone760).toContain('.v2-connector-row__name-sep { display: inline; }');
     expect(phone760).toContain('.v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px;');
     // TASK-140: the aside's Revoke ✕ carries `--secondary` as well as `--icon`,
     // and `--secondary` sets `min-height: 36px`. Because min-height beats height,
