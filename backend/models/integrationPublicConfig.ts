@@ -33,6 +33,14 @@ export const INTEGRATION_SECRET_CONFIG_KEYS = [
   'webhookUrlRef',
   'oauthStateNonce',
   'oauthStateClaimId',
+  // `hosted-mcp` (TASK-172): the two refs point at the row's encrypted pair in
+  // ConnectorSecret, and `pendingAuth` holds the single-use state nonce and the
+  // PKCE verifier of a flow in progress. A browser is handed the vendor's
+  // consent URL and nothing else — the verifier is what makes an intercepted
+  // code useless, so it must not travel to the caller that began the flow.
+  'credentialRef',
+  'refreshTokenRef',
+  'pendingAuth',
 ] as const;
 
 export const toPublicIntegrationConfig = (

@@ -378,6 +378,19 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
+    // `hosted-mcp` is refused by NAME for the reason the type exists (TASK-172,
+    // scope §2): a connected row may only be written by the entry's OAuth
+    // callback, so `createdBy` is always the person who consented. The manifest
+    // lookup below already answers 400 for a type it does not know, but that
+    // refusal would disappear the day a manifest is added, and it does not say
+    // why. A row that named its own `entryId`, `grantedScope` or
+    // `credentialRef` from a body would be a consent nobody gave.
+    if (type === 'hosted-mcp') {
+      return res.status(400).json({
+        message: 'hosted-mcp connections are created by the vendor consent flow: '
+          + 'GET /api/integrations/connect/hosted-mcp/:entryId/start',
+      });
+    }
     // This block refuses an id in a shape Discord would not accept, and a
     // supplied `botToken` rather than stripping it, because a 200 for a write we
     // ignored reports a binding that does not exist. Both refusals run before

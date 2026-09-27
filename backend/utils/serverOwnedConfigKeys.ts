@@ -70,6 +70,21 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // gateway reads. A body that sets any of the three names a destination or
   // starts a listener the caller was never granted.
   'relayMap', 'messageBuffer', 'webhookListenerEnabled',
+  // `hosted-mcp` (TASK-172, scope §2/§4). The OAuth callback is the ONLY writer
+  // of a connected row, and the generic POST refuses the type by name as it
+  // refuses `github-app`; this list is the second lock on the same door. Every
+  // one of these decides something a body must not: `entryId` fixes which
+  // catalogue entry the row's tools and grants are checked against, `grantedScope`
+  // is the consent a later write tool reads to tell a row that needs re-consent
+  // from one that does not, `providerSubject` is what makes a reconnect as a
+  // different account revoke the row's grants, `expiresAt`/`refreshGeneration`
+  // are the refresh fence's state, `credentialRef`/`refreshTokenRef` point at
+  // another row's encrypted secret if a caller supplies them, and `pendingAuth`
+  // is a single-use nonce — a supplied one is a state the callback would accept
+  // from whoever wrote it. `intake` and `credentialHint` are here for the same
+  // reason at lower stakes: no browser decides how a credential is obtained.
+  'entryId', 'intake', 'providerSubject', 'grantedScope', 'expiresAt',
+  'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'credentialHint', 'pendingAuth',
 ];
 
 export const isServerOwnedConfigKey = (key: string): boolean => SERVER_OWNED_CONFIG_KEYS.includes(key);
