@@ -190,6 +190,17 @@ const connectorPodId = (connector: Connector | null | undefined): string | null 
 
 const groupCode = (code: string): string => (code.match(/.{1,4}/g) || [code]).join(' ');
 
+// Mirrors `PERSONAL_POD_TYPES` in `backend/services/podTypePolicyService.ts` —
+// private conversation surfaces, not rooms a channel should join by default.
+// `/api/pods` returns the caller's own 1:1 room first, so TASK-155 shipped with
+// the picker defaulting to "Scout (Default)", an agent-room. The pods stay in
+// the list (a DM is a legal target) — they just never become the default.
+const PERSONAL_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
+const defaultPodForChannel = (pods: V2Pod[]): string => (
+  (pods.find((pod) => !PERSONAL_POD_TYPES.has(String(pod.type))) || pods[0])?._id || ''
+);
+
 const codeIsLive = (connector: Connector): boolean => Boolean(
   connector.config?.connectCode
   && connector.config?.connectCodeExpiresAt
@@ -346,7 +357,7 @@ const V2ConnectorsPage: React.FC = () => {
         const eligible = Array.isArray(data) ? data : [];
         if (!cancelled) {
           setPods(eligible);
-          setNewPodId((current) => current || eligible[0]?._id || '');
+          setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {
         // Keep the normal picker visible when membership cannot be read. A
@@ -1457,20 +1468,27 @@ const V2ConnectorsPage: React.FC = () => {
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
                 {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
-                {adding && selectedAside && renderAddForm()}
               </div>
             )}
           </section>
-          {selectedAside
-            || (adding && (
-              <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
-                <section className="v2-connector-aside__step">
-                  <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                  {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
-                  {renderAddForm(true)}
-                </section>
-              </aside>
-            ))}
+          {/*
+            TASK-155: the aside owns the add form, so the panel always changes
+            when a channel is being added. Before this, a selected row's detail
+            kept the aside and the form was rendered a second time in the left
+            column — clicking Add (or Connect a channel) with another row
+            selected left the panel on that row and put the picker somewhere
+            else, which reads as "Add did nothing". One form, in the panel the
+            page uses for the thing you are doing.
+          */}
+          {adding ? (
+            <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
+              <section className="v2-connector-aside__step">
+                <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
+                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
+                {renderAddForm(true)}
+              </section>
+            </aside>
+          ) : selectedAside}
         </div>
       )}
 
