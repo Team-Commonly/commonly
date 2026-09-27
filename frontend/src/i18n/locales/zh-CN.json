@@ -2025,7 +2025,7 @@
     "changeAccess": "更改访问权限",
     "connection": "连接",
     "counts": "调用次数",
-    "days": "{{count}} 天后",
+    "days": "{{count}}天后",
     "endedExpired": "{{rel}}过期。",
     "endedRevoked": "{{rel}}撤销。",
     "endedRevokedBy": "{{rel}}由 {{member}} 撤销。",
