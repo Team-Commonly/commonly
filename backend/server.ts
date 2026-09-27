@@ -500,13 +500,13 @@ const emitPresence = async (podId: any) => {
   }
 };
 
-const isPodMember = (pod: any, userId: any) => {
-  if (!pod || !userId) {
-    return false;
-  }
-
-  return (pod.members || []).some((member: any) => member?.toString() === userId.toString());
-};
+// The pod's own membership rule has ONE definition: `utils/isPodMember`. This
+// module kept a copy, and the copy had already drifted from `createMessage` on
+// populated member docs — `member.toString()` renders `[object Object]`, so a
+// member Mongo had populated was admitted by the write path and refused by the
+// socket that mirrors it. TASK-165.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isListedPodMember } = require('./utils/isPodMember');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const DMServiceForSocketAuth = require('./services/dmService');
@@ -533,7 +533,7 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
   const isReadAction = action === 'join';
   const allowed = isReadAction
     ? await DMServiceForSocketAuth.canViewPod(socket.userId, pod)
-    : isPodMember(pod, socket.userId);
+    : isListedPodMember(pod, socket.userId);
 
   if (!allowed) {
     console.error(`Socket error: Not authorized to ${action} for this pod`, {
@@ -811,6 +811,5 @@ if (require.main === module) {
 module.exports = {
   app,
   server,
-  isPodMember,
   authorizeSocketPodAccess,
 };
