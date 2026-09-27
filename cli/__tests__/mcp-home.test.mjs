@@ -19,8 +19,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   KEEP_VERSION_DIRS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
-  lockPathFor, mcpHomeDir, newestInstalledVersion, planMcpSpawn, prepareMcpSpawn,
-  readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
+  isUsableWarmHome, kickWarm, lockPathFor, mcpHomeDir, newestInstalledVersion, planMcpSpawn,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
 
@@ -274,6 +274,40 @@ describe('prepareMcpSpawn — the warm is kicked when it is due, and only then',
     writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
     expect(warmLooksWanted(home, '0.3.13')).toBe(false);
     expect(warmLooksWanted(home, '0.3.12')).toBe(true);
+  });
+
+  test('the home override refuses a junk value: `env.X = undefined` writes the STRING', () => {
+    // The incident this comes from, in one line: a caller saved an unset override
+    // and restored it with `process.env.COMMONLY_MCP_HOME = previous` while
+    // previous was undefined — which SETS THE STRING "undefined". The warm then
+    // created `./undefined/`, installed into it, and pointed at it, inside the
+    // package directory. A path variable is not obliged to hold a path, so both
+    // the reader and the child check.
+    for (const junk of ['undefined', 'null', '', null, undefined]) {
+      expect(mcpHomeDir({ COMMONLY_MCP_HOME: junk })).toContain(join('.commonly', 'mcp'));
+    }
+    expect(mcpHomeDir({ COMMONLY_MCP_HOME: '/tmp/a-real-home' })).toBe('/tmp/a-real-home');
+    expect(isUsableWarmHome('/tmp/a-real-home')).toBe(true);
+    for (const bad of ['undefined', 'null', '', 'relative/home', '.', undefined, null, 42]) {
+      expect(isUsableWarmHome(bad)).toBe(false);
+    }
+  });
+
+  test('kickWarm never hands the child the literal string "undefined"', () => {
+    const calls = [];
+    const spawnImpl = (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      return { unref: () => {} };
+    };
+
+    kickWarm({ home: undefined, spawnImpl, childPath: '/tmp/warm-child.mjs' });
+
+    expect(calls[0].args[1]).not.toBe('undefined');
+    // The configured home here is the empty temp dir the jest setup installs, or
+    // the real `~/.commonly/mcp` outside it — either way a real, absolute path.
+    expect(isUsableWarmHome(calls[0].args[1])).toBe(true);
+    // The child reads the same value from its env, so the two cannot disagree.
+    expect(calls[0].opts.env.COMMONLY_MCP_HOME).toBe(calls[0].args[1]);
   });
 
   test('mcpHomeDir honours the override', () => {

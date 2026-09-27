@@ -173,7 +173,10 @@ describe('claude adapter — ctx.environment', () => {
       expect(entry.env.COMMONLY_TOKEN_FILE).toBeDefined();
       expect(entry.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
     } finally {
-      process.env.COMMONLY_MCP_HOME = previous;
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined", which is how a warm came to write ./undefined/ (TASK-174).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
     }
   });
 
@@ -226,7 +229,10 @@ describe('claude adapter — ctx.environment', () => {
       // places, and asserting only the config would miss the child env.
       expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
     } finally {
-      process.env.COMMONLY_MCP_HOME = previous;
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined", which is how a warm came to write ./undefined/ (TASK-174).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
     }
   });
 

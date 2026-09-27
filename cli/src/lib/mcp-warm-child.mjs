@@ -31,7 +31,7 @@ import {
 import { join } from 'node:path';
 import {
   KEEP_VERSION_DIRS, REGISTRY_CACHE_NAME, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
-  currentPointerPath, lockPathFor, readBinInPrefix, versionDirFor,
+  currentPointerPath, isUsableWarmHome, lockPathFor, readBinInPrefix, versionDirFor,
 } from './mcp-home.js';
 import { MCP_PACKAGE, parseVersion } from './mcp-server-version.js';
 
@@ -352,8 +352,12 @@ export const warmMcpHome = async (home, {
 
 const invokedDirectly = process.argv[1] && /mcp-warm-child\.mjs$/.test(process.argv[1]);
 if (invokedDirectly) {
+  // Validated, not trusted: argv entries are coerced with String(), so a parent
+  // that passed an undefined home sends the literal 'undefined' and this child
+  // would otherwise create and populate a directory by that name (which is how
+  // one appeared inside the package directory on 2026-09-27).
   const home = process.argv[2];
-  if (home) {
+  if (isUsableWarmHome(home)) {
     warmMcpHome(home, { now: Date.now() })
       .then((result) => {
         // A warm runs with stdio ignored; this is for a human running it by hand

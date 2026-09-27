@@ -237,7 +237,10 @@ describe('codex adapter — spawn()', () => {
       expect(cFlags.find((f) => f.startsWith('mcp_servers.commonly.env='))).toContain('COMMONLY_TOKEN_FILE');
       expect(cFlags.find((f) => f.includes('env_vars'))).toBeUndefined();
     } finally {
-      process.env.COMMONLY_MCP_HOME = previous;
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined", which is how a warm came to write ./undefined/ (TASK-174).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
     }
   });
 

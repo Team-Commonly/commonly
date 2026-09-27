@@ -64,11 +64,31 @@ export const WARM_RESULTS = Object.freeze({
   PROBE_FAILED: 'probe-failed',
 });
 
-export const mcpHomeDir = (env = process.env) => (
-  (env && typeof env[MCP_HOME_ENV] === 'string' && env[MCP_HOME_ENV])
-    ? env[MCP_HOME_ENV]
-    : join(homedir(), '.commonly', 'mcp')
+export const mcpHomeDir = (env = process.env) => {
+  const configured = env && env[MCP_HOME_ENV];
+  // A DEFECT THIS LITERALLY PREVENTED, 2026-09-27: `process.env.X = undefined`
+  // does not unset X, it sets the STRING "undefined" (Node coerces env values),
+  // so a caller that saved and restored an unset override handed the warm the
+  // home `./undefined/` — which it created, populated and pointed at, inside the
+  // package directory. This value is a PATH; a value that is not a plausible
+  // path is not a home, and the real home is the safe answer.
+  if (typeof configured === 'string' && configured && configured !== 'undefined' && configured !== 'null') {
+    return configured;
+  }
+  return join(homedir(), '.commonly', 'mcp');
+};
+
+/** True for a home a warm may write into: a real, absolute-looking path. */
+export const isUsableWarmHome = (home) => (
+  typeof home === 'string'
+  && home.length > 1
+  && home !== 'undefined'
+  && home !== 'null'
+  && (home.startsWith('/') || /^[A-Za-z]:[\\/]/.test(home))
 );
+
+/** The home a caller asked for, or the configured one — never a junk string. */
+export const resolveHomeDir = (home) => (isUsableWarmHome(home) ? home : mcpHomeDir());
 
 export const currentPointerPath = (home) => join(home, 'current');
 export const versionDirFor = (home, version) => join(home, version);
@@ -204,23 +224,24 @@ const isUnpinnedShippedSpec = (spec) => (
  * `reason` names which of those it was, for the spawn path's logs.
  */
 export const planMcpSpawn = (command, {
-  home = mcpHomeDir(),
+  home,
   readFile = defaultRead,
   exists = defaultExists,
   readBin = (h, v) => readBinPath(h, v, { readFile, exists }),
   newest = (h) => newestInstalledVersion(h, { readBin }),
 } = {}) => {
+  const target = resolveHomeDir(home);
   if (!isShippedCommonlyMcpCommand(command) || !isUnpinnedShippedSpec(String(command[2]))) {
     return { command, source: 'declared', version: null, reason: 'not-the-shipped-unpinned-spec' };
   }
-  const pointer = readCurrentVersion(home, { readFile });
+  const pointer = readCurrentVersion(target, { readFile });
   if (pointer) {
-    const bin = readBin(home, pointer);
+    const bin = readBin(target, pointer);
     if (bin) return { command: ['node', bin], source: 'home', version: pointer, reason: 'pointer' };
   }
-  const fallback = newest(home);
+  const fallback = newest(target);
   if (fallback) {
-    const bin = readBin(home, fallback);
+    const bin = readBin(target, fallback);
     if (bin) {
       return {
         command: ['node', bin],
@@ -270,17 +291,21 @@ export const warmChildPath = () => join(dirname(fileURLToPath(import.meta.url)),
  * parent: a warm that fails costs the NEXT spawn nothing but the old version.
  */
 export const kickWarm = ({
-  home = mcpHomeDir(),
+  home,
   apiUrl = null,
   spawnImpl = spawn,
   childPath = warmChildPath(),
 } = {}) => {
   try {
-    const child = spawnImpl(process.execPath, [childPath, home], {
+    // argv entries are coerced with String(), so an undefined home reaches the
+    // child as the literal 'undefined' and it warms a directory by that name.
+    const targetHome = resolveHomeDir(home);
+    const child = spawnImpl(process.execPath, [childPath, targetHome], {
       detached: true,
       stdio: 'ignore',
       env: {
         ...process.env,
+        COMMONLY_MCP_HOME: targetHome,
         ...(apiUrl ? { COMMONLY_WARM_API_URL: String(apiUrl) } : {}),
       },
     });
@@ -301,7 +326,7 @@ const lockPresent = (home, { exists = defaultExists } = {}) => exists(lockPathFo
  * warming, so this spawn just runs the current version.
  */
 export const prepareMcpSpawn = (command, {
-  home = mcpHomeDir(),
+  home,
   apiUrl = null,
   spawnImpl,
   childPath,
@@ -309,10 +334,12 @@ export const prepareMcpSpawn = (command, {
   readFile = defaultRead,
   exists = defaultExists,
 } = {}) => {
+  const resolvedHome = resolveHomeDir(home);
   try {
-    const plan = planMcpSpawn(command, { home, readFile, exists });
-    const due = !lockPresent(home, { exists }) && warmLooksWanted(home, plan.version, { now, readFile });
-    if (due) kickWarm({ home, apiUrl, spawnImpl, childPath });
+    const plan = planMcpSpawn(command, { home: resolvedHome, readFile, exists });
+    const due = !lockPresent(resolvedHome, { exists })
+      && warmLooksWanted(resolvedHome, plan.version, { now, readFile });
+    if (due) kickWarm({ home: resolvedHome, apiUrl, spawnImpl, childPath });
     return plan.command;
   } catch {
     // A rewrite that throws must not cost the seat its tools: the declaration
