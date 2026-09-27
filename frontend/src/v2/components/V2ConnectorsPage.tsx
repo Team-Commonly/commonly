@@ -361,8 +361,11 @@ const V2ConnectorsPage: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        // Membership is the only rule, and it is the server's: every pod that
-        // lists the user is one the install verb and a gate key would accept.
+        // The server decides this, in both halves: every pod that lists the user
+        // is one a connector may target, and the types the default listing hides
+        // (`agent-admin`) are refused as targets — installing into one, gating
+        // one, or making one active all 403 (TASK-171). This list is built from
+        // that same endpoint, so it offers exactly what those verbs accept.
         const data = await api.get<V2Pod[]>('/api/pods');
         const eligible = Array.isArray(data) ? data : [];
         if (!cancelled) {
