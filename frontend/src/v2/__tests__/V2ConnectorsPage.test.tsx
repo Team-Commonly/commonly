@@ -169,8 +169,13 @@ describe('V2ConnectorsPage', () => {
     });
     // Positive control: these attributes are the instrument, so prove they carry a
     // value at all (an empty string would make the equality below meaningless).
+    // Both attributes, both glyphs: controlling only `width` left the height
+    // comparison able to pass on null === null — strip `height` from *both* `G`
+    // components and a width-only control stays green (sprint-review's gate).
     expect(markSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(markSvg.getAttribute('height')).toMatch(/^\d+$/);
     expect(modeSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(modeSvg.getAttribute('height')).toMatch(/^\d+$/);
     expect(markSvg.getAttribute('width')).toBe(modeSvg.getAttribute('width'));
     expect(markSvg.getAttribute('height')).toBe(modeSvg.getAttribute('height'));
   });
