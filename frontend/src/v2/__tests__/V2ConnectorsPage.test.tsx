@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
 import en from '../../i18n/locales/en.json';
+import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -1135,6 +1136,27 @@ describe('V2ConnectorsPage', () => {
         { podId: 'p2' },
         expect.anything(),
       ));
+    });
+
+    // TASK-164: the gate line was the last raw English relative time on this page —
+    // `since ${relativeTime(...)}` built its own sentence and no key could reach it.
+    it('the gate line reads in zh-CN, not English (TASK-164)', async () => {
+      mockCatalog([entry({
+        installableId: 'slack',
+        label: 'Slack',
+        installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+        integration: liveIntegration(),
+      })]);
+      await i18nReady;
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      try {
+        renderPage();
+        const line = await screen.findByText(/前起$/);
+        expect(line.textContent).toMatch(/^(刚刚|\d+(分钟|小时|天)前)起$/);
+        expect(screen.queryByText(/^since /)).toBeNull();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
     });
 
     it('lists every pod with its gate, marks the active pod, and writes the whole gates map on a switch', async () => {

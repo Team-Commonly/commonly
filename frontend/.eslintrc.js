@@ -65,6 +65,12 @@ module.exports = {
         'src/v2/components/V2Inspector.tsx',
         'src/v2/components/V2PodsSidebar.tsx',
         'src/v2/components/V2YourTeamPage.tsx',
+        // Connectors + Tools (TASK-164) — the channels list and the grants list
+        // rendered English defaults under zh-CN: neither file was in this manifest,
+        // so translationKeys.test.ts never saw the keys they were using.
+        'src/v2/components/V2ConnectorsPage.tsx',
+        'src/v2/components/V2ConnectorTools.tsx',
+        'src/v2/utils/localizeRelativeTime.ts',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {

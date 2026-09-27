@@ -7,6 +7,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom';
 import V2ConnectorTools from '../components/V2ConnectorTools';
 import { AuthContext } from '../../context/AuthContext';
+import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -179,6 +180,35 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   }
   expect(document.querySelector('.v2-connector-row__when')).toBeNull();
   expect(document.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/ · granted /);
+});
+
+// TASK-164: every {{rel}} in these lines used to be filled with an English
+// relative time, so a zh grant read "Granted by sam 1小时前." worst of both.
+test('TASK-164: the grant, budget and trail times read in zh-CN, not English', async () => {
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    const { container } = renderTools();
+    await screen.findByText(/^Tools$|^工具$/);
+    fireEvent.click(container.querySelector('.v2-connector-row__selection') as HTMLElement);
+    const aside = await screen.findByRole('complementary');
+    expect(within(aside).getByText(/前由 sam 授权。/)).toBeInTheDocument();
+    expect(within(aside).getByText(/后结束。/)).toBeInTheDocument();
+    expect(within(aside).getByText(/每 1小时可调用 50 次/)).toBeInTheDocument();
+    await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
+    const lines = within(aside).getAllByRole('listitem');
+    expect(lines.map((line) => line.textContent)).toEqual([
+      'Scout · github.list_issues · 成功2分钟前',
+      'Scout · github.comment_on_issue · 已拒绝5分钟前',
+      'Scout · github.comment_on_issue · 等待人工确认7分钟前',
+      'Scout · github.close_issue · 已回答8分钟前',
+    ]);
+    // The whole aside, not just the four line keys: this is the regression the
+    // gate caught — an English relative time inside an otherwise-Chinese line.
+    expect(aside.textContent).not.toMatch(/\bago\b|from now|\bm ago\b/);
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
 });
 
 test('the aside reads the grant and the trail: agents, allow-list under its mode, what asks first, three counts, outcomes as words', async () => {

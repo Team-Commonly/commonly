@@ -13,6 +13,7 @@ import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools from './V2ConnectorTools';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -215,16 +216,9 @@ const codeExpiresInMinutes = (connector: Connector): number => {
   return Math.max(1, Math.ceil((expiry - Date.now()) / 60_000));
 };
 
-const relativeTime = (date?: string, now: number = Date.now()): string => {
-  const timestamp = date ? new Date(date).getTime() : NaN;
-  if (!Number.isFinite(timestamp)) return 'just now';
-  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
+// One connector's age as English prose uses this profile; the gate line below
+// needed the same parts (TASK-164).
+const connectorRelativeTimeOptions = { includeFuture: false, missing: 'just now', rounding: 'floor' } as const;
 
 const claimIsStale = (installation: CatalogInstallation): boolean => {
   const claimedAt = installation.claimedAt ? new Date(installation.claimedAt).getTime() : NaN;
@@ -276,6 +270,14 @@ const V2ConnectorsPage: React.FC = () => {
   const now = useRelativeNow();
   const adding = addingType !== null;
   const podList = pods || [];
+  // The gate mode options, declared here rather than inline in the JSX: eslint's
+  // i18next/no-literal-string reads an array literal in JSX as copy, and only the
+  // second element of each pair is copy (TASK-164).
+  const gateModes: [ConnectorGate['mode'], string][] = [
+    [undefined, t('connectors.modeDefault', { defaultValue: 'Default' })],
+    ['attention', t('connectors.modeAttention', { defaultValue: 'Attention' })],
+    ['mirror', t('connectors.modeMirror', { defaultValue: 'Mirror' })],
+  ];
 
   // TASK-155: at 390 the aside sits below the fold of the page's own scroller
   // (`v2-feature__body` is the scroller, not the document), so opening the form
@@ -741,7 +743,7 @@ const V2ConnectorsPage: React.FC = () => {
             : t('connectors.kickerOff', { defaultValue: 'relay off' }),
         },
         dot: relay ? 'live' : 'idle',
-        line: `${title} · linked to ${podNameById(activePodId, connector)}`,
+        line: t('connectors.linkedLine', { defaultValue: '{{title}} · linked to {{pod}}', title, pod: podNameById(activePodId, connector) }),
         pulse: relay && Boolean(recent),
         secondary: true,
         when: ageLine('added', connector.createdAt),
@@ -807,7 +809,7 @@ const V2ConnectorsPage: React.FC = () => {
       action: null,
       detail: t('connectors.pending', { defaultValue: 'Waiting for the channel' }),
       dot: 'empty',
-      line: `${TYPE_LABELS[connector.type] || connector.type} is waiting to connect.`,
+      line: t('connectors.waitingToConnect', { defaultValue: '{{label}} is waiting to connect.', label: TYPE_LABELS[connector.type] || connector.type }),
       pulse: false,
       when: started,
     };
@@ -1154,7 +1156,7 @@ const V2ConnectorsPage: React.FC = () => {
                   {active && <span className="v2-connector-gate__tag">{t('connectors.activeTag', { defaultValue: 'active' })}</span>}
                 </button>
                 <span className={`v2-connector-gate__since${enabled ? '' : ' v2-connector-gate__since--off'}`}>
-                  {enabled ? `since ${relativeTime(gate?.since, now)}` : t('connectors.gateOff', { defaultValue: 'off' })}
+                  {enabled ? t('connectors.sinceWhen', { defaultValue: 'since {{rel}}', rel: localizeRelativeTime(gate?.since, t, { ...connectorRelativeTimeOptions, now }) }) : t('connectors.gateOff', { defaultValue: 'off' })}
                 </span>
                 <input
                   type="checkbox"
@@ -1170,11 +1172,7 @@ const V2ConnectorsPage: React.FC = () => {
               {open && (
                 <div className="v2-connector-gate__more">
                   <div className="v2-connector-aside__mode" role="group" aria-label={t('connectors.gateMode', { defaultValue: 'Mode for {{pod}}', pod: pod.name })}>
-                    {([
-                      [undefined, t('connectors.modeDefault', { defaultValue: 'Default' })],
-                      ['attention', t('connectors.modeAttention', { defaultValue: 'Attention' })],
-                      ['mirror', t('connectors.modeMirror', { defaultValue: 'Mirror' })],
-                    ] as [ConnectorGate['mode'], string][]).map(([mode, modeLabel]) => {
+                    {gateModes.map(([mode, modeLabel]) => {
                       const on = (gate?.mode || undefined) === mode;
                       return (
                         <button
@@ -1314,7 +1312,7 @@ const V2ConnectorsPage: React.FC = () => {
                   {t('connectors.enableHintSend', { defaultValue: ' and send:' })}
                 </p>
                 <div className="v2-connector-code">
-                  <code>/commonly-enable {groupCode(connector.config?.connectCode || '')}</code>
+                  <code>{t('connectors.enableCommand', { defaultValue: '/commonly-enable {{code}}', code: groupCode(connector.config?.connectCode || '') })}</code>
                   <button type="button" className="v2-connector-code__copy" onClick={() => copyCommand(connector.config?.connectCode || '')}>
                     {copied === connector.config?.connectCode
                       ? t('connectors.copied', { defaultValue: 'Copied' })
@@ -1340,7 +1338,7 @@ const V2ConnectorsPage: React.FC = () => {
                 })}</p>
                 <div className="v2-connector-aside__actions">
                   <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key); }}>
-                    {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
+                    {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>
                     {t('connectors.slackReject', { defaultValue: 'This is not me' })}

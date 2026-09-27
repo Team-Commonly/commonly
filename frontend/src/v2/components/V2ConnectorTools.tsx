@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
+import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -107,6 +108,11 @@ interface GithubAppIntegrationResponse {
 const USED_RECENTLY_MS = 10 * 60 * 1000;
 const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
+// The two option sets the aside renders as buttons. They live here, not inline in the
+// JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
+// a JSX expression as copy — and these are ids, not words (TASK-164).
+const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
+const SEGMENTS = ['all', 'granted', 'not-yet'] as const;
 
 /** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
 export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
@@ -120,20 +126,10 @@ export const shortAge = (date: string | null | undefined, now: number, t: (key: 
   return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
 };
 
-export const relativeTime = (date?: string | null, now: number = Date.now()): string => {
-  if (!date) return '—';
-  const ms = now - new Date(date).getTime();
-  if (!Number.isFinite(ms)) return '—';
-  const abs = Math.abs(ms);
-  const suffix = ms >= 0 ? 'ago' : 'from now';
-  const minutes = Math.round(abs / 60_000);
-  if (minutes < 1) return ms >= 0 ? 'just now' : 'in a moment';
-  if (minutes < 60) return `${minutes}m ${suffix}`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ${suffix}`;
-  const days = Math.round(hours / 24);
-  return `${days}d ${suffix}`;
-};
+// Both surfaces used to carry their own copy of this grammar; the locale family
+// lives in one place now (TASK-164). Re-exported so the module's surface is
+// unchanged for anything importing it from here.
+export { localizeRelativeTime, relativeTime } from '../utils/localizeRelativeTime';
 
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
 // Callers that decide what a render SHOWS pass that render's `now`; the read
@@ -296,11 +292,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const entry = Object.entries(seats).find(([, rows]) => rows.some((row) => row.userId === grant.target.id));
     return entry ? entry[0] : null;
   };
+  // zh joins a list with 、 and en with ', ', so the separator is copy and not a
+  // literal at each join site (TASK-164).
+  const joinList = (items: string[]): string => items.join(t('tools.listSeparator', { defaultValue: ', ' }));
   const audienceLabels = (grant: ToolGrant): string => {
     const podId = grantPodId(grant);
     const labels = grant.effectiveAudience.map((id) => seatLabel(podId, id));
     if (labels.length === 0) return t('tools.nobody', { defaultValue: 'no agent' });
-    return labels.join(', ');
+    return joinList(labels);
   };
   const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
     .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
@@ -310,7 +309,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
     const list = irreversibleTools(entryFor(grant), grant.tools);
     return list.length
-      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: list.join(', ') })
+      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(list) })
       : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
   };
   const outcomeLabel = (outcome: ToolOutcome): string => ({
@@ -499,11 +498,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const line2 = dead
       ? (grant.revokedAt
         ? (revokedBy
-          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
-          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
-        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))
       // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
-      : `${audienceLabels(grant)} ${t('tools.mayUse', { defaultValue: 'may use it' })}`;
+      // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
+      // that orders the clause differently needs the whole sentence (TASK-164). The
+      // rendered English is unchanged.
+      : t('tools.mayUse', { defaultValue: '{{agents}} may use it', agents: audienceLabels(grant) });
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
@@ -602,7 +604,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'administrator setup' })}</p>
           <h2>{t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}</h2>
-          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their rooms.' })}</p>
+          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their pods.' })}</p>
           <div className="v2-tools__form">
             <label className="v2-tools__field">
               <span>{t('tools.installationId', { defaultValue: 'installation ID' })}</span>
@@ -660,7 +662,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
       ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
       : draft.writeMode === 'write-with-confirm'
         ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
-        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: irreversible.join(', ') }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
+        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
         <section className="v2-connector-aside__card">
@@ -670,7 +672,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <div className="v2-tools__form">
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
-                <span>{t('tools.toRoom', { defaultValue: 'room' })}</span>
+                <span>{t('tools.toRoom', { defaultValue: 'pod' })}</span>
                 <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
                   {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
                 </select>
@@ -687,7 +689,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
-                {(['read', 'write-with-confirm', 'write'] as GrantWriteMode[]).map((mode) => (
+                {WRITE_MODES.map((mode) => (
                   <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
@@ -698,7 +700,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             </div>
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
-              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this room yet' })}</span>}
+              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
               {podSeats.map((seat) => seat.userId && (
                 <label key={seat.userId} className="v2-connector-aside__relay">
                   <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
@@ -743,16 +745,16 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
           <p>
             {granter
-              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: relativeTime(grant.createdAt, now) })
-              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: relativeTime(grant.createdAt, now) })}
+              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now }) })
+              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now }) })}
             {' '}
             {grant.revokedAt
               ? (revokedBy
-                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
-                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt, now) }))
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
               : (isExpired(grant, now)
-                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt, now) })
-                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt, now) }))}
+                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) })
+                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))}
           </p>
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
@@ -765,7 +767,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               <>
                 <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>
                 <dd>{grant.budget.windowMs
-                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: relativeTime(new Date(now - grant.budget.windowMs).toISOString(), now).replace(' ago', '') })
+                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: localizeWindow(grant.budget.windowMs, t) })
                   : t('tools.budgetTotal', { defaultValue: '{{calls}} calls', calls: grant.budget.calls })}</dd>
               </>
             )}
@@ -822,7 +824,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
                   <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
-                  <span className="v2-tools__trail-when">{relativeTime(line.at, now)}</span>
+                  <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now })}</span>
                 </li>
               ))}
             </ol>
@@ -855,7 +857,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="v2-connector-aside__mode v2-tools__segment" role="group" aria-label={t('tools.filter', { defaultValue: 'Show' })}>
-            {(['all', 'granted', 'not-yet'] as const).map((key) => (
+            {SEGMENTS.map((key) => (
               <button
                 key={key}
                 type="button"
