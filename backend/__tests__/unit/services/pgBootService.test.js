@@ -203,6 +203,42 @@ describe('pgBootService — the route-table probe (TASK-168)', () => {
     expect(routerIsMounted(appWith(layer(pgMessages)), pgMessages)).toBe(true);
   });
 
+  // Production runs @sentry/node, which wraps every Express layer handle: the
+  // wrapper is a new function that exposes the original's properties. Identity
+  // on the handle then fails on a pod that has the route mounted (deploy
+  // 4e60f240, 2026-09-27). This builds a real Express app and wraps the layer
+  // the same way.
+  const wrapLikeSentry = (app, router) => {
+    const target = app._router.stack.find((l) => l.handle === router);
+    const original = target.handle;
+    const wrapper = function wrapped(...args) { return original.apply(this, args); };
+    Object.defineProperty(wrapper, 'stack', { get: () => original.stack });
+    target.handle = wrapper;
+    return target;
+  };
+
+  it('finds the mounted router when instrumentation has wrapped its layer handle', () => {
+    const express = require('express');
+    const app = express();
+    const pgMessages = express.Router();
+    pgMessages.get('/:id', (req, res) => res.sendStatus(401));
+    app.use('/api/pg/messages', pgMessages);
+    const target = wrapLikeSentry(app, pgMessages);
+    expect(target.handle).not.toBe(pgMessages);
+    expect(routerIsMounted(app, pgMessages)).toBe(true);
+  });
+
+  it('does not mistake a different wrapped router for this one', () => {
+    const express = require('express');
+    const app = express();
+    const other = express.Router();
+    other.get('/', (req, res) => res.sendStatus(200));
+    app.use('/api/pg/status', other);
+    wrapLikeSentry(app, other);
+    const pgMessages = express.Router();
+    expect(routerIsMounted(app, pgMessages)).toBe(false);
+  });
+
   it('returns false when that router is absent, which is the incident', () => {
     const pgMessages = { name: 'pg-messages' };
     const pgStatus = { name: 'pg-status' };
