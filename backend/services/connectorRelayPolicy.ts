@@ -4,10 +4,13 @@
 // or about which pods a connector may address at all.
 
 // The strict membership rule, re-exported here so every connector site reads one
-// definition through this module. The permissive `isPodMember` is deliberately
-// NOT imported any more: its creator clause is what let a departed creator keep
-// relaying (TASK-161). Defined beside `isPodMember` in utils so the platform
-// readers that need the same rule (PG chat, reactions) share this one home.
+// definition through this module. It is also the only rule its home module exports
+// any more: as of TASK-170 `utils/isPodMember` carries no creator-inclusive
+// export, because that permissive predicate — membership *or* `createdBy` — is
+// what let a departed creator keep relaying (TASK-161). The creator clause it
+// carried is covered where the pod is created (`Pod`'s pre-save hook lists
+// `createdBy`), not by a second predicate, so nothing sits beside
+// `isListedPodMember` now.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 
