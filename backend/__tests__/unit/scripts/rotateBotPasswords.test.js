@@ -24,6 +24,13 @@ const HUMAN_PLAIN = 'human-plain-password';
 
 const BCRYPT_HASH = /^\$2[aby]\$/;
 
+// `rotated` counts rows written and `verified + unverified` accounts for every
+// one of them. A report that breaks this identity is under-reporting a store
+// change, which is the failure mode an operator cannot see from the exit code.
+const expectAllWritesAccountedFor = (r) => {
+  expect(r.rotated).toBe(r.verified + r.unverified.length);
+};
+
 const seedBot = (overrides = {}) => User.create({
   username: 'agent-bot',
   email: 'agent-bot@example.com',
@@ -99,6 +106,7 @@ describe('rotate-bot-passwords', () => {
     expect(r).toEqual(expect.objectContaining({
       rotated: 2, verified: 2, unverified: [], refused: false,
     }));
+    expectAllWritesAccountedFor(r);
 
     // A plaintext anywhere in these pairs is the failure the script exists to
     // avoid: `updateMany` would store NEW_PLAIN verbatim and the row count
@@ -165,8 +173,12 @@ describe('rotate-bot-passwords', () => {
     const r = await rotateBotPasswords({ dryRun: false, generate: () => NEW_PLAIN });
 
     expect(r.unverified).toEqual(['agent-a']);
-    expect(r.rotated).toBe(0);
+    // One row was written and zero were verified — the two counts disagreeing is
+    // the point. A report that said 0 rotated here would be telling the operator
+    // nothing was touched on the one path where the store changed.
+    expect(r.rotated).toBe(1);
     expect(r.verified).toBe(0);
+    expectAllWritesAccountedFor(r);
     expect(exitCodeFor(r)).toBe(3);
     expect(await storedPassword(botA._id)).toBe(before.a);
     // Not just "a is unchanged": b must not be rotated after a failed read-back.
@@ -189,7 +201,9 @@ describe('rotate-bot-passwords', () => {
     const r = await rotateBotPasswords({ dryRun: false, generate: () => NEW_PLAIN });
 
     expect(r.unverified).toEqual(['agent-a']);
-    expect(r.rotated).toBe(0);
+    expect(r.rotated).toBe(1);
+    expect(r.verified).toBe(0);
+    expectAllWritesAccountedFor(r);
     expect(await storedPassword(bot._id)).toBe(before);
   });
 
