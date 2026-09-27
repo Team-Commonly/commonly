@@ -89,6 +89,11 @@ describe('/commonly-enable hardening', () => {
     });
     await enable('e'.repeat(32));
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    // TASK-157 follow-up (vera 74617): `findByIdAndUpdate` not called is
+    // satisfied by ANY refusal, so on its own this arm cannot tell an expiry
+    // refusal from a shape refusal. Assert the expiry copy, like its sibling
+    // `refuses a code with no expiry` does.
+    expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/invalid or expired/i);
   });
 
   it('binds a fresh code and clears both code fields', async () => {
