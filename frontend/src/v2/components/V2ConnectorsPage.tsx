@@ -1067,8 +1067,11 @@ const V2ConnectorsPage: React.FC = () => {
               // TASK-162 (3): the consequence is the visible words; the mode word
               // (mirror / attention / relay off) is what the glyph itself means,
               // so it rides title + aria-label rather than being the only thing
-              // on the line. The glyph rides .v2-tools__mode's 14px rule (see
-              // v2.css): #1782 says the channel mark follows the Tools glyph.
+              // on the line. The glyph's 14px is THIS call site's `size` prop — no
+              // rule carries it (the shared rule with .v2-tools__mode is layout and
+              // colour only), so a same-size pin in V2ConnectorsPage.test.tsx holds
+              // it to the Tools glyph's own 14 (TASK-177). #1782 says the channel
+              // mark follows the Tools glyph.
               <span className="v2-connector-row__detail">
                 <span className="v2-connector-row__mark" title={row.mark.word} role="img" aria-label={row.mark.word}><MarkGlyph name={row.mark.name} size={14} /></span>
                 <span className="v2-connector-row__mark-text">{row.mark.label}</span>
