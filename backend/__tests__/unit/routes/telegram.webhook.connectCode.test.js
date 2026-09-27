@@ -25,7 +25,14 @@ jest.mock('../../../models/WebhookDelivery', () => ({
 // so count the calls while keeping the real budget implementation behind them.
 jest.mock('../../../services/telegramConnectCode', () => {
   const actual = jest.requireActual('../../../services/telegramConnectCode');
-  return { ...actual, registerEnableAttempt: jest.fn(actual.registerEnableAttempt) };
+  return {
+    ...actual,
+    registerEnableAttempt: jest.fn(actual.registerEnableAttempt),
+    // TASK-159: the route must ask this module for the shape. Wrapping the real
+    // implementation keeps the behaviour while recording the call, so a local
+    // regex reappearing in the route reddens instead of drifting silently.
+    isConnectCodeShape: jest.fn(actual.isConnectCodeShape),
+  };
 });
 
 const Integration = require('../../../models/Integration');
@@ -33,7 +40,7 @@ const Pod = require('../../../models/Pod');
 const WebhookDelivery = require('../../../models/WebhookDelivery');
 const telegramService = require('../../../services/telegramService');
 const {
-  registerEnableAttempt, resetEnableAttempts, ENABLE_ATTEMPT_LIMIT,
+  registerEnableAttempt, resetEnableAttempts, ENABLE_ATTEMPT_LIMIT, isConnectCodeShape,
 } = require('../../../services/telegramConnectCode');
 const telegramRoutes = require('../../../routes/webhooks/telegram');
 
@@ -180,6 +187,17 @@ describe('/commonly-enable hardening', () => {
     expect(registerEnableAttempt).toHaveBeenCalledWith('42');
     expect(Integration.findOne).toHaveBeenCalledTimes(1);
     expect(telegramService.sendMessage.mock.calls.at(-1)[2]).toMatch(/invalid or expired/i);
+  });
+
+  // TASK-159. Everything above pins the VALUES the shape gate produces; this
+  // pins WHERE the answer comes from. Without it, re-adding a local
+  // `CONNECT_CODE_SHAPE` to the route keeps every arm green while the two
+  // definitions drift apart — the failure this row exists to close.
+  it('asks the service for the shape instead of matching its own copy', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    await enable(SPACED_CODE.toUpperCase());
+    // Normalised before the predicate: lowercased, groups joined (vera 74615).
+    expect(isConnectCodeShape).toHaveBeenCalledWith(JOINED_CODE);
   });
 
   it.each(['1964', 'abc123', `${JOINED_CODE}a`, JOINED_CODE.slice(0, 31)])(

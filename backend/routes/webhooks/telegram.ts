@@ -10,7 +10,9 @@ const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
 const { escapeHtml } = telegramService;
 const deliveryFailures = require('../../services/connectorDeliveryFailureService');
-const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
+const {
+  isConnectCodeShape, isConnectCodeExpired, registerEnableAttempt,
+} = require('../../services/telegramConnectCode');
 const {
   claimDelivery: claimWebhookDelivery,
   releaseDelivery: releaseWebhookDelivery,
@@ -34,10 +36,6 @@ const ENABLE_COMMAND = '/commonly-enable';
 // Underscore alias: Telegram's registered-command menu forbids hyphens, so
 // the menu carries /commonly_enable while typed /commonly-enable keeps working.
 const ENABLE_COMMAND_ALIAS = '/commonly_enable';
-// Every minted code is exactly this shape (mintConnectCode is the only mint
-// path: `crypto.randomBytes(16).toString('hex')`), so the enable handler can
-// tell a typo from a guess without touching the database.
-const CONNECT_CODE_SHAPE = /^[0-9a-f]{32}$/;
 const SUMMARY_COMMAND = '/summary';
 const POD_SUMMARY_COMMAND = '/pod_summary';
 const TLDR_COMMAND = '/tldr';
@@ -107,7 +105,7 @@ const handleEnableCommand = async (chat: any, code: any) => {
   // Malformed input is left to the route's outer rate limiter
   // (telegramWebhookRateLimit), because input that costs a regex is not worth a
   // per-chat counter.
-  if (!CONNECT_CODE_SHAPE.test(code)) {
+  if (!isConnectCodeShape(code)) {
     await telegramService.sendMessage(
       botToken,
       chatId,

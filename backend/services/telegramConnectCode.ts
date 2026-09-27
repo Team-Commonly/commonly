@@ -10,13 +10,27 @@
 import crypto from 'crypto';
 
 export const CONNECT_CODE_TTL_MS = 10 * 60 * 1000;
+// The one number the minted code and its shape both come from. Changing the
+// entropy without the shape (or the shape without the entropy) refuses every
+// real code, so the two are derived from this rather than restated.
+export const CONNECT_CODE_BYTES = 16;
 export const ENABLE_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 export const ENABLE_ATTEMPT_LIMIT = 5;
 
 export const mintConnectCode = (now: number = Date.now()): { connectCode: string; connectCodeExpiresAt: Date } => ({
-  connectCode: crypto.randomBytes(16).toString('hex'),
+  connectCode: crypto.randomBytes(CONNECT_CODE_BYTES).toString('hex'),
   connectCodeExpiresAt: new Date(now + CONNECT_CODE_TTL_MS),
 });
+
+// What a minted code looks like, derived from the minter's own constant rather
+// than written out: `mintConnectCode` is the only mint path, and the enable
+// webhook cannot authenticate the redeemer, so telling a typo from a guess has
+// to happen without touching the database. The route must consult THIS — a
+// second regex in the route is a second answer to the same question, and the
+// failure it invites is silent (widen the minter, update the pins, every real
+// code is refused).
+const CONNECT_CODE_SHAPE = new RegExp(`^[0-9a-f]{${CONNECT_CODE_BYTES * 2}}$`);
+export const isConnectCodeShape = (code: string): boolean => CONNECT_CODE_SHAPE.test(code);
 
 // A code without an expiry predates the TTL — treat it as expired so legacy
 // 24-bit codes can never be redeemed; the owner re-mints from the UI.
@@ -64,10 +78,12 @@ export const resetEnableAttempts = (): void => { attempts.clear(); };
 
 module.exports = {
   CONNECT_CODE_TTL_MS,
+  CONNECT_CODE_BYTES,
   ENABLE_ATTEMPT_WINDOW_MS,
   ENABLE_ATTEMPT_LIMIT,
   ENABLE_ATTEMPT_MAX_CHATS,
   mintConnectCode,
+  isConnectCodeShape,
   isConnectCodeExpired,
   registerEnableAttempt,
   resetEnableAttempts,
