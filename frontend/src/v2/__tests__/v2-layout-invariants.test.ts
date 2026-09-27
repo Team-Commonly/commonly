@@ -2456,11 +2456,23 @@ describe('the landing hero demo (TASK-147)', () => {
     expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('background: var(--v2-accent);');
   });
 
-  test('the hero demo keeps the letterboxed screenshot chrome out of its card', () => {
-    // The feature rows still use the framed-screenshot chrome with window dots;
-    // the live demo is not a screenshot, so its card has no dots bar.
-    expect(ruleBody(landing, '.v2-landing__shot-bar')).toContain('height: 32px');
-    expect(landingPage.match(/v2-landing__shot-bar/g) ?? []).toHaveLength(1);
+  test('landing screenshot cards are flat: no window bar anywhere, no shadow anywhere', () => {
+    // Landing.dc.html draws every card flat (1px border, radius 6). Checked over
+    // the whole file, not through ruleBody('.v2-landing__shot-frame'): that
+    // selector's first match is the max-width rule, so a shadow on the later
+    // rule would pass a ruleBody check (ux-lead, #1918).
+    expect(landingPage).not.toContain('v2-landing__shot-bar');
+    expect(landing).not.toContain('box-shadow');
+  });
+
+  test('even feature rows mirror their columns, and still stack on a phone', () => {
+    // Without the mirror, :nth-child(even) only swaps order and rows 2 and 4
+    // put the shot in the narrow column (496.6 px against 571.4 at 1200).
+    expect(ruleBody(landing, '.v2-landing__feature-row:nth-child(even)')).toContain('grid-template-columns: 1fr 1.15fr');
+    // :nth-child(even) (0,2,0) outranks the phone stacking rule (0,1,0), so the
+    // phone block must name even rows too or they stay two columns at 390.
+    const phone = landing.slice(landing.indexOf('@media (max-width: 680px)'));
+    expect(phone).toContain('.v2-landing__feature-row:nth-child(even) { grid-template-columns: 1fr; }');
   });
 
   test('a row refusal takes a line of its own, under the row that raised it (Row C)', () => {
