@@ -18,7 +18,6 @@ jest.mock('../../models/Pod', () => ({ findById: jest.fn() }));
 // Mock PG models
 jest.mock('../../models/pg/Pod', () => ({
   findById: jest.fn(),
-  isMember: jest.fn(),
   addMember: jest.fn(),
 }));
 
@@ -43,8 +42,9 @@ const PGMessage = require('../../models/pg/Message');
 const AgentMentionService = require('../../services/agentMentionService');
 
 // TASK-162: Mongo `members` decides access, so an arm that expects 200 names
-// the caller in the pod Mongo returns. `PGPod.isMember` is still mocked in these
-// arms on purpose — a live PG row that says "member" must not be enough.
+// the caller in the pod Mongo returns. There is no mirror reader left to keep in
+// check — TASK-167 deleted `PGPod.isMember` — so a live PG row cannot reach the
+// decision even in principle.
 const podListing = (...memberIds) => {
   MongoPod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
@@ -71,7 +71,6 @@ afterEach(() => {
 describe('PostgreSQL Message Routes', () => {
   it('retrieves messages for a member of the pod, decided by Mongo membership', async () => {
     PGPod.findById.mockResolvedValue({ id: 'pod1' });
-    PGPod.isMember.mockResolvedValue(true); // a live PG row is not the reason
     podListing('user1');
     PGMessage.findByPodId.mockResolvedValue([{ id: 1, content: 'Hello' }]);
     const token = generateTestToken('user1');
@@ -82,17 +81,15 @@ describe('PostgreSQL Message Routes', () => {
       .expect(200);
 
     expect(MongoPod.findById).toHaveBeenCalledWith('pod1');
-    expect(PGPod.isMember).not.toHaveBeenCalled();
     expect(res.body[0].content).toBe('Hello');
   });
 
-  // TASK-162's witness at the route tier: a live PG row that says "member" for
-  // a caller Mongo no longer lists. `PGPod.isMember` returns true in this arm,
-  // so an arm that only leaves the pod cannot see the defect — the SURVIVOR row
-  // is what discriminates the read-time check from a mirror-on-leave fix.
+  // TASK-162's witness at the route tier: the SURVIVOR. The `pod_members` row is
+  // still present while Mongo membership is gone, so an arm that only leaves the
+  // pod cannot see the defect — the survivor is what discriminates the read-time
+  // check from a mirror-on-leave fix.
   it('refuses a post whose PG pod_members row survived a leave', async () => {
     PGPod.findById.mockResolvedValue({ id: 'pod1' });
-    PGPod.isMember.mockResolvedValue(true);
     podListing(); // Mongo membership is gone
     const token = generateTestToken('user1');
 
@@ -108,7 +105,6 @@ describe('PostgreSQL Message Routes', () => {
 
   it('returns 401 if user is not a member', async () => {
     PGPod.findById.mockResolvedValue({ id: 'pod1' });
-    PGPod.isMember.mockResolvedValue(false);
     podListing();
     const token = generateTestToken('user1');
 
@@ -122,7 +118,6 @@ describe('PostgreSQL Message Routes', () => {
 
   it('creates a message successfully', async () => {
     PGPod.findById.mockResolvedValue({ id: 'pod1' });
-    PGPod.isMember.mockResolvedValue(true);
     podListing('user1');
     PGMessage.create.mockResolvedValue({ id: 1 });
     PGMessage.findById.mockResolvedValue({ id: 1, content: 'Hi there' });
@@ -151,7 +146,6 @@ describe('PostgreSQL Message Routes', () => {
       userId: { _id: 'user1', username: 'sam' },
     };
     PGPod.findById.mockResolvedValue({ id: 'pod1', type: 'chat' });
-    PGPod.isMember.mockResolvedValue(true);
     podListing('user1');
     PGMessage.create.mockResolvedValue({ id: message.id });
     PGMessage.findById.mockResolvedValue(message);
@@ -176,7 +170,6 @@ describe('PostgreSQL Message Routes', () => {
       username: 'sam',
     };
     PGPod.findById.mockResolvedValue({ id: 'pod1', type: 'chat' });
-    PGPod.isMember.mockResolvedValue(true);
     podListing('user1');
     PGMessage.create.mockResolvedValue(persistedMessage);
     PGMessage.findById.mockResolvedValue(null);
@@ -209,7 +202,6 @@ describe('PostgreSQL Message Routes', () => {
       userId: { _id: 'user1', username: 'sam' },
     };
     PGPod.findById.mockResolvedValue({ id: 'pod1', type: 'agent-room' });
-    PGPod.isMember.mockResolvedValue(true);
     podListing('user1');
     PGMessage.create.mockResolvedValue({ id: message.id });
     PGMessage.findById.mockResolvedValue(message);
@@ -229,7 +221,6 @@ describe('PostgreSQL Message Routes', () => {
 
   it('rejects message creation for non-members', async () => {
     PGPod.findById.mockResolvedValue({ id: 'pod1' });
-    PGPod.isMember.mockResolvedValue(false);
     podListing();
     const token = generateTestToken('user1');
 

@@ -122,19 +122,14 @@ class Pod {
     return result.rows[0];
   }
 
-  static async isMember(podId: string, userId: string): Promise<boolean> {
-    console.log('Checking membership with params:', { podId, userId, podIdType: typeof podId });
-    const query = `SELECT * FROM pod_members WHERE pod_id = $1 AND user_id = $2`;
-    try {
-      const result = await (pool as PgPool).query(query, [podId, userId]);
-      return result.rows.length > 0;
-    } catch (error) {
-      const e = error as { message?: string };
-      console.error('SQL Error in Pod.isMember:', e.message);
-      console.error('Query parameters:', { podId, userId });
-      throw error;
-    }
-  }
+  // `isMember` used to live here — a read of the `pod_members` MIRROR. It is
+  // deleted rather than kept and relabelled because a method with that name on
+  // this model is exactly what the next author reaches for when they want a
+  // membership answer, and the answer it gives authorises nothing: since
+  // TASK-162 the decision is Mongo (`utils/isPodMember` read through the
+  // controller), and #1942 renamed its last caller. If a reader of the mirror is
+  // ever genuinely needed, name it for what it is (`readMirrorRow`) and say at
+  // the call site that it decides nothing.
 }
 
 export default Pod;

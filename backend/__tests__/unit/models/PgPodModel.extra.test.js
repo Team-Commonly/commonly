@@ -13,11 +13,4 @@ describe('PG Pod model', () => {
     expect(Pod.addMember).toHaveBeenCalledWith('p1', 'u1');
     expect(result.id).toBe('p1');
   });
-
-  it('isMember checks membership', async () => {
-    pool.query.mockResolvedValue({ rows: [{ pod_id: 'p1' }] });
-    const res = await Pod.isMember('p1', 'u1');
-    expect(pool.query).toHaveBeenCalled();
-    expect(res).toBe(true);
-  });
 });
