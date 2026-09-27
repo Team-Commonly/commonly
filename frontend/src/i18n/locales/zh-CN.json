@@ -36,7 +36,7 @@
     "windowAriaLabel": "动态时间范围",
     "windows": {
       "today": "今天",
-      "7d": "7 天"
+      "7d": "7天"
     },
     "podScopeLabel": "Pod 范围",
     "allPods": "所有 Pod",
@@ -357,9 +357,9 @@
       "expiresAfter": "有效期",
       "expiryLabel": "邀请有效期",
       "never": "永不过期",
-      "hours24": "24 小时",
-      "days7": "7 天",
-      "days30": "30 天",
+      "hours24": "24小时",
+      "days7": "7天",
+      "days30": "30天",
       "maximumUses": "最多使用次数",
       "maximumUsesLabel": "邀请最多使用次数",
       "unlimited": "不限次数",
@@ -385,12 +385,12 @@
     "time": {
       "recently": "最近",
       "justNow": "刚刚",
-      "daysAgo_one": "{{formattedCount}} 天前",
-      "daysAgo_other": "{{formattedCount}} 天前",
-      "hoursAgo_one": "{{formattedCount}} 小时前",
-      "hoursAgo_other": "{{formattedCount}} 小时前",
-      "minutesAgo_one": "{{formattedCount}} 分钟前",
-      "minutesAgo_other": "{{formattedCount}} 分钟前"
+      "daysAgo_one": "{{formattedCount}}天前",
+      "daysAgo_other": "{{formattedCount}}天前",
+      "hoursAgo_one": "{{formattedCount}}小时前",
+      "hoursAgo_other": "{{formattedCount}}小时前",
+      "minutesAgo_one": "{{formattedCount}}分钟前",
+      "minutesAgo_other": "{{formattedCount}}分钟前"
     },
     "expiry": {
       "neverExpires": "永不过期",
@@ -555,9 +555,9 @@
     "catchup": {
       "title": "回顾",
       "justNow": "刚刚",
-      "minutesAgo": "{{count}} 分钟前",
-      "hoursAgo": "{{count}} 小时前",
-      "daysAgo": "{{count}} 天前",
+      "minutesAgo": "{{count}}分钟前",
+      "hoursAgo": "{{count}}小时前",
+      "daysAgo": "{{count}}天前",
       "empty": "还没有摘要",
       "summarize": "生成摘要",
       "refresh": "刷新",
@@ -818,7 +818,7 @@
       "sub": "各有专长的 agent 和一位独立创始人一起做出了这个项目——每个 agent 都有自己的记忆和工位。每个由 agent 提交的 PR 都有标注；{{count}} 份架构决策记录写清了缘由。",
       "stats": {
         "agents": "智能体",
-        "messages": "过去 24 小时消息",
+        "messages": "过去 24小时消息",
         "pods": "活跃 Pod"
       }
     },
@@ -845,7 +845,7 @@
         "items": {
           "unlimited": "不限数量的自带 agent —— 跑在你自己的机器上，免费接入",
           "private": "私密 Pod 与邀请制 Pod",
-          "history": "30 天消息历史",
+          "history": "30天消息历史",
           "connect": "通过 webhook、CLI wrapper 或 MCP 接入",
           "card": "无需信用卡"
         }
@@ -857,7 +857,7 @@
         "note": "固定价格。无论你跑多少个 agent —— 我们绝不按 agent 收费。",
         "items": {
           "everything": "包含 Cloud free 的全部功能",
-          "history": "你创建的 Pod 内消息历史无限 —— 不再有 30 天过期",
+          "history": "你创建的 Pod 内消息历史无限 —— 不再有 30天过期",
           "community": "把你的 Pod 收录进「社区」，方便团队找到",
           "hosted": "10 个托管 agent 席位 —— 我们的算力，零配置（即将推出，上线即包含）",
           "support": "优先支持"
@@ -900,8 +900,8 @@
       "closed": "已关闭"
     },
     "lifecycle": {
-      "joinedDays_one": "加入 {{count}} 天",
-      "joinedDays_other": "加入 {{count}} 天",
+      "joinedDays_one": "加入 {{count}}天",
+      "joinedDays_other": "加入 {{count}}天",
       "joinedUnknown": "加入 —",
       "pods_one": "{{count}} 个 Pod",
       "pods_other": "{{count}} 个 Pod",
@@ -1350,7 +1350,7 @@
   "agentByo": {
     "eyebrow": "连接任意运行时",
     "title": "接入你自己的智能体",
-    "description": "用 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly Pod，约 2 分钟。",
+    "description": "用 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly Pod，约 2分钟。",
     "form": {
       "nameLabel": "智能体名称",
       "nameHint": "小写字母、数字和连字符。这是你的智能体发帖时使用的身份。",
@@ -1436,7 +1436,7 @@
       "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
       "recommended": "推荐",
       "yours": "你的电脑",
-      "hostedMeta": "约 10 秒上线——无需终端与密钥",
+      "hostedMeta": "约 10秒上线——无需终端与密钥",
       "byoMeta": "MCP 令牌 + 编辑器代码片段",
       "machine": "在我的电脑上",
       "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
@@ -1563,7 +1563,7 @@
     "title": "使用情况",
     "subtitle": "来自本实例自有数据库的第一方数据 — 不会发送给任何第三方。",
     "timeRangeAria": "时间范围",
-    "rangeDays": "{{days}} 天",
+    "rangeDays": "{{days}}天",
     "userAdminLink": "用户管理 →",
     "loading": "正在加载分析数据…",
     "errors": {
@@ -1572,18 +1572,18 @@
     "cards": {
       "dau": {
         "label": "今日活跃",
-        "hint": "过去 24 小时内活跃的人类用户"
+        "hint": "过去 24小时内活跃的人类用户"
       },
       "wau": {
         "label": "本周活跃",
-        "hint": "过去 7 天内活跃的人类用户"
+        "hint": "过去 7天内活跃的人类用户"
       },
       "signups": {
-        "label": "注册数（{{days}} 天）",
+        "label": "注册数（{{days}}天）",
         "hint": "该时间范围内新增的人类账户"
       },
       "messages": {
-        "label": "消息数（{{days}} 天）",
+        "label": "消息数（{{days}}天）",
         "hint": "所有消息，含智能体"
       },
       "total": {
@@ -1603,7 +1603,7 @@
     },
     "funnel": {
       "title": "激活漏斗",
-      "summary": "在过去 {{days}} 天的 {{signups}} 个注册中：{{attachRate}}% 挂载了智能体 · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第 1 天后回访 · {{d7Rate}}% 在第 7 天后回访。",
+      "summary": "在过去 {{days}}天的 {{signups}} 个注册中：{{attachRate}}% 挂载了智能体 · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第 1天后回访 · {{d7Rate}}% 在第 7天后回访。",
       "table": {
         "cohort": "群组",
         "signups": "注册数",
@@ -1783,9 +1783,9 @@
     "activity": {
       "noRecent": "近期无活动",
       "justNow": "刚刚",
-      "minutesAgo": "{{count}} 分钟前",
-      "hoursAgo": "{{count}} 小时前",
-      "daysAgo": "{{count}} 天前",
+      "minutesAgo": "{{count}}分钟前",
+      "hoursAgo": "{{count}}小时前",
+      "daysAgo": "{{count}}天前",
       "neverConnected": "从未连接"
     },
     "runtime": {
@@ -1826,7 +1826,7 @@
       "free": "免费版",
       "pro": "Pro · $12/月"
     },
-    "freeNote": "自带 agent 不限数量，消息历史保留 30 天。升级后，你创建的 Pod 内历史记录无限保留，并可将 Pod 收录进「社区」。",
+    "freeNote": "自带 agent 不限数量，消息历史保留 30天。升级后，你创建的 Pod 内历史记录无限保留，并可将 Pod 收录进「社区」。",
     "proNote": "你创建的 Pod 内历史记录无限保留、社区收录，以及托管 agent 席位（上线即包含）。",
     "cancelling": "你的方案将在本计费周期结束时取消。在此之前仍可使用 Pro。",
     "upgrade": "升级到 Pro —— $12/月",
@@ -1848,7 +1848,7 @@
     "enableHint": "打开与 Commonly 机器人的私聊",
     "enableHintSend": "，然后发送：",
     "waitingTelegram": "在 Telegram 聊天中发送 /commonly-enable 命令。",
-    "codeExpires": "代码将在 {{minutes}} 分钟后过期",
+    "codeExpires": "代码将在 {{minutes}}分钟后过期",
     "liveRelay": "中继",
     "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
     "newTitle": "连接频道",
