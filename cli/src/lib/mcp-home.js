@@ -173,8 +173,10 @@ export const liveInUsePids = (home, version, {
  *
  * Called by `prepareMcpSpawn`, keyed by THIS process: the MCP server runs as a
  * descendant of the process that materialised the command, so while that process
- * lives its version dir must not be pruned. Best-effort by construction — a home
- * that cannot be written to costs the seat nothing but its claim.
+ * lives its version dir must not be pruned. A claim that cannot be written is
+ * reported, never swallowed: `prepareMcpSpawn` refuses to exec from a dir it
+ * could not claim (Vera 74903), because an unclaimed dir is one the pruner is
+ * free to `rm -rf` while this seat is running out of it.
  */
 export const claimInUse = ({
   home,
@@ -184,13 +186,28 @@ export const claimInUse = ({
   writeFile = writeFileSync,
 } = {}) => {
   try {
-    if (!isUsableWarmHome(home) || !parseVersion(version) || parsePid(pid) === null) return false;
+    if (!isUsableWarmHome(home) || !parseVersion(version) || parsePid(pid) === null) {
+      return { claimed: false, reason: 'not_claimable' };
+    }
     mkdir(inUseDirFor(home, version), { recursive: true });
     writeFile(inUseMarkerPath(home, version, pid), '');
-    return true;
-  } catch {
-    return false;
+    return { claimed: true, reason: null };
+  } catch (error) {
+    // The errno is the difference between a home nobody can write to and a
+    // `.inuse` path that is a file, and only one of those is worth a log line
+    // that says which.
+    return { claimed: false, reason: (error && error.code) || 'claim_failed' };
   }
+};
+
+/**
+ * Say it out loud. A seat whose claim failed is still a seat, but it must not be
+ * a silent one: warn() is injectable so a test can hold the sentence.
+ */
+const defaultWarn = (line) => {
+  try {
+    process.stderr.write(`${line}\n`);
+  } catch { /* a seat that cannot warn still runs */ }
 };
 
 const defaultRead = (path) => {
@@ -435,17 +452,31 @@ export const prepareMcpSpawn = (command, {
   now = Date.now(),
   readFile = defaultRead,
   exists = defaultExists,
+  warn = defaultWarn,
 } = {}) => {
   const resolvedHome = resolveHomeDir(home);
   try {
     const plan = planMcpSpawn(command, { home: resolvedHome, readFile, exists });
     // Claim the version this spawn is about to execute from, BEFORE returning the
     // command, so a prune that runs while the seat is starting cannot take it.
-    if (plan.source === 'home') claimInUse({ home: resolvedHome, version: plan.version });
+    let resolved = plan.command;
+    if (plan.source === 'home') {
+      const claim = claimInUse({ home: resolvedHome, version: plan.version });
+      // A claim that could not be written means the pruner may take this very
+      // directory out from under the running seat — the hazard the claim exists
+      // for. The declared command is what the guard approved and what no pruner
+      // owns, so the spawn falls back to it rather than executing unprotected,
+      // and says why. The warm still runs: with the seat off the dir, a prune or
+      // a repair is safe.
+      if (!claim.claimed) {
+        warn(`commonly: cannot claim ${versionDirFor(resolvedHome, plan.version)} for pid ${process.pid} (${claim.reason}) — running the declared command instead, because a prune could delete the directory this seat would run from`);
+        resolved = command;
+      }
+    }
     const due = !lockPresent(resolvedHome, { exists })
       && warmLooksWanted(resolvedHome, plan.version, { now, readFile });
     if (due) kickWarm({ home: resolvedHome, apiUrl, spawnImpl, childPath });
-    return plan.command;
+    return resolved;
   } catch {
     // A rewrite that throws must not cost the seat its tools: the declaration
     // is what the guard approved, and it still runs.

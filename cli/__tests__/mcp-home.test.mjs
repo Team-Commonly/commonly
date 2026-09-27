@@ -728,10 +728,58 @@ describe('the spawn claims the version it is about to run', () => {
     const home = makeHome();
     installVersion(home, '0.3.13');
 
-    expect(claimInUse({ home: 'undefined', version: '0.3.13' })).toBe(false);
-    expect(claimInUse({ home, version: 'not-a-version' })).toBe(false);
-    expect(claimInUse({ home, version: '0.3.13', pid: 'not-a-pid' })).toBe(false);
+    expect(claimInUse({ home: 'undefined', version: '0.3.13' })).toEqual({ claimed: false, reason: 'not_claimable' });
+    expect(claimInUse({ home, version: 'not-a-version' })).toEqual({ claimed: false, reason: 'not_claimable' });
+    expect(claimInUse({ home, version: '0.3.13', pid: 'not-a-pid' })).toEqual({ claimed: false, reason: 'not_claimable' });
     expect(existsSync(join(home, '0.3.13', '.inuse'))).toBe(false);
+
+    // The reason is the errno, not a bare boolean, because the caller has to say
+    // WHICH failure it hit — a home nobody can write to and a `.inuse` that is a
+    // file are different problems with the same symptom.
+    expect(claimInUse({ home, version: '0.3.13' })).toEqual({ claimed: true, reason: null });
+    rmSync(join(home, '0.3.13', '.inuse'), { recursive: true, force: true });
+    writeFileSync(join(home, '0.3.13', '.inuse'), '');
+    expect(claimInUse({ home, version: '0.3.13' })).toEqual({ claimed: false, reason: 'EEXIST' });
+  });
+
+  test('a claim that cannot be written is LOUD: the spawn runs the declaration, not an unprotected dir', () => {
+    // Vera 74903: `claimInUse` swallowed every failure, so a spawn whose claim
+    // could not be written exec'd out of a version dir the pruner was free to
+    // `rm -rf` and said nothing about it. An `.inuse` that already exists as a
+    // FILE is how that happens in the field, and it is the case no count and no
+    // grace window covers: the seat is on a dir older than the window.
+    const home = makeHome();
+    installVersion(home, '0.3.13');
+    pointAt(home, '0.3.13');
+    writeFileSync(join(home, '0.3.13', '.inuse'), '');
+    const warn = jest.fn();
+
+    const command = prepareMcpSpawn(SHIPPED_COMMAND, {
+      home, warn, now: Date.now(), spawnImpl: () => ({ unref: () => {} }),
+    });
+
+    expect(command).toEqual(SHIPPED_COMMAND);
+    expect(command.join(' ')).toContain('npx');   // the declaration, never the unprotected bin
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/cannot claim .*0\.3\.13/);
+    expect(warn.mock.calls[0][0]).toMatch(/EEXIST/);
+    expect(warn.mock.calls[0][0]).toMatch(/prune could delete/);
+  });
+
+  test('positive control: a usable marker dir takes the home path and warns about nothing', () => {
+    // Without this the arm above would also pass if the spawn ALWAYS fell back to
+    // the declaration, which would undo TASK-174 entirely.
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.13');
+    pointAt(home, '0.3.13');
+    const warn = jest.fn();
+
+    const command = prepareMcpSpawn(SHIPPED_COMMAND, {
+      home, warn, now: Date.now(), spawnImpl: () => ({ unref: () => {} }),
+    });
+
+    expect(command).toEqual(['node', bin]);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
