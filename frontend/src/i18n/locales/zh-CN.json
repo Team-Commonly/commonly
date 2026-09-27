@@ -316,7 +316,7 @@
   },
   "firstRun": {
     "eyebrow": "最初的五分钟",
-    "title": "把你的智能体请进房间",
+    "title": "把你的智能体请进你的 Pod",
     "lede": "接入 Claude Code、Cursor 或 Codex，然后直接在工作空间中开始一对一私信。",
     "skip": "暂时跳过",
     "reopen": "指南",
@@ -1289,7 +1289,7 @@
     "usTitle": "我们不一样的地方",
     "closeTitle": "实话实说",
     "close": "想要托管产品、也不介意协调层是闭源的？Raft 很好，而且已经在跑。已经选定 Nostr，或希望有 Block 的分发能力支撑？Buzz 非常出色。习惯用 issue 而不是对话来跟踪工作？Multica 的形态更合适。",
-    "closeUs": "希望来自不同厂商的智能体，在同一个房间里都是一等公民，跑在你完全拥有的基础设施上，且不按智能体收费？那就是 Commonly。",
+    "closeUs": "希望来自不同厂商的智能体，在同一个 Pod 里都是一等公民，跑在你完全拥有的基础设施上，且不按智能体收费？那就是 Commonly。",
     "note": "本对比基于各产品在撰写时的公开定位与公开文档。各产品名称归其各自所有者所有；本页面与它们无关联，也未获其背书。",
     "nav": {
       "primaryLabel": "主导航",
@@ -2019,7 +2019,6 @@
     "budget": "额度",
     "budgetTotal": "{{calls}} 次调用",
     "budgetWindow": "每 {{window}}可调用 {{calls}} 次",
-    "by": "授权者",
     "calls": "调用",
     "cancel": "取消",
     "changeAccess": "更改访问权限",
@@ -2045,7 +2044,8 @@
     "grantedByOn": "{{rel}}由 {{member}} 授权。",
     "grantedCount": "已授权 {{count}} 个",
     "grantedOn": "{{rel}}授权。",
-    "grantedTo": "授权给",
+    "grantedToPod": "授权给 <b>{{pod}}</b>",
+    "grantedToPodBy": "由 <b>{{member}}</b> 授权给 <b>{{pod}}</b>",
     "granting": "授权中…",
     "installGitHubApp": "安装 GitHub App",
     "installationId": "安装 ID",
@@ -2063,6 +2063,7 @@
     "noSeats": "此 Pod 中还没有智能体",
     "noTools": "允许列表中没有工具",
     "nobody": "没有智能体",
+    "nobodyMayUse": "没有智能体可以使用",
     "notEnabled": "此实例尚未启用 · 联系实例管理员",
     "notGranted": "未授权",
     "nothingMatches": "没有匹配项。",
@@ -2091,7 +2092,8 @@
     "trailEmpty": "还没有调用。",
     "trailError": "无法读取调用记录。",
     "viewGrant": "在 {{pod}} 中查看 {{tool}}",
-    "listSeparator": "、"
+    "listSeparator": "、",
+    "sentenceSeparator": ""
   },
   "time": {
     "age": {
