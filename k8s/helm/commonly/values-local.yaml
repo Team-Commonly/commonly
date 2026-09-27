@@ -187,7 +187,6 @@ localSecrets:
   githubPat: ""
   xOauthClientId: ""
   xOauthClientSecret: ""
-  slackBotToken: ""
   slackClientId: ""
   slackClientSecret: ""
   slackSigningSecret: ""

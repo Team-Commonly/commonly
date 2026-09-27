@@ -369,13 +369,6 @@ spec:
               name: api-keys
               key: commonly-bot-runtime-token
 
-        # Other Integrations
-        - name: SLACK_BOT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: slack-bot-token
-              optional: true
         # Slack installable OAuth and per-workspace token encryption. Every
         # reference is optional so instances that have not enabled Slack's
         # OAuth ExternalSecret entries continue to start normally.

@@ -255,30 +255,11 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       });
       return;
     }
-    if (type === 'slack') {
-      // The env token, not the row's copy: `config.botToken` has had no writer
-      // since TASK-139, every Slack send resolves the instance credential (the
-      // OAuth bind's `botTokenRef`, or `SLACK_BOT_TOKEN`), and handing the
-      // gateway a value no other reader echoes is how a rotation misses rows
-      // that already exist (TASK-124, one hop further out — TASK-140).
-      const botToken = String(process.env.SLACK_BOT_TOKEN || '').trim();
-      // The instance's, not the row's (TASK-141): same rule as `botToken` above.
-      // A row copy has had no writer since the key joined
-      // `SERVER_OWNED_CONFIG_KEYS`, and preferring one would hand the gateway a
-      // verification key that no other reader echoes.
-      const appToken = String(process.env.SLACK_APP_TOKEN || '').trim();
-      const signingSecret = String(process.env.SLACK_SIGNING_SECRET || '').trim();
-      if (!id || !botToken) return;
-      channels.slack.push({
-        accountId: id,
-        name,
-        botToken,
-        ...(appToken ? { appToken } : {}),
-        ...(signingSecret ? { signingSecret } : {}),
-        ...(config.channelId ? { channelId: String(config.channelId) } : {}),
-      });
-      return;
-    }
+    // Slack is deliberately absent (TASK-151): the instance-wide
+    // `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` fallback is retired, and the only
+    // Slack token a runtime is handed now comes from the per-workspace OAuth
+    // bind (`botTokenRef` -> `connectorSecrets`). `channels.slack` stays an
+    // empty array so a consumer that iterates it keeps working.
     if (type === 'telegram') {
       // Same rule as Slack above, and measured: every live Telegram path reads
       // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,

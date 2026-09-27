@@ -426,7 +426,8 @@ describe('Discord binding containment (TASK-123 a)', () => {
       // still accepted (the strip is silent, and the `botToken` refusal above is
       // Discord-scoped), and the caller's value is gone from the stored config.
       // Nothing loses a credential it had: Slack's live bind stores
-      // `botTokenRef`, and its readers fall back to `SLACK_BOT_TOKEN`. This test
+      // `botTokenRef`, and the instance-wide `SLACK_BOT_TOKEN` fallback is
+      // retired (TASK-151). This test
       // previously asserted the opposite — that the caller's token was stored —
       // which is the state the strip removes.
       const res = await post({

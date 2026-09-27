@@ -101,7 +101,8 @@ describe('agentProvisionerService', () => {
       const raw = fs.readFileSync(openclawConfigPath, 'utf8');
       const parsed = JSON.parse(raw);
       expect(parsed.channels.discord.token).toBe('env-disc-token');
-      expect(parsed.channels.slack.botToken).toBe('env-slack-token');
+      // The Slack env token is retired (TASK-151): it must not create the key.
+      expect(parsed.channels.slack).toBeUndefined();
       expect(parsed.channels.telegram.botToken).toBe('env-telegram-token');
       expect(parsed.tools.web.search.provider).toBe('brave');
       expect(parsed.tools.web.search.apiKey).toBe('env-brave-key');
@@ -111,6 +112,29 @@ describe('agentProvisionerService', () => {
       delete process.env.SLACK_BOT_TOKEN;
       delete process.env.TELEGRAM_BOT_TOKEN;
       delete process.env.BRAVE_API_KEY;
+    }
+  });
+
+  // TASK-151 witness: the WHOLE Slack block had to go, not just the token
+  // assignments — with only the signing secret set, a block that kept its
+  // signing-secret read would still create `channels.slack`.
+  it('creates no slack channel when only the signing secret is set', async () => {
+    process.env.SLACK_SIGNING_SECRET = 'env-slack-signing-secret';
+    try {
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        integrationChannels: { discord: [], slack: [], telegram: [] },
+      });
+
+      const parsed = JSON.parse(fs.readFileSync(openclawConfigPath, 'utf8'));
+      expect(parsed.channels.slack).toBeUndefined();
+    } finally {
+      delete process.env.SLACK_SIGNING_SECRET;
     }
   });
 

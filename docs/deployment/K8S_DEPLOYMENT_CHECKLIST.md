@@ -84,7 +84,6 @@ kubectl create secret generic api-keys \
   --from-literal=github-client-secret='' \
   --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
-  --from-literal=slack-bot-token='' \
   --from-literal=groupme-bot-id='' \
   --from-literal=telegram-bot-token='' \
   --from-literal=litellm-master-key=''

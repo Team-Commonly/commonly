@@ -41,7 +41,6 @@ describe('slackProvider — the row shape the bind writes', () => {
     mockGet.mockReset();
     mockHistory.mockReset();
     mockSlackApi.mockClear();
-    delete process.env.SLACK_BOT_TOKEN;
   });
 
   it('syncs a bound row by resolving its ref and reading its chatId', async () => {
@@ -81,13 +80,20 @@ describe('slackProvider — the row shape the bind writes', () => {
     expect(mockHistory.mock.calls[0][0]).toBe('C0456');
   });
 
-  it('falls back to the instance token when no ref and no stored copy exist', async () => {
+  it('does not fall back to the instance token, which is retired (TASK-151)', async () => {
     process.env.SLACK_BOT_TOKEN = 'xoxb-instance';
     mockHistory.mockResolvedValue({ messages: [] });
+    try {
+      const row = createSlackProvider({ _id: 'i-env', config: { channelId: 'C0456' } });
 
-    await createSlackProvider({ _id: 'i-env', config: { channelId: 'C0456' } }).syncRecent({ hours: 1 });
-
-    expect(mockSlackApi).toHaveBeenCalledWith('xoxb-instance');
+      // A row with a chat binding but no ref and no stored copy is refused
+      // before Slack is reached, and the env token is never used to reach it.
+      await expect(row.syncRecent({ hours: 1 })).rejects.toThrow(/missing its bot token/);
+      expect(mockSlackApi).not.toHaveBeenCalled();
+      await expect(row.health()).resolves.toEqual({ ok: false, error: 'Slack connector has no bot token' });
+    } finally {
+      delete process.env.SLACK_BOT_TOKEN;
+    }
   });
 
   it('names the missing binding instead of calling Slack with undefined', async () => {
