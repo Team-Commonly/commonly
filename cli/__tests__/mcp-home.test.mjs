@@ -689,6 +689,30 @@ describe('pruneVersionDirs — a count bounds disk, liveness and time bound risk
     expect(existsSync(join(home, '0.3.9'))).toBe(true);
   });
 
+  test('the REAL mtime reader leaves an unstat-able dir alone (the production fallback, not an injected one)', () => {
+    // Vera's survivor (74902): the arm above injects `mtime: () => null`, which
+    // witnesses the CONSUMER's `typeof !== 'number'` branch and never the
+    // production fallback — the `catch` inside the DEFAULT reader, which is what
+    // runs when `statSync` throws. Changing that catch to `return 0` passed all
+    // 49 tests: an unreadable dir became "maximally old" and was pruned, the
+    // hazard the branch exists to prevent. This arm uses the default reader, on a
+    // version the directory listing reports and the filesystem does not have.
+    const home = makeHome();
+    ['0.3.11', '0.3.12', '0.3.13'].forEach((v) => installVersion(home, v));
+    const remove = jest.fn();
+    // 0.3.9 is past the count, so it IS a prune candidate — and it is gone from
+    // disk, so the real reader's statSync throws. `keeps the newest N and removes
+    // the rest` is the positive control: the same default reader prunes the same
+    // shape of candidate when it CAN read the mtime.
+    const readDir = () => ['0.3.9', '0.3.11', '0.3.12', '0.3.13'];
+
+    const removed = pruneVersionDirs(home, '0.3.13', { keep: 3, remove, readDir });
+
+    expect(removed).toEqual([]);
+    expect(remove).not.toHaveBeenCalled();
+    expect(existsSync(join(home, '0.3.9'))).toBe(false);
+  });
+
   test('a dir it cannot remove does not fail the warm', () => {
     const home = makeHome();
     installVersion(home, '0.3.9');
