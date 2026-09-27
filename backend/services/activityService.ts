@@ -128,12 +128,12 @@ class ActivityService {
     // TASK-166: the pod list is built from membership only. `createdBy` says who
     // made the pod, and `leavePod` keeps it after unlisting them, so reading it
     // as membership handed a departed creator this pod's recap.
-    const pods: PodDoc[] = await Pod.find({
-      $or: [
-        { 'members.userId': userId },
-        { members: userId },
-      ],
-    }).select('_id name type').lean();
+    // TASK-170: `{ 'members.userId': userId }` sat beside the live term as a
+    // second spelling of membership. No pod has a `members.userId` entry (Vera,
+    // 0 of 424, 2026-09-27), so it selected nothing while teaching that a member
+    // is an object carrying a `userId` — the belief behind the `getPodFeed`
+    // defect TASK-166 fixed. Deleted rather than kept as a fallback.
+    const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
     const scopedPods = requestedPodId
@@ -315,12 +315,9 @@ class ActivityService {
         return { activities: [], hasMore: false, quick: null };
       }
 
-      const pods: PodDoc[] = await Pod.find({
-        $or: [
-          { 'members.userId': userId },
-          { members: userId },
-        ],
-      })
+      // TASK-170: the dead `members.userId` term is gone here too; see
+      // `getRecap` for the census and the reason.
+      const pods: PodDoc[] = await Pod.find({ members: userId })
         .select('_id name type')
         .lean();
 
@@ -410,18 +407,19 @@ class ActivityService {
       : [];
     const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
     const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
-    const membership = {
-      $or: [
-        { 'members.userId': userId },
-        { members: userId },
-        { 'members._id': userId },
-      ],
-    };
+    // TASK-170: `members._id` and `members.userId` were the other two spellings
+    // of the same belief (a member is an object with a key) and matched nothing —
+    // no pod carries either shape. The live term is the one below it.
+    const membership = { members: userId };
     const podQuery = requestedPodId ? { _id: requestedPodId, ...membership } : membership;
     const pods: PodDoc[] = await Pod.find(podQuery).select('_id name members').lean();
     if (requestedPodId && pods.length === 0) throw new Error('Access denied');
+    // TASK-170: the post-filter's `member?.userId` arm is the same dead shape as
+    // the query terms above. With the query narrowed, an object-shaped member
+    // can no longer reach this line, so leaving the arm would be a reader that
+    // admits what the selector does not select.
     const allowedPods = pods.filter((pod) => (
-      (pod.members || []).some((member: any) => String(member?.userId || member?._id || member) === String(userId))
+      (pod.members || []).some((member: any) => String(member?._id || member) === String(userId))
     ));
     if (requestedPodId && allowedPods.length === 0) throw new Error('Access denied');
     const podIds = allowedPods.map((pod) => String(pod._id));

@@ -58,12 +58,10 @@ describe('ActivityService recap and legacy approval authorization', () => {
     // returns whichever fixture it is handed. `createdBy` is written once at
     // creation and survives `leavePod`, so reading it here handed a departed
     // creator the recap of a pod they are no longer in.
-    expect(Pod.find.mock.calls[0][0]).toEqual({
-      $or: [
-        { 'members.userId': ownerId },
-        { members: ownerId },
-      ],
-    });
+    // TASK-170: exact equality, so the arm fails on an added term as well as a
+    // missing one — the dead `{ 'members.userId': … }` spelling cannot come
+    // back without reddening this line.
+    expect(Pod.find.mock.calls[0][0]).toEqual({ members: ownerId });
   });
 
   test('rejects a requested pod that is outside the viewer membership', async () => {
