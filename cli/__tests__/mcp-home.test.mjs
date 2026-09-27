@@ -1,12 +1,19 @@
 /**
  * mcp-home.test.mjs — TASK-174, the spawn path.
  *
- * The defect: every seat declared `npx -y @commonlyai/mcp@latest`, whose npx dir
- * is keyed by the spec string, so all seats shared one dir that a spawn rewrote
- * in place after a publish — and every npx run did registry + lock work before
- * the server started. This file witnesses the replacement: a spawn reads a
- * pointer file and exec's `node <bin>` from a version dir, and NOTHING on the
- * spawn path touches the network.
+ * The defect: every seat declared `npx -y @commonlyai/mcp@latest`, so the spawn
+ * path paid for an install. The cost is a COLD INSTALL, not a shared dir
+ * rewritten in place — corrected by measurement (Vera, 74832/74833) after an
+ * earlier write-up of mine claimed the mutate race: `~/.npm/_npx` held five
+ * `_npx` dirs, one per resolved version, and a publish lands the new version in
+ * a NEW dir without touching the dir a live spawn is reading. What it does cost
+ * is that the FIRST spawn(s) on a newly published version each build their own
+ * dir — two dirs for one version is a create race — and that is where the
+ * post-publish `CONNECTION_CLOSED` window and the 30 s `CONNECT_TIMEOUT` came
+ * from. This file witnesses the replacement: a spawn reads a pointer file and
+ * exec's `node <bin>` from a version dir, NOTHING on the spawn path touches the
+ * network, and the install is single-flight in a background warm that builds in
+ * `.tmp-<version>-<pid>` and renames into place.
  *
  * The fixtures carry the shape the package actually has at 0.3.13 —
  * `bin: { 'commonly-mcp': 'src/index.js' }`, `type: 'module'`, no `main` — taken
