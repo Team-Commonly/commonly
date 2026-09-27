@@ -327,8 +327,13 @@ describe('V2ConnectorsPage', () => {
     expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
     // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
     // pod') taught the one-pod model. The refusal is about the bind, and other
-    // pods reach the channel through its gate switches.
-    expect(screen.getByText(/gate switches/)).toBeInTheDocument();
+    // pods reach the channel through the switches. TASK-173: the arm used to
+    // pin the word 'gate switches', which is this file's internal name and no
+    // string the page renders — so the witnessed wording went stale in the
+    // same direction the copy did. It now matches the two labels the user can
+    // actually look for: the section title and the aside that holds it.
+    expect(screen.getByText(/through "Pods that reach this channel" in Channel details/)).toBeInTheDocument();
+    expect(screen.queryByText(/gate switches/)).toBeNull();
     expect(screen.queryByText(/Remove it to bind/)).toBeNull();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });

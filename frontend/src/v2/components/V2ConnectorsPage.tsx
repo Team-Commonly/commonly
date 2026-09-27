@@ -421,7 +421,13 @@ const V2ConnectorsPage: React.FC = () => {
         message = installInProgressMessage(response.data.boundPodId);
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
         message = t('connectors.alreadyBound', {
-          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through its gate switches — turn one on in the panel.',
+          // TASK-173: name the controls the page actually shows. "gate" is
+          // this file's internal name for the switches (ConnectorGate,
+          // expandedGate, writeGate) and it had leaked into the only
+          // user-visible string on the page that used it. The section is
+          // `connectors.gatesTitle` ("Pods that reach this channel", :1106)
+          // inside the aside labelled "Channel details" (:1214).
+          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through "Pods that reach this channel" in Channel details — switch a pod on there.',
           connector: typeLabel,
           pod: boundPodName(response.data.boundPodId),
         });
