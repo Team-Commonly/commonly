@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
@@ -500,7 +501,14 @@ class AgentIdentityService {
       agentUser = new User({
         username,
         email: buildAgentEmail(resolvedType, instanceId),
-        password: `agent-password-${Date.now()}`,
+        // Random, and not a function of when the seat was created (TASK-163).
+        // This used to be `agent-password-${Date.now()}`: a millisecond
+        // timestamp, against an identity whose existence is public. Nothing
+        // reads the value — no caller does, and bots cannot log in, because
+        // every login path filters `isBot` — so the old shape bought nothing
+        // and would have become a reconstructable credential the first time a
+        // login path was added without that filter.
+        password: crypto.randomBytes(32).toString('hex'),
         verified: true,
         profilePicture: normalizeAvatarUrl(options.profilePicture) || 'default',
         role: 'user',
