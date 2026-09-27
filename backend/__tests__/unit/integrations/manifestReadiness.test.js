@@ -61,8 +61,17 @@ describe('installable connector manifest readiness', () => {
     expect(manifests.telegram.readiness()).toEqual({ available: true });
   });
 
-  it('describes Telegram as one chat connected to one pod', () => {
-    expect(manifests.telegram.catalog.description).toBe('One Telegram chat, one pod.');
+  it('describes Telegram as a chat the pods the member turns on reach (TASK-154)', () => {
+    expect(manifests.telegram.catalog.description)
+      .toBe('Link your Telegram chat to Commonly — every pod you turn on reaches it.');
     expect(manifests.telegram.catalog.description).not.toMatch(/ingest|summar/i);
+  });
+
+  // Its own arm, because the copy this row used to carry taught one chat = one
+  // pod, and TASK-154's ruling reversed that: one private chat binds one member,
+  // and their pods sit behind it as gates. A separate test is what makes the
+  // sentence's removal redden one name rather than hide behind another.
+  it('does not teach the one-pod model TASK-154 reversed', () => {
+    expect(manifests.telegram.catalog.description).not.toMatch(/one pod/i);
   });
 });
