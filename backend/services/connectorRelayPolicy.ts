@@ -88,8 +88,10 @@ export const isRoutedPodTarget = (opts: {
   const {
     integration, pod, podId, userId,
   } = opts;
-  return Boolean(userId)
-    && isGatedPodTarget(integration, podId)
+  // No separate user-id guard: `isPodMember` fails closed on a falsy id itself
+  // (measured — a guard here changed no arm, so it was removed rather than kept
+  // unwitnessed).
+  return isGatedPodTarget(integration, podId)
     && isPodMember(pod, userId);
 };
 
