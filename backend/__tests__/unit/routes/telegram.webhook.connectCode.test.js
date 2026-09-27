@@ -21,12 +21,20 @@ jest.mock('../../../models/WebhookDelivery', () => ({
   create: jest.fn(),
   deleteOne: jest.fn(),
 }));
+// The counter's VALUE is the contract for TASK-157 (a typo must spend no try),
+// so count the calls while keeping the real budget implementation behind them.
+jest.mock('../../../services/telegramConnectCode', () => {
+  const actual = jest.requireActual('../../../services/telegramConnectCode');
+  return { ...actual, registerEnableAttempt: jest.fn(actual.registerEnableAttempt) };
+});
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const WebhookDelivery = require('../../../models/WebhookDelivery');
 const telegramService = require('../../../services/telegramService');
-const { resetEnableAttempts, ENABLE_ATTEMPT_LIMIT } = require('../../../services/telegramConnectCode');
+const {
+  registerEnableAttempt, resetEnableAttempts, ENABLE_ATTEMPT_LIMIT,
+} = require('../../../services/telegramConnectCode');
 const telegramRoutes = require('../../../routes/webhooks/telegram');
 
 const app = express();
@@ -47,6 +55,9 @@ const freshCode = () => ({
 // code — before the fix only the first group was read and every attempt failed.
 const SPACED_CODE = '1964 774b a58c d1e2 f3a4 b5c6 d7e8 f9a0';
 const JOINED_CODE = SPACED_CODE.replace(/\s+/g, '');
+// A well-formed code that no row carries: the shape gate (TASK-157) admits it,
+// so it reaches the lookup and spends an attempt, and still refuses.
+const wrongCode = (n) => n.toString(16).padStart(32, '0');
 
 describe('/commonly-enable hardening', () => {
   beforeEach(() => {
@@ -64,19 +75,19 @@ describe('/commonly-enable hardening', () => {
     Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Test Pod' }) });
   });
 
-  it('refuses a legacy code with no expiry', async () => {
+  it('refuses a code with no expiry', async () => {
     Integration.findOne = jest.fn()
-      .mockResolvedValueOnce({ _id: 'i1', podId: 'p1', config: { connectCode: 'abc123' } });
-    await enable('abc123');
+      .mockResolvedValueOnce({ _id: 'i1', podId: 'p1', config: { connectCode: 'a'.repeat(32) } });
+    await enable('a'.repeat(32));
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/expired/i);
   });
 
   it('refuses an expired code', async () => {
     Integration.findOne = jest.fn().mockResolvedValueOnce({
-      _id: 'i1', podId: 'p1', config: { connectCode: 'x', connectCodeExpiresAt: new Date(Date.now() - 1) },
+      _id: 'i1', podId: 'p1', config: { connectCode: 'e'.repeat(32), connectCodeExpiresAt: new Date(Date.now() - 1) },
     });
-    await enable('x');
+    await enable('e'.repeat(32));
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
@@ -92,9 +103,13 @@ describe('/commonly-enable hardening', () => {
 
   it('rate-limits attempts per chat and stops looking codes up', async () => {
     Integration.findOne = jest.fn().mockResolvedValue(null);
-    for (let i = 0; i < ENABLE_ATTEMPT_LIMIT; i += 1) await enable(`guess${i}`); // eslint-disable-line no-await-in-loop
+    // Well-formed guesses: only those are metered, which is the point of the
+    // shape gate (TASK-157) — a malformed one is refused without an attempt.
+    for (let i = 0; i < ENABLE_ATTEMPT_LIMIT; i += 1) {
+      await enable(wrongCode(i)); // eslint-disable-line no-await-in-loop
+    }
     expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
-    await enable('one-more');
+    await enable(wrongCode(99));
     expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
     expect(telegramService.sendMessage.mock.calls.at(-1)[2]).toMatch(/too many attempts/i);
   });
@@ -129,9 +144,9 @@ describe('/commonly-enable hardening', () => {
 
   it('still refuses a spaced code that matches nothing', async () => {
     Integration.findOne = jest.fn().mockResolvedValue(null);
-    await enable('zzzz zzzz zzzz zzzz');
+    await enable('dead beef dead beef dead beef dead beef');
     expect(Integration.findOne).toHaveBeenCalledWith(
-      expect.objectContaining({ 'config.connectCode': 'zzzzzzzzzzzzzzzz' }),
+      expect.objectContaining({ 'config.connectCode': 'deadbeefdeadbeefdeadbeefdeadbeef' }),
     );
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/invalid or expired/i);
@@ -143,11 +158,44 @@ describe('/commonly-enable hardening', () => {
     Integration.findOne = jest.fn().mockResolvedValue(null);
     await enable(SPACED_CODE); // eight groups, one command
     for (let i = 0; i < ENABLE_ATTEMPT_LIMIT - 1; i += 1) {
-      await enable(`guess${i}`); // eslint-disable-line no-await-in-loop
+      await enable(wrongCode(i)); // eslint-disable-line no-await-in-loop
     }
     expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
-    await enable('one-more');
+    await enable(wrongCode(99));
     expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
     expect(telegramService.sendMessage.mock.calls.at(-1)[2]).toMatch(/too many attempts/i);
+  });
+
+  // TASK-157. The counter's VALUE is asserted, not the fact that a refusal
+  // happened: the point is which inputs cost one of the chat's five tries.
+  it('spends exactly one attempt on a well-formed wrong code', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    await enable(wrongCode(7));
+    expect(registerEnableAttempt).toHaveBeenCalledTimes(1);
+    expect(registerEnableAttempt).toHaveBeenCalledWith('42');
+    expect(Integration.findOne).toHaveBeenCalledTimes(1);
+    expect(telegramService.sendMessage.mock.calls.at(-1)[2]).toMatch(/invalid or expired/i);
+  });
+
+  it.each(['1964', 'abc123', `${JOINED_CODE}a`, JOINED_CODE.slice(0, 31)])(
+    'spends no attempt on the malformed code %s',
+    async (input) => {
+      Integration.findOne = jest.fn().mockResolvedValue(null);
+      await enable(input);
+      expect(registerEnableAttempt).not.toHaveBeenCalled();
+      expect(Integration.findOne).not.toHaveBeenCalled();
+      expect(telegramService.sendMessage.mock.calls[0][2])
+        .toMatch(/doesn't look like a connect code/i);
+    },
+  );
+
+  it('binds a capitalised, spaced code', async () => {
+    const integration = { _id: 'i1', podId: 'p1', config: { ...freshCode(), connectCode: JOINED_CODE } };
+    Integration.findOne = jest.fn().mockResolvedValueOnce(integration).mockResolvedValueOnce(null);
+    await enable(SPACED_CODE.toUpperCase());
+    expect(Integration.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ 'config.connectCode': JOINED_CODE }),
+    );
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
   });
 });

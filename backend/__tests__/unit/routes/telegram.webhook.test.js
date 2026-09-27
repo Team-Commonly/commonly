@@ -54,7 +54,7 @@ describe('Telegram webhook routes', () => {
     const integration = {
       _id: 'integration-1',
       podId: 'pod-1',
-      config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60000) },
+      config: { connectCode: 'abc12300000000000000000000000000', connectCodeExpiresAt: new Date(Date.now() + 60000) },
     };
 
     Integration.findOne = jest.fn()
@@ -69,7 +69,7 @@ describe('Telegram webhook routes', () => {
       .post('/api/webhooks/telegram')
       .send({
         message: {
-          text: '/commonly-enable abc123',
+          text: '/commonly-enable abc12300000000000000000000000000',
           chat: { id: 42, title: 'Test Chat', type: 'group' },
           from: { id: 7, first_name: 'Sam' },
         },
@@ -110,7 +110,7 @@ describe('Telegram webhook routes', () => {
     const integration = {
       _id: 'integration-1',
       podId: 'pod-1',
-      config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60000) },
+      config: { connectCode: 'abc12300000000000000000000000000', connectCodeExpiresAt: new Date(Date.now() + 60000) },
     };
     Integration.findOne = jest.fn().mockResolvedValueOnce(integration).mockResolvedValueOnce(null);
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({ config: { chatId: '42' } });
@@ -122,7 +122,7 @@ describe('Telegram webhook routes', () => {
       .post('/api/webhooks/telegram')
       .send({
         message: {
-          text: '/commonly-enable abc123',
+          text: '/commonly-enable abc12300000000000000000000000000',
           chat: { id: 42, title: 'Test Chat', type: 'group' },
           from: { id: 7, first_name: 'Sam' },
         },

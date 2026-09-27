@@ -34,6 +34,10 @@ const ENABLE_COMMAND = '/commonly-enable';
 // Underscore alias: Telegram's registered-command menu forbids hyphens, so
 // the menu carries /commonly_enable while typed /commonly-enable keeps working.
 const ENABLE_COMMAND_ALIAS = '/commonly_enable';
+// Every minted code is exactly this shape (mintConnectCode is the only mint
+// path: `crypto.randomBytes(16).toString('hex')`), so the enable handler can
+// tell a typo from a guess without touching the database.
+const CONNECT_CODE_SHAPE = /^[0-9a-f]{32}$/;
 const SUMMARY_COMMAND = '/summary';
 const POD_SUMMARY_COMMAND = '/pod_summary';
 const TLDR_COMMAND = '/tldr';
@@ -92,6 +96,22 @@ const handleEnableCommand = async (chat: any, code: any) => {
       botToken,
       chatId,
       'Usage: /commonly-enable &lt;code&gt; (get the code from Commonly)',
+    );
+    return;
+  }
+
+  // A malformed code is a typo, and a typo must not cost one of the chat's five
+  // tries — so this sits BEFORE the attempt counter, which is the whole point of
+  // the check. It does not make guessing free: only a well-formed code can ever
+  // match a minted one, and a well-formed guess still spends an attempt.
+  // Malformed input is left to the route's outer rate limiter
+  // (telegramWebhookRateLimit), because input that costs a regex is not worth a
+  // per-chat counter.
+  if (!CONNECT_CODE_SHAPE.test(code)) {
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      "That doesn't look like a connect code — copy it from Commonly.",
     );
     return;
   }
@@ -441,13 +461,14 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
     const command = rawCommand?.startsWith('/') ? normalizeCommand(rawCommand) : null;
 
     if (command === ENABLE_COMMAND || command === ENABLE_COMMAND_ALIAS) {
-      // Everything after the command is the code, with whitespace removed: the
-      // connectors page renders it grouped in fours (`1964 774b a58c …`) for
-      // readability, so a user who types or selects what they see sends it as
-      // several tokens. Minted codes carry no whitespace of their own
+      // Everything after the command is the code, with whitespace removed and
+      // lowercased: the connectors page renders it grouped in fours (`1964 774b
+      // a58c …`) for readability, so a user who types or selects what they see
+      // sends it as several tokens, and a keyboard can capitalise one of them.
+      // Minted codes carry no whitespace of their own
       // (telegramConnectCode.mintConnectCode), so joining cannot merge two
       // codes into one — it can only reassemble the one that was displayed.
-      await handleEnableCommand(chat, args.join(''));
+      await handleEnableCommand(chat, args.join('').toLowerCase());
       return res.sendStatus(200);
     }
 
