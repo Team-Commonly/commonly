@@ -17,13 +17,14 @@ import { jest } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
-  liveInUsePids, mcpHomeDir, newestInstalledVersion, pinShippedSpec, planMcpSpawn, prepareMcpSpawn,
-  readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
+  liveInUsePids, mcpHomeDir, newestInstalledVersion, packageDirFor, pinShippedSpec, planMcpSpawn,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, versionDirFor, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
+import { exactVersion } from '../src/lib/mcp-server-version.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
 
 const SHIPPED_COMMAND = ['npx', '-y', '@commonlyai/mcp@latest'];
@@ -911,3 +912,159 @@ describe('the spawn claims the version it is about to run', () => {
   });
 });
 
+
+describe('a version that becomes a path or a spec is a triple (TASK-174, Vera 74938)', () => {
+  // Vera's value, kept literal. `parseVersion` is a prefix test, so this parsed
+  // as [0,3,13] and every string built from it carried the suffix; `join`
+  // resolved the `..`, landing outside the home entirely — and #1970's
+  // `startsWith(pkgDir)` confinement is computed FROM that dir, so it confined
+  // to the wrong place. Reachability is honest (it needs a writer to this
+  // operator's own `~/.commonly/mcp/.registry.json` or `current`), but this is
+  // the commit that first puts such a value into a command we execute.
+  const TRAVERSAL = '0.3.13/../../../../tmp/evil';
+  const HOSTILE = [TRAVERSAL, '0.3.13/..', '..', 'junk', '', null, undefined, '0.3.13-rc.1'];
+
+  test('control: joined raw, this value leaves the home — the hazard the guard exists for', () => {
+    // Without this arm, the containment assertions below would also pass if the
+    // value had never been dangerous.
+    expect(join('/Users/x/.commonly/mcp', TRAVERSAL)).toBe('/Users/tmp/evil');
+  });
+
+  test('exactVersion rebuilds the parsed triple, or declines', () => {
+    expect(exactVersion(TRAVERSAL)).toBe('0.3.13');
+    expect(exactVersion('0.3.13.1')).toBe('0.3.13');
+    expect(exactVersion('0.3.13')).toBe('0.3.13');
+    // The deliberate cost: a prerelease pins to the stable release of its
+    // triple, which is published, rather than falling back to `@latest`.
+    expect(exactVersion('0.3.13-rc.1')).toBe('0.3.13');
+    expect(exactVersion('v1.2.3')).toBeNull();
+    expect(exactVersion('0.3')).toBeNull();
+    expect(exactVersion(null)).toBeNull();
+  });
+
+  test('versionDirFor and packageDirFor cannot resolve outside the home', () => {
+    const home = join('/', 'Users', 'x', '.commonly', 'mcp');
+
+    HOSTILE.filter(Boolean).forEach((value) => {
+      [versionDirFor(home, value), packageDirFor(home, value)].forEach((dir) => {
+        expect(dir.startsWith(`${home}${sep}`)).toBe(true);
+        expect(dir).not.toContain('..');
+      });
+    });
+    // A value that is not exactly a triple lands on a name no version can have,
+    // so every read of it misses and the spawn falls back to its declaration.
+    // The prerelease is REFUSED rather than rewritten: `<home>/0.3.14` is a
+    // different build, and this path is read from and removed.
+    expect(versionDirFor(home, 'junk')).toBe(join(home, '.unusable-version'));
+    expect(versionDirFor(home, '0.3.14-rc.1')).toBe(join(home, '.unusable-version'));
+    expect(readBinPath(home, 'junk')).toBeNull();
+  });
+
+  test('pinShippedSpec writes the triple into the argv entry, never the string it was given', () => {
+    expect(pinShippedSpec(SHIPPED_COMMAND, TRAVERSAL)).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+    expect(pinShippedSpec(SHIPPED_COMMAND, '0.3.13-rc.1')).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+    // Nothing to build from: the declaration survives by identity, not by copy.
+    expect(pinShippedSpec(SHIPPED_COMMAND, 'junk')).toBe(SHIPPED_COMMAND);
+  });
+
+  test('the planner pins a poisoned registry cache to the triple, and says so', () => {
+    const home = makeHome();
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: TRAVERSAL, checkedAt: Date.now() }));
+
+    const plan = planMcpSpawn(SHIPPED_COMMAND, { home });
+
+    expect(plan.command).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+    expect(plan.command.join(' ')).not.toContain('..');
+    expect(plan.pinned).toBe('0.3.13');
+    expect(plan.reason).toBe('home-empty');
+  });
+
+  test('a poisoned pointer file resolves to the triple, and to a real bin when it exists', () => {
+    const home = makeHome();
+    writeFileSync(join(home, 'current'), TRAVERSAL);
+    const bin = installVersion(home, '0.3.13');
+
+    expect(readCurrentVersion(home)).toBe('0.3.13');
+    expect(readBinPath(home, '0.3.13')).toBe(bin);
+  });
+
+  test('the warm rebuilds the registry answer before it becomes argv and before it is cached', async () => {
+    const home = makeHome();
+    const exec = jest.fn(async (bin, args) => {
+      if (bin === 'npm' && args[0] === 'view') return { ok: true, stdout: `"${TRAVERSAL}"\n` };
+      if (bin === 'npm' && args[0] === 'install') {
+        writePackage(args[2], '0.3.13');
+        return { ok: true, stdout: 'added 1 package\n' };
+      }
+      return { ok: false, stdout: '' };
+    });
+
+    expect(await warmMcpHome(home, { exec, probe: jest.fn(async () => true), now: Date.now() }))
+      .toBe(WARM_RESULTS.ADVANCED);
+
+    const installArgs = exec.mock.calls.find(([, args]) => args[0] === 'install')[1];
+    // The spec is an argv entry we execute; the prefix is a path we build.
+    expect(installArgs).toContain(`@commonlyai/mcp@0.3.13`);
+    expect(installArgs.join(' ')).not.toContain('..');
+    expect(installArgs[2].startsWith(`${home}${sep}`)).toBe(true);
+    // What was persisted is the triple too, so the cache cannot carry it onward.
+    expect(JSON.parse(readFileSync(join(home, '.registry.json'), 'utf8')).version).toBe('0.3.13');
+    expect(readCurrentVersion(home)).toBe('0.3.13');
+    expect(existsSync(join(home, '0.3.13'))).toBe(true);
+  });
+
+  test('a reader that names a prerelease is not handed the stable build of its triple', () => {
+    const home = makeHome();
+    const stable = installVersion(home, '0.3.14');
+    installVersion(home, '0.3.14-rc.1');
+
+    // Positive control: the stable build IS readable under its own name, so a
+    // null below is the refusal and not a broken fixture.
+    expect(readBinPath(home, '0.3.14')).toBe(stable);
+    // The rc name resolves to nothing rather than to 0.3.14's bin: rebuilding it
+    // would hand a caller a DIFFERENT build on disk, which is the failure mode
+    // that makes "normalise in the builder" the wrong shape here.
+    expect(readBinPath(home, '0.3.14-rc.1')).toBeNull();
+  });
+
+  test('a prerelease-named dir is not the dir of its triple, for reading or for pruning', () => {
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.13');
+    installVersion(home, '0.3.14-rc.1');
+
+    // Normalising the NAME here would point this read at a dir the caller never
+    // mentioned, so the rc dir is ignored rather than mapped onto `0.3.14` — and
+    // it is the newest triple-shaped name in the home, so ignoring it is the
+    // difference between this answer and `0.3.14-rc.1`.
+    expect(newestInstalledVersion(home)).toBe('0.3.13');
+    // And a reader that names the rc build is handed nothing, not the stable
+    // build of the same triple: this is a different build, on disk, right there.
+    expect(readBinPath(home, '0.3.14-rc.1')).toBeNull();
+
+    // The prune loop REMOVES what it names, which is why a name it would have to
+    // normalise is a name it must not count: with the rc dir counted, `keep: 1`
+    // makes the real 0.3.13 the candidate, and the count then deletes a build a
+    // seat may be running.
+    backdate(join(home, '0.3.13'));
+    backdate(join(home, '0.3.14-rc.1'));
+
+    const removed = pruneVersionDirs(home, '0.3.9', { keep: 1 });
+
+    expect(removed).toEqual([]);
+    expect(existsSync(join(home, '0.3.14-rc.1'))).toBe(true);
+    expect(existsSync(join(home, '0.3.13'))).toBe(true);
+    expect(readBinPath(home, '0.3.13')).toBe(bin);
+  });
+
+  test('the slot-2 bound is armed: a spec in another slot is never rewritten (Vera 74940)', () => {
+    // `isShippedCommonlyMcpCommand` proves the package sits in slot 2 of a 3-arg
+    // command, so no spawn can reach this — the bound is what makes the function
+    // safe to read on its own, and this is the arm for it rather than an
+    // argument from the shape check. Same string, both slots, opposite answers.
+    const notTheShippedShape = ['@commonlyai/mcp@latest', '-y', 'something-else'];
+
+    expect(pinShippedSpec(notTheShippedShape, '0.3.13')).toBe(notTheShippedShape);
+    expect(pinShippedSpec(['npx', '-y', '@commonlyai/mcp@latest'], '0.3.13'))
+      .toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+  });
+});

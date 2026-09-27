@@ -48,7 +48,7 @@ import { homedir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isShippedCommonlyMcpCommand } from './declared-mcp-guard.js';
-import { MCP_PACKAGE, parseVersion } from './mcp-server-version.js';
+import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js';
 
 /** The env override, so tests (and an operator) can point the home elsewhere. */
 export const MCP_HOME_ENV = 'COMMONLY_MCP_HOME';
@@ -122,8 +122,34 @@ export const isUsableWarmHome = (home) => (
 export const resolveHomeDir = (home) => (isUsableWarmHome(home) ? home : mcpHomeDir());
 
 export const currentPointerPath = (home) => join(home, 'current');
-export const versionDirFor = (home, version) => join(home, version);
-export const packageDirFor = (home, version) => join(home, version, 'node_modules', MCP_PACKAGE);
+
+/**
+ * Where a version dir name that is not a triple lands: inside the home, and
+ * never a version (a version starts with a digit), so every read of it misses
+ * and the spawn falls back to its declaration. The alternative — building the
+ * path from whatever string arrived — is how `0.3.13/../../../../tmp/x` resolved
+ * outside the home, and #1970's `startsWith(pkgDir)` confinement is computed
+ * FROM that dir, so it would have confined to the wrong place (Vera, 74938).
+ */
+const UNUSABLE_VERSION_DIR = '.unusable-version';
+
+/**
+ * A version dir, built from the parsed triple — and only when the string given
+ * IS that triple.
+ *
+ * Refusing beats rebuilding here: this result is what the warm RENAMES into and
+ * what the pruner REMOVES, so silently rewriting `0.3.14-rc.1` to `0.3.14` would
+ * aim both at a different build. Normalising belongs at the producer of a
+ * version value (`resolveRegistryLatest`, `readCurrentVersion`,
+ * `readRegistryCache`, `pinShippedSpec`), where the choice is deliberate and
+ * visible; a producer that names something else gets a name no version can have.
+ */
+export const versionDirFor = (home, version) => {
+  const triple = exactVersion(version);
+  const name = triple && triple === String(version).trim() ? triple : UNUSABLE_VERSION_DIR;
+  return join(home, name);
+};
+export const packageDirFor = (home, version) => join(versionDirFor(home, version), 'node_modules', MCP_PACKAGE);
 export const lockPathFor = (home) => join(home, WARM_LOCK_NAME);
 
 /** `<home>/<version>/.inuse/` — one empty file per claiming pid. */
@@ -245,8 +271,8 @@ const defaultExists = (path) => {
 export const readCurrentVersion = (home, { readFile = defaultRead } = {}) => {
   const raw = readFile(currentPointerPath(home));
   if (typeof raw !== 'string') return null;
-  const version = raw.trim();
-  return parseVersion(version) ? version : null;
+  const version = exactVersion(raw.trim());
+  return version || null;
 };
 
 /**
@@ -291,6 +317,9 @@ const readBinInPackageDir = (pkgDir, {
 
 /** The bin of a version dir inside the seat's home. */
 export const readBinPath = (home, version, options = {}) => {
+  // Truthiness of `parseVersion` is truthiness of `exactVersion`; the check that
+  // matters here is `versionDirFor` refusing a name that is not a triple, so a
+  // reader naming `0.3.14-rc.1` gets nothing rather than 0.3.14's build.
   if (!parseVersion(version)) return null;
   return readBinInPackageDir(packageDirFor(home, version), options);
 };
@@ -326,7 +355,10 @@ export const newestInstalledVersion = (home, {
   readBin = (h, v) => readBinPath(h, v),
 } = {}) => {
   const versions = readDir(home)
-    .filter((name) => parseVersion(name))
+    // An exact triple, not a prefix match: a dir literally named `0.3.13-rc.1`
+    // is not `0.3.13`, and normalising the name would point this read at a dir
+    // the caller never mentioned.
+    .filter((name) => exactVersion(name) === name)
     .filter((name) => readBin(home, name))
     .sort((a, b) => {
       const [am, an, ap] = parseVersion(a);
@@ -354,12 +386,19 @@ const isUnpinnedShippedSpec = (spec) => (
  * uses.
  */
 export const pinShippedSpec = (command, version) => {
-  if (!Array.isArray(command) || !parseVersion(version)) return command;
+  // The triple, not the string: this spec is an argv entry we execute, so a
+  // version carrying a suffix must not reach it.
+  const safe = exactVersion(version);
+  if (!Array.isArray(command) || !safe) return command;
   let changed = false;
   const pinned = command.map((part, index) => {
+    // Slot 2 only. `isShippedCommonlyMcpCommand` already proves the package sits
+    // in slot 2 of a 3-arg command, so this bound is not reachable today — it is
+    // here so the function is safe to read on its own, and it is armed in the
+    // tests rather than argued from the shape check (Vera, 74940).
     if (index !== 2 || !isUnpinnedShippedSpec(String(part))) return part;
     changed = true;
-    return `${MCP_PACKAGE}@${version}`;
+    return `${MCP_PACKAGE}@${safe}`;
   });
   // The same reference when nothing changed, so a caller can use identity as the
   // "did this spawn's spec move" check — the convention the rest of this module
@@ -430,9 +469,9 @@ export const readRegistryCache = (home, { readFile = defaultRead } = {}) => {
   if (typeof raw !== 'string') return null;
   try {
     const parsed = JSON.parse(raw);
-    const version = parsed && typeof parsed.version === 'string' ? parsed.version : null;
+    const version = exactVersion(parsed && parsed.version);
     const checkedAt = parsed && Number.isFinite(parsed.checkedAt) ? parsed.checkedAt : null;
-    if (!parseVersion(version) || checkedAt === null) return null;
+    if (!version || checkedAt === null) return null;
     return { version, checkedAt };
   } catch {
     return null;

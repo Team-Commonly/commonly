@@ -24,6 +24,28 @@ export const parseVersion = (spec) => {
 };
 
 /**
+ * The version as a bare triple — or null when there is none to build.
+ *
+ * `parseVersion` is a PREFIX test, which is right for ordering two versions and
+ * wrong for building anything out of one: it accepts `0.3.13/../../../../tmp/x`,
+ * so a version read out of a file (`~/.commonly/mcp/.registry.json`, the
+ * `current` pointer) or out of `npm view` could become a path or an npm SPEC
+ * ARGUMENT that leaves the seat's home. Everything that turns a version into a
+ * STRING used outside this module's own comparisons goes through here instead,
+ * and the string it builds is the parsed triple, so no suffix can travel.
+ *
+ * The cost is deliberate and one-directional: a prerelease (`0.3.13-rc.1`)
+ * becomes `0.3.13` rather than falling back to `@latest` — the stable release of
+ * the same triple, which is a real published version, and strictly better than
+ * the shared `@latest` dir this whole change exists to get off. Anchoring the
+ * regex at the end instead would reject the prerelease and leave it unpinned.
+ */
+export const exactVersion = (spec) => {
+  const triple = parseVersion(spec);
+  return triple ? triple.join('.') : null;
+};
+
+/**
  * True when `version` is older than `target`; null when there is no version to
  * judge (an unpinned `@latest` tracks the published release, so it is never
  * treated as old).

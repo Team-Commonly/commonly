@@ -34,7 +34,7 @@ import {
   WARM_RESULTS, currentPointerPath, isUsableWarmHome, liveInUsePids, lockPathFor,
   readBinInPrefix, versionDirFor,
 } from './mcp-home.js';
-import { MCP_PACKAGE, parseVersion } from './mcp-server-version.js';
+import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js';
 
 export const PROBE_API_URL_PLACEHOLDER = 'http://127.0.0.1:1';
 export const PROBE_TOKEN_PLACEHOLDER = 'cm_agent_warm_probe';
@@ -147,9 +147,9 @@ export const resolveRegistryLatest = async (home, {
   if (cached) {
     try {
       const parsed = JSON.parse(cached);
-      if (parsed && Number.isFinite(parsed.checkedAt) && now - parsed.checkedAt < ttlMs
-        && parseVersion(parsed.version)) {
-        return { version: parsed.version, source: 'cache' };
+      const cachedVersion = parsed ? exactVersion(parsed.version) : null;
+      if (cachedVersion && Number.isFinite(parsed.checkedAt) && now - parsed.checkedAt < ttlMs) {
+        return { version: cachedVersion, source: 'cache' };
       }
     } catch { /* unreadable cache is just a miss */ }
   }
@@ -164,18 +164,24 @@ export const resolveRegistryLatest = async (home, {
       version = raw.replace(/^"|"$/g, '');
     }
   }
-  if (version && parseVersion(version)) {
+  // This answer is both persisted and, downstream, an argv entry
+  // (`npm install <pkg>@<version>`) and a path (`<home>/<version>`, the temp
+  // prefix). Rebuild it as a triple here, at the one place it enters, so the
+  // rest of the warm can keep treating a version as a name.
+  const safe = exactVersion(version);
+  if (safe) {
     try {
-      writeFile(cachePath, JSON.stringify({ version, checkedAt: now }));
+      writeFile(cachePath, JSON.stringify({ version: safe, checkedAt: now }));
     } catch { /* a cache we cannot write is not a warm we should fail */ }
-    return { version, source: 'registry' };
+    return { version: safe, source: 'registry' };
   }
   // Registry down: the last known answer is better than none, and better than
   // moving the pointer backwards.
   if (cached) {
     try {
       const parsed = JSON.parse(cached);
-      if (parseVersion(parsed.version)) return { version: parsed.version, source: 'stale-cache' };
+      const stale = parsed ? exactVersion(parsed.version) : null;
+      if (stale) return { version: stale, source: 'stale-cache' };
     } catch { /* fall through */ }
   }
   return { version: null, source: 'unavailable' };
@@ -267,7 +273,10 @@ export const pruneVersionDirs = (home, current, {
   },
   livePids = (version) => liveInUsePids(home, version),
 } = {}) => {
-  const versions = readDir(home).filter((name) => parseVersion(name));
+  // Exact triples only, for the same reason `newestInstalledVersion` uses them:
+  // a dir named `0.3.13-rc.1` is not the dir `0.3.13`, and this loop REMOVES what
+  // it names.
+  const versions = readDir(home).filter((name) => exactVersion(name) === name);
   versions.sort((a, b) => {
     const [am, an, ap] = parseVersion(a);
     const [bm, bn, bp] = parseVersion(b);
@@ -309,8 +318,7 @@ export const warmMcpHome = async (home, {
   readCurrent = (h) => {
     const raw = readIfAny(currentPointerPath(h));
     if (typeof raw !== 'string') return null;
-    const trimmed = raw.trim();
-    return parseVersion(trimmed) ? trimmed : null;
+    return exactVersion(raw.trim()) || null;
   },
   keep = KEEP_VERSION_DIRS,
 } = {}) => {
