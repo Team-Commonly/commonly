@@ -8,7 +8,7 @@ jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 
 const { pool } = require('../../../config/db-pg');
 const MongoPod = require('../../../models/Pod');
-const { cleanupGhostPodMembers } = require('../../../scripts/cleanup-ghost-pod-members');
+const { cleanupGhostPodMembers, exitCodeFor, main } = require('../../../scripts/cleanup-ghost-pod-members');
 
 const ROW_SQL = /SELECT pod_id, user_id FROM pod_members/;
 const COUNT_SQL = /count\(\*\)/;
@@ -50,7 +50,14 @@ const castError = () => {
 };
 
 describe('cleanup-ghost-pod-members', () => {
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    // Keep the status from leaking between arms. Measured, not assumed: jest
+    // assigns its own exit status at teardown, so a leaked 3 does NOT make a
+    // green run fail — but an arm reading the status must not be able to see a
+    // previous arm's value.
+    delete process.exitCode;
+  });
 
   it('a dry run classifies every row, names one example per class, and deletes nothing', async () => {
     fixtures({
@@ -135,5 +142,52 @@ describe('cleanup-ghost-pod-members', () => {
     const r = await cleanupGhostPodMembers({ dryRun: false });
 
     expect(r).toEqual(expect.objectContaining({ examined: 1, toDelete: [], deleted: 0, reconciled: true }));
+  });
+
+  // ── TASK-167 gate: what the PROCESS reports, not just what the report says ─
+  // A scripted caller reads the exit status; nobody greps the log line. The
+  // suite above proves the report carries `reconciled: false`; these prove the
+  // process does not call that a success.
+  describe('exit status', () => {
+    const mongoose = require('mongoose');
+    const APPLY = ['node', 'cleanup-ghost-pod-members.js', '--apply'];
+
+    beforeEach(() => jest.spyOn(mongoose, 'connect').mockResolvedValue(mongoose));
+
+    it('a diverged reconciliation exits non-zero: the numbers disagree and rows are gone', async () => {
+      fixtures({ rows: [row('podGhost', 'userGone')], docs: { podGhost: member('someoneElse') }, remaining: 1 });
+
+      await main(APPLY);
+
+      expect(process.exitCode).toBe(3);
+    });
+
+    it('a clean run exits 0, so 3 is not a blanket non-zero (control)', async () => {
+      fixtures({ rows: [row('podGhost', 'userGone')], docs: { podGhost: member('someoneElse') }, remaining: 0 });
+
+      await main(APPLY);
+
+      expect(process.exitCode).toBe(0);
+    });
+
+    it('a refused run exits 2, distinct from the divergence code', async () => {
+      fixtures({
+        rows: [row('podUnreadable', 'userU')],
+        docs: {},
+        errors: { podUnreadable: new Error('connection terminated unexpectedly') },
+      });
+
+      await main(APPLY);
+
+      expect(process.exitCode).toBe(2);
+    });
+
+    it('maps the three outcomes, and a refusal wins if both are somehow true', () => {
+      expect(exitCodeFor({ refused: false, reconciled: true })).toBe(0);
+      expect(exitCodeFor({ refused: false, reconciled: null })).toBe(0); // dry run
+      expect(exitCodeFor({ refused: true, reconciled: null })).toBe(2);
+      expect(exitCodeFor({ refused: false, reconciled: false })).toBe(3);
+      expect(exitCodeFor({ refused: true, reconciled: false })).toBe(2);
+    });
   });
 });

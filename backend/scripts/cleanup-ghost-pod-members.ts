@@ -191,8 +191,26 @@ const describe = (label: string, row: MemberRow | null): string => (
   row ? `${label}: pod=${row.podId} user=${row.userId}` : `${label}: none in this run`
 );
 
-async function main(): Promise<void> {
-  const dryRun = !process.argv.includes('--apply');
+/**
+ * The exit status for a finished run.
+ *
+ * Two conditions must not read as success to a scripted caller, and they are not
+ * interchangeable: `refused` (2) means nothing was written, so a re-run is safe;
+ * a failed reconciliation (3) can only be discovered *after* rows are gone, so it
+ * means inspect the store before touching it again. Distinct codes so the caller
+ * can tell those apart without parsing the log. Refusal wins if both are somehow
+ * true — it is the state in which the sweep did not happen at all.
+ *
+ * TASK-167 gate: the report already knew about a divergence; the process did not.
+ */
+export function exitCodeFor(report: CleanupReport): number {
+  if (report.refused) return 2;
+  if (report.reconciled === false) return 3;
+  return 0;
+}
+
+export async function main(argv: string[] = process.argv): Promise<void> {
+  const dryRun = !argv.includes('--apply');
   await mongoose.connect(process.env.MONGO_URI ?? '');
 
   const r = await cleanupGhostPodMembers({ dryRun });
@@ -219,8 +237,17 @@ async function main(): Promise<void> {
       `[pod-members] REFUSED: ${r.unreadable} row(s) could not be classified because their pod`
       + ' could not be read. Nothing was deleted.',
     );
-    process.exitCode = 2;
   }
+  if (r.reconciled === false) {
+    console.error(
+      `[pod-members] RECONCILIATION FAILED: after deleting ${r.deleted} of ${r.examined}`
+      + ` examined row(s), the store holds ${r.remaining}. It did not lose exactly what this run`
+      + ' deleted. Inspect the store before re-running.',
+    );
+  }
+  // Set once, from the one function that decides status, so a new condition
+  // cannot be added to the log without being added to the exit code.
+  process.exitCode = exitCodeFor(r);
 }
 
 if (require.main === module) {
