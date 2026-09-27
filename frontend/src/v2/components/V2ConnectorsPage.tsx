@@ -425,9 +425,15 @@ const V2ConnectorsPage: React.FC = () => {
           // this file's internal name for the switches (ConnectorGate,
           // expandedGate, writeGate) and it had leaked into the only
           // user-visible string on the page that used it. The section is
-          // `connectors.gatesTitle` ("Pods that reach this channel", :1106)
-          // inside the aside labelled "Channel details" (:1214).
-          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through "Pods that reach this channel" in Channel details — switch a pod on there.',
+          // `connectors.gatesTitle` ("Pods that reach this channel", :1106).
+          //
+          // The aside that HOLDS that section is labelled "Channel details"
+          // (:1220, :1286) — an `aria-label`, not visible text, so naming it in
+          // the copy sent a sighted user hunting for a string the page never
+          // renders. That is the same defect as "gate switches" sourced from an
+          // attribute instead of an identifier (Vera, TASK-173 gate), so the
+          // copy names the section title alone.
+          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through "Pods that reach this channel" — switch a pod on there.',
           connector: typeLabel,
           pod: boundPodName(response.data.boundPodId),
         });
