@@ -50,6 +50,22 @@ describe('ActivityService recap and legacy approval authorization', () => {
     findByIdSpy?.mockRestore();
   });
 
+  test('builds the viewer\'s pod list from membership, not from createdBy', async () => {
+    await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    // The membership decision for this reader is in the query, so the arm
+    // asserts the term the change removes rather than a row — the Pod mock
+    // returns whichever fixture it is handed. `createdBy` is written once at
+    // creation and survives `leavePod`, so reading it here handed a departed
+    // creator the recap of a pod they are no longer in.
+    expect(Pod.find.mock.calls[0][0]).toEqual({
+      $or: [
+        { 'members.userId': ownerId },
+        { members: ownerId },
+      ],
+    });
+  });
+
   test('rejects a requested pod that is outside the viewer membership', async () => {
     await expect(ActivityService.getRecap(ownerId, { podId: 'not-a-member-pod' }))
       .rejects.toThrow('Access denied');
@@ -110,6 +126,25 @@ describe('ActivityService recap and legacy approval authorization', () => {
       .resolves.toEqual({ success: true, status: 'approved' });
     expect(approve).toHaveBeenCalledWith('member-1', 'Approved');
     expect(mockResolve).toHaveBeenCalledWith('approval', storedApproval._id);
+  });
+
+  // TASK-166: the read rule and this gate move together. A non-member arm
+  // cannot see the creator clause at all — only a creator can — so this is the
+  // arm that distinguishes the two predicates.
+  test('fails closed when the pod\'s creator has left it', async () => {
+    const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
+    const approve = jest.fn().mockResolvedValue();
+    storedApproval.approve = approve;
+    findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
+    Pod.findById.mockReturnValue({
+      select: jest.fn(() => ({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: ownerId, members: ['member-1'] }),
+      })),
+    });
+
+    await expect(ActivityService.approveActivity(String(storedApproval._id), ownerId, 'Approved'))
+      .resolves.toEqual({ success: false, status: 403, error: 'Only pod members can decide this' });
+    expect(approve).not.toHaveBeenCalled();
   });
 
   test('fails closed when a non-member attempts a legacy Activity approval', async () => {

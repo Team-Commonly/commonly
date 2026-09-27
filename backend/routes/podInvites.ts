@@ -46,10 +46,12 @@ const inviteWriteRateLimit = rateLimit({
 });
 
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+// TASK-166: the strict predicate — `createdBy` records who made the pod, not who
+// may manage its invites once they have left it.
+const { isListedPodMember } = require('../utils/isPodMember');
 
 // POST /api/pods/:podId/invites — issue a fresh invite token. Caller must
-// be a member or creator. Body: { expiresInHours?, maxUses? } — both
+// be a listed member. Body: { expiresInHours?, maxUses? } — both
 // optional; null = unlimited.
 router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any, res: any) => {
   try {
@@ -57,7 +59,7 @@ router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any,
     if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
     const pod = await Pod.findById(req.params.podId);
     if (!pod) return res.status(404).json({ msg: 'Pod not found' });
-    if (!isPodMember(pod, userId)) {
+    if (!isListedPodMember(pod, userId)) {
       return res.status(403).json({ msg: 'Only pod members can create invites' });
     }
     const { expiresInHours, maxUses } = req.body || {};
@@ -99,7 +101,7 @@ router.get('/pods/:podId/invites', inviteReadRateLimit, auth, async (req: any, r
     const podId = new mongoose.Types.ObjectId(rawPodId);
     const pod = await Pod.findById(podId);
     if (!pod) return res.status(404).json({ msg: 'Pod not found' });
-    if (!isPodMember(pod, userId)) {
+    if (!isListedPodMember(pod, userId)) {
       return res.status(403).json({ msg: 'Only pod members can manage invites' });
     }
     const invites = await PodInvite.find({ podId: pod._id, revokedAt: null })
@@ -139,7 +141,7 @@ router.delete('/invites/:token', inviteWriteRateLimit, auth, async (req: any, re
     if (!invite) return res.status(404).json({ msg: 'Invite not found' });
     const pod = await Pod.findById(invite.podId);
     if (!pod) return res.status(404).json({ msg: 'Pod not found' });
-    if (!isPodMember(pod, userId)) {
+    if (!isListedPodMember(pod, userId)) {
       return res.status(403).json({ msg: 'Only pod members can manage invites' });
     }
     if (!invite.revokedAt) {

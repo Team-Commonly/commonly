@@ -21,7 +21,9 @@ const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+// TASK-166: the strict predicate. These two routes used the permissive default,
+// which admits a pod's creator after `leavePod` has unlisted them.
+const { isListedPodMember } = require('../utils/isPodMember');
 
 interface Req {
   query?: Record<string, string>;
@@ -333,7 +335,7 @@ router.post('/seed/:podId', auth, async (req: Req, res: Res) => {
     const userId = getAuthenticatedUserId(req);
     const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
-    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can seed activities' });
+    if (!isListedPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can seed activities' });
     const result = await ActivityService.seedPodActivities(podId, userId) as { success?: boolean; error?: string };
     if (!result.success) return res.status(400).json({ error: result.error });
     return res.json(result);
@@ -360,7 +362,9 @@ router.post('/create', auth, async (req: Req, res: Res) => {
     // operators rather than an id.
     const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
-    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can create activities in a pod' });
+    if (!isListedPodMember(pod, userId)) {
+      return res.status(403).json({ error: 'Only pod members can create activities in a pod' });
+    }
     const user = await User.findById(userId).select('username').lean() as { username?: string } | null;
     // Store the id of the pod that was actually resolved and authorised, not
     // the body's copy of it.

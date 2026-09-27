@@ -20,7 +20,7 @@ const { deliverMessageToAgents } = require('./messageAgentDeliveryService');
 // eslint-disable-next-line global-require
 const AgentEventService = require('./agentEventService');
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
 
@@ -368,9 +368,9 @@ export const chooseDecision = async (
 
   const caller = await User.findById(callerUserId).select('username isBot').lean();
   if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a human can rule on this decision' } };
-  const pod = await Pod.findById(String(row.podId)).select('members createdBy type').lean();
+  const pod = await Pod.findById(String(row.podId)).select('members type').lean();
   if (!pod) return { status: 404, body: { error: 'Pod not found' } };
-  if (!isPodMember(pod, callerUserId)) {
+  if (!isListedPodMember(pod, callerUserId)) {
     return { status: 403, body: { error: 'Only human pod members can rule on this decision' } };
   }
 

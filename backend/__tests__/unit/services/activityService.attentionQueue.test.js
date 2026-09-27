@@ -89,6 +89,36 @@ describe('ActivityService.getDecisionQueue', () => {
     });
   });
 
+  // TASK-166. `createdBy` is who made the pod, not a standing membership, and
+  // `leavePod` leaves it behind. Two witnesses: the query term, and the
+  // in-process filter that re-checks the returned rows.
+  it('reads settled history by membership only', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],
+    }]));
+
+    await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
+
+    expect(mockPodFind).toHaveBeenCalledWith({
+      _id: 'pod-1',
+      $or: [
+        { 'members.userId': 'member-1' },
+        { members: 'member-1' },
+        { 'members._id': 'member-1' },
+      ],
+    });
+  });
+
+  it('refuses a creator who left the pod, although createdBy still names them', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Former', createdBy: 'creator-1', members: ['member-1'],
+    }]));
+
+    await expect(ActivityService.getDecisionHistory('creator-1', { podId: 'pod-1' }))
+      .rejects.toThrow('Access denied');
+    expect(mockDecisionFind).not.toHaveBeenCalled();
+  });
+
   it('rejects settled history for a viewer outside the requested pod', async () => {
     mockPodFind.mockReturnValue(chain([]));
 
