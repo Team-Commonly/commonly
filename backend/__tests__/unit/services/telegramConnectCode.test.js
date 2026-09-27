@@ -1,8 +1,9 @@
 // Connect-code lifecycle: 128-bit, 10-minute TTL, legacy codes (no expiry)
 // are dead, and /commonly-enable attempts are rate-limited per chat.
 const {
-  mintConnectCode, isConnectCodeExpired, registerEnableAttempt, resetEnableAttempts,
-  CONNECT_CODE_TTL_MS, ENABLE_ATTEMPT_LIMIT, ENABLE_ATTEMPT_WINDOW_MS, ENABLE_ATTEMPT_MAX_CHATS,
+  mintConnectCode, isConnectCodeShape, isConnectCodeExpired, registerEnableAttempt, resetEnableAttempts,
+  CONNECT_CODE_TTL_MS, CONNECT_CODE_BYTES, ENABLE_ATTEMPT_LIMIT, ENABLE_ATTEMPT_WINDOW_MS,
+  ENABLE_ATTEMPT_MAX_CHATS,
 } = require('../../../services/telegramConnectCode');
 
 describe('telegramConnectCode', () => {
@@ -14,6 +15,28 @@ describe('telegramConnectCode', () => {
     expect(connectCode).toMatch(/^[0-9a-f]{32}$/);
     expect(connectCodeExpiresAt.getTime()).toBe(now + CONNECT_CODE_TTL_MS);
     expect(mintConnectCode().connectCode).not.toBe(connectCode);
+  });
+
+  // TASK-159. The shape is derived from the minter's byte count, so these arms
+  // are written against what the minter PRODUCES rather than against a literal
+  // width: widening the code cannot leave the predicate refusing real codes.
+  describe('isConnectCodeShape', () => {
+    it('accepts what the minter produces and refuses one character either side', () => {
+      const { connectCode } = mintConnectCode();
+      expect(isConnectCodeShape(connectCode)).toBe(true);
+      expect(isConnectCodeShape(`${connectCode}a`)).toBe(false);
+      expect(isConnectCodeShape(connectCode.slice(0, -1))).toBe(false);
+    });
+
+    it('refuses non-hex and uppercase, because the caller lowercases first', () => {
+      const { connectCode } = mintConnectCode();
+      expect(isConnectCodeShape(connectCode.replace(/[0-9a-f]/, 'z'))).toBe(false);
+      expect(isConnectCodeShape(connectCode.toUpperCase())).toBe(false);
+    });
+
+    it('draws its width from the same constant as the minter', () => {
+      expect(mintConnectCode().connectCode).toHaveLength(CONNECT_CODE_BYTES * 2);
+    });
   });
 
   it('treats a code with no expiry (legacy 24-bit) as expired', () => {
