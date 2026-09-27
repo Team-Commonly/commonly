@@ -9,7 +9,7 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const isPodMember = require('../utils/isPodMember');
+const { isListedPodMember } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const verdicts = require('./channelVerdictService');
 
@@ -81,7 +81,7 @@ export const resolveDecisionCardReply = async (input: {
     + ` Open it in Commonly: ${link}`;
   // chooseDecision's already-ruled response precedes its membership guard.
   // Protect the late-reply writer and standing ruling from ex-members too.
-  if (!pod || !caller || caller.isBot || !isPodMember(pod, input.linkedUserId)) return answer(denied);
+  if (!pod || !caller || caller.isBot || !isListedPodMember(pod, input.linkedUserId)) return answer(denied);
 
   const close = async (): Promise<void> => {
     try {

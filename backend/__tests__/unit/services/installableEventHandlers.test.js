@@ -455,24 +455,36 @@ describe('installable event dispatcher', () => {
   // reddens as well.
   describe('the outbound selector agrees with connectorRelayPolicy', () => {
     // The matrix the row names: member / non-member × gate on / off / absent.
+    //
+    // TASK-161 adds the CREATOR cell — a subject who is the pod's `createdBy` and
+    // is not listed in `members`, i.e. a creator who has left. It is the cell
+    // where the two sides used to agree on "yes": the selector unioned
+    // `pod.createdBy` into memberIds exactly as the permissive `isPodMember`
+    // did, so green meant the wrong answer rather than an untested one. Both
+    // sides now exclude it, and this asserts the exclusion rather than the
+    // agreement alone.
     const CELLS = [
-      { label: 'member, gate on', member: true, gate: true },
-      { label: 'member, gate off', member: true, gate: false },
-      { label: 'member, gate absent', member: true, gate: null },
-      { label: 'non-member, gate on', member: false, gate: true },
-      { label: 'non-member, gate off', member: false, gate: false },
-      { label: 'non-member, gate absent', member: false, gate: null },
+      { label: 'member, gate on', membership: 'listed', gate: true },
+      { label: 'member, gate off', membership: 'listed', gate: false },
+      { label: 'member, gate absent', membership: 'listed', gate: null },
+      { label: 'non-member, gate on', membership: 'absent', gate: true },
+      { label: 'non-member, gate off', membership: 'absent', gate: false },
+      { label: 'non-member, gate absent', membership: 'absent', gate: null },
+      { label: 'creator not listed, gate on', membership: 'creator', gate: true },
+      { label: 'creator not listed, gate off', membership: 'creator', gate: false },
+      { label: 'creator not listed, gate absent', membership: 'creator', gate: null },
     ];
 
     it.each(CELLS)('$label: the selector and the predicate reach the same verdict', async ({
-      member, gate,
+      membership, gate,
     }) => {
       const podId = freshId();
-      const creatorId = freshId();
       const ownerId = freshId();
       // Installed while the owner IS a member, then removed for the non-member
-      // cells — the same shape the membership arm above uses, and the only order
-      // that leaves the row itself unchanged between cells.
+      // and creator cells — the only order that leaves the row itself unchanged
+      // between cells. `creatorId === ownerId` is the whole difference between
+      // the creator cell and the plain non-member one.
+      const creatorId = membership === 'creator' ? ownerId : freshId();
       await createPod(podId, creatorId, [ownerId]);
       const installed = await install({ installableId: 'telegram', installedBy: ownerId, podId });
       // `install` seeds the installed pod's gate ON, so the absent cell has to
@@ -489,7 +501,9 @@ describe('installable event dispatcher', () => {
           { $set: { [`config.gates.${podId}.enabled`]: gate } },
         );
       }
-      if (!member) await Pod.updateOne({ _id: podId }, { $pull: { members: ownerId } });
+      if (membership !== 'listed') {
+        await Pod.updateOne({ _id: podId }, { $pull: { members: ownerId } });
+      }
 
       const row = await Integration.findById(installed.integration._id).lean();
       const pod = await Pod.findById(podId).lean();
@@ -507,7 +521,7 @@ describe('installable event dispatcher', () => {
 
       // Both halves, then their conjunction, then the verdict all three must
       // reach — so agreement-by-both-saying-no cannot pass as agreement.
-      const expected = member && gate === true;
+      const expected = membership === 'listed' && gate === true;
       expect(isGatedPodTarget(row, podId)).toBe(gate === true);
       expect(selectorSays).toBe(expected);
       expect(predicateSays).toBe(expected);

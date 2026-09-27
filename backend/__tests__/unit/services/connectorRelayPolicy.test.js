@@ -72,8 +72,21 @@ describe('connectorRelayPolicy — the routed-target conjunction', () => {
     expect(isRoutedPodTarget(target({ pod: undefined }))).toBe(false);
   });
 
-  it('admits a pod whose creator is not listed in members', () => {
-    expect(isRoutedPodTarget(target({ pod: pod({ createdBy: 'user-1' }) }))).toBe(true);
+  it('refuses a pod whose creator is not listed in members', () => {
+    // TASK-161. `leavePod` filters `members` and never clears `createdBy`, so
+    // this cell IS "a creator who has left" — and the pod's own write path
+    // (`createMessage`) 401s them. The permissive `isPodMember` counted them as
+    // a member so that a pod whose `members` forgot its creator still
+    // authorises them; a connector must reach the same verdict as the write.
+    expect(isRoutedPodTarget(target({ pod: pod({ createdBy: 'user-1' }) }))).toBe(false);
+  });
+
+  it('still admits a creator who is also listed — the clause is gone, not the creator', () => {
+    // The complement, so the arm above cannot pass by refusing every pod that
+    // names a creator at all.
+    expect(isRoutedPodTarget(target({
+      pod: pod({ createdBy: 'user-1', members: ['user-1'] }),
+    }))).toBe(true);
   });
 
   it('refuses a missing user id rather than stringifying it into a match', () => {

@@ -271,6 +271,25 @@ describe('Slack installable OAuth routes', () => {
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[&lt;Evil|pod&gt;] connected');
   });
 
+  test('refuses to confirm a bind whose pod the caller created and left', async () => {
+    // TASK-161. `leavePod` filters `members` and never clears `createdBy`; the
+    // permissive predicate counted that as membership, so the confirm step —
+    // which stores the chat a connector will speak into — admitted a person the
+    // pod's own write path refuses. `slack_pod_access_denied` had no arm at all.
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById.mockResolvedValueOnce({ createdBy: String(ownerId), members: [] });
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('slack_pod_access_denied');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   test('a reconnect clears the reason an earlier flip left on the row (wren 73838)', async () => {
     const pending = {
       teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',

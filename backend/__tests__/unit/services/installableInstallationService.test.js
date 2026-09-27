@@ -690,7 +690,11 @@ describe('installable connector projection', () => {
 
   it('reconciles pause projections and prunes gates when the owner leaves a pod', async () => {
     const { userId, podId } = ids();
-    await Pod.create({ _id: podId, name: 'Current pod', type: 'team', createdBy: userId, members: [] });
+    // The owner is LISTED: this arm is about the stale pod's gate, and a pod
+    // created-but-unlisted is a different cell with its own arm below (TASK-161).
+    await Pod.create({
+      _id: podId, name: 'Current pod', type: 'team', createdBy: 'someone-else', members: [userId],
+    });
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
     const stalePodId = new mongoose.Types.ObjectId().toString();
     const pausedAt = new Date();
@@ -720,6 +724,49 @@ describe('installable connector projection', () => {
     const resumedSweep = await sweep(new Date());
     expect(resumedSweep.clearedPauseProjections).toBe(1);
     expect((await Integration.findById(installed.integration._id)).config.adminPause).toBeUndefined();
+  });
+
+  it('prunes a NON-ACTIVE gate for a pod the owner created and then left', async () => {
+    // TASK-161, from Vera's 74663. The connecting gate is not the active pod:
+    // only `sweepOrphanedGates` prunes a secondary gate, so this cell cannot be
+    // satisfied by the active-pod sweep — which is why the first draft of this
+    // arm survived the reconciler being reverted. A pod the owner CREATED and
+    // left still names them in `createdBy`, which the permissive predicate read
+    // as membership, leaving the ON switch the Connectors page shows for a pod
+    // whose relay now refuses every message.
+    //
+    // Two halves make this site strict, and the mutation that witnesses it has to
+    // restore BOTH: the predicate, and the `.select('members')` beside it. Put the
+    // permissive predicate back on its own and it reads `pod.createdBy` off a
+    // query that no longer selects it, so the clause is inert and this arm stays
+    // green — measured, which is why the ledger's M6 is a two-edit mutation.
+    const { userId, podId } = ids();
+    await Pod.create({
+      _id: podId, name: 'Active pod', type: 'team', createdBy: new mongoose.Types.ObjectId(), members: [userId],
+    });
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.chatId': 'chat-1', 'config.chatType': 'private' } },
+    );
+    const leftPodId = new mongoose.Types.ObjectId().toString();
+    await Pod.create({
+      _id: leftPodId, name: 'Created then left', type: 'team', createdBy: userId, members: [userId],
+    });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { [`config.gates.${leftPodId}`]: { enabled: true, since: new Date() } } },
+    );
+    await Pod.updateOne({ _id: leftPodId }, { $pull: { members: userId } });
+    expect(String((await Pod.findById(leftPodId).lean()).createdBy)).toBe(String(userId));
+
+    const reconciled = await sweep(new Date());
+    const projection = await Integration.findById(installed.integration._id).lean();
+
+    expect(reconciled.prunedGates).toBe(1);
+    expect(projection.config.gates?.[leftPodId]).toBeUndefined();
+    // The active pod's own gate stays: its owner is still listed there.
+    expect(projection.config.gates?.[podId]).toBeDefined();
   });
 
   it('clears the active pod with its orphaned gate and tells the linked chat why', async () => {

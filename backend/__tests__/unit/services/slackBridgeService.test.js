@@ -365,4 +365,32 @@ describe('Slack installable bridge', () => {
       'D1', 'This connector has no active pod. Choose one in Commonly first.',
     );
   });
+
+  test('refuses inbound authorship when the linked user created the active pod and left', async () => {
+    // TASK-161: same refusal, different cell. The arm above has no `createdBy`;
+    // here the linked user IS the pod's creator, which `leavePod` leaves behind
+    // — so the permissive predicate admitted exactly this message.
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ type: 'team', createdBy: 'user-1', members: [] }),
+      }),
+    });
+
+    await expect(relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1' },
+      },
+      event: { text: 'hello', user: 'U1' },
+    })).resolves.toEqual({ relayed: false });
+
+    expect(User.findById).not.toHaveBeenCalled();
+    expect(connectorSecrets.get).toHaveBeenCalledWith('secret-ref');
+    const api = SlackApi.mock.results[0].value;
+    expect(api.postMessage).toHaveBeenCalledWith(
+      'D1',
+      'This connector has no active pod. Choose one in Commonly first.',
+    );
+  });
 });

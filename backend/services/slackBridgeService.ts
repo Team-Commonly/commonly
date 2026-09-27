@@ -5,12 +5,13 @@ const Integration = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('./connectorSecrets');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { shouldEscalate, isGatedPodTarget, isRoutedPodTarget } = require('./connectorRelayPolicy');
+const {
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+} = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
@@ -462,7 +463,7 @@ export const relaySlackMessageToPod = async (opts: {
   const socketConfig = require('../config/socket');
 
   const pod = await PodModel.findById(podId).select('type createdBy members').lean();
-  if (!pod || !isPodMember(pod, linkedUserId)) {
+  if (!pod || !isListedPodMember(pod, linkedUserId)) {
     console.warn('[slack-bridge] inbound dropped — linked user is no longer a pod member');
     await replyNoActivePod(integration);
     return { relayed: false };

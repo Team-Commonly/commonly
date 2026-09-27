@@ -3,7 +3,13 @@
 // about which pod messages are allowed to interrupt a person's attention surface,
 // or about which pods a connector may address at all.
 
-const isPodMember = require('../utils/isPodMember');
+// The strict membership rule, re-exported here so every connector site reads one
+// definition through this module. The permissive `isPodMember` is deliberately
+// NOT imported any more: its creator clause is what let a departed creator keep
+// relaying (TASK-161). Defined beside `isPodMember` in utils so the platform
+// readers that need the same rule (PG chat, reactions) share this one home.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isListedPodMember } = require('../utils/isPodMember');
 
 export interface RelayPolicyIntegration {
   scope?: string;
@@ -69,6 +75,11 @@ export const isGatedPodTarget = (
 // failure this exists for: the gate says the connector is still subscribed, the
 // membership says the person it speaks for is still in the room.
 //
+// The membership half is `isListedPodMember` — `pod.members` only, the check the
+// pod's own write path runs — so a connector can never write where its owner
+// would be refused. Before TASK-161 this read the permissive `isPodMember`, and a
+// pod's creator who had left the pod still relayed in both directions.
+//
 // KNOWN WINDOW, accepted: this is check-then-act. A gate switched off between
 // this call and the write still lets that one message through. Closing it means
 // making the write itself carry the condition (a conditional update or a
@@ -88,11 +99,16 @@ export const isRoutedPodTarget = (opts: {
   const {
     integration, pod, podId, userId,
   } = opts;
-  // No separate user-id guard: `isPodMember` fails closed on a falsy id itself
+  // No separate user-id guard: the predicate fails closed on a falsy id itself
   // (measured — a guard here changed no arm, so it was removed rather than kept
   // unwitnessed).
   return isGatedPodTarget(integration, podId)
-    && isPodMember(pod, userId);
+    && isListedPodMember(pod, userId);
 };
 
-module.exports = { shouldEscalate, isGatedPodTarget, isRoutedPodTarget };
+module.exports = {
+  shouldEscalate,
+  isGatedPodTarget,
+  isRoutedPodTarget,
+  isListedPodMember,
+};

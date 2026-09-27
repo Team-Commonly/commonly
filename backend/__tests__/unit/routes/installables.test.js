@@ -125,6 +125,26 @@ describe('installable connector routes', () => {
     expect(installationService.install).not.toHaveBeenCalled();
   });
 
+  it('rejects a departed CREATOR before any install row is claimed', async () => {
+    // TASK-161: `leavePod` filters `members` and never clears `createdBy`, so
+    // this pod has no members and still names the caller as its creator. The
+    // install route used to admit them through the creator clause; installing
+    // seeds the pod's gate ON, so it must take the pod's write path instead.
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => '64b64c48c4f37a6b2f34c111' },
+      members: [],
+    });
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(403);
+    expect(installationService.install).not.toHaveBeenCalled();
+  });
+
   it('rejects an invalid podId without querying a pod or claiming an install', async () => {
     const response = await request(app)
       .post('/api/installables/telegram/install')

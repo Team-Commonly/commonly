@@ -177,6 +177,20 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
     expect(confirmation()).not.toContain('secret');
   });
 
+  test('refuses a card reply from a pod creator who left, recording nothing', async () => {
+    // TASK-161, from Vera 74671: wren's ruling named this as witness (v) and the
+    // arm did not exist. The arm above departs through `members`; the population
+    // the permissive predicate admitted is the CREATOR who left — present in
+    // `createdBy`, absent from `members`. `assertOpen` is the other half of the
+    // claim: the refusal has to leave the standing ruling and the ledger alone.
+    Pod.findById.mockImplementation(() => chain({ name: 'Launch', members: [], createdBy: ownerId }));
+    await receive();
+    expect(choose).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(0);
+    await assertOpen();
+    expect(confirmation()).toContain("You're no longer in Launch");
+  });
+
   test('409-ruled: loser text goes under ask, not winner; standing ruling and ledger stay unchanged', async () => {
     await receive();
     const original = await ledger();
