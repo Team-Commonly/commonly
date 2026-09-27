@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 const { pool } = require('../../../config/db-pg');
 const Pod = require('../../../models/pg/Pod');
@@ -23,11 +26,6 @@ describe('PG Pod model additional tests', () => {
   it('addMember throws when query fails', async () => {
     pool.query.mockRejectedValue(new Error('db'));
     await expect(Pod.addMember('p1', 'u1')).rejects.toThrow('db');
-  });
-
-  it('isMember throws when query fails', async () => {
-    pool.query.mockRejectedValue(new Error('oops'));
-    await expect(Pod.isMember('p1', 'u1')).rejects.toThrow('oops');
   });
 
   it('update returns updated row', async () => {
@@ -72,5 +70,17 @@ describe('PG Pod model additional tests', () => {
       ['p1', 'u1'],
     );
     expect(res).toEqual({ id: '1' });
+  });
+
+  it('exposes no membership reader: the mirror decides nothing (TASK-167)', () => {
+    // The claim is absence, so the instrument is the source rather than a call:
+    // no execution can show that a method is gone, and an `isMember` on this
+    // model is exactly the shape the next author reaches for when they want a
+    // membership answer. The second assertion is the positive control — without
+    // it, a typo'd pattern matches nothing against a file where the code is
+    // sitting in plain sight.
+    const src = fs.readFileSync(path.join(__dirname, '../../../models/pg/Pod.ts'), 'utf8');
+    expect(src).not.toMatch(/static\s+async\s+isMember\b/);
+    expect(src).toMatch(/static\s+async\s+addMember\b/);
   });
 });

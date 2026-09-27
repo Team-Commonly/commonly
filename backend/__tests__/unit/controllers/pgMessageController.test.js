@@ -92,7 +92,9 @@ describe('pgMessageController', () => {
   // SURVIVOR: the ghost row still present, Mongo membership gone.
   it('refuses a post from a member whose PG row survived their departure', async () => {
     PGPod.findById.mockResolvedValue({ type: 'chat' }); // the ghost row is there
-    PGPod.isMember.mockResolvedValue(true); // and would still say yes
+    // No mirror reader to mock against any more: TASK-167 deleted
+    // `PGPod.isMember`, so the Mongo answer below is the only one this arm can
+    // turn on — which is the property, not a weakening of it.
     mongoPod([]); // Mongo is the truth, and this caller is not in it
     const req = {
       params: { podId: 'p1' },
@@ -106,12 +108,10 @@ describe('pgMessageController', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(PGMessage.create).not.toHaveBeenCalled();
-    expect(PGPod.isMember).not.toHaveBeenCalled();
   });
 
   it('refuses a read from the same stale row, so the ghost does not leak history', async () => {
     PGPod.findById.mockResolvedValue({ type: 'chat' });
-    PGPod.isMember.mockResolvedValue(true);
     mongoPod([]);
     const req = {
       params: { podId: 'p1' },
@@ -133,7 +133,6 @@ describe('pgMessageController', () => {
     // other. `createdBy` is not membership: it says who made the pod, not who is
     // in it.
     PGPod.findById.mockResolvedValue({ type: 'chat' });
-    PGPod.isMember.mockResolvedValue(true);
     mongoPod([]);
     MongoPod.findById.mockReturnValue({
       select: jest.fn().mockReturnValue({
@@ -198,5 +197,34 @@ describe('pgMessageController', () => {
     // The mirror is warmed for the PG listing surfaces, and that write decides
     // nothing.
     expect(PGPod.addMember).toHaveBeenCalledWith('p1', 'u1');
+  });
+
+  it('admits a listed member even when the mirror write is rejected', async () => {
+    PGPod.findById.mockResolvedValue({ type: 'chat' });
+    mongoPod(['u1']);
+    // The FK on pod_members.pod_id rejects ordinarily when the pod has no PG row
+    // yet, which is a state a legitimate member can be in. Warming the mirror is
+    // a cache write, so its failure must not deny the member — removing the
+    // inner try/catch in isPodMemberInMongo sends this rejection to the outer
+    // catch, which answers 401 to someone Mongo lists as a member.
+    PGPod.addMember.mockRejectedValue(
+      new Error('insert or update on table "pod_members" violates foreign key constraint "pod_members_pod_id_fkey"'),
+    );
+    PGMessage.findByPodId.mockResolvedValue([{ id: 'm1' }]);
+    const req = {
+      params: { podId: 'p1' },
+      query: {},
+      userId: 'u1',
+      user: { id: 'u1' },
+    };
+    const res = jsonRes();
+
+    await controller.getMessages(req, res);
+
+    // The attempt happened, and its failure did not become the answer.
+    expect(PGPod.addMember).toHaveBeenCalledWith('p1', 'u1');
+    expect(res.status).not.toHaveBeenCalledWith(401);
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith([{ id: 'm1' }]);
   });
 });
