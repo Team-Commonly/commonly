@@ -79,6 +79,16 @@ export const normalizeAdapter = (adapter: unknown): string | null => (
 );
 
 /**
+ * The adapter a seat declares, resolved the way the daemon resolves it: a
+ * declared `adapter` wins, `runtimeType` is the fallback. `null` means the row
+ * names neither, which is not a refusal (see `grantBrokerRefusal`).
+ */
+export const declaredAdapter = (runtime: unknown): string | null => {
+  const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
+  return normalizeAdapter(row?.adapter) ?? normalizeAdapter(row?.runtimeType);
+};
+
+/**
  * Every mode ANY of the enforcing adapters implements for a public seat:
  * {workspace, read-only} in both claude and codex, plus `bwrap` (claude's
  * Linux path). A declared mode outside this set confines nowhere, so the
@@ -112,15 +122,25 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
 });
 
 /**
+ * The adapter is `runtime.adapter`, or `runtime.runtimeType` when no adapter is
+ * declared. A declared adapter wins, as it does in the daemon
+ * (`cli/src/commands/daemon.js:142`). This is load-bearing, not tidiness: a
+ * hand-attached pi seat carries `runtimeType: 'pi'` with NO `adapter` key —
+ * `cli/src/commands/agent.js:664` falls back to the adapter's name for the tag
+ * and `:688` writes `config.runtime` as `{runtimeType, host: 'byo'}` — so a
+ * predicate reading `adapter` alone admitted exactly the seat it exists to
+ * refuse (Wren, TASK-175 12:17Z). A row naming NEITHER field stays
+ * daemon-decided: undeclared, the daemon resolves only claude or codex, never
+ * pi, so refusing there would refuse working claude seats.
+ *
  * `null` means "not refused here" — either the declaration is confinable, or it
  * declares no sandbox block at all and the daemon decides.
  *
  * `runtime` is the seat's projected runtime (`config.runtime`), which is where
- * the adapter is known. When the adapter is absent from the row the daemon
- * detects it locally, so the daemon-side refusal covers that case.
+ * the adapter is known.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  const adapter = normalizeAdapter((runtime as { adapter?: unknown } | null | undefined)?.adapter);
+  const adapter = declaredAdapter(runtime);
   if (adapter && CONFINEMENTLESS_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',

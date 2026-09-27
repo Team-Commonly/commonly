@@ -9,6 +9,8 @@ import {
   getGrantLineage,
   RoomGrantError,
 } from './roomGrantService';
+import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
+import { judgeSeatConfinement } from './seatGrantConfinement';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -40,6 +42,13 @@ export interface BrokerCallInput {
   instanceId?: string;
   tool: string;
   args?: unknown;
+  /**
+   * Set only by the native runtime's in-process dispatch
+   * (`grantBrokerProjectionService.dispatchHostedBrokerTool`). A hosted turn has
+   * no shell, web or file tools, so it has nothing for a sandbox to confine and
+   * the seat-confinement refusal does not apply to it (Wren, TASK-175 74882).
+   */
+  hosted?: boolean;
 }
 
 export interface BrokerCallResult {
@@ -557,6 +566,8 @@ const loadGrantForAgent = async (input: {
 export const listToolsForGrant = async (input: {
   grantId: string;
   agentUserId: string;
+  agentName?: string;
+  instanceId?: string;
 }): Promise<ToolDefinition[]> => {
   const grant = await loadGrantForAgent(input);
   await assertGrantUsable({
@@ -564,6 +575,10 @@ export const listToolsForGrant = async (input: {
     agentUserId: input.agentUserId,
     currentMemberIds: await currentMemberIds(grant),
   });
+  // A list is a capability disclosure, and the refusal covers the list as well
+  // as the call: a seat that may not use the grant must not be handed its tool
+  // definitions (TASK-146's rule, now for the seat's own confinement).
+  await assertSeatCanConfine(input);
 
   const allowed = getToolDefinitions().filter((definition) => {
     try {
@@ -587,6 +602,37 @@ export const listToolsForGrant = async (input: {
   for (const definition of byConnectionType.values()) await resolveConnection(grant, definition);
 
   return allowed;
+};
+
+/**
+ * Refuse the call when the CALLING SEAT's own declaration cannot confine a
+ * broker (TASK-175). The same predicate the grant read reports and the server
+ * projection applies, resolved through the same projection, so the endpoint
+ * cannot judge a seat differently from the way the daemon delivers it.
+ *
+ * It runs before any tool work — before the connection is resolved, the
+ * approval parked, or a budget line spent — because a refusal is not a
+ * spendable call; the shared catch trails it `refused`.
+ */
+const assertSeatCanConfine = async (input: {
+  agentName?: string;
+  instanceId?: string;
+  agentUserId: string;
+  hosted?: boolean;
+}): Promise<void> => {
+  if (input.hosted) return;
+  const judgement = await judgeSeatConfinement({
+    agentName: input.agentName,
+    instanceId: input.instanceId,
+    agentUserId: input.agentUserId,
+  });
+  if (!judgement.refusal) return;
+  throw new RoomGrantError(
+    GRANT_BROKER_REFUSAL_CODE,
+    judgement.refusal.detail,
+    403,
+    { reason: judgement.refusal.reason, decidedBy: judgement.refusal.decidedBy },
+  );
 };
 
 /**
@@ -700,6 +746,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       // Required mode comes only from this server-side definition map.
       requiredWriteMode: definition.requiredWriteMode,
     });
+    await assertSeatCanConfine(input);
 
     const connection = await resolveConnection(grant, definition);
 
