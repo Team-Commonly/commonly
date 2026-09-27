@@ -2,6 +2,8 @@
 
 **Status:** scope, 2026-09-26. **Ruling:** Sam, 2026-09-26, relayed by connector-ops in the Connectors v2 pod (74408): Linear is the one new app build, and it starts only after Slack, GitHub and Telegram are green on the [integration readiness matrix](integration-readiness-matrix.md) on the deployed build. Its shape is GitHub's: the grant broker, room grants (C8), and revoke, expiry and rotation (C9). **Scope:** Wren (this note, TASK-144 step 1). **Build:** step 2, gated by Vera. **Blocked:** nothing here is built before those three rows are green. The note is written now so that the build starts from a reviewed shape. No Linear code exists on `main` (checked at `5561a1dd`).
 
+**Superseded as the build path, 2026-09-27.** Sam ruled "Start now, Linear first" (74820) for the `hosted-mcp` type, so Linear is built as that type's first catalogue entry: see [hosted-mcp-connection-scope.md](hosted-mcp-connection-scope.md). The hosted type has no inbound path, so it does not deliver C6. This note's §5 remains the design for that if Sam wants a decision answered from Linear later.
+
 The short version: **Linear is GitHub's App row with three substitutions.** The credential arrives through an OAuth flow a member starts, not an admin form. It is a 24-hour token behind a rotating refresh token, not a one-hour installation token minted from a private key. And it is the first Connection that receives as well as sends, because C6 needs the answer to come back. The grant, the broker, the tiers, the confirmation floor, approval and the trail are all reused unchanged.
 
 In this note, `§10.x` means that section of [tools-catalogue-room-grants.md](tools-catalogue-room-grants.md), "the grants plan". This note extends it and does not restate it.
