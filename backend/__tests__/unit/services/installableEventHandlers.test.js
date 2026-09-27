@@ -13,9 +13,14 @@ const {
   install,
 } = require('../../../services/installable/installableInstallationService');
 const {
+  activeHandlersForPod,
   dispatch,
   eventHandlers,
 } = require('../../../services/installable/eventHandlers');
+const {
+  isGatedPodTarget,
+  isRoutedPodTarget,
+} = require('../../../services/connectorRelayPolicy');
 const telegramSend = require('../../../services/telegramService');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const {
@@ -438,5 +443,74 @@ describe('installable event dispatcher', () => {
       content: 'Will not fail the post',
       podMessageId: 'message-fail',
     })).resolves.toBeUndefined();
+  });
+  // TASK-160 residue (2). The outbound selector is a Mongo `$match` reading
+  // `config.gates.<podId>.enabled` plus membership; the bridges' authorisation
+  // rule is `connectorRelayPolicy.isRoutedPodTarget` reading the same two
+  // halves. Until now the two were only asserted apart, so a change to either
+  // could leave the other behind: the selector is what decides whether a
+  // connector is ever reached, and the predicate is what decides whether it may
+  // speak. This walks one fixture matrix through BOTH and asserts they agree per
+  // cell — plus the concrete expectation, so the two drifting together to "no"
+  // reddens as well.
+  describe('the outbound selector agrees with connectorRelayPolicy', () => {
+    // The matrix the row names: member / non-member × gate on / off / absent.
+    const CELLS = [
+      { label: 'member, gate on', member: true, gate: true },
+      { label: 'member, gate off', member: true, gate: false },
+      { label: 'member, gate absent', member: true, gate: null },
+      { label: 'non-member, gate on', member: false, gate: true },
+      { label: 'non-member, gate off', member: false, gate: false },
+      { label: 'non-member, gate absent', member: false, gate: null },
+    ];
+
+    it.each(CELLS)('$label: the selector and the predicate reach the same verdict', async ({
+      member, gate,
+    }) => {
+      const podId = freshId();
+      const creatorId = freshId();
+      const ownerId = freshId();
+      // Installed while the owner IS a member, then removed for the non-member
+      // cells — the same shape the membership arm above uses, and the only order
+      // that leaves the row itself unchanged between cells.
+      await createPod(podId, creatorId, [ownerId]);
+      const installed = await install({ installableId: 'telegram', installedBy: ownerId, podId });
+      // `install` seeds the installed pod's gate ON, so the absent cell has to
+      // unset the key rather than skip the write — an absent gate and a false
+      // one are different inputs, and only the absent one exercises `$exists`.
+      if (gate === null) {
+        await Integration.updateOne(
+          { _id: installed.integration._id },
+          { $unset: { [`config.gates.${podId}`]: '' } },
+        );
+      } else {
+        await Integration.updateOne(
+          { _id: installed.integration._id },
+          { $set: { [`config.gates.${podId}.enabled`]: gate } },
+        );
+      }
+      if (!member) await Pod.updateOne({ _id: podId }, { $pull: { members: ownerId } });
+
+      const row = await Integration.findById(installed.integration._id).lean();
+      const pod = await Pod.findById(podId).lean();
+      // These cells are only meaningful on the user-scoped branch: that is the
+      // one whose selection reads `config.gates.<podId>.enabled` at all.
+      expect(String(row.scope)).toBe('user');
+
+      const selected = await activeHandlersForPod(podId);
+      const selectorSays = selected.some(
+        ({ integration }) => String(integration._id) === String(row._id),
+      );
+      const predicateSays = isRoutedPodTarget({
+        integration: row, pod, podId, userId: row.createdBy,
+      });
+
+      // Both halves, then their conjunction, then the verdict all three must
+      // reach — so agreement-by-both-saying-no cannot pass as agreement.
+      const expected = member && gate === true;
+      expect(isGatedPodTarget(row, podId)).toBe(gate === true);
+      expect(selectorSays).toBe(expected);
+      expect(predicateSays).toBe(expected);
+    });
   });
 });
