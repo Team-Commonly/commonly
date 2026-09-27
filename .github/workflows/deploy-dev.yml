@@ -204,6 +204,7 @@ jobs:
       # it. A deployment scaled to zero passes instantly (0 of 0 updated),
       # which is correct: parked is not stuck.
       - name: Verify rollout of the deployed workloads
+        id: rollout
         run: |
           set -uo pipefail
           FAILED=""
@@ -236,6 +237,19 @@ jobs:
       # (TASK-168), ask the newest backend pod from the inside. Unauthenticated,
       # a mounted /api/pg/messages answers 401 and an unmounted one 404.
       - name: Verify the new backend serves chat
+        # Deliberately not `always()` / `!cancelled()`: if an earlier step failed
+        # (image push, helm upgrade, GKE credentials) the cluster is unreachable
+        # or unchanged, and this step would then report "Chat unavailable on the
+        # new backend" for a reason that has nothing to do with chat. The case
+        # that needs it is the one below — the rollout gate failing on its own.
+        #
+        # 2026-09-27: a stuck rollout (readiness refusing a pod that was in fact
+        # serving 401s) exited 1 inside the rollout step, so this step was
+        # skipped and the operator got "backend did not become ready within 8m"
+        # with no 401-vs-404 discriminator attached. That discriminator is what
+        # separates "readiness is lying about a working pod" from "the pod is
+        # broken", and it was absent exactly when it was needed.
+        if: ${{ success() || steps.rollout.outcome == 'failure' }}
         run: |
           set -uo pipefail
           POD=$(kubectl get pod -n "$NAMESPACE" -l app=backend \
