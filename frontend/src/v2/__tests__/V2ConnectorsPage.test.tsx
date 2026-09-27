@@ -324,11 +324,25 @@ describe('V2ConnectorsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    const refusal = await screen.findByText(/bound to Rewire Live Demo/);
+    expect(refusal).toBeInTheDocument();
     // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
     // pod') taught the one-pod model. The refusal is about the bind, and other
-    // pods reach the channel through its gate switches.
-    expect(screen.getByText(/gate switches/)).toBeInTheDocument();
+    // pods reach the channel through the switches. TASK-173: the arm used to
+    // pin the word 'gate switches', which is this file's internal name and no
+    // string the page renders — so the witnessed wording went stale in the
+    // same direction the copy did. It now matches the label the user can
+    // actually look for, and the phrase is longer than the section title so a
+    // page that merely renders the section cannot satisfy it.
+    expect(screen.getByText(/through "Pods that reach this channel"/)).toBeInTheDocument();
+    expect(screen.queryByText(/gate switches/)).toBeNull();
+    // The verdict that narrowed this twice: "Channel details" is the aside's
+    // `aria-label` (:1220, :1286) and never visible text, so naming it in the
+    // copy sends a sighted user after a string the page does not render. That
+    // the phrase is an attribute and not text is witnessed where the aside is
+    // actually rendered (the gates scenario below); here the copy is checked,
+    // which is the half that can be checked in this state.
+    expect(refusal.textContent).not.toMatch(/Channel details/);
     expect(screen.queryByText(/Remove it to bind/)).toBeNull();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
@@ -1008,6 +1022,13 @@ describe('V2ConnectorsPage', () => {
 
       expect(await screen.findByText('Rewire crew · linked to Rewire Live Demo')).toBeInTheDocument();
       expect(screen.getByText('Pods that reach this channel')).toBeInTheDocument();
+      // The anchors, measured rather than assumed (Vera's gate): the aside that
+      // holds that section is reachable by its ACCESSIBLE NAME and never as
+      // text. A copy that names it sends a sighted user hunting, which is the
+      // defect TASK-173 was opened for — so the distinction is witnessed here,
+      // where the aside renders, and the copy is checked against it above.
+      expect(screen.getByLabelText('Channel details')).toBeInTheDocument();
+      expect(screen.queryAllByText(/^Channel details$/)).toHaveLength(0);
       expect(screen.getByText('active')).toBeInTheDocument();
       expect(screen.getByText('off')).toBeInTheDocument();
       expect(screen.getByText(/^since /)).toBeInTheDocument();
