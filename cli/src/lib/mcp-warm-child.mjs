@@ -30,8 +30,9 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import {
-  KEEP_VERSION_DIRS, REGISTRY_CACHE_NAME, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
-  currentPointerPath, isUsableWarmHome, lockPathFor, readBinInPrefix, versionDirFor,
+  KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_CACHE_NAME, REGISTRY_TTL_MS, STALE_LOCK_MS,
+  WARM_RESULTS, currentPointerPath, isUsableWarmHome, liveInUsePids, lockPathFor,
+  readBinInPrefix, versionDirFor,
 } from './mcp-home.js';
 import { MCP_PACKAGE, parseVersion } from './mcp-server-version.js';
 
@@ -247,6 +248,8 @@ const writePointerAtomic = (home, version, { writeTemp = writeFileSync } = {}) =
 /** Keep the newest N version dirs; the current one is never a candidate. */
 export const pruneVersionDirs = (home, current, {
   keep = KEEP_VERSION_DIRS,
+  grace = PRUNE_GRACE_MS,
+  now = Date.now(),
   readDir = (dir) => {
     try {
       return readdirSync(dir);
@@ -255,6 +258,14 @@ export const pruneVersionDirs = (home, current, {
     }
   },
   remove = (path) => rmSync(path, { recursive: true, force: true }),
+  mtime = (path) => {
+    try {
+      return statSync(path).mtimeMs;
+    } catch {
+      return null;
+    }
+  },
+  livePids = (version) => liveInUsePids(home, version),
 } = {}) => {
   const versions = readDir(home).filter((name) => parseVersion(name));
   versions.sort((a, b) => {
@@ -265,6 +276,13 @@ export const pruneVersionDirs = (home, current, {
   const removed = [];
   versions.slice(keep).forEach((name) => {
     if (name === current) return;
+    // A live claimant outranks the count: this dir may be executing right now.
+    if (livePids(name).length > 0) return;
+    // And time outranks the count too — a dir inside the grace window may belong
+    // to a spawn that has not written its claim yet. An unreadable/absent mtime
+    // is not evidence of age, so it is left alone.
+    const installedAt = mtime(versionDirFor(home, name));
+    if (typeof installedAt !== 'number' || now - installedAt < grace) return;
     try {
       remove(versionDirFor(home, name));
       removed.push(name);

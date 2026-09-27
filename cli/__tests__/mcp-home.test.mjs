@@ -14,13 +14,15 @@
  * proves a fact about the fixture.
  */
 import { jest } from '@jest/globals';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  KEEP_VERSION_DIRS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
-  isUsableWarmHome, kickWarm, lockPathFor, mcpHomeDir, newestInstalledVersion, planMcpSpawn,
-  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
+  KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
+  claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
+  liveInUsePids, mcpHomeDir, newestInstalledVersion, planMcpSpawn, prepareMcpSpawn,
+  readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
 
@@ -44,6 +46,19 @@ const installVersion = (home, version, options) => writePackage(join(home, versi
 
 const pointAt = (home, version) => {
   writeFileSync(join(home, 'current'), `${version}\n`);
+};
+
+/** Age a version dir, so a rule stated in TIME can be exercised. */
+const OLD_MS = 48 * 60 * 60 * 1000;
+const backdate = (path, msAgo = OLD_MS) => {
+  const when = new Date(Date.now() - msAgo);
+  utimesSync(path, when, when);
+};
+
+/** A pid that is certainly gone: a child that ran to completion and was reaped. */
+const deadPid = () => {
+  const child = spawnSync(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  return child.pid;
 };
 
 afterAll(() => {
@@ -173,6 +188,32 @@ describe('planMcpSpawn — what a spawn executes', () => {
 
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: '@other/mcp', version: '0.3.9', bin: 'dist/index.js' }));
     expect(readBinPath(home, '0.3.9')).toBeNull();
+  });
+
+  test('a bin that escapes the package dir is refused, not exec’d', () => {
+    // The published package is ours, so this cannot happen today. The check is
+    // one line and makes the exec path self-evident rather than trusted (Vera,
+    // 74880). The escaping target EXISTS, so a null here is the confinement and
+    // not the `exists` check doing the work.
+    const home = makeHome();
+    const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    mkdirSync(join(home, '0.3.13', 'escape'), { recursive: true });
+    writeFileSync(join(home, '0.3.13', 'escape', 'evil.js'), '#!/usr/bin/env node\n');
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': '../../escape/evil.js' },
+    }));
+
+    expect(readBinPath(home, '0.3.13')).toBeNull();
+
+    // Positive control: the same fixture with a contained bin resolves, so the
+    // arm above is the path check and not a fixture that resolves to nothing.
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(join(pkgDir, 'src', 'index.js'), '#!/usr/bin/env node\n');
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    expect(readBinPath(home, '0.3.13')).toBe(join(pkgDir, 'src', 'index.js'));
   });
 
   test('newestInstalledVersion ignores names that are not versions and dirs with no bin', () => {
@@ -442,6 +483,9 @@ describe('warmMcpHome — install, probe, then move the pointer', () => {
     const home = makeHome();
     ['0.3.9', '0.3.10', '0.3.11', '0.3.12'].forEach((v) => installVersion(home, v));
     pointAt(home, '0.3.12');
+    // The dirs being pruned must be past the grace window; the fixture's age is
+    // the real variable here, so it is set rather than simulated.
+    ['0.3.9', '0.3.10'].forEach((v) => backdate(join(home, v)));
     const { exec, probe } = fakeInstall(home, '0.3.13');
 
     expect(await warmMcpHome(home, { exec, probe, now: Date.now() })).toBe(WARM_RESULTS.ADVANCED);
@@ -527,10 +571,13 @@ describe('warmMcpHome — install, probe, then move the pointer', () => {
   });
 });
 
-describe('pruneVersionDirs', () => {
+describe('pruneVersionDirs — a count bounds disk, liveness and time bound risk', () => {
   test('keeps the newest N and removes the rest', () => {
     const home = makeHome();
     ['0.3.9', '0.3.10', '0.3.11', '0.3.12', '0.3.13'].forEach((v) => installVersion(home, v));
+    // The candidates are old: the count decides WHICH are candidates, the grace
+    // window decides whether being past the count is enough.
+    ['0.3.9', '0.3.10'].forEach((v) => backdate(join(home, v)));
 
     const removed = pruneVersionDirs(home, '0.3.13', { keep: KEEP_VERSION_DIRS });
 
@@ -541,6 +588,7 @@ describe('pruneVersionDirs', () => {
   test('a current version outside the newest N survives, because a live spawn may be reading it', () => {
     const home = makeHome();
     ['0.3.9', '0.3.10', '0.3.11', '0.3.12', '0.3.13'].forEach((v) => installVersion(home, v));
+    ['0.3.9', '0.3.10'].forEach((v) => backdate(join(home, v)));
 
     // 0.3.10 is older than the newest three and is still the pointer. Removing
     // it would break the seats running it, so it costs one extra dir until the
@@ -551,13 +599,133 @@ describe('pruneVersionDirs', () => {
     expect(removed).toEqual(['0.3.9']);
   });
 
+  test('a NON-current, non-newest dir with a LIVE claim survives — the arm the count cannot express', () => {
+    // Vera's hold (74878): nothing recorded which version a live spawn was
+    // executing, so a seat that started on 0.3.10 and had seen three advances
+    // had its dir removed under it. This is that seat, claiming its own dir.
+    const home = makeHome();
+    ['0.3.9', '0.3.10', '0.3.11', '0.3.12', '0.3.13'].forEach((v) => installVersion(home, v));
+    claimInUse({ home, version: '0.3.10', pid: process.pid });   // this test process is alive
+    ['0.3.9', '0.3.10'].forEach((v) => backdate(join(home, v)));   // installed long ago
+
+    const removed = pruneVersionDirs(home, '0.3.13', { keep: KEEP_VERSION_DIRS });
+
+    expect(readdirSync(home)).toContain('0.3.10');
+    expect(removed).toEqual(['0.3.9']);
+  });
+
+  test('the marker FILE is not the signal: a dead claimant does not pin its dir', () => {
+    // A seat that is killed leaves `.inuse/<pid>` behind. A pruner that read
+    // presence would never remove that version again — unbounded disk with extra
+    // steps (Vera, 74889). The check is whether the claimant still exists.
+    const home = makeHome();
+    const gone = deadPid();
+    ['0.3.9', '0.3.13'].forEach((v) => installVersion(home, v));
+    mkdirSync(join(home, '0.3.9', '.inuse'), { recursive: true });
+    writeFileSync(inUseMarkerPath(home, '0.3.9', gone), '');
+    // Backdated AFTER the marker: adding an entry to a directory moves that
+    // directory's mtime, and the age under test is the INSTALL age — the real
+    // order is install, then (hours later) a spawn writing its claim.
+    backdate(join(home, '0.3.9'));
+
+    expect(isPidAlive(gone)).toBe(false);
+    expect(liveInUsePids(home, '0.3.9')).toEqual([]);
+
+    const removed = pruneVersionDirs(home, '0.3.13', { keep: 1 });
+
+    expect(removed).toEqual(['0.3.9']);
+    expect(existsSync(join(home, '0.3.9'))).toBe(false);
+  });
+
+  test('an unparseable marker is absent, not alive', () => {
+    const home = makeHome();
+    ['0.3.9', '0.3.13'].forEach((v) => installVersion(home, v));
+    mkdirSync(join(home, '0.3.9', '.inuse'), { recursive: true });
+    writeFileSync(join(home, '0.3.9', '.inuse', 'not-a-pid'), '');
+    backdate(join(home, '0.3.9'));
+
+    expect(liveInUsePids(home, '0.3.9')).toEqual([]);
+    expect(pruneVersionDirs(home, '0.3.13', { keep: 1 })).toEqual(['0.3.9']);
+  });
+
+  test('isPidAlive: EPERM is alive, ESRCH is dead, a non-pid is dead', () => {
+    const eperm = () => { const e = new Error('nope'); e.code = 'EPERM'; throw e; };
+    const esrch = () => { const e = new Error('gone'); e.code = 'ESRCH'; throw e; };
+
+    expect(isPidAlive(4242, { kill: eperm })).toBe(true);
+    expect(isPidAlive(4242, { kill: esrch })).toBe(false);
+    expect(isPidAlive(0, { kill: eperm })).toBe(false);
+    expect(isPidAlive('not-a-pid', { kill: eperm })).toBe(false);
+    expect(isPidAlive(null, { kill: eperm })).toBe(false);
+    expect(isPidAlive(process.pid)).toBe(true);
+  });
+
+  test('a dir inside the grace window survives even with no claimant', () => {
+    // A spawn that is starting up has not written its claim yet. Time is what
+    // bounds that exposure, and the window is stated rather than implied.
+    const home = makeHome();
+    ['0.3.9', '0.3.13'].forEach((v) => installVersion(home, v));
+
+    expect(pruneVersionDirs(home, '0.3.13', { keep: 1 })).toEqual([]);
+    expect(existsSync(join(home, '0.3.9'))).toBe(true);
+    // …and the same dir past the window is removed, so the rule is a window and
+    // not an exemption.
+    backdate(join(home, '0.3.9'), PRUNE_GRACE_MS + 60_000);
+    expect(pruneVersionDirs(home, '0.3.13', { keep: 1 })).toEqual(['0.3.9']);
+  });
+
+  test('a dir with no readable mtime is left alone', () => {
+    const home = makeHome();
+    ['0.3.9', '0.3.13'].forEach((v) => installVersion(home, v));
+    const mtime = () => null;
+
+    expect(pruneVersionDirs(home, '0.3.13', { keep: 1, mtime })).toEqual([]);
+    expect(existsSync(join(home, '0.3.9'))).toBe(true);
+  });
+
   test('a dir it cannot remove does not fail the warm', () => {
     const home = makeHome();
     installVersion(home, '0.3.9');
     installVersion(home, '0.3.13');
+    backdate(join(home, '0.3.9'));
     const remove = jest.fn(() => { throw new Error('EBUSY'); });
 
     expect(() => pruneVersionDirs(home, '0.3.13', { keep: 1, remove })).not.toThrow();
     expect(statSync(join(home, '0.3.9')).isDirectory()).toBe(true);
   });
 });
+
+describe('the spawn claims the version it is about to run', () => {
+  test('prepareMcpSpawn leaves a live claim naming this process', () => {
+    const home = makeHome();
+    installVersion(home, '0.3.13');
+    pointAt(home, '0.3.13');
+
+    prepareMcpSpawn(SHIPPED_COMMAND, { home, now: Date.now(), spawnImpl: () => ({ unref: () => {} }) });
+
+    // The claim is what makes the pair of arms above safe: the prune's liveness
+    // check is only load-bearing if something writes the marker on the spawn
+    // path, and this is that half.
+    expect(existsSync(inUseMarkerPath(home, '0.3.13', process.pid))).toBe(true);
+    expect(liveInUsePids(home, '0.3.13')).toEqual([process.pid]);
+  });
+
+  test('an empty home claims nothing, because nothing is being run from it', () => {
+    const home = makeHome();
+
+    prepareMcpSpawn(SHIPPED_COMMAND, { home, now: Date.now(), spawnImpl: () => ({ unref: () => {} }) });
+
+    expect(readdirSync(home)).toEqual([]);
+  });
+
+  test('claimInUse refuses a junk home, a non-version and a non-pid', () => {
+    const home = makeHome();
+    installVersion(home, '0.3.13');
+
+    expect(claimInUse({ home: 'undefined', version: '0.3.13' })).toBe(false);
+    expect(claimInUse({ home, version: 'not-a-version' })).toBe(false);
+    expect(claimInUse({ home, version: '0.3.13', pid: 'not-a-pid' })).toBe(false);
+    expect(existsSync(join(home, '0.3.13', '.inuse'))).toBe(false);
+  });
+});
+

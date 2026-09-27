@@ -32,9 +32,11 @@
  * deleted under it) cannot both be produced on one host.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isShippedCommonlyMcpCommand } from './declared-mcp-guard.js';
 import { MCP_PACKAGE, parseVersion } from './mcp-server-version.js';
@@ -51,8 +53,28 @@ export const REGISTRY_TTL_MS = 15 * 60 * 1000;
 /** A lock older than this is a warm that died; reclaim rather than wedge. */
 export const STALE_LOCK_MS = 10 * 60 * 1000;
 
-/** Version dirs kept after a successful advance (the current one always survives). */
+/**
+ * Version dirs kept after a successful advance.
+ *
+ * This is a DISK BOUND, not the safety rule. Retention by count cannot express
+ * "not while someone is running it": keeping the newest three protects the
+ * newest three, and a seat still executing the fourth-newest dir is exactly the
+ * case that matters. A DIR IS REMOVABLE only when it is not `current`, carries
+ * no LIVE liveness claim, and is past `PRUNE_GRACE_MS` (Vera, 74878/74887).
+ */
 export const KEEP_VERSION_DIRS = 3;
+
+/**
+ * A version dir younger than this is never pruned, even with no live claimant.
+ *
+ * Time, not count, is what bounds the exposure: a dir inside the window may
+ * belong to a spawn that is starting up and has not written its claim yet, or
+ * whose claim was written by a pid the kernel has since recycled.
+ */
+export const PRUNE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** Where a spawn records that a process may still be executing from a version. */
+export const IN_USE_DIR_NAME = '.inuse';
 
 /** The warm child's own exit codes, read by the spawn path's logs. */
 export const WARM_RESULTS = Object.freeze({
@@ -94,6 +116,82 @@ export const currentPointerPath = (home) => join(home, 'current');
 export const versionDirFor = (home, version) => join(home, version);
 export const packageDirFor = (home, version) => join(home, version, 'node_modules', MCP_PACKAGE);
 export const lockPathFor = (home) => join(home, WARM_LOCK_NAME);
+
+/** `<home>/<version>/.inuse/` — one empty file per claiming pid. */
+export const inUseDirFor = (home, version) => join(versionDirFor(home, version), IN_USE_DIR_NAME);
+export const inUseMarkerPath = (home, version, pid) => join(inUseDirFor(home, version), String(pid));
+
+/** A pid is a positive integer, or it is not a pid. */
+const parsePid = (value) => {
+  const pid = Number(value);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+};
+
+/**
+ * Is this pid still running? `kill(pid, 0)` asks the kernel and sends nothing.
+ *
+ * EPERM means the pid exists and belongs to another user — alive. ESRCH means
+ * gone — dead. Anything else, including a value that was never a pid, is DEAD,
+ * because the two errors are not symmetric: guessing "alive" pins a version dir
+ * forever (unbounded disk with extra steps), while guessing "dead" costs one
+ * reinstall on a later warm.
+ */
+export const isPidAlive = (pid, { kill = process.kill } = {}) => {
+  const parsed = parsePid(pid);
+  if (parsed === null) return false;
+  try {
+    kill(parsed, 0);
+    return true;
+  } catch (error) {
+    return Boolean(error) && error.code === 'EPERM';
+  }
+};
+
+/**
+ * The claimants under a version dir that are still running.
+ *
+ * The marker's PRESENCE is not the signal — a seat that is killed or crashes
+ * leaves its file behind, and a pruner that read presence would never remove
+ * that version again. The check is whether the claimant still exists; a dead or
+ * unparseable marker counts as absent.
+ */
+export const liveInUsePids = (home, version, {
+  readDir = (dir) => {
+    try {
+      return readdirSync(dir);
+    } catch {
+      return [];
+    }
+  },
+  isAlive = isPidAlive,
+} = {}) => readDir(inUseDirFor(home, version))
+  .map(parsePid)
+  .filter((pid) => pid !== null && isAlive(pid));
+
+/**
+ * Claim a version dir for a process that may be executing from it.
+ *
+ * Called by `prepareMcpSpawn`, keyed by THIS process: the MCP server runs as a
+ * descendant of the process that materialised the command, so while that process
+ * lives its version dir must not be pruned. Best-effort by construction — a home
+ * that cannot be written to costs the seat nothing but its claim.
+ */
+export const claimInUse = ({
+  home,
+  version,
+  pid = process.pid,
+  mkdir = mkdirSync,
+  writeFile = writeFileSync,
+} = {}) => {
+  try {
+    if (!isUsableWarmHome(home) || !parseVersion(version) || parsePid(pid) === null) return false;
+    mkdir(inUseDirFor(home, version), { recursive: true });
+    writeFile(inUseMarkerPath(home, version, pid), '');
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const defaultRead = (path) => {
   try {
@@ -158,6 +256,10 @@ const readBinInPackageDir = (pkgDir, {
   }
   if (!relative) return null;
   const binPath = join(pkgDir, relative);
+  // `join` resolves `..`, so this is the whole confinement. The package is our
+  // own published build and today `bin` cannot escape — but a check that costs
+  // one line makes the exec path self-evident instead of trusted (Vera, 74880).
+  if (!binPath.startsWith(`${pkgDir}${sep}`)) return null;
   return exists(binPath) ? binPath : null;
 };
 
@@ -337,6 +439,9 @@ export const prepareMcpSpawn = (command, {
   const resolvedHome = resolveHomeDir(home);
   try {
     const plan = planMcpSpawn(command, { home: resolvedHome, readFile, exists });
+    // Claim the version this spawn is about to execute from, BEFORE returning the
+    // command, so a prune that runs while the seat is starting cannot take it.
+    if (plan.source === 'home') claimInUse({ home: resolvedHome, version: plan.version });
     const due = !lockPresent(resolvedHome, { exists })
       && warmLooksWanted(resolvedHome, plan.version, { now, readFile });
     if (due) kickWarm({ home: resolvedHome, apiUrl, spawnImpl, childPath });
