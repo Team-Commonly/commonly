@@ -146,6 +146,12 @@ So:
 
 `tools/list` already follows the grant (`listToolsForGrant`, used by the endpoint's ListTools handler since TASK-146), so a `read` grant lists no write tool on any surface.
 
+**A seat that cannot be confined is offered no hosted tool, reads included** (Kai, 74877). A hosted grant reaches a seat through the same grants endpoint as every grant, so it inherits TASK-063's refusal unchanged, and that refusal drops the whole entry, not a tool class. The server withholds the entry at the projection (`routes/agentBinding.ts:115`), the daemon withholds it again (`withholdGrantBroker`, `cli/src/lib/grant-broker-guard.js:230`), and the pi client refuses the broker's path (`cli/src/lib/adapters/pi-mcp-client.mjs:39`, `:68–74`). The two halves reach pi by opposite rules. The daemon admits only the adapters that confine, claude and codex (`grant-broker-guard.js:179–180`), while the server refuses only the adapters it lists as confining on no host, today pi (`CONFINEMENTLESS_ADAPTERS`, `backend/services/grantBrokerConfinement.ts:65`, `:124`). Both refuse a pi seat `grant_broker_unconfined`, reason `adapter_cannot_confine`, so it gets no Linear tool at all.
+
+That is intended, and there is no read-only arm. A read never parks (§5). On a seat nothing confines, the park still stops each write for the owner, but a read's result goes wherever the seat can send it, and confinement is the only bound on that. An arm that admitted reads to such a seat would admit exactly the calls the refusal exists for. The refusal is a named state (§9): the grant read returns it, with the fix in its detail, which is to move the seat to claude or codex (`routes/grants.ts:239`). No page on `main` reads that field yet, so the grant's page must show it before step 7's walk (§10).
+
+The refusal must also hold where the tool runs, not only where the entry is offered. The grants endpoint evaluates the server's predicate (`grantBrokerRefusal`) for the calling seat, on `tools/list` and before `callTool` on `tools/call`, and trails a refused call `refused`, not spent. That was ruled on TASK-111 (2026-09-23) and is TASK-175, built before the mint admits the type (§10, step 4). Because the server's rule lists what it refuses, an adapter added to the CLI later would be refused by the daemon and admitted at the endpoint until the server lists it too, so TASK-175 also pins the two lists together with a test.
+
 **What each arm can witness.** v1's Linear entry has no write tool, so these arms run on a test entry that has one, against a stub MCP server. They witness the mechanism, not Linear.
 
 - **The park, through the grants endpoint.**
@@ -158,6 +164,7 @@ So:
   - `write` on a hosted row is refused `write_requires_confirm`.
   - Attenuating `write-with-confirm` to `write` is refused `grant_not_attenuated`.
 - **A `read` grant.** The write tool is absent from `tools/list`, and calling it anyway is refused `write_mode_not_allowed`.
+- **A seat that cannot confine.** A pi seat in the grant's audience is refused, never parked: the projection and the daemon withhold the entry with `grant_broker_unconfined`, reason `adapter_cannot_confine`, and the grant read names it. A read tool's `tools/list` and `tools/call` reaching the endpoint anyway are refused with the same code, and the stub sees no call.
 
 ## 7. What changes in the mint, the broker and the catalogue
 
@@ -240,14 +247,14 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a hosted grant cannot name another entry's tool`
    - `a hosted row is found by _id only`
    - the §6 arms
-   - TASK-147's witness per removal path, before the mint admits the type
+   - TASK-147's witness per removal path, and TASK-175's refusal at the broker call, both before the mint admits the type
 5. **The trail column.**
    - `every tool call records whose credential ran`
    - `the trail names the credential owner after the Connection is removed`
 6. **Removal.**
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
-7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build.
+7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
 
 ## 11. What this corrects, and what stays open
 
