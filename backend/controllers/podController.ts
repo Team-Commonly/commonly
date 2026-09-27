@@ -589,6 +589,19 @@ exports.leavePod = async (req: any, res: any) => {
       return res.status(404).json({ msg: 'Pod not found' });
     }
 
+    // TASK-166: the creator cannot leave. `createdBy` is written only at
+    // creation and nothing transfers it, while `removeMember` is gated on it
+    // with no admin fallback — so a creator who left would strand the pod with
+    // nobody able to remove a member. Refused rather than stripped: the field
+    // records who made the pod, and the membership readers no longer read it as
+    // membership.
+    if (String(pod.createdBy) === String(req.userId)) {
+      return res.status(409).json({
+        msg: 'A pod creator cannot leave their own pod.',
+        code: 'creator_cannot_leave',
+      });
+    }
+
     // Check if user is a member
     if (!pod.members.includes(req.userId)) {
       return res.status(400).json({ msg: 'Not a member of this pod' });

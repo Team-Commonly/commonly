@@ -269,4 +269,19 @@ describe('DecisionRequestService', () => {
       .resolves.toEqual({ status: 403, body: { error: 'Only human pod members can rule on this decision' } });
     expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
   });
+
+  // TASK-166: `createdBy` is who made the pod, not a standing membership. A
+  // creator who has left the room must not rule on its decision cards — the
+  // gate is reached from `routes/activity.ts` under plain `auth`, which bot
+  // and human tokens both satisfy, so this is the reachable population and not
+  // a hypothetical one.
+  test('refuses a creator who left the pod before claiming the decision', async () => {
+    mockDecision.findById.mockResolvedValue(pending());
+    mockUser.findById.mockReturnValue(userChain({ _id: 'creator-1', username: 'Former owner', isBot: false }));
+    mockPod.findById.mockReturnValue(podChain({ createdBy: 'creator-1', members: ['member'], type: 'team' }));
+    await expect(chooseDecision({ decisionId: 'decision-1', callerUserId: 'creator-1', value: 'Canary' }))
+      .resolves.toEqual({ status: 403, body: { error: 'Only human pod members can rule on this decision' } });
+    expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockPGMessage.create).not.toHaveBeenCalled();
+  });
 });

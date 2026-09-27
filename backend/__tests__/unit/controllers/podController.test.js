@@ -282,6 +282,51 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith(pod);
   });
 
+  // ── TASK-166: the creator cannot leave, everyone else still can ─────────
+
+  it('leavePod refuses the creator with 409 creator_cannot_leave and keeps them listed', async () => {
+    const pod = {
+      _id: 'p1',
+      createdBy: 'creator',
+      members: ['creator', 'member'],
+      save: jest.fn(),
+      populate: jest.fn(),
+    };
+    Pod.findById.mockResolvedValue(pod);
+    const req = { params: { id: 'p1' }, userId: 'creator' };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.leavePod(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'creator_cannot_leave' }));
+    // The refusal is a non-event, not a silent success: nothing was unlisted
+    // and nothing was saved.
+    expect(pod.members).toEqual(['creator', 'member']);
+    expect(pod.save).not.toHaveBeenCalled();
+  });
+
+  // Positive control. The arm above is satisfied by a route that refuses
+  // everyone, which is exactly the shape the guard must not be.
+  it('leavePod still removes a non-creator member (control)', async () => {
+    const pod = {
+      _id: 'p1',
+      createdBy: 'creator',
+      members: ['creator', 'member'],
+      save: jest.fn(),
+      populate: jest.fn().mockResolvedValue(),
+    };
+    Pod.findById.mockResolvedValue(pod);
+    const req = { params: { id: 'p1' }, userId: 'member' };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.leavePod(req, res);
+
+    expect(pod.members).toEqual(['creator']);
+    expect(pod.save).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(pod);
+  });
+
   // ── ADR-001 §3.10: agent-rooms are 1:1 DMs ──────────────────────────────
 
   it('joinPod rejects a third-person join on agent-room with 403', async () => {
