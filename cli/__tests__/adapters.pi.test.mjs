@@ -352,6 +352,49 @@ describe('helpers', () => {
     expect(resolveProvider({})).toEqual({ name: 'litellm', baseUrl: 'https://litellm.commonly.me/v1', api: 'openai-completions', apiKeyEnv: 'COMMONLY_LITELLM_KEY' });
     expect(buildModelsJson(resolveProvider({}), 'm').providers.litellm.models[0].id).toBe('m');
   });
+  test('TASK-174: a warmed MCP home makes pi exec the home build, not npx @latest', async () => {
+    // Control: the helper tests in this file call resolveMcpServers with the
+    // empty home the jest setup installs, and see `npx -y @commonlyai/mcp@latest`
+    // carried through unchanged. This arm is the same call with a real home.
+    const home = await mkdtemp(join(tmpdir(), 'cli-mcp-home-'));
+    const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    await mkdir(join(pkgDir, 'src'), { recursive: true });
+    await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', type: 'module', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    await writeFile(join(pkgDir, 'src', 'index.js'), '');
+    await writeFile(join(home, 'current'), '0.3.13\n');
+    const previous = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const ctx = {
+        instanceUrl: 'https://api.example.test',
+        credentialFile: '/tmp/credential-xyz',
+        credentialKey: 'COMMONLY_AGENT_TOKEN',
+      };
+      const declared = [{
+        name: 'commonly',
+        transport: 'stdio',
+        command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        env: {
+          COMMONLY_API_URL: '${COMMONLY_API_URL}',
+          COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+        },
+      }];
+
+      const [carried] = resolveMcpServers(declared, ctx);
+
+      expect(carried.command).toEqual(['node', join(pkgDir, 'src', 'index.js')]);
+      // The executed build is 0.3.13, which reads the file — same channel the
+      // unpinned declaration landed on, so the rewrite is not a silent change
+      // of how this seat authenticates.
+      expect(carried.env.COMMONLY_TOKEN_FILE).toBe(ctx.credentialFile);
+      expect(carried.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    } finally {
+      process.env.COMMONLY_MCP_HOME = previous;
+    }
+  });
+
   test('resolveMcpServers carries stdio and HTTP entries, filling placeholders in env and headers alike', () => {
     const resolved = resolveMcpServers([
       { name: 'a', command: ['x'], env: { K: '${COMMONLY_OTHER}' } },

@@ -58,6 +58,7 @@ import {
 } from 'path';
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
+import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -138,20 +139,26 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
   for (const server of mcpServers || []) {
+    const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (!server?.name || transport !== 'stdio'
+      || !Array.isArray(server.command) || !server.command.length) continue;
+    // TASK-174: the command that will EXECUTE — the warmed build from the seat's
+    // MCP home when there is one — and the credential channel is decided on that
+    // same command, so the two can never disagree about which release runs. The
+    // rewrite is before `substitutePlaceholders` because it introduces no
+    // placeholder: it is a path this host resolved.
+    const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
     // A declared credential is rewritten to the file channel before anything is
     // substituted, so for our server the token is not token-bearing at all: it
     // lands in `env={...}` as a path and never reaches `env_vars`, which is the
     // one path by which the value ends up in codex's own environment and from
     // there in every MCP child it spawns (TASK-083, measured on a live codex
     // seat before the change).
-    const declaredEnv = deliverSeatCredential(server, {
+    const declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
       credentialFile: ctx.credentialFile,
       label: 'codex',
     }).env;
-    const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
-    if (!server?.name || transport !== 'stdio'
-      || !Array.isArray(server.command) || !server.command.length) continue;
-    const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
+    const [command, ...rest] = spawnCommand.map((a) => substitutePlaceholders(a, ctx));
     // The doc block above promises bearer tokens never ride in argv, and this is
     // the place that had to hold it: an env value that carries the token is
     // diverted to env_vars, but a COMMAND ARGUMENT has no such route — codex

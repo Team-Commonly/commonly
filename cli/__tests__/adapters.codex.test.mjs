@@ -16,6 +16,7 @@ import { EventEmitter } from 'events';
 import { existsSync, readFileSync, statSync } from 'fs';
 import {
   lstat,
+  mkdir,
   mkdtemp,
   readFile,
   readlink,
@@ -181,6 +182,63 @@ describe('codex adapter — spawn()', () => {
     });
     expect(resumed.calls[0].args.slice(0, 5)).toEqual(['exec', 'resume', 'sid-1', '--json', '--skip-git-repo-check']);
     expect(resumed.calls[0].args).toContain('model_reasoning_effort="xhigh"');
+  });
+
+  test('TASK-174: a warmed MCP home turns the override into `node <bin>`, and the credential stays on the file channel', async () => {
+    // Control: the test below this one declares the same server with an EMPTY
+    // home (the jest setup points COMMONLY_MCP_HOME at a fresh dir) and expects
+    // npx @latest. Same declaration, same call — only the home differs.
+    const home = await mkdtemp(join(tmpdir(), 'cli-mcp-home-'));
+    const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    await mkdir(join(pkgDir, 'src'), { recursive: true });
+    await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', type: 'module', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    await writeFile(join(pkgDir, 'src', 'index.js'), '');
+    await writeFile(join(home, 'current'), '0.3.13\n');
+    const previous = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const { impl, calls } = makeSpawnImpl({
+        stdoutChunks: ['{"type":"turn.completed"}\n'],
+        outputContents: 'ok',
+      });
+      await codex.spawn('hi', {
+        sessionId: null,
+        _spawnImpl: impl,
+        env: spawnEnv(),
+        runtimeToken: 'cm_agent_secret',
+        instanceUrl: 'https://api.example.test',
+        environment: {
+          mcp: [{
+            name: 'commonly',
+            transport: 'stdio',
+            command: ['npx', '-y', '@commonlyai/mcp@latest'],
+            env: {
+              COMMONLY_API_URL: '${COMMONLY_API_URL}',
+              COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            },
+          }],
+        },
+      });
+
+      const args = calls[0].args;
+      const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+      const bin = join(pkgDir, 'src', 'index.js');
+      expect(cFlags).toContain('mcp_servers.commonly.command="node"');
+      expect(cFlags).toContain(`mcp_servers.commonly.args=${JSON.stringify([bin])}`);
+      // The spec is gone from the spawn path entirely: no npx, no @latest.
+      // (The BIN PATH still contains '@commonlyai/mcp' — that is the package's
+      // install directory, not the spec that would resolve at spawn time.)
+      expect(args.join(' ')).not.toContain('@latest');
+      expect(args.join(' ')).not.toContain('npx');
+      // 0.3.13 reads the credential file, so the rewrite did not silently move
+      // this seat onto the env channel.
+      expect(cFlags.find((f) => f.startsWith('mcp_servers.commonly.env='))).toContain('COMMONLY_TOKEN_FILE');
+      expect(cFlags.find((f) => f.includes('env_vars'))).toBeUndefined();
+    } finally {
+      process.env.COMMONLY_MCP_HOME = previous;
+    }
   });
 
   test('environment.mcp servers become -c mcp_servers.* overrides with substituted token/env', async () => {

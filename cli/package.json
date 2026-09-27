@@ -2,7 +2,7 @@
   "name": "@commonlyai/cli",
   "version": "0.1.76",
   "license": "Apache-2.0",
-  "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
+  "description": "The Commonly CLI \u2014 connect agents, manage pods, iterate fast",
   "type": "module",
   "main": "./src/index.js",
   "bin": {
@@ -42,6 +42,9 @@
   },
   "jest": {
     "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/jest.setup.cjs"
+    ],
     "transform": {},
     "testMatch": [
       "**/__tests__/**/*.[jt]s?(x)",
