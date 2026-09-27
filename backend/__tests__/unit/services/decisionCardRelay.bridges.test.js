@@ -18,7 +18,13 @@ jest.mock('../../../services/slackApi', () => {
   mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
   return mock;
 });
-jest.mock('../../../services/connectorRelayPolicy', () => ({ shouldEscalate: jest.fn(() => false) }));
+// Delegate to the real module: the bridges also read isGatedPodTarget /
+// isRoutedPodTarget from here, and a factory that stubs the whole module makes
+// them undefined (TASK-156).
+jest.mock('../../../services/connectorRelayPolicy', () => ({
+  ...jest.requireActual('../../../services/connectorRelayPolicy'),
+  shouldEscalate: jest.fn(() => false),
+}));
 jest.mock('../../../services/channelVerdictService', () => ({ record: jest.fn() }));
 
 const Integration = require('../../../models/Integration');

@@ -10,7 +10,7 @@ const isPodMember = require('../utils/isPodMember');
 const connectorSecrets = require('./connectorSecrets');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { shouldEscalate } = require('./connectorRelayPolicy');
+const { shouldEscalate, isGatedPodTarget, isRoutedPodTarget } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
@@ -59,9 +59,7 @@ interface SlackIntegrationDoc {
 }
 
 const isRelayableIntegration = (integration: SlackIntegrationDoc, podId: string): boolean => (
-  (integration.scope === 'user'
-    ? integration.config?.gates?.[String(podId)]?.enabled === true
-    : String(integration.podId) === String(podId))
+  isGatedPodTarget(integration, podId)
   && integration.type === 'slack'
   && integration.isActive === true
   && integration.status !== 'error'
@@ -409,12 +407,24 @@ export const relaySlackMessageToPod = async (opts: {
   //
   // An entry with no `podId` is not this case: it was written before multi-pod
   // routing shipped, carries no pod to check, and routes as it always has.
+  //
+  // The predicate is `isRoutedPodTarget` (gate + membership, one home in
+  // connectorRelayPolicy): the same rule the outbound relay and decision-card
+  // delivery read, so a fix to the rule reaches all of them. Note what it does
+  // NOT bound — the ACTIVE pod is exempt from the gate by design (see
+  // isInboundRelayableIntegration above), so this check applies only to the
+  // quoted pod, and only when it differs from the active one. The shared
+  // predicate answers gate + membership; the bridge's own predicate adds the
+  // protocol-health conditions only Slack knows (liveRelay, chatType, teamId).
   let podId = cardReply.lateReply?.podId || String(integration.podId);
   if (routed.podId && String(routed.podId) !== String(podId)) {
     const routedPod = await Pod.findById(routed.podId).select('name type createdBy members').lean();
-    if (!routedPod
-      || !isPodMember(routedPod, String(config.linkedUserId))
-      || !isRelayableIntegration(integration, routed.podId)) {
+    if (!isRoutedPodTarget({
+      integration,
+      pod: routedPod,
+      podId: routed.podId,
+      userId: config.linkedUserId,
+    }) || !isRelayableIntegration(integration, routed.podId)) {
       console.warn(
         `[slack-bridge] thread reply refused — quoted pod ${routed.podId} is no longer routed to this chat`,
       );

@@ -26,7 +26,7 @@ const isPodMember = require('../utils/isPodMember');
 const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { shouldEscalate } = require('./connectorRelayPolicy');
+const { shouldEscalate, isGatedPodTarget, isRoutedPodTarget } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
@@ -178,9 +178,7 @@ const isRelayableIntegration = (
   integration: TelegramIntegrationDoc,
   podId: string,
 ): boolean => (
-  (integration.scope === 'user'
-    ? integration.config?.gates?.[String(podId)]?.enabled === true
-    : String(integration.podId) === String(podId))
+  isGatedPodTarget(integration, podId)
   && (integration.type === undefined || integration.type === 'telegram')
   && integration.isActive !== false
   && integration.config?.liveRelay === true
@@ -500,13 +498,25 @@ export const relayTelegramMessageToPod = async (opts: {
   //
   // An entry with no `podId` is not this case. It was written before multi-pod
   // routing shipped, carries no pod to check, and routes as it always has.
+  //
+  // The predicate is `isRoutedPodTarget` (gate + membership, one home in
+  // connectorRelayPolicy): the same rule the outbound relay and decision-card
+  // delivery read, so a fix to the rule reaches all of them. Note what it does
+  // NOT bound — the ACTIVE pod is exempt from the gate by design (see
+  // isInboundRelayableIntegration above), so this check applies only to the
+  // quoted pod, and only when it differs from the active one. The shared
+  // predicate answers gate + membership; the bridge's own predicate adds the
+  // protocol-health conditions only Telegram knows (liveRelay, chatType, chatId).
   if (routed.podId && String(routed.podId) !== String(podId)) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const PodModel = require('../models/Pod');
     const routedPod = await PodModel.findById(routed.podId).select('name type createdBy members').lean();
-    if (!routedPod
-      || !isPodMember(routedPod, linkedUserId)
-      || !isRelayableIntegration(integration, routed.podId)) {
+    if (!isRoutedPodTarget({
+      integration,
+      pod: routedPod,
+      podId: routed.podId,
+      userId: linkedUserId,
+    }) || !isRelayableIntegration(integration, routed.podId)) {
       console.warn(
         `[tg-bridge] quote-reply refused — quoted pod ${routed.podId} is no longer routed to this chat`,
       );
