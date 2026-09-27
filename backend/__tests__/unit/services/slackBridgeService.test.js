@@ -140,16 +140,27 @@ describe('Slack installable bridge', () => {
     })).toEqual({ content: '@kai Can you clarify?', routedAgent: 'kai', podId: null });
   });
 
+  // Two fixture shapes, because the routed pod and the active pod are different
+  // documents: the first names the pod that may not be reachable any more.
+  const podWithMembers = (name) => ({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name, type: 'team', members: ['user-1'] }),
+    }),
+  });
+  const podsById = (gatedPodName) => (id) => ({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(
+        String(id) === 'pod-2'
+          ? { name: gatedPodName, type: 'team', members: ['user-1'] }
+          : { name: 'Alpha', type: 'team', members: ['user-1'] },
+      ),
+    }),
+  });
+
   test('sends a thread reply into the quoted pod, not the connector\'s active one', async () => {
     // ADR-025 D11. The map entry names the pod its line came from; before this,
     // the reader kept only the agent and the reply landed in the active pod.
-    Pod.findById.mockImplementation((id) => ({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue(
-          String(id) === 'pod-2' ? { name: 'Launch', type: 'team', members: ['user-1'] } : { name: 'Alpha', type: 'team', members: ['user-1'] },
-        ),
-      }),
-    }));
+    Pod.findById.mockImplementation(podsById('Launch'));
     PGMessage.create.mockResolvedValue({ id: 'pg-1' });
     PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
     User.findById.mockReturnValue({
@@ -178,9 +189,7 @@ describe('Slack installable bridge', () => {
   });
 
   test('still posts an unquoted Slack message to the active pod', async () => {
-    Pod.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Alpha', type: 'team', members: ['user-1'] }) }),
-    });
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
     PGMessage.create.mockResolvedValue({ id: 'pg-1' });
     PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
     User.findById.mockReturnValue({
@@ -192,7 +201,9 @@ describe('Slack installable bridge', () => {
       integration: {
         ...integration,
         scope: 'user',
-        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {} },
+        config: {
+          ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {},
+        },
       },
       event: { text: 'hello', user: 'U1' },
     });
@@ -201,13 +212,7 @@ describe('Slack installable bridge', () => {
   });
 
   test('refuses a thread reply into a pod whose gate is off, naming it, posting nothing', async () => {
-    Pod.findById.mockImplementation((id) => ({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue(
-          String(id) === 'pod-2' ? { name: 'Launch', type: 'team', members: ['user-1'] } : { name: 'Alpha', type: 'team', members: ['user-1'] },
-        ),
-      }),
-    }));
+    Pod.findById.mockImplementation(podsById('Launch'));
 
     const result = await relaySlackMessageToPod({
       integration: {
@@ -228,15 +233,11 @@ describe('Slack installable bridge', () => {
     expect(PGMessage.create).not.toHaveBeenCalled();
     expect(deliverMessageToAgents).not.toHaveBeenCalled();
     const api = SlackApi.mock.results[0].value;
-    expect(api.postMessage).toHaveBeenCalledWith(
-      'D1', expect.stringContaining('Launch'),
-    );
+    expect(api.postMessage).toHaveBeenCalledWith('D1', expect.stringContaining('Launch'));
   });
 
   test('routes a pre-D11 map entry (no podId) to the active pod', async () => {
-    Pod.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Alpha', type: 'team', members: ['user-1'] }) }),
-    });
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
     PGMessage.create.mockResolvedValue({ id: 'pg-1' });
     PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
     User.findById.mockReturnValue({

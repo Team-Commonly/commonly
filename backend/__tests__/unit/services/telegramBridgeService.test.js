@@ -223,7 +223,12 @@ describe('telegramBridgeService — multi-pod routing', () => {
       ...overrides,
     },
   });
-  const podDoc = (overrides = {}) => ({ name: 'Alpha', type: 'team', members: ['user-1'], ...overrides });
+  const podDoc = (overrides = {}) => ({
+    name: 'Alpha',
+    type: 'team',
+    members: ['user-1'],
+    ...overrides,
+  });
 
   const originalToken = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -259,7 +264,7 @@ describe('telegramBridgeService — multi-pod routing', () => {
 
   it('returns the quoted line\'s pod, and null for an entry that predates it', () => {
     const integration = userScoped();
-    const relayMap = integration.config.relayMap;
+    const { relayMap } = integration.config;
     expect(routeReplyContent({
       content: 'use the v2 schema', replyToTgMessageId: '101', relayMap,
     }).podId).toBe(GATED_POD);
