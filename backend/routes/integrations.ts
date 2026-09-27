@@ -148,12 +148,18 @@ const validateManifestIfComplete = (type: string, config: unknown) => {
   validateRequiredConfig(resolveEffectiveConfig(type, config as Record<string, unknown>), manifest);
 };
 
+// TASK-168: `createdBy` records who made the pod and survives `leavePod`, so a
+// pod-creator arm that reads the field alone admits someone who has left — to act
+// on a pod whose channel they can no longer read. Every pod-creator arm in this
+// file therefore also requires listed membership, the strict rule this file
+// already imports from the connector policy (line 38). The admin and
+// integration-creator arms are untouched: neither ever claimed pod membership.
 async function canDeleteIntegration(integration: { createdBy?: { toString: () => string }; podId?: unknown } | null, userId: string): Promise<boolean> {
   const user = await User.findById(userId) as { role?: string } | null;
   if (!user) return false;
   if (user.role === 'admin') return true;
   const pod = await Pod.findById(integration?.podId) as { createdBy?: { toString: () => string } } | null;
-  if (pod && pod.createdBy?.toString() === userId) return true;
+  if (pod && pod.createdBy?.toString() === userId && isListedPodMember(pod, userId)) return true;
   if (integration?.createdBy?.toString() === userId) return true;
   return false;
 }
@@ -462,7 +468,8 @@ router.post('/:id/connect', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     let service: { connect: () => Promise<boolean> } | null = null;
     if (integration.type === 'discord') service = new DiscordService(id);
     else if (integration.type !== 'slack') return res.status(400).json({ message: 'Unsupported integration type' });
@@ -481,7 +488,8 @@ router.post('/:id/disconnect', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type !== 'discord') return res.status(400).json({ message: 'Unsupported integration type' });
     const service = new DiscordService(id);
     const disconnected = await service.disconnect();
@@ -499,7 +507,8 @@ router.get('/:id/stats', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     let service: { getStats: () => Promise<unknown> } | null = null;
     if (integration.type === 'discord') service = new DiscordService(id);
     else if (integration.type !== 'slack') return res.status(400).json({ message: 'Unsupported integration type' });
@@ -518,7 +527,8 @@ router.get('/:id/messages', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type === 'discord') {
       const service = new DiscordService(id);
       const messages = await service.fetchMessages({ limit, before });
@@ -539,7 +549,8 @@ router.post('/:id/send', auth, async (req: AuthReq, res: Res) => {
     const integration = await Integration.findById(id) as { type?: string; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const pod = await Pod.findById(integration.podId) as { createdBy?: { toString: () => string } } | null;
-    if (!pod || pod.createdBy?.toString() !== req.user?.id) return res.status(403).json({ message: 'Access denied' });
+    if (!pod || pod.createdBy?.toString() !== req.user?.id
+      || !isListedPodMember(pod, req.user?.id)) return res.status(403).json({ message: 'Access denied' });
     if (integration.type === 'discord') {
       const service = new DiscordService(id);
       const result = await service.sendMessage(message);
