@@ -269,12 +269,22 @@ const V2ConnectorsPage: React.FC = () => {
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
   // when the tab comes back: a row that says `since 5m ago` is wrong twice
   // over if it is still saying it an hour later (TASK-131).
   const now = useRelativeNow();
   const adding = addingType !== null;
   const podList = pods || [];
+
+  // TASK-155: at 390 the aside sits below the fold of the page's own scroller
+  // (`v2-feature__body` is the scroller, not the document), so opening the form
+  // changed nothing on screen even once it moved into the panel. Focusing the
+  // picker scrolls it into view, and is where a keyboard user wants the cursor
+  // anyway. Keyed on the type so switching provider also lands on the picker.
+  useEffect(() => {
+    if (addingType) podPickerRef.current?.focus();
+  }, [addingType]);
 
   const load = useCallback(async () => {
     try {
@@ -408,7 +418,7 @@ const V2ConnectorsPage: React.FC = () => {
         message = installInProgressMessage(response.data.boundPodId);
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
         message = t('connectors.alreadyBound', {
-          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Remove it to bind a different pod.',
+          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through its gate switches — turn one on in the panel.',
           connector: typeLabel,
           pod: boundPodName(response.data.boundPodId),
         });
@@ -974,6 +984,12 @@ const V2ConnectorsPage: React.FC = () => {
     setSelectedKey(item.key);
     setConfirmRemove(null);
     setExpandedGate(null);
+    // TASK-155: while the form is open it owns the aside, so a row click or a
+    // row's gear has to close it — otherwise the click looks like it did
+    // nothing, which is the symptom this page was reported for pointed the
+    // other way. `runAction` calls this first and re-opens the form for
+    // `connect`, so Add is unaffected.
+    setAddingType(null);
   };
 
   const runAction = (item: ListItem, action: ConnectorAction) => {
@@ -1416,6 +1432,7 @@ const V2ConnectorsPage: React.FC = () => {
           ))}
         </div>
         <select
+          ref={podPickerRef}
           className="v2-connectors__select"
           value={newPodId}
           onChange={(event) => setNewPodId(event.target.value)}

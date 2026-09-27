@@ -325,6 +325,11 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
+    // pod') taught the one-pod model. The refusal is about the bind, and other
+    // pods reach the channel through its gate switches.
+    expect(screen.getByText(/gate switches/)).toBeInTheDocument();
+    expect(screen.queryByText(/Remove it to bind/)).toBeNull();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
@@ -637,6 +642,35 @@ describe('V2ConnectorsPage', () => {
 
       expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
       expect(screen.getAllByLabelText('Pod to bridge')).toHaveLength(1);
+    });
+
+    it('TASK-155: selecting a row while the form is open closes the form', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Slack' }));
+
+      // The form wins the aside while it is open, so the row click has to close
+      // it — otherwise this is the walk's symptom pointed the other way
+      // (connector-ops 74623 item 1).
+      expect(within(asidePanel()).getByText('What the channel sees')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
+    });
+
+    it('TASK-155: the picker takes focus when the form opens', async () => {
+      mockCatalog([entry()]);
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+
+      // At 390 the panel is below the fold of the page's scroller; focus is
+      // what scrolls the picker into view (connector-ops 74623 item 2).
+      expect(screen.getByLabelText('Pod to bridge')).toHaveFocus();
     });
 
     it('TASK-155: the picker defaults to a room, never a personal pod', async () => {
