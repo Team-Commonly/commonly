@@ -74,7 +74,15 @@ const buildRes = () => {
 const messageLookup = (podId, authorUserId = 'message-author') => ({
   rows: [{ pod_id: podId, user_id: authorUserId }], rowCount: 1,
 });
-const memberLookup = (hits) => ({ rows: [], rowCount: hits });
+// TASK-162: Mongo `members` decides write access, and the PG `pod_members`
+// mirror no longer grants anything. An arm that expects access therefore names
+// the caller in the pod Mongo returns; the PG membership hits these arms used
+// to queue are gone, because queueing them was queueing a grant nobody read.
+const podListing = (...memberIds) => {
+  Pod.findById.mockReturnValue({
+    select: () => ({ lean: () => Promise.resolve({ members: memberIds }) }),
+  });
+};
 
 describe('reactionController.addReaction — agent runtime path', () => {
   let emitMock;
@@ -128,14 +136,10 @@ describe('reactionController.addReaction — agent runtime path', () => {
     AgentInstallation.findOne.mockReturnValue({
       lean: () => Promise.resolve(null),
     });
-    Pod.findById.mockReturnValue({
-      select: () => ({
-        lean: () =>
-          Promise.resolve({
-            members: [{ userId: { toString: () => 'bot-user-2' } }],
-          }),
-      }),
-    });
+    // `Pod.members` holds ObjectIds (`models/Pod.ts:157`), the same shape
+    // `createMessage` compares against — not `{ userId }` objects, which that
+    // comparison would refuse.
+    podListing('bot-user-2');
 
     const req = {
       params: { messageId: '7' },
@@ -174,12 +178,11 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(MessageReaction.add).not.toHaveBeenCalled();
   });
 
-  test('human caller hits the pg pod_members path (not the AgentInstallation path)', async () => {
+  test('human caller is admitted from Mongo members, and no PG pod_members row is read (TASK-162)', async () => {
     pool.query
       // loadMessageContext
-      .mockResolvedValueOnce(messageLookup('pod-h'))
-      // pod_members lookup
-      .mockResolvedValueOnce(memberLookup(1));
+      .mockResolvedValueOnce(messageLookup('pod-h'));
+    podListing('human-1');
 
     const req = {
       params: { messageId: '11' },
@@ -192,15 +195,13 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
     expect(AgentInstallation.findOne).not.toHaveBeenCalled();
     expect(MessageReaction.add).toHaveBeenCalledWith('11', 'human-1', '👀');
+    // The mirror is not a fast path any more: one query, the message context.
+    expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
-  test('human NOT in pg pod_members but IN mongo pod.members is still allowed (dual-DB drift, 2026-07-24)', async () => {
-    pool.query
-      .mockResolvedValueOnce(messageLookup('pod-drift')) // loadMessageContext
-      .mockResolvedValueOnce(memberLookup(0)); // pg pod_members MISS → must fall back to Mongo
-    Pod.findById.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve({ members: [{ toString: () => 'human-2' }] }) }),
-    });
+  test('human IN mongo pod.members with no PG row is still allowed (the mirror may lag, 2026-07-24)', async () => {
+    pool.query.mockResolvedValueOnce(messageLookup('pod-drift')); // loadMessageContext
+    podListing('human-2');
 
     const req = { params: { messageId: '12' }, body: { emoji: '👍' }, user: { _id: 'human-2' } };
     const res = buildRes();
@@ -211,11 +212,9 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(MessageReaction.add).toHaveBeenCalledWith('12', 'human-2', '👍');
   });
 
-  test('human in neither pg pod_members nor mongo members → 403', async () => {
-    pool.query
-      .mockResolvedValueOnce(messageLookup('pod-x'))
-      .mockResolvedValueOnce(memberLookup(0));
-    Pod.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ members: [] }) }) });
+  test('human in no Mongo membership list → 403', async () => {
+    pool.query.mockResolvedValueOnce(messageLookup('pod-x'));
+    podListing();
 
     const req = { params: { messageId: '13' }, body: { emoji: '👍' }, user: { _id: 'stranger' } };
     const res = buildRes();
@@ -245,9 +244,8 @@ describe('reactionController.addReaction — agent runtime path', () => {
   });
 
   test('new human reaction to an agent message queues one unclaimable acknowledgement for its author', async () => {
-    pool.query
-      .mockResolvedValueOnce(messageLookup('pod-receipt', 'author-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
+    pool.query.mockResolvedValueOnce(messageLookup('pod-receipt', 'author-bot'));
+    podListing('human-reactor');
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({
@@ -342,8 +340,8 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
   test('derives the same instance suffix that a token-authenticated recipient polls', async () => {
     pool.query
-      .mockResolvedValueOnce(messageLookup('pod-suffix', 'suffix-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
+      .mockResolvedValueOnce(messageLookup('pod-suffix', 'suffix-bot'));
+    podListing('human-reactor');
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({
@@ -370,8 +368,8 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
   test('logs and skips an acknowledgement when a legacy bot has no routable agentName', async () => {
     pool.query
-      .mockResolvedValueOnce(messageLookup('pod-legacy', 'legacy-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
+      .mockResolvedValueOnce(messageLookup('pod-legacy', 'legacy-bot'));
+    podListing('human-reactor');
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({
@@ -401,8 +399,8 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
   test('an idempotent duplicate reaction does not wake the agent a second time', async () => {
     pool.query
-      .mockResolvedValueOnce(messageLookup('pod-idempotent', 'author-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
+      .mockResolvedValueOnce(messageLookup('pod-idempotent', 'author-bot'));
+    podListing('human-reactor');
     MessageReaction.add.mockResolvedValueOnce(false);
 
     const req = {
@@ -421,8 +419,8 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
   test('a reaction to a human message does not enqueue an agent event', async () => {
     pool.query
-      .mockResolvedValueOnce(messageLookup('pod-human-author', 'human-author'))
-      .mockResolvedValueOnce(memberLookup(1));
+      .mockResolvedValueOnce(messageLookup('pod-human-author', 'human-author'));
+    podListing('human-reactor');
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({ lean: () => Promise.resolve({ isBot: false, username: 'human-author' }) }),

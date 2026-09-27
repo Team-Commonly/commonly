@@ -5,6 +5,8 @@ const PGPod = require('../models/pg/Pod');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
+const { isListedPodMember } = require('../utils/isPodMember');
+// eslint-disable-next-line global-require
 const MongoPod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
@@ -30,22 +32,37 @@ type CreatedMessage = {
   userId?: { username?: string } | string;
 };
 
-// Check if user is a member via PG, falling back to MongoDB as source of truth
-async function isMemberWithFallback(podId: string, userId: string): Promise<boolean> {
-  const pgMember = await PGPod.isMember(podId, userId);
-  if (pgMember) return true;
-  // Fall back to MongoDB (may throw CastError for invalid ObjectId — treat as not found)
+// Mongo `members` is the membership truth for the PG chat path (TASK-162). The
+// PG `pod_members` row is a lazily-synced mirror, and it used to be trusted as
+// proof: `PGPod.create` inserts the owner unconditionally and `syncPodFromMongo`
+// backfills Mongo's `createdBy`, so a leave plus any later backfill re-created a
+// row for someone no longer in the pod. Measured read-only on production
+// (Vera 74648, 727 rows): 77 rows present in PG and absent from their pod's
+// Mongo `members` — 36 of them the pod's own creator — plus 140 rows pointing at
+// a pod id Mongo does not have, which passed membership because the fallback
+// never consulted Mongo. Reading Mongo at request time settles both classes,
+// and the stored-row cleanup is a separate script.
+//
+// The rule is the one `createMessage` runs (controllers/messageController.ts):
+// `pod.members` alone. A PG write must not admit anyone the pod's own write path
+// would refuse.
+async function isPodMemberInMongo(podId: string, userId: string): Promise<boolean> {
   try {
-    const mongoPod = await MongoPod.findById(podId).lean() as {
-      members?: Array<{ toString(): string }>;
-    } | null;
-    if (!mongoPod) return false;
-    const inMongo = (mongoPod.members || []).some((m) => m.toString() === userId.toString());
-    if (inMongo) {
-      // Sync this member to PG for future requests
-      await PGPod.addMember(podId, userId).catch(() => {});
+    // CastError for a malformed id and a null row for a pod Mongo no longer has
+    // both mean "not a member" rather than an error.
+    const mongoPod = await MongoPod.findById(podId).select('members').lean();
+    if (!isListedPodMember(mongoPod, userId)) return false;
+    // Warm the mirror the PG listings still read. This write grants nothing:
+    // the row was the defect, not the fix. Failure to warm a cache must not deny
+    // a member either, so it is swallowed rather than failing the request — and
+    // it is awaited, not detached, so a rejection cannot surface as an
+    // unhandled one.
+    try {
+      await PGPod.addMember(podId, userId);
+    } catch {
+      // cache write only
     }
-    return inMongo;
+    return true;
   } catch {
     return false;
   }
@@ -83,7 +100,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       }
     }
 
-    const isMember = await isMemberWithFallback(podId, userId);
+    const isMember = await isPodMemberInMongo(podId, userId);
     if (!isMember) {
       res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
       return;
@@ -132,7 +149,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    const isMember = await isMemberWithFallback(podId, userId);
+    const isMember = await isPodMemberInMongo(podId, userId);
     if (!isMember) {
       res.status(401).json({ msg: 'Not authorized to post in this pod' });
       return;

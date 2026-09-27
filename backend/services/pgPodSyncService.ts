@@ -41,9 +41,14 @@ export async function syncPodFromMongo(
   // `created_by` MUST mirror Mongo's real owner, never whoever happened to
   // trigger the backfill. PGPod.create also inserts created_by into
   // pod_members, so attributing it to the requester manufactured a membership
-  // row for a non-member — which `isMemberWithFallback` and
-  // `reactionController.callerHasPodAccess` then trusted as proof of access,
-  // and which the now-removed pg deletePod trusted as proof of ownership.
+  // row for a non-member — which the PG-first membership checks then trusted as
+  // proof of access, and which the now-removed pg deletePod trusted as proof of
+  // ownership. Those checks read Mongo membership at request time since
+  // TASK-162 (pgMessageController.isPodMemberInMongo,
+  // podWriteAccessService.callerHasPodWriteAccess), so the row this creates is
+  // a mirror for the PG listing surfaces and no longer decides access — but it
+  // is still written from Mongo's owner, because the mirror should say what the
+  // pod says.
   const ownerId = mongoPod.createdBy ? String(mongoPod.createdBy) : requestingUserId;
   const pod = await PGPod.create(
     mongoPod.name,
