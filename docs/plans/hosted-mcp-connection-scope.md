@@ -134,7 +134,9 @@ This answers Vera 74793/74794, in Kai's wording (74826). Three surfaces can call
 - the native-runtime projection (`grantBrokerProjectionService.ts:258`);
 - a direct call.
 
-All three end in `toolBrokerService.callTool` (`:685`). **The park is one function for every surface, so it is the enforcement, and no surface routes around it.** The native projection offers only read tools, `getToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read')` (`:180`). That is an **offering filter, not the enforcement**: a write reaching `callTool` from there would hit the same park. This corrects the TASK-172 ruling's part 3, which called `:180` enforcement.
+All three end in `toolBrokerService.callTool` (`:685`). **For every call an agent makes, the park is one function, so it is the enforcement, and no surface routes around it.** The native projection offers only read tools, `getToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read')` (`:180`). That is an **offering filter, not the enforcement**: a write reaching `callTool` from there would hit the same park. This corrects the TASK-172 ruling's part 3, which called `:180` enforcement.
+
+One path reaches the vendor without passing the park, and it is the approval itself (Vera, 74860). `definition.call` has two call sites: `:799` inside `callTool`, past the park, and `:861` inside `executeApprovedToolCall` (`:833`), which runs only from `approvalActionService.ts:595` once the owner approves. That path never re-parks, by design, so its gate is (b) and (d), not (a). The owner check lives in its caller (`approvalActionService.ts:493`, `:502`). The digest check at `:842–843` is inside it, but compares the args against whatever `expectedArgsDigest` the caller passes; today both come from the approved row (`approvalActionService.ts:671–672`). **A second caller of `executeApprovedToolCall` inherits no park. It must check the owner itself and take the args and the digest from the owner-approved record.**
 
 So:
 
