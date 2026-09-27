@@ -49,6 +49,13 @@ services:
       - PG_HOST=${PG_HOST}
       - PG_PORT=${PG_PORT}
       - PG_DATABASE=${PG_DATABASE}
+      # Local Postgres has no TLS, so this compose file states that intent
+      # explicitly — the same thing the chart does for local (values-local.yaml:
+      # pgSslEnabled: "false"). Without it, PG_SSL_CA_PATH below is a declared CA
+      # path with no CA behind it (the backend image contains no /app/ca.pem) and
+      # db-pg keeps TLS required, which fails the connect instead of silently
+      # sending chat in the clear. Override in .env to reach an external PG.
+      - PG_SSL_ENABLED=${PG_SSL_ENABLED:-false}
       - PG_SSL_CA_PATH=/app/ca.pem
       
       # Authentication
