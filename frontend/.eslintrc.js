@@ -70,6 +70,7 @@ module.exports = {
         // so translationKeys.test.ts never saw the keys they were using.
         'src/v2/components/V2ConnectorsPage.tsx',
         'src/v2/components/V2ConnectorTools.tsx',
+        'src/v2/utils/localizeRelativeTime.ts',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {

@@ -1877,6 +1877,7 @@
     "rowAttention": "escalations reach the channel",
     "rowMirror": "every agent line reaches the channel",
     "rowRelayOff": "messages stay in the pod",
+    "sinceWhen": "since {{rel}}",
     "age": {
       "added": "added {{age}}",
       "started": "started {{age}}",
@@ -2103,6 +2104,13 @@
   "time": {
     "age": {
       "justNow": "just now",
+      "inAMoment": "in a moment",
+      "minutesAgo": "{{n}}m ago",
+      "hoursAgo": "{{n}}h ago",
+      "daysAgo": "{{n}}d ago",
+      "minutesFromNow": "{{n}}m from now",
+      "hoursFromNow": "{{n}}h from now",
+      "daysFromNow": "{{n}}d from now",
       "minutes": "{{n}}m",
       "hours": "{{n}}h",
       "days": "{{n}}d"

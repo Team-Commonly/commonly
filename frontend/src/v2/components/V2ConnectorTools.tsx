@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
+import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -125,20 +126,10 @@ export const shortAge = (date: string | null | undefined, now: number, t: (key: 
   return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
 };
 
-export const relativeTime = (date?: string | null, now: number = Date.now()): string => {
-  if (!date) return '—';
-  const ms = now - new Date(date).getTime();
-  if (!Number.isFinite(ms)) return '—';
-  const abs = Math.abs(ms);
-  const suffix = ms >= 0 ? 'ago' : 'from now';
-  const minutes = Math.round(abs / 60_000);
-  if (minutes < 1) return ms >= 0 ? 'just now' : 'in a moment';
-  if (minutes < 60) return `${minutes}m ${suffix}`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ${suffix}`;
-  const days = Math.round(hours / 24);
-  return `${days}d ${suffix}`;
-};
+// Both surfaces used to carry their own copy of this grammar; the locale family
+// lives in one place now (TASK-164). Re-exported so the module's surface is
+// unchanged for anything importing it from here.
+export { localizeRelativeTime, relativeTime } from '../utils/localizeRelativeTime';
 
 const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
 // Callers that decide what a render SHOWS pass that render's `now`; the read
@@ -507,9 +498,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const line2 = dead
       ? (grant.revokedAt
         ? (revokedBy
-          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
-          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: relativeTime(grant.revokedAt, now) }))
-        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: relativeTime(grant.expiresAt, now) }))
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))
       // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
       // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
       // that orders the clause differently needs the whole sentence (TASK-164). The
@@ -754,16 +745,16 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
           <p>
             {granter
-              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: relativeTime(grant.createdAt, now) })
-              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: relativeTime(grant.createdAt, now) })}
+              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now }) })
+              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now }) })}
             {' '}
             {grant.revokedAt
               ? (revokedBy
-                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: relativeTime(grant.revokedAt, now) })
-                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: relativeTime(grant.revokedAt, now) }))
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
               : (isExpired(grant, now)
-                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: relativeTime(grant.expiresAt, now) })
-                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: relativeTime(grant.expiresAt, now) }))}
+                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) })
+                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))}
           </p>
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
@@ -776,7 +767,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               <>
                 <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>
                 <dd>{grant.budget.windowMs
-                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: relativeTime(new Date(now - grant.budget.windowMs).toISOString(), now).replace(' ago', '') })
+                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: localizeWindow(grant.budget.windowMs, t) })
                   : t('tools.budgetTotal', { defaultValue: '{{calls}} calls', calls: grant.budget.calls })}</dd>
               </>
             )}
@@ -833,7 +824,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
                   <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
-                  <span className="v2-tools__trail-when">{relativeTime(line.at, now)}</span>
+                  <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now })}</span>
                 </li>
               ))}
             </ol>

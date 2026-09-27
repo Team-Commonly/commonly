@@ -13,6 +13,7 @@ import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools from './V2ConnectorTools';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -215,16 +216,9 @@ const codeExpiresInMinutes = (connector: Connector): number => {
   return Math.max(1, Math.ceil((expiry - Date.now()) / 60_000));
 };
 
-const relativeTime = (date?: string, now: number = Date.now()): string => {
-  const timestamp = date ? new Date(date).getTime() : NaN;
-  if (!Number.isFinite(timestamp)) return 'just now';
-  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
+// One connector's age as English prose uses this profile; the gate line below
+// needed the same parts (TASK-164).
+const connectorRelativeTimeOptions = { includeFuture: false, missing: 'just now', rounding: 'floor' } as const;
 
 const claimIsStale = (installation: CatalogInstallation): boolean => {
   const claimedAt = installation.claimedAt ? new Date(installation.claimedAt).getTime() : NaN;
@@ -1159,7 +1153,7 @@ const V2ConnectorsPage: React.FC = () => {
                   {active && <span className="v2-connector-gate__tag">{t('connectors.activeTag', { defaultValue: 'active' })}</span>}
                 </button>
                 <span className={`v2-connector-gate__since${enabled ? '' : ' v2-connector-gate__since--off'}`}>
-                  {enabled ? `since ${relativeTime(gate?.since, now)}` : t('connectors.gateOff', { defaultValue: 'off' })}
+                  {enabled ? t('connectors.sinceWhen', { defaultValue: 'since {{rel}}', rel: localizeRelativeTime(gate?.since, t, { ...connectorRelativeTimeOptions, now }) }) : t('connectors.gateOff', { defaultValue: 'off' })}
                 </span>
                 <input
                   type="checkbox"

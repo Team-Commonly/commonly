@@ -1869,6 +1869,7 @@
     "rowAttention": "升级消息会回到频道",
     "rowMirror": "智能体的每条消息都会回到频道",
     "rowRelayOff": "消息只留在 Pod 内",
+    "sinceWhen": "{{rel}}起",
     "age": {
       "added": "{{age}}前添加",
       "started": "{{age}}前开始",
@@ -2095,6 +2096,13 @@
   "time": {
     "age": {
       "justNow": "刚刚",
+      "inAMoment": "即将",
+      "minutesAgo": "{{n}}分钟前",
+      "hoursAgo": "{{n}}小时前",
+      "daysAgo": "{{n}}天前",
+      "minutesFromNow": "{{n}}分钟后",
+      "hoursFromNow": "{{n}}小时后",
+      "daysFromNow": "{{n}}天后",
       "minutes": "{{n}}分钟",
       "hours": "{{n}}小时",
       "days": "{{n}}天"
