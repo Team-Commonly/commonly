@@ -401,6 +401,21 @@ describe('warmMcpHome — install, probe, then move the pointer', () => {
     expect(existsSync(lockPathFor(home))).toBe(false);
   });
 
+  test('old version dirs are pruned once the pointer has moved', async () => {
+    // Not the same arm as the pruneVersionDirs unit test: this one witnesses
+    // that the WARM calls it. Without it a home grows by one build per publish
+    // forever, and nothing goes red until a disk fills.
+    const home = makeHome();
+    ['0.3.9', '0.3.10', '0.3.11', '0.3.12'].forEach((v) => installVersion(home, v));
+    pointAt(home, '0.3.12');
+    const { exec, probe } = fakeInstall(home, '0.3.13');
+
+    expect(await warmMcpHome(home, { exec, probe, now: Date.now() })).toBe(WARM_RESULTS.ADVANCED);
+
+    expect(readdirSync(home).filter((n) => !n.startsWith('.') && n !== 'current').sort())
+      .toEqual(['0.3.11', '0.3.12', '0.3.13']);
+  });
+
   test('a build that does not answer initialize never becomes current', async () => {
     const home = makeHome();
     installVersion(home, '0.3.13');

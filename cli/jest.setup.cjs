@@ -17,4 +17,4 @@ const { mkdtempSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
-process.env.COMMONLY_MCP_HOME = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
+// deliberately left unset

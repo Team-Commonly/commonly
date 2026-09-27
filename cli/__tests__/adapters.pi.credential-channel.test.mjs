@@ -197,6 +197,30 @@ describe('describeMcpCommand: is this our server, and which version', () => {
     )).toEqual({ isCommonly: true, version: [0, 3, 4] });
   });
 
+  test('a home bin PATH is a path, not a spec — the version comes from its package.json', () => {
+    // TASK-174. The seat home runs `node <home>/<version>/node_modules/@commonlyai/mcp/<bin>`,
+    // and that string CONTAINS the package name. Before this arm existed, the
+    // spec branch matched it first and answered `{ version: null }` — "unpinned,
+    // so never old" — for every home build. The version then decided nothing,
+    // and an old build in the home was handed the credential file channel it
+    // cannot read.
+    const pkg = JSON.stringify({ name: '@commonlyai/mcp', version: '0.3.7' });
+    expect(describeMcpCommand(
+      ['node', '/home/me/.commonly/mcp/0.3.7/node_modules/@commonlyai/mcp/src/index.js'],
+      reader(pkg),
+    )).toEqual({ isCommonly: true, version: [0, 3, 7] });
+    // Control, same shape, unreadable package.json: it must NOT be read as an
+    // unpinned npx spec (which is what the bug did — it answered
+    // `{ isCommonly: true, version: null }` here).
+    expect(describeMcpCommand(
+      ['node', '/home/me/.commonly/mcp/0.3.7/node_modules/@commonlyai/mcp/src/index.js'],
+      reader(null),
+    )).toBeNull();
+    // And the npx shapes are untouched by that rule.
+    expect(describeMcpCommand(['npx', '-y', '@commonlyai/mcp@latest']))
+      .toEqual({ isCommonly: true, version: null });
+  });
+
   test('a package.json naming another package, or a malformed one, is not our server', () => {
     expect(describeMcpCommand(['node', '/tmp/other/src/index.js'], reader('{"name":"other","version":"1.0.0"}'))).toBeNull();
     expect(describeMcpCommand(['node', '/tmp/broken/src/index.js'], reader('{not json'))).toBeNull();
