@@ -146,7 +146,13 @@ const sweepPausedInstallations = async (): Promise<number> => {
 // promise is exactly what a departed CREATOR breaks: `leavePod` filters `members`
 // and keeps `createdBy`, so the permissive predicate kept this sweep blind to
 // them, and after TASK-161 made relay strict the ON switch they were shown could
-// never deliver. Same predicate as the relay, so the two cannot disagree here.
+// never deliver. It shares the relay's MEMBERSHIP half and deliberately nothing
+// else, for two measured reasons (Vera 74753): the per-pod read projects
+// `.select('members')`, so a type half here would see `type: undefined` — not a
+// hidden type — and refuse nothing while looking like enforcement; and widening
+// that projection is what would start pruning, unsetting a live gate and the
+// active `podId` the moment the constant changed. Type is refused where it is
+// decided, at the connector target writes and on routed replies (TASK-171).
 const sweepOrphanedGates = async (): Promise<number> => {
   const rows = await Integration.find({
     scope: 'user',

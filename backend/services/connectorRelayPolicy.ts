@@ -13,6 +13,8 @@
 // `isListedPodMember` now.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { isListedPodMember } = require('../utils/isPodMember');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isHiddenFromDefaultListing } = require('./podListing');
 
 export interface RelayPolicyIntegration {
   scope?: string;
@@ -73,15 +75,42 @@ export const isGatedPodTarget = (
     : String(integration.podId) === String(podId)
 );
 
+// Every connector TARGET write runs this: the install verb, the connector's
+// creation, the pod it makes active, and each gate key. Two halves, both the
+// server's reading of the same question — may this person point a channel at
+// this pod?
+//
+//   1. Listed membership (`isListedPodMember`, membership and nothing else).
+//   2. Not a type the default listing hides. `agent-admin` is the legacy
+//      multi-admin debug channel: it has no gate UI, so a gate written for one
+//      is a switch its owner never sees (V2ConnectorsPage drops gate keys
+//      outside the offered list on the next toggle) and — at 2-3 members per
+//      pod — it is other admins' words leaving the instance because a
+//      co-member flipped something in an API call (Wren's ruling, TASK-171).
+//
+// Reading one constant with the listing is the point: the rule the page relies
+// on is "the list shows exactly what the server would accept", and two lists
+// that agree today is how the gate key came to accept a type the list hid.
+//
+// This is a TARGET check, not a READ check. Authorisation on an EXISTING row
+// (`canDeleteIntegration`, the listener and delete paths) stays membership-only,
+// so an owner who is a member can still list and remove a connector that points
+// somewhere they may no longer target; and the ACTIVE pod relay path in each
+// bridge is unchanged.
+export const isConnectorTargetPod = (pod: any, userId: unknown): boolean => (
+  isListedPodMember(pod, userId) && !isHiddenFromDefaultListing(pod)
+);
+
 // May this connector address `pod` on behalf of `userId`? Gate and membership in
 // one predicate, because a caller that holds one half and not the other is the
 // failure this exists for: the gate says the connector is still subscribed, the
 // membership says the person it speaks for is still in the room.
 //
-// The membership half is `isListedPodMember` — `pod.members` only, the check the
-// pod's own write path runs — so a connector can never write where its owner
-// would be refused. Before TASK-161 this read the permissive `isPodMember`, and a
-// pod's creator who had left the pod still relayed in both directions.
+// The second half is `isConnectorTargetPod`: listed membership — `pod.members`
+// only, the check the pod's own write path runs — so a connector can never write
+// where its owner would be refused, plus the pod-type rule the write verbs run
+// (TASK-171). Before TASK-161 this read the permissive `isPodMember`, and a pod's
+// creator who had left the pod still relayed in both directions.
 //
 // KNOWN WINDOW, accepted: this is check-then-act. A gate switched off between
 // this call and the write still lets that one message through. Closing it means
@@ -105,13 +134,22 @@ export const isRoutedPodTarget = (opts: {
   // No separate user-id guard: the predicate fails closed on a falsy id itself
   // (measured — a guard here changed no arm, so it was removed rather than kept
   // unwitnessed).
+  // The same target predicate the write verbs run, so what a connector may be
+  // POINTED at and what a ROUTED reply may address cannot drift apart. This is
+  // the only relay path that reads the type half; the other three ask three
+  // different questions (measured, Vera 74748): the bridges' outbound fan-out
+  // asks `isRelayableIntegration` — the gate plus the row's relay flags, no
+  // membership; decision-card delivery asks the gate and then membership; the
+  // active-pod inbound paths ask membership alone. Nothing can create such a row
+  // any more, because the write verbs refuse one (TASK-171).
   return isGatedPodTarget(integration, podId)
-    && isListedPodMember(pod, userId);
+    && isConnectorTargetPod(pod, userId);
 };
 
 module.exports = {
   shouldEscalate,
   isGatedPodTarget,
   isRoutedPodTarget,
+  isConnectorTargetPod,
   isListedPodMember,
 };

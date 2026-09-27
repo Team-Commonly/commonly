@@ -35,7 +35,10 @@ const { hash, randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
-const { isListedPodMember } = require('../services/connectorRelayPolicy');
+const {
+  isConnectorTargetPod,
+  isListedPodMember,
+} = require('../services/connectorRelayPolicy');
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 // eslint-disable-next-line global-require
@@ -396,7 +399,11 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // for read observability, and would make "only members can write here"
     // untrue). Plain findById: unit mocks resolve a bare doc.
     const targetPod = await Pod.findById(String(podId));
-    if (!targetPod || !isListedPodMember(targetPod, req.user?.id)) {
+    // The target predicate, not membership alone: a created connector makes this
+    // pod a relay target, and the pod types the default listing hides have no
+    // gate UI, so a connector pointed at one is invisible from the page that
+    // would show it (TASK-171).
+    if (!targetPod || !isConnectorTargetPod(targetPod, req.user?.id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
     const relay = readRelayFlags(stripServerOwnedConfig(config));
@@ -657,7 +664,9 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
           return res.status(400).json({ message: 'podId must be a valid pod id' });
         }
         const activePod = await Pod.findById(podId);
-        if (!activePod || !isListedPodMember(activePod, requesterId)) {
+        // The active pod is a target too: bridges relay its content without a
+        // gate, so the same type rule applies as to any other target (TASK-171).
+        if (!activePod || !isConnectorTargetPod(activePod, requesterId)) {
           return res.status(403).json({ message: 'Access denied' });
         }
       }
@@ -680,7 +689,10 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
         // a mixed valid/invalid PATCH atomic: no valid gate is written first.
         for (const gatePodId of gatePodIds) {
           const gatePod = await Pod.findById(gatePodId);
-          if (!gatePod || !isListedPodMember(gatePod, requesterId)) {
+          // This is the site the row was opened for: the gate-key check had no
+          // type rule, so a listed owner could switch a gate on for a pod the
+          // Connectors page never offers (TASK-171).
+          if (!gatePod || !isConnectorTargetPod(gatePod, requesterId)) {
             return res.status(403).json({ message: 'Access denied' });
           }
         }

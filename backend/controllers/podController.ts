@@ -13,6 +13,7 @@ const {
   COMMUNITY_LISTING_QUERY,
   NON_LISTABLE_POD_TYPES,
   communityDiscoverQuery,
+  defaultListingTypeFilter,
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
@@ -189,8 +190,9 @@ exports.getAllPods = async (req: any, res: any) => {
       scopedCallerId = new mongoose.Types.ObjectId(rawCallerId);
     }
     if (hasUnusableType) return res.json([]);
-    // Exclude agent-admin DM pods from default listing; only show when
-    // explicitly requested and the caller is a member.
+    // The default listing hides the types no connector may target, from one
+    // constant (`services/podListing.ts`), so a type cannot be hidden here and
+    // still be gateable through the API (TASK-171).
     // Community and Discover are explicit, additive discovery scopes. Personal
     // pod types stay excluded even if a malformed/admin-created row has the
     // listing/read flags forced true.
@@ -208,7 +210,7 @@ exports.getAllPods = async (req: any, res: any) => {
           ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
           : { $nin: NON_LISTABLE_POD_TYPES },
       }
-      : (type ? { type } : { type: { $ne: 'agent-admin' } });
+      : defaultListingTypeFilter(type);
 
     // Membership filter — return only pods the requester belongs to.
     //

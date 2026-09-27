@@ -125,6 +125,43 @@ describe('installable connector routes', () => {
     expect(installationService.install).not.toHaveBeenCalled();
   });
 
+  // TASK-171: the caller is LISTED here, so only the type half can refuse it.
+  // Installing seeds the pod's gate ON, and `agent-admin` has no gate switch in
+  // the UI, so the install verb refuses it the same way the gate key does.
+  it('rejects an agent-admin pod the caller is listed in', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      type: 'agent-admin',
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(403);
+    expect(installationService.install).not.toHaveBeenCalled();
+  });
+
+  it('still installs into a team pod the caller is listed in', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      type: 'team',
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).not.toBe(403);
+    expect(installationService.install).toHaveBeenCalled();
+  });
+
   it('rejects a departed CREATOR before any install row is claimed', async () => {
     // TASK-161: `leavePod` filters `members` and never clears `createdBy`, so
     // this pod has no members and still names the caller as its creator. The

@@ -1,6 +1,7 @@
 process.env.PG_HOST = '';
 const mongoose = require('mongoose');
 const podController = require('../../../controllers/podController');
+const { DEFAULT_LISTING_HIDDEN_POD_TYPES } = require('../../../services/podListing');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
 const Post = require('../../../models/Post');
@@ -454,7 +455,9 @@ describe('podController', () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     // 'admin-id' is not a castable ObjectId, so this exercises the JS fallback.
-    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
+    // The hidden set comes from `services/podListing.ts` (TASK-171) — the same
+    // constant the connector target predicate reads.
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] } });
     // Default scope=mine: admin is filtered to their own pods, NOT every
     // chat pod in the instance.
     expect(res.json).toHaveBeenCalledWith([myPod]);
@@ -479,7 +482,7 @@ describe('podController', () => {
     await podController.getAllPods(req, res);
 
     const [query] = Pod.find.mock.calls[0];
-    expect(query.type).toEqual({ $ne: 'agent-admin' });
+    expect(query.type).toEqual({ $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] });
     expect(String(query.members)).toBe(String(me));
     expect(res.json).toHaveBeenCalledWith([mine]);
   });
@@ -547,7 +550,7 @@ describe('podController', () => {
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
 
-    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] } });
     expect(res.json).toHaveBeenCalledWith([otherPod]);
   });
 

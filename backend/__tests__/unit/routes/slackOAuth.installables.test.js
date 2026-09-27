@@ -290,6 +290,46 @@ describe('Slack installable OAuth routes', () => {
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  test('refuses to confirm a bind onto an agent-admin pod the caller is listed in', async () => {
+    // TASK-171. The confirm step stores the chat a connector will speak into, so
+    // it is a target write: listed membership AND a pod type the listing shows.
+    // `agent-admin` has no gate UI, so a bind onto one is a channel nobody can
+    // switch off from the page that would show it.
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById.mockResolvedValueOnce({ createdBy: 'another', type: 'agent-admin', members: [ownerId] });
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('slack_pod_access_denied');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('confirms a bind onto a team pod the caller is listed in', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById
+      .mockResolvedValueOnce({ createdBy: 'another', type: 'team', members: [ownerId] })
+      .mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Team' }) }),
+      });
+    Integration.findOneAndUpdate.mockResolvedValue({ ...integration, status: 'connected', config: { ...pending } });
+    connectorSecrets.get.mockResolvedValue('xoxb-secret');
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '1.1' }) }));
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(200);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalled();
+  });
+
   test('a reconnect clears the reason an earlier flip left on the row (wren 73838)', async () => {
     const pending = {
       teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
