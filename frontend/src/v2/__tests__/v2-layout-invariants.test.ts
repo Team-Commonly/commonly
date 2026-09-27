@@ -1860,7 +1860,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(sharedMarkRule?.[2]).toContain('display: inline-flex');
     expect(sharedMarkRule?.[2]).toContain('vertical-align: -2px');
     expect(sharedMarkRule?.[2]).toContain('color: var(--v2-text-tertiary)');
-    // Rule 3: the kicker is mono 11; rule 1 (as revised by the TASK-162 gate): the mode word is hidden until 760 and the mark's own 16px rule is GONE — its size now comes from the shared rule above plus the glyph's `size` prop; rule 2: the gear is 32 (44 on the phone).
+    // Rule 3: the kicker is mono 11; rule 1 (as revised by the TASK-162 gate): the mode word is hidden until 760 and the mark's own 16px rule is GONE — the shared rule carries no dimensions, so the size is the glyph's `size` prop alone, pinned same-size against the Tools glyph in V2ConnectorsPage.test.tsx (TASK-177); rule 2: the gear is 32 (44 on the phone).
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__kicker')).toContain('font-size: 11px');
     expect(ruleBody(v2, '.v2-connector-row__kicker-mode')).toContain('display: none');

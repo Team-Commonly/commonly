@@ -122,6 +122,64 @@ describe('V2ConnectorsPage', () => {
     expect(row?.querySelector('.v2-connector-row__when')).toBeNull();
   });
 
+  // TASK-177. The mark and the Tools glyph agree at 14px through TWO independent
+  // literals in two files: `size={14}` at the mark's call site, and
+  // V2ConnectorTools' own local `G` (`:157`, `width="14" height="14"`) — it does
+  // not import `MarkGlyph`, and `icons/glyphs.tsx`'s `G` defaults to 16.
+  // So nothing shared carries the agreement and nothing tested it: drop the prop
+  // and the mark renders 16 while Tools stays 14, silently desyncing the two rows
+  // v2.css claims cannot drift. And a `14` asserted in one file would have passed
+  // through every misreading of this chain, so what is pinned is the AGREEMENT:
+  // whichever number the design lands on, both glyphs must carry it. The absolute
+  // size stays the gate's decision, not this test's.
+  it('TASK-177: the connector mark and the Tools mode glyph render at the same size', async () => {
+    const toolsEntry = {
+      installableId: 'github', list: 'tools', label: 'GitHub', description: 'Issues and pull requests.', available: true,
+      broker: { id: 'commonly-grant-broker' },
+      tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }],
+      connections: [],
+    };
+    const grant = {
+      grantId: 'grant_live', installationId: 'inst-1', target: { kind: 'pod', id: 'p1' }, tools: ['github.list_issues'],
+      writeMode: 'read', budget: { calls: 50, windowMs: 3600000 }, effectiveAudience: [],
+      expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: new Date().toISOString(), grantedBy: 'u1',
+    };
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [connectors[1]] });
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Launch pod', type: 'chat' }] });
+      if (url === '/api/installables') return Promise.resolve({ data: { installables: [toolsEntry] } });
+      if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grant] } });
+      if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+      if (url.includes('/calls')) {
+        return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    const { container } = renderPage();
+    // Both glyphs have to actually BE there, or the comparison would pass on two
+    // absent nodes — the vacuity the same-size claim is easiest to fake.
+    const markSvg = await waitFor(() => {
+      expect(container.querySelector('.v2-connector-row__mark svg')).not.toBeNull();
+      return container.querySelector('.v2-connector-row__mark svg') as SVGElement;
+    });
+    const modeSvg = await waitFor(() => {
+      expect(container.querySelector('.v2-tools__mode svg')).not.toBeNull();
+      return container.querySelector('.v2-tools__mode svg') as SVGElement;
+    });
+    // Positive control: these attributes are the instrument, so prove they carry a
+    // value at all (an empty string would make the equality below meaningless).
+    // Both attributes, both glyphs: controlling only `width` left the height
+    // comparison able to pass on null === null — strip `height` from *both* `G`
+    // components and a width-only control stays green (sprint-review's gate).
+    expect(markSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(markSvg.getAttribute('height')).toMatch(/^\d+$/);
+    expect(modeSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(modeSvg.getAttribute('height')).toMatch(/^\d+$/);
+    expect(markSvg.getAttribute('width')).toBe(modeSvg.getAttribute('width'));
+    expect(markSvg.getAttribute('height')).toBe(modeSvg.getAttribute('height'));
+  });
+
   it('TASK-162: line 3 never repeats the mode word the kicker already carries', async () => {
     // The prefixes lived in the component's defaultValue, which is exactly where
     // they could not be guarded: once the key exists in the catalog the catalog
