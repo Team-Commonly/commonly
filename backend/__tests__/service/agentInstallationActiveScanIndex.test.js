@@ -97,10 +97,18 @@ describe('AgentInstallation — the active-set read on the grant-broker path', (
   });
 
   test('the index is declared in the schema, in the key order the plan needs', () => {
+    const KEY_ORDER = ['status', 'agentName', 'instanceId', 'installedBy', '_id'];
     const declared = AgentInstallation.schema.indexes().map(([keys]) => keys);
+    const match = declared.find((keys) => Object.keys(keys).length === KEY_ORDER.length
+      && KEY_ORDER.every((key) => key in keys));
 
-    expect(declared).toContainEqual({
-      status: 1, agentName: 1, instanceId: 1, installedBy: 1, _id: 1,
-    });
+    expect(match).toBeDefined();
+    // The ORDER, not the key set. A prefix the seam never filters on
+    // (`agentName` first) is served as a non-covering IXSCAN+FETCH — a
+    // different plan. `toEqual`/`toContainEqual` on a plain object ignore key
+    // order (and mongoose keeps the declaration's order), so a reorder passed
+    // the object form while only the explain arm below caught it. Asserting the
+    // keys as an ARRAY is what makes this test's name true.
+    expect(Object.keys(match)).toEqual(KEY_ORDER);
   });
 });
