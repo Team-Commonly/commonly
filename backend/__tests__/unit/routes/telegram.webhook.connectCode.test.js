@@ -42,6 +42,12 @@ const freshCode = () => ({
   connectCodeExpiresAt: new Date(Date.now() + 60000),
 });
 
+// TASK-153: what the connectors page displays. `groupCode` in V2ConnectorsPage
+// splits the 32 hex chars into fours, so the tokens after the command are ONE
+// code — before the fix only the first group was read and every attempt failed.
+const SPACED_CODE = '1964 774b a58c d1e2 f3a4 b5c6 d7e8 f9a0';
+const JOINED_CODE = SPACED_CODE.replace(/\s+/g, '');
+
 describe('/commonly-enable hardening', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -108,5 +114,40 @@ describe('/commonly-enable hardening', () => {
       .mockResolvedValueOnce(null);
     await enable('c'.repeat(32), { id: -100, type: 'group', title: 'Crew' });
     expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
+  });
+
+  it('binds from the spaced form the connectors page displays', async () => {
+    const integration = { _id: 'i1', podId: 'p1', config: { ...freshCode(), connectCode: JOINED_CODE } };
+    Integration.findOne = jest.fn().mockResolvedValueOnce(integration).mockResolvedValueOnce(null);
+    await enable(SPACED_CODE);
+    // The lookup is the contract: the whole displayed code, whitespace removed.
+    expect(Integration.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ 'config.connectCode': JOINED_CODE }),
+    );
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
+  });
+
+  it('still refuses a spaced code that matches nothing', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    await enable('zzzz zzzz zzzz zzzz');
+    expect(Integration.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ 'config.connectCode': 'zzzzzzzzzzzzzzzz' }),
+    );
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/invalid or expired/i);
+  });
+
+  // Witnesses where the join sits, not just that it happens: joining must not
+  // move the attempt counter, or one displayed command burns the whole budget.
+  it('spends one attempt on a spaced command, not one per group', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    await enable(SPACED_CODE); // eight groups, one command
+    for (let i = 0; i < ENABLE_ATTEMPT_LIMIT - 1; i += 1) {
+      await enable(`guess${i}`); // eslint-disable-line no-await-in-loop
+    }
+    expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
+    await enable('one-more');
+    expect(Integration.findOne).toHaveBeenCalledTimes(ENABLE_ATTEMPT_LIMIT);
+    expect(telegramService.sendMessage.mock.calls.at(-1)[2]).toMatch(/too many attempts/i);
   });
 });
