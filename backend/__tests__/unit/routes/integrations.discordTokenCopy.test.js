@@ -29,7 +29,6 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
   listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../services/dmService', () => ({ canViewPod: jest.fn(() => true) }));
-jest.mock('../../../utils/isPodMember', () => jest.fn(() => true));
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
 // The create path initializes and connects the provider; only the row matters.
 jest.mock('../../../services/discordService', () => jest.fn().mockImplementation(() => ({

@@ -345,6 +345,48 @@ describe('telegramBridgeService — multi-pod routing', () => {
     expect(telegramSend.sendMessage.mock.calls[0][2]).toContain('Launch');
   });
 
+  it('refuses a quote-reply into a pod the linked user created and left', async () => {
+    // TASK-161. The arm above is a pod whose `members` no longer name the user;
+    // this is the same person as the pod's `createdBy`, which `leavePod` never
+    // clears. The permissive predicate treated that as membership, so this is
+    // the cell the row measured: relayed in, and the pod's own write path 401s.
+    Pod.findById.mockImplementation((id) => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          String(id) === GATED_POD
+            ? podDoc({ name: 'Launch', createdBy: 'user-1', members: [] })
+            : podDoc(),
+        ),
+      }),
+    }));
+    const result = await inbound(userScoped(), { reply_to_message: { message_id: 101 } });
+
+    expect(result).toEqual({ relayed: false });
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(deliverMessageToAgents).not.toHaveBeenCalled();
+    expect(telegramSend.sendMessage.mock.calls[0][2]).toContain('Launch');
+  });
+
+  it('refuses an unquoted inbound message when the ACTIVE pod\'s creator left it', async () => {
+    // The routed-reply arm above exercises the policy conjunction; this one is
+    // the bridge's own membership read on the active pod, so a future edit that
+    // restores the permissive predicate at either site reddens something.
+    Pod.findById.mockImplementation(() => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(podDoc({ createdBy: 'user-1', members: [] })),
+      }),
+    }));
+    const result = await inbound(userScoped(), {});
+
+    expect(result).toEqual({ relayed: false });
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(telegramSend.sendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'This connector has no active pod. Choose one in Commonly first.',
+    );
+  });
+
   it('routes an entry with no podId as it always has — the active pod', async () => {
     await inbound(userScoped(), { reply_to_message: { message_id: 103 } });
 

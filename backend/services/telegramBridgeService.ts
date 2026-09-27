@@ -21,12 +21,13 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const IntegrationModel = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { shouldEscalate, isGatedPodTarget, isRoutedPodTarget } = require('./connectorRelayPolicy');
+const {
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+} = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
@@ -553,7 +554,7 @@ export const relayTelegramMessageToPod = async (opts: {
   const socketConfig = require('../config/socket');
 
   const pod = await Pod.findById(podId).select('type createdBy members').lean();
-  if (!pod || !isPodMember(pod, linkedUserId)) {
+  if (!pod || !isListedPodMember(pod, linkedUserId)) {
     console.warn('[tg-bridge] inbound dropped — linked user is no longer a pod member');
     await replyNoActivePod(integration);
     return { relayed: false };

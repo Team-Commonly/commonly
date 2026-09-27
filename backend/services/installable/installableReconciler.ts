@@ -25,7 +25,7 @@ const { allRefPaths, kindSpec, rowReferencesSecret } = require('../connectorSecr
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorDeliveryFailures = require('../connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../../utils/isPodMember');
+const { isListedPodMember } = require('../connectorRelayPolicy');
 
 const ORPHAN_SECRET_GRACE_MS = 10 * 60_000;
 
@@ -142,7 +142,11 @@ const sweepPausedInstallations = async (): Promise<number> => {
 };
 
 // Membership is authoritative on outbound selection, but prune obsolete keys
-// here as well so the owner's gate list does not promise a pod they left.
+// here as well so the owner's gate list does not promise a pod they left. That
+// promise is exactly what a departed CREATOR breaks: `leavePod` filters `members`
+// and keeps `createdBy`, so the permissive predicate kept this sweep blind to
+// them, and after TASK-161 made relay strict the ON switch they were shown could
+// never deliver. Same predicate as the relay, so the two cannot disagree here.
 const sweepOrphanedGates = async (): Promise<number> => {
   const rows = await Integration.find({
     scope: 'user',
@@ -159,8 +163,8 @@ const sweepOrphanedGates = async (): Promise<number> => {
     if (!gates || typeof gates !== 'object') continue;
     const unset: Record<string, 1> = {};
     for (const podId of Object.keys(gates)) {
-      const pod = await Pod.findById(podId).select('createdBy members').lean();
-      if (!pod || !isPodMember(pod, row.createdBy)) {
+      const pod = await Pod.findById(podId).select('members').lean();
+      if (!pod || !isListedPodMember(pod, row.createdBy)) {
         unset[`config.gates.${podId}`] = 1;
         if (String(row.podId) === podId) unset.podId = 1;
       }

@@ -10,7 +10,7 @@ const Pod = require('../models/Pod');
 const Integration = require('../models/Integration');
 const InstallableInstallation = require('../models/InstallableInstallation');
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+const { isListedPodMember } = require('../services/connectorRelayPolicy');
 // eslint-disable-next-line global-require
 const { randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
@@ -403,7 +403,7 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     return slackError(res, 409, 'slack_bind_expired', 'Slack authorization expired. Start again.');
   }
   const pod = await Pod.findById(owned.integration.podId);
-  if (!pod || !isPodMember(pod, userId)) {
+  if (!pod || !isListedPodMember(pod, userId)) {
     return slackError(res, 403, 'slack_pod_access_denied', 'You no longer have access to this pod.');
   }
   const confirmed = await Integration.findOneAndUpdate(
@@ -568,7 +568,10 @@ router.post('/:installableId/install', writeIntegrationsRateLimit, auth, async (
 
   try {
     const pod = await Pod.findById(podId);
-    if (!pod || !isPodMember(pod, userId)) {
+    // The pod's write path, not the permissive predicate: installing a connector
+    // seeds that pod's gate ON, so a creator who left must not be able to write
+    // install state into a pod that would refuse their messages (TASK-161).
+    if (!pod || !isListedPodMember(pod, userId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const result = await install({

@@ -7,9 +7,8 @@ const DecisionRequest = require('../models/DecisionRequest');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { isGatedPodTarget } = require('./connectorRelayPolicy');
+const { isGatedPodTarget, isListedPodMember } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
@@ -92,7 +91,7 @@ const canSendClosingLine = (
   const mutedUntil = integration.config.relayMutedUntil;
   if (mutedUntil && new Date(mutedUntil).getTime() > now.getTime()) return false;
   const linkedUserId = memberIdFor(integration);
-  if (!linkedUserId || !isPodMember(pod, linkedUserId)) return false;
+  if (!linkedUserId || !isListedPodMember(pod, linkedUserId)) return false;
   if (!integration.config.chatId) return false;
   if (integration.type === 'telegram') {
     return integration.config.chatType === 'private' && Boolean(process.env.TELEGRAM_BOT_TOKEN);

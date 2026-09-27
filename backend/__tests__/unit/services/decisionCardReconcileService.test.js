@@ -301,6 +301,53 @@ describe('decision card closure fan-out', () => {
     expect((await Integration.findById(missingLink._id)).config.cards[0].closedAt).toEqual(expect.any(Date));
   });
 
+  test('sends no closing line to a creator who left, while a listed sibling still receives one', async () => {
+    // TASK-161, from Vera 74671: `canSendClosingLine` had no witness for the
+    // population the permissive predicate admitted. `createdBy` identifies the
+    // pod's creator; it is not membership, and this arm is the one that says so.
+    // The listed sibling is the control — without it a `not.toHaveBeenCalled`
+    // would be indistinguishable from an arm that never ran.
+    const thirdId = new mongoose.Types.ObjectId();
+    Pod.findById.mockImplementation(() => chain({ createdBy: memberId, members: [ownerId, thirdId] }));
+    const origin = await Integration.create({
+      podId, scope: 'user', type: 'telegram', createdBy: ownerId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(ownerId), chatType: 'private', chatId: 'origin',
+        gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, tgMessageId: '11', sentAt: new Date() }],
+      },
+    });
+    const leftCreator = await Integration.create({
+      podId, scope: 'user', type: 'telegram', createdBy: memberId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(memberId), chatType: 'private', chatId: 'left-creator',
+        gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, tgMessageId: '12', sentAt: new Date() }],
+      },
+    });
+    const listed = await Integration.create({
+      podId, scope: 'user', type: 'telegram', createdBy: thirdId, isActive: true, status: 'connected',
+      config: {
+        liveRelay: true, linkedUserId: String(thirdId), chatType: 'private', chatId: 'listed',
+        gates: { [String(podId)]: { enabled: true, since: new Date() } },
+        cards: [{ podMessageId: cardId, tgMessageId: '13', sentAt: new Date() }],
+      },
+    });
+
+    await fanoutDecisionClosure(
+      { _id: new mongoose.Types.ObjectId(), podId, messageId: cardId, ruling: { value: 'Now', byUsername: 'Sam' } },
+      { via: 'workspace', integrationId: origin._id },
+    );
+
+    expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+    expect(telegramSend.sendMessage).toHaveBeenCalledWith(
+      'telegram-token', 'listed', '✓ Ruled by Sam: Now', { replyToMessageId: '13', plainText: true },
+    );
+    // Closure is unconditional (it is a receipt, not a delivery), so the
+    // departure shows up in the send and not in `closedAt`.
+    expect((await Integration.findById(leftCreator._id)).config.cards[0].closedAt).toEqual(expect.any(Date));
+  });
+
   test('returns after durable closure while a sibling provider send is still pending', async () => {
     let releaseSend;
     const pendingSend = new Promise((resolve) => { releaseSend = resolve; });
