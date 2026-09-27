@@ -136,10 +136,12 @@ export const isRoutedPodTarget = (opts: {
   // unwitnessed).
   // The same target predicate the write verbs run, so what a connector may be
   // POINTED at and what a ROUTED reply may address cannot drift apart. This is
-  // the only relay path that reads the type half: the bridges' outbound fan-out
-  // and decision-card delivery still ask `isGatedPodTarget` + membership alone
-  // (measured, Vera 74749), and nothing can create such a row any more, because
-  // the write verbs refuse one.
+  // the only relay path that reads the type half; the other three ask three
+  // different questions (measured, Vera 74748): the bridges' outbound fan-out
+  // asks `isRelayableIntegration` — the gate plus the row's relay flags, no
+  // membership; decision-card delivery asks the gate and then membership; the
+  // active-pod inbound paths ask membership alone. Nothing can create such a row
+  // any more, because the write verbs refuse one (TASK-171).
   return isGatedPodTarget(integration, podId)
     && isConnectorTargetPod(pod, userId);
 };
