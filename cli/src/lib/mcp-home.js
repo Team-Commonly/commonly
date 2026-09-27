@@ -27,6 +27,15 @@
  * operator saying which build to run, and the npx cache already gives a pinned
  * spec its own dir.
  *
+ * The cold path is pinned too (TASK-174's second half). A spawn with no usable
+ * home still runs the declaration, but not with the shared `@latest` spec: the
+ * spec this spawn executes is the version the registry already answered with,
+ * read from the warm's own cache, so `@latest`'s one shared npx dir is not on
+ * the spawn path even once. The fallback is the declaration as written, and it
+ * is used exactly when nothing has ever resolved a version on this host — a
+ * fresh machine's first spawn, where `@latest` is also the only spec that could
+ * work — or when the cache is unreadable. Nothing here throws.
+ *
  * Every filesystem answer here is injected, because the two states that matter
  * (a home that has never been warmed, and a home whose pointed-at version dir was
  * deleted under it) cannot both be produced on one host.
@@ -333,6 +342,32 @@ const isUnpinnedShippedSpec = (spec) => (
 );
 
 /**
+ * The shipped command with its spec pinned to `version`, or the command
+ * unchanged when there is no version to pin to.
+ *
+ * Only slot 2 is touched, and only after `isShippedCommonlyMcpCommand` has
+ * proven the slot is the package spec — so `npx`, its `-y` and every other
+ * entry survive byte-for-byte, and a command that is not the shipped 3-arg form
+ * cannot be rewritten by construction. npx keys its cache dir by the spec
+ * string, which is the whole point: `@latest` is one dir every seat shares and a
+ * publish rewrites in place, while `@0.3.13` is a dir only this version ever
+ * uses.
+ */
+export const pinShippedSpec = (command, version) => {
+  if (!Array.isArray(command) || !parseVersion(version)) return command;
+  let changed = false;
+  const pinned = command.map((part, index) => {
+    if (index !== 2 || !isUnpinnedShippedSpec(String(part))) return part;
+    changed = true;
+    return `${MCP_PACKAGE}@${version}`;
+  });
+  // The same reference when nothing changed, so a caller can use identity as the
+  // "did this spawn's spec move" check — the convention the rest of this module
+  // already keeps (`ensureCommonlyMcpServer`, `withholdGrantBroker`).
+  return changed ? pinned : command;
+};
+
+/**
  * What a spawn should execute, and where that decision came from.
  *
  * `source: 'home'` — the command is `node <bin>` from the version dir, no npx
@@ -370,7 +405,23 @@ export const planMcpSpawn = (command, {
       };
     }
   }
-  return { command, source: 'declared', version: null, reason: 'home-empty' };
+  // No usable home, so the declaration is what runs — and the one thing worth
+  // changing about it is the spec string. The cached registry answer is used
+  // rather than a fresh lookup because this function is synchronous and on the
+  // spawn's critical path, and the warm refreshes that same cache on the same
+  // TTL (`REGISTRY_TTL_MS`). A stale-but-real version still gives this run its
+  // own npx dir, which `@latest` does not, and a stale cache means the registry
+  // has been answering nothing for a while — the case where `@latest` is least
+  // usable. `pinned` is reported so the caller can log which spec it ran.
+  const cached = readRegistryCache(target, { readFile });
+  const pinned = cached ? pinShippedSpec(command, cached.version) : command;
+  return {
+    command: pinned,
+    source: 'declared',
+    version: null,
+    reason: 'home-empty',
+    pinned: cached ? cached.version : null,
+  };
 };
 
 /** The warm's cached registry answer, with its age. */

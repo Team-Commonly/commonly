@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
-  liveInUsePids, mcpHomeDir, newestInstalledVersion, planMcpSpawn, prepareMcpSpawn,
+  liveInUsePids, mcpHomeDir, newestInstalledVersion, pinShippedSpec, planMcpSpawn, prepareMcpSpawn,
   readBinPath, readCurrentVersion, readRegistryCache, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
@@ -148,6 +148,110 @@ describe('planMcpSpawn — what a spawn executes', () => {
     pointAt(home, '0.3.13');
 
     expect(planMcpSpawn(SHIPPED_COMMAND, { home }).command).toEqual(SHIPPED_COMMAND);
+  });
+
+  test('TASK-174: with no usable home the declared spec is pinned to the warm\'s cached version', () => {
+    // The cold path is the one place npx still runs, and `@latest` is the one
+    // spec whose npx dir every seat shares and a publish rewrites in place.
+    // The warm's own cache already says which version this host resolved, so
+    // the run that has to use npx uses THAT version's dir.
+    const home = makeHome();
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
+
+    const plan = planMcpSpawn(SHIPPED_COMMAND, { home });
+    expect(plan.command).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+    expect(plan.source).toBe('declared');
+    // Still the cold path's reason — the pin changes the spec, not why npx runs.
+    expect(plan.reason).toBe('home-empty');
+    expect(plan.pinned).toBe('0.3.13');
+  });
+
+  test('TASK-174: the pin is not only for a missing version dir — a bit-rotted home is pinned too', () => {
+    const home = makeHome();
+    mkdirSync(join(home, '0.3.13'), { recursive: true }); // exists, no package.json
+    pointAt(home, '0.3.13');
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
+
+    expect(planMcpSpawn(SHIPPED_COMMAND, { home }).command)
+      .toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+  });
+
+  test('TASK-174: a STALE cache still pins — a quiet registry is not a reason to share a dir', () => {
+    // The age is deliberately past the TTL and the version deliberately behind
+    // the newest: the pin's purpose is a spec only this version uses, and a
+    // stale answer means the registry has been answering nothing, which is the
+    // state where `@latest` is least usable.
+    const home = makeHome();
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({
+      version: '0.3.9', checkedAt: Date.now() - (48 * 60 * 60 * 1000),
+    }));
+
+    const plan = planMcpSpawn(SHIPPED_COMMAND, { home });
+    expect(plan.command).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.9']);
+    expect(plan.pinned).toBe('0.3.9');
+  });
+
+  test('TASK-174: an absent or unusable cache leaves the declaration alone, and never throws', () => {
+    // This is the registry-unavailable witness: no answer on this host, so the
+    // spawn runs the declaration exactly as declared. A first spawn on a fresh
+    // machine lands here, which is also the only case where `@latest` is the
+    // spec that could work at all.
+    for (const body of [
+      null, '', 'not json', '{}', '[]',
+      '{"version":"latest"}', '{"version":"../etc"}',
+      // A version with no age is not an answer this module will act on:
+      // `readRegistryCache` requires both fields.
+      '{"version":"0.3.13"}', '{"checkedAt":1}',
+    ]) {
+      const home = makeHome();
+      if (body !== null) writeFileSync(join(home, '.registry.json'), body);
+      const plan = planMcpSpawn(SHIPPED_COMMAND, { home });
+      expect(plan.command).toEqual(SHIPPED_COMMAND);
+      expect(plan.pinned).toBeNull();
+    }
+  });
+
+  test('TASK-174: an operator-pinned declaration is never rewritten, whatever the cache says', () => {
+    const home = makeHome();
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
+
+    const declared = ['npx', '-y', '@commonlyai/mcp@0.3.5'];
+    const plan = planMcpSpawn(declared, { home });
+    expect(plan.command).toEqual(declared);
+    // Not `null`: the pin never ran, so it reports nothing rather than "no".
+    expect(plan.pinned).toBeUndefined();
+  });
+
+  test('TASK-174: a warmed home is untouched by the pin — the cache does not re-route it', () => {
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.12');
+    pointAt(home, '0.3.12');
+    writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
+
+    const plan = planMcpSpawn(SHIPPED_COMMAND, { home });
+    expect(plan.command).toEqual(['node', bin]);
+    expect(plan.source).toBe('home');
+    expect(plan.version).toBe('0.3.12');
+  });
+
+  test('TASK-174: pinShippedSpec touches slot 2 and nothing else', () => {
+    // The pin is not a rebuild of the command: `npx`, its `-y` and the arity
+    // survive, and an input array is never mutated.
+    const input = ['npx', '-y', '@commonlyai/mcp@latest'];
+    const pinned = pinShippedSpec(input, '0.3.13');
+    expect(pinned).toEqual(['npx', '-y', '@commonlyai/mcp@0.3.13']);
+    expect(input).toEqual(['npx', '-y', '@commonlyai/mcp@latest']);
+
+    // No version to pin to, or not the shipped shape: unchanged, by identity.
+    for (const [command, version] of [
+      [input, null], [input, 'latest'], [input, 'v0.3.13'], [input, ''],
+      [['npx', '-y', 'some-other-mcp@latest'], '0.3.13'],
+      [['npx', '-y', '@commonlyai/mcp@0.3.5'], '0.3.13'],
+      [['commonly-mcp'], '0.3.13'],
+      ['npx -y @commonlyai/mcp@latest', '0.3.13'],
+    ]) {
+      expect(pinShippedSpec(command, version)).toBe(command);
+    }
   });
 
   test('commands that are not the shipped server are untouched', () => {

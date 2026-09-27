@@ -33,6 +33,21 @@ describe('isShippedCommonlyMcpCommand', () => {
   });
 });
 
+describe('the pinned spec the spawn path materialises (TASK-174)', () => {
+  // The spawn materialiser rewrites the declaration's spec to the version the
+  // registry answered with (`mcp-home.planMcpSpawn`), and that rewritten entry
+  // is what the adapters write into their per-spawn config. So the guard has to
+  // admit it on the same terms as the declaration it came from — otherwise a
+  // future tightening would refuse the seat's own kernel server, and the seat
+  // would come up tool-less with a refusal line about a pinned version.
+  test('a version-pinned shipped entry is admitted exactly like the unpinned one', () => {
+    const pinned = { ...defaultServer, command: ['npx', '-y', '@commonlyai/mcp@0.3.13'] };
+    expect(auditDeclaredMcp({ mcp: [pinned] }, { instanceUrl })).toEqual({ ok: true, refusals: [] });
+    expect(auditDeclaredMcp({ mcp: [pinned, broker] }, { instanceUrl }).ok).toBe(true);
+    expect(isShippedCommonlyMcpEntry(pinned)).toBe(true);
+  });
+});
+
 describe('auditDeclaredMcp', () => {
   test('the shipped default plus the grant broker pass', () => {
     const result = auditDeclaredMcp({ mcp: [defaultServer, broker] }, { instanceUrl });

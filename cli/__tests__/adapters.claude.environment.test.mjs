@@ -180,6 +180,59 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  test('TASK-174: the cold path materialises an EXACT spec — the spawn never names @latest', async () => {
+    // The home holds nothing but the warm's registry cache: an empty home is the
+    // one state where the declaration still runs through npx, and `@latest` is
+    // the one spec whose npx dir every seat shares and a publish rewrites in
+    // place. So the config this adapter writes names the version the host
+    // resolved, which gets a dir of its own. The control is the whole rest of
+    // this file: the same call with no cache in the home lands on the declared
+    // `@latest` unchanged.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mcp-pin-'));
+    fs.writeFileSync(path.join(home, '.registry.json'), JSON.stringify({
+      version: '0.3.13', checkedAt: Date.now(),
+    }));
+    const previous = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const { impl, calls } = makeSpawnImpl();
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        instanceUrl: 'https://api.example.test',
+        runtimeToken: 'cm_agent_secret',
+        environment: {
+          mcp: [{
+            name: 'commonly',
+            transport: 'stdio',
+            command: ['npx', '-y', '@commonlyai/mcp@latest'],
+            env: {
+              COMMONLY_API_URL: '${COMMONLY_API_URL}',
+              COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            },
+          }],
+        },
+        _spawnImpl: impl,
+      });
+
+      const entry = calls[0].config.mcpServers.commonly;
+      expect(entry.command).toBe('npx');
+      expect(entry.args).toEqual(['-y', '@commonlyai/mcp@0.3.13']);
+      expect(JSON.stringify(calls[0].config)).not.toContain('@latest');
+      // The credential channel still follows the DECLARED build here: nothing in
+      // the home proves which reader the pinned version has, and `@0.3.13` reads
+      // the file (mcp-credential-delivery's floor is 0.3.12) — so the token
+      // travels as a path, not in the env.
+      expect(entry.env.COMMONLY_TOKEN_FILE).toBeDefined();
+      expect(entry.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    } finally {
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined" (the TASK-174 footgun).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
+    }
+  });
+
   test('TASK-174: an OLD build in the home keeps the env channel — the channel follows what RUNS', async () => {
     // The interesting case, and the one that makes the coupling observable: the
     // declaration is the unpinned `@latest` (which is never treated as old, so it
