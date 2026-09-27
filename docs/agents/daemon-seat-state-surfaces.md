@@ -9,6 +9,11 @@ supervisor is the spawn/report disagreement in Trap 3, via a throwaway probe.
 loop) to `:408–410`, and its corollary is no longer conditional. Nothing else in
 the field map was re-measured — the rest is still a read of `ac544d5c`.
 
+**Re-anchored 2026-09-27 at main `1c883e46` (cli 0.1.79):** Trap 4 is measured on
+the operator host today, including the counts and the install time it quotes. The
+other traps still carry the 09-18/09-19 reads, and the field map below was **not**
+re-measured.
+
 **Where the daemon's own environment comes from** — the service file's `PATH`,
 `HOME` and provider keys, and the symptoms when one is missing:
 [daemon-service-environment.md](./daemon-service-environment.md) (TASK-049).
@@ -138,6 +143,77 @@ value. The status path now agrees with it: `:408–410` reads the record first a
 falls back to `row.runtime?.…` only when there is no record at all, so a seat
 whose *record* has no adapter reports `unknown` rather than the row's adapter.
 
+## Trap 4 — `state: running` names a process, not the build it is executing
+
+No field in this report says *which* cli a seat is running, and the obvious
+stand-ins do not answer it. `pid` is the **supervisor's** pid. The supervisor's
+argv does not name the build either: `/opt/homebrew/bin/commonly` is a symlink
+into the installed package, so the *command* is the same string before and after
+an upgrade.
+
+The *interpreter* is not the same, and it is a **wrong instrument that currently
+returns the right answer** — worth writing down, because it is the first thing a
+reader reaches for. On this host the fifteen supervisors split 13/2 on that path:
+the thirteen hand-started ones print `/opt/homebrew/bin/node`, and the daemon's
+own two print `/opt/homebrew/Cellar/node/26.0.0/bin/node`. That difference tracks
+**who launched the seat** (by hand under `ppid 1` versus the daemon), not which
+cli it loaded. The two partitions coincide today only because the hand-started
+ones happen to be the pre-install ones; one seat hand-started after an upgrade
+breaks the coincidence, and the instrument then says "current" about a stale
+seat. The module was read at boot; the file changed underneath it.
+
+Two signals outside this report do separate them:
+
+- **the supervisor's start time against the installed file's mtime.** This is the
+  only cheap per-seat signal, for the reason [rule 38 of the review
+  checklist](../development/review-checklist.md) gives — Node closes the module
+  handle after reading it, so `lsof` shows nothing to read. Compare **seconds**
+  (`ps -axo pid=,lstart=` against `date -r <resolved target>`); both round to the
+  same minute in the case that rule was earned on.
+- **the seat's MCP child argv**, while it has one: `npm exec @commonlyai/mcp@latest`
+  from the shared `~/.npm/_npx/6d82e98be466b586` dir is a pre-TASK-174
+  supervisor, while `node ~/.commonly/mcp/<version>/…` is 0.1.77 or later. A seat
+  with no live child has nothing to read, which is not the same as a seat that
+  passes.
+
+**And the report's population is the seats *this daemon* supervises.** The state
+file is rebuilt from the supervisor's in-memory `seats` Map (`daemon-supervisor.js:62`,
+persisted through `persistState(agentStates())` at `:67`), which is filled from
+the machine's bound rows — so a hand-started `commonly agent run <seat>` never
+appears in it, and `commonly daemon restart` SIGTERMs only that daemon's own
+children. The chain runs: restart the service (`launchctl unload -w` then
+`load -w`, or `systemctl --user restart`) → SIGTERM to the daemon → its shutdown
+handler (`commands/daemon.js:402–410`, `supervisor.stop()` at `:406`;
+rule 38 anchors the same claim from the caller's side at `:403`) → `stop()`
+(`daemon-supervisor.js:458`) → `stopSeat` (`:118`) → `seat.child.kill('SIGTERM')`
+(`:126`). **`:126` reads as the wrong line if you arrive at it alone**, because
+its log line is *"no longer assigned here — stopping"*, which says de-assignment
+rather than restart; `:458` is the link that makes it the restart path. `:436` is
+a different path — the per-seat respawn when a *record* changes (`:433`) — whose
+comment, *"the restart path IS the D6 path"*, is about a record change while
+reading as if it were about `daemon restart`.
+
+Measured on the operator host 2026-09-27 14:20Z, with cli 0.1.79 installed
+14:04:06Z (the mtime of the resolved `src/index.js`):
+
+| what | count |
+|---|---|
+| seats in `daemon status --verbose` / `state.json` | **2** (quill, c4-smoke) |
+| `commonly agent run` supervisors running | **15** |
+| …of those, `ppid 1` **and** started before the install | **13** |
+
+So the ship recipe "install the cli, restart the daemon" reaches the daemon's own
+two seats and those seats only. The other thirteen keep the module they booted
+with until each supervisor restarts on its own, and nothing on these surfaces
+says which of them has. A criterion shaped "no seat logs `CONNECTION_CLOSED`
+across the next publish" is therefore a per-seat question rather than a
+daemon-restart one, and `state=running` is evidence about a **process** — never
+evidence that a seat runs the new code.
+
+**What would close it** (named, not built): a `version` (or `gitHead`) recorded by
+the supervisor at boot and carried into the report. That is two edits rather than
+one — see the security boundary in *When you change a seat field*.
+
 ## When you change a seat field
 
 1. **Find every surface the field reaches** — the heartbeat/API path, the local
@@ -166,6 +242,17 @@ sed -n '26,47p'   cli/src/lib/daemon-state.js
 
 # the only renderer of adapter/model/effort
 grep -rn 'loadDaemonState' cli/src
+
+# the report's POPULATION is this daemon's own seats, with their start times.
+# ANCHOR it: an agent quoting this doc carries the phrase in its own prompt, so
+# the unanchored form counts that agent too (16 here, the sixteenth a `claude -p`
+# seat reading this file; 15 anchored)
+ps -axo pid=,ppid=,lstart=,args= | grep -E '[c]ommonly agent run [a-z0-9-]+$'
+python3 -c "import json,os;print([s['agentName'] for s in json.load(open(os.path.expanduser('~/.commonly/daemon/state.json')))['seats']])"
+
+# when the installed cli landed, and which build a seat's MCP child is running
+T=$(python3 -c "import os;print(os.path.realpath('$(command -v commonly)'))"); date -r "$T" '+%F %T %z'
+ps -axo pid=,ppid=,args= | grep -E '[c]ommonlyai/mcp|mcp/0\.3'
 ```
 
 ## Related
@@ -173,3 +260,6 @@ grep -rn 'loadDaemonState' cli/src
 - [LOCAL_CLI_WRAPPER.md](./LOCAL_CLI_WRAPPER.md) — the daemon, `attach`/`run`/`detach`
 - [public-facing-agent-sandboxing.md](./public-facing-agent-sandboxing.md) — what a seat's declaration confines
 - `backend/services/machineService.ts`, `cli/src/lib/daemon-state.js`
+- [review-checklist.md](../development/review-checklist.md) — rule 38: a read of
+  the installed artifact is not a read of the process running it, and the two
+  disagree for as long as the process outlives the file
