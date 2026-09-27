@@ -325,6 +325,11 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
+    // pod') taught the one-pod model. The refusal is about the bind, and other
+    // pods reach the channel through its gate switches.
+    expect(screen.getByText(/gate switches/)).toBeInTheDocument();
+    expect(screen.queryByText(/Remove it to bind/)).toBeNull();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
@@ -602,6 +607,88 @@ describe('V2ConnectorsPage', () => {
   // D8 Phase 2: rows keyed by the capability catalog (D1/D2), the aside's
   // gate list (D4), and the not-linked row (#1551).
   describe('catalog rows', () => {
+    // TASK-155. The walk found that adding a channel with a live row selected
+    // left the panel on that row: the row's detail kept the aside and the form
+    // was rendered beside the list instead, so the picker appeared somewhere
+    // other than the panel the page uses for the thing you are doing.
+    const asidePanel = () => document.querySelector('.v2-connectors__aside') as HTMLElement;
+
+    it('TASK-155: adding a channel moves the panel to the picker', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'View Slack' }));
+      expect(within(asidePanel()).getByText('What the channel sees')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(within(asidePanel()).queryByText('What the channel sees')).toBeNull();
+      // One form, not two: the left-column copy the walk could not see is gone.
+      expect(screen.getAllByLabelText('Pod to bridge')).toHaveLength(1);
+    });
+
+    it('TASK-155: "Connect a channel" moves the panel while a row is selected', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'View Slack' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Connect a channel' }));
+
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.getAllByLabelText('Pod to bridge')).toHaveLength(1);
+    });
+
+    it('TASK-155: selecting a row while the form is open closes the form', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Slack' }));
+
+      // The form wins the aside while it is open, so the row click has to close
+      // it — otherwise this is the walk's symptom pointed the other way
+      // (connector-ops 74623 item 1).
+      expect(within(asidePanel()).getByText('What the channel sees')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
+    });
+
+    it('TASK-155: the picker takes focus when the form opens', async () => {
+      mockCatalog([entry()]);
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+
+      // At 390 the panel is below the fold of the page's scroller; focus is
+      // what scrolls the picker into view (connector-ops 74623 item 2).
+      expect(screen.getByLabelText('Pod to bridge')).toHaveFocus();
+    });
+
+    it('TASK-155: the picker defaults to a room, never a personal pod', async () => {
+      mockCatalog([entry()], [], [
+        { _id: 'p-scout', name: 'Scout (Default)', type: 'agent-room', members: [] },
+        { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] },
+        { _id: 'p2', name: 'Ops', type: 'team', members: [] },
+      ]);
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+
+      const picker = screen.getByLabelText('Pod to bridge') as HTMLSelectElement;
+      expect(picker.value).toBe('p1');
+      // A DM stays selectable: it is a legal target, just never the default.
+      expect(Array.from(picker.options).map((option) => option.textContent)).toContain('Scout (Default)');
+    });
+
     const entry = (over = {}) => ({
       installableId: 'telegram',
       label: 'Telegram',
@@ -624,18 +711,14 @@ describe('V2ConnectorsPage', () => {
       podId: 'p1',
       ...over,
     });
-    const mockCatalog = (installables, list = []) => {
+    const mockCatalog = (installables, list = [], pods = [
+      { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [{ _id: 'b1', username: 'vale', isBot: true }] },
+      { _id: 'p2', name: 'Ops', type: 'team', members: [] },
+    ]) => {
       axios.get.mockImplementation((url) => {
         if (url === '/api/integrations/user/all') return Promise.resolve({ data: list });
         if (url === '/api/installables') return Promise.resolve({ data: { installables } });
-        if (url === '/api/pods') {
-          return Promise.resolve({
-            data: [
-              { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [{ _id: 'b1', username: 'vale', isBot: true }] },
-              { _id: 'p2', name: 'Ops', type: 'team', members: [] },
-            ],
-          });
-        }
+        if (url === '/api/pods') return Promise.resolve({ data: pods });
         return Promise.resolve({ data: [] });
       });
     };

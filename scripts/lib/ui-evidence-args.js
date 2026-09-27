@@ -33,8 +33,19 @@
 
 const KNOWN_FLAGS = new Set([
   'route', 'out', 'base-url', 'api', 'email', 'password', 'wait', 'selector', 'width', 'height',
-  'token', 'click',
+  'token', 'click', 'page-shot',
 ]);
+
+// `--page-shot` decides whether the PNG is the whole document or what is on screen.
+// It takes a value like every other flag here (the parser refuses a bare flag), and
+// an unrecognised value is refused for the same reason an unknown flag is: a capture
+// that silently did something else is worse than no capture. The guard lives here,
+// not in the script, so it is covered without a browser (TASK-155).
+const PAGE_SHOTS = ['full', 'viewport'];
+const pageShotFor = (value) => {
+  if (value === undefined) return 'full';
+  return PAGE_SHOTS.includes(value) ? value : null;
+};
 
 const parseArgs = (argv) => {
   const values = new Map();
@@ -106,5 +117,5 @@ const refusalFor = ({
 };
 
 module.exports = {
-  KNOWN_FLAGS, parseArgs, refusalFor,
+  KNOWN_FLAGS, PAGE_SHOTS, parseArgs, pageShotFor, refusalFor,
 };
