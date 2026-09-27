@@ -134,8 +134,12 @@ export const isRoutedPodTarget = (opts: {
   // No separate user-id guard: the predicate fails closed on a falsy id itself
   // (measured — a guard here changed no arm, so it was removed rather than kept
   // unwitnessed).
-  // The same target predicate the write verbs run, so what a connector may
-  // address and what it may relay to cannot drift apart.
+  // The same target predicate the write verbs run, so what a connector may be
+  // POINTED at and what a ROUTED reply may address cannot drift apart. This is
+  // the only relay path that reads the type half: the bridges' outbound fan-out
+  // and decision-card delivery still ask `isGatedPodTarget` + membership alone
+  // (measured, Vera 74749), and nothing can create such a row any more, because
+  // the write verbs refuse one.
   return isGatedPodTarget(integration, podId)
     && isConnectorTargetPod(pod, userId);
 };

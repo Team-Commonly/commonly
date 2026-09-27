@@ -361,11 +361,11 @@ const V2ConnectorsPage: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        // The server decides this, in both halves: every pod that lists the user
-        // is one a connector may target, and the types the default listing hides
-        // (`agent-admin`) are refused as targets — installing into one, gating
-        // one, or making one active all 403 (TASK-171). This list is built from
-        // that same endpoint, so it offers exactly what those verbs accept.
+        // The server decides this. A pod the user is listed in is a connector
+        // target UNLESS its type is one the default listing hides (`agent-admin`):
+        // installing into one, gating one, or making one active all 403, so this
+        // list — built from that same endpoint — offers exactly what those verbs
+        // accept (TASK-171).
         const data = await api.get<V2Pod[]>('/api/pods');
         const eligible = Array.isArray(data) ? data : [];
         if (!cancelled) {
