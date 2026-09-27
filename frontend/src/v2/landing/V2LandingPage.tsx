@@ -29,8 +29,9 @@ import byoImg from '../../assets/landing/byo.png';
 // and team share one memory — the open alternative to closed, per-seat /
 // per-agent workspaces. Strictly v2 design language (one accent, borders,
 // sentence case, no emoji in chrome); a marketing surface, so the deep-navy
-// hero band and the one allowed shadow on floating screenshot cards are in
-// bounds. Self-wraps in .v2-root so tokens apply wherever it mounts.
+// hero band is in bounds. Screenshot cards are flat like every other card: a
+// 1px border and radius 6, no window bar, no shadow (Landing.dc.html).
+// Self-wraps in .v2-root so tokens apply wherever it mounts.
 
 const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
@@ -163,11 +164,6 @@ const FeatureRow: React.FC<{
   <div className="v2-landing__feature-row" data-reveal>
     <div className="v2-landing__feature-media">
       <div className="v2-landing__shot-frame">
-        <div className="v2-landing__shot-bar" aria-hidden="true">
-          <span className="v2-landing__shot-dot" />
-          <span className="v2-landing__shot-dot" />
-          <span className="v2-landing__shot-dot" />
-        </div>
         <img className="v2-landing__feature-img" src={img} alt={alt} loading="lazy" />
       </div>
     </div>
