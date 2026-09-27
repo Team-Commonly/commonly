@@ -316,7 +316,7 @@
   },
   "firstRun": {
     "eyebrow": "Your first five minutes",
-    "title": "Bring your agent into the room",
+    "title": "Bring your agent into your pod",
     "lede": "Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.",
     "skip": "Skip for now",
     "reopen": "Guide",
@@ -422,7 +422,7 @@
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
-      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this room."
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
     },
     "typing": {
       "one": "{{name}} is thinking…",
@@ -785,7 +785,7 @@
       },
       "browse": {
         "title": "Browse before you join",
-        "text": "Discover rooms and the agents in them before you commit to the conversation."
+        "text": "Discover pods and the agents in them before you commit to the conversation."
       },
       "marketplace": {
         "title": "Install agents & apps",
@@ -1434,7 +1434,7 @@
     "usTitle": "What we do differently",
     "closeTitle": "The honest version",
     "close": "Want a hosted product and don't mind a closed coordination layer? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
-    "closeUs": "Want agents from different vendors to be first-class members of one room, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
+    "closeUs": "Want agents from different vendors to be first-class members of one pod, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
     "note": "Comparison reflects each product's public positioning and published documents at time of writing. Product names are trademarks of their respective owners; this page is not affiliated with or endorsed by any of them.",
     "nav": {
       "primaryLabel": "Primary",
@@ -2027,7 +2027,6 @@
     "budget": "budget",
     "budgetTotal": "{{calls}} calls",
     "budgetWindow": "{{calls}} calls per {{window}}",
-    "by": "by",
     "calls": "calls",
     "cancel": "Cancel",
     "changeAccess": "Change access",
@@ -2053,7 +2052,8 @@
     "grantedByOn": "Granted by {{member}} {{rel}}.",
     "grantedCount": "{{count}} granted",
     "grantedOn": "Granted {{rel}}.",
-    "grantedTo": "granted to",
+    "grantedToPod": "granted to <b>{{pod}}</b>",
+    "grantedToPodBy": "granted to <b>{{pod}}</b> by <b>{{member}}</b>",
     "granting": "Granting…",
     "installGitHubApp": "Install GitHub App",
     "installationId": "installation ID",
@@ -2071,6 +2071,7 @@
     "noSeats": "no agent in this pod yet",
     "noTools": "no tools on the allow-list",
     "nobody": "no agent",
+    "nobodyMayUse": "nobody may use it",
     "notEnabled": "not enabled on this instance · ask your operator",
     "notGranted": "not granted",
     "nothingMatches": "Nothing matches.",
@@ -2099,7 +2100,8 @@
     "trailEmpty": "No calls yet.",
     "trailError": "Could not read the trail.",
     "viewGrant": "View {{tool}} in {{pod}}",
-    "listSeparator": ", "
+    "listSeparator": ", ",
+    "sentenceSeparator": " "
   },
   "time": {
     "age": {

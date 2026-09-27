@@ -211,6 +211,73 @@ test('TASK-164: the grant, budget and trail times read in zh-CN, not English', a
   }
 });
 
+test('TASK-179: the grant line is one sentence per language, and an empty audience is its own sentence', async () => {
+  // ux-lead's render at 3d6e1763 read the old three-piece composition as
+  // 「授权给 Growth 授权者 sam」, and the empty audience as 「没有智能体 可以使用」.
+  const emptyAudience = { ...grantLive, grantId: 'grant_empty', target: { kind: 'pod', id: 'p2' }, effectiveAudience: [] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grantLive] } });
+    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [emptyAudience] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  renderTools();
+
+  const live = await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+  const ops = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  // One key holds both names, so the language orders them. en is unchanged from
+  // the three-piece version; zh puts the granter first, as the ruling requires.
+  expect(live.querySelector('strong')?.textContent).toBe('granted to Launch pod by sam');
+  expect(within(ops).getByText('nobody may use it')).toBeInTheDocument();
+
+  fireEvent.click(live);
+  await screen.findByRole('complementary', { name: 'Grant details' });
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    // The accessible name is translated too, so locate rows by what they say.
+    const rows = () => Array.from(document.querySelectorAll('.v2-connector-row')) as HTMLElement[];
+    const rowSaying = (text: string) => rows().find((row) => row.textContent?.includes(text)) as HTMLElement;
+    expect(rowSaying('Launch pod').querySelector('strong')?.textContent).toBe('由 sam 授权给 Launch pod');
+    // The audience keeps its space before a Latin name, and loses it when there
+    // is no audience at all — which is why the empty case is a separate key.
+    expect(rowSaying('Launch pod').textContent).toContain('Scout 可以使用');
+    expect(rowSaying('Ops').textContent).toContain('没有智能体可以使用');
+    // The separator key is zh-empty: two sentences that each end in 。 join with
+    // nothing, where the English pair needs the space.
+    const aside = document.querySelector('.v2-connectors__aside') as HTMLElement;
+    expect(within(aside).getByText(/授权。/).textContent).toBe('1小时前由 sam 授权。6天后结束。');
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
+});
+
+test('TASK-179: a seat grant names the seat in its sentence and the pod in the row it sits in', async () => {
+  // ux-lead's gate at 07873c19: one shared label put the seat's name where the
+  // row's location belongs, announcing a seat grant under Ops as 「View GitHub in
+  // Reed」. The sentence's subject and the row's location are different nouns, so
+  // they are two expressions, and this test fails if they are ever re-merged.
+  const seatGrant = { ...grantLive, grantId: 'grant_seat', target: { kind: 'seat', id: 'a1' }, effectiveAudience: ['a1'] };
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [] } });
+    if (url === '/api/pods/p2/grants') return Promise.resolve({ data: { podId: 'p2', grants: [seatGrant] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url === '/api/registry/pods/p2/agents') return Promise.resolve({ data: { agents: [{ name: 'reed', displayName: 'Reed', userId: 'a1' }] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  renderTools();
+
+  // Found by the pod's name: if the seat leaks back into the accessible name
+  // this query returns nothing, which is the fix's own control.
+  const row = await screen.findByRole('button', { name: 'View GitHub in Ops' });
+  expect(row.querySelector('strong')?.textContent).toBe('granted to Reed by sam');
+  expect(row.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/^Ops · granted /);
+});
+
 test('the aside reads the grant and the trail: agents, allow-list under its mode, what asks first, three counts, outcomes as words', async () => {
   renderTools();
   fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));

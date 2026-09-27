@@ -11,7 +11,7 @@
 // Grant, Manage on a row with one act) keeps its word.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
@@ -491,6 +491,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
+    // What the grant was given TO, which is a seat when the target is a seat. It
+    // is not the row's location: the kicker and the accessible name both name the
+    // pod the row lives in, so a seat grant under Ops has a sentence reading
+    // `granted to Reed` in a row announced as `View GitHub in Ops`. Sharing one
+    // label between the two put the seat's name where the location belongs
+    // (TASK-179, ux-lead's gate at 07873c19) — two nouns, so two expressions.
+    const targetLabel = grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id);
     // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
     const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
     const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
@@ -505,7 +512,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
       // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
       // that orders the clause differently needs the whole sentence (TASK-164). The
       // rendered English is unchanged.
-      : t('tools.mayUse', { defaultValue: '{{agents}} may use it', agents: audienceLabels(grant) });
+      // An empty audience is its own sentence, not the interpolated one with an empty
+      // subject: zh writes 「没有智能体可以使用」 with no space, which `{{agents}} 可以使用`
+      // cannot produce (TASK-179).
+      : (grant.effectiveAudience.length === 0
+        ? t('tools.nobodyMayUse', { defaultValue: 'nobody may use it' })
+        : t('tools.mayUse', { defaultValue: '{{agents}} may use it', agents: audienceLabels(grant) }));
     return (
       <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
         <button
@@ -527,8 +539,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             </span>
             <strong>
               {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
-              {t('tools.grantedTo', { defaultValue: 'granted to' })} <b>{grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</b>
-              {granter && <> {t('tools.by', { defaultValue: 'by' })} <b>{granter}</b></>}
+              {/* One key per sentence, both names ordered by the language. The old shape
+                  composed three pieces (`granted to` + pod + `by` + member), so zh could
+                  only read 「授权给 Growth 授权者 sam」 (TASK-179). */}
+              {granter ? (
+                <Trans i18nKey="tools.grantedToPodBy" values={{ pod: targetLabel, member: granter }} components={{ b: <b /> }} />
+              ) : (
+                <Trans i18nKey="tools.grantedToPod" values={{ pod: targetLabel }} components={{ b: <b /> }} />
+              )}
             </strong>
             <span className="v2-connector-row__detail">
               {!dead && <span className="v2-tools__mode" title={modeLabel(grant.writeMode)} role="img" aria-label={modeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
@@ -747,7 +765,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             {granter
               ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now }) })
               : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now }) })}
-            {' '}
+            {t('tools.sentenceSeparator', { defaultValue: ' ' })}
             {grant.revokedAt
               ? (revokedBy
                 ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })

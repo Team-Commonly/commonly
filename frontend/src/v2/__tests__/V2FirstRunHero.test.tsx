@@ -135,7 +135,7 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toHaveAttribute('aria-modal', 'true');
     expect(screen.getByText('Waiting for your agent to connect…')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open connection setup/i })).toHaveAttribute('target', '_blank');
@@ -198,11 +198,11 @@ describe('V2FirstRunHero', () => {
     renderHero();
 
     // The ownership probe must not flash the onboarding card while it resolves.
-    expect(screen.queryByRole('heading', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     await flush();
 
     await waitFor(() => {
-      expect(screen.queryByRole('heading', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     });
   });
 
@@ -211,7 +211,7 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(screen.queryByRole('heading', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
   });
 
@@ -226,7 +226,7 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
   });
 
@@ -237,7 +237,7 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
   });
 
@@ -248,10 +248,10 @@ describe('V2FirstRunHero', () => {
     const { unmount } = renderHero();
     await flush();
 
-    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
     expect(priorControl).toHaveFocus();
     priorControl.remove();
@@ -260,7 +260,7 @@ describe('V2FirstRunHero', () => {
     unmount();
     renderHero();
     await flush();
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
   });
 
@@ -274,16 +274,16 @@ describe('V2FirstRunHero', () => {
     const { unmount } = renderHero();
     await flush();
 
-    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into the room' });
+    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into your pod' });
     fireEvent.mouseDown(dialog.parentElement as HTMLElement);
 
-    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
 
     unmount();
     renderHero();
     await flush();
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
   });
 
@@ -314,7 +314,7 @@ describe('V2FirstRunHero', () => {
       window.dispatchEvent(new Event('commonly:reopen-first-run'));
     });
 
-    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
@@ -373,7 +373,7 @@ describe('V2Layout first-run placement', () => {
     await flush();
 
     expect(screen.getByText('Normal pod view')).toBeInTheDocument();
-    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into the room' });
+    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into your pod' });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByTestId('pod-chat')).not.toContainElement(dialog);
     expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');
@@ -397,7 +397,7 @@ describe('V2Layout first-run placement', () => {
     await waitFor(() => {
       expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
     });
-    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
   });
 
@@ -418,7 +418,7 @@ describe('V2Layout first-run placement', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
     expect(screen.queryByText('Quiet pod empty state')).not.toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
