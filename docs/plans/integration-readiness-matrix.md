@@ -47,8 +47,8 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 
 | row | code exists | known state |
 |---|---|---|
-| Telegram | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). C1 is green to the external boundary: the code is shown, and a real chat is what completes it. Inbound and sender identity (C5) were shown on a simulated chat on `0e142135`; with #1878 live a simulated chat fails at its first send, so C5 on the current build needs a real chat. A dead chat is a named failure on the row since #1878, shown on `5561a1dd` (C10 for that case) |
-| Slack | yes | Walked 2026-09-25 and re-walked 2026-09-26 on `5561a1dd` (both below). **Was red for everyone** in C1 from #1537 until #1875: every new install was refused at Authorize in Slack, and the "stable" note here was wrong. C1 is now green to the external boundary: Authorize reaches Slack's OAuth page, and the OAuth leg needs a Slack workspace. The page naming a refused authorize (#1890, Row C) shipped and has not been walked, since no refusal can be triggered without corrupting a row |
+| Telegram | yes | Walked live 2026-09-27 on `7ccc6ac2` with a real account (below). **C1 red**: the page shows the code grouped with spaces while the bot reads only the first word, so typing the command as displayed fails (TASK-153). C1 is also limited by design: binding is private-chat-only with one chat per pod, so one Telegram account links one pod (TASK-154, for Wren to scope). C10 green: both refusals are named, and since #1878 a dead chat is a named failure. Inbound and sender identity (C5) were shown on a simulated chat on `0e142135` |
+| Slack | yes | Walked live 2026-09-26/27 on `7ccc6ac2` with a real workspace (below). **C1, C3 and C5 green**: connect through consent, callback and confirm; a hosted agent's reply relays to Slack; a Slack mention reaches the agent and its answer comes back. C5 inbound was green only after two Slack app settings were fixed during the walk. Red for customers until the app was publicly distributed, which is now done. A second authorize on a connected row is refused with 409 `slack_already_authorized` (measured through the API); the refusal copy on the page (#1890, Row C) is still unwalked in the UI. Before #1875 (09-04 to 09-25), every new install was refused at Authorize |
 | Discord | partly | **red** in C0: not offered on the Connectors page (#1826, held for Sam's read of the renders). **red** in C1: not connectable (TASK-104). Two different fixes |
 | GroupMe | yes | **red**: TASK-101 |
 | X | yes (admin OAuth callback + feed) | unverified |
@@ -84,6 +84,33 @@ Fresh stranger account `eng-smoke-20ba7c6d`, created 2026-09-25 through the ordi
 | Slack | C0 green. C1 green up to the external boundary: Add, then Connect, installs; Authorize in Slack opens `slack.com/oauth/v2/authorize` with a client id, our callback, a state and the DM scopes. The OAuth leg waits on Sam's workspace |
 | Telegram | C0 green. C1 green up to the code: Connect shows `/commonly-enable` with a 10-minute code. A simulated private chat binds with the code, and its dead-chat confirmation turns the connector into a named failure ("Telegram stopped delivering: this chat no longer exists."), shown on the row with New code (C10 for this case). With #1878 live, a simulated chat now fails at its first send, so inbound and sender identity (C5) were last shown on `0e142135`, before that fix. Re-showing them needs a real chat |
 | GitHub | C0 green. C2 green at 390: the row shows its reason, and its copy names the instance's own repository. C3, C4 and C8 wait on a new grant; the only grant lapsed 2026-09-25 11:32Z |
+
+## Live Slack walk, 2026-09-26/27 on `7ccc6ac2`
+
+Walked by the Connectors session with Sam's real Commonly Slack workspace (Sam's choice), with `lily-shen` on the Commonly side, in a throwaway pod "Connector walk 0926". Part 1 ran 2026-09-26 23:35Z to 23:50Z (16:35 to 16:50 PDT); part 2, with Scout hired into the pod, ran 2026-09-27 00:00Z to 00:10Z. The room post in the Connectors pod carries the detail.
+
+| cell | result |
+|---|---|
+| C1 | green live: Authorize, Slack's consent screen, the callback, and confirm in Commonly |
+| C1 for customers | was red: the Slack app was "Not distributed", so only its own workspace could install it. Public distribution is now activated. TASK-151 removes the `SLACK_BOT_TOKEN` fallbacks that distribution's attestation rules out |
+| C5 outbound | green |
+| C5 inbound | was red, from two Slack app settings, not code: the App Home messages tab was unticked, and the Events Request URL was unverified. Both were fixed in the app settings with Sam's OK, and a DM now lands in the pod |
+| C3 | green: with Scout hired into the test pod, its intro relayed to Slack |
+| C5 both ways | green: "@scout … PONG" sent from Slack came back as "[Connector walk 0926] Scout: PONG" within about a minute |
+| second authorize | green, measured: at about 2026-09-27 00:05Z, `POST /api/installables/slack/authorize-url` from the page's own session on the connected row returned 409 `slack_already_authorized` (Connectors room, message 74576). A connected row refuses a second authorize by design. #1890's refused-authorize copy (Row C) is still unwalked in the UI; the 409 was observed through the API, so no refusal copy was rendered |
+
+The two C5 settings live in Slack's app configuration, which no test here can see. A new instance's operator has to set them too, so the Slack setup docs must name them.
+
+## Live Telegram walk, 2026-09-27 on `7ccc6ac2`
+
+Walked by the Connectors session with Sam's real Telegram account, 2026-09-27 00:00Z to 00:10Z, in the same session as part 2 of the Slack walk (the Slack C3 and C5 rows above).
+
+| cell | result |
+|---|---|
+| C1 | red: the page displays the code grouped with spaces, and the bot reads only the first word after `/commonly-enable`, so typing the command exactly as shown fails. Reproduced live; TASK-153 |
+| C1 limit | binding is private-chat-only, with one chat per pod, so one Telegram account can link one pod. Sam's account is held by the Rewire Live Demo binding, so the test pod could not bind. TASK-154, a scope call for Wren |
+| C10 | green: both refusals seen in the walk are named to the person |
+| UI | TASK-155: the Telegram Add button, and the pod picker defaulting to an agent room |
 
 ## Cross-cutting reds
 
