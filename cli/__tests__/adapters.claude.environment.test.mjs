@@ -127,6 +127,115 @@ describe('claude adapter — ctx.environment', () => {
     expect(fs.existsSync(path.dirname(calls[0].configPath))).toBe(false);
   });
 
+  test('TASK-174: a warmed MCP home makes claude execute the home build, not npx @latest', async () => {
+    // The control for this arm is the rest of this file: every other test here
+    // declares the shipped `npx -y @commonlyai/mcp@latest`, and the jest setup
+    // points COMMONLY_MCP_HOME at an EMPTY dir, so they all see it unchanged.
+    // This arm is the same call with a populated home.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mcp-home-'));
+    const pkgDir = path.join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', type: 'module', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
+    fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
+    const previous = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const { impl, calls } = makeSpawnImpl();
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        instanceUrl: 'https://api.example.test',
+        runtimeToken: 'cm_agent_secret',
+        environment: {
+          mcp: [{
+            name: 'commonly',
+            transport: 'stdio',
+            command: ['npx', '-y', '@commonlyai/mcp@latest'],
+            env: {
+              COMMONLY_API_URL: '${COMMONLY_API_URL}',
+              COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            },
+          }],
+        },
+        _spawnImpl: impl,
+      });
+
+      const entry = calls[0].config.mcpServers.commonly;
+      const bin = path.join(pkgDir, 'src', 'index.js');
+      expect(entry.command).toBe('node');
+      expect(entry.args).toEqual([bin]);
+      expect(JSON.stringify(calls[0].config)).not.toContain('@latest');
+      // And the credential channel did NOT move with it: the executed build is
+      // 0.3.13, which reads the file, exactly as the unpinned declaration did.
+      expect(entry.env.COMMONLY_TOKEN_FILE).toBeDefined();
+      expect(entry.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    } finally {
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined", which is how a warm came to write ./undefined/ (TASK-174).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
+    }
+  });
+
+  test('TASK-174: an OLD build in the home keeps the env channel — the channel follows what RUNS', async () => {
+    // The interesting case, and the one that makes the coupling observable: the
+    // declaration is the unpinned `@latest` (which is never treated as old, so it
+    // lands on the file channel), while the home points at 0.3.7, whose reader
+    // only understands the environment. Deciding the channel on the declaration
+    // would hand that build a path it cannot read and take the seat's tools away;
+    // deciding it on the executed command keeps the token in the env for exactly
+    // that build (mcp-credential-delivery only does this below 0.3.12).
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mcp-home-old-'));
+    const pkgDir = path.join(home, '0.3.7', 'node_modules', '@commonlyai', 'mcp');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.7', type: 'module', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
+    fs.writeFileSync(path.join(home, 'current'), '0.3.7\n');
+    const previous = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const { impl, calls } = makeSpawnImpl();
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        instanceUrl: 'https://api.example.test',
+        runtimeToken: 'cm_agent_secret',
+        environment: {
+          mcp: [{
+            name: 'commonly',
+            transport: 'stdio',
+            command: ['npx', '-y', '@commonlyai/mcp@latest'],
+            env: {
+              COMMONLY_API_URL: '${COMMONLY_API_URL}',
+              COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            },
+          }],
+        },
+        _spawnImpl: impl,
+      });
+
+      const entry = calls[0].config.mcpServers.commonly;
+      expect(entry.command).toBe('node');
+      expect(entry.args[0]).toContain(path.join('0.3.7', 'node_modules'));
+      expect(entry.env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+      expect(entry.env.COMMONLY_TOKEN_FILE).toBeUndefined();
+      // The token rides in the CHILD ENV for this build, because claude expands
+      // `${VAR}` from its own environment — the channel is observable in two
+      // places, and asserting only the config would miss the child env.
+      expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
+    } finally {
+      // `process.env.X = undefined` does not unset X — it sets the STRING
+      // "undefined", which is how a warm came to write ./undefined/ (TASK-174).
+      if (previous === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = previous;
+    }
+  });
+
   test('mounts skills.claude entries into <cwd>/.claude/skills/ as read-only copies', async () => {
     const { impl } = makeSpawnImpl();
     const skillSrc = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-'));

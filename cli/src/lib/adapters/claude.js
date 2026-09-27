@@ -74,6 +74,7 @@ import {
 } from '../sandbox/seatbelt.js';
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
+import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -341,10 +342,19 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
   for (const server of mcpServers) {
+    // TASK-174: the command this seat will EXECUTE, not the one it declared —
+    // `node <home>/<version>/node_modules/@commonlyai/mcp/<bin>` when the seat's
+    // MCP home has a warmed build, and otherwise the unchanged declaration. The
+    // credential channel below is decided on that same command, so the two can
+    // never disagree about which release is running.
+    const spawnCommand = server.command
+      ? prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl })
+      : null;
+    const executed = spawnCommand ? { ...server, command: spawnCommand } : server;
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
-    if (server.command) {
-      const [command, ...args] = server.command;
+    if (spawnCommand) {
+      const [command, ...args] = spawnCommand;
       entry.command = command;
       if (args.length) entry.args = args;
     }
@@ -352,7 +362,7 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     // config claude actually reads, so the value never has to exist in the
     // runtime's environment at all (TASK-083).
     if (server.env) {
-      entry.env = deliverSeatCredential(server, {
+      entry.env = deliverSeatCredential(executed, {
         credentialFile: ctx.credentialFile,
         label: 'claude',
       }).env;

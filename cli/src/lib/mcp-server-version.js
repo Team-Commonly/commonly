@@ -51,40 +51,51 @@ export const versionOlderThan = (version, target) => {
  * `null` as the return value means "not identifiable as our server", which is a
  * different answer and takes a different branch: a stranger's server gets its
  * declaration honoured unchanged.
+ *
+ * The ENTRY SCRIPT is checked first, and that ordering is load-bearing since
+ * TASK-174. A seat home runs `node <home>/<version>/node_modules/@commonlyai/mcp/<bin>`,
+ * and that path CONTAINS the package name — so a spec-first order matched the
+ * path, took the `@` of `@commonlyai/mcp` for the version separator, and returned
+ * `{ version: null }` ("unpinned, so never old") for every home build. The
+ * version then decided nothing: measured, a home holding 0.3.7 was handed the
+ * credential FILE channel, whose reader does not exist before 0.3.12. Nor is
+ * "a spec has no slash" a usable rule — a SCOPED spec is `@commonlyai/mcp`.
  */
 export const describeMcpCommand = (command, {
   readTextFile = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null),
 } = {}) => {
   if (!Array.isArray(command) || command.length === 0) return null;
   const parts = command.map(String);
+  const scriptPath = parts.find((p) => p.endsWith('.js') || p.endsWith('.mjs'));
+  if (scriptPath) {
+    // `src/index.js` → `../package.json`; also try one level further up, because
+    // a bin shim can live in `bin/` beside `src/`.
+    for (const candidate of [join(dirname(scriptPath), '..', 'package.json'), join(dirname(scriptPath), 'package.json')]) {
+      let raw;
+      try {
+        raw = readTextFile(candidate);
+      } catch {
+        raw = null;
+      }
+      if (!raw) continue;
+      try {
+        const pkg = JSON.parse(raw);
+        if (!pkg || typeof pkg !== 'object') continue;
+        if (pkg.name === MCP_PACKAGE) return { isCommonly: true, version: parseVersion(pkg.version) };
+        // A package.json that names another package settles it: not ours, so its
+        // declaration is none of this function's business.
+        return null;
+      } catch {
+        // A malformed package.json is not an answer; keep looking.
+      }
+    }
+    return null;
+  }
   const pkgArg = parts.find((p) => p.includes(MCP_PACKAGE));
   if (pkgArg) {
     const at = pkgArg.lastIndexOf('@');
     if (at <= pkgArg.indexOf(MCP_PACKAGE)) return { isCommonly: true, version: null };
     return { isCommonly: true, version: parseVersion(pkgArg.slice(at + 1)) };
-  }
-  const scriptPath = parts.find((p) => p.endsWith('.js') || p.endsWith('.mjs'));
-  if (!scriptPath) return null;
-  // `src/index.js` → `../package.json`; also try one level further up, because a
-  // bin shim can live in `bin/` beside `src/`.
-  for (const candidate of [join(dirname(scriptPath), '..', 'package.json'), join(dirname(scriptPath), 'package.json')]) {
-    let raw;
-    try {
-      raw = readTextFile(candidate);
-    } catch {
-      raw = null;
-    }
-    if (!raw) continue;
-    try {
-      const pkg = JSON.parse(raw);
-      if (!pkg || typeof pkg !== 'object') continue;
-      if (pkg.name === MCP_PACKAGE) return { isCommonly: true, version: parseVersion(pkg.version) };
-      // A package.json that names another package settles it: not ours, so its
-      // declaration is none of this function's business.
-      return null;
-    } catch {
-      // A malformed package.json is not an answer; keep looking.
-    }
   }
   return null;
 };

@@ -46,6 +46,7 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
+import { prepareMcpSpawn } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
@@ -207,13 +208,17 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
         }
         continue;
       }
+      // TASK-174: what will EXECUTE — the warmed build from the seat's MCP home
+      // when there is one — and the credential channel is decided on that same
+      // command, so the two can never disagree about which release runs.
+      const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
       carried.push({
         name: server.name,
-        command: server.command.map((a) => substitutePlaceholders(a, ctx)),
+        command: spawnCommand.map((a) => substitutePlaceholders(a, ctx)),
         // Rewritten before substitution, so our own server is handed the file
         // (whose value the bridge pipes) instead of the token itself.
         env: Object.fromEntries(Object.entries(
-          deliverSeatCredential(server, {
+          deliverSeatCredential({ ...server, command: spawnCommand }, {
             credentialFile: ctx.credentialFile,
             label: 'pi',
           }).env,
