@@ -150,7 +150,7 @@ const manifests: Record<string, IntegrationManifest> = {
       provider: 'telegram',
       category: 'chat',
       docsPath: 'docs/telegram/README.md',
-      description: 'One Telegram chat, one pod.',
+      description: 'Link your Telegram chat to Commonly — every pod you turn on reaches it.',
       capabilities: ['webhook', 'summary', 'commands'],
     },
   }),

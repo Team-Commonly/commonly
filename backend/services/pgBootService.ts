@@ -125,13 +125,24 @@ export const PG_MESSAGE_PATH = '/api/pg/messages';
  * IS the thing being mounted, so asking whether that object is in the stack is
  * the same question with no translation step — and it stays correct if the path
  * ever changes.
+ *
+ * The router's own `stack` array is the identity that survives instrumentation.
+ * In production `@sentry/node` (10.65) wraps every Express layer handle, so
+ * `layer.handle === router` is false on a pod that has the route mounted. The
+ * wrapper exposes the original's properties, so `layer.handle.stack` is still
+ * the router's stack. 2026-09-27: deploy 4e60f240 hung, because the new pod
+ * answered /api/pg/messages with 401 while /api/health/ready said "not mounted".
+ * A local reproduction with Sentry initialised gives identity false and stack
+ * true; without Sentry, both are true.
  */
 export const routerIsMounted = (app: unknown, router: unknown): boolean => {
   if (!router) return false;
+  const routerStack = (router as { stack?: unknown }).stack;
   const walk = (candidate: any): boolean => {
     const stack = (candidate && candidate.stack) || [];
     return stack.some((layer: any) => {
       if (layer.handle === router) return true;
+      if (routerStack && layer.handle && layer.handle.stack === routerStack) return true;
       return Boolean(layer.handle && layer.handle.stack) && walk(layer.handle);
     });
   };

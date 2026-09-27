@@ -706,7 +706,9 @@ describe('V2ConnectorsPage', () => {
     const entry = (over = {}) => ({
       installableId: 'telegram',
       label: 'Telegram',
-      description: 'One Telegram chat, one pod.',
+      // Mirror of the provider manifest's copy, which the server sends as the
+      // entry's description. The source pin is backend manifestReadiness.
+      description: 'Link your Telegram chat to Commonly — every pod you turn on reaches it.',
       available: true,
       installation: null,
       integration: null,
@@ -786,7 +788,7 @@ describe('V2ConnectorsPage', () => {
       ]);
       renderPage();
 
-      expect(await screen.findByText('One Telegram chat, one pod.')).toBeInTheDocument();
+      expect(await screen.findByText('Link your Telegram chat to Commonly — every pod you turn on reaches it.')).toBeInTheDocument();
       expect(screen.queryByText('GitHub')).toBeNull();
       expect(screen.queryByText('Issues and pull requests.')).toBeNull();
       expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
@@ -803,7 +805,7 @@ describe('V2ConnectorsPage', () => {
 
       expect(await screen.findByText('Not enabled on this instance.')).toBeInTheDocument();
       expect(screen.getByText('ask your operator')).toBeInTheDocument();
-      expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
+      expect(screen.getByText('Link your Telegram chat to Commonly — every pod you turn on reaches it.')).toBeInTheDocument();
       expect(screen.getByText(/not connected/)).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
       const ask = screen.getAllByRole('link', { name: 'Ask' }).find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
