@@ -200,6 +200,19 @@ describe('/commonly-enable hardening', () => {
     expect(isConnectCodeShape).toHaveBeenCalledWith(JOINED_CODE);
   });
 
+  // vera 74641: the arm above pins WHERE the answer comes from, not that the
+  // answer is USED. A belt-and-braces drift -- ask the service and then also
+  // apply a local regex -- would keep every arm green. Admitting a malformed
+  // code through the service must therefore let the lookup proceed: if the
+  // route re-checks the code itself, this refuses instead and reddens.
+  it('lets the service answer decide, rather than re-checking the code itself', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    isConnectCodeShape.mockReturnValueOnce(true);
+    await enable('not-a-connect-code');
+    expect(registerEnableAttempt).toHaveBeenCalledTimes(1);
+    expect(Integration.findOne).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['1964', 'abc123', `${JOINED_CODE}a`, JOINED_CODE.slice(0, 31)])(
     'spends no attempt on the malformed code %s',
     async (input) => {

@@ -34,8 +34,16 @@ describe('telegramConnectCode', () => {
       expect(isConnectCodeShape(connectCode.toUpperCase())).toBe(false);
     });
 
-    it('draws its width from the same constant as the minter', () => {
-      expect(mintConnectCode().connectCode).toHaveLength(CONNECT_CODE_BYTES * 2);
+    // vera 74641: the title this arm used to carry ("draws its width from the
+    // same constant as the minter") claimed a derivation it cannot witness --
+    // hex of N bytes is 2N characters whatever the constant is, so it survived
+    // every constant mutation. The derivation is carried by `accepts what the
+    // minter produces`; what this arm pins is that the code is HEX, which is
+    // why its width tracks the byte count.
+    it('mints hex, so the code is twice CONNECT_CODE_BYTES wide', () => {
+      const { connectCode } = mintConnectCode();
+      expect(connectCode).toMatch(/^[0-9a-f]+$/);
+      expect(connectCode).toHaveLength(CONNECT_CODE_BYTES * 2);
     });
   });
 
