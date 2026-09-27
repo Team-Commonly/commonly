@@ -1714,6 +1714,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
+  test('zh-CN: the mono labels that carry the Pod noun are not lowercased (TASK-164)', () => {
+    // The two rules this resets BOTH still lowercase — assert them first, so
+    // the reset cannot pass by guarding a rule that no longer exists.
+    expect(ruleBody(v2, '.v2-connector-gates__title')).toContain('text-transform: lowercase');
+    expect(ruleBody(v2, '.v2-tools__field > span:first-child, .v2-tools__field > legend')).toContain('text-transform: lowercase');
+    const start = v2.indexOf('.v2-root:lang(zh) .v2-connector-gates__title');
+    expect(start).toBeGreaterThan(-1);
+    const block = v2.slice(start, v2.indexOf('}', start));
+    expect(block).toContain('.v2-root:lang(zh) .v2-tools__field > span:first-child');
+    expect(block).toContain('text-transform: none');
+  });
+
   test('zh-CN: body copy takes line-height 1.6 and a 12px floor under :lang(zh) (TASK-055)', () => {
     // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55,
     // the composer hint at 1.45/11px. CJK glyphs fill the em box, so Latin

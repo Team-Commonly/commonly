@@ -9809,6 +9809,21 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------------------------------------------------------------------------
+ * zh-CN: mono labels drop `text-transform: lowercase` (TASK-164, rule class 3).
+ * `.v2-connector-gates__title` and `.v2-tools__field > span:first-child` set
+ * lowercase for Latin kickers. The zh copy for both is CJK plus one Latin
+ * token — `Pod`, the product noun, which lily-shen ruled is never a synonym —
+ * and CSS lowercases it to `pod`, so a label contradicts the sentence beside
+ * it. Case is not a property of CJK; the reset exists only for the Latin token
+ * the copy carries. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-connector-gates__title,
+.v2-root:lang(zh) .v2-tools__field > span:first-child,
+.v2-root:lang(zh) .v2-tools__field > legend {
+  text-transform: none;
+}
+
+/* ---------------------------------------------------------------------------
  * zh-CN: CJK body line-height 1.6 and a 12px floor (TASK-055, rule class 2).
  * Latin body copy sits at 1.45–1.55 here; CJK glyphs fill the em box, so the
  * same leading leaves no white between lines. Measured in the real browser

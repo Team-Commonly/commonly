@@ -194,7 +194,7 @@ test('TASK-164: the grant, budget and trail times read in zh-CN, not English', a
     const aside = await screen.findByRole('complementary');
     expect(within(aside).getByText(/前由 sam 授权。/)).toBeInTheDocument();
     expect(within(aside).getByText(/后结束。/)).toBeInTheDocument();
-    expect(within(aside).getByText(/每 1小时 可调用 50 次/)).toBeInTheDocument();
+    expect(within(aside).getByText(/每 1小时可调用 50 次/)).toBeInTheDocument();
     await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
     const lines = within(aside).getAllByRole('listitem');
     expect(lines.map((line) => line.textContent)).toEqual([
