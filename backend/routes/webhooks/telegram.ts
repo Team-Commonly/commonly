@@ -441,7 +441,13 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
     const command = rawCommand?.startsWith('/') ? normalizeCommand(rawCommand) : null;
 
     if (command === ENABLE_COMMAND || command === ENABLE_COMMAND_ALIAS) {
-      await handleEnableCommand(chat, args[0]);
+      // Everything after the command is the code, with whitespace removed: the
+      // connectors page renders it grouped in fours (`1964 774b a58c …`) for
+      // readability, so a user who types or selects what they see sends it as
+      // several tokens. Minted codes carry no whitespace of their own
+      // (telegramConnectCode.mintConnectCode), so joining cannot merge two
+      // codes into one — it can only reassemble the one that was displayed.
+      await handleEnableCommand(chat, args.join(''));
       return res.sendStatus(200);
     }
 
