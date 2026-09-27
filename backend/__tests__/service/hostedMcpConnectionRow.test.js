@@ -18,9 +18,12 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 //      per-person and carries no pod, so the conditional requirement is what
 //      lets the row exist at all — the arm below fails the day that
 //      requirement loses its condition.
-//   3. The row is one per `(createdBy, config.entryId)`. The index is PARTIAL:
-//      a non-partial unique index over the same keys would refuse a second
-//      Slack row for one person, which is the direction this type cannot fail.
+//   3. The row is one per `(createdBy, config.entryId)`, and `entryId` itself
+//      is required for THIS type. The index is PARTIAL: a non-partial unique
+//      index over the same keys would refuse a second Slack row for one
+//      person, which is the direction this type cannot fail. Required, so a
+//      hosted row with no entry is refused by name rather than indexed as
+//      `null` and refused as a duplicate entry (Vera, #1976 gate).
 
 const OWNER_A = new mongoose.Types.ObjectId();
 const OWNER_B = new mongoose.Types.ObjectId();
@@ -141,6 +144,61 @@ describe('the hosted-mcp connection row', () => {
     await expect(Integration.create({
       scope: 'user', type: 'slack', status: 'connected', createdBy: owner,
       config: { teamId: 'T2', slackUserId: 'U2' },
+    })).resolves.toBeDefined();
+  });
+
+  test('a hosted-mcp row with no entry is refused by name, not by the index', async () => {
+    // The unique index is on `(createdBy, config.entryId)`, and a row with no
+    // entry is indexed as `null` — so before this requirement, the SECOND such
+    // row for one person arrived as an E11000 naming `config.entryId`: a
+    // refusal that reports a duplicate entry to a writer whose two rows share
+    // no entry at all, in the one direction this type was said not to fail in
+    // (Vera, #1976 gate). It is refused at validation instead, so the failure
+    // names the missing field. Nothing can create such a row today — the create
+    // route refuses the type by name — which is why the declaration, and not a
+    // caller nobody has written yet, is where it is closed.
+    const noEntry = () => ({
+      scope: 'user', type: 'hosted-mcp', status: 'pending', createdBy: OWNER_A,
+      config: { intake: 'oauth' },
+    });
+
+    const first = await Integration.create(noEntry()).then(() => null, (error) => error);
+    expect(first).toBeInstanceOf(mongoose.Error.ValidationError);
+    expect(Object.keys(first.errors)).toContain('config.entryId');
+    expect(first.code).not.toBe(11000);
+
+    // The second attempt is the one that used to be the duplicate-key error.
+    const second = await Integration.create(noEntry()).then(() => null, (error) => error);
+    expect(second).toBeInstanceOf(mongoose.Error.ValidationError);
+    expect(second.code).not.toBe(11000);
+    expect(await Integration.countDocuments({ type: 'hosted-mcp' })).toBe(0);
+  });
+
+  test('a whitespace-only entry is refused, so the index cannot see two of one entry', async () => {
+    // `trim` runs before validation, so `'   '` reaches `required` as `''` and
+    // is refused by the same arm above. Without the trim it would be stored
+    // verbatim: `(createdBy, '   ')` is a different key from
+    // `(createdBy, 'linear')`, so one person's row for an entry could be born
+    // twice under two strings that name the same entry.
+    await expect(Integration.create(shape({ config: { entryId: '   ', intake: 'oauth' } })))
+      .rejects.toBeInstanceOf(mongoose.Error.ValidationError);
+
+    // The positive control for the trim itself: a padded entry is stored as the
+    // entry, not as the padding.
+    const padded = await Integration.create(shape({ config: { entryId: ' linear ', intake: 'oauth' } }));
+    expect(padded.config.entryId).toBe(ENTRY_A);
+  });
+
+  test('positive control: the entry requirement is scoped to the type that has entries', async () => {
+    // If `required` lost its condition, every connector row in the collection
+    // would have to carry `config.entryId` — and Slack and Discord legitimately
+    // have none, so half the collection could not be created. The condition is
+    // the whole of the rule above, and this is the arm that sees it.
+    const owner = new mongoose.Types.ObjectId();
+
+    await expect(Integration.create({
+      scope: 'user', type: 'slack', status: 'connected', createdBy: owner,
+      config: { teamId: 'T-scoped', slackUserId: 'U-scoped' },
     })).resolves.toBeDefined();
   });
 

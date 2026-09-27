@@ -10,7 +10,13 @@ export type IntegrationType =
   | 'whatsapp'
   | 'x'
   | 'instagram'
-  | 'github-app';
+  | 'github-app'
+  // The runtime `enum` on the schema below is a string array mongoose does not
+  // tie to this union, so the two can drift — and in the first cut of
+  // TASK-172's slice 1 they did: the value was in the enum and not here, which
+  // is how a typed write to a hosted row comes to need a cast (Vera, #1976
+  // gate). The validator below is the arm that fails the day they drift again.
+  | 'hosted-mcp';
 
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'pending';
 export type IntegrationScope = 'pod' | 'user';
@@ -161,6 +167,20 @@ export interface IIntegration extends Document {
       sentAt: Date;
       closedAt?: Date;
     }[];
+    // The hosted-MCP connection's own keys (TASK-172, scope §2), declared here
+    // as well as in the schema below. The schema half closes the silent drop;
+    // this half is what stops a typed write from needing a cast to state the
+    // same thing — a cast being the same silence one layer up (Vera, #1976 gate).
+    entryId?: string;
+    intake?: 'oauth';
+    providerSubject?: string;
+    grantedScope?: string;
+    expiresAt?: Date;
+    credentialRef?: string;
+    refreshTokenRef?: string;
+    refreshGeneration?: number;
+    credentialHint?: string;
+    pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date };
   };
   ingestTokens: IIngestToken[];
   lastSync?: Date | null;
@@ -326,7 +346,23 @@ const IntegrationSchema = new Schema<IIntegration>(
       // (utils/serverOwnedConfigKeys) and the three that name a secret or a
       // nonce are withheld from every serialization
       // (models/integrationPublicConfig).
-      entryId: String, // which catalogue entry; fixed at the first connect
+
+      // Which catalogue entry the row connects; fixed at the first connect.
+      // Required CONDITIONALLY, like `podId` one level up, because the index
+      // below is unique on `(createdBy, config.entryId)` and a hosted-mcp row
+      // with no entry is indexed as `null`: two of them for one person collided
+      // with an E11000 naming `config.entryId`, a refusal that reports a
+      // duplicate entry to a writer whose two rows share no entry at all
+      // (Vera, #1976 gate, measured). Refused here, the failure names the
+      // missing field instead. `trim` for the same invariant: `'linear '` and
+      // `'linear'` are one entry, not two.
+      entryId: {
+        type: String,
+        trim: true,
+        required(this: IIntegration) {
+          return this.type === 'hosted-mcp';
+        },
+      },
       intake: String, // 'oauth' is the only intake for this type
       providerSubject: String, // the authorization server's stable id for the account
       grantedScope: String, // the token response's `scope`: what the person consented to
