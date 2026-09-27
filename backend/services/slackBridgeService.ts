@@ -132,6 +132,15 @@ const isInboundRelayableIntegration = (integration: SlackIntegrationDoc, podId: 
 
 const NO_ACTIVE_POD_REPLY = 'This connector has no active pod. Choose one in Commonly first.';
 
+// ADR-025 D11: a quote-reply whose pod is no longer reachable is refused in the
+// chat and posted nowhere. Naming the pod is the whole point — "your reply did
+// not go through" is unactionable, while "that line came from Launch" tells the
+// user which pod the fix is in.
+const routedPodRefusal = (podLabel: string): string => (
+  `⚠️ That line came from “${podLabel}”, which this chat no longer reaches. `
+  + 'Nothing was posted — open Commonly to reply there.'
+);
+
 const replyNoActivePod = async (integration: SlackIntegrationDoc): Promise<void> => {
   const chatId = integration.config?.chatId;
   const botTokenRef = integration.config?.botTokenRef;
@@ -143,6 +152,24 @@ const replyNoActivePod = async (integration: SlackIntegrationDoc): Promise<void>
     await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
   } catch (error) {
     console.warn('[slack-bridge] could not send no-active-pod reply:', (error as Error).message);
+  }
+};
+
+// Same trust level as replyNoActivePod: a refusal that never reaches the chat
+// leaves the user believing their message was relayed.
+const replyRoutedPodRefused = async (
+  integration: SlackIntegrationDoc,
+  podLabel: string,
+): Promise<void> => {
+  const chatId = integration.config?.chatId;
+  const botTokenRef = integration.config?.botTokenRef;
+  if (!chatId || !botTokenRef) return;
+  try {
+    const token = await connectorSecrets.get(String(botTokenRef));
+    const sent = await new SlackApi(token).postMessage(String(chatId), routedPodRefusal(podLabel));
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
+  } catch (error) {
+    console.warn('[slack-bridge] could not send routed-pod refusal:', (error as Error).message);
   }
 };
 
@@ -276,6 +303,10 @@ export const relayAgentMessageToSlack = async (opts: {
 // D11: a Slack thread attached to a relayed line is a direct answer to that
 // line's agent. Keep the map generic so Telegram can migrate from tgMessageId
 // without changing this reader.
+//
+// It also returns the pod the quoted line came from. The caller owns the
+// decision — the map is data, and this function does no lookups — so a `podId`
+// here means "the quoted entry names a pod", not "routing to it is allowed".
 export const routeSlackReplyContent = (opts: {
   content: string;
   threadTs?: string | null;
@@ -283,16 +314,18 @@ export const routeSlackReplyContent = (opts: {
     externalMessageId?: string;
     tgMessageId?: string;
     agentUsername?: string;
+    podId?: string | null;
   }>;
-}): { content: string; routedAgent: string | null } => {
+}): { content: string; routedAgent: string | null; podId: string | null } => {
   const { content, threadTs, relayMap } = opts;
-  if (!threadTs || !Array.isArray(relayMap)) return { content, routedAgent: null };
+  if (!threadTs || !Array.isArray(relayMap)) return { content, routedAgent: null, podId: null };
   const hit = relayMap.find((entry) => String(entry.externalMessageId || entry.tgMessageId) === String(threadTs));
-  if (!hit?.agentUsername) return { content, routedAgent: null };
+  if (!hit?.agentUsername) return { content, routedAgent: null, podId: null };
+  const routedPodId = hit.podId ? String(hit.podId) : null;
   const mention = `@${hit.agentUsername}`;
   return content.toLowerCase().includes(mention.toLowerCase())
-    ? { content, routedAgent: hit.agentUsername }
-    : { content: `${mention} ${content}`, routedAgent: hit.agentUsername };
+    ? { content, routedAgent: hit.agentUsername, podId: routedPodId }
+    : { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
 // Inbound Slack DM → Commonly pod. The event route has already proven the
@@ -360,12 +393,40 @@ export const relaySlackMessageToPod = async (opts: {
     await replyNoActivePod(integration);
     return { relayed: false };
   }
-  const { content: routedText, routedAgent } = routeSlackReplyContent({
+  const routed = routeSlackReplyContent({
     content: rawText,
     threadTs: event.thread_ts,
     relayMap: cardReply.lateReply ? [] : config.relayMap,
   });
-  const podId = cardReply.lateReply?.podId || String(integration.podId);
+  // ADR-025 D11: a thread reply answers the line it quotes, so it belongs in THAT
+  // pod — not in whichever pod is this connector's active destination. The quoted
+  // pod is re-derived here rather than trusted from the map: the map is written
+  // at send time and an entry can outlive its gate, its pod, or the owner's
+  // membership (100-entry cap, owner-editable gates). Any failure refuses in the
+  // chat and posts nothing. Falling back to the active pod is the defect this
+  // rule exists for — the user's answer to B would be authored into A and the
+  // agent it names would wake there without B's thread.
+  //
+  // An entry with no `podId` is not this case: it was written before multi-pod
+  // routing shipped, carries no pod to check, and routes as it always has.
+  let podId = cardReply.lateReply?.podId || String(integration.podId);
+  if (routed.podId && String(routed.podId) !== String(podId)) {
+    const routedPod = await Pod.findById(routed.podId).select('name type createdBy members').lean();
+    if (!routedPod
+      || !isPodMember(routedPod, String(config.linkedUserId))
+      || !isRelayableIntegration(integration, routed.podId)) {
+      console.warn(
+        `[slack-bridge] thread reply refused — quoted pod ${routed.podId} is no longer routed to this chat`,
+      );
+      await replyRoutedPodRefused(
+        integration,
+        routedPod?.name ? String(routedPod.name) : `pod ${routed.podId}`,
+      );
+      return { relayed: false };
+    }
+    podId = String(routed.podId);
+  }
+  const { content: routedText, routedAgent } = routed;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
   const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;

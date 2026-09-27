@@ -1,6 +1,9 @@
 jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findByIdAndUpdate: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/pg/Message', () => ({ create: jest.fn(), findById: jest.fn() }));
+jest.mock('../../../services/messageAgentDeliveryService', () => ({ deliverMessageToAgents: jest.fn() }));
+jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn() }));
 // The constructor is stubbed (the network); the escape is the real one, because
 // the escaping these tests assert is the behaviour we ship.
@@ -20,6 +23,8 @@ jest.mock('../../../services/connectorDeliveryFailureService', () => ({
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
+const PGMessage = require('../../../models/pg/Message');
+const { deliverMessageToAgents } = require('../../../services/messageAgentDeliveryService');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const SlackApi = require('../../../services/slackApi');
 const deliveryFailures = require('../../../services/connectorDeliveryFailureService');
@@ -132,7 +137,129 @@ describe('Slack installable bridge', () => {
       content: 'Can you clarify?',
       threadTs: '171234.0001',
       relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai' }],
-    })).toEqual({ content: '@kai Can you clarify?', routedAgent: 'kai' });
+    })).toEqual({ content: '@kai Can you clarify?', routedAgent: 'kai', podId: null });
+  });
+
+  test('sends a thread reply into the quoted pod, not the connector\'s active one', async () => {
+    // ADR-025 D11. The map entry names the pod its line came from; before this,
+    // the reader kept only the agent and the reply landed in the active pod.
+    Pod.findById.mockImplementation((id) => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          String(id) === 'pod-2' ? { name: 'Launch', type: 'team', members: ['user-1'] } : { name: 'Alpha', type: 'team', members: ['user-1'] },
+        ),
+      }),
+    }));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+    Integration.findOne.mockResolvedValue(null);
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: {
+          ...integration.config,
+          linkedUserId: 'user-1',
+          slackUserId: 'U1',
+          gates: { 'pod-2': { enabled: true } },
+          relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai', podId: 'pod-2' }],
+        },
+      },
+      event: { text: 'yes, ship it', user: 'U1', thread_ts: '171234.0001' },
+    });
+
+    expect(result).toEqual({ relayed: true, routedAgent: 'kai' });
+    expect(PGMessage.create.mock.calls[0][0]).toBe('pod-2');
+  });
+
+  test('still posts an unquoted Slack message to the active pod', async () => {
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Alpha', type: 'team', members: ['user-1'] }) }),
+    });
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {} },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(PGMessage.create.mock.calls[0][0]).toBe('pod-1');
+  });
+
+  test('refuses a thread reply into a pod whose gate is off, naming it, posting nothing', async () => {
+    Pod.findById.mockImplementation((id) => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(
+          String(id) === 'pod-2' ? { name: 'Launch', type: 'team', members: ['user-1'] } : { name: 'Alpha', type: 'team', members: ['user-1'] },
+        ),
+      }),
+    }));
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: {
+          ...integration.config,
+          linkedUserId: 'user-1',
+          slackUserId: 'U1',
+          gates: {},
+          relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai', podId: 'pod-2' }],
+        },
+      },
+      event: { text: 'yes, ship it', user: 'U1', thread_ts: '171234.0001' },
+    });
+
+    expect(result).toEqual({ relayed: false });
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(deliverMessageToAgents).not.toHaveBeenCalled();
+    const api = SlackApi.mock.results[0].value;
+    expect(api.postMessage).toHaveBeenCalledWith(
+      'D1', expect.stringContaining('Launch'),
+    );
+  });
+
+  test('routes a pre-D11 map entry (no podId) to the active pod', async () => {
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Alpha', type: 'team', members: ['user-1'] }) }),
+    });
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+
+    await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: {
+          ...integration.config,
+          linkedUserId: 'user-1',
+          slackUserId: 'U1',
+          gates: {},
+          relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai' }],
+        },
+      },
+      event: { text: 'yes, ship it', user: 'U1', thread_ts: '171234.0001' },
+    });
+
+    expect(PGMessage.create.mock.calls[0][0]).toBe('pod-1');
   });
 
   test('does not relay through a visible recovery row whose secret is unavailable', async () => {
