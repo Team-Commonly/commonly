@@ -38,6 +38,14 @@ interface Res {
 const router: ReturnType<typeof express.Router> = express.Router();
 const MAX_MESSAGE_IDS_PER_REQUEST = 200;
 
+// The forms a `since` bound may take: a date, or a date-time WITH a zone.
+// A date-time without a zone is refused rather than parsed, because `Date.parse`
+// reads it in the SERVER's local zone (`'2026-09-28T04:00:00'` -> 11:00Z on this
+// host, 04:00Z on a UTC one) while `createdAt` is stored UTC, so the same request
+// means a different instant per host. A shifted bound silently hides rows; a
+// refusal is visible. Date-only is unambiguous (ISO reads it as UTC).
+const ISO_SINCE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/i;
+
 // Activity queries and actions fan out to multiple projections. Sixty per
 // minute leaves room for normal use without an unbounded hot loop.
 const activityRateLimit = rateLimit({
@@ -113,6 +121,7 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     const rawMessageIds = req.query?.messageIds;
     const rawLimit = req.query?.limit;
     const rawOffset = req.query?.offset;
+    const rawSince = req.query?.since;
     if (podId !== undefined && typeof podId !== 'string') {
       return res.status(400).json({ error: 'podId must be a string' });
     }
@@ -133,11 +142,46 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
       return res.status(400).json({ error: 'offset must be a non-negative integer' });
     }
+    // `since` opens a window on the queue and is what makes a watcher tick one
+    // request instead of paging the whole thing: `/api/activity` is 60 requests a
+    // minute keyed on the client IP, shared with every other session on this host
+    // AND with the person's own Activity page, so paging a 550-item queue eleven
+    // times per tick draws on somebody else's budget.
+    //
+    // INCLUSIVE (`createdAt >= since`), pinned here because it is the difference
+    // between a row being re-delivered and a row being lost: a caller's cursor is
+    // a bare timestamp, and one sitting at millisecond T cannot know about a row
+    // INSERTED at T after it was written. An exclusive bound drops that row from
+    // that read and from every later read.
+    //
+    // The residual is bounded, not closed: a caller resuming from `nextSince - W`
+    // (the window the CLI uses) misses an arrival more than W behind a cursor it
+    // has already passed. `createdAt` is stamped before the write commits AND the
+    // stamp comes from the writer's clock, so W must exceed write-commit latency
+    // plus the writer's clock offset: a lagging clock stamps a new row behind a
+    // cursor the caller has already advanced past. Over-covering re-prints (the
+    // client dedupes on `attentionItemId`); a miss loses the row.
+    //
+    // An unusable value is refused rather than quietly dropped: a caller that
+    // asked to narrow and silently received the whole queue cannot tell.
+    //
+    // Three separate checks, because they catch three different callers: the
+    // TYPE check catches a repeated parameter (an array of one parses fine once
+    // stringified), the SHAPE check catches `Date.parse`'s tolerance for
+    // non-ISO forms (`'Sep 28 2026'`, `'2026'`) and for zone-less date-times it
+    // would read in local time, and the VALUE check catches an in-shape but
+    // impossible instant (`'2026-13-45T00:00:00Z'`).
+    const since = rawSince === undefined ? undefined : Date.parse(String(rawSince));
+    if (rawSince !== undefined
+      && (typeof rawSince !== 'string' || !ISO_SINCE.test(rawSince) || !Number.isFinite(since))) {
+      return res.status(400).json({ error: 'since must be an ISO-8601 timestamp' });
+    }
     const options = {
       ...(podId ? { podId } : {}),
       ...(messageIds ? { messageIds } : rawMessageIds !== undefined ? { messageIds: [] } : {}),
       ...(limit === undefined ? {} : { limit }),
       ...(offset === undefined ? {} : { offset }),
+      ...(since === undefined ? {} : { since: new Date(since) }),
     };
     return res.json(await ActivityService.getDecisionQueue(userId, options));
   } catch (error) {

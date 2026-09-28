@@ -440,6 +440,7 @@ interface OpenQueueOptions {
   messageIds?: unknown;
   limit?: number;
   offset?: number;
+  since?: unknown;
 }
 
 export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueOptions = {}): Promise<{
@@ -448,6 +449,8 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   countsByPod: Record<string, number>;
   countsByKind: Record<string, number>;
   composePodId: string | null;
+  windowCount: number;
+  nextSince: string | null;
   offset: number;
   limit: number;
   remaining: number;
@@ -460,11 +463,61 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     : [];
   const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
   const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
+  // `since` opens a WINDOW: work created AT OR AFTER an instant. It is what makes
+  // a watcher tick one request instead of a full-queue paging loop (`/api/activity`
+  // is 60 requests a minute per client IP, shared with every session on the host
+  // and with the person's own Activity page).
+  //
+  // The counts below do NOT narrow with it. `count`, `countsByKind`, `countsByPod`
+  // and `composePodId` describe the whole open set, exactly as they did before this
+  // parameter existed, so an Activity badge or any caller that passes no bound sees
+  // no change; a bounded call gets `windowCount` for the window. `offset`/`limit`/
+  // `remaining`/`hasMore` page WITHIN the window, which is the only reading of
+  // "pagination" that can terminate: rows outside the window are never delivered,
+  // so a page count that included them could never be worked off.
+  //
+  // The comparison is INCLUSIVE. A caller's cursor is a bare timestamp, and one
+  // sitting at millisecond T cannot know about a row INSERTED at T after it was
+  // written — an exclusive bound would drop that row from that read and from every
+  // later read, silently and permanently. Re-delivering a row the caller already
+  // has is the recoverable direction, and callers dedupe on `attentionItemId`.
+  //
+  // `createdAt` is stamped by mongoose at insert, from the model's own `now`, and
+  // no writer in this codebase sets it (the source's own time lives in
+  // `sourceCreatedAt`), so it orders rows by when they were STAMPED. That is what
+  // makes the existing `find().sort({ createdAt: -1 })` cheap on the
+  // `{recipientUserId, status, createdAt}` index. This bound never touches that
+  // index: the whole-set counts above require the whole open set, so the window is
+  // applied in memory below, after the read. What it cuts is the size of the
+  // response and the number of round trips (the watcher tick that motivated it
+  // went from eleven requests to one), not the database work.
+  //
+  // Stamp order is NOT commit order, and that is where the residual lives — not in
+  // backdating alone. A row stamped before a cursor can become visible after it
+  // (its write had not committed when the caller read), and a writer whose clock
+  // lags stamps a new row behind a cursor the caller already advanced past; this
+  // bound misses both. Only a caller-side lookback W closes them, and W has to
+  // exceed write-commit latency PLUS writer clock offset — an earlier revision of
+  // this comment said "not skew", and that was wrong. So the bound is a narrowing,
+  // not a guarantee: a caller that must not miss a row re-reads from
+  // `nextSince - W` and dedupes on `attentionItemId`.
+  //
+  // A value that cannot be parsed narrows nothing rather than raising: the route
+  // refuses it with a 400 first, so this is the second line, and of the two ways
+  // to be wrong here, returning a superset is the one that cannot hide a row.
+  // (`podId` above already treats a malformed scope the same way.)
+  const since = options.since instanceof Date
+    ? options.since
+    : (typeof options.since === 'string' && options.since.trim() ? new Date(options.since) : null);
+  const sinceAt = since && Number.isFinite(since.getTime()) ? since : null;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
   if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
-    return { items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+    return {
+      items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,
+      windowCount: 0, nextSince: null, offset, limit, remaining: 0, hasMore: false,
+    };
   }
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
@@ -517,7 +570,12 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     counts[kind] = (counts[kind] || 0) + 1;
     return counts;
   }, {});
-  const page = scoped.slice(offset, offset + limit);
+  // The window is applied AFTER the whole-set counts and BEFORE the slice, so
+  // the counts keep their meaning and the page is drawn from the window.
+  const window = sinceAt
+    ? scoped.filter((row: any) => new Date(row.createdAt).getTime() >= sinceAt.getTime())
+    : scoped;
+  const page = window.slice(offset, offset + limit);
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
@@ -526,13 +584,21 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
   }
-  const remaining = Math.max(scoped.length - offset - picked.length, 0);
+  const remaining = Math.max(window.length - offset - picked.length, 0);
+  // The newest instant actually DELIVERED, so a caller can resume from it. It is
+  // the max over the page rather than over the window: a value the caller has not
+  // seen must not be skipped past.
+  const nextSince = picked.length
+    ? new Date(Math.max(...picked.map((row: any) => new Date(row.createdAt).getTime()))).toISOString()
+    : null;
   return {
     items: picked,
     count: scoped.length,
     countsByPod,
     countsByKind,
     composePodId,
+    windowCount: window.length,
+    nextSince,
     offset,
     limit,
     remaining,
