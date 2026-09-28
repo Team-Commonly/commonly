@@ -38,6 +38,14 @@ interface Res {
 const router: ReturnType<typeof express.Router> = express.Router();
 const MAX_MESSAGE_IDS_PER_REQUEST = 200;
 
+// The forms a `since` bound may take: a date, or a date-time WITH a zone.
+// A date-time without a zone is refused rather than parsed, because `Date.parse`
+// reads it in the SERVER's local zone (`'2026-09-28T04:00:00'` -> 11:00Z on this
+// host, 04:00Z on a UTC one) while `createdAt` is stored UTC, so the same request
+// means a different instant per host. A shifted bound silently hides rows; a
+// refusal is visible. Date-only is unambiguous (ISO reads it as UTC).
+const ISO_SINCE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/i;
+
 // Activity queries and actions fan out to multiple projections. Sixty per
 // minute leaves room for normal use without an unbounded hot loop.
 const activityRateLimit = rateLimit({
@@ -153,8 +161,16 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     //
     // An unusable value is refused rather than quietly dropped: a caller that
     // asked to narrow and silently received the whole queue cannot tell.
+    //
+    // Three separate checks, because they catch three different callers: the
+    // TYPE check catches a repeated parameter (an array of one parses fine once
+    // stringified), the SHAPE check catches `Date.parse`'s tolerance for
+    // non-ISO forms (`'Sep 28 2026'`, `'2026'`) and for zone-less date-times it
+    // would read in local time, and the VALUE check catches an in-shape but
+    // impossible instant (`'2026-13-45T00:00:00Z'`).
     const since = rawSince === undefined ? undefined : Date.parse(String(rawSince));
-    if (rawSince !== undefined && (typeof rawSince !== 'string' || !Number.isFinite(since))) {
+    if (rawSince !== undefined
+      && (typeof rawSince !== 'string' || !ISO_SINCE.test(rawSince) || !Number.isFinite(since))) {
       return res.status(400).json({ error: 'since must be an ISO-8601 timestamp' });
     }
     const options = {

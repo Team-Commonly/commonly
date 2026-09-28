@@ -68,18 +68,50 @@ describe('activity read routes', () => {
   });
 
   it('GET /api/activity/decision-queue refuses a since bound it cannot read', async () => {
-    const unusable = ['not-a-date', '', '2026-13-45T00:00:00Z'];
+    const unusable = [
+      'not-a-date',
+      '',
+      '2026-13-45T00:00:00Z',
+      // In-shape but not ISO: `Date.parse` accepts both, reading the first in the
+      // SERVER's local zone and the second as Jan 1. Accepted, they are a bound
+      // nobody asked for.
+      'Sep 28 2026',
+      '2026-09-28T04:00:00',
+    ];
     await Promise.all(unusable.map((since) => request(app)
       .get('/api/activity/decision-queue')
       .query({ since })
       .expect(400)));
     // A repeated parameter arrives as an array, and `Date.parse(String([one]))`
     // parses — so this is the arm that separates "the value parses" from "the
-    // value is what the caller meant to send".
+    // value is what the caller meant to send". The bare `[]` form is the one
+    // that discriminates: a TWO-element array comma-joins into something
+    // unparseable and 400s even without the type check.
     await request(app)
       .get('/api/activity/decision-queue?since=2026-09-01T00:00:00Z&since=2026-09-01T00:00:00Z')
       .expect(400);
+    await request(app)
+      .get('/api/activity/decision-queue?since[]=2026-09-01T00:00:00Z')
+      .expect(400);
     expect(ActivityService.getDecisionQueue).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/activity/decision-queue accepts the ISO forms a cursor actually takes', async () => {
+    // The control for the refusal arm: a shape test that refused these would be
+    // over-strict rather than safe. Date-only is ISO's UTC-midnight form, and
+    // an offset is as valid as `Z`.
+    await request(app)
+      .get('/api/activity/decision-queue?since=2026-09-01')
+      .expect(200);
+    expect(ActivityService.getDecisionQueue).toHaveBeenCalledWith('user123', {
+      since: new Date('2026-09-01'),
+    });
+    await request(app)
+      .get('/api/activity/decision-queue?since=2026-09-01T04:00:00.123%2B02:00')
+      .expect(200);
+    expect(ActivityService.getDecisionQueue).toHaveBeenLastCalledWith('user123', {
+      since: new Date('2026-09-01T04:00:00.123+02:00'),
+    });
   });
 
   it('GET /api/activity/decision-queue rejects unsafe pagination', async () => {
