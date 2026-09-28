@@ -10,7 +10,13 @@ export type IntegrationType =
   | 'whatsapp'
   | 'x'
   | 'instagram'
-  | 'github-app';
+  | 'github-app'
+  // The runtime `enum` on the schema below is a string array mongoose does not
+  // tie to this union, so the two can drift — and in the first cut of
+  // TASK-172's slice 1 they did: the value was in the enum and not here, which
+  // is how a typed write to a hosted row comes to need a cast (Vera, #1976
+  // gate). The validator below is the arm that fails the day they drift again.
+  | 'hosted-mcp';
 
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'pending';
 export type IntegrationScope = 'pod' | 'user';
@@ -161,6 +167,20 @@ export interface IIntegration extends Document {
       sentAt: Date;
       closedAt?: Date;
     }[];
+    // The hosted-MCP connection's own keys (TASK-172, scope §2), declared here
+    // as well as in the schema below. The schema half closes the silent drop;
+    // this half is what stops a typed write from needing a cast to state the
+    // same thing — a cast being the same silence one layer up (Vera, #1976 gate).
+    entryId?: string;
+    intake?: 'oauth';
+    providerSubject?: string;
+    grantedScope?: string;
+    expiresAt?: Date;
+    credentialRef?: string;
+    refreshTokenRef?: string;
+    refreshGeneration?: number;
+    credentialHint?: string;
+    pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date };
   };
   ingestTokens: IIngestToken[];
   lastSync?: Date | null;
@@ -200,7 +220,10 @@ const IntegrationSchema = new Schema<IIntegration>(
     type: {
       type: String,
       required: true,
-      enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram', 'github-app'],
+      enum: [
+        'discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp',
+        'x', 'instagram', 'github-app', 'hosted-mcp',
+      ],
       default: 'discord',
     },
     status: {
@@ -313,6 +336,47 @@ const IntegrationSchema = new Schema<IIntegration>(
         botTokenRef: String,
         expiresAt: Date,
       },
+      // `hosted-mcp` — a per-person Connection to a vendor-hosted remote MCP
+      // server (TASK-172, docs/plans/hosted-mcp-connection-scope.md §2).
+      // Every key is declared because `config` is a STRICT subdocument: an
+      // undeclared `$set` is dropped in silence (see webhookUrlRef above), and
+      // here the silence would be a credential reference that the row never
+      // kept — the OAuth callback reporting a connect that holds no token.
+      // Only that callback writes any of them; all of them are server-owned
+      // (utils/serverOwnedConfigKeys) and the three that name a secret or a
+      // nonce are withheld from every serialization
+      // (models/integrationPublicConfig).
+
+      // Which catalogue entry the row connects; fixed at the first connect.
+      // Required CONDITIONALLY, like `podId` one level up, because the index
+      // below is unique on `(createdBy, config.entryId)` and a hosted-mcp row
+      // with no entry is indexed as `null`: two of them for one person collided
+      // with an E11000 naming `config.entryId`, a refusal that reports a
+      // duplicate entry to a writer whose two rows share no entry at all
+      // (Vera, #1976 gate, measured). Refused here, the failure names the
+      // missing field instead. `trim` for the same invariant: `'linear '` and
+      // `'linear'` are one entry, not two.
+      entryId: {
+        type: String,
+        trim: true,
+        required(this: IIntegration) {
+          return this.type === 'hosted-mcp';
+        },
+      },
+      intake: String, // 'oauth' is the only intake for this type
+      providerSubject: String, // the authorization server's stable id for the account
+      grantedScope: String, // the token response's `scope`: what the person consented to
+      expiresAt: Date, // the access token's expiry, when the AS states one
+      credentialRef: String, // ConnectorSecret ref: the access token
+      refreshTokenRef: String, // ConnectorSecret ref: the refresh token
+      refreshGeneration: Number, // the §10.3 fence's generation at the last refresh
+      credentialHint: String,
+      // Present only mid-connect, and holding nothing secret once it expires.
+      pendingAuth: {
+        state: String,
+        codeVerifier: String,
+        expiresAt: Date,
+      },
       relayMap: [
         {
           externalMessageId: String,
@@ -357,6 +421,16 @@ IntegrationSchema.index({ podId: 1, type: 1 });
 IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
 IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
+// One `hosted-mcp` row per (person, catalogue entry). The page cannot say which
+// row a grant uses if a person holds two for one vendor, and the two would go
+// through removal separately (scope §2). Partial, not sparse: `config.entryId`
+// is absent on every other type, and every other type has no such key to
+// collide on. A second connect by the same person REUSES the row through the
+// §10.3 fence rather than inserting one.
+IntegrationSchema.index(
+  { createdBy: 1, 'config.entryId': 1 },
+  { unique: true, partialFilterExpression: { type: 'hosted-mcp' } },
+);
 IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
 // Installable Slack Events API lookup: a global endpoint resolves a bound DM
 // solely by its workspace and channel, then still checks isActive.

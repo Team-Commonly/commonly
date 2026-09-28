@@ -124,3 +124,40 @@ describe('projectIntegrationForViewer', () => {
     expect(anonymous.config.linked).toBe(true);
   });
 });
+
+// A `hosted-mcp` row (TASK-172, scope §2) holds the pair that acts as the
+// member at the vendor. The entry, the consent and the expiry stay readable —
+// the Connectors page tells a person which entry their account is connected to
+// and what they consented to — while the two refs and the half-finished flow
+// leave through neither the model's toJSON nor a lean read.
+describe('the hosted-mcp connection row', () => {
+  const hostedRow = () => ({
+    type: 'hosted-mcp',
+    scope: 'user',
+    createdBy: '64b000000000000000000011',
+    config: {
+      entryId: 'linear',
+      intake: 'oauth',
+      grantedScope: 'read openid',
+      expiresAt: new Date('2026-09-27T15:00:00Z'),
+      credentialRef: 'secret_access_ref',
+      refreshTokenRef: 'secret_refresh_ref',
+      pendingAuth: { state: 'nonce_1', codeVerifier: 'verifier_1', expiresAt: new Date('2026-09-27T14:30:00Z') },
+    },
+  });
+
+  it('withholds both refs and the in-flight flow, and keeps the consented facts', () => {
+    const out = toPublicIntegration(hostedRow());
+    const text = JSON.stringify(out);
+
+    expect(text).not.toContain('secret_access_ref');
+    expect(text).not.toContain('secret_refresh_ref');
+    expect(text).not.toContain('verifier_1');
+    expect(out.config).not.toHaveProperty('pendingAuth');
+    // Positive control: the strip is selective. A reader that dropped `config`
+    // whole would satisfy every assertion above.
+    expect(out.config.entryId).toBe('linear');
+    expect(out.config.grantedScope).toBe('read openid');
+    expect(out.config.intake).toBe('oauth');
+  });
+});

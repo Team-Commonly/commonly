@@ -62,9 +62,34 @@ export const DISCORD_WEBHOOK_URL: ConnectorSecretKindSpec = {
   unavailableReason: 'Discord connector webhook is unavailable',
 };
 
+/**
+ * The `hosted-mcp` pair (TASK-172, scope §2/§4). A vendor-hosted MCP server is
+ * reached with the MEMBER's own OAuth pair, so both halves are encrypted like
+ * Slack's bot token and read only inside the broker: no agent environment, tool
+ * result or trail row ever holds the access token. The refresh half is its own
+ * kind rather than a second field on the first, because the fence rotates it
+ * separately from the access token it replaces (a vendor may issue no refresh
+ * token at all, and then this kind has no row).
+ */
+export const HOSTED_MCP_ACCESS_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'hosted-mcp-access-token',
+  provider: 'hosted-mcp',
+  refPaths: ['config.credentialRef'],
+  unavailableReason: 'Hosted MCP connection credential is unavailable',
+};
+
+export const HOSTED_MCP_REFRESH_TOKEN: ConnectorSecretKindSpec = {
+  kind: 'hosted-mcp-refresh-token',
+  provider: 'hosted-mcp',
+  refPaths: ['config.refreshTokenRef'],
+  unavailableReason: 'Hosted MCP connection refresh token is unavailable',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   SLACK_BOT_TOKEN,
   DISCORD_WEBHOOK_URL,
+  HOSTED_MCP_ACCESS_TOKEN,
+  HOSTED_MCP_REFRESH_TOKEN,
 ];
 
 export const kindSpec = (kind: string): ConnectorSecretKindSpec | undefined => (
