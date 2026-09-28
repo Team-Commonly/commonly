@@ -27,6 +27,7 @@ const {
 } = await import('../src/commands/inbox.js');
 const {
   extractToken, filterItems, nextCursorFrom, formatItemLine, createScrubber,
+  retryDelayMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
 } = await import('../src/lib/inbox.js');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-inbox-'));
@@ -79,7 +80,12 @@ const capture = () => {
   const out = [];
   const err = [];
   return {
-    out, err, log: (line) => out.push(String(line)), error: (line) => err.push(String(line)),
+    out,
+    err,
+    log: (line) => out.push(String(line)),
+    error: (line) => err.push(String(line)),
+    // Injected so a 429 backoff cannot make the suite wait on wall-clock time.
+    sleep: jest.fn(async () => {}),
   };
 };
 
@@ -215,17 +221,56 @@ describe('identity: the account comes from the token file or nowhere', () => {
     expect(text).not.toContain('commonly login');
   });
 
-  test('a 429 says the token was rate-limited rather than leaving HTTP 429 bare', async () => {
-    // Live finding while verifying this command: the session limiter returns an
-    // empty body, so without this the operator sees `Failed: HTTP 429` and
-    // cannot tell a dead token from a busy instance.
-    const file = writeTokenFile('limited-token', 'limited-secret-value\n');
-    const { code, err } = await runList({ tokenFile: file }, {
-      '/api/auth/user': jsonRes({}, 429),
+  test('a 429 is backed off on Retry-After and the read continues', async () => {
+    // Live finding while verifying this command: /api/activity is limited to 60
+    // requests a minute KEYED ON THE CALLER IP, so a run that pages a large
+    // queue shares the bucket with every session on the host and with the
+    // operator's browser. A 429 is therefore an ordinary busy signal.
+    const file = writeTokenFile('backoff-token', 'backoff-secret-value\n');
+    let calls = 0;
+    const fetchImpl = stubFetch({
+      '/api/auth/user': () => {
+        calls += 1;
+        return calls === 1
+          ? {
+            ok: false,
+            status: 429,
+            headers: { get: () => '2' },
+            text: async () => JSON.stringify({ code: 'rate_limited' }),
+          }
+          : jsonRes(USER);
+      },
+      '/api/activity/decision-queue': queuePage([item(1)]),
     });
+    const io = capture();
+    const code = await runInboxList({ tokenFile: file }, { fetchImpl, env: {}, ...io });
+    expect(code).toBe(0);
+    expect(io.sleep).toHaveBeenCalledWith(2000);
+    expect(io.out[0]).toBe('account: connector-ops @ https://api.commonly.me');
+  });
+
+  test('a persistent 429 names the IP-keyed limiter after the retries are spent', async () => {
+    const file = writeTokenFile('limited-token', 'limited-secret-value\n');
+    const fetchImpl = stubFetch({ '/api/auth/user': jsonRes({ code: 'rate_limited' }, 429) });
+    const io = capture();
+    const code = await runInboxList({ tokenFile: file }, { fetchImpl, env: {}, ...io });
+
     expect(code).toBe(1);
-    expect(err.join('\n')).toContain('rate-limited');
-    expect(err.join('\n')).toContain('one request per 50 items');
+    expect(fetchImpl.mock.calls.length).toBe(3); // the first call plus two retries
+    expect(io.sleep).toHaveBeenCalledTimes(2);
+    expect(io.sleep).toHaveBeenCalledWith(DEFAULT_BACKOFF_MS);
+    // The server's own field is `code`; without it the operator sees `HTTP 429`
+    // and cannot tell a busy instance from a dead token.
+    expect(io.err.join('\n')).toContain('rate_limited');
+    expect(io.err.join('\n')).toContain('keyed on the caller IP');
+    expect(io.err.join('\n')).not.toContain('limited-secret-value');
+  });
+
+  test('Retry-After is honoured, capped, and falls back when absent or unparseable', () => {
+    expect(retryDelayMs({ headers: { get: () => '2' } })).toBe(2000);
+    expect(retryDelayMs({ headers: { get: () => '600' } })).toBe(MAX_BACKOFF_MS);
+    expect(retryDelayMs({ headers: { get: () => 'nonsense' } })).toBe(DEFAULT_BACKOFF_MS);
+    expect(retryDelayMs({})).toBe(DEFAULT_BACKOFF_MS);
   });
 
   test.each([

@@ -213,6 +213,25 @@ export const createScrubber = (token) => {
 };
 
 /**
+ * The `/api/activity` limiter answers 429 with `{code:'rate_limited'}` and
+ * `Retry-After` (it sets `standardHeaders`). A read that pages a 550-item queue
+ * is 11 requests against a limit of **60 a minute keyed on the caller's IP**
+ * (`backend/routes/activity.ts:43-53`) — shared by every session on one host,
+ * including the operator's browser — so a 429 is an ordinary busy signal here,
+ * not a fault. Back off and continue; fail only when the budget is still gone
+ * after the retries.
+ */
+export const MAX_RATE_LIMIT_RETRIES = 2;
+export const DEFAULT_BACKOFF_MS = 5_000;
+export const MAX_BACKOFF_MS = 60_000;
+
+export const retryDelayMs = (response, fallback = DEFAULT_BACKOFF_MS) => {
+  const header = Number(response?.headers?.get?.('retry-after'));
+  if (Number.isFinite(header) && header > 0) return Math.min(header * 1_000, MAX_BACKOFF_MS);
+  return fallback;
+};
+
+/**
  * Minimal request layer, deliberately NOT `lib/api.js`'s `createClient`.
  * That client answers a 401 with "run `commonly login`", which is the one
  * instruction this command must never give: the token here comes from a file
@@ -220,7 +239,7 @@ export const createScrubber = (token) => {
  * is testable without a server.
  */
 export const createInboxRequest = ({
-  baseUrl, token, tokenFile, fetchImpl = fetch,
+  baseUrl, token, tokenFile, fetchImpl = fetch, sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const scrub = createScrubber(token);
   return async (path, { method = 'GET', params = {}, body } = {}) => {
@@ -228,32 +247,39 @@ export const createInboxRequest = ({
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
-    const res = await fetchImpl(url.toString(), {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'commonly-cli/0.1',
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    const text = await res.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { message: text };
-    }
-    if (!res.ok) {
-      const detail = parsed?.error || parsed?.message || parsed?.msg || `HTTP ${res.status}`;
+    for (let attempt = 0; ; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetchImpl(url.toString(), {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'commonly-cli/0.1',
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      // eslint-disable-next-line no-await-in-loop
+      const text = await res.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = { message: text };
+      }
+      if (res.ok) return parsed;
+      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(retryDelayMs(res));
+        continue;
+      }
+      const detail = parsed?.error || parsed?.message || parsed?.msg || parsed?.code || `HTTP ${res.status}`;
       const hint = res.status === 401
         ? ` — the token in ${tokenFile} was rejected. This command never uses the saved login.`
         : res.status === 429
-          ? ' — the instance rate-limited this token (session limiter). Wait and retry; listing reads the whole queue, one request per 50 items.'
+          ? ' — the /api/activity rate limit (60 a minute, keyed on the caller IP, so every session on this host shares it). Wait and retry; one page per 50 items is already the minimum this read can make.'
           : '';
       throw new InboxRequestError(scrub(`${detail}${hint}`), res.status);
     }
-    return parsed;
   };
 };
 

@@ -46,7 +46,7 @@ const normalizeKind = (value) => {
  * request: every subcommand goes through it, so no subcommand can grow its own
  * fallback to the saved login.
  */
-const connect = async (opts, { env, fetchImpl }) => {
+const connect = async (opts, { env, fetchImpl, sleep }) => {
   const tokenFile = resolveTokenFilePath(opts, env);
   if (!tokenFile) {
     throw new InboxRefusal(
@@ -58,7 +58,7 @@ const connect = async (opts, { env, fetchImpl }) => {
   const token = readInboxToken(tokenFile);
   const baseUrl = resolveInstanceUrl(opts.instance);
   const request = createInboxRequest({
-    baseUrl, token, tokenFile, fetchImpl,
+    baseUrl, token, tokenFile, fetchImpl, sleep,
   });
   const user = await request('/api/auth/user');
   return {
@@ -78,7 +78,7 @@ const reportFailure = (err, error) => {
 
 export const runInboxList = async (opts = {}, deps = {}) => {
   const {
-    env = process.env, fetchImpl = fetch, log = console.log, error = console.error,
+    env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
     // Validated before the request: a typo in --kind must not cost a network
@@ -86,7 +86,7 @@ export const runInboxList = async (opts = {}, deps = {}) => {
     const kind = normalizeKind(opts.kind);
     const {
       baseUrl, request, account,
-    } = await connect(opts, { env, fetchImpl });
+    } = await connect(opts, { env, fetchImpl, sleep });
     const sinceRaw = opts.since !== undefined ? opts.since : readCursorFile(opts.cursorFile);
     const sinceMs = parseCursor(sinceRaw);
     const since = sinceMs === null ? null : new Date(sinceMs).toISOString();
@@ -124,13 +124,13 @@ export const runInboxList = async (opts = {}, deps = {}) => {
 
 export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
   const {
-    env = process.env, fetchImpl = fetch, log = console.log, error = console.error,
+    env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
     if (!itemId) throw new InboxRefusal('an item id is required: commonly inbox ack <attentionItemId>');
     const {
       baseUrl, request, account,
-    } = await connect(opts, { env, fetchImpl });
+    } = await connect(opts, { env, fetchImpl, sleep });
     log(formatAccountLine({ account, baseUrl }));
     const result = await request(`/api/activity/${encodeURIComponent(itemId)}/acknowledge`, {
       method: 'POST',
@@ -152,14 +152,14 @@ export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
 
 export const runInboxChoose = async (decisionId, value, opts = {}, deps = {}) => {
   const {
-    env = process.env, fetchImpl = fetch, log = console.log, error = console.error,
+    env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
     if (!decisionId) throw new InboxRefusal('a decision id is required: commonly inbox choose <decisionId> <value>');
     if (value === undefined) throw new InboxRefusal('a value is required: commonly inbox choose <decisionId> <value>');
     const {
       baseUrl, request, account,
-    } = await connect(opts, { env, fetchImpl });
+    } = await connect(opts, { env, fetchImpl, sleep });
     log(formatAccountLine({ account, baseUrl }));
     const result = await request(`/api/activity/decisions/${encodeURIComponent(decisionId)}/choose`, {
       method: 'POST',
@@ -201,10 +201,16 @@ Examples:
   $ commonly inbox choose <decisionId> 2
 
 Cost: \`list\` reads the WHOLE queue, one request per 50 items — 550 open
-items is 11 requests against the instance's session limiter, and a 429 comes
-back as one. A cursor narrows what is PRINTED, not what is read: the queue has
-no created-since filter yet, so narrowing the request itself is a kernel change
-(--pod is the one scope the route accepts).
+items is 11 requests — and /api/activity is limited to 60 a minute **keyed on
+the caller's IP**, so every session on one host (and the operator's browser)
+shares that budget. A 429 is backed off and retried twice on the server's own
+\`Retry-After\`, then reported. A cursor narrows what is PRINTED, not what is
+read: the route has no created-since filter yet, so \`--pod\` is the one scope
+that narrows the request itself.
+
+\`ack\` deliberately ships WITHOUT an \`--all\`: a burst of acks shares that same
+per-IP budget, so a paced loop is the caller's decision and a bulk
+\`ids[]\`-accepting route (one request) is the kernel-side answer.
 
 Ids: \`list\` prints both ids an item has. \`ack\` takes \`item=…\`
 (attentionItemId); \`choose\` takes the item's source id, which for a decision is
