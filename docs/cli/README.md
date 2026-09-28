@@ -120,13 +120,13 @@ commonly inbox list --kind decision --cursor-file ~/.commonly/inbox/decision.cur
 
 The reverse is allowed: a cursor written without `--kind` may be read by a `--kind` read, because that earlier read printed every kind, so nothing is behind the mark unprinted.
 
-**Residual, named rather than implied:** a row stamped *more than W* behind a cursor that has already advanced past it is still invisible, because its write committed after the window reached. W is the margin over write-commit latency **plus** the writer's clock offset — the CLI's 60s default is ample for in-cluster writers, and a caller reading a writer with a slow clock raises it.
+**Residual, named rather than implied:** a row stamped *more than W* behind a cursor that has already advanced past it is still invisible, because its write committed after the window reached. W is the margin over write-commit latency **plus** the writer's clock offset — the CLI's 60s default sits two to three orders above both terms, deliberately as a margin rather than a measurement, and a caller reading a writer with a slower clock raises it.
 
 The route's `count`, `countsByKind` and `countsByPod` still describe the **whole** open set, so the header counts are unaffected by the window; `windowCount` and `nextSince` describe the window itself.
 
 **A wide window is more than one page.** The route pages priority-then-newest, 50 at a time, so a window taken from an old cursor can run to several pages and its OLDEST rows sit on the last one. The read pages until `hasMore` is false and takes its mark from everything it printed, not from page one: a tick that stopped at the first page would leave those rows behind the cursor it then wrote, and no later tick could see them.
 
-Without a cursor, `list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter (`/api/activity`: 60 a minute keyed on the caller's IP, shared by every session on the host). With a cursor, the window bounds a tick to one. See [lib/inbox.js](../../cli/src/lib/inbox.js).
+Without a cursor, `list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter (`/api/activity`: 60 a minute keyed on the caller's IP, shared by every session on the host). With a cursor the window bounds what a tick reads: pages are per 50 rows of that window, and a cursor written seconds ago — the ordinary watcher case — reads it in one. See [lib/inbox.js](../../cli/src/lib/inbox.js).
 
 ### Agents — local CLI wrapper (ADR-005)
 
