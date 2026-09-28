@@ -37,15 +37,24 @@ export const hostedMcpApiBase = (): string =>
   String(process.env.PUBLIC_API_URL || process.env.BACKEND_URL || 'https://api.commonly.me')
     .replace(/\/$/, '');
 
-const connectBase = (entryId: string): string =>
-  `${hostedMcpApiBase()}/api/integrations/connect/hosted-mcp/${encodeURIComponent(entryId)}`;
+/**
+ * Both leaf URLs come from one place. A document that advertises a redirect URI
+ * the start route does not send is a client the vendor accepts and then refuses
+ * the code for, and two inline copies of the path is how the two drift.
+ */
+const CALLBACK_LEAF = 'callback';
+const CLIENT_METADATA_LEAF = 'client-metadata';
+
+const entryPath = (apiBase: string, entryId: string, leaf: string): string =>
+  `${apiBase}/api/integrations/connect/hosted-mcp/${encodeURIComponent(entryId)}/${leaf}`;
 
 /** The one redirect URI this instance registers with this entry's authorization server. */
-export const hostedMcpCallbackUrl = (entryId: string): string => `${connectBase(entryId)}/callback`;
+export const hostedMcpCallbackUrl = (entryId: string): string =>
+  entryPath(hostedMcpApiBase(), entryId, CALLBACK_LEAF);
 
 /** The URL that IS the client id under CIMD, and the document it serves. */
 export const hostedMcpClientMetadataUrl = (entryId: string): string =>
-  `${connectBase(entryId)}/client-metadata`;
+  entryPath(hostedMcpApiBase(), entryId, CLIENT_METADATA_LEAF);
 
 /**
  * The Client ID Metadata Document. Its `client_id` is its own URL, which is
@@ -67,7 +76,7 @@ export const buildClientMetadataDocument = (
   entry: HostedMcpEntry,
   apiBase: string = hostedMcpApiBase(),
 ): HostedMcpClientMetadataDocument => {
-  const clientId = `${apiBase}/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.id)}/client-metadata`;
+  const clientId = entryPath(apiBase, entry.id, CLIENT_METADATA_LEAF);
   return {
     client_id: clientId,
     // Names the instance's product, not the person: the document is fetched by
@@ -75,7 +84,7 @@ export const buildClientMetadataDocument = (
     client_name: `Commonly (${entry.title})`,
     // Exactly one, deliberately. A second URI here would re-open the mix-up the
     // entry-scoped path closes.
-    redirect_uris: [`${apiBase}/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.id)}/callback`],
+    redirect_uris: [entryPath(apiBase, entry.id, CALLBACK_LEAF)],
     token_endpoint_auth_method: 'none',
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],

@@ -71,11 +71,13 @@ describe('hosted-mcp connect: the client metadata document', () => {
     expect(res.status).toBe(200);
     // The path the AS fetches and the client_id inside must be the same URL, or
     // the AS resolves a client id to a document describing a different client.
+    // Literal, not read back from `hostedMcpApiBase()`: an expectation computed
+    // by the function under test moves with it and witnesses nothing.
     expect(res.body.client_id).toBe(
-      `${intake.hostedMcpApiBase()}/api/integrations/connect/hosted-mcp/linear/client-metadata`,
+      'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/client-metadata',
     );
     expect(res.body.redirect_uris).toEqual([
-      `${intake.hostedMcpApiBase()}/api/integrations/connect/hosted-mcp/linear/callback`,
+      'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/callback',
     ]);
     expect(res.body.token_endpoint_auth_method).toBe('none');
     expect(res.body.scope).toBe('read openid');
@@ -119,10 +121,10 @@ describe('hosted-mcp connect: start', () => {
     expect(url.origin + url.pathname).toBe(AS_METADATA.authorization_endpoint);
     expect(url.searchParams.get('resource')).toBe(FIXTURE_ENTRY.resource);
     expect(url.searchParams.get('client_id')).toBe(
-      `${intake.hostedMcpApiBase()}/api/integrations/connect/hosted-mcp/linear/client-metadata`,
+      'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/client-metadata',
     );
     expect(url.searchParams.get('redirect_uri')).toBe(
-      `${intake.hostedMcpApiBase()}/api/integrations/connect/hosted-mcp/linear/callback`,
+      'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/callback',
     );
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
 

@@ -156,7 +156,13 @@ describe('hosted-mcp connect: callback', () => {
       grantedScope: 'read',
       providerSubject: 'acct-1',
       refreshGeneration: 0,
+      expiresAt: expect.any(Date),
     });
+    const committedExpiry = new Date(update.$set.expiresAt).getTime();
+    // `expires_in` is seconds, and a reader that treated it as milliseconds
+    // would show this credential as long expired.
+    expect(committedExpiry).toBeGreaterThan(Date.now() + 59 * 60 * 1000);
+    expect(committedExpiry).toBeLessThan(Date.now() + 61 * 60 * 1000);
     // The pending state is gone whichever way the flow went, so a replay of the
     // state finds no row and cannot reach the exchange a second time.
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$unset).toEqual({ 'config.pendingAuth': 1 });
@@ -241,6 +247,16 @@ describe('hosted-mcp connect: callback', () => {
     expect(revokeConnectionGrants).not.toHaveBeenCalled();
   });
 
+  it('revokes the row\'s grants when neither side has a subject to compare', async () => {
+    // The old row was written before a vendor issued ID tokens, and this one
+    // still doesn't: two unknowns are not the same account.
+    setStoredRow({ credentialRef: 'ref-old-access' });
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({ access_token: 'access-1' }) });
+    const res = await callback();
+    expect(outcome(res).hostedMcp).toBe('connected');
+    expect(revokeConnectionGrants).toHaveBeenCalled();
+  });
+
   it('revokes the row\'s grants when the vendor issues no subject to compare', async () => {
     setStoredRow({
       credentialRef: 'ref-old-access',
@@ -267,6 +283,16 @@ describe('hosted-mcp connect: callback', () => {
     expect(update.$set.refreshTokenRef).toBeUndefined();
   });
 
+  it('refuses a callback carrying no state at all, before it looks for a row', async () => {
+    const noState = await callback('code=code-1');
+    expect(outcome(noState)).toEqual({ status: 302, hostedMcp: 'error', code: 'invalid_state' });
+    const noCode = await callback('state=st-1');
+    expect(outcome(noCode)).toEqual({ status: 302, hostedMcp: 'error', code: 'invalid_state' });
+    // A lookup keyed on an empty state would match whatever a mock or a
+    // permissive query returned, so the guard has to run before the lookup.
+    expect(Integration.findOne).not.toHaveBeenCalled();
+  });
+
   it('reports a refused exchange as a vendor outcome, not as a connected row', async () => {
     global.fetch.mockResolvedValue({ ok: false, status: 400, json: async () => ({}) });
     const res = await callback();
@@ -275,5 +301,22 @@ describe('hosted-mcp connect: callback', () => {
     // The commit never ran: a row still carrying the old credential must not be
     // relabelled from a failed exchange.
     expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an exchange that returned no token as incomplete, not as connected', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({ scope: 'read' }) });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'exchange_incomplete' });
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an exchange that never arrived as unreachable, not as a refusal', async () => {
+    global.fetch.mockRejectedValue(new Error('socket hang up'));
+    const res = await callback();
+    // A network failure and a refused grant send the person to different
+    // actions — retry, or reconnect — so they cannot share a code.
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'exchange_unreachable' });
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
   });
 });
