@@ -9,6 +9,8 @@ const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const adminAuth = require('../middleware/adminAuth');
 // eslint-disable-next-line global-require
+const hostedMcpConnectRoutes = require('./hostedMcpConnect');
+// eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
 const DiscordIntegration = require('../models/DiscordIntegration');
@@ -126,6 +128,12 @@ try {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// hosted-MCP intake (§4) is public where it must be: an authorization server
+// reads the client metadata document before anyone has consented, and its
+// callback arrives with no bearer. Mounted before `/:podId` so the deeper path
+// owns its own space.
+router.use('/connect/hosted-mcp', hostedMcpConnectRoutes);
 
 const resolveEffectiveConfig = (type: string, config: Record<string, unknown> = {}) => {
   if (type !== 'discord') return config;
