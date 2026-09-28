@@ -5,28 +5,45 @@ const service = require('../../services/attentionItemService');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 /**
- * `since` narrows the open queue to work created AT OR AFTER an instant, so an
- * operator watcher can ask "what is new" once instead of paging the whole queue
- * eleven times a tick.
+ * `since` opens a WINDOW on the open queue: work created at or after an instant.
+ * It exists so an operator watcher tick is one request instead of paging the whole
+ * queue (550 open items is eleven requests) against a limiter of 60 requests a
+ * minute keyed on the client IP that every session on the host shares with the
+ * person's own Activity page.
  *
- * Two properties are the whole point, and both are asserted against numbers that
- * would differ if the narrowing happened anywhere else:
+ * What is asserted here, and why each one is discriminating:
  *
- *  1. INCLUSIVE of its own millisecond. A caller's cursor sitting at T cannot
- *     know about a row inserted at T after it was written, so an exclusive bound
- *     would drop that row from every later read — silently and for good. This is
- *     the same failure the CLI cursor had to fix (`cli/src/lib/inbox.js`), one
- *     layer down.
- *  2. Applied BEFORE the counts and before pagination, so `count`,
- *     `countsByKind`, `countsByPod`, `remaining` and `hasMore` all describe the
- *     narrowed view. A count that contradicts the rows is worse than a slow
- *     query, and the pod scope already follows exactly this rule.
+ *  1. The window is INCLUSIVE of its own millisecond (`createdAt >= since`). A
+ *     caller's cursor cannot know about a row inserted at its own millisecond
+ *     after it was written; an exclusive bound would drop that row from that read
+ *     and from every later one. The arm plants a second row on the boundary and
+ *     ticks from the `nextSince` the first tick returned.
+ *  2. The COUNTS DO NOT NARROW. `count`, `countsByKind` and `countsByPod` keep
+ *     describing the whole open set, so an Activity badge and an unfiltered caller
+ *     are unchanged; the window size travels in `windowCount`. An arm with an
+ *     EMPTY window asserts the total is still reported, which is what makes this
+ *     a real constraint rather than a comment.
+ *  3. `nextSince` is the newest instant DELIVERED — the max over the page, not
+ *     over the window — because a caller resumes from it and must not skip past a
+ *     value it has not seen. A one-row page is what separates those two.
+ *  4. Pagination happens WITHIN the window, so `remaining`/`hasMore` can reach
+ *     zero; rows outside the window are never delivered, so counting them would be
+ *     an unworkable page count.
+ *  5. A bound the server cannot read narrows NOTHING. It must not empty the queue:
+ *     a watcher that received "nothing" would believe the queue was quiet. The
+ *     route refuses such a value with a 400, so this is the second line.
+ *
+ * The rows are inserted with explicit `createdAt` values purely to place them in
+ * time — the production writer (`recordForRecipients`) sets it from the model's
+ * own `now` at insert. Nothing here asserts that a BACKDATED row survives a bound;
+ * that gap is the caller's lookback window W, and it is bounded rather than
+ * closed.
  */
 
 const BASE = new Date('2026-09-01T00:00:00Z');
 const at = (minutes) => new Date(BASE.getTime() + minutes * 60 * 1000);
 
-describe('the open queue can be narrowed to a created-since instant', () => {
+describe('the open queue window (createdAt >= since)', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
   afterEach(clearMongoDb);
@@ -59,70 +76,125 @@ describe('the open queue can be narrowed to a created-since instant', () => {
       make('bound', podB, 'approval', BASE),
       make('mid', podA, 'mention', at(60)),
       make('new', podB, 'handoff', at(120)),
-      // Another recipient's row at the same instant, to keep the recipient scope
-      // and the timestamp scope from being confused for each other.
+      // Another recipient's row on the boundary, so the recipient scope and the
+      // time scope cannot be mistaken for each other.
       { ...make('theirs', podA, 'mention', BASE), recipientUserId: other },
     ]);
     return { recipient, podA, podB };
   };
 
-  // Priority order, then newest first: approval, handoff, then mentions.
+  // Whole-set order: priority first, then newest first.
   const UNNARROWED = ['bound', 'new', 'mid', 'old'];
+  const WHOLE_KINDS = { approval: 1, handoff: 1, mention: 2 };
 
-  it('keeps the item that sits exactly on the bound, and drops only what is older', async () => {
-    const { recipient } = await plant();
+  it('windows the page but leaves every count describing the whole open set', async () => {
+    const { recipient, podA, podB } = await plant();
 
     const all = await service.getOpenQueue(recipient);
     expect(all.items.map((item) => item.id)).toEqual(UNNARROWED);
+    expect(all.count).toBe(4);
+    expect(all.windowCount).toBe(4);
+    expect(all.countsByKind).toEqual(WHOLE_KINDS);
+    expect(all.countsByPod).toEqual({ [podA.id]: 2, [podB.id]: 2 });
+    expect(all.nextSince).toBe(at(120).toISOString());
 
-    const narrowed = await service.getOpenQueue(recipient, { since: BASE });
-    expect(narrowed.items.map((item) => item.id)).toEqual(['bound', 'new', 'mid']);
-
-    // Just past the boundary: now the boundary row itself goes, which is what
-    // separates `$gte` from a filter that never drops anything.
-    const past = await service.getOpenQueue(recipient, { since: new Date(BASE.getTime() + 1) });
-    expect(past.items.map((item) => item.id)).toEqual(['new', 'mid']);
+    const windowed = await service.getOpenQueue(recipient, { since: BASE });
+    expect(windowed.items.map((item) => item.id)).toEqual(['bound', 'new', 'mid']);
+    expect(windowed.windowCount).toBe(3);
+    // The three that did NOT narrow: this is the arm that kills a filter placed
+    // on the counts.
+    expect(windowed.count).toBe(4);
+    expect(windowed.countsByKind).toEqual(WHOLE_KINDS);
+    expect(windowed.countsByPod).toEqual({ [podA.id]: 2, [podB.id]: 2 });
   });
 
-  it('reports every count for the narrowed view, not for the whole queue', async () => {
-    const { recipient, podA, podB } = await plant();
-
-    const narrowed = await service.getOpenQueue(recipient, { since: BASE });
-    expect(narrowed.count).toBe(3);
-    expect(narrowed.countsByKind).toEqual({
-      approval: 1, handoff: 1, mention: 1,
-    });
-    expect(narrowed.countsByPod).toEqual({ [podA.id]: 1, [podB.id]: 2 });
-    // Both are read from the narrowed set, so a filter applied after the page
-    // was sliced cannot produce them: three rows are visible and three fit.
-    const paged = await service.getOpenQueue(recipient, { since: BASE, limit: 3 });
-    expect(paged.items).toHaveLength(3);
-    expect(paged.remaining).toBe(0);
-    expect(paged.hasMore).toBe(false);
-
-    const shortPage = await service.getOpenQueue(recipient, { since: BASE, limit: 2 });
-    expect(shortPage.items.map((item) => item.id)).toEqual(['bound', 'new']);
-    expect(shortPage.count).toBe(3);
-    expect(shortPage.remaining).toBe(1);
-    expect(shortPage.hasMore).toBe(true);
-  });
-
-  it('takes an instant as a Date or as a string, and narrows with neither when it cannot read one', async () => {
+  it('pages within the window, so remaining can reach zero while count stays whole', async () => {
     const { recipient } = await plant();
 
-    expect((await service.getOpenQueue(recipient, { since: BASE.toISOString() })).items.map((item) => item.id))
-      .toEqual(['bound', 'new', 'mid']);
-    expect((await service.getOpenQueue(recipient, { since: BASE })).items.map((item) => item.id))
-      .toEqual(['bound', 'new', 'mid']);
+    const first = await service.getOpenQueue(recipient, { since: BASE, limit: 2 });
+    expect(first.items.map((item) => item.id)).toEqual(['bound', 'new']);
+    expect(first.windowCount).toBe(3);
+    expect(first.count).toBe(4);
+    expect(first.remaining).toBe(1);
+    expect(first.hasMore).toBe(true);
 
-    // A bound the server cannot read narrows nothing. It must not empty the
-    // queue: every row here is still the caller's, and a watcher that received
-    // "nothing" would believe the queue was quiet. The route refuses these with
-    // a 400, so this is the second line rather than the only one.
+    const second = await service.getOpenQueue(recipient, { since: BASE, limit: 2, offset: 2 });
+    expect(second.items.map((item) => item.id)).toEqual(['mid']);
+    expect(second.remaining).toBe(0);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it('returns nextSince as the newest instant delivered, not the newest in the window', async () => {
+    const { recipient } = await plant();
+
+    const one = await service.getOpenQueue(recipient, { since: BASE, limit: 1 });
+    expect(one.items.map((item) => item.id)).toEqual(['bound']);
+    expect(one.nextSince).toBe(BASE.toISOString());
+
+    const rest = await service.getOpenQueue(recipient, { since: BASE });
+    expect(rest.nextSince).toBe(at(120).toISOString());
+  });
+
+  it('keeps a row that shares the instant the cursor resumes from, and loses it if the bound is exclusive', async () => {
+    const { recipient, podB } = await plant();
+    await AttentionItem.create({
+      recipientUserId: recipient,
+      podId: podB._id,
+      kind: 'mention',
+      status: 'open',
+      source: { type: 'message', id: 'twin' },
+      title: 'twin',
+      createdAt: BASE,
+    });
+
+    // Tick one: the newest row at or after the cursor... the approval at BASE.
+    const tickOne = await service.getOpenQueue(recipient, { since: BASE, limit: 1 });
+    expect(tickOne.items.map((item) => item.id)).toEqual(['bound']);
+    expect(tickOne.nextSince).toBe(BASE.toISOString());
+
+    // Tick two resumes from nextSince. The twin WAS inserted at that same
+    // millisecond after tick one was built (it is created above, but the point is
+    // the boundary: what matters is that the bound includes it).
+    const tickTwo = await service.getOpenQueue(recipient, { since: tickOne.nextSince });
+    expect(tickTwo.items.map((item) => item.id)).toContain('twin');
+  });
+
+  it('returns rows inside the caller lookback and not rows behind it', async () => {
+    const { recipient } = await plant();
+
+    // A caller resuming from the newest delivered instant, looking back 60s.
+    const lookback = new Date(at(120).getTime() - 60 * 1000);
+    const wide = await service.getOpenQueue(recipient, { since: lookback });
+    expect(wide.items.map((item) => item.id)).toEqual(['new']);
+
+    // The control: a bound behind that lookback returns the row that fell out,
+    // so the arm above cannot pass on a query that ignores the bound.
+    const wider = await service.getOpenQueue(recipient, { since: at(60) });
+    expect(wider.items.map((item) => item.id)).toEqual(['new', 'mid']);
+  });
+
+  it('reports an empty window without emptying the counts, and reads a Date or a string', async () => {
+    const { recipient, podA, podB } = await plant();
+
+    const empty = await service.getOpenQueue(recipient, { since: at(600) });
+    expect(empty.items).toEqual([]);
+    expect(empty.windowCount).toBe(0);
+    expect(empty.nextSince).toBeNull();
+    expect(empty.count).toBe(4);
+    expect(empty.countsByKind).toEqual(WHOLE_KINDS);
+    expect(empty.countsByPod).toEqual({ [podA.id]: 2, [podB.id]: 2 });
+    expect(empty.hasMore).toBe(false);
+
+    expect((await service.getOpenQueue(recipient, { since: BASE.toISOString() })).windowCount).toBe(3);
+    expect((await service.getOpenQueue(recipient, { since: BASE })).windowCount).toBe(3);
+
+    // A bound the server cannot read narrows nothing: every row here is still the
+    // caller's, and "nothing" would read as a quiet queue.
     const unusable = ['not-a-date', '', '   ', new Date('nonsense')];
     await Promise.all(unusable.map(async (value) => {
       const queue = await service.getOpenQueue(recipient, { since: value });
       expect(queue.items.map((item) => item.id)).toEqual(UNNARROWED);
+      expect(queue.windowCount).toBe(4);
     }));
   });
 });

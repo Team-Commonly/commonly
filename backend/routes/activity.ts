@@ -134,13 +134,25 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
       return res.status(400).json({ error: 'offset must be a non-negative integer' });
     }
-    // `since` is what makes a watcher tick cheap: `/api/activity` is 60 requests a
+    // `since` opens a window on the queue and is what makes a watcher tick one
+    // request instead of paging the whole thing: `/api/activity` is 60 requests a
     // minute keyed on the client IP, shared with every other session on this host
     // AND with the person's own Activity page, so paging a 550-item queue eleven
-    // times per tick draws on somebody else's budget. The bound is INCLUSIVE of
-    // its own millisecond (see `getOpenQueue` for why), and an unusable value is
-    // refused here rather than quietly dropped: a caller that asked to narrow and
-    // silently received the whole queue has no way to tell it was ignored.
+    // times per tick draws on somebody else's budget.
+    //
+    // INCLUSIVE (`createdAt >= since`), pinned here because it is the difference
+    // between a row being re-delivered and a row being lost: a caller's cursor is
+    // a bare timestamp, and one sitting at millisecond T cannot know about a row
+    // INSERTED at T after it was written. An exclusive bound drops that row from
+    // that read and from every later read.
+    //
+    // The residual is bounded, not closed: a caller resuming from `nextSince - W`
+    // (the window the CLI uses) misses an arrival more than W behind a cursor it
+    // has already passed, because a row is stamped before its write commits — W
+    // must exceed write-commit latency, not clock skew.
+    //
+    // An unusable value is refused rather than quietly dropped: a caller that
+    // asked to narrow and silently received the whole queue cannot tell.
     const since = rawSince === undefined ? undefined : Date.parse(String(rawSince));
     if (rawSince !== undefined && (typeof rawSince !== 'string' || !Number.isFinite(since))) {
       return res.status(400).json({ error: 'since must be an ISO-8601 timestamp' });

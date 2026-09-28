@@ -111,6 +111,9 @@ describe('uncapped attention counts — persisted query and membership', () => {
   it('returns an authoritative empty shape for invalid recipients', async () => {
     expect(await service.getOpenQueue('invalid')).toEqual({
       items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,
+      // The window fields are part of the shape for every caller, not only for a
+      // bounded one, so a consumer can read them unconditionally.
+      windowCount: 0, nextSince: null,
       offset: 0, limit: 50, remaining: 0, hasMore: false,
     });
   });

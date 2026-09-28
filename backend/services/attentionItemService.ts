@@ -449,6 +449,8 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   countsByPod: Record<string, number>;
   countsByKind: Record<string, number>;
   composePodId: string | null;
+  windowCount: number;
+  nextSince: string | null;
   offset: number;
   limit: number;
   remaining: number;
@@ -461,18 +463,33 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     : [];
   const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
   const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
-  // `since` narrows the open queue to work created AT OR AFTER an instant, so a
-  // watcher tick reads one page instead of paging the whole queue. It is applied
-  // to the QUERY — before supersession, membership, the counts and pagination all
-  // run — so every number the caller reads describes the narrowed view. That is
-  // the rule the pod scope below already follows, for the same reason: a narrowed
-  // list must never report a count that contradicts its own rows.
+  // `since` opens a WINDOW: work created AT OR AFTER an instant. It is what makes
+  // a watcher tick one request instead of a full-queue paging loop (`/api/activity`
+  // is 60 requests a minute per client IP, shared with every session on the host
+  // and with the person's own Activity page).
   //
-  // INCLUSIVE (`$gte`), deliberately, and the reason is the caller's cursor: one
+  // The counts below do NOT narrow with it. `count`, `countsByKind`, `countsByPod`
+  // and `composePodId` describe the whole open set, exactly as they did before this
+  // parameter existed, so an Activity badge or any caller that passes no bound sees
+  // no change; a bounded call gets `windowCount` for the window. `offset`/`limit`/
+  // `remaining`/`hasMore` page WITHIN the window, which is the only reading of
+  // "pagination" that can terminate: rows outside the window are never delivered,
+  // so a page count that included them could never be worked off.
+  //
+  // The comparison is INCLUSIVE. A caller's cursor is a bare timestamp, and one
   // sitting at millisecond T cannot know about a row INSERTED at T after it was
-  // written, so an exclusive bound would drop that row from every later read —
-  // silently and permanently. A caller re-printing a row it has already seen is
-  // recoverable; never seeing it is not.
+  // written — an exclusive bound would drop that row from that read and from every
+  // later read, silently and permanently. Re-delivering a row the caller already
+  // has is the recoverable direction, and callers dedupe on `attentionItemId`.
+  //
+  // `createdAt` is stamped by mongoose at insert, from the model's own `now`, and
+  // no writer in this codebase sets it (the source's own time lives in
+  // `sourceCreatedAt`). That is what makes the `{recipientUserId, status, createdAt}`
+  // index insertion-ordered and monotonic, and it is why this bound is cheap.
+  // Its residual is bounded rather than closed, and it is NOT backdating or clock
+  // skew: a row is stamped before its write commits, so an arrival more than the
+  // caller's lookback W behind a cursor it already advanced past is missed. W has
+  // to exceed write-commit latency, not skew.
   //
   // A value that cannot be parsed narrows nothing rather than raising: the route
   // refuses it with a 400 first, so this is the second line, and of the two ways
@@ -486,7 +503,10 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
   if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
-    return { items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+    return {
+      items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,
+      windowCount: 0, nextSince: null, offset, limit, remaining: 0, hasMore: false,
+    };
   }
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
@@ -494,7 +514,6 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const rows = await AttentionItem.find({
     recipientUserId,
     status: 'open',
-    ...(sinceAt ? { createdAt: { $gte: sinceAt } } : {}),
     ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
   }).sort({ createdAt: -1 }).lean();
   // Suppressed before anything is counted, so every number the caller reads —
@@ -540,7 +559,12 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     counts[kind] = (counts[kind] || 0) + 1;
     return counts;
   }, {});
-  const page = scoped.slice(offset, offset + limit);
+  // The window is applied AFTER the whole-set counts and BEFORE the slice, so
+  // the counts keep their meaning and the page is drawn from the window.
+  const window = sinceAt
+    ? scoped.filter((row: any) => new Date(row.createdAt).getTime() >= sinceAt.getTime())
+    : scoped;
+  const page = window.slice(offset, offset + limit);
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
@@ -549,13 +573,21 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
   }
-  const remaining = Math.max(scoped.length - offset - picked.length, 0);
+  const remaining = Math.max(window.length - offset - picked.length, 0);
+  // The newest instant actually DELIVERED, so a caller can resume from it. It is
+  // the max over the page rather than over the window: a value the caller has not
+  // seen must not be skipped past.
+  const nextSince = picked.length
+    ? new Date(Math.max(...picked.map((row: any) => new Date(row.createdAt).getTime()))).toISOString()
+    : null;
   return {
     items: picked,
     count: scoped.length,
     countsByPod,
     countsByKind,
     composePodId,
+    windowCount: window.length,
+    nextSince,
     offset,
     limit,
     remaining,
