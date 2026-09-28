@@ -306,12 +306,38 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     if (connectionOwnerId(connection) !== userId) return res.status(403).json({ error: 'access_denied' });
     // The installation is the connection's, never the body's (Vera 67821):
     // a grant on connection A must not be able to name installation B.
-    const installationId = String(connection.installationId || connection.config?.installationId || '').trim();
-    if (connection.type !== 'github-app' || connection.status !== 'connected' || connection.revokedAt || !installationId) {
+    // A hosted-mcp row has neither installationId slot, so the row's `_id` IS
+    // the grant's installationId for this type (scope §7). An `_id` is never
+    // reused, which is what keeps the TASK-148 class — a grant matching a
+    // re-created row by an external id — from arising here.
+    const hosted = connection.type === 'hosted-mcp';
+    const connectionRowId = String(connection._id || '').trim();
+    const installationId = hosted
+      ? connectionRowId
+      : String(connection.installationId || connection.config?.installationId || '').trim();
+    const isConnected = connection.status === 'connected' && !connection.revokedAt;
+    if (hosted) {
+      // A pending row holds nothing secret and must never be grantable, and a
+      // row with no credential has nothing for the broker to decrypt, so both
+      // are refused here rather than at first call.
+      if (!isConnected || !connectionRowId || !String(connection.config?.credentialRef || '').trim()) {
+        return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected hosted MCP connection' });
+      }
+    } else if (connection.type !== 'github-app' || !isConnected || !installationId) {
       return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
     }
     if (body.installationId !== undefined) {
       return res.status(400).json({ error: 'invalid_installation', message: 'installationId is set by the server from the connection, not the caller' });
+    }
+    // Scope §5(a): a hosted write counts as the member's own act only when the
+    // call parks for their approval, and a `write` grant runs non-read calls
+    // without parking — so the mode is refused at the mint, which is the only
+    // place that can keep it out of every attenuated descendant too.
+    if (hosted && body.writeMode === 'write') {
+      return res.status(403).json({
+        error: 'write_requires_confirm',
+        message: 'a hosted-mcp grant cannot hold write mode; use write-with-confirm',
+      });
     }
 
     const target = body.target;
@@ -349,7 +375,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     if (body.brokerId !== undefined) {
       return res.status(400).json({ error: 'invalid_broker', message: 'brokerId is set by the server, not the caller' });
     }
-    const broker = await resolveBrokerFor(String(connection.type));
+    const broker = await resolveBrokerFor(connection);
     const requestedTools = Array.isArray(body.tools) ? body.tools.map(String) : [];
     const unknownTools = requestedTools.filter((tool: string) => !broker.enabledTools.includes(tool));
     if (unknownTools.length) {
