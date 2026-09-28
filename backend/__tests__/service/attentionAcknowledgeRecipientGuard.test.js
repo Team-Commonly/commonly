@@ -55,8 +55,15 @@ describe('acknowledging an attention item is scoped to its recipient', () => {
 
     // One item per caller shape, so one case cannot mask the next. The third is
     // mongoose's legacy 12-byte form: it casts to a valid ObjectId that is not
-    // anybody, which is why the length is checked and not just the cast.
-    const callers = ['', 'not-an-id', '507f191e810c'];
+    // anybody, which is why the length is checked and not just the cast. The last
+    // two are 24 hex characters plus something, and they exist because both of
+    // the edits most likely to be made to that regex were measured as SURVIVORS
+    // without them: drop the trailing `$` and the 25-character id passes the guard
+    // and the cast throws (straight back to the 500 this change removes); drop the
+    // leading `^` and the prefixed one does the same.
+    const callers = ['', 'not-an-id', '507f191e810c',
+      '507f191e810c19729de860ea0',
+      'x507f191e810c19729de860ea'];
     await AttentionItem.insertMany(callers.map((_, index) => makeAttention(`theirs-${index}`, stranger, pod._id)));
 
     const rows = await AttentionItem.find({ 'source.id': /^theirs-/ }).sort({ 'source.id': 1 });
@@ -68,7 +75,7 @@ describe('acknowledging an attention item is scoped to its recipient', () => {
     }
 
     const after = await AttentionItem.find({ 'source.id': /^theirs-/ }).lean();
-    expect(after.map((row) => row.status)).toEqual(['open', 'open', 'open']);
+    expect(after.map((row) => row.status)).toEqual(callers.map(() => 'open'));
   });
 
   it('a valid id belonging to somebody else cannot acknowledge this recipient\'s row', async () => {
