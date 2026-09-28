@@ -20,6 +20,7 @@ const {
   WINNER_WAIT_MS,
 } = require('../../../services/hostedMcpCredentialService');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
+
 const DeployedIntegration = jest.requireActual('../../../models/Integration').default;
 
 const T0 = new Date('2026-09-28T12:00:00.000Z').getTime();
@@ -65,6 +66,10 @@ const harness = (options = {}) => {
   let nowMs = T0;
 
   const put = jest.fn(async (integrationId, spec, material) => {
+    // `connectorSecrets.put` refuses empty material rather than storing it, so a
+    // caller that puts a token it never received fails here instead of silently
+    // keeping the old secret.
+    if (!material) throw new Error('empty material');
     // Upsert on (integrationId, kind): the same kind keeps its ref. Under
     // `newRefPerPut` the ref moves, which is the world the loser's ref-diffing
     // detection assumed and the one production is not in.
@@ -144,7 +149,12 @@ const harness = (options = {}) => {
         put,
         revoke,
       },
-      row: { findById, bumpGeneration, commit, markError },
+      row: {
+        findById,
+        bumpGeneration,
+        commit,
+        markError,
+      },
       sleep: async (ms) => {
         sleeps.push(ms);
         nowMs += ms;
@@ -180,13 +190,26 @@ describe('the fast path', () => {
     expect(h.revoke).not.toHaveBeenCalled();
   });
 
-  test('freshness is exclusive at the skew boundary, inside it the fence runs', async () => {
-    const exactly = harness({ row: stale({ expiresAt: new Date(T0 + EXPIRY_SKEW_MS) }) });
-    await credentialFor(stale({ expiresAt: new Date(T0 + EXPIRY_SKEW_MS) }), exactly.deps);
+  test('freshness is exclusive at the skew boundary, and a token inside the window is fenced', async () => {
+    // Literal times, not EXPIRY_SKEW_MS: a fixture built from the constant under
+    // test moves its own boundary with the mutant, so a margin of zero would pass
+    // an arm written to witness it. The literals are the contract (one minute),
+    // asserted as a value rather than referenced.
+    expect(EXPIRY_SKEW_MS).toBe(60 * 1000);
+
+    const exactly = harness({ row: stale({ expiresAt: new Date(T0 + 60 * 1000) }) });
+    await credentialFor(stale({ expiresAt: new Date(T0 + 60 * 1000) }), exactly.deps);
     expect(exactly.bumpGeneration).toHaveBeenCalledTimes(1);
 
-    const inside = harness({ row: stale({ expiresAt: new Date(T0 + EXPIRY_SKEW_MS + 1) }) });
-    const got = await credentialFor(stale({ expiresAt: new Date(T0 + EXPIRY_SKEW_MS + 1) }), inside.deps);
+    // Half a window in is still inside it: a token with 30s left is not usable
+    // for a call that may take longer, which is the whole reason the margin
+    // exists rather than a `> now` comparison.
+    const withinWindow = harness({ row: stale({ expiresAt: new Date(T0 + 30 * 1000) }) });
+    await credentialFor(stale({ expiresAt: new Date(T0 + 30 * 1000) }), withinWindow.deps);
+    expect(withinWindow.bumpGeneration).toHaveBeenCalledTimes(1);
+
+    const inside = harness({ row: stale({ expiresAt: new Date(T0 + 60 * 1000 + 1) }) });
+    const got = await credentialFor(stale({ expiresAt: new Date(T0 + 60 * 1000 + 1) }), inside.deps);
     expect(got.token).toBe('old-access');
     expect(inside.bumpGeneration).not.toHaveBeenCalled();
   });
@@ -437,7 +460,12 @@ describe('the loser of the fence', () => {
 
     expect(error.code).toBe('credential_refreshing');
     expect(error.retryable).toBe(true);
-    expect(h.sleeps.reduce((total, ms) => total + ms, 0)).toBe(WINNER_WAIT_MS);
+    // Literal bound, for the same reason as the skew margin: an expectation
+    // written as WINNER_WAIT_MS / WINNER_POLL_MS moves with any mutant of either,
+    // so the wait is asserted as 15 polls of 100ms totalling 1500ms.
+    expect(h.sleeps.reduce((total, ms) => total + ms, 0)).toBe(1500);
+    expect(h.sleeps).toHaveLength(15);
+    expect(h.sleeps.every((ms) => ms === 100)).toBe(true);
     expect(h.reads.length).toBe(h.sleeps.length + 1);
     expect(h.bumpGeneration).toHaveBeenCalledTimes(1);
     expect(h.refreshAtVendor).not.toHaveBeenCalled();
