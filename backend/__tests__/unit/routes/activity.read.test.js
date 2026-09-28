@@ -57,6 +57,31 @@ describe('activity read routes', () => {
     });
   });
 
+  it('GET /api/activity/decision-queue forwards a created-since bound to the millisecond', async () => {
+    await request(app)
+      .get('/api/activity/decision-queue')
+      .query({ since: '2026-09-01T04:00:00.123Z', limit: 50 })
+      .expect(200);
+    expect(ActivityService.getDecisionQueue).toHaveBeenCalledWith('user123', {
+      since: new Date('2026-09-01T04:00:00.123Z'), limit: 50,
+    });
+  });
+
+  it('GET /api/activity/decision-queue refuses a since bound it cannot read', async () => {
+    const unusable = ['not-a-date', '', '2026-13-45T00:00:00Z'];
+    await Promise.all(unusable.map((since) => request(app)
+      .get('/api/activity/decision-queue')
+      .query({ since })
+      .expect(400)));
+    // A repeated parameter arrives as an array, and `Date.parse(String([one]))`
+    // parses — so this is the arm that separates "the value parses" from "the
+    // value is what the caller meant to send".
+    await request(app)
+      .get('/api/activity/decision-queue?since=2026-09-01T00:00:00Z&since=2026-09-01T00:00:00Z')
+      .expect(400);
+    expect(ActivityService.getDecisionQueue).not.toHaveBeenCalled();
+  });
+
   it('GET /api/activity/decision-queue rejects unsafe pagination', async () => {
     await request(app).get('/api/activity/decision-queue?limit=0').expect(400);
     await request(app).get('/api/activity/decision-queue?offset=-1').expect(400);

@@ -113,6 +113,7 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     const rawMessageIds = req.query?.messageIds;
     const rawLimit = req.query?.limit;
     const rawOffset = req.query?.offset;
+    const rawSince = req.query?.since;
     if (podId !== undefined && typeof podId !== 'string') {
       return res.status(400).json({ error: 'podId must be a string' });
     }
@@ -133,11 +134,23 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     if (offset !== undefined && (!Number.isInteger(offset) || offset < 0)) {
       return res.status(400).json({ error: 'offset must be a non-negative integer' });
     }
+    // `since` is what makes a watcher tick cheap: `/api/activity` is 60 requests a
+    // minute keyed on the client IP, shared with every other session on this host
+    // AND with the person's own Activity page, so paging a 550-item queue eleven
+    // times per tick draws on somebody else's budget. The bound is INCLUSIVE of
+    // its own millisecond (see `getOpenQueue` for why), and an unusable value is
+    // refused here rather than quietly dropped: a caller that asked to narrow and
+    // silently received the whole queue has no way to tell it was ignored.
+    const since = rawSince === undefined ? undefined : Date.parse(String(rawSince));
+    if (rawSince !== undefined && (typeof rawSince !== 'string' || !Number.isFinite(since))) {
+      return res.status(400).json({ error: 'since must be an ISO-8601 timestamp' });
+    }
     const options = {
       ...(podId ? { podId } : {}),
       ...(messageIds ? { messageIds } : rawMessageIds !== undefined ? { messageIds: [] } : {}),
       ...(limit === undefined ? {} : { limit }),
       ...(offset === undefined ? {} : { offset }),
+      ...(since === undefined ? {} : { since: new Date(since) }),
     };
     return res.json(await ActivityService.getDecisionQueue(userId, options));
   } catch (error) {

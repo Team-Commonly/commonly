@@ -440,6 +440,7 @@ interface OpenQueueOptions {
   messageIds?: unknown;
   limit?: number;
   offset?: number;
+  since?: unknown;
 }
 
 export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueOptions = {}): Promise<{
@@ -460,6 +461,27 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     : [];
   const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
   const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
+  // `since` narrows the open queue to work created AT OR AFTER an instant, so a
+  // watcher tick reads one page instead of paging the whole queue. It is applied
+  // to the QUERY — before supersession, membership, the counts and pagination all
+  // run — so every number the caller reads describes the narrowed view. That is
+  // the rule the pod scope below already follows, for the same reason: a narrowed
+  // list must never report a count that contradicts its own rows.
+  //
+  // INCLUSIVE (`$gte`), deliberately, and the reason is the caller's cursor: one
+  // sitting at millisecond T cannot know about a row INSERTED at T after it was
+  // written, so an exclusive bound would drop that row from every later read —
+  // silently and permanently. A caller re-printing a row it has already seen is
+  // recoverable; never seeing it is not.
+  //
+  // A value that cannot be parsed narrows nothing rather than raising: the route
+  // refuses it with a 400 first, so this is the second line, and of the two ways
+  // to be wrong here, returning a superset is the one that cannot hide a row.
+  // (`podId` above already treats a malformed scope the same way.)
+  const since = options.since instanceof Date
+    ? options.since
+    : (typeof options.since === 'string' && options.since.trim() ? new Date(options.since) : null);
+  const sinceAt = since && Number.isFinite(since.getTime()) ? since : null;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
@@ -472,6 +494,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const rows = await AttentionItem.find({
     recipientUserId,
     status: 'open',
+    ...(sinceAt ? { createdAt: { $gte: sinceAt } } : {}),
     ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
   }).sort({ createdAt: -1 }).lean();
   // Suppressed before anything is counted, so every number the caller reads —
