@@ -135,7 +135,7 @@ describe('the open queue window (createdAt >= since)', () => {
     expect(rest.nextSince).toBe(at(120).toISOString());
   });
 
-  it('keeps a row that shares the instant the cursor resumes from, and loses it if the bound is exclusive', async () => {
+  it('keeps a row that shares the instant the cursor resumes from', async () => {
     const { recipient, podB } = await plant();
     await AttentionItem.create({
       recipientUserId: recipient,
