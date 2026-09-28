@@ -92,6 +92,38 @@ Requires Node 20+. No compiled build step — source is ESM.
 
 `--key` gives you named profiles — e.g. `--key dev`, `--key prod`. Most other commands accept `--instance <url-or-key>` and resolve either form against saved profiles (see [config.js:resolveInstance](../../cli/src/lib/config.js)).
 
+### Inbox — one account's own attention queue
+
+| Command | Purpose |
+|---------|---------|
+| `commonly inbox list [--token-file <path>] [--since <iso>] [--cursor-file <path>] [--kind <kind>] [--pod <podId>] [--json]` | Print the account's open attention items (`mention`, `decision`, `handoff`, `approval`), newest first. |
+| `commonly inbox ack <attentionItemId>` | Acknowledge an item — the id printed as `item=…`. |
+| `commonly inbox choose <decisionId> <value>` | Rule a decision card — the id printed as `source=…` on a `decision` line. |
+
+The account is read from `--token-file <path>` (or `COMMONLY_TOKEN_FILE`) and **from nowhere else**: with neither set the command refuses before it makes a request. It never falls back to the saved login, because on a shared operator host that login belongs to somebody else — that is exactly how an "ops inbox" helper ends up reading the wrong person's queue. Every run prints the account it resolved on its first line, from `GET /api/auth/user`.
+
+A cursor is an ISO-8601 timestamp compared against `createdAt`, **carried in the cursor file together with the ids delivered at exactly that timestamp.** `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own:
+
+```bash
+commonly inbox list --token-file ~/.commonly/bin/connector-ops-token \
+  --cursor-file ~/.commonly/inbox/connector-ops.cursor
+```
+
+An item that **shares the cursor's millisecond** but was inserted after the cursor was written is printed, not skipped — that is what the id list is for. It is also why `--since <iso>` includes its own millisecond: re-printing one item is recoverable, and never printing it is not. The file is one line of `{"at":"<iso>","ids":[...]}`; a bare ISO timestamp — what older versions wrote, and what the printed `cursor:` line shows — is still accepted, and re-prints that millisecond rather than dropping it.
+
+**A cursor file belongs to the query that wrote it**, so the file records which `--kind` filter wrote it. `--kind` is a different query over a subset, and a kind-filtered read advances the cursor past items of other kinds that read never printed — they would then never be printed at all. A read whose filter differs from the file's (including a read with no filter at all, reading a file a `--kind` read wrote) is therefore **refused before it makes a request**, with the file's own kind named in the message. Keep one cursor file per kind:
+
+```bash
+commonly inbox list --kind mention  --cursor-file ~/.commonly/inbox/mention.cursor
+commonly inbox list --kind decision --cursor-file ~/.commonly/inbox/decision.cursor
+```
+
+The reverse is allowed: a cursor written without `--kind` may be read by a `--kind` read, because that earlier read printed every kind, so nothing is behind the mark unprinted.
+
+**Residual, named rather than implied:** a row whose `createdAt` is *older* than a timestamp this command has already advanced past (a backdated insert, or clock skew between writers) is still invisible to a cursor. The fix belongs on the server as a created-since filter on the route, which is also what would make a watcher tick cost one request instead of a full queue scan.
+
+`list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter. A cursor narrows what is printed, not what is read: the route has no created-since filter yet, so `--pod` is the only scope that narrows the request itself. See [lib/inbox.js](../../cli/src/lib/inbox.js).
+
 ### Agents — local CLI wrapper (ADR-005)
 
 | Command | Purpose |
@@ -191,6 +223,21 @@ Written by `commonly agent attach`. One file per attached agent; holds the `cm_a
   "adapter": "claude"
 }
 ```
+
+### `~/.commonly/bin/<account>-token` — operator accounts
+
+Not written by the CLI. A shared operator host keeps one file per operator
+account holding that account's **user** token, raw, owner-readable only:
+
+```bash
+install -m 600 /dev/null ~/.commonly/bin/connector-ops-token
+# then write the account's token into it (never into a command line or a log)
+```
+
+`commonly inbox` takes one of these with `--token-file` and refuses a file
+holding an `cm_agent_*` token by name: an agent runtime token has no human queue
+to read, and silently reading the wrong thing is the failure this convention
+exists to prevent.
 
 ### `~/.commonly/sessions/<name>.json`
 
