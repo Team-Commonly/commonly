@@ -86,6 +86,7 @@ const renderSidebar = (pods, selectedPodId = 'sharpen', extra = {}) => render(
       attentionCountByPod={{ sharpen: 2, connectors: 1, naming: 0, hq: 91 }}
       podsState={{
         pods, loading: false, error: null, createPod: mockCreatePod, patchLastMessage: jest.fn(),
+        refresh: jest.fn(() => Promise.resolve()),
       }}
       {...extra}
     />
