@@ -96,20 +96,20 @@ Requires Node 20+. No compiled build step — source is ESM.
 
 | Command | Purpose |
 |---------|---------|
-| `commonly inbox list [--token-file <path>] [--since <iso>] [--cursor-file <path>] [--kind <kind>] [--pod <podId>] [--json]` | Print the account's open attention items (`mention`, `decision`, `handoff`, `approval`), newest first. |
+| `commonly inbox list [--token-file <path>] [--since <iso>] [--cursor-file <path>] [--window <seconds>] [--kind <kind>] [--pod <podId>] [--json]` | Print the account's open attention items (`mention`, `decision`, `handoff`, `approval`), newest first. |
 | `commonly inbox ack <attentionItemId>` | Acknowledge an item — the id printed as `item=…`. |
 | `commonly inbox choose <decisionId> <value>` | Rule a decision card — the id printed as `source=…` on a `decision` line. |
 
 The account is read from `--token-file <path>` (or `COMMONLY_TOKEN_FILE`) and **from nowhere else**: with neither set the command refuses before it makes a request. It never falls back to the saved login, because on a shared operator host that login belongs to somebody else — that is exactly how an "ops inbox" helper ends up reading the wrong person's queue. Every run prints the account it resolved on its first line, from `GET /api/auth/user`.
 
-A cursor is an ISO-8601 timestamp compared against `createdAt`, **carried in the cursor file together with the ids delivered at exactly that timestamp.** `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own:
+A cursor is an ISO-8601 timestamp compared against `createdAt`, **carried in the cursor file together with the ids delivered inside a window that ends at it.** `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own. With a cursor the read also asks the route for `createdAt >= cursor − W` (`--window`, default 60s), so **a watcher tick is one request instead of eleven**:
 
 ```bash
 commonly inbox list --token-file ~/.commonly/bin/connector-ops-token \
   --cursor-file ~/.commonly/inbox/connector-ops.cursor
 ```
 
-An item that **shares the cursor's millisecond** but was inserted after the cursor was written is printed, not skipped — that is what the id list is for. It is also why `--since <iso>` includes its own millisecond: re-printing one item is recoverable, and never printing it is not. The file is one line of `{"at":"<iso>","ids":[...]}`; a bare ISO timestamp — what older versions wrote, and what the printed `cursor:` line shows — is still accepted, and re-prints that millisecond rather than dropping it.
+**W has to exceed two quantities, and 60 is a margin, not a measurement.** The row is written synchronously inside the request that records the event, so the stamp-to-visible gap is one database write round trip (milliseconds); the writer's own clock is offset from the reader's by whatever the cluster's time sync leaves (sub-second between NTP-synced pods). 60s sits two to three orders above both, which is the point: nobody has to re-measure it per deployment, and a caller who knows their writer is further behind can raise it with `--window`. The two errors are not symmetric — too large re-prints rows a caller dedupes by id, too small loses them — so the default errs large. W is not a guess about clock skew. A row is stamped from the writer's clock when the write happens and becomes visible only when that write **commits**, so a row can carry a stamp *before* the cursor and still be absent from the response that wrote it — resuming exactly at the cursor would never show it, on that tick or any later one. The window re-reads that stretch, and the ids already delivered inside it are dropped **by id**, so nothing prints twice. An item that **shares the cursor's millisecond** but arrived after the cursor was written is printed for the same reason. `--since <iso>` is likewise inclusive of its own millisecond and also reads a window behind it: re-printing one item is recoverable, and never printing it is not. The file is one line of `{"at":"<iso>","ids":[...]}`, pruned to the window on every write so it cannot grow; a bare ISO timestamp — what older versions wrote, and what the printed `cursor:` line shows — is still accepted and re-prints the window rather than dropping it. `--window 0` restores the exact-cursor behaviour.
 
 **A cursor file belongs to the query that wrote it**, so the file records which `--kind` filter wrote it. `--kind` is a different query over a subset, and a kind-filtered read advances the cursor past items of other kinds that read never printed — they would then never be printed at all. A read whose filter differs from the file's (including a read with no filter at all, reading a file a `--kind` read wrote) is therefore **refused before it makes a request**, with the file's own kind named in the message. Keep one cursor file per kind:
 
@@ -120,9 +120,13 @@ commonly inbox list --kind decision --cursor-file ~/.commonly/inbox/decision.cur
 
 The reverse is allowed: a cursor written without `--kind` may be read by a `--kind` read, because that earlier read printed every kind, so nothing is behind the mark unprinted.
 
-**Residual, named rather than implied:** a row whose `createdAt` is *older* than a timestamp this command has already advanced past (a backdated insert, or clock skew between writers) is still invisible to a cursor. The fix belongs on the server as a created-since filter on the route, which is also what would make a watcher tick cost one request instead of a full queue scan.
+**Residual, named rather than implied:** a row stamped *more than W* behind a cursor that has already advanced past it is still invisible, because its write committed after the window reached. W is the margin over write-commit latency **plus** the writer's clock offset — the CLI's 60s default sits two to three orders above both terms, deliberately as a margin rather than a measurement, and a caller reading a writer with a slower clock raises it.
 
-`list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter. A cursor narrows what is printed, not what is read: the route has no created-since filter yet, so `--pod` is the only scope that narrows the request itself. See [lib/inbox.js](../../cli/src/lib/inbox.js).
+The route's `count`, `countsByKind` and `countsByPod` still describe the **whole** open set, so the header counts are unaffected by the window; `windowCount` and `nextSince` describe the window itself.
+
+**A wide window is more than one page.** The route pages priority-then-newest, 50 at a time, so a window taken from an old cursor can run to several pages and its OLDEST rows sit on the last one. The read pages until `hasMore` is false and takes its mark from everything it printed, not from page one: a tick that stopped at the first page would leave those rows behind the cursor it then wrote, and no later tick could see them.
+
+Without a cursor, `list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter (`/api/activity`: 60 a minute keyed on the caller's IP, shared by every session on the host). With a cursor the window bounds what a tick reads: pages are per 50 rows of that window, and a cursor written seconds ago — the ordinary watcher case — reads it in one. See [lib/inbox.js](../../cli/src/lib/inbox.js).
 
 ### Agents — local CLI wrapper (ADR-005)
 

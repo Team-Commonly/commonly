@@ -21,6 +21,7 @@ import {
   formatItemLine,
   nextCursorFrom,
   parseCursor,
+  parseWindowMs,
   readCursorFile,
   readInboxToken,
   resolveAccountLabel,
@@ -84,6 +85,9 @@ export const runInboxList = async (opts = {}, deps = {}) => {
     // Validated before the request: a typo in --kind must not cost a network
     // round trip, and must not read a queue the caller did not ask for.
     const kind = normalizeKind(opts.kind);
+    // Validated here with --kind, for the same reason: a typo must not cost a
+    // request, and a caller who asked for a window must not silently get another.
+    const windowMs = parseWindowMs(opts.window);
     // Read and check the cursor BEFORE connecting: this is a local-file fact, and
     // a misuse of the flags must not cost even the identity request that
     // resolves the account.
@@ -103,23 +107,28 @@ export const runInboxList = async (opts = {}, deps = {}) => {
         + `--kind ${cursorIn.kind} --cursor-file <path>.${cursorIn.kind}.`,
       );
     }
-    const sinceMs = cursorIn ? cursorIn.ms : null;
-    const since = cursorIn ? cursorIn.at : null;
+    // The window: W behind the cursor's own stamp, not at it. A row stamped before
+    // the cursor can commit after the read that wrote it, and it is that read's
+    // `since` — not the row — that made it invisible; a read starting W earlier
+    // sees it. The ids already delivered inside the window are what keep the
+    // re-read from printing the old rows again (see lib/inbox.js).
+    const sinceMs = cursorIn ? cursorIn.ms - windowMs : null;
+    const since = sinceMs === null ? null : new Date(sinceMs).toISOString();
 
     const {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
 
-    const { items, meta } = await fetchQueue(request, { podId: opts.pod });
+    const { items, meta } = await fetchQueue(request, { podId: opts.pod, since });
     const selected = filterItems(items, {
       kind,
       sinceMs,
-      // The ids already delivered at the cursor's own millisecond. An item that
-      // shares that millisecond but is not among them arrived after the cursor
-      // was written, and is exactly the row a bare `ms > since` loses.
+      // Everything already delivered inside the window. An item of the same id in
+      // the response is a re-delivery, not news; an item that merely shares its
+      // instant with one is news, which is why this dedupes by id and not by time.
       seenIds: cursorIn ? cursorIn.ids : [],
     });
-    const cursor = nextCursorFrom(selected, cursorIn, kind);
+    const cursor = nextCursorFrom(selected, cursorIn, kind, windowMs);
 
     if (opts.json) {
       log(JSON.stringify({
@@ -138,7 +147,7 @@ export const runInboxList = async (opts = {}, deps = {}) => {
       const counts = countsLine(meta?.countsByKind);
       log(`open: ${Number.isInteger(meta?.count) ? meta.count : items.length}${counts ? ` (${counts})` : ''}`);
       if (selected.length === 0) {
-        log(since ? `(no items newer than ${since})` : '(queue is empty)');
+        log(since ? `(nothing new; the window since ${since} was re-read)` : '(queue is empty)');
       }
       for (const item of selected) log(formatItemLine(item));
       log(`cursor: ${cursor ? cursor.at : ''}`);
@@ -226,16 +235,23 @@ Examples:
   $ commonly inbox list --json | jq '.items[].title'
   $ commonly inbox list --kind decision --pod <podId>
   $ commonly inbox list --cursor-file ~/.commonly/inbox/connector-ops.cursor   # only what is new
+  $ commonly inbox list --cursor-file ~/.commonly/inbox/c.cursor --window 300  # widen the re-read to 5m
   $ commonly inbox ack <attentionItemId>
   $ commonly inbox choose <decisionId> 2
 
-Cost: \`list\` reads the WHOLE queue, one request per 50 items — 550 open
-items is 11 requests — and /api/activity is limited to 60 a minute **keyed on
+Cost: with no cursor, \`list\` reads the WHOLE queue, one request per 50 items —
+550 open items is 11 requests. /api/activity is limited to 60 a minute **keyed on
 the caller's IP**, so every session on one host (and the operator's browser)
-shares that budget. A 429 is backed off and retried twice on the server's own
-\`Retry-After\`, then reported. A cursor narrows what is PRINTED, not what is
-read: the route has no created-since filter yet, so \`--pod\` is the one scope
-that narrows the request itself.
+shares that budget; a 429 is backed off and retried twice on the server's own
+\`Retry-After\`, then reported.
+
+With \`--cursor-file\`, the read instead asks for \`createdAt >= cursor - W\`
+(\`--window\`, default 60s), so a watcher tick is ONE request. W is the margin
+over write-commit latency plus the writer's clock offset — a row is stamped before
+its write commits, so resuming exactly at the cursor would lose it. Rows already
+delivered inside W are dropped by id, which is the re-delivery the window is for.
+The counts printed in the header still describe the whole open set; only the rows
+inside the window are printed.
 
 \`ack\` deliberately ships WITHOUT an \`--all\`: a burst of acks shares that same
 per-IP budget, so a paced loop is the caller's decision and a bulk
@@ -253,6 +269,7 @@ their attention as runtime events, not from this queue.
     .option('--token-file <path>', INBOX_TOKEN_HELP)
     .option('--since <cursor>', 'ISO-8601 timestamp; only items created after it')
     .option('--cursor-file <path>', 'Read the cursor from this file and write the advanced cursor back')
+    .option('--window <seconds>', 'Re-read this far behind the cursor, dropping ids already delivered (default 60; 0 = exact cursor)')
     .option('--kind <kind>', `Only this kind: ${INBOX_KINDS.join('|')}`)
     .option('--pod <podId>', 'Only this pod')
     .option('--json', 'Emit one JSON object (with the resolved account and the cursor)')

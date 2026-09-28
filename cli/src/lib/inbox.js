@@ -24,20 +24,30 @@
  * `list` prints both, labelled, so neither command has to be discovered by
  * failing first.
  *
- * The cursor is a TIMESTAMP PLUS the ids delivered at exactly that timestamp,
- * compared against `createdAt` — the only field on an item that never moves. The
- * queue's ORDER moves as items are acknowledged (priority, then newest first),
+ * The cursor is a TIMESTAMP PLUS the ids delivered INSIDE A WINDOW that ends at
+ * it, compared against `createdAt` — the only field on an item that never moves.
+ * The queue's ORDER moves as items are acknowledged (priority, then newest first),
  * so an offset cursor would skip rows; `createdAt` cannot.
  *
- * The ids are not decoration. A bare `ms > since` cursor loses any row that
- * shares its millisecond with the cursor and was inserted after the cursor was
- * written: the next run compares `ms > since` (false), nothing prints it, and no
- * later run can see it either, because the cursor never moves. That row is gone
- * silently and forever — the one failure this queue (576 open items, none ever
- * read) cannot afford. So the cursor carries the ids it already delivered at its
- * own millisecond and re-prints only the ones it did not: `ms > sinceMs ||
- * (ms === sinceMs && !delivered.has(id))`. A legacy plain-timestamp cursor parses
- * with an EMPTY set, which degrades toward re-printing rather than skipping.
+ * The window is what makes the cursor safe, and the ids are not decoration. A row
+ * is stamped from the WRITER's clock at the moment of the write and becomes
+ * visible only when that write commits, so a row can carry a stamp before the
+ * cursor and appear after the read that wrote it — and it is not late, it is
+ * simply invisible to a reader who resumes at the cursor. Starting a read W
+ * behind the cursor (`--window`, default 60s) makes that row visible on the next
+ * tick; the ids already delivered inside that window are then dropped, so the
+ * re-read prints only what the caller has not seen. A bare `ms > since` cursor
+ * loses such a row silently and forever — the one failure this queue (576 open
+ * items, none ever read) cannot afford, which is why the recoverable direction
+ * (re-printing, deduped by `attentionItemId`) is always the one taken here. A
+ * legacy plain-timestamp cursor parses with an EMPTY set, which degrades toward
+ * re-printing rather than skipping.
+ *
+ * The window is NOT a guess about clock skew alone: W must exceed the write's
+ * commit latency PLUS the writer's clock offset, and a caller that sets it to 0
+ * gets the exact-cursor behaviour (resume at the cursor, dedupe only the ids
+ * stamped with it). The ids are pruned to the window on every write, so the
+ * cursor file stays the size of one window of deliveries instead of growing.
  *
  * THE GENERAL RULE, which both cursor bugs above are instances of: a resume
  * cursor is valid only for the query that wrote it. `--kind` is a DIFFERENT
@@ -168,6 +178,24 @@ export const parseCursor = (value) => {
   };
 };
 
+/**
+ * `--window <seconds>`: how far behind the cursor a read starts. The default is
+ * the spec's 60s — the margin over in-cluster write latency and clock offset —
+ * and 0 restores the exact-cursor behaviour. Refused rather than clamped: a
+ * negative or unreadable window would silently change which rows a read can see,
+ * and that is the failure this whole module is built to avoid.
+ */
+export const DEFAULT_WINDOW_MS = 60 * 1000;
+
+export const parseWindowMs = (value, fallback = DEFAULT_WINDOW_MS) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const seconds = Number(String(value).trim());
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new InboxRefusal(`--window must be a number of seconds >= 0, not ${value}.`);
+  }
+  return Math.round(seconds * 1000);
+};
+
 /** A missing cursor file is "nothing seen yet", not an error. */
 export const readCursorFile = (filePath) => {
   if (!filePath) return null;
@@ -217,28 +245,46 @@ export const cursorKeyOf = (item) => String(item?.attentionItemId || item?.id ||
 /**
  * An item with an unparseable `createdAt` is KEPT under a cursor: dropping it
  * would lose the row silently, and re-printing is the recoverable error. The same
- * argument decides the millisecond boundary — see the module header.
+ * argument decides the boundary — see the module header.
+ *
+ * `seenIds` is the set delivered inside the window and is dropped BY ID, whatever
+ * the item's timestamp: the window exists to re-serve those rows to the server
+ * call, and the id is the only thing that can say "the caller already saw this
+ * one". `sinceMs` is the window's own start and is inclusive, matching the
+ * route's bound, so a row stamped exactly at it still prints.
  */
 export const filterItems = (items, { kind = null, sinceMs = null, seenIds = [] } = {}) => {
   const delivered = seenIds instanceof Set ? seenIds : new Set(seenIds);
   return (items || []).filter((item) => {
     if (kind && item?.kind !== kind) return false;
+    if (delivered.has(cursorKeyOf(item))) return false;
     if (sinceMs === null) return true;
     const ms = itemCreatedAtMs(item);
     if (ms === null) return true;
-    if (ms > sinceMs) return true;
-    return ms === sinceMs && !delivered.has(cursorKeyOf(item));
+    return ms >= sinceMs;
   });
 };
 
 /**
- * Newest timestamp delivered, so the next call resumes exactly where this one
- * ended — plus the ids delivered AT that timestamp, which are what make the
- * boundary safe to resume from. Those ids are carried forward only while the
- * timestamp stays put; once it moves, they can never match again (the check needs
- * `ms === sinceMs`) and carrying them would grow the file for nothing.
+ * Newest timestamp this query has covered — the previous cursor's stamp or the
+ * newest item printed, whichever is later — so the next call resumes from W behind
+ * it, plus every id delivered at or after that window's start, which is what the
+ * next read's window will re-serve and must therefore not print twice.
+ *
+ * The max is taken over the PRINTED items, not the server's `nextSince`, because
+ * `--kind` is filtered on this side: the server's window may hold rows of other
+ * kinds that this read will never print, and advancing the cursor onto them would
+ * move the high-water mark past a row of THIS kind that a later page has not
+ * delivered yet. When nothing printed, the cursor stays where it was — the
+ * fallback — so a quiet tick does not move the mark at all.
+ *
+ * The set is recomputed from the window plus the ids the previous cursor had not
+ * yet aged out of it, and both halves are load-bearing: this read's items are
+ * post-dedupe, so a row it dropped is absent from them and would be forgotten
+ * without the carry. The prune is what bounds the file at one window of
+ * deliveries instead of a list of everything ever printed.
  */
-export const nextCursorFrom = (items, fallback = null, kind = null) => {
+export const nextCursorFrom = (items, fallback = null, kind = null, windowMs = DEFAULT_WINDOW_MS) => {
   let max = null;
   for (const item of items || []) {
     const ms = itemCreatedAtMs(item);
@@ -246,15 +292,33 @@ export const nextCursorFrom = (items, fallback = null, kind = null) => {
     if (max === null || ms > max) max = ms;
   }
   if (max === null) return fallback;
-  const at = new Date(max).toISOString();
-  const boundary = (items || []).filter((item) => itemCreatedAtMs(item) === max)
-    .map(cursorKeyOf).filter(Boolean);
-  const carried = fallback && fallback.ms === max ? (fallback.ids || []) : [];
+  // A high-water mark: the newest item printed, or the cursor that came in,
+  // whichever is later. A row printed from inside the window is older than the
+  // mark that delimited that window, and letting it drag the mark back would move
+  // the next read's `since` back with it — reopening ground this query has already
+  // covered and moving the prune cutoff that bounds the id set.
+  const mark = fallback && Number.isFinite(fallback.ms) && fallback.ms > max ? fallback.ms : max;
+  const at = new Date(mark).toISOString();
+  const cutoff = mark - windowMs;
+  const inWindow = (items || []).filter((item) => {
+    const ms = itemCreatedAtMs(item);
+    return ms !== null && ms >= cutoff;
+  }).map(cursorKeyOf).filter(Boolean);
+  // The ids from the previous cursor are NOT dead weight, and dropping them is a
+  // measurable bug: `items` is what this read SELECTED, so a row delivered last
+  // tick has already been filtered out of it, and the set built from `items` alone
+  // would forget it — then the read after that would print it again, and the
+  // dedupe would alternate every tick. They are carried only while the previous
+  // cursor's own stamp is still inside this window; past that the next read's
+  // `since` is later than every one of them, the server can never re-serve them,
+  // and keeping them would grow the file for nothing.
+  const carried = fallback && Number.isFinite(fallback.ms) && fallback.ms >= cutoff
+    ? (fallback.ids || []) : [];
   // The kind is the CURRENT read's, never inherited: the cursor describes the
   // query that just ran, and a mismatch with the file's own kind is what the
   // command refuses on before it makes a request.
   return {
-    at, ms: max, ids: [...new Set([...carried, ...boundary])], kind: kind || null,
+    at, ms: mark, ids: [...new Set([...carried, ...inWindow])], kind: kind || null,
   };
 };
 
@@ -371,21 +435,31 @@ export const createInboxRequest = ({
  * that reports `hasMore: true` beside an empty page would otherwise spin
  * forever, and one that lies about `count` would page past the end.
  */
-export const fetchQueue = async (request, { podId } = {}) => {
+export const fetchQueue = async (request, { podId, since } = {}) => {
   const items = [];
   let meta = {};
   let offset = 0;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop
     const page = await request('/api/activity/decision-queue', {
-      params: { limit: API_PAGE_LIMIT, offset, ...(podId ? { podId } : {}) },
+      params: {
+        limit: API_PAGE_LIMIT,
+        offset,
+        ...(podId ? { podId } : {}),
+        // Only sent when there is a cursor: a first read is asking for everything
+        // the account has, and a bound there would silently hide its older half.
+        ...(since ? { since } : {}),
+      },
     });
     const batch = Array.isArray(page?.items) ? page.items : [];
     items.push(...batch);
     meta = page || {};
     if (!meta.hasMore) break;
     if (batch.length === 0) break;
-    if (Number.isInteger(meta.count) && items.length >= meta.count) break;
+    // A bounded call reports the WHOLE open set in `count` and the window in
+    // `windowCount`, so stopping on `count` would page past the window's end.
+    const reported = since && Number.isInteger(meta.windowCount) ? meta.windowCount : meta.count;
+    if (Number.isInteger(reported) && items.length >= reported) break;
     offset += batch.length;
   }
   return { items, meta };

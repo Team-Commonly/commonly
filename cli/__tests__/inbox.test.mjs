@@ -478,11 +478,26 @@ describe('list: paging, filter, cursor', () => {
     // row. Anything older still does not.
     expect(out.filter((line) => line.startsWith('mention'))).toHaveLength(3);
     expect(out).toContain(`cursor: ${new Date(Date.UTC(2026, 8, 28, 3, 3)).toISOString()}`);
-    const older = await runList(
+    // Below the cursor the window decides. --window 0 is the exact cursor: the
+    // 03:01 item is behind it and stays behind it.
+    const exact = await runList(
+      {
+        tokenFile: file,
+        since: new Date(Date.UTC(2026, 8, 28, 3, 2)).toISOString(),
+        window: '0',
+      },
+      routesFor(page),
+    );
+    expect(exact.out.join('\n')).not.toContain('mention  item=' + hex(201));
+
+    // The default window starts 60s behind the cursor, so the SAME 03:01 item is
+    // inside it and prints. That is not a regression: the window's whole purpose
+    // is to re-serve that stretch, and the id set is what stops it printing twice.
+    const windowed = await runList(
       { tokenFile: file, since: new Date(Date.UTC(2026, 8, 28, 3, 2)).toISOString() },
       routesFor(page),
     );
-    expect(older.out.join('\n')).not.toContain('mention  item=' + hex(201));
+    expect(windowed.out.join('\n')).toContain('mention  item=' + hex(201));
   });
 
   test('nothing newer than the cursor leaves the cursor where it was', async () => {
@@ -490,7 +505,7 @@ describe('list: paging, filter, cursor', () => {
     const since = new Date(Date.UTC(2026, 8, 28, 4, 0)).toISOString();
     const { code, out } = await runList({ tokenFile: file, since }, routesFor(queuePage([item(1)])));
     expect(code).toBe(0);
-    expect(out.join('\n')).toContain(`(no items newer than ${since})`);
+    expect(out.join('\n')).toContain(`(nothing new; the window since ${new Date(Date.parse(since) - 60 * 1000).toISOString()} was re-read)`);
     expect(out).toContain(`cursor: ${since}`);
   });
 
@@ -517,18 +532,20 @@ describe('list: paging, filter, cursor', () => {
     expect(first.code).toBe(0);
     expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim()))
       .toEqual({ at: new Date(Date.UTC(2026, 8, 28, 3, 5)).toISOString(), ids: [item(5).attentionItemId] });
-    expect(first.out).not.toContain(`(no items newer than`);
+    expect(first.out).not.toContain('(nothing new;');
 
     const second = await runList({ tokenFile: file, cursorFile }, routesFor(page));
     expect(second.code).toBe(0);
-    expect(second.out.join('\n')).toContain('(no items newer than');
+    expect(second.out.join('\n')).toContain('(nothing new;');
   });
 
   /**
-   * The boundary defect, reproduced at the command level. X and Y share a
-   * millisecond; Y is inserted after the cursor was written. With a bare
-   * `ms > since` cursor Y is never printed by this run or any later one, because
-   * the cursor cannot move past a millisecond it already passed.
+   * The boundary defect, reproduced at the command level — the gate's arm (b) for
+   * TASK-177. X and Y share a millisecond; Y is inserted after the cursor was
+   * written. With a bare `ms > since` cursor Y is never printed by this run or any
+   * later one, because the cursor cannot move past a millisecond it already
+   * passed. The request must also ASK for that stretch again — the window is the
+   * mechanism, and the dedupe set is only what keeps it quiet.
    */
   test('an item inserted at the cursor\'s own millisecond is printed, not lost', async () => {
     const file = writeTokenFile('boundary-token', 't\n');
@@ -543,15 +560,20 @@ describe('list: paging, filter, cursor', () => {
     // The control: without the sibling present there is nothing to print, so the
     // run below cannot pass because the filter is off.
     const control = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x])));
-    expect(control.out.join('\n')).toContain('(no items newer than');
+    expect(control.out.join('\n')).toContain('(nothing new;');
 
     const second = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
     expect(second.code).toBe(0);
+    // Both rows are inside the window the client asked for, which is why the
+    // sibling can come back at all.
+    const asked = second.fetchImpl.calls.filter((call) => call.url.includes('decision-queue'));
+    expect(new URL(asked[0].url).searchParams.get('since'))
+      .toBe(new Date(Date.parse(x.createdAt) - 60 * 1000).toISOString());
     expect(second.out.join('\n')).toContain(`item=${y.attentionItemId}`);
     expect(second.out.join('\n')).not.toContain(`item=${x.attentionItemId}`);
 
     const third = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
-    expect(third.out.join('\n')).toContain('(no items newer than');
+    expect(third.out.join('\n')).toContain('(nothing new;');
   });
 
   test('a legacy plain-timestamp cursor re-prints the boundary item instead of dropping it', async () => {
@@ -585,8 +607,10 @@ describe('list: paging, filter, cursor', () => {
 
     const moved = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y, z])));
     expect(moved.out.join('\n')).toContain(`item=${z.attentionItemId}`);
-    // Stale ids cannot match once the timestamp moves (the check needs
-    // `ms === sinceMs`), so they are dropped rather than carried forever.
+    // The ids are pruned to the window, and that is the bound: once the cursor has
+    // moved more than W past the previous one, the next read's `since` is later
+    // than every carried id, so the server cannot re-deliver them and keeping them
+    // would grow the file for nothing.
     expect(read()).toEqual({ at: z.createdAt, ids: [z.attentionItemId] });
   });
 
@@ -597,7 +621,7 @@ describe('list: paging, filter, cursor', () => {
     fs.writeFileSync(cursorFile, '2026-09-28T03:00:00.000Z\n');
     const { code, out } = await runList({ tokenFile: file, cursorFile, since: newer }, routesFor(queuePage([item(1)])));
     expect(code).toBe(0);
-    expect(out.join('\n')).toContain(`(no items newer than ${newer})`);
+    expect(out.join('\n')).toContain(`(nothing new; the window since ${new Date(Date.parse(newer) - 60 * 1000).toISOString()} was re-read)`);
     expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim())).toEqual({ at: newer, ids: [] });
   });
 
@@ -628,6 +652,253 @@ describe('list: paging, filter, cursor', () => {
     });
   });
 });
+
+  /**
+   * TASK-177's client half. A row is stamped from the writer's clock when the
+   * write happens and becomes visible only when it commits, so a row can carry a
+   * stamp BEFORE the cursor and still be absent from the response that wrote it —
+   * Wren's case C. The window is what makes it visible to the next tick without
+   * ever printing it twice.
+   */
+  test('a row stamped before the cursor but committed after it is printed once, by the next tick', async () => {
+    const file = writeTokenFile('late-commit-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'late-commit.cursor');
+    const stampedAt = Date.UTC(2026, 8, 28, 3, 10);
+    const a = item(1, { createdAt: new Date(stampedAt).toISOString() });
+    const b = item(2, {
+      createdAt: new Date(stampedAt - 31).toISOString(),
+      title: 'stamped before the cursor, committed after it',
+    });
+
+    const first = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([a])));
+    expect(first.code).toBe(0);
+    expect(first.out.join('\n')).not.toContain(`item=${b.attentionItemId}`);
+
+    const second = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([a, b])));
+    expect(second.code).toBe(0);
+    // The mechanism, asserted rather than inferred from the output: ONE queue
+    // request for the tick (the rate-limit motive), asking from W behind the
+    // cursor. Without that parameter the row below is invisible to the server.
+    const calls = second.fetchImpl.calls.filter((call) => call.url.includes('decision-queue'));
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0].url).searchParams.get('since'))
+      .toBe(new Date(stampedAt - 60 * 1000).toISOString());
+    const printed = second.out.filter((line) => line.startsWith('mention'));
+    expect(printed).toHaveLength(1);
+    expect(printed[0]).toContain(`item=${b.attentionItemId}`);
+
+    // And it stays printed once: the server keeps returning both rows inside the
+    // window, and only the id set stops them printing again.
+    const third = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([a, b])));
+    expect(third.code).toBe(0);
+    expect(third.out.join('\n')).not.toContain(`item=${b.attentionItemId}`);
+    expect(third.out.join('\n')).not.toContain(`item=${a.attentionItemId}`);
+  });
+
+  test('a bounded tick stops at the window, not at the whole-set count', async () => {
+    // On a bounded call `count` is the WHOLE open set and `windowCount` is the
+    // window, so a loop that stops on `count` pages past the window's end — which
+    // is the cost the parameter exists to remove.
+    const file = writeTokenFile('windowcount-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'windowcount.cursor');
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at: new Date(Date.UTC(2026, 8, 28, 3, 0)).toISOString(), ids: [] })}\n`);
+    // The second page is finite and ends the loop by itself: a stub that reports
+    // `hasMore: true` forever turns the mutation of this guard into an OOM instead
+    // of a failing assertion, and a ledger cannot read a crash as a kill.
+    let call = 0;
+    const page = () => {
+      call += 1;
+      return call === 1
+        ? jsonRes({
+          items: [item(1)], count: 500, windowCount: 1, hasMore: true, countsByKind: { mention: 500 },
+        })
+        : jsonRes({
+          items: [item(2)], count: 500, windowCount: 2, hasMore: false, countsByKind: { mention: 500 },
+        });
+    };
+    const { code, fetchImpl } = await runList({ tokenFile: file, cursorFile }, routesFor(page));
+    expect(code).toBe(0);
+    expect(fetchImpl.calls.filter((call2) => call2.url.includes('decision-queue'))).toHaveLength(1);
+  });
+
+  /**
+   * The id set covers the WHOLE window, not just the newest row in it. A window
+   * whose set stopped at the newest delivered id would re-print every older row
+   * inside it on the next tick — the alternating dedupe that makes a watcher's
+   * output unusable even though no row is ever lost.
+   */
+  test('every id delivered inside the window is remembered, not only the newest', async () => {
+    const file = writeTokenFile('wholeset-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'wholeset.cursor');
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at, ids: [] })}\n`);
+    const older = item(5, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const newer = item(6, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 40)).toISOString() });
+    const page = queuePage([older, newer]);
+
+    const first = await runList({ tokenFile: file, cursorFile }, routesFor(page));
+    expect(first.code).toBe(0);
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim())).toEqual({
+      at, ids: [older.attentionItemId, newer.attentionItemId],
+    });
+
+    // Second tick over the same window: both rows come back from the server and
+    // neither may print again.
+    const second = await runList({ tokenFile: file, cursorFile }, routesFor(page));
+    expect(second.code).toBe(0);
+    expect(second.out.join('\n')).not.toContain(`item=${older.attentionItemId}`);
+    expect(second.out.join('\n')).not.toContain(`item=${newer.attentionItemId}`);
+  });
+
+  /**
+   * The cursor's stamp is a HIGH-WATER MARK. A row printed from inside the window
+   * is older than the mark that delimited that window, and if it were allowed to
+   * pull the mark back, the next read's `since` would move back with it — the read
+   * would reopen ground it had already covered, and the prune cutoff that bounds
+   * the id set would move too.
+   */
+  test('a row printed from inside the window cannot pull the cursor stamp back', async () => {
+    const file = writeTokenFile('highwater-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'highwater.cursor');
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at, ids: [] })}\n`);
+    const behind = item(4, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const { code, out } = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([behind])));
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain(`item=${behind.attentionItemId}`);
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim()))
+      .toEqual({ at, ids: [behind.attentionItemId] });
+  });
+
+  test('--window 0 is the exact cursor: nothing behind it is re-read', async () => {
+    const file = writeTokenFile('window0-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'window0.cursor');
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at, ids: [item(9).attentionItemId] })}\n`);
+    const behind = item(3, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const { code, out, fetchImpl } = await runList(
+      { tokenFile: file, cursorFile, window: '0' },
+      routesFor(queuePage([behind])),
+    );
+    expect(code).toBe(0);
+    expect(out.join('\n')).not.toContain(`item=${behind.attentionItemId}`);
+    const url = fetchImpl.calls.find((call) => call.url.includes('decision-queue')).url;
+    expect(new URL(url).searchParams.get('since')).toBe(at);
+  });
+
+  test('a row behind the window is not returned, and one inside it is', async () => {
+    const file = writeTokenFile('behind-window-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'behind-window.cursor');
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at, ids: [] })}\n`);
+    // One read, two rows: 03:09:30 is inside the default 60s window, 03:07:00 is
+    // behind it. Without the second row the window arms pass on a lookback that
+    // simply fetches everything, which is the thing the bound exists to stop.
+    const inside = item(0, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const behind = item(0, {
+      id: hex(101),
+      attentionItemId: hex(301),
+      createdAt: new Date(Date.UTC(2026, 8, 28, 3, 7)).toISOString(),
+    });
+    const { code, out, fetchImpl } = await runList(
+      { tokenFile: file, cursorFile },
+      routesFor(queuePage([inside, behind])),
+    );
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain(`item=${inside.attentionItemId}`);
+    expect(out.join('\n')).not.toContain(`item=${behind.attentionItemId}`);
+    // And the bound is what the server is ASKED for: the local filter is the second
+    // line of defence, not the mechanism.
+    const url = fetchImpl.calls.find((call) => call.url.includes('decision-queue')).url;
+    expect(new URL(url).searchParams.get('since'))
+      .toBe(new Date(Date.parse(at) - 60 * 1000).toISOString());
+    // And only the row inside the window enters the id set: the stamp stays at the
+    // cursor it came in at, and the row behind the window is neither printed nor
+    // remembered. (An id set that kept every row it was shown would grow without
+    // bound and would suppress rows the next window will never re-serve.)
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim()))
+      .toEqual({ at, ids: [inside.attentionItemId] });
+  });
+
+  test('an overflowing window is paged to the end: page one would strand its oldest rows', async () => {
+    const file = writeTokenFile('overflow-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'overflow.cursor');
+    fs.writeFileSync(cursorFile, `${JSON.stringify({
+      at: new Date(Date.UTC(2026, 8, 28, 3, 0)).toISOString(), ids: [],
+    })}\n`);
+
+    // The route pages priority-then-newest, so page 1 is the NEWEST 50 rows and the
+    // 5 oldest sit on page 2. They are inside THIS window (the cursor is ten minutes
+    // old) but behind the window the tick's own mark will write, so a tick that stops
+    // after page 1 never prints them — not now, and not on any later tick, because
+    // the cursor it writes moves `since` past them. That is the loss (Wren, 75183);
+    // it is why the loop is bounded by `hasMore` and not by a page count.
+    const pageOne = [];
+    for (let i = 0; i < 50; i += 1) {
+      pageOne.push(item(0, {
+        id: hex(1000 + i),
+        attentionItemId: hex(2000 + i),
+        createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 59 - i)).toISOString(),
+      }));
+    }
+    const pageTwo = [];
+    for (let i = 0; i < 5; i += 1) {
+      pageTwo.push(item(0, {
+        id: hex(3000 + i),
+        attentionItemId: hex(4000 + i),
+        createdAt: new Date(Date.UTC(2026, 8, 28, 2, 59, 24 - i)).toISOString(),
+      }));
+    }
+    // A server-faithful page: it answers for the window it was ASKED for, so the
+    // second tick is served the way the real route would serve it.
+    const windowPage = (url) => {
+      const since = new URL(url).searchParams.get('since');
+      const offset = Number(new URL(url).searchParams.get('offset'));
+      const all = [...pageOne, ...pageTwo]
+        .filter((row) => !since || Date.parse(row.createdAt) >= Date.parse(since));
+      const items = all.slice(offset, offset + 50);
+      return jsonRes({
+        items,
+        count: 550,
+        windowCount: all.length,
+        hasMore: offset + items.length < all.length,
+        countsByKind: { mention: 550 },
+      });
+    };
+
+    const first = await runList({ tokenFile: file, cursorFile }, routesFor(windowPage));
+    expect(first.code).toBe(0);
+    expect(first.out.filter((line) => line.startsWith('mention'))).toHaveLength(55);
+    expect(first.out.join('\n')).toContain(`item=${pageTwo[0].attentionItemId}`);
+    // Two requests, not one, and the mark is the newest row across both pages.
+    expect(first.fetchImpl.calls.filter((call) => call.url.includes('decision-queue'))).toHaveLength(2);
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim())).toEqual({
+      at: pageOne[0].createdAt,
+      ids: pageOne.map((row) => row.attentionItemId),
+    });
+
+    // The state of the world the paging produced: the next window starts at the
+    // mark minus W, which is later than every page-2 row, so they are not re-served
+    // and nothing prints. Had page 2 been skipped they would be behind it forever.
+    const second = await runList({ tokenFile: file, cursorFile }, routesFor(windowPage));
+    expect(second.code).toBe(0);
+    expect(second.out.filter((line) => line.startsWith('mention'))).toHaveLength(0);
+  });
+
+  test('a bad --window refuses by name before any request', async () => {
+    const file = writeTokenFile('bad-window-token', 't\n');
+    const bad = ['later', '-5'];
+    const results = [];
+    for (const value of bad) {
+      // eslint-disable-next-line no-await-in-loop
+      results.push([value, await runList({ tokenFile: file, window: value }, routesFor(queuePage([])))]);
+    }
+    for (const [value, result] of results) {
+      expect(result.code).toBe(1);
+      expect(result.err.join('\n')).toContain(`--window must be a number of seconds >= 0, not ${value}.`);
+      expect(result.fetchImpl).not.toHaveBeenCalled();
+    }
+  });
 
 describe('ack and choose', () => {
   test('ack posts the attentionItemId with the file token', async () => {
@@ -743,6 +1014,18 @@ describe('item line and pure helpers', () => {
 
     const sameMs = nextCursorFrom([x, y], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
     expect(sameMs.ids.sort()).toEqual([x.attentionItemId, y.attentionItemId, 'earlier'].sort());
+  });
+
+  test('the marker it returns is the marker its own file re-reads as', () => {
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    const given = { at, ms: Date.parse(at), ids: [] };
+    const behind = item(0, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const next = nextCursorFrom([behind], given);
+    // `at` is the high-water mark, so `ms` has to be that same instant. The file
+    // keeps only `at`, so a returned `ms` lagging it would make the in-process
+    // object disagree with the cursor its own write produces.
+    expect(next.ms).toBe(Date.parse(next.at));
+    expect(parseCursor(formatCursor(next))).toEqual(next);
   });
 
   test('parseCursor takes both shapes and refuses a malformed one by name', () => {
