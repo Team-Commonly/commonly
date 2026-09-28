@@ -425,12 +425,15 @@ describe('attentionItemService', () => {
   });
 
   it('acknowledges only recipient-owned mentions and handoffs, never decisions or approvals', async () => {
-    await AttentionItemService.acknowledgeMention('sam', '507f191e810c19729de860eb');
+    // The recipient is a real ObjectId, not a placeholder: `acknowledgeAttention`
+    // refuses a caller id it cannot cast BEFORE it reaches the update, and the
+    // subject of this arm is the `$or` selector, not the spelling of the id.
+    await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
 
     const selector = mockUpdateOne.mock.calls.at(-1)[0];
     expect(selector).toEqual({
       _id: '507f191e810c19729de860eb',
-      recipientUserId: 'sam',
+      recipientUserId: '507f191e810c19729de860ea',
       status: 'open',
       $or: [
         { kind: 'mention' },
