@@ -300,12 +300,16 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
     {
       $set: {
         status: 'connected',
-        credentialRef,
-        refreshTokenRef,
-        refreshGeneration: 0,
-        grantedScope: tokens.scope || entry.scopes.join(' '),
-        expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
-        providerSubject,
+        // Every one of these is a `config.*` path: `config` is a STRICT
+        // subdocument, so an unprefixed `credentialRef` is dropped in silence
+        // and this handler reports a Connection whose row holds no token (see
+        // the model's note, and the arm that now reads the schema).
+        'config.credentialRef': credentialRef,
+        'config.refreshTokenRef': refreshTokenRef,
+        'config.refreshGeneration': 0,
+        'config.grantedScope': tokens.scope || entry.scopes.join(' '),
+        'config.expiresAt': tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        'config.providerSubject': providerSubject,
         revokedAt: null,
         errorMessage: null,
       },

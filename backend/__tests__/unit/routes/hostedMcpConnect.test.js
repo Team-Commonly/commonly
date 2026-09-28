@@ -45,6 +45,7 @@ const express = require('express');
 
 const connectRoutes = require('../../../routes/hostedMcpConnect');
 const Integration = require('../../../models/Integration');
+const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
 
 const app = express();
@@ -154,6 +155,12 @@ describe('hosted-mcp connect: start', () => {
       'config.entryId': 'linear',
     });
     expect(update.$set['config.intake']).toBe('oauth');
+    // The same declaration check the callback arm makes: `config` is a strict
+    // subdocument, so a key named here but not declared is dropped in silence
+    // and leaves a row nobody can find (or a state nothing can spend).
+    const Deployed = jest.requireActual('../../../models/Integration').default;
+    const written = [...Object.keys(update.$set), ...Object.keys(update.$setOnInsert)];
+    expect(undeclaredPaths(Deployed.schema, written)).toEqual([]);
   });
 
   it('discovers the entry\'s own issuer, not a literal', async () => {

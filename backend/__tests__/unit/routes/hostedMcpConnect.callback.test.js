@@ -58,6 +58,7 @@ const connectRoutes = require('../../../routes/hostedMcpConnect');
 const Integration = require('../../../models/Integration');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { revokeConnectionGrants } = require('../../../services/roomGrantService');
+const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
 
 const app = express();
@@ -151,14 +152,21 @@ describe('hosted-mcp connect: callback', () => {
     const [, update] = Integration.findOneAndUpdate.mock.calls[1];
     expect(update.$set).toMatchObject({
       status: 'connected',
-      credentialRef: 'ref-access',
-      refreshTokenRef: 'ref-refresh',
-      grantedScope: 'read',
-      providerSubject: 'acct-1',
-      refreshGeneration: 0,
-      expiresAt: expect.any(Date),
+      'config.credentialRef': 'ref-access',
+      'config.refreshTokenRef': 'ref-refresh',
+      'config.grantedScope': 'read',
+      'config.providerSubject': 'acct-1',
+      'config.refreshGeneration': 0,
+      'config.expiresAt': expect.any(Date),
     });
-    const committedExpiry = new Date(update.$set.expiresAt).getTime();
+    // Every path this write names must be DECLARED. `config` is a strict
+    // subdocument, so an unprefixed `credentialRef` matches nothing above and is
+    // dropped by the real schema in silence: the row would come back `connected`
+    // holding no token, and this mock would never say so. Measured against a
+    // real mongod before this arm existed — all six `config.*` fields vanished.
+    const Deployed = jest.requireActual('../../../models/Integration').default;
+    expect(undeclaredPaths(Deployed.schema, Object.keys(update.$set))).toEqual([]);
+    const committedExpiry = new Date(update.$set['config.expiresAt']).getTime();
     // `expires_in` is seconds, and a reader that treated it as milliseconds
     // would show this credential as long expired.
     expect(committedExpiry).toBeGreaterThan(Date.now() + 59 * 60 * 1000);
