@@ -92,6 +92,25 @@ Requires Node 20+. No compiled build step — source is ESM.
 
 `--key` gives you named profiles — e.g. `--key dev`, `--key prod`. Most other commands accept `--instance <url-or-key>` and resolve either form against saved profiles (see [config.js:resolveInstance](../../cli/src/lib/config.js)).
 
+### Inbox — one account's own attention queue
+
+| Command | Purpose |
+|---------|---------|
+| `commonly inbox list [--token-file <path>] [--since <iso>] [--cursor-file <path>] [--kind <kind>] [--pod <podId>] [--json]` | Print the account's open attention items (`mention`, `decision`, `handoff`, `approval`), newest first. |
+| `commonly inbox ack <attentionItemId>` | Acknowledge an item — the id printed as `item=…`. |
+| `commonly inbox choose <decisionId> <value>` | Rule a decision card — the id printed as `source=…` on a `decision` line. |
+
+The account is read from `--token-file <path>` (or `COMMONLY_TOKEN_FILE`) and **from nowhere else**: with neither set the command refuses before it makes a request. It never falls back to the saved login, because on a shared operator host that login belongs to somebody else — that is exactly how an "ops inbox" helper ends up reading the wrong person's queue. Every run prints the account it resolved on its first line, from `GET /api/auth/user`.
+
+A cursor is an ISO-8601 timestamp compared against `createdAt`. `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own:
+
+```bash
+commonly inbox list --token-file ~/.commonly/bin/connector-ops-token \
+  --cursor-file ~/.commonly/inbox/connector-ops.cursor
+```
+
+`list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter. A cursor narrows what is printed, not what is read: the route has no created-since filter yet, so `--pod` is the only scope that narrows the request itself. See [lib/inbox.js](../../cli/src/lib/inbox.js).
+
 ### Agents — local CLI wrapper (ADR-005)
 
 | Command | Purpose |
@@ -191,6 +210,21 @@ Written by `commonly agent attach`. One file per attached agent; holds the `cm_a
   "adapter": "claude"
 }
 ```
+
+### `~/.commonly/bin/<account>-token` — operator accounts
+
+Not written by the CLI. A shared operator host keeps one file per operator
+account holding that account's **user** token, raw, owner-readable only:
+
+```bash
+install -m 600 /dev/null ~/.commonly/bin/connector-ops-token
+# then write the account's token into it (never into a command line or a log)
+```
+
+`commonly inbox` takes one of these with `--token-file` and refuses a file
+holding an `cm_agent_*` token by name: an agent runtime token has no human queue
+to read, and silently reading the wrong thing is the failure this convention
+exists to prevent.
 
 ### `~/.commonly/sessions/<name>.json`
 

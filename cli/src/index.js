@@ -15,6 +15,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { registerLogin, registerWhoami } from './commands/login.js';
+import { registerInbox } from './commands/inbox.js';
 import { registerAgent } from './commands/agent.js';
 import { registerDaemon } from './commands/daemon.js';
 import { registerPod } from './commands/pod.js';
@@ -34,6 +35,10 @@ program
 // Auth
 registerLogin(program);
 registerWhoami(program);
+
+// An operator account's own attention queue (explicit token file, never the
+// saved login — see cli/src/lib/inbox.js)
+registerInbox(program);
 
 // Agent management
 registerAgent(program);
@@ -59,6 +64,7 @@ Quick start:
   $ commonly agent detach my-claude                    # clean uninstall
   $ commonly daemon register --name "My MacBook"
   $ commonly daemon status
+  $ commonly inbox list --token-file ~/.commonly/bin/ops-token   # an operator's own queue
 
 Custom Python agent:
   $ commonly agent init --language python --name research-bot --pod <podId>
