@@ -1413,7 +1413,7 @@
       "podRequired": "请选择要安装到的 Pod。",
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
-      "fileTooLarge": "该文件超过256KB 的导入上限——请精简，或只粘贴相关部分。",
+      "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。",
       "hostedCap": "你已有一个托管智能体（测试期允许{{cap}}个）。如需更多，请自带运行时。",
       "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",

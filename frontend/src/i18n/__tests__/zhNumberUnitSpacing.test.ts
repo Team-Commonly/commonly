@@ -48,10 +48,17 @@ const OPAQUE_PLACEHOLDERS = [
 // a name list in the inspector, so it cannot be declared for the catalog as a whole.
 const NUMERAL_BY_KEY: Array<[string, string]> = [['yourTeam.head.meta', 'agents']];
 
-// A digit is this rule's numeral only when it stands alone. `Apache-2.0 许可` and
-// `D1 回访` keep their space: the digits belong to a Latin token there, and the
-// ruling keeps the space wherever hanzi meets a Latin word or unit.
+// A digit is this rule's numeral only when it stands alone, and that is a question
+// about the TOKEN the digit sits inside, so it has two halves. `Apache-2.0 许可` and
+// `D1 回访` keep their space because a Latin letter precedes the digits;
+// `该文件超过 256KB` keeps it because a Latin unit FOLLOWS them. The ruling keeps the
+// space wherever hanzi meets a Latin word or unit, and `256KB` is a Latin unit. The
+// trailing half was found by sprint-review's gate at c66396a5 — the first cut of this
+// guard tested only the preceding character, so it mandated 「超过256KB」 while
+// mandating 「256KB 的」 four characters later. Measured: 1 instance in the catalog,
+// and it was spaced before this sweep touched it.
 const INSIDE_LATIN_TOKEN = /[A-Za-z0-9._-]/;
+const LATIN_FOLLOWS_DIGITS = /[A-Za-z]/;
 
 const UNITS = ['分钟', '小时', '个月', '天', '周', '月', '年', '秒'];
 const AMOUNT = String.raw`(?:\d+|\{\{[a-zA-Z]+\}\})`;
@@ -69,30 +76,41 @@ const zhValues = flatten(JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'locales', 'zh-CN.json'), 'utf8'),
 ));
 
-type Boundary = { side: 'before' | 'after'; insertion: string; precededBy: string };
+type Boundary = { side: 'before' | 'after'; insertion: string; precededBy: string; followedBy: string };
 
 // Every place a numeral is separated from a hanzi by spaces. Both sides are
-// collected and each carries the insertion's name and the character in front of
-// it, because `2.0` and `Apache-2.0` are the same digits with different answers.
+// collected and each carries the insertion's name and the characters on either side
+// of it, because `2.0`, `Apache-2.0` and `256KB` are the same digits with different
+// answers.
 const boundaryEvents = (value: string): Boundary[] => {
   const events: Boundary[] = [];
   const numeral = String.raw`(?:\d[\d,.]*|\{\{[a-zA-Z]+\}\})`;
   const name = (token: string) => (token.startsWith('{{') ? token.slice(2, -2) : 'DIGIT');
   for (const match of value.matchAll(new RegExp(`([\\u4e00-\\u9fff]) +(?=(${numeral}))`, 'g'))) {
-    events.push({ side: 'after', insertion: name(match[2]), precededBy: match[1] });
+    // The numeral is a lookahead, so it is not in match[0]: it starts where the
+    // match ends and the character after it is what says whether it is a token.
+    const end = match.index + match[0].length + match[2].length;
+    events.push({
+      side: 'after', insertion: name(match[2]), precededBy: match[1], followedBy: value[end] || '',
+    });
   }
   for (const match of value.matchAll(new RegExp(`(${numeral}) +(?=[\\u4e00-\\u9fff])`, 'g'))) {
+    const end = match.index + match[1].length;
     events.push({
       side: 'before',
       insertion: name(match[1]),
       precededBy: match.index === undefined ? '' : value[match.index - 1] || '',
+      followedBy: value[end] || '',
     });
   }
   return events;
 };
 
 const isNumeral = (key: string, event: Boundary): boolean => {
-  if (event.insertion === 'DIGIT') return !INSIDE_LATIN_TOKEN.test(event.precededBy);
+  if (event.insertion === 'DIGIT') {
+    return !INSIDE_LATIN_TOKEN.test(event.precededBy)
+      && !LATIN_FOLLOWS_DIGITS.test(event.followedBy);
+  }
   if (NUMERAL_BY_KEY.some(([prefix, placeholder]) => key.startsWith(prefix) && placeholder === event.insertion)) return true;
   return NUMERAL_PLACEHOLDERS.includes(event.insertion);
 };
@@ -140,11 +158,33 @@ describe('zh-CN number and unit spacing', () => {
     // "delete every space": 242 values space a hanzi↔Latin boundary and 0 do not,
     // so it is pinnable. It is also the reason {{age}} and {{time}} are exempt —
     // a formatter's duration is not a bare numeral.
-    const latin = '[A-Za-z]{2,}';
-    const unspaced = new RegExp(`[\\u4e00-\\u9fff](?=${latin})|(?<=${latin})[\\u4e00-\\u9fff]`);
-    const spaced = new RegExp(`[\\u4e00-\\u9fff] +(?=${latin})|(?<=${latin}) +[\\u4e00-\\u9fff]`);
-    expect(zhValues.filter(([, value]) => unspaced.test(value)).map(([key]) => key)).toEqual([]);
-    expect(zhValues.filter(([, value]) => spaced.test(value)).length).toBeGreaterThan(200);
+    //
+    // The Latin side is TWO classes, and the second one is the half this test was
+    // blind to until c66396a5: a Latin word (`GitHub`) and a Latin unit (`256KB`) —
+    // the second begins with digits, so a `[A-Za-z]{2,}` predicate cannot see it.
+    // Measured on this catalog: 218 + 147 letter-led, 1 + 1 digit-led, 0 unspaced in
+    // every arm.
+    const letterLed = '[A-Za-z]{2,}';
+    const digitLed = '\\d[\\d,.]*[A-Za-z][A-Za-z0-9]*';
+    // Each class carries its OWN probe, because a single hand-written pair cannot
+    // exercise both predicates: the letter-led regex cannot match `256KB` at all, so
+    // using it as the probe for both arms reports the digit-led half as blind.
+    for (const [latin, probe] of [[letterLed, 'GitHub'], [digitLed, '256KB']]) {
+      const unspaced = new RegExp(`[\\u4e00-\\u9fff](?=${latin})|(?<=${latin})[\\u4e00-\\u9fff]`);
+      const spaced = new RegExp(`[\\u4e00-\\u9fff] +(?=${latin})|(?<=${latin}) +[\\u4e00-\\u9fff]`);
+      expect(zhValues.filter(([, value]) => unspaced.test(value)).map(([key]) => key)).toEqual([]);
+      // Non-vacuity, per class and per direction: each predicate has to find its own
+      // shape, or the assertion above is satisfied by a regex that matches nothing.
+      expect(unspaced.test(`超过${probe}`)).toBe(true);
+      expect(unspaced.test(`超过 ${probe}`)).toBe(false);
+      expect(spaced.test(`超过 ${probe}`)).toBe(true);
+      expect(spaced.test(`${probe} 的导入上限`)).toBe(true);
+      expect(zhValues.filter(([, value]) => spaced.test(value)).length).toBeGreaterThan(0);
+    }
+    // and the catalog still holds whole classes of both, so a green run means "none
+    // left" rather than "nothing scanned".
+    const anyLatin = new RegExp(`[\\u4e00-\\u9fff] +(?=${letterLed}|${digitLed})`);
+    expect(zhValues.filter(([, value]) => anyLatin.test(value)).length).toBeGreaterThan(200);
   });
 
   it('is not green because the detector matches nothing', () => {
@@ -170,6 +210,14 @@ describe('zh-CN number and unit spacing', () => {
     expect(found('yourTeam.head.meta', '{{agents}} 个智能体 · {{working}} 个工作中')).toBe(2);
     expect(found('landing.footer.copyright', '代码采用 Apache-2.0 许可')).toBe(0);
     expect(found('adminAnalytics.funnel.table.returnedD1', 'D1 回访')).toBe(0);
+    // The trailing half of the same rule, and the value it was found on: `KB` is a
+    // Latin unit, so the digits are not a numeral and the space stays. Without this
+    // the guard mandates a two-convention string (「超过256KB 的」) and reds anyone who
+    // fixes it.
+    expect(found('agentByo.errors.fileTooLarge', '该文件超过 256KB 的导入上限——请精简。')).toBe(0);
+    // and the mirror, so the arm above cannot pass by suppressing the detector: a
+    // numeral whose unit IS hanzi still closes.
+    expect(found('billing.freeNote', '保留 30天')).toBe(1);
     expect(found('auth.reset.errors.tooShort', '密码至少需要 8 个字符。')).toBe(2);
     // and the catalog still holds events on both sides for the detectors to find, so
     // a green run means "none left" rather than "nothing scanned".
