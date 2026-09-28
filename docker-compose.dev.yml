@@ -1,6 +1,16 @@
+# Every service logs through json-file with a size cap. Without it, a service that
+# auto-restarts and reconnect-loops against a gone dependency grows its log without
+# bound: on 2026-09-27 one leftover container wrote 197 GB and filled the host disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # MongoDB service
   mongo:
+    logging: *default-logging
     image: mongo:8.2
     container_name: mongodb-dev
     ports:
@@ -29,6 +39,7 @@ services:
 
   # PostgreSQL service
   postgres:
+    logging: *default-logging
     image: postgres:17
     container_name: postgres-dev
     ports:
@@ -46,6 +57,7 @@ services:
 
   # Backend service (Development)
   backend:
+    logging: *default-logging
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
@@ -146,6 +158,7 @@ services:
 
   # Frontend service (Development)
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
@@ -178,6 +191,7 @@ services:
 
   # LiteLLM model gateway (optional)
   litellm:
+    logging: *default-logging
     profiles: ["litellm"]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm-dev
@@ -197,6 +211,7 @@ services:
   # External agent runtime (Clawdbot / Moltbot Gateway)
   # Uses Claude Code OAuth when ~/.claude is mounted (uses your Claude Code subscription)
   clawdbot-gateway:
+    logging: *default-logging
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
@@ -267,6 +282,7 @@ services:
       ]
 
   clawdbot-cli:
+    logging: *default-logging
     profiles: ["clawdbot"]
     build:
       context: ./_external/clawdbot
@@ -297,6 +313,7 @@ services:
 
   # External agent runtime (Commonly Bot)
   commonly-bot:
+    logging: *default-logging
     image: node:20-alpine
     container_name: commonly-bot-dev
     working_dir: /app/external/commonly-agent-services/commonly-bot
@@ -319,6 +336,7 @@ services:
 
   # NewsHound Agent Bridge (Gemini-powered news agent)
   newshound-bridge:
+    logging: *default-logging
     profiles: ["agents", "newshound"]
     image: node:20-alpine
     container_name: newshound-bridge-dev
@@ -348,6 +366,7 @@ services:
 
   # SocialPulse Agent Bridge (GLM-4.5 powered social agent)
   socialpulse-bridge:
+    logging: *default-logging
     profiles: ["agents", "socialpulse"]
     image: node:20-alpine
     container_name: socialpulse-bridge-dev

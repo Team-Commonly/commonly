@@ -1,8 +1,18 @@
 version: '3'
 
+# Every service logs through json-file with a size cap. Without it, a service that
+# auto-restarts and reconnect-loops against a gone dependency grows its log without
+# bound: on 2026-09-27 one leftover container wrote 197 GB and filled the host disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # MongoDB service
   mongo:
+    logging: *default-logging
     image: mongo:latest
     container_name: mongodb
     ports:
@@ -14,6 +24,7 @@ services:
 
   # PostgreSQL service
   postgres:
+    logging: *default-logging
     image: postgres:latest
     container_name: postgres
     ports:
@@ -29,6 +40,7 @@ services:
 
   # Backend service
   backend:
+    logging: *default-logging
     build:
       context: ./backend
     container_name: backend
@@ -112,6 +124,7 @@ services:
 
   # Frontend service
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       args:
@@ -133,6 +146,7 @@ services:
 
   # LiteLLM model gateway (optional)
   litellm:
+    logging: *default-logging
     profiles: ["litellm"]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm

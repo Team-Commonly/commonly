@@ -8,8 +8,18 @@
 # This profile binds the app to localhost-oriented URLs; do not use it as a
 # public-domain/TLS deployment.
 
+# Every service logs through json-file with a size cap. Without it, a service that
+# auto-restarts and reconnect-loops against a gone dependency grows its log without
+# bound: on 2026-09-27 one leftover container wrote 197 GB and filled the host disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   mongo:
+    logging: *default-logging
     image: mongo:7
     container_name: commonly-mongo
     restart: unless-stopped
@@ -24,6 +34,7 @@ services:
       retries: 5
 
   backend:
+    logging: *default-logging
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -70,6 +81,7 @@ services:
       - commonly
 
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       dockerfile: Dockerfile
