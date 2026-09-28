@@ -194,7 +194,10 @@ test('TASK-164: the grant, budget and trail times read in zh-CN, not English', a
     const aside = await screen.findByRole('complementary');
     expect(within(aside).getByText(/前由 sam 授权。/)).toBeInTheDocument();
     expect(within(aside).getByText(/后结束。/)).toBeInTheDocument();
-    expect(within(aside).getByText(/每 1小时可调用 50 次/)).toBeInTheDocument();
+    // lily-shen's TASK-180 ruling names this key explicitly — 「每{{window}}可调用
+    // {{calls}}次」 — so the budget line loses both of its spaces. This assertion
+    // pinned the old spacing, which is why it had to move with the ruling.
+    expect(within(aside).getByText(/每1小时可调用50次/)).toBeInTheDocument();
     await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
     const lines = within(aside).getAllByRole('listitem');
     expect(lines.map((line) => line.textContent)).toEqual([
@@ -242,7 +245,9 @@ test('TASK-179: the grant line is one sentence per language, and an empty audien
     const rowSaying = (text: string) => rows().find((row) => row.textContent?.includes(text)) as HTMLElement;
     expect(rowSaying('Launch pod').querySelector('strong')?.textContent).toBe('由 sam 授权给 Launch pod');
     // The audience keeps its space before a Latin name, and loses it when there
-    // is no audience at all — which is why the empty case is a separate key.
+    // is no audience at all — which is why the empty case is a separate key. This
+    // is also the assertion that caught the first cut of TASK-180, where `agents`
+    // was declared a numeral by name and closed the space before the audience.
     expect(rowSaying('Launch pod').textContent).toContain('Scout 可以使用');
     expect(rowSaying('Ops').textContent).toContain('没有智能体可以使用');
     // The separator key is zh-empty: two sentences that each end in 。 join with
