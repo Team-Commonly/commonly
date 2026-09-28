@@ -75,8 +75,16 @@ const callback = (query = 'state=st-1&code=code-1') => (
   request(app).get(`/connect/hosted-mcp/linear/callback?${query}`)
 );
 
-/** A row as the database would hand it back on a reconnect. */
-const storedRow = (overrides = {}) => ({
+/**
+ * A row as the database would hand it back on a reconnect.
+ *
+ * The argument is a set of `config` fields, because that is where the
+ * credential half actually lives: `config` is a strict subdocument, and a
+ * fixture that spread `credentialRef` across the top level would let the
+ * handler read the wrong shape and still look green (measured 2026-09-28 —
+ * the same class of miss as the unprefixed `$set` beside it).
+ */
+const storedRow = (config = {}) => ({
   _id: 'row-1',
   createdBy: 'user-1',
   config: {
@@ -86,8 +94,8 @@ const storedRow = (overrides = {}) => ({
       codeVerifier: 'verifier-1',
       expiresAt: new Date(Date.now() + 60 * 1000),
     },
+    ...config,
   },
-  ...overrides,
 });
 
 const okTokenResponse = {
@@ -186,13 +194,10 @@ describe('hosted-mcp connect: callback', () => {
 
   it('refuses a state whose nonce has expired, before it claims anything', async () => {
     Integration.findOne.mockResolvedValue(storedRow({
-      config: {
-        entryId: 'linear',
-        pendingAuth: {
-          state: 'st-1',
-          codeVerifier: 'verifier-1',
-          expiresAt: new Date(Date.now() - 1000),
-        },
+      pendingAuth: {
+        state: 'st-1',
+        codeVerifier: 'verifier-1',
+        expiresAt: new Date(Date.now() - 1000),
       },
     }));
     const res = await callback();
@@ -212,6 +217,14 @@ describe('hosted-mcp connect: callback', () => {
     expect(update.$unset).toEqual({ 'config.pendingAuth': 1 });
     expect(options.new).toBe(false);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts a callback that carries no iss at all, because RFC 9207 is optional', async () => {
+    // The arm below refuses a DIFFERENT issuer. Without this one, a handler that
+    // demanded the parameter would look green: every other callback arm happens
+    // to be caught as collateral, none of them NAMES the rule.
+    const res = await callback('state=st-1&code=code-1');
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
   });
 
   it('refuses an iss that is not the entry\'s issuer', async () => {
@@ -288,7 +301,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(outcome(res).hostedMcp).toBe('connected');
     expect(connectorSecrets.revoke).toHaveBeenCalledWith('ref-old-refresh');
     const [, update] = Integration.findOneAndUpdate.mock.calls[1];
-    expect(update.$set.refreshTokenRef).toBeUndefined();
+    expect(update.$set['config.refreshTokenRef']).toBe(null);
   });
 
   it('refuses a callback carrying no state at all, before it looks for a row', async () => {

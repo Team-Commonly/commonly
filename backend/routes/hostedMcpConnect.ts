@@ -271,20 +271,24 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
   }
 
   const owner = String(consumed.createdBy);
-  const previousSubject = consumed.providerSubject || undefined;
+  // The credential half of the row lives under `config` (a strict
+  // subdocument), so a top-level read is `undefined` on every real row: the
+  // account-change rule would never fire and the retired refresh token would
+  // never be dropped. The arms below read the same shape.
+  const previousSubject = consumed.config?.providerSubject || undefined;
   const providerSubject = idTokenSubject(tokens.id_token);
   // §2: a grant was made against the reach of the account connected at the
   // time, and the row's `createdAt` survives a reconnect, so the broker's
   // TASK-148 guard cannot see this one. An unknowable subject revokes too —
   // assuming the account is unchanged is the assumption that costs the most.
-  const accountChanged = Boolean(consumed.credentialRef)
+  const accountChanged = Boolean(consumed.config?.credentialRef)
     && (!providerSubject || !previousSubject || providerSubject !== previousSubject);
   if (accountChanged) {
     await revokeConnectionGrants({ connection: consumed, revokedBy: owner });
   }
 
   const credentialRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token);
-  let refreshTokenRef = consumed.refreshTokenRef || undefined;
+  let refreshTokenRef = consumed.config?.refreshTokenRef || undefined;
   if (tokens.refresh_token) {
     refreshTokenRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token);
   } else if (refreshTokenRef) {
@@ -305,7 +309,7 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
         // and this handler reports a Connection whose row holds no token (see
         // the model's note, and the arm that now reads the schema).
         'config.credentialRef': credentialRef,
-        'config.refreshTokenRef': refreshTokenRef,
+        'config.refreshTokenRef': refreshTokenRef || null,
         'config.refreshGeneration': 0,
         'config.grantedScope': tokens.scope || entry.scopes.join(' '),
         'config.expiresAt': tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
