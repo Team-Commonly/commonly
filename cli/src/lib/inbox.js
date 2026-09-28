@@ -318,7 +318,7 @@ export const nextCursorFrom = (items, fallback = null, kind = null, windowMs = D
   // query that just ran, and a mismatch with the file's own kind is what the
   // command refuses on before it makes a request.
   return {
-    at, ms: max, ids: [...new Set([...carried, ...inWindow])], kind: kind || null,
+    at, ms: mark, ids: [...new Set([...carried, ...inWindow])], kind: kind || null,
   };
 };
 

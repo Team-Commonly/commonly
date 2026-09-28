@@ -786,6 +786,105 @@ describe('list: paging, filter, cursor', () => {
     expect(new URL(url).searchParams.get('since')).toBe(at);
   });
 
+  test('a row behind the window is not returned, and one inside it is', async () => {
+    const file = writeTokenFile('behind-window-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'behind-window.cursor');
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    fs.writeFileSync(cursorFile, `${JSON.stringify({ at, ids: [] })}\n`);
+    // One read, two rows: 03:09:30 is inside the default 60s window, 03:07:00 is
+    // behind it. Without the second row the window arms pass on a lookback that
+    // simply fetches everything, which is the thing the bound exists to stop.
+    const inside = item(0, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const behind = item(0, {
+      id: hex(101),
+      attentionItemId: hex(301),
+      createdAt: new Date(Date.UTC(2026, 8, 28, 3, 7)).toISOString(),
+    });
+    const { code, out, fetchImpl } = await runList(
+      { tokenFile: file, cursorFile },
+      routesFor(queuePage([inside, behind])),
+    );
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain(`item=${inside.attentionItemId}`);
+    expect(out.join('\n')).not.toContain(`item=${behind.attentionItemId}`);
+    // And the bound is what the server is ASKED for: the local filter is the second
+    // line of defence, not the mechanism.
+    const url = fetchImpl.calls.find((call) => call.url.includes('decision-queue')).url;
+    expect(new URL(url).searchParams.get('since'))
+      .toBe(new Date(Date.parse(at) - 60 * 1000).toISOString());
+    // And only the row inside the window enters the id set: the stamp stays at the
+    // cursor it came in at, and the row behind the window is neither printed nor
+    // remembered. (An id set that kept every row it was shown would grow without
+    // bound and would suppress rows the next window will never re-serve.)
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim()))
+      .toEqual({ at, ids: [inside.attentionItemId] });
+  });
+
+  test('an overflowing window is paged to the end: page one would strand its oldest rows', async () => {
+    const file = writeTokenFile('overflow-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'overflow.cursor');
+    fs.writeFileSync(cursorFile, `${JSON.stringify({
+      at: new Date(Date.UTC(2026, 8, 28, 3, 0)).toISOString(), ids: [],
+    })}\n`);
+
+    // The route pages priority-then-newest, so page 1 is the NEWEST 50 rows and the
+    // 5 oldest sit on page 2. They are inside THIS window (the cursor is ten minutes
+    // old) but behind the window the tick's own mark will write, so a tick that stops
+    // after page 1 never prints them — not now, and not on any later tick, because
+    // the cursor it writes moves `since` past them. That is the loss (Wren, 75183);
+    // it is why the loop is bounded by `hasMore` and not by a page count.
+    const pageOne = [];
+    for (let i = 0; i < 50; i += 1) {
+      pageOne.push(item(0, {
+        id: hex(1000 + i),
+        attentionItemId: hex(2000 + i),
+        createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 59 - i)).toISOString(),
+      }));
+    }
+    const pageTwo = [];
+    for (let i = 0; i < 5; i += 1) {
+      pageTwo.push(item(0, {
+        id: hex(3000 + i),
+        attentionItemId: hex(4000 + i),
+        createdAt: new Date(Date.UTC(2026, 8, 28, 2, 59, 24 - i)).toISOString(),
+      }));
+    }
+    // A server-faithful page: it answers for the window it was ASKED for, so the
+    // second tick is served the way the real route would serve it.
+    const windowPage = (url) => {
+      const since = new URL(url).searchParams.get('since');
+      const offset = Number(new URL(url).searchParams.get('offset'));
+      const all = [...pageOne, ...pageTwo]
+        .filter((row) => !since || Date.parse(row.createdAt) >= Date.parse(since));
+      const items = all.slice(offset, offset + 50);
+      return jsonRes({
+        items,
+        count: 550,
+        windowCount: all.length,
+        hasMore: offset + items.length < all.length,
+        countsByKind: { mention: 550 },
+      });
+    };
+
+    const first = await runList({ tokenFile: file, cursorFile }, routesFor(windowPage));
+    expect(first.code).toBe(0);
+    expect(first.out.filter((line) => line.startsWith('mention'))).toHaveLength(55);
+    expect(first.out.join('\n')).toContain(`item=${pageTwo[0].attentionItemId}`);
+    // Two requests, not one, and the mark is the newest row across both pages.
+    expect(first.fetchImpl.calls.filter((call) => call.url.includes('decision-queue'))).toHaveLength(2);
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim())).toEqual({
+      at: pageOne[0].createdAt,
+      ids: pageOne.map((row) => row.attentionItemId),
+    });
+
+    // The state of the world the paging produced: the next window starts at the
+    // mark minus W, which is later than every page-2 row, so they are not re-served
+    // and nothing prints. Had page 2 been skipped they would be behind it forever.
+    const second = await runList({ tokenFile: file, cursorFile }, routesFor(windowPage));
+    expect(second.code).toBe(0);
+    expect(second.out.filter((line) => line.startsWith('mention'))).toHaveLength(0);
+  });
+
   test('a bad --window refuses by name before any request', async () => {
     const file = writeTokenFile('bad-window-token', 't\n');
     const bad = ['later', '-5'];
@@ -915,6 +1014,18 @@ describe('item line and pure helpers', () => {
 
     const sameMs = nextCursorFrom([x, y], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
     expect(sameMs.ids.sort()).toEqual([x.attentionItemId, y.attentionItemId, 'earlier'].sort());
+  });
+
+  test('the marker it returns is the marker its own file re-reads as', () => {
+    const at = new Date(Date.UTC(2026, 8, 28, 3, 10)).toISOString();
+    const given = { at, ms: Date.parse(at), ids: [] };
+    const behind = item(0, { createdAt: new Date(Date.UTC(2026, 8, 28, 3, 9, 30)).toISOString() });
+    const next = nextCursorFrom([behind], given);
+    // `at` is the high-water mark, so `ms` has to be that same instant. The file
+    // keeps only `at`, so a returned `ms` lagging it would make the in-process
+    // object disagree with the cursor its own write produces.
+    expect(next.ms).toBe(Date.parse(next.at));
+    expect(parseCursor(formatCursor(next))).toEqual(next);
   });
 
   test('parseCursor takes both shapes and refuses a malformed one by name', () => {
