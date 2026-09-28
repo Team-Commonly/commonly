@@ -379,6 +379,84 @@ describe('list: paging, filter, cursor', () => {
     expect(bad.fetchImpl).not.toHaveBeenCalled();
   });
 
+  test('a cursor written by a kind-filtered read refuses a read with a different filter', async () => {
+    const file = writeTokenFile('kind-cursor-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'kindfilter-mention.cursor');
+    const page = queuePage([
+      item(1, { kind: 'mention' }),
+      item(2, {
+        kind: 'decision',
+        id: hex(900),
+        title: 'pick a store',
+        createdAt: new Date(Date.UTC(2026, 8, 28, 3, 0)).toISOString(),
+      }),
+    ]);
+    // The read that owns the cursor: allowed, and the file records its filter.
+    const mention = await runList({ tokenFile: file, kind: 'mention', cursorFile }, routesFor(page));
+    expect(mention.code).toBe(0);
+    expect(fs.readFileSync(cursorFile, 'utf8')).toContain('"kind":"mention"');
+
+    // The same file, read without the filter. The decision above is OLDER than
+    // the mention read advanced to, so this read would never print it — and no
+    // later read could either. Refused before any request.
+    const broad = await runList({ tokenFile: file, cursorFile }, routesFor(page));
+    expect(broad.code).toBe(1);
+    expect(broad.err.join('\n')).toContain('written by a read with --kind mention');
+    expect(broad.err.join('\n')).toContain('not filtered by kind');
+    expect(broad.fetchImpl).not.toHaveBeenCalled();
+
+    // A different filter is the same defect from the other side.
+    const other = await runList({ tokenFile: file, kind: 'decision', cursorFile }, routesFor(page));
+    expect(other.code).toBe(1);
+    expect(other.err.join('\n')).toContain('written by a read with --kind mention');
+    expect(other.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('a broad cursor read by a filtered read is allowed: that earlier read printed every kind', async () => {
+    const file = writeTokenFile('broad-cursor-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'broad.cursor');
+    const page = queuePage([item(1, { kind: 'mention' }), item(2, { kind: 'decision', id: hex(900) })]);
+    const broad = await runList({ tokenFile: file, cursorFile }, routesFor(page));
+    expect(broad.code).toBe(0);
+    expect(fs.readFileSync(cursorFile, 'utf8')).not.toContain('"kind"');
+
+    const narrowed = await runList({ tokenFile: file, kind: 'mention', cursorFile }, routesFor(page));
+    expect(narrowed.code).toBe(0);
+    expect(narrowed.fetchImpl).toHaveBeenCalled();
+  });
+
+  // NOT a fix-witness — this shape already worked before the refusal. It asserts
+  // that the remedy the refusal names is real: with one cursor file per kind,
+  // a mention read advances only the mention cursor, so a decision that is
+  // OLDER than it is still printed by the decision read. (With one shared file
+  // that decision is behind the high-water mark forever, which is the loss the
+  // refusal exists to prevent.)
+  test('one cursor file per kind: an older item of another kind is still printed', async () => {
+    const file = writeTokenFile('per-kind-token', 't\n');
+    const page = queuePage([
+      item(1, { kind: 'mention' }),
+      item(2, {
+        kind: 'decision',
+        id: hex(900),
+        title: 'pick a store',
+        createdAt: new Date(Date.UTC(2026, 8, 28, 3, 0)).toISOString(),
+      }),
+    ]);
+    const mention = await runList(
+      { tokenFile: file, kind: 'mention', cursorFile: path.join(tmpDir, 'perkind-mention.cursor') },
+      routesFor(page),
+    );
+    expect(mention.code).toBe(0);
+    expect(mention.out.some((line) => line.includes('item 1'))).toBe(true);
+
+    const decision = await runList(
+      { tokenFile: file, kind: 'decision', cursorFile: path.join(tmpDir, 'perkind-decision.cursor') },
+      routesFor(page),
+    );
+    expect(decision.code).toBe(0);
+    expect(decision.out.some((line) => line.includes('pick a store'))).toBe(true);
+  });
+
   test('--pod is passed through to the queue as a query parameter', async () => {
     const file = writeTokenFile('pod-token', 't\n');
     const { code, fetchImpl } = await runList({ tokenFile: file, pod: hex(7) }, routesFor(queuePage([])));
@@ -659,7 +737,9 @@ describe('item line and pure helpers', () => {
     const cursor = nextCursorFrom([x, y, item(4)], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
     // item(4) is newer, so the boundary is its own millisecond and the older ids
     // go: they can never match again.
-    expect(cursor).toEqual({ at: item(4).createdAt, ms: Date.parse(item(4).createdAt), ids: [item(4).attentionItemId] });
+    expect(cursor).toEqual({
+      at: item(4).createdAt, ms: Date.parse(item(4).createdAt), ids: [item(4).attentionItemId], kind: null,
+    });
 
     const sameMs = nextCursorFrom([x, y], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
     expect(sameMs.ids.sort()).toEqual([x.attentionItemId, y.attentionItemId, 'earlier'].sort());
@@ -667,18 +747,32 @@ describe('item line and pure helpers', () => {
 
   test('parseCursor takes both shapes and refuses a malformed one by name', () => {
     const at = '2026-09-28T03:00:00.000Z';
-    expect(parseCursor(at)).toEqual({ at, ms: Date.parse(at), ids: [] });
+    expect(parseCursor(at)).toEqual({
+      at, ms: Date.parse(at), ids: [], kind: null,
+    });
     expect(parseCursor(JSON.stringify({ at, ids: ['a', '', 7] })))
-      .toEqual({ at, ms: Date.parse(at), ids: ['a'] });
+      .toEqual({
+        at, ms: Date.parse(at), ids: ['a'], kind: null,
+      });
+    // Which query wrote the file is part of the cursor, not a side note.
+    expect(parseCursor(JSON.stringify({ at, ids: [], kind: 'mention' })).kind).toBe('mention');
+    expect(parseCursor(JSON.stringify({ at, ids: [], kind: 7 })).kind).toBeNull();
     expect(parseCursor(undefined)).toBeNull();
     expect(() => parseCursor('{oops')).toThrow('Not a cursor');
     expect(() => parseCursor('{"at":"yesterday"}')).toThrow('Not an ISO-8601 timestamp');
   });
 
-  test('formatCursor round-trips through parseCursor', () => {
+  test('formatCursor round-trips through parseCursor, and writes kind only when there is one', () => {
     const at = '2026-09-28T03:00:00.000Z';
-    const cursor = { at, ms: Date.parse(at), ids: ['a', 'b'] };
+    const cursor = {
+      at, ms: Date.parse(at), ids: ['a', 'b'], kind: null,
+    };
     expect(parseCursor(formatCursor(cursor))).toEqual(cursor);
+    expect(formatCursor(cursor)).not.toContain('kind');
+
+    const scoped = { ...cursor, kind: 'mention' };
+    expect(parseCursor(formatCursor(scoped))).toEqual(scoped);
+    expect(formatCursor(scoped)).toContain('"kind":"mention"');
   });
 
   test('the redactor removes a real token and leaves a sentence alone', () => {

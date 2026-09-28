@@ -38,6 +38,16 @@
  * own millisecond and re-prints only the ones it did not: `ms > sinceMs ||
  * (ms === sinceMs && !delivered.has(id))`. A legacy plain-timestamp cursor parses
  * with an EMPTY set, which degrades toward re-printing rather than skipping.
+ *
+ * THE GENERAL RULE, which both cursor bugs above are instances of: a resume
+ * cursor is valid only for the query that wrote it. `--kind` is a DIFFERENT
+ * query over a subset of the same queue, so a kind-filtered read advances the
+ * high-water mark past items of every other kind — items that read never printed,
+ * and that no later read can reach, because the mark has already moved beyond
+ * them. A cursor file therefore records the kind filter (`kind` in the JSON) and
+ * a read whose filter differs from the recorded one refuses before it makes a
+ * request, rather than silently skipping. One cursor file per kind is the
+ * remedy, and the message names it.
  */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
@@ -133,6 +143,7 @@ export const parseCursor = (value) => {
   // set, so the boundary items re-print instead of disappearing.
   let at = text;
   let ids = [];
+  let kind = null;
   if (text.startsWith('{')) {
     let parsed;
     try {
@@ -142,12 +153,19 @@ export const parseCursor = (value) => {
     }
     at = parsed?.at;
     ids = Array.isArray(parsed?.ids) ? parsed.ids.filter((id) => typeof id === 'string' && id) : [];
+    // Which kind filter the read that wrote this cursor used, so the next read
+    // can tell whether it is asking the same question — see the rule at the top
+    // of this file. Absent on a bare timestamp and on a file written by an
+    // unfiltered read, which is the direction that cannot lose a row.
+    kind = typeof parsed?.kind === 'string' && parsed.kind ? parsed.kind : null;
   }
   const ms = Date.parse(String(at));
   if (!Number.isFinite(ms)) {
     throw new InboxRefusal(`Not an ISO-8601 timestamp: ${at}`);
   }
-  return { at: new Date(ms).toISOString(), ms, ids };
+  return {
+    at: new Date(ms).toISOString(), ms, ids, kind,
+  };
 };
 
 /** A missing cursor file is "nothing seen yet", not an error. */
@@ -167,7 +185,11 @@ export const formatCursor = (cursor) => {
   if (typeof cursor === 'string') return cursor;
   const at = cursor.at || (Number.isFinite(cursor.ms) ? new Date(cursor.ms).toISOString() : null);
   if (!at) return null;
-  return JSON.stringify({ at, ids: Array.isArray(cursor.ids) ? cursor.ids : [] });
+  const ids = Array.isArray(cursor.ids) ? cursor.ids : [];
+  // `kind` is written only when the read was scoped to one, so an unfiltered
+  // cursor keeps the exact shape it had before and neither gains nor loses
+  // meaning.
+  return JSON.stringify(cursor.kind ? { at, ids, kind: cursor.kind } : { at, ids });
 };
 
 /**
@@ -216,7 +238,7 @@ export const filterItems = (items, { kind = null, sinceMs = null, seenIds = [] }
  * timestamp stays put; once it moves, they can never match again (the check needs
  * `ms === sinceMs`) and carrying them would grow the file for nothing.
  */
-export const nextCursorFrom = (items, fallback = null) => {
+export const nextCursorFrom = (items, fallback = null, kind = null) => {
   let max = null;
   for (const item of items || []) {
     const ms = itemCreatedAtMs(item);
@@ -228,7 +250,12 @@ export const nextCursorFrom = (items, fallback = null) => {
   const boundary = (items || []).filter((item) => itemCreatedAtMs(item) === max)
     .map(cursorKeyOf).filter(Boolean);
   const carried = fallback && fallback.ms === max ? (fallback.ids || []) : [];
-  return { at, ms: max, ids: [...new Set([...carried, ...boundary])] };
+  // The kind is the CURRENT read's, never inherited: the cursor describes the
+  // query that just ran, and a mismatch with the file's own kind is what the
+  // command refuses on before it makes a request.
+  return {
+    at, ms: max, ids: [...new Set([...carried, ...boundary])], kind: kind || null,
+  };
 };
 
 const oneLine = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();

@@ -111,6 +111,15 @@ commonly inbox list --token-file ~/.commonly/bin/connector-ops-token \
 
 An item that **shares the cursor's millisecond** but was inserted after the cursor was written is printed, not skipped — that is what the id list is for. It is also why `--since <iso>` includes its own millisecond: re-printing one item is recoverable, and never printing it is not. The file is one line of `{"at":"<iso>","ids":[...]}`; a bare ISO timestamp — what older versions wrote, and what the printed `cursor:` line shows — is still accepted, and re-prints that millisecond rather than dropping it.
 
+**A cursor file belongs to the query that wrote it**, so the file records which `--kind` filter wrote it. `--kind` is a different query over a subset, and a kind-filtered read advances the cursor past items of other kinds that read never printed — they would then never be printed at all. A read whose filter differs from the file's (including a read with no filter at all, reading a file a `--kind` read wrote) is therefore **refused before it makes a request**, with the file's own kind named in the message. Keep one cursor file per kind:
+
+```bash
+commonly inbox list --kind mention  --cursor-file ~/.commonly/inbox/mention.cursor
+commonly inbox list --kind decision --cursor-file ~/.commonly/inbox/decision.cursor
+```
+
+The reverse is allowed: a cursor written without `--kind` may be read by a `--kind` read, because that earlier read printed every kind, so nothing is behind the mark unprinted.
+
 **Residual, named rather than implied:** a row whose `createdAt` is *older* than a timestamp this command has already advanced past (a backdated insert, or clock skew between writers) is still invisible to a cursor. The fix belongs on the server as a created-since filter on the route, which is also what would make a watcher tick cost one request instead of a full queue scan.
 
 `list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter. A cursor narrows what is printed, not what is read: the route has no created-since filter yet, so `--pod` is the only scope that narrows the request itself. See [lib/inbox.js](../../cli/src/lib/inbox.js).

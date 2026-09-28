@@ -84,13 +84,31 @@ export const runInboxList = async (opts = {}, deps = {}) => {
     // Validated before the request: a typo in --kind must not cost a network
     // round trip, and must not read a queue the caller did not ask for.
     const kind = normalizeKind(opts.kind);
+    // Read and check the cursor BEFORE connecting: this is a local-file fact, and
+    // a misuse of the flags must not cost even the identity request that
+    // resolves the account.
+    const sinceRaw = opts.since !== undefined ? opts.since : readCursorFile(opts.cursorFile);
+    const cursorIn = parseCursor(sinceRaw);
+    // A resume cursor is valid only for the query that wrote it. Reading a
+    // kind-scoped cursor with a different filter — including no filter at all —
+    // would advance past items of other kinds that the earlier read never
+    // printed, and no later read could reach them. Only this direction is
+    // refused: a BROAD cursor read by a narrower query loses nothing, because
+    // that earlier read printed every kind.
+    if (cursorIn?.kind && cursorIn.kind !== kind) {
+      throw new InboxRefusal(
+        `the cursor file was written by a read with --kind ${cursorIn.kind}, and this read is `
+        + `${kind ? `--kind ${kind}` : 'not filtered by kind'}. A cursor records how far THAT query got, so this `
+        + `read would skip items of other kinds that one never printed. Keep one cursor file per kind, e.g. `
+        + `--kind ${cursorIn.kind} --cursor-file <path>.${cursorIn.kind}.`,
+      );
+    }
+    const sinceMs = cursorIn ? cursorIn.ms : null;
+    const since = cursorIn ? cursorIn.at : null;
+
     const {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
-    const sinceRaw = opts.since !== undefined ? opts.since : readCursorFile(opts.cursorFile);
-    const cursorIn = parseCursor(sinceRaw);
-    const sinceMs = cursorIn ? cursorIn.ms : null;
-    const since = cursorIn ? cursorIn.at : null;
 
     const { items, meta } = await fetchQueue(request, { podId: opts.pod });
     const selected = filterItems(items, {
@@ -101,7 +119,7 @@ export const runInboxList = async (opts = {}, deps = {}) => {
       // was written, and is exactly the row a bare `ms > since` loses.
       seenIds: cursorIn ? cursorIn.ids : [],
     });
-    const cursor = nextCursorFrom(selected, cursorIn);
+    const cursor = nextCursorFrom(selected, cursorIn, kind);
 
     if (opts.json) {
       log(JSON.stringify({
