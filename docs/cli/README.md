@@ -102,12 +102,16 @@ Requires Node 20+. No compiled build step — source is ESM.
 
 The account is read from `--token-file <path>` (or `COMMONLY_TOKEN_FILE`) and **from nowhere else**: with neither set the command refuses before it makes a request. It never falls back to the saved login, because on a shared operator host that login belongs to somebody else — that is exactly how an "ops inbox" helper ends up reading the wrong person's queue. Every run prints the account it resolved on its first line, from `GET /api/auth/user`.
 
-A cursor is an ISO-8601 timestamp compared against `createdAt`. `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own:
+A cursor is an ISO-8601 timestamp compared against `createdAt`, **carried in the cursor file together with the ids delivered at exactly that timestamp.** `--cursor-file` reads it, prints only what is new, and writes the advanced cursor back, so a watcher needs no seen-list of its own:
 
 ```bash
 commonly inbox list --token-file ~/.commonly/bin/connector-ops-token \
   --cursor-file ~/.commonly/inbox/connector-ops.cursor
 ```
+
+An item that **shares the cursor's millisecond** but was inserted after the cursor was written is printed, not skipped — that is what the id list is for. It is also why `--since <iso>` includes its own millisecond: re-printing one item is recoverable, and never printing it is not. The file is one line of `{"at":"<iso>","ids":[...]}`; a bare ISO timestamp — what older versions wrote, and what the printed `cursor:` line shows — is still accepted, and re-prints that millisecond rather than dropping it.
+
+**Residual, named rather than implied:** a row whose `createdAt` is *older* than a timestamp this command has already advanced past (a backdated insert, or clock skew between writers) is still invisible to a cursor. The fix belongs on the server as a created-since filter on the route, which is also what would make a watcher tick cost one request instead of a full queue scan.
 
 `list` reads the **whole** queue — one request per 50 items, so 550 open items is 11 requests against the instance's session limiter. A cursor narrows what is printed, not what is read: the route has no created-since filter yet, so `--pod` is the only scope that narrows the request itself. See [lib/inbox.js](../../cli/src/lib/inbox.js).
 

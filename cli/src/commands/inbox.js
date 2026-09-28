@@ -88,19 +88,30 @@ export const runInboxList = async (opts = {}, deps = {}) => {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
     const sinceRaw = opts.since !== undefined ? opts.since : readCursorFile(opts.cursorFile);
-    const sinceMs = parseCursor(sinceRaw);
-    const since = sinceMs === null ? null : new Date(sinceMs).toISOString();
+    const cursorIn = parseCursor(sinceRaw);
+    const sinceMs = cursorIn ? cursorIn.ms : null;
+    const since = cursorIn ? cursorIn.at : null;
 
     const { items, meta } = await fetchQueue(request, { podId: opts.pod });
-    const selected = filterItems(items, { kind, sinceMs });
-    const cursor = nextCursorFrom(selected, since);
+    const selected = filterItems(items, {
+      kind,
+      sinceMs,
+      // The ids already delivered at the cursor's own millisecond. An item that
+      // shares that millisecond but is not among them arrived after the cursor
+      // was written, and is exactly the row a bare `ms > since` loses.
+      seenIds: cursorIn ? cursorIn.ids : [],
+    });
+    const cursor = nextCursorFrom(selected, cursorIn);
 
     if (opts.json) {
       log(JSON.stringify({
         account,
         instance: baseUrl,
         count: selected.length,
-        cursor,
+        // The bare timestamp: a caller feeding this back through --since loses
+        // the boundary ids, which degrades to re-printing that millisecond
+        // rather than to skipping it.
+        cursor: cursor ? cursor.at : null,
         countsByKind: meta?.countsByKind || {},
         items: selected,
       }, null, 2));
@@ -112,7 +123,7 @@ export const runInboxList = async (opts = {}, deps = {}) => {
         log(since ? `(no items newer than ${since})` : '(queue is empty)');
       }
       for (const item of selected) log(formatItemLine(item));
-      log(`cursor: ${cursor || ''}`);
+      log(`cursor: ${cursor ? cursor.at : ''}`);
     }
     writeCursorFile(opts.cursorFile, cursor);
     return 0;

@@ -24,10 +24,20 @@
  * `list` prints both, labelled, so neither command has to be discovered by
  * failing first.
  *
- * The cursor is an ISO-8601 timestamp compared against `createdAt` — the only
- * field on an item that never moves. The queue's ORDER moves as items are
- * acknowledged (priority, then newest first), so an offset cursor would skip
- * rows; `createdAt` cannot.
+ * The cursor is a TIMESTAMP PLUS the ids delivered at exactly that timestamp,
+ * compared against `createdAt` — the only field on an item that never moves. The
+ * queue's ORDER moves as items are acknowledged (priority, then newest first),
+ * so an offset cursor would skip rows; `createdAt` cannot.
+ *
+ * The ids are not decoration. A bare `ms > since` cursor loses any row that
+ * shares its millisecond with the cursor and was inserted after the cursor was
+ * written: the next run compares `ms > since` (false), nothing prints it, and no
+ * later run can see it either, because the cursor never moves. That row is gone
+ * silently and forever — the one failure this queue (576 open items, none ever
+ * read) cannot afford. So the cursor carries the ids it already delivered at its
+ * own millisecond and re-prints only the ones it did not: `ms > sinceMs ||
+ * (ms === sinceMs && !delivered.has(id))`. A legacy plain-timestamp cursor parses
+ * with an EMPTY set, which degrades toward re-printing rather than skipping.
  */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
@@ -115,12 +125,29 @@ export const readInboxToken = (filePath) => {
 
 /** `--since` / a cursor file holds an ISO-8601 timestamp; null means "everything". */
 export const parseCursor = (value) => {
-  if (value === undefined || value === null || value === '') return null;
-  const ms = Date.parse(String(value));
-  if (!Number.isFinite(ms)) {
-    throw new InboxRefusal(`Not an ISO-8601 timestamp: ${value}`);
+  const text = value === undefined || value === null ? '' : String(value).trim();
+  if (!text) return null;
+  // Two accepted shapes. The JSON object is what `list` writes (a timestamp plus
+  // the ids delivered at it); a bare ISO timestamp is what an operator copies off
+  // the `cursor:` line, and what older versions wrote — it parses with an empty id
+  // set, so the boundary items re-print instead of disappearing.
+  let at = text;
+  let ids = [];
+  if (text.startsWith('{')) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new InboxRefusal(`Not a cursor: ${text}`);
+    }
+    at = parsed?.at;
+    ids = Array.isArray(parsed?.ids) ? parsed.ids.filter((id) => typeof id === 'string' && id) : [];
   }
-  return ms;
+  const ms = Date.parse(String(at));
+  if (!Number.isFinite(ms)) {
+    throw new InboxRefusal(`Not an ISO-8601 timestamp: ${at}`);
+  }
+  return { at: new Date(ms).toISOString(), ms, ids };
 };
 
 /** A missing cursor file is "nothing seen yet", not an error. */
@@ -134,16 +161,26 @@ export const readCursorFile = (filePath) => {
   }
 };
 
+/** The cursor as it goes on disk: `{"at":"<iso>","ids":[...]}` on one line. */
+export const formatCursor = (cursor) => {
+  if (!cursor) return null;
+  if (typeof cursor === 'string') return cursor;
+  const at = cursor.at || (Number.isFinite(cursor.ms) ? new Date(cursor.ms).toISOString() : null);
+  if (!at) return null;
+  return JSON.stringify({ at, ids: Array.isArray(cursor.ids) ? cursor.ids : [] });
+};
+
 /**
  * Written temp-then-rename so a watcher reading this file mid-write sees either
  * the previous cursor or the new one, never a half line. A failed write must not
  * fail the run whose items were already printed, so the caller decides.
  */
 export const writeCursorFile = (filePath, cursor) => {
-  if (!filePath || !cursor) return;
+  const text = formatCursor(cursor);
+  if (!filePath || !text) return;
   mkdirSync(dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
-  writeFileSync(tmp, `${cursor}\n`, 'utf8');
+  writeFileSync(tmp, `${text}\n`, 'utf8');
   renameSync(tmp, filePath);
 };
 
@@ -152,19 +189,33 @@ export const itemCreatedAtMs = (item) => {
   return Number.isFinite(ms) ? ms : null;
 };
 
+/** The identity an item is remembered by between runs: the id `ack` consumes. */
+export const cursorKeyOf = (item) => String(item?.attentionItemId || item?.id || '');
+
 /**
  * An item with an unparseable `createdAt` is KEPT under a cursor: dropping it
- * would lose the row silently, and re-printing is the recoverable error.
+ * would lose the row silently, and re-printing is the recoverable error. The same
+ * argument decides the millisecond boundary — see the module header.
  */
-export const filterItems = (items, { kind = null, sinceMs = null } = {}) => (items || [])
-  .filter((item) => {
+export const filterItems = (items, { kind = null, sinceMs = null, seenIds = [] } = {}) => {
+  const delivered = seenIds instanceof Set ? seenIds : new Set(seenIds);
+  return (items || []).filter((item) => {
     if (kind && item?.kind !== kind) return false;
     if (sinceMs === null) return true;
     const ms = itemCreatedAtMs(item);
-    return ms === null ? true : ms > sinceMs;
+    if (ms === null) return true;
+    if (ms > sinceMs) return true;
+    return ms === sinceMs && !delivered.has(cursorKeyOf(item));
   });
+};
 
-/** Newest timestamp delivered, so the next call resumes exactly where this one ended. */
+/**
+ * Newest timestamp delivered, so the next call resumes exactly where this one
+ * ended — plus the ids delivered AT that timestamp, which are what make the
+ * boundary safe to resume from. Those ids are carried forward only while the
+ * timestamp stays put; once it moves, they can never match again (the check needs
+ * `ms === sinceMs`) and carrying them would grow the file for nothing.
+ */
 export const nextCursorFrom = (items, fallback = null) => {
   let max = null;
   for (const item of items || []) {
@@ -172,7 +223,12 @@ export const nextCursorFrom = (items, fallback = null) => {
     if (ms === null) continue;
     if (max === null || ms > max) max = ms;
   }
-  return max === null ? fallback : new Date(max).toISOString();
+  if (max === null) return fallback;
+  const at = new Date(max).toISOString();
+  const boundary = (items || []).filter((item) => itemCreatedAtMs(item) === max)
+    .map(cursorKeyOf).filter(Boolean);
+  const carried = fallback && fallback.ms === max ? (fallback.ids || []) : [];
+  return { at, ms: max, ids: [...new Set([...carried, ...boundary])] };
 };
 
 const oneLine = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();

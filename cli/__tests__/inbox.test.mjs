@@ -26,8 +26,8 @@ const {
   runInboxList, runInboxAck, runInboxChoose, registerInbox,
 } = await import('../src/commands/inbox.js');
 const {
-  extractToken, filterItems, nextCursorFrom, formatItemLine, createScrubber,
-  retryDelayMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
+  extractToken, filterItems, nextCursorFrom, parseCursor, formatCursor,
+  formatItemLine, createScrubber, retryDelayMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
 } = await import('../src/lib/inbox.js');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-inbox-'));
@@ -387,7 +387,7 @@ describe('list: paging, filter, cursor', () => {
     expect(new URL(queueUrl).searchParams.get('podId')).toBe(hex(7));
   });
 
-  test('--since keeps only newer items and the cursor lands on the newest printed', async () => {
+  test('--since is inclusive of its own millisecond and the cursor lands on the newest printed', async () => {
     const file = writeTokenFile('since-token', 't\n');
     const page = queuePage([item(3), item(2), item(1)]);
     const { code, out } = await runList(
@@ -395,9 +395,16 @@ describe('list: paging, filter, cursor', () => {
       routesFor(page),
     );
     expect(code).toBe(0);
-    expect(out.filter((line) => line.startsWith('mention'))).toHaveLength(2);
+    // 03:01 is the boundary: an item AT it prints (it may have been inserted after
+    // that cursor was taken), so all three print and the run is not a way to lose a
+    // row. Anything older still does not.
+    expect(out.filter((line) => line.startsWith('mention'))).toHaveLength(3);
     expect(out).toContain(`cursor: ${new Date(Date.UTC(2026, 8, 28, 3, 3)).toISOString()}`);
-    expect(out).not.toContain('mention  item=' + hex(201));
+    const older = await runList(
+      { tokenFile: file, since: new Date(Date.UTC(2026, 8, 28, 3, 2)).toISOString() },
+      routesFor(page),
+    );
+    expect(older.out.join('\n')).not.toContain('mention  item=' + hex(201));
   });
 
   test('nothing newer than the cursor leaves the cursor where it was', async () => {
@@ -430,13 +437,90 @@ describe('list: paging, filter, cursor', () => {
     const page = queuePage([item(5), item(1)]);
     const first = await runList({ tokenFile: file, cursorFile }, routesFor(page));
     expect(first.code).toBe(0);
-    expect(fs.readFileSync(cursorFile, 'utf8').trim())
-      .toBe(new Date(Date.UTC(2026, 8, 28, 3, 5)).toISOString());
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim()))
+      .toEqual({ at: new Date(Date.UTC(2026, 8, 28, 3, 5)).toISOString(), ids: [item(5).attentionItemId] });
     expect(first.out).not.toContain(`(no items newer than`);
 
     const second = await runList({ tokenFile: file, cursorFile }, routesFor(page));
     expect(second.code).toBe(0);
     expect(second.out.join('\n')).toContain('(no items newer than');
+  });
+
+  /**
+   * The boundary defect, reproduced at the command level. X and Y share a
+   * millisecond; Y is inserted after the cursor was written. With a bare
+   * `ms > since` cursor Y is never printed by this run or any later one, because
+   * the cursor cannot move past a millisecond it already passed.
+   */
+  test('an item inserted at the cursor\'s own millisecond is printed, not lost', async () => {
+    const file = writeTokenFile('boundary-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'boundary.cursor');
+    const x = item(1);
+    const y = item(1, { attentionItemId: hex(999), id: hex(998), title: 'late sibling' });
+    expect(y.createdAt).toBe(x.createdAt);
+
+    const first = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x])));
+    expect(first.code).toBe(0);
+    expect(first.out.filter((line) => line.startsWith('mention'))).toHaveLength(1);
+    // The control: without the sibling present there is nothing to print, so the
+    // run below cannot pass because the filter is off.
+    const control = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x])));
+    expect(control.out.join('\n')).toContain('(no items newer than');
+
+    const second = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
+    expect(second.code).toBe(0);
+    expect(second.out.join('\n')).toContain(`item=${y.attentionItemId}`);
+    expect(second.out.join('\n')).not.toContain(`item=${x.attentionItemId}`);
+
+    const third = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
+    expect(third.out.join('\n')).toContain('(no items newer than');
+  });
+
+  test('a legacy plain-timestamp cursor re-prints the boundary item instead of dropping it', async () => {
+    const file = writeTokenFile('legacy-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'legacy.cursor');
+    const x = item(1);
+    const y = item(1, { attentionItemId: hex(999), id: hex(998), title: 'late sibling' });
+    // What an operator gets by copying the `cursor:` line, and what older
+    // versions wrote: no id set, so the millisecond re-prints. Recoverable, which
+    // is the direction this module always picks (see filterItems).
+    fs.writeFileSync(cursorFile, `${x.createdAt}\n`);
+    const { code, out } = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain(`item=${x.attentionItemId}`);
+    expect(out.join('\n')).toContain(`item=${y.attentionItemId}`);
+  });
+
+  test('the cursor carries the ids at its own millisecond and drops them when it moves', async () => {
+    const file = writeTokenFile('carry-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'carry.cursor');
+    const x = item(1);
+    const y = item(1, { attentionItemId: hex(999), id: hex(998), title: 'late sibling' });
+    const z = item(9);
+    const read = () => JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim());
+
+    await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x])));
+    expect(read()).toEqual({ at: x.createdAt, ids: [x.attentionItemId] });
+
+    await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y])));
+    expect(read()).toEqual({ at: x.createdAt, ids: [x.attentionItemId, y.attentionItemId] });
+
+    const moved = await runList({ tokenFile: file, cursorFile }, routesFor(queuePage([x, y, z])));
+    expect(moved.out.join('\n')).toContain(`item=${z.attentionItemId}`);
+    // Stale ids cannot match once the timestamp moves (the check needs
+    // `ms === sinceMs`), so they are dropped rather than carried forever.
+    expect(read()).toEqual({ at: z.createdAt, ids: [z.attentionItemId] });
+  });
+
+  test('an explicit --since wins over the cursor file', async () => {
+    const file = writeTokenFile('precedence-token', 't\n');
+    const cursorFile = path.join(tmpDir, 'precedence.cursor');
+    const newer = new Date(Date.UTC(2026, 8, 28, 3, 9)).toISOString();
+    fs.writeFileSync(cursorFile, '2026-09-28T03:00:00.000Z\n');
+    const { code, out } = await runList({ tokenFile: file, cursorFile, since: newer }, routesFor(queuePage([item(1)])));
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain(`(no items newer than ${newer})`);
+    expect(JSON.parse(fs.readFileSync(cursorFile, 'utf8').trim())).toEqual({ at: newer, ids: [] });
   });
 
   test('a missing cursor file is simply no cursor', async () => {
@@ -449,16 +533,6 @@ describe('list: paging, filter, cursor', () => {
     expect(out.filter((line) => line.startsWith('mention'))).toHaveLength(1);
   });
 
-  test('an explicit --since wins over the cursor file', async () => {
-    const file = writeTokenFile('precedence-token', 't\n');
-    const cursorFile = path.join(tmpDir, 'precedence.cursor');
-    const newer = new Date(Date.UTC(2026, 8, 28, 3, 9)).toISOString();
-    fs.writeFileSync(cursorFile, '2026-09-28T03:00:00.000Z\n');
-    const { code, out } = await runList({ tokenFile: file, cursorFile, since: newer }, routesFor(queuePage([item(1)])));
-    expect(code).toBe(0);
-    expect(out.join('\n')).toContain(`(no items newer than ${newer})`);
-    expect(fs.readFileSync(cursorFile, 'utf8').trim()).toBe(newer);
-  });
 
   test('--json emits one object carrying both ids, the account and the cursor', async () => {
     const file = writeTokenFile('json-token', 't\n');
@@ -574,8 +648,37 @@ describe('item line and pure helpers', () => {
   });
 
   test('nextCursorFrom falls back to the incoming cursor, not to null', () => {
-    expect(nextCursorFrom([], 'given')).toBe('given');
-    expect(nextCursorFrom([item(1, { createdAt: 'x' })], 'given')).toBe('given');
+    const given = { at: '2026-09-28T03:00:00.000Z', ms: Date.parse('2026-09-28T03:00:00.000Z'), ids: ['kept'] };
+    expect(nextCursorFrom([], given)).toEqual(given);
+    expect(nextCursorFrom([item(1, { createdAt: 'x' })], given)).toEqual(given);
+  });
+
+  test('nextCursorFrom records every id delivered at the newest millisecond', () => {
+    const x = item(1);
+    const y = item(1, { attentionItemId: hex(999) });
+    const cursor = nextCursorFrom([x, y, item(4)], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
+    // item(4) is newer, so the boundary is its own millisecond and the older ids
+    // go: they can never match again.
+    expect(cursor).toEqual({ at: item(4).createdAt, ms: Date.parse(item(4).createdAt), ids: [item(4).attentionItemId] });
+
+    const sameMs = nextCursorFrom([x, y], { at: x.createdAt, ms: Date.parse(x.createdAt), ids: ['earlier'] });
+    expect(sameMs.ids.sort()).toEqual([x.attentionItemId, y.attentionItemId, 'earlier'].sort());
+  });
+
+  test('parseCursor takes both shapes and refuses a malformed one by name', () => {
+    const at = '2026-09-28T03:00:00.000Z';
+    expect(parseCursor(at)).toEqual({ at, ms: Date.parse(at), ids: [] });
+    expect(parseCursor(JSON.stringify({ at, ids: ['a', '', 7] })))
+      .toEqual({ at, ms: Date.parse(at), ids: ['a'] });
+    expect(parseCursor(undefined)).toBeNull();
+    expect(() => parseCursor('{oops')).toThrow('Not a cursor');
+    expect(() => parseCursor('{"at":"yesterday"}')).toThrow('Not an ISO-8601 timestamp');
+  });
+
+  test('formatCursor round-trips through parseCursor', () => {
+    const at = '2026-09-28T03:00:00.000Z';
+    const cursor = { at, ms: Date.parse(at), ids: ['a', 'b'] };
+    expect(parseCursor(formatCursor(cursor))).toEqual(cursor);
   });
 
   test('the redactor removes a real token and leaves a sentence alone', () => {
