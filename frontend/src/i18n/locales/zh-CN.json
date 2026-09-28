@@ -1603,7 +1603,7 @@
     },
     "funnel": {
       "title": "激活漏斗",
-      "summary": "在过去{{days}}天的{{signups}}个注册中：{{attachRate}}% 挂载了智能体 · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第1天后回访 · {{d7Rate}}% 在第7天后回访。",
+      "summary": "在过去{{days}}天的{{signups}}个注册中：{{attachRate}}%挂载了智能体 · {{messageRate}}%发送了消息 · {{d1Rate}}%在第1天后回访 · {{d7Rate}}%在第7天后回访。",
       "table": {
         "cohort": "群组",
         "signups": "注册数",
