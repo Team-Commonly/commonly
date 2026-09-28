@@ -156,8 +156,11 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
     //
     // The residual is bounded, not closed: a caller resuming from `nextSince - W`
     // (the window the CLI uses) misses an arrival more than W behind a cursor it
-    // has already passed, because a row is stamped before its write commits — W
-    // must exceed write-commit latency, not clock skew.
+    // has already passed. `createdAt` is stamped before the write commits AND the
+    // stamp comes from the writer's clock, so W must exceed write-commit latency
+    // plus the writer's clock offset: a lagging clock stamps a new row behind a
+    // cursor the caller has already advanced past. Over-covering re-prints (the
+    // client dedupes on `attentionItemId`); a miss loses the row.
     //
     // An unusable value is refused rather than quietly dropped: a caller that
     // asked to narrow and silently received the whole queue cannot tell.
