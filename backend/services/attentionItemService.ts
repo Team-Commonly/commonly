@@ -484,12 +484,23 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   //
   // `createdAt` is stamped by mongoose at insert, from the model's own `now`, and
   // no writer in this codebase sets it (the source's own time lives in
-  // `sourceCreatedAt`). That is what makes the `{recipientUserId, status, createdAt}`
-  // index insertion-ordered and monotonic, and it is why this bound is cheap.
-  // Its residual is bounded rather than closed, and it is NOT backdating or clock
-  // skew: a row is stamped before its write commits, so an arrival more than the
-  // caller's lookback W behind a cursor it already advanced past is missed. W has
-  // to exceed write-commit latency, not skew.
+  // `sourceCreatedAt`), so it orders rows by when they were STAMPED. That is what
+  // makes the existing `find().sort({ createdAt: -1 })` cheap on the
+  // `{recipientUserId, status, createdAt}` index. This bound never touches that
+  // index: the whole-set counts above require the whole open set, so the window is
+  // applied in memory below, after the read. What it cuts is the size of the
+  // response and the number of round trips (the watcher tick that motivated it
+  // went from eleven requests to one), not the database work.
+  //
+  // Stamp order is NOT commit order, and that is where the residual lives — not in
+  // backdating alone. A row stamped before a cursor can become visible after it
+  // (its write had not committed when the caller read), and a writer whose clock
+  // lags stamps a new row behind a cursor the caller already advanced past; this
+  // bound misses both. Only a caller-side lookback W closes them, and W has to
+  // exceed write-commit latency PLUS writer clock offset — an earlier revision of
+  // this comment said "not skew", and that was wrong. So the bound is a narrowing,
+  // not a guarantee: a caller that must not miss a row re-reads from
+  // `nextSince - W` and dedupes on `attentionItemId`.
   //
   // A value that cannot be parsed narrows nothing rather than raising: the route
   // refuses it with a 400 first, so this is the second line, and of the two ways
