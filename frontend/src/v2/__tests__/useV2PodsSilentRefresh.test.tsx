@@ -92,4 +92,36 @@ describe('useV2Pods silent refresh', () => {
     });
     expect(result.current.error).toBe('network down');
   });
+  it('a successful poll clears a stale error instead of refreshing data nobody can see', async () => {
+    // The cell the first draft missed: the mount FAILED, so `error` is set and
+    // V2PodsSidebar (:501/:502) renders the error INSTEAD of the rows. A poll
+    // that swaps the data but cannot clear the error leaves the view broken
+    // while fetching correctly every minute.
+    mockApi.get.mockRejectedValueOnce(new Error('network down'));
+    const { result } = renderHook(() => useV2Pods());
+    await waitFor(() => expect(result.current.error).toBe('network down'));
+    expect(result.current.pods).toHaveLength(0);
+
+    mockApi.get.mockResolvedValueOnce([row('2026-09-28T05:00:00.000Z')]);
+    await act(async () => {
+      await result.current.refresh({ silent: true });
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.pods).toHaveLength(1);
+  });
+
+  it('a silent failure still never clears an error it did not earn', async () => {
+    // The complement: only a SUCCESS is evidence the error is stale.
+    mockApi.get.mockRejectedValueOnce(new Error('network down'));
+    const { result } = renderHook(() => useV2Pods());
+    await waitFor(() => expect(result.current.error).toBe('network down'));
+
+    mockApi.get.mockRejectedValueOnce(new Error('still down'));
+    await act(async () => {
+      await result.current.refresh({ silent: true });
+    });
+
+    expect(result.current.error).toBe('network down');
+  });
 });

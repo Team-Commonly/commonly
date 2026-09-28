@@ -35,10 +35,11 @@ export interface UseV2PodsResult {
   pods: V2Pod[];
   loading: boolean;
   error: string | null;
-  // `silent` re-reads the list in place: it swaps the data on success WITHOUT
-  // touching `loading`/`error`, so a background poll cannot blink a list into
-  // its spinner or replace the last good rows with a transient failure.
-  // Non-silent is the mount/retry path and owns the loading state.
+  // `silent` re-reads the list in place: it swaps the data on success without
+  // setting `loading` or an error, so a background poll cannot blink a list
+  // into its spinner or replace the last good rows with a transient failure.
+  // Non-silent is the mount/retry path and owns the loading state. Both modes
+  // clear an existing error on success — see the success path below.
   refresh: (options?: { silent?: boolean }) => Promise<void>;
   createPod: (
     name: string,
@@ -65,6 +66,13 @@ export const useV2Pods = (): UseV2PodsResult => {
     try {
       const data = await api.get<V2Pod[]>('/api/pods');
       setPods(Array.isArray(data) ? data : []);
+      // A successful read is evidence the stored error is stale, so it clears
+      // it — in BOTH modes. Without this the silent poll could never recover
+      // the view it was added for: V2PodsSidebar renders the list only on
+      // `!loading && !error`, so a failed first load hid the rows behind an
+      // error that a later successful poll could refresh the data but never
+      // un-hide. Silence still means a poll never SETS a failure.
+      setError(null);
     } catch (err) {
       // A failed poll keeps the last good rows and the last error: silence is
       // the point. Only the mount/retry path may surface a failure.
