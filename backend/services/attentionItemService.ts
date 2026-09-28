@@ -542,6 +542,19 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
 
 export const acknowledgeAttention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
   if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
+  // Same guard `getOpenQueue` already carries (`:466`), for the same reason and
+  // one more. A recipient id that is not an ObjectId does not reach the update
+  // as "no recipient": it is cast on the way in and throws a CastError, which
+  // the route reports as a 500 'Failed to acknowledge attention'. A malformed
+  // caller id is a client-side fact, so it belongs in the 400 lane beside the
+  // item-id refusal, not in an unhandled throw.
+  //
+  // The cross-recipient read this was first proposed for is NOT what happens:
+  // measured on `bbab5c31`, `recipientUserId: undefined` and `null` are refused
+  // ('Attention item not found') and the other recipient's row stays open, while
+  // `''` and `'not-an-id'` throw. Refuse both shapes here rather than rely on the
+  // filter's behaviour for one of them.
+  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { success: false, error: 'Invalid recipient' };
   const result = await AttentionItem.updateOne(
     {
       _id: attentionItemId,
