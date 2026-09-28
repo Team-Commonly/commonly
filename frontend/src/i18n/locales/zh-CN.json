@@ -1917,6 +1917,7 @@
     "newCode": "新启用码",
     "nextStep": "下一步",
     "noPods": "请先加入一个 Pod。",
+    "notConnectable": "暂不可连接。",
     "notConnected": "未连接",
     "notEnabled": "此实例尚未启用。",
     "notLinkedDetail": "你的消息还没有去处",
