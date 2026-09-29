@@ -71,9 +71,14 @@ const idToken = (sub) => [
   'sig',
 ].join('.');
 
-const callback = (query = 'state=st-1&code=code-1') => (
-  request(app).get(`/connect/hosted-mcp/linear/callback?${query}`)
-);
+const BROWSER_COOKIE = 'commonly_hosted_mcp_nonce=browser-1';
+
+const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE) => {
+  const sent = request(app).get(`/connect/hosted-mcp/linear/callback?${query}`);
+  // The browser that started the flow sends this; `null` is the browser that
+  // did not, which is the whole point of the cookie.
+  return cookie === null ? sent : sent.set('Cookie', cookie);
+};
 
 /**
  * A row as the database would hand it back on a reconnect.
@@ -93,6 +98,7 @@ const storedRow = (config = {}) => ({
       state: 'st-1',
       codeVerifier: 'verifier-1',
       expiresAt: new Date(Date.now() + 60 * 1000),
+      browserNonce: 'browser-1',
     },
     ...config,
   },
@@ -182,6 +188,45 @@ describe('hosted-mcp connect: callback', () => {
     // The pending state is gone whichever way the flow went, so a replay of the
     // state finds no row and cannot reach the exchange a second time.
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$unset).toEqual({ 'config.pendingAuth': 1 });
+  });
+
+  it('refuses a browser that carries no nonce cookie, before it reads any row', async () => {
+    const res = await callback('state=st-1&code=code-1', null);
+    expect(outcome(res).code).toBe('invalid_state');
+    // "Before it reads any row" is a claim about ORDER, so it is asserted: the
+    // refusal must not be a lookup whose answer happens to be no, or a request
+    // carrying a state it was sent costs us a row read per attempt.
+    expect(Integration.findOne).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a cookie that belongs to another flow, without spending this one', async () => {
+    const res = await callback('state=st-1&code=code-1', 'commonly_hosted_mcp_nonce=browser-2');
+    expect(outcome(res).code).toBe('browser_mismatch');
+    // NOT consumed: a wrong browser must not be able to burn a flow that
+    // belongs to somebody else, which is the reason this check sits outside the
+    // claim rather than inside its filter.
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    // Positive control, same request with its own cookie: the arm cannot pass by
+    // refusing every callback in sight.
+    const control = await callback();
+    expect(outcome(control).hostedMcp).toBe('connected');
+  });
+
+  it('refuses when the row holds no nonce at all, so a dropped field is not an open door', async () => {
+    // This is what an UNDECLARED `browserNonce` on the strict subdocument looks
+    // like from the handler's side: the compare reads `undefined`, and the arm
+    // that says "a mismatch refuses" is the one that catches it.
+    setStoredRow({
+      pendingAuth: {
+        state: 'st-1',
+        codeVerifier: 'verifier-1',
+        expiresAt: new Date(Date.now() + 60 * 1000),
+      },
+    });
+    const res = await callback();
+    expect(outcome(res).code).toBe('browser_mismatch');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('refuses a state it did not issue, without spending a code on it', async () => {

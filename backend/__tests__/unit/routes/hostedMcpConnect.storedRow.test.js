@@ -88,7 +88,12 @@ const seedPending = async ({ state, subject, credentialRef = 'ref-old' }) => {
       entryId: 'linear',
       credentialRef,
       providerSubject: subject,
-      pendingAuth: { state, codeVerifier: 'verifier-1', expiresAt: new Date(Date.now() + 60 * 1000) },
+      pendingAuth: {
+        state,
+        codeVerifier: 'verifier-1',
+        expiresAt: new Date(Date.now() + 60 * 1000),
+        browserNonce: BROWSER_NONCE,
+      },
     },
   });
   return String(row._id);
@@ -107,13 +112,47 @@ const exchange = ({ idToken: token } = {}) => {
   });
 };
 
-const callback = (state) => request(app).get(`/connect/hosted-mcp/linear/callback?state=${state}&code=code-1`);
+const BROWSER_NONCE = 'browser-1';
+const BROWSER_COOKIE = `commonly_hosted_mcp_nonce=${BROWSER_NONCE}`;
+
+const callback = (state, cookie = BROWSER_COOKIE) => {
+  const sent = request(app).get(`/connect/hosted-mcp/linear/callback?state=${state}&code=code-1`);
+  return cookie === null ? sent : sent.set('Cookie', cookie);
+};
 const stored = async (id) => (await Integration.findById(id).lean()).config;
+
+const outcome = (res) => {
+  const url = new URL(res.headers.location, 'https://commonly.me');
+  return { hostedMcp: url.searchParams.get('hostedMcp'), code: url.searchParams.get('code') };
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
   intake.discoverAuthorizationServer.mockResolvedValue({ token_endpoint: TOKEN_ENDPOINT });
   connectorSecrets.put.mockResolvedValue('ref-new');
+});
+
+test('a browser that did not start the flow is refused, and the flow survives it', async () => {
+  const id = await seedPending({ state: 'st-other', subject: 'acct-old' });
+  exchange();
+
+  const refused = await callback('st-other', 'commonly_hosted_mcp_nonce=browser-2');
+  expect(refused.status).toBe(302);
+  expect(outcome(refused).code).toBe('browser_mismatch');
+  // The STORE is the witness, and it is the claim that matters: the wrong
+  // browser consumed nothing, exchanged nothing, and the person whose flow it
+  // is can still finish it.
+  expect((await stored(id)).pendingAuth.state).toBe('st-other');
+  expect(connectorSecrets.put).not.toHaveBeenCalled();
+
+  // Positive control from the same seed: the browser that started it gets
+  // through, and the consumption is real.
+  expect((await callback('st-other')).status).toBe(302);
+  expect((await stored(id)).pendingAuth).toBeUndefined();
+  // Two puts — access and refresh — because the control reached the exchange
+  // the refusal never touched. (Its subject is cleared by the exchange itself:
+  // no ID token was issued, which is the neighbouring test's claim.)
+  expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
 });
 
 test('a vendor that issues no ID token CLEARS the stored subject rather than keeping a stale one', async () => {
@@ -141,6 +180,7 @@ test('so a later reconnect to the old subject revokes, instead of matching the s
     state: 'st-again',
     codeVerifier: 'verifier-1',
     expiresAt: new Date(Date.now() + 60 * 1000),
+    browserNonce: BROWSER_NONCE,
   };
   row.config.credentialRef = 'ref-new';
   await row.save();

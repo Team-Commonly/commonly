@@ -22,7 +22,7 @@
  * callback path names the entry — that is the redirect-per-AS defence against
  * mix-up (§4).
  */
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
 
 /** Long enough for a person to finish a consent screen, short enough to be worthless afterwards. */
@@ -45,8 +45,11 @@ export const hostedMcpApiBase = (): string =>
 const CALLBACK_LEAF = 'callback';
 const CLIENT_METADATA_LEAF = 'client-metadata';
 
+const entryPathname = (entryId: string, leaf: string): string =>
+  `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entryId)}/${leaf}`;
+
 const entryPath = (apiBase: string, entryId: string, leaf: string): string =>
-  `${apiBase}/api/integrations/connect/hosted-mcp/${encodeURIComponent(entryId)}/${leaf}`;
+  `${apiBase}${entryPathname(entryId, leaf)}`;
 
 /** The one redirect URI this instance registers with this entry's authorization server. */
 export const hostedMcpCallbackUrl = (entryId: string): string =>
@@ -55,6 +58,33 @@ export const hostedMcpCallbackUrl = (entryId: string): string =>
 /** The URL that IS the client id under CIMD, and the document it serves. */
 export const hostedMcpClientMetadataUrl = (entryId: string): string =>
   entryPath(hostedMcpApiBase(), entryId, CLIENT_METADATA_LEAF);
+
+/**
+ * The browser-bound half of the pending state (§10.7's cell; the Slack double
+ * submit in `routes/installables.ts`).
+ *
+ * `state` is a bearer value the STARTER holds: it travels in the authorization
+ * URL, so whoever the starter sends that URL to can finish the flow in their
+ * own browser — and the code that comes back is the VICTIM'S. The consent
+ * screen really does say "Commonly", which is what makes it work. PKCE does not
+ * help: it binds the code to this instance, which is what the attacker wants.
+ * The account-change rule does not fire either, because a first connect has no
+ * stored subject to differ from.
+ *
+ * So the flow carries a SECOND secret, delivered to the starting browser as a
+ * cookie scoped to this entry's callback and never readable by script. The two
+ * are compared in constant time at the callback: the browser that finishes the
+ * flow has to be the browser that started it.
+ */
+export const HOSTED_MCP_NONCE_COOKIE = 'commonly_hosted_mcp_nonce';
+
+/**
+ * The cookie's path is the callback's, built from the same leaf constant the
+ * redirect URI comes from: a cookie scoped to a second spelling of the path
+ * would be sent to no request that matters.
+ */
+export const hostedMcpNonceCookiePath = (entryId: string): string =>
+  entryPathname(entryId, CALLBACK_LEAF);
 
 /**
  * The Client ID Metadata Document. Its `client_id` is its own URL, which is
@@ -231,6 +261,46 @@ export const buildRefreshBody = (
  * a replay finds nothing to claim.
  */
 export const createStateNonce = (): string => randomBytes(24).toString('base64url');
+
+/**
+ * The browser nonce. Minted independently of the state and the same width, so
+ * holding one of the two is no evidence of holding the other.
+ */
+export const createBrowserNonce = (): string => randomBytes(24).toString('base64url');
+
+/**
+ * Constant-time comparison, mirroring the Slack precedent (`matchesSlackNonce`,
+ * `routes/installables.ts`): a stored value that is missing or not a string is a
+ * mismatch rather than a crash, and nothing about the compare depends on where
+ * the first difference is.
+ */
+export const browserNonceMatches = (stored: unknown, supplied: string): boolean => {
+  if (typeof stored !== 'string' || !stored) return false;
+  const expected = Buffer.from(stored);
+  const actual = Buffer.from(supplied);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+};
+
+/**
+ * One cookie out of a request's `Cookie` header, or nothing. Hand-rolled for the
+ * same reason the Slack flow hand-rolled one: this route is mounted without
+ * `cookie-parser`, and a dependency added for three lines of parsing would be
+ * parseable by the attacker's input either way.
+ */
+export const readCookie = (header: unknown, name: string): string | undefined => {
+  const serialized = Array.isArray(header) ? header.join(';') : header;
+  if (typeof serialized !== 'string' || !serialized) return undefined;
+  const hit = serialized
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  if (!hit) return undefined;
+  try {
+    return decodeURIComponent(hit.slice(name.length + 1));
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * PKCE, and it is not optional here: a CIMD client is a public client that

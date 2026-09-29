@@ -3,15 +3,21 @@
 // vendor: the authorization server is a stub the test passes in, which is the
 // ruling's point that every step except the live lines is testable without one.
 const {
+  HOSTED_MCP_NONCE_COOKIE,
   HOSTED_MCP_PENDING_TTL_MS,
   HostedMcpClientError,
+  browserNonceMatches,
   buildAuthorizeUrl,
   buildClientMetadataDocument,
   buildRefreshBody,
   buildTokenExchangeBody,
+  createBrowserNonce,
   createPkcePair,
   createStateNonce,
   discoverAuthorizationServer,
+  hostedMcpCallbackUrl,
+  hostedMcpNonceCookiePath,
+  readCookie,
   resolvedClientId,
 } = require('../../../services/hostedMcpIntakeService');
 
@@ -230,5 +236,58 @@ describe('hosted-mcp intake: the authorization request and PKCE', () => {
     // Read here because the callback's three state arms (not issued, used,
     // expired) are written against this bound rather than against a literal.
     expect(HOSTED_MCP_PENDING_TTL_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('hosted-mcp intake: the browser-bound half of the pending state', () => {
+  it('scopes the nonce cookie to the callback path the redirect URI names', () => {
+    // Both come from ONE leaf constant. A cookie scoped to a second spelling of
+    // the path is never received by the callback it guards, and a check that
+    // never receives its cookie refuses every legitimate connect.
+    expect(hostedMcpNonceCookiePath('linear')).toBe(
+      new URL(hostedMcpCallbackUrl('linear')).pathname,
+    );
+    expect(hostedMcpNonceCookiePath('linear')).toBe(
+      '/api/integrations/connect/hosted-mcp/linear/callback',
+    );
+  });
+
+  it('mints the browser nonce independently of the state', () => {
+    const nonce = createBrowserNonce();
+    expect(nonce).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(createBrowserNonce()).not.toBe(nonce);
+    // Holding the state is no evidence of holding the nonce, which is the whole
+    // reason there are two secrets rather than one.
+    expect(createStateNonce()).not.toBe(nonce);
+  });
+
+  it('compares a stored nonce to a supplied one, and reads every absence as a mismatch', () => {
+    const nonce = createBrowserNonce();
+    expect(browserNonceMatches(nonce, nonce)).toBe(true);
+    expect(browserNonceMatches(nonce, createBrowserNonce())).toBe(false);
+    // Length first: an extension or a prefix is a mismatch, and `timingSafeEqual`
+    // throws on unequal lengths rather than answering false.
+    expect(browserNonceMatches(nonce, `${nonce}x`)).toBe(false);
+    expect(browserNonceMatches(nonce, nonce.slice(0, -1))).toBe(false);
+    // What a strict subdocument without the field hands back — the shape that
+    // must NOT read as "the guard is armed".
+    expect(browserNonceMatches(undefined, nonce)).toBe(false);
+    expect(browserNonceMatches(null, nonce)).toBe(false);
+    expect(browserNonceMatches('', '')).toBe(false);
+    expect(browserNonceMatches({}, nonce)).toBe(false);
+  });
+
+  it('reads one cookie out of a header, and nothing out of a malformed one', () => {
+    const header = 'a=1; commonly_hosted_mcp_nonce=browser-1; b=2';
+    expect(readCookie(header, HOSTED_MCP_NONCE_COOKIE)).toBe('browser-1');
+    expect(readCookie('commonly_hosted_mcp_nonce=browser-1', HOSTED_MCP_NONCE_COOKIE)).toBe('browser-1');
+    expect(readCookie(['a=1', 'commonly_hosted_mcp_nonce=browser-1'], HOSTED_MCP_NONCE_COOKIE)).toBe('browser-1');
+    expect(readCookie('a=1; b=2', HOSTED_MCP_NONCE_COOKIE)).toBeUndefined();
+    expect(readCookie(undefined, HOSTED_MCP_NONCE_COOKIE)).toBeUndefined();
+    // A name that only starts with ours is a different cookie.
+    expect(readCookie('commonly_hosted_mcp_nonce_extra=x', HOSTED_MCP_NONCE_COOKIE)).toBeUndefined();
+    // A percent-decode failure is a missing cookie, not a throw inside a public
+    // route: this parse runs before anything else in the callback.
+    expect(readCookie('commonly_hosted_mcp_nonce=%E0%A4%A', HOSTED_MCP_NONCE_COOKIE)).toBeUndefined();
   });
 });

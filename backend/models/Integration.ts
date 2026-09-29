@@ -376,6 +376,12 @@ const IntegrationSchema = new Schema<IIntegration>(
         state: String,
         codeVerifier: String,
         expiresAt: Date,
+        // The browser-bound half of the flow (§10.7): `state` proves the flow
+        // exists, this proves the browser finishing it is the one that started
+        // it. Declared here because this subdocument is STRICT — an undeclared
+        // path is dropped in silence, and the check would then read as armed
+        // while comparing `undefined` against a real cookie.
+        browserNonce: String,
       },
       relayMap: [
         {

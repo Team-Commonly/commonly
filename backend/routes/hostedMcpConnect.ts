@@ -30,14 +30,19 @@ const { revokeConnectionGrants } = require('../services/roomGrantService');
 const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../integrations/hostedMcp/entries');
 // eslint-disable-next-line global-require
 const {
+  HOSTED_MCP_NONCE_COOKIE,
   HOSTED_MCP_PENDING_TTL_MS,
+  browserNonceMatches,
   buildAuthorizeUrl,
   buildClientMetadataDocument,
   buildTokenExchangeBody,
+  createBrowserNonce,
   createPkcePair,
   createStateNonce,
   discoverAuthorizationServer,
   hostedMcpCallbackUrl,
+  hostedMcpNonceCookiePath,
+  readCookie,
   resolvedClientId,
 } = require('../services/hostedMcpIntakeService');
 
@@ -146,6 +151,10 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
 
   const { verifier, challenge } = createPkcePair();
   const state = createStateNonce();
+  // Two secrets, and the asymmetry between them is the point: `state` proves
+  // the flow EXISTS and travels in a URL, the nonce proves the browser that
+  // FINISHES it is the one that started it and travels only as a cookie.
+  const browserNonce = createBrowserNonce();
   const expiresAt = new Date(Date.now() + HOSTED_MCP_PENDING_TTL_MS);
   const redirectUri = hostedMcpCallbackUrl(entry.id);
 
@@ -157,7 +166,7 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     {
       $set: {
         'config.intake': 'oauth',
-        'config.pendingAuth': { state, codeVerifier: verifier, expiresAt },
+        'config.pendingAuth': { state, codeVerifier: verifier, expiresAt, browserNonce },
       },
       $setOnInsert: {
         type: 'hosted-mcp',
@@ -169,6 +178,18 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+
+  // Scoped to THIS entry's callback, so it is not sent to any other route, and
+  // kept out of JavaScript, because a nonce a script can read is a nonce a
+  // script can hand to somebody else. The options stay at the sink — the same
+  // shape as Slack's — so a reviewer reads them where the cookie is written.
+  res.cookie?.(HOSTED_MCP_NONCE_COOKIE, browserNonce, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: true,
+    maxAge: HOSTED_MCP_PENDING_TTL_MS,
+    path: hostedMcpNonceCookiePath(entry.id),
+  });
 
   return res.json({
     authorizeUrl: buildAuthorizeUrl(entry, authorizationEndpoint, {
@@ -185,6 +206,11 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
  * spent twice is a second consent nobody gave, and a vendor code replayed at
  * the token endpoint is a code the AS may have already retired.
  *
+ * Two secrets guard it, and they fail differently (§10.7). The cookie is
+ * REFUSED WITHOUT ANY ROW READ when it is absent, and refused without consuming
+ * the flow when it is present but belongs to a different flow. Only then is the
+ * state claimed.
+ *
  * The claim is `$unset` of `pendingAuth` rather than the Slack callback's
  * `claimId`, and not by preference: `config.pendingAuth` is a strict subdocument
  * (`models/Integration.ts:375`), so a `claimId` written onto it is dropped
@@ -200,6 +226,13 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   const code = typeof req.query.code === 'string' ? req.query.code : '';
   if (!state || !code) {
+    return callbackRedirect(res, 'error', 'invalid_state');
+  }
+  // Presence first, and before the row read: a browser that never started a
+  // flow must not be able to finish one by holding a state it was sent, and the
+  // cheapest refusal is the one that touches nothing.
+  const browserNonce = readCookie(req.headers.cookie, HOSTED_MCP_NONCE_COOKIE);
+  if (!browserNonce) {
     return callbackRedirect(res, 'error', 'invalid_state');
   }
   // RFC 9207. Absent is not a refusal — a vendor that sends no `iss` still had
@@ -220,6 +253,15 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
   const expiresAt = issued.config?.pendingAuth?.expiresAt;
   if (!expiresAt || new Date(expiresAt).getTime() <= now.getTime()) {
     return callbackRedirect(res, 'error', 'state_expired');
+  }
+  // The state is unguessable, but the STARTER is who holds it: sending that URL
+  // to somebody else is enough to have their vendor credential delivered onto
+  // the starter's row, and every trail row would correctly name the starter.
+  // This is the check that makes the browser finishing the flow the one that
+  // started it. It sits OUTSIDE the claim below on purpose, so a wrong browser
+  // is refused WITHOUT consuming a flow that belongs to somebody else.
+  if (!browserNonceMatches(issued.config?.pendingAuth?.browserNonce, browserNonce)) {
+    return callbackRedirect(res, 'error', 'browser_mismatch');
   }
 
   const codeVerifier = issued.config?.pendingAuth?.codeVerifier;

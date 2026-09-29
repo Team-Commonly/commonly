@@ -140,6 +140,38 @@ describe('hosted-mcp connect: start', () => {
     expect(typeof res.body.expiresAt).toBe('string');
   });
 
+  it('hands the starting browser a second secret, scoped to this entry\'s callback', async () => {
+    const res = await start();
+    const cookie = (res.headers['set-cookie'] || [])
+      .find((line) => line.startsWith('commonly_hosted_mcp_nonce='));
+    expect(cookie).toBeTruthy();
+    // The attributes ARE the guard: `HttpOnly` keeps it out of the app's own
+    // scripts, `SameSite=Lax` keeps it off a cross-site request to the callback,
+    // `Secure` keeps it off plaintext, and the path is what makes it useless at
+    // any other route on the instance.
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('Max-Age=600');
+    expect(cookie).toContain('Path=/api/integrations/connect/hosted-mcp/linear/callback');
+  });
+
+  it('stores the secret it hands the browser, and hands it to nobody else', async () => {
+    const res = await start();
+    const cookie = (res.headers['set-cookie'] || [])
+      .find((line) => line.startsWith('commonly_hosted_mcp_nonce='));
+    const browserNonce = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+    const [, update] = Integration.findOneAndUpdate.mock.calls[0];
+    // The same value on both sides, or the callback compares a cookie against a
+    // row that never held it and refuses every legitimate connect.
+    expect(update.$set['config.pendingAuth'].browserNonce).toBe(browserNonce);
+    // And it is not in the response body: a secret returned as JSON is one the
+    // caller's own page can leak, and it is never a value the START request
+    // needs back — unlike the state beside it, which has to reach the vendor.
+    expect(res.body.browserNonce).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain(browserNonce);
+  });
+
   it('reuses one row per person per entry, rather than inserting a second', async () => {
     await start();
     const [filter, update, options] = Integration.findOneAndUpdate.mock.calls[0];
