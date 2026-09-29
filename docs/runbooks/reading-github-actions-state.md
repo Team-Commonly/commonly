@@ -17,10 +17,19 @@ are not the same problem and they do not share a remedy.
 | PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | nothing created in the push's own minute, while a mergeable sibling's push created three | rebase onto the new base, retarget it, **then** push — a retarget alone is *not* enough; see below |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
-| Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
+| Superseded by concurrency | run `cancelled` | a **newer run of the same workflow** exists in the same group — the SHA is *not* the key: a push and a base retarget in the same moment produce two full fan-outs at the SAME SHA and the group cancels one | none needed; read the newer run — if its jobs ran, the PR is fine |
 | Superseded but never cancelled | grey/pending, indefinitely | run `status=queued` **and** a later run of the same workflow on the same branch has `completed` | none — it is dead; read the successor |
-| Jobs cancelled at 0 steps | run `failure` | jobs `cancelled`, `steps=0`, and no newer run to have superseded them | `gh run rerun <id>` |
+| Jobs cancelled at 0 steps | run `failure` | jobs `cancelled`, `steps=0`, and no newer run to have superseded them — **a same-SHA sibling counts**, so look for one before using this row | `gh run rerun <id>` |
 | Orphaned jobs | `pending` forever in `statusCheckRollup` — and possibly **not visible at all** in `gh pr checks` | run `completed/failure`, jobs still `queued/null` at `steps=0` | **a new SHA.** `gh run rerun` and close/reopen both ADD a generation; neither replaces one |
+
+A `cancelled` run is the case where the check list names the wrong thing twice:
+`gh pr checks` buckets it `fail`, and the row above asks for a *newer SHA* that a
+same-SHA duplicate never provides. Measured on #2020 at `a742b389`, where the
+push and the base retarget landed in the same second: run `36632003622`
+`cancelled` with all three jobs at `steps=0`, run `36632004815` green on all
+three, **both at that one SHA**. So the discriminator is a newer *run of the same
+workflow*, not a newer commit — and `conclusion=cancelled` with `steps=0` on every
+job means nothing executed: shed, not failed.
 
 Two of these mislead in opposite directions. A run-level `failure` reads as
 "the tests failed" when nothing ever executed. And a check row reporting
