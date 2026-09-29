@@ -137,16 +137,25 @@ describe('hosted-mcp intake: discovery', () => {
   });
 
   it('refuses an incomplete document rather than guessing an endpoint', async () => {
+    // `issuer` is present ON PURPOSE. Without it this document is refused for
+    // naming no issuer — the SAME code the missing endpoint gets — so deleting the
+    // endpoint guard below changes no test, which is how it went unwitnessed. The
+    // message is the only thing that tells the two defects apart, so both this arm
+    // and the no-issuer arm pin theirs.
     let thrown;
     try {
       await discoverAuthorizationServer(
         'https://mcp.linear.app',
-        async () => jsonResponse({ authorization_endpoint: AS_METADATA.authorization_endpoint }),
+        async () => jsonResponse({
+          issuer: 'https://mcp.linear.app',
+          authorization_endpoint: AS_METADATA.authorization_endpoint,
+        }),
       );
     } catch (error) {
       thrown = error;
     }
     expect(thrown.code).toBe('issuer_metadata_incomplete');
+    expect(thrown.message).toBe('authorization server metadata names no authorization_endpoint or token_endpoint');
   });
 
   it('names an unreachable issuer as unreachable, whether by status or by transport', async () => {
