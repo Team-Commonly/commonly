@@ -239,15 +239,19 @@ you from misreading. `gh pr checks` cannot show a suite that was never created;
 read `actions/runs?head_sha=<sha>` instead.
 
 **And `head_sha` is not an event filter, which is the trap that table sets.**
-Read `?head_sha=0dafe74f…` a minute later and you get five runs — the five
-guards just named — every one of them created at `19:38:38Z`. `event` reads
-`pull_request` for both `synchronize` and `edited`, so that field cannot tell you
-which one dispatched it; compare each run's `created_at` against the PR's
+`event` reads `pull_request` for both `synchronize` and `edited`, so that field
+cannot tell you which one dispatched a run, and a query by `head_sha` silently
+merges the two: read `?head_sha=0dafe74f…` a minute later and you get five runs —
+the five guards just named — every one of them created at `19:38:38Z`.
+
+Prefer the witness that does not read a clock. The four guards that declare
+`branches: [main]` cannot be dispatched while the base is a feature branch, so
+their presence is the `edited` and their absence is the control — the sibling
+push from the same minute has none of them.
+
+Then, secondarily, compare each run's `created_at` against the PR's
 `base_ref_changed` in its timeline, which is `19:38:35Z` here — three seconds
-before the runs, and 73 after the push. A second witness makes the attribution
-independent of clock-reading: the four guards that declare `branches: [main]`
-cannot be dispatched while the base is a feature branch, and the sibling push
-from that same minute has none of them. **A run listed at your head may belong to
+before the runs, and 73 after the push. **A run listed at your head may belong to
 a later event**, so sort by `created_at` against the push you are reasoning about
 before attributing anything to it.
 
@@ -266,6 +270,21 @@ git push origin <branch>
 sha — which is the whole cost, and it is not zero: **every head-bound ask, gate
 or stamp has to be re-pointed, and a stamp already posted is spent under rule 32
 even though the tree is identical.**
+
+**A RED check is a different case, and it has a cheaper lever.** The push above
+is for a suite that was never created. When the suite ran and failed — a flake,
+not a regression — re-run the failed jobs instead:
+
+```bash
+gh run rerun <run-id> --failed
+```
+
+That works from a seat and costs **no head move**, so no stamp is spent. Verified
+2026-09-29 on run `36620571351`: `run_attempt` went to 2 and the failed check
+returned to pending. Take the run id from the failing check's URL. The REST
+equivalent is refused from a seat (`gh api -X POST
+.../actions/runs/<id>/rerun-failed-jobs`) — the same refusal as the dispatch
+endpoint above. The lever is available; its API form is not.
 
 **Prevention.** Retargeting a stacked PR to `main` is necessary and not
 sufficient, and the incident above hides that: the branch there had *already*
