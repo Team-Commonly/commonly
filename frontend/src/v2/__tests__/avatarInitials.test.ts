@@ -41,6 +41,43 @@ describe('initialsFor', () => {
     expect(initialsFor('奶龙')).toBe('奶龙');
   });
 
+  test('an astral character is taken whole, never cut in half', () => {
+    // A JS string indexes UTF-16 units, so a name starting with an astral
+    // character used to yield the high surrogate ALONE — "\ud801", which is not
+    // a character and renders as a replacement box or nothing at all. Deseret
+    // capital 𐐀 is U+10400, two units.
+    expect(initialsFor('𐐀lpha Beta')).toBe('𐐀B');
+    expect(initialsFor('Deseret 𐐀team')).toBe('D𐐀');
+    // The one-word branch cuts after TWO characters, so here the second code
+    // point is the one at risk: 'A𝔘' is three units, and slice(0, 2) was "A"
+    // plus half of 𝔘.
+    expect(initialsFor('A𝔘')).toBe('A𝔘');
+  });
+
+  test('no result is ever a lone surrogate', () => {
+    // The class, not the three instances above: a lone surrogate is a single
+    // UTF-16 unit inside the surrogate range, whereas a whole astral character
+    // iterates as a two-unit string. Names with no letters at all reach the
+    // fallback branch, so an emoji-only name is the input that pins THAT read.
+    const loneSurrogates = (s: string) =>
+      Array.from(s).filter((ch) => ch.length === 1 && ch >= '\uD800' && ch <= '\uDFFF');
+    const names = [
+      '𐐀lpha Beta', 'Deseret 𐐀team', 'A𝔘', '𝔘', '😀😀', '😀 Launch',
+      '奶龙', 'Sprint Review', 'Fable (lead)', '(lead)', '—', '', 'A—𝔘',
+    ];
+    for (const name of names) {
+      expect({ name, lone: loneSurrogates(initialsFor(name)) }).toEqual({ name, lone: [] });
+    }
+  });
+
+  test('a name with nothing strippable left still reads two whole characters', () => {
+    // The third UTF-16 read was the fallback: a slice(0, 2) of the raw string.
+    // An emoji-only name has no letter or digit token, so it lands here, and
+    // the slice used to take one emoji where two were meant.
+    expect(initialsFor('😀😀')).toBe('😀😀');
+    expect(initialsFor('😀')).toBe('😀');
+  });
+
   test('empty and punctuation-only names fall back rather than throwing', () => {
     expect(initialsFor('')).toBe('?');
     expect(initialsFor(null)).toBe('?');
