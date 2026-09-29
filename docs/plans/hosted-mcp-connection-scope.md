@@ -74,10 +74,12 @@ Entries live in this repo, one module per vendor, and change only by PR. An entr
 |---|---|
 | missing | `tool_unavailable` |
 | `inputSchema` differs from the pin | `tool_drift` until a PR re-pins it: the owner approves canonical args under the pinned schema, and a changed schema can change what those args mean |
-| annotations moved toward write since the pin (`readOnlyHint` withdrawn, `destructiveHint` set) | `tool_drift`: the hint grants nothing, but a vendor withdrawing it is a reason to stop |
+| annotations moved toward write since the pin: a claim it recorded (`readOnlyHint: true`, `destructiveHint: false`) is no longer made, or a `read` pin's tool now says `destructiveHint: true` | `tool_drift`: the hint grants nothing, but a vendor withdrawing it is a reason to stop |
 | present and unchanged | offered and callable |
 
 Upstream tools that are not in the entry are never offered and never callable, and that is not an error. A drift refusal names the tool and the entry, so whoever reads the trail knows the re-pin is ours to do. `listToolsForGrant` (`:557–590`) is extended to leave out tools refused for either reason, so an agent is not offered what will be refused.
+
+**A claim the pin recorded must still be made, and silence withdraws it.** The spec defaults an absent `readOnlyHint` to `false` and an absent `destructiveHint` to `true` (schema 2026-07-28, `ToolAnnotations`), the unsafe value both times. A vendor that stops saying `readOnlyHint: true` or `destructiveHint: false` has withdrawn the claim. One that newly spells a default has changed nothing, so a pin that recorded no `destructiveHint` does not drift when the vendor starts saying `true` (75445, 75449). A `read` pin also drifts on a live `destructiveHint: true`, because the entry load refuses a `read` pin carrying it, and drift does not admit later what the entry refuses.
 
 **A tool pinned `read` carries the vendor's own `readOnlyHint: true`.** The spec's default for an absent `readOnlyHint` is `false` (schema 2026-07-28, `ToolAnnotations`), so a tool whose vendor says nothing is one the vendor has not called read-only. A pin without the hint would also leave the drift row above dead for that tool, because a pin that never held the hint cannot see it withdrawn (Vera 75423–75424). The entry load refuses such a pin, as it refuses a `read` pin whose annotations say `readOnlyHint: false` or `destructiveHint: true` (#2014). The hint still grants nothing; its absence refuses. **A vendor that sends no `readOnlyHint` gets no entry, not a write-only one** (75440). The class records what a tool does, so a read tool is never pinned `write` to get past a missing hint, and §5's answer on attribution cannot arrive that way.
 
@@ -246,6 +248,7 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a pinned tool missing upstream is refused tool_unavailable`
    - `a pinned tool whose schema changed upstream is refused tool_drift`
    - `a read pin carrying no readOnlyHint is refused`, with #2014's other entry-time refusals (§3)
+   - the annotation arms, one case each (§3): a `destructiveHint: false` gone silent is `tool_drift`; a default newly spelled on a pin that recorded nothing is `ok`; a `read` pin whose tool now says `destructiveHint: true` is `tool_drift`
 3. **Intake.** The CIMD document, start and callback.
    - `the callback refuses a state it did not issue, a used state and an expired state`
    - `the callback refuses a valid state from a browser that did not start the flow, and the flow stays pending`, with no cookie, with another flow's cookie, and on a row that stores no nonce
@@ -285,7 +288,7 @@ The TASK-172 ruling's part 3 wording on `:180` is replaced by §6.
 
 - Notion's only advertised scope is `default`, so a Notion entry cannot narrow its credential to reads the way Linear's `read` does.
 - GitHub needs the pre-registered client (§4).
-- Two servers publish their source, so their hints can be read before a login. Sentry's makes `readOnlyHint`, `destructiveHint` and `openWorldHint` required on every tool (`getsentry/sentry-mcp` at `0563bde`, `packages/mcp-core/src/tools/types.ts`). GitHub's sets `readOnlyHint` on all 121 of its tools (`github/github-mcp-server` at `85598ba`).
+- Two servers publish their source, so their hints can be read before a login, in the files that declare what they serve over MCP. Sentry's tool type makes `readOnlyHint`, `destructiveHint` and `openWorldHint` required, and a test enforces it (`getsentry/sentry-mcp` at `0563bde`, `packages/mcp-core/src/tools/types.ts`); its `internal/agents/tools` are not MCP tools and carry none. GitHub's sets `readOnlyHint` on all 121 tools in `pkg/github`, and its tests fail a tool that omits it (`github/github-mcp-server` at `85598ba`, `pkg/toolvalidation/readonlyhint.go`).
 
 **Still open, and not this note's to decide:**
 
