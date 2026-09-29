@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../../context/AuthContext';
+import i18n from '../../../i18n';
 import V2LandingPage from '../V2LandingPage';
 
 // TASK-152. Two user-visible strings on the landing hero were wrong in
@@ -117,5 +118,35 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     expect(command).toBe(readmeQuickStartCommand());
     expect(command).toContain('cd commonly');
     expect(command).toContain('./install.sh');
+  });
+
+  it('renders the zh hero title suffix as its own element for the nowrap rule to bind to', async () => {
+    // TASK-211. The hero sentence is 「与你的___对话」 in zh: the rotator supplies
+    // the object and the suffix trails it, so the suffix is a word the reader
+    // must see whole (it split across lines at 390 until v2-landing.css stopped
+    // the break). The declaration is pinned in v2-layout-invariants.test.ts —
+    // this is the other half: that pin only means anything while the suffix
+    // still renders through `.v2-landing__title-suffix` inside the h1 it is
+    // scoped to. Inline the suffix as bare text and the CSS would have nothing
+    // to bind to while the pin stayed green.
+    const zhSuffix = (((readLocale('zh-CN.json').landing as TranslationTree).hero as TranslationTree)
+      .titleSuffix) as string;
+    expect(zhSuffix.length).toBeGreaterThan(0);
+
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    const zh = renderLanding();
+    const node = zh.container.querySelector('.v2-landing__title-suffix');
+    expect(node).not.toBeNull();
+    expect(node?.textContent).toBe(zhSuffix);
+    expect(node?.closest('h1.v2-landing__title')).not.toBeNull();
+    zh.unmount();
+
+    // en ships an empty suffix, so no span is rendered there and the rule is
+    // zh-only by construction — this is the control that keeps the pin from
+    // quietly becoming an English-hero assertion.
+    await act(async () => { await i18n.changeLanguage('en'); });
+    const en = renderLanding();
+    expect(en.container.querySelector('.v2-landing__title-suffix')).toBeNull();
+    en.unmount();
   });
 });
