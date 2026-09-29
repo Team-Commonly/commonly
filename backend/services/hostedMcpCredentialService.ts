@@ -27,6 +27,23 @@
  * the winner has WRITTEN finds the old reference, which by then is already
  * useless. What the loser is waiting for is the winner's write, not the
  * generation bump.
+ *
+ * ## Why the generation alone is not enough
+ *
+ * A generation stops a caller holding a STALE pre-image. It does not stop one
+ * holding a FRESH one: a call that reads the row after the winner's bump and
+ * before its commit sees `refreshGeneration: G+1`, a value no one has consumed
+ * yet, so it bumps from G+1, wins its own fence, and refreshes with the same
+ * single-use token. The window is the vendor round-trip, which is exactly when
+ * calls pile up — an 8-hour token expires and several seats in a room call tools
+ * milliseconds apart.
+ *
+ * So the bump also takes a short LEASE (`config.refreshingUntil`), held by the
+ * winner across the round-trip. A caller arriving mid-flight FAILS the bump and
+ * becomes a loser, where it already behaves correctly. The lease expires so a
+ * winner that crashed cannot strand the row, and the generation guard on
+ * `commit`/`markError` is what makes that expiry safe: a timed-out winner
+ * returning late can no longer overwrite its successor.
  */
 
 import Integration from '../models/Integration';
@@ -48,6 +65,16 @@ export const WINNER_WAIT_MS = 1500;
 
 /** The loser's poll interval while it waits. */
 const WINNER_POLL_MS = 100;
+
+/**
+ * The fence's lease, held by the winner across its provider call.
+ *
+ * Long enough that a slow vendor does not hand the fence to a second caller —
+ * which is the double-spend the lease exists to prevent — and short enough that
+ * a winner which crashed mid-refresh strands the row only briefly: the lease is
+ * the ONLY thing bounding that case, since the winner never returns to clear it.
+ */
+export const REFRESH_LEASE_MS = 30 * 1000;
 
 export type HostedMcpCredentialErrorCode =
   | 'connection_mismatch'
@@ -109,10 +136,15 @@ interface CredentialDeps {
   row: {
     /** The row as it is NOW, by `_id` only: never a grant-supplied id (§10.3). */
     findById: (id: unknown) => Promise<HostedMcpRow | null>;
-    /** The fence itself: bump the generation from the value the caller read, or return null. */
+    /**
+     * The fence itself: bump the generation from the value the caller read AND
+     * take the refresh lease, or return null. `now` is a parameter rather than a
+     * clock read here, so the lease's expiry is testable without waiting.
+     */
     bumpGeneration: (
       id: unknown,
       from: number,
+      now: Date,
     ) => Promise<HostedMcpRow | null>;
     /** Commit the winner's pair. Guarded on the generation it now holds. */
     commit: (id: unknown, generation: number, fields: Record<string, unknown>) => Promise<void>;
@@ -171,9 +203,29 @@ const defaultDeps = (): CredentialDeps => ({
   secrets: connectorSecrets,
   row: {
     findById: (id) => Integration.findById(id).lean() as unknown as Promise<HostedMcpRow | null>,
-    bumpGeneration: (id, from) => Integration.findOneAndUpdate(
-      { _id: id, 'config.refreshGeneration': from },
-      { $inc: { 'config.refreshGeneration': 1 } },
+    bumpGeneration: (id, from, now) => Integration.findOneAndUpdate(
+      {
+        _id: id,
+        'config.refreshGeneration': from,
+        // The lease in its takeable states: never taken, already released (a
+        // clear is a VALUE, so the field is present and null), and expired. The
+        // first two are one condition in MongoDB — `$eq: null` matches a missing
+        // field as well as a null one, which a mutant that drops the
+        // `$exists: false` arm confirms by changing no test — but both are
+        // written out so that reading the filter does not require knowing that.
+        // `$lte` alone would NOT do: its range operators are type-bracketed, so
+        // it matches neither a null nor a missing value, and a released lease
+        // would then wedge every later refresh.
+        $or: [
+          { 'config.refreshingUntil': { $exists: false } },
+          { 'config.refreshingUntil': null },
+          { 'config.refreshingUntil': { $lte: now } },
+        ],
+      },
+      {
+        $inc: { 'config.refreshGeneration': 1 },
+        $set: { 'config.refreshingUntil': new Date(now.getTime() + REFRESH_LEASE_MS) },
+      },
       { new: false },
     ).lean() as unknown as Promise<HostedMcpRow | null>,
     commit: async (id, generation, fields) => {
@@ -186,7 +238,17 @@ const defaultDeps = (): CredentialDeps => ({
     markError: async (id, generation, message) => {
       await Integration.findOneAndUpdate(
         { _id: id, 'config.refreshGeneration': generation },
-        { $set: { status: 'error', errorMessage: message } },
+        {
+          $set: {
+            status: 'error',
+            errorMessage: message,
+            // Every exit the winner has releases the lease, including this one:
+            // a row marked while still looking "in flight" refuses the next
+            // call's bump for no reason. `null`, not an absent value — on a
+            // STRICT subdocument a `$set` of `undefined` is a silent no-op.
+            'config.refreshingUntil': null,
+          },
+        },
         { new: true },
       );
     },
@@ -258,7 +320,7 @@ export const credentialFor = async (
   }
 
   const generation = generationOf(row);
-  const won = await deps.row.bumpGeneration(id, generation);
+  const won = await deps.row.bumpGeneration(id, generation, now);
 
   if (!won) {
     return loseTheRace({ deps, id, startExpiresAt: row.config?.expiresAt });
@@ -317,6 +379,9 @@ export const credentialFor = async (
     'config.credentialRef': credentialRef,
     'config.refreshTokenRef': nextRefreshRef,
     'config.expiresAt': expiresAt,
+    // Released with the write it guarded, so the next refresh is not turned into
+    // a loser by a lease whose holder has already finished.
+    'config.refreshingUntil': null,
     // Top-level, not `config.*`: the row's error text lives outside the strict
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,

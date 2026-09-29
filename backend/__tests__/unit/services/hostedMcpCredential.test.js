@@ -17,6 +17,7 @@ const {
   credentialFor,
   HostedMcpCredentialError,
   EXPIRY_SKEW_MS,
+  REFRESH_LEASE_MS,
   WINNER_WAIT_MS,
 } = require('../../../services/hostedMcpCredentialService');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
@@ -85,11 +86,23 @@ const harness = (options = {}) => {
     order.push(`revoke:${ref}`);
   });
 
-  const bumpGeneration = jest.fn(async (id, from) => {
+  const bumpGeneration = jest.fn(async (id, from, now) => {
     if (options.loseRace) return null;
     if ((state.config.refreshGeneration ?? 0) !== from) return null;
+    // The lease, modelled because the real filter carries it: absent, released
+    // (null) and elapsed are all takeable, and a live one is not. A fake that
+    // ignored it would witness a fence production does not have.
+    const until = state.config.refreshingUntil;
+    if (until && new Date(until).getTime() > now.getTime()) return null;
     const preImage = state;
-    state = { ...state, config: { ...state.config, refreshGeneration: from + 1 } };
+    state = {
+      ...state,
+      config: {
+        ...state.config,
+        refreshGeneration: from + 1,
+        refreshingUntil: new Date(now.getTime() + REFRESH_LEASE_MS),
+      },
+    };
     order.push('bump');
     return preImage;
   });
@@ -108,7 +121,12 @@ const harness = (options = {}) => {
   const markError = jest.fn(async (id, generation, message) => {
     order.push('markError');
     if ((state.config.refreshGeneration ?? 0) !== generation) return;
-    state = { ...state, status: 'error', errorMessage: message };
+    state = {
+      ...state,
+      status: 'error',
+      errorMessage: message,
+      config: { ...state.config, refreshingUntil: null },
+    };
   });
 
   const findById = jest.fn(async () => {
@@ -290,7 +308,7 @@ describe('the winner of the fence', () => {
       token: 'new-access',
       expiresAt: new Date(T0 + 3600 * 1000).toISOString(),
     });
-    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3);
+    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3, new Date(T0));
     expect(h.refreshAtVendor).toHaveBeenCalledWith({
       entry: ENTRY,
       clientId: ENTRY.clientId,
@@ -301,6 +319,9 @@ describe('the winner of the fence', () => {
       'config.credentialRef': ACCESS_REF,
       'config.refreshTokenRef': REFRESH_REF,
       'config.expiresAt': new Date(T0 + 3600 * 1000),
+      // Released with the write it guarded: a lease left behind would make the
+      // NEXT refresh a loser against a winner that has already finished.
+      'config.refreshingUntil': null,
       errorMessage: null,
     });
     expect(h.state().config.expiresAt).toEqual(new Date(T0 + 3600 * 1000));
@@ -457,6 +478,24 @@ describe('the loser of the fence', () => {
     });
 
     await expect(credentialFor(stale(), h.deps)).resolves.toMatchObject({ token: 'winner-access' });
+  });
+
+  test('a lease another caller holds makes this one a loser, not a second winner', async () => {
+    // The generation is NOT stale here — it is the one the holder is using — so
+    // nothing but the lease stops this call from bumping from it and refreshing
+    // with the same single-use token. Literal offset, not REFRESH_LEASE_MS: a
+    // fixture built from the constant under test moves with its mutant.
+    const h = harness({ row: stale({ refreshingUntil: new Date(T0 + 30 * 1000) }) });
+    const error = await refusal(credentialFor(stale({ refreshingUntil: new Date(T0 + 30 * 1000) }), h.deps));
+
+    expect(error.code).toBe('credential_refreshing');
+    expect(error.retryable).toBe(true);
+    expect(h.bumpGeneration).toHaveBeenCalledTimes(1);
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+    expect(h.commit).not.toHaveBeenCalled();
+    expect(h.markError).not.toHaveBeenCalled();
+    expect(h.state().config.refreshGeneration).toBe(3);
+    expect(h.state().status).toBe('connected');
   });
 
   test('reports credential_refreshing when the winner never commits, and harms nothing', async () => {
