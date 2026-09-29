@@ -25,15 +25,22 @@ import {
 
 const TOKEN = 'cm_agent_secret_value';
 
+// The child renames its result into place, so the path existing means the content
+// is complete. This still waits for a non-empty read as a belt: a reader that
+// returns on mere existence turns a partially written file into JSON.parse('')
+// -> "Unexpected end of JSON input", which is how TASK-187 was reported.
 const waitForFile = async (path, ms = 5000) => {
   const deadline = Date.now() + ms;
   for (;;) {
+    let text = null;
     try {
-      return readFileSync(path, 'utf8');
+      text = readFileSync(path, 'utf8');
     } catch {
-      if (Date.now() > deadline) throw new Error(`probe file never appeared: ${path}`);
-      await new Promise((r) => { setTimeout(r, 25); });
+      text = null;
     }
+    if (text !== null && text.length > 0) return text;
+    if (Date.now() > deadline) throw new Error(`probe file never appeared: ${path}`);
+    await new Promise((r) => { setTimeout(r, 25); });
   }
 };
 
@@ -49,10 +56,11 @@ const runChildProbe = async ({
   const dir = mkdtempSync(join(tmpdir(), 'kai-cred-'));
   const out = join(dir, 'seen.json');
   const server = `
-    import { readFileSync, writeFileSync } from 'node:fs';
+    import { readFileSync, renameSync, writeFileSync } from 'node:fs';
     let piped = null;
     try { piped = readFileSync(3, 'utf8'); } catch (e) { piped = 'ERR:' + e.code; }
-    writeFileSync(${JSON.stringify(out)}, JSON.stringify({
+    const partial = ${JSON.stringify(out)} + '.part';
+    writeFileSync(partial, JSON.stringify({
       fdVar: process.env.COMMONLY_TOKEN_FD ?? null,
       envToken: process.env.COMMONLY_AGENT_TOKEN ?? null,
       tokenFile: process.env.COMMONLY_TOKEN_FILE ?? null,
@@ -63,6 +71,8 @@ const runChildProbe = async ({
       home: process.env.HOME ?? null,
       piped,
     }));
+    // rename(2) is atomic within a filesystem: no reader can see a half file.
+    renameSync(partial, ${JSON.stringify(out)});
     process.stdin.resume();
   `;
   const command = [process.execPath, '--input-type=module', '-e', server];
@@ -461,4 +471,21 @@ describe('writeCredentialFile: the launcher side (TASK-083)', () => {
     expect(calls.map((c) => c[0])).toEqual(['mkdir', 'write', 'chmod']);
     expect(calls[2][1]).toEqual(['/r/kai-1-x/token', 0o600]);
   });
+});
+
+// TASK-187. The writer renames into place, so in this suite the reader's
+// wait-for-content loop never trips — which would leave it an unpinned line.
+// This drives it directly: an existing-but-empty file is exactly the state that
+// produced `JSON.parse('')` -> "Unexpected end of JSON input" in CI.
+test('waitForFile waits for content, not merely for the file to exist (TASK-187)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kai-cred-wait-'));
+  const probe = join(dir, 'seen.json');
+  writeFileSync(probe, '');
+  let settled = false;
+  const pending = waitForFile(probe, 2000).then((text) => { settled = true; return text; });
+  await new Promise((r) => { setTimeout(r, 100); });
+  // A reader that returns on mere existence has already resolved with '' here.
+  expect(settled).toBe(false);
+  writeFileSync(probe, '{"ok":true}');
+  expect(JSON.parse(await pending)).toEqual({ ok: true });
 });
