@@ -19,7 +19,10 @@ export interface ToolDefinition {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
-  connectionType: 'github-app';
+  /** `hosted-mcp` tools are entry-projected; their `call` lands with §4's intake. */
+  connectionType: 'github-app' | 'hosted-mcp';
+  /** Set only on a `hosted-mcp` definition: the catalogue entry it was projected from. */
+  entryId?: string;
   irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
   inputSchema: Record<string, unknown>;
   /** Enrich the canonical approval payload with provider state captured now. */
