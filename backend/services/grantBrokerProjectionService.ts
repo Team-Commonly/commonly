@@ -265,7 +265,7 @@ export const dispatchHostedBrokerTool = async (
       // A hosted turn has no shell, web or file tools: there is nothing for a
       // sandbox to confine, so the seat-confinement refusal does not apply
       // (Wren, TASK-175 74882). This is the only caller that sets it.
-      hosted: true,
+      hostedTurn: true,
     });
     return { content: result.result, callId: result.callId, outcome: 'ok' };
   } catch (error) {

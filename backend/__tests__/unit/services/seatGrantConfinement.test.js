@@ -365,7 +365,7 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
       instanceId: INSTANCE,
       tool: 'github.list_issues',
       args: {},
-      hosted: true,
+      hostedTurn: true,
     });
 
     expect(result.callId).toBeTruthy();

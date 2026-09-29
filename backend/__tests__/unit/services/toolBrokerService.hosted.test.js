@@ -192,7 +192,7 @@ describe('a hosted-MCP grant through the broker', () => {
       agentUserId: 'agent-a',
       tool: 'linear.list_issues',
       args: { limit: 3 },
-      hosted: true,
+      hostedTurn: true,
     });
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -304,7 +304,7 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));
   });
 
-  it('cannot park a hosted write whose row names no owner, so the connection is refused instead', async () => {
+  it('refuses a hosted write whose row names no owner as a connection mismatch, not a retryable card failure', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
       tools: ['linear.create_issue'],
       writeMode: 'write-with-confirm',
@@ -312,19 +312,26 @@ describe('a hosted-MCP grant through the broker', () => {
     const orphan = hostedRow({ createdBy: undefined });
     mockIntegration.findById.mockReturnValue({ ...orphan, lean: async () => orphan });
 
-    // The cause is `ownerUserId` being absent, and the park path's own catch
-    // converts any failure to open an approval room into `approval_unavailable`
-    // — pre-existing and generic (the GitHub path converts the same way), so
-    // this arm pins the OUTCOME rather than the code: a connection with no
-    // recorded owner cannot park, no room is requested, and nothing reaches the
-    // vendor. The conversion hiding a connection-level cause is recorded on the
-    // row as an observation, not fixed in this slice.
+    // The cause is `ownerUserId` being absent, which `resolveApprovalPodId`
+    // refuses as a permanent `connection_mismatch` (403). The park path's catch
+    // used to relabel every cause `approval_unavailable` (503) — a retryable
+    // verdict for something no retry can fix, with the ledger recording a
+    // reason that was not the cause (recorded on the row as an observation in
+    // slice 3c-2, fixed here). The positive control is the sibling arm in
+    // `toolBrokerApprovalService.test.js` ("records a refusal when the approval
+    // proposal throws"): a cause that is NOT a `RoomGrantError` still reports
+    // `approval_unavailable`.
     await expect(callTool({
       grantId: 'grant-hosted',
       agentUserId: 'agent-a',
       tool: 'linear.create_issue',
       args: { title: 'x' },
-    })).rejects.toMatchObject({ code: 'approval_unavailable' });
+    })).rejects.toMatchObject({ code: 'connection_mismatch', statusCode: 403 });
+    // The ledger reason is a code, and it is now the cause's own code.
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused',
+      reason: 'connection_mismatch',
+    }));
     expect(mockDmService.getOrCreateAgentRoom).not.toHaveBeenCalled();
     expect(mockProposeAction).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
