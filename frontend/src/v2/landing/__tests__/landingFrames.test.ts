@@ -43,3 +43,71 @@ describe('landing feature frames', () => {
     expect(onDisk).toEqual(FRAMES.map(([landing]) => landing).sort());
   });
 });
+
+/**
+ * TASK-205. The four frames are `loading="lazy"`, so before they load their box
+ * is only as tall as its markup allows: with no width/height attributes that is
+ * 0, the page grows 691px mid-scroll, and a first-click anchor on Use cases or
+ * Pricing lands short — measured from the top of the page, frames unloaded.
+ *
+ * These assertions read the size out of each PNG's own IHDR and compare it with
+ * what the page passes, so the page cannot disagree with the file it renders: a
+ * re-shot frame at a new size fails here instead of silently restoring the
+ * shift. They are source-derived rather than rendered deliberately — jest maps
+ * every PNG import to the same file mock, so in a rendered tree all four <img>
+ * elements carry one indistinguishable src and a render test could not say
+ * which row got which numbers.
+ */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The frame's intrinsic size, from its IHDR chunk (signature, length, then "IHDR", width, height). */
+const pngSize = (file: string): { width: number; height: number } => {
+  const bytes = fs.readFileSync(path.join(LANDING_ASSETS, file));
+  if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.subarray(12, 16).toString('ascii') !== 'IHDR') {
+    throw new Error(`${file} does not begin with an IHDR chunk, so a size read from it would be garbage`);
+  }
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+};
+
+/** Import identifier -> landing asset filename, read from the page's own imports. */
+const importedFrames = (): Map<string, string> => new Map(
+  Array.from(PAGE.matchAll(/import\s+(\w+)\s+from '\.\.\/\.\.\/assets\/landing\/([^']+)'/g),
+    (m) => [m[1], m[2]] as const),
+);
+
+const featureRows = (): Array<{ img: string; width: number; height: number }> => Array
+  .from(PAGE.matchAll(/<FeatureRow\b[\s\S]*?\/>/g), (match) => {
+    const img = /img=\{(\w+)\}/.exec(match[0]);
+    const width = /width=\{(\d+)\}/.exec(match[0]);
+    const height = /height=\{(\d+)\}/.exec(match[0]);
+    if (!img || !width || !height) {
+      throw new Error(`a FeatureRow passes no img/width/height: ${match[0].replace(/\s+/g, ' ')}`);
+    }
+    return { img: img[1], width: Number(width[1]), height: Number(height[1]) };
+  });
+
+describe('landing feature frames reserve their box (TASK-205)', () => {
+  test('every feature row passes the size its own frame actually has', () => {
+    const imports = importedFrames();
+    const rows = featureRows();
+
+    expect(rows).toHaveLength(FRAMES.length);
+    for (const row of rows) {
+      const file = imports.get(row.img);
+      expect(file).toBeDefined();
+      expect({ width: row.width, height: row.height }).toEqual(pngSize(file as string));
+    }
+  });
+
+  test('FeatureRow puts that box on the img, and leaves the sizing lazy', () => {
+    const element = /<img[\s\S]*?v2-landing__feature-img[\s\S]*?\/>/.exec(PAGE);
+    expect(element).not.toBeNull();
+    const tag = (element as RegExpExecArray)[0];
+
+    // The props are only worth passing if the element they feed carries them.
+    expect(tag).toContain('src={img}');
+    expect(tag).toContain('width={width}');
+    expect(tag).toContain('height={height}');
+    expect(tag).toContain('loading="lazy"');
+  });
+});

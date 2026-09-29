@@ -25,7 +25,18 @@
   color: var(--v2-text-primary);
   font-family: var(--v2-font);
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
+  /* TASK-205: a first-click anchor landed the section short and then under the
+     bar. Two causes, one rule each.
+     scroll-padding-top here, on the SCROLLER rather than as scroll-margin on
+     each section, so hash navigation, scrollIntoView and keyboard focus all
+     inherit it — focus was landing under the bar too. 72 is the frosted bar
+     plus 40 of air; the phone block below drops it to 88 (64 + 24).
+     `scroll-behavior: smooth` used to sit here unconditionally, which beat the
+     no-preference block at the foot of this file (0,2,0 against 0,1,0) and so
+     animated the jump for visitors who had asked for reduced motion. Deleted
+     rather than overridden: smooth scrolling now has exactly one source, and a
+     reduced-motion visitor gets an instant jump. */
+  scroll-padding-top: 112px;
 }
 
 .v2-landing__bar,
@@ -1086,6 +1097,9 @@
 
 @media (max-width: 680px) {
   .v2-landing__bar { height: 64px; }
+  /* TASK-205: 64 bar + 24, keeping the same air as the 112 above. Same
+     specificity as the base rule (0,2,0), later in the file, so it wins. */
+  .v2-root.v2-landing { scroll-padding-top: 88px; }
   .v2-landing__brand-name { font-size: 22px; }
   .v2-landing__hero { padding-top: 40px; }
   .v2-landing__hero-inner { gap: 16px; }
