@@ -210,7 +210,7 @@ describe('dispatchHostedBrokerTool', () => {
       instanceId: 'default',
       // Set only here: a hosted turn has no shell, web or file tools to confine,
       // so the seat-confinement refusal does not apply to it (Wren, TASK-175).
-      hosted: true,
+      hostedTurn: true,
       tool: 'github.list_issues',
       args: { grantId: 'grant-someone-else', agentUserId: OTHER_SEAT, state: 'open' },
     });

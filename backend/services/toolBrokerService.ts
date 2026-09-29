@@ -84,8 +84,12 @@ export interface BrokerCallInput {
    * (`grantBrokerProjectionService.dispatchHostedBrokerTool`). A hosted turn has
    * no shell, web or file tools, so it has nothing for a sandbox to confine and
    * the seat-confinement refusal does not apply to it (Wren, TASK-175 74882).
+   *
+   * Named for the TURN and not the connection: a caller may hold a hosted
+   * connection and still be a shelled seat, which is a different question and
+   * one this flag must not answer.
    */
-  hosted?: boolean;
+  hostedTurn?: boolean;
 }
 
 export interface BrokerCallResult {
@@ -743,9 +747,9 @@ const assertSeatCanConfine = async (input: {
   agentName?: string;
   instanceId?: string;
   agentUserId: string;
-  hosted?: boolean;
+  hostedTurn?: boolean;
 }): Promise<void> => {
-  if (input.hosted) return;
+  if (input.hostedTurn) return;
   const judgement = await judgeSeatConfinement({
     agentName: input.agentName,
     instanceId: input.instanceId,
@@ -980,15 +984,26 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
             argsDigest: digestArgs(canonicalArgs),
           },
         });
-      } catch {
+      } catch (error) {
         // A proposal failure must never leave a pending ledger row with no
         // approval id. Record the refusal immediately, then surface the same
         // fail-closed error as the explicit `{ ok: false }` branch below.
-        const refusedCallId = await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+        //
+        // A cause that is already a `RoomGrantError` keeps its own code and
+        // status. `resolveApprovalPodId` refuses with `connection_mismatch` or
+        // `invalid_target` — both permanent 403s — and relabelling them
+        // `approval_unavailable` told the caller to retry something that can
+        // never succeed while the ledger recorded a reason that was not the
+        // cause. Only an unclassified failure, such as the approval store
+        // being unavailable, is `approval_unavailable`.
+        const cause = error instanceof RoomGrantError
+          ? error
+          : new RoomGrantError('approval_unavailable', 'approval card could not be created', 503);
+        const refusedCallId = await recordCall(input, grant, 'refused', startedAt, cause.code, {
           callId,
           args: canonicalArgs,
         });
-        throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
+        throw new RoomGrantError(cause.code, cause.message, cause.statusCode, {
           recorded: true,
           callId: refusedCallId,
         });
