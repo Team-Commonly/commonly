@@ -47,11 +47,27 @@ describe('podRecency', () => {
     expect(podInitials('—')).toBe('·');
   });
 
-  test('podInitials shows one glyph when a CJK glyph is picked', () => {
+  test('podInitials shows one glyph when the picked glyph is CJK', () => {
     expect(podInitials('设计评审')).toBe('设');
     expect(podInitials('Growth 团队')).toBe('G');
-    // Stated scope rather than an oversight: the predicate is a script list and
-    // JS \p{…} cannot express East_Asian_Width, so fullwidth Latin shows two.
+  });
+
+  test('podInitials cuts every CJK script, not just Han', () => {
+    // Han alone carried the predicate until these existed: dropping any ONE of
+    // the other three scripts from the class left the suite green, so a later
+    // "simplification" to a single script would have gone unnoticed.
+    expect(podInitials('ひらがな')).toBe('ひ');
+    expect(podInitials('カタカナ')).toBe('カ');
+    // Two words on purpose, so first() and the CJK branch are exercised together.
+    expect(podInitials('한국어 팀')).toBe('한');
+  });
+
+  test('podInitials states its scope: a fullwidth-Latin pick is not CJK', () => {
+    // The predicate is a script list and JS \p{…} cannot express
+    // East_Asian_Width, so fullwidth Latin shows both glyphs. Asserted rather
+    // than left in a comment — a known miss a test pins is a decision, and this
+    // assertion belongs in its own test so widening the class relocates it
+    // instead of tripping the CJK test.
     expect(podInitials('ＡＢＣ')).toBe('ＡＢ');
   });
 
