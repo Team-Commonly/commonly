@@ -74,12 +74,16 @@ Entries live in this repo, one module per vendor, and change only by PR. An entr
 |---|---|
 | missing | `tool_unavailable` |
 | `inputSchema` differs from the pin | `tool_drift` until a PR re-pins it: the owner approves canonical args under the pinned schema, and a changed schema can change what those args mean |
-| annotations moved toward write since the pin (`readOnlyHint` withdrawn, `destructiveHint` set) | `tool_drift`: the hint grants nothing, but a vendor withdrawing it is a reason to stop |
+| annotations moved toward write since the pin: a claim it recorded (`readOnlyHint: true`, `destructiveHint: false`) is no longer made, or a tool pinned with `readOnlyHint: true` now also says `destructiveHint: true` | `tool_drift`: the hint grants nothing, but a vendor withdrawing it is a reason to stop |
 | present and unchanged | offered and callable |
 
 Upstream tools that are not in the entry are never offered and never callable, and that is not an error. A drift refusal names the tool and the entry, so whoever reads the trail knows the re-pin is ours to do. `listToolsForGrant` (`:557–590`) is extended to leave out tools refused for either reason, so an agent is not offered what will be refused.
 
-**The Linear entry is pinned at build** from a `tools/list` taken on a consenting test account, with read tools only, each re-described by us. This note names no Linear tool: the research behind it made unauthenticated requests only.
+**A claim the pin recorded must still be made, and silence withdraws it.** The spec defaults an absent `readOnlyHint` to `false` and an absent `destructiveHint` to `true` (schema 2026-07-28, `ToolAnnotations`), the unsafe value both times. A vendor that stops saying `readOnlyHint: true` or `destructiveHint: false` has withdrawn the claim. A live `destructiveHint: true` also contradicts a recorded `readOnlyHint: true`; the entry load refuses that pair (#2014), and drift does not admit later what the entry refuses. Otherwise a newly spelled default changes nothing, so a pin that recorded neither claim does not drift when the vendor starts saying `destructiveHint: true` (75445, 75449, 75454). Each arm reads the annotations the pin recorded, not its class, and where a withdrawn claim and the contradiction coincide, the refusal names the claim (75457). A `read` pin is not asked to record `destructiveHint: false`: the spec makes that field meaningful only when `readOnlyHint` is `false`, and GitHub's server sets it on none of its 60 read tools (`github/github-mcp-server` at `85598ba`). A vendor that sends `true` there has still said something, and that is what the entry refuses.
+
+**A tool pinned `read` carries the vendor's own `readOnlyHint: true`.** The spec's default for an absent `readOnlyHint` is `false` (schema 2026-07-28, `ToolAnnotations`), so a tool whose vendor says nothing is one the vendor has not called read-only. A pin without the hint would also leave the drift row above dead for that tool, because a pin that never held the hint cannot see it withdrawn (Vera 75423–75424). The entry load refuses such a pin, as it refuses a `read` pin whose annotations say `readOnlyHint: false` or `destructiveHint: true` (#2014). The hint still grants nothing; its absence refuses. **A vendor that sends no `readOnlyHint` gets no entry, not a write-only one** (75440). The class records what a tool does, so a read tool is never pinned `write` to get past a missing hint, and §5's answer on attribution cannot arrive that way.
+
+**The Linear entry is pinned at build** from a `tools/list` taken on a consenting test account, with read tools only, each re-described by us. This note names no Linear tool: the research behind it made unauthenticated requests only. Linear's MCP docs never mention annotations, so whether its read tools carry the hint is known only from that list (§11).
 
 ## 4. Credentials and intake
 
@@ -243,6 +247,8 @@ Each step can be tested without the vendor, except the live measurements in step
    - `the upstream description never reaches an agent`
    - `a pinned tool missing upstream is refused tool_unavailable`
    - `a pinned tool whose schema changed upstream is refused tool_drift`
+   - `a read pin carrying no readOnlyHint is refused`, with #2014's other entry-time refusals (§3)
+   - the annotation arms (§3): a `destructiveHint: false` gone silent is `tool_drift`; a pin that recorded `readOnlyHint: true` whose tool now also says `destructiveHint: true` is `tool_drift`; a pin that recorded both claims, against that same tool, is refused naming the `destructiveHint: false` it lost; a `destructiveHint: true` newly spelled on a `write` pin that recorded neither claim is `ok`
 3. **Intake.** The CIMD document, start and callback.
    - `the callback refuses a state it did not issue, a used state and an expired state`
    - `the callback refuses a valid state from a browser that did not start the flow, and the flow stays pending`, with no cookie, with another flow's cookie, and on a row that stores no nonce
@@ -265,6 +271,7 @@ Each step can be tested without the vendor, except the live measurements in step
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
    - TASK-147's witness per removal path (§7), before the first entry ships
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
+   - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
    - `the page's call to start is credentialed`, before the walk (§4)
 
 ## 11. What this corrects, and what stays open
@@ -277,12 +284,14 @@ Each step can be tested without the vendor, except the live measurements in step
 
 The TASK-172 ruling's part 3 wording on `:180` is replaced by §6.
 
-**Other vendors join the catalogue only once their own docs verify** the URL, transport, auth mode, token lifetime and refresh, and revocation (74820; the TASK-172 row). Two facts from their discovery documents already shape their entries:
+**Other vendors join the catalogue only once their own docs verify** the URL, transport, auth mode, token lifetime and refresh, and revocation (74820; the TASK-172 row), and once a `tools/list` shows `readOnlyHint: true` on each tool the entry pins `read` (§3). Three facts already shape their entries:
 
 - Notion's only advertised scope is `default`, so a Notion entry cannot narrow its credential to reads the way Linear's `read` does.
 - GitHub needs the pre-registered client (§4).
+- Two servers publish their source, so their hints can be read before a login, in the files that declare what they serve over MCP. Sentry's tool type makes `readOnlyHint`, `destructiveHint` and `openWorldHint` required, and a test enforces it (`getsentry/sentry-mcp` at `0563bde`, `packages/mcp-core/src/tools/types.ts`); its `internal/agents/tools` are not MCP tools and carry none. GitHub's sets `readOnlyHint` on all 121 tools in `pkg/github`, and its tests fail a tool that omits it (`github/github-mcp-server` at `85598ba`, `pkg/toolvalidation/readonlyhint.go`).
 
 **Still open, and not this note's to decide:**
 
 - CIMD end to end at Linear, the MCP AS's token lifetimes and rotation, and whether it issues an ID token for `openid`: measured at build (§4).
+- Whether Linear's read tools carry `readOnlyHint: true`. The test account's first `tools/list` answers it, and that list can be taken before step 7. If they arrive unannotated, §3 leaves Linear with no entry. The one case worth reopening is Linear's own: v1 requests only `read`, whose token "can’t reach write APIs" (§4), a fence Linear enforces where the hint only reports. It is decided on the measured list, not assumed now.
 - §10.6's three questions stay Sam's. This is the first per-person Connection type, so the first of them — the granter leaves the room — has a live case the day a member grants their Linear to a room and then leaves it. Until Sam rules, a hosted grant behaves as every grant does today: it survives to its expiry, which it always has.
