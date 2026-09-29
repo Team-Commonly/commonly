@@ -187,6 +187,33 @@ describe('zh-CN number and unit spacing', () => {
     expect(zhValues.filter(([, value]) => anyLatin.test(value)).length).toBeGreaterThan(200);
   });
 
+  it('attaches a percent sign to the hanzi after it, the same way as a unit', () => {
+    // ux-lead's render-gate call on this PR (75149), open to lily-shen's overrule: the
+    // `%` belongs to its numeral, so `{{attachRate}}%` closes to hanzi exactly like
+    // `{{days}}天` does. Measured as the class before patching the instance, since a
+    // one-key fix that leaves siblings is how the `256KB` defect happened: this is the
+    // ONLY `%` in the catalog, one value, four events — instance and class coincide.
+    //
+    // Deliberately NOT swept and counted here so they read as a boundary rather than an
+    // omission: `·` separates clauses (19 values / 21 events space it) and `—` likewise
+    // (31 / 31). They are separators, not a numeral's unit, so the `%` reasoning does
+    // not transfer and nothing here asserts either way.
+    const spacedPct = /%[ \u00a0]+[\u4e00-\u9fff]/;
+    const attachedPct = /%[\u4e00-\u9fff]/;
+    expect(zhValues.filter(([, value]) => spacedPct.test(value)).map(([key]) => key)).toEqual([]);
+    // Non-vacuity, both directions and both numeral forms, or the line above would be
+    // satisfied by a pattern that matches nothing at all.
+    expect(spacedPct.test('36% 挂载')).toBe(true);
+    expect(attachedPct.test('36%挂载')).toBe(true);
+    expect(spacedPct.test('{{attachRate}}% 挂载')).toBe(true);
+    expect(attachedPct.test('{{attachRate}}%挂载')).toBe(true);
+    // …and it must NOT fire where a Latin word follows the `%`: that space stays, the
+    // same other half of the rule the Latin test above defends.
+    expect(spacedPct.test('{{rate}}% Growth')).toBe(false);
+    // and the catalog still holds the attached form, so green means "none left".
+    expect(zhValues.filter(([, value]) => attachedPct.test(value)).length).toBeGreaterThan(0);
+  });
+
   it('is not green because the detector matches nothing', () => {
     // Vacuity control. The same detector has to be able to fire — on a hand-written
     // spaced pair and on the attached pairs this catalog does contain — or the test
