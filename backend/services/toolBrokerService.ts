@@ -877,7 +877,18 @@ const recordCall = async (
   outcome: 'ok' | 'refused' | 'failed' | 'pending_approval',
   startedAt: number,
   reason?: string,
-  overrides?: { callId?: string; approvalId?: string; args?: unknown },
+  overrides?: {
+    callId?: string;
+    approvalId?: string;
+    args?: unknown;
+    /**
+     * The Connection's owner, supplied by the BROKER from the row it resolved
+     * (`connection.ownerUserId`) — never by the caller, which is why it sits
+     * here rather than in `BrokerCallInput`. Absent when the call was refused
+     * before a connection resolved: there is no credential to name.
+     */
+    credentialOwnerId?: string;
+  },
 ): Promise<string> => {
   const callId = overrides?.callId || `tool_call_${randomUUID()}`;
   await ToolCall.create({
@@ -886,6 +897,7 @@ const recordCall = async (
     podId: grant ? String(((grant as Record<string, unknown>).target as { id?: string })?.id || '') : undefined,
     installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
     agentUserId: input.agentUserId,
+    credentialOwnerId: overrides?.credentialOwnerId,
     tool: input.tool,
     argsDigest: digestArgs(overrides?.args === undefined ? input.args : overrides.args),
     at: new Date(startedAt),
@@ -921,6 +933,10 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   const startedAt = Date.now();
   const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
+  // Whose credential ran (scope §8). Filled the moment the connection resolves,
+  // so the refusals and failures below record it too — and left unset when the
+  // refusal IS the resolution, where no credential can be named.
+  let credentialOwnerId: string | undefined;
 
   try {
     grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
@@ -938,6 +954,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     await assertSeatCanConfine(input);
 
     const connection = await resolveConnection(grant, definition);
+    credentialOwnerId = connection.ownerUserId;
 
     // Validate the shape before reserving a budget slot; malformed requests
     // are refusals, not spendable calls.
@@ -982,6 +999,10 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
             tool: definition.name,
             canonicalArgs,
             argsDigest: digestArgs(canonicalArgs),
+            // The parked envelope carries the credential owner so the record the
+            // DECISION writes (approvalActionService) keeps naming it, even if
+            // the Connection row is gone by then (§8).
+            credentialOwnerId: connection.ownerUserId,
           },
         });
       } catch (error) {
@@ -1002,6 +1023,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
         const refusedCallId = await recordCall(input, grant, 'refused', startedAt, cause.code, {
           callId,
           args: canonicalArgs,
+          credentialOwnerId,
         });
         throw new RoomGrantError(cause.code, cause.message, cause.statusCode, {
           recorded: true,
@@ -1012,6 +1034,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
         await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
           callId,
           args: canonicalArgs,
+          credentialOwnerId,
         });
         throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
           recorded: true,
@@ -1022,6 +1045,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
         callId,
         approvalId: proposal?.approvalId,
         args: canonicalArgs,
+        credentialOwnerId,
       });
       const approvalError = new RoomGrantError(
         'approval_required',
@@ -1043,7 +1067,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     }
 
     const result = await runDefinition(definition, parsedArgs, connection);
-    const callId = await recordCall(input, grant, 'ok', startedAt);
+    const callId = await recordCall(input, grant, 'ok', startedAt, undefined, { credentialOwnerId });
     return { callId, result };
   } catch (error) {
     const reason = safeReason(error);
@@ -1056,7 +1080,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
     const callId = alreadyRecorded
       ? String(error.details?.callId || '')
-      : await recordCall(input, grant, outcome, startedAt, reason);
+      : await recordCall(input, grant, outcome, startedAt, reason, { credentialOwnerId });
     if (error instanceof RoomGrantError) {
       Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
@@ -1083,6 +1107,10 @@ export const executeApprovedToolCall = async (
   const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
   const callId = `tool_call_${randomUUID()}`;
+  // Whose credential ran (scope §8), filled when the connection resolves — the
+  // parked envelope carries the same value, so a decision after the row's
+  // deletion still names the owner.
+  let credentialOwnerId: string | undefined;
   try {
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
     if (digestArgs(input.args) !== input.expectedArgsDigest) {
@@ -1099,6 +1127,7 @@ export const executeApprovedToolCall = async (
       requiredWriteMode: definition.requiredWriteMode,
     });
     const connection = await resolveConnection(grant, definition);
+    credentialOwnerId = connection.ownerUserId;
     const executionArgs = definition.connectionType === 'github-app'
       ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
       : input.args;
@@ -1113,7 +1142,7 @@ export const executeApprovedToolCall = async (
       'ok',
       startedAt,
       undefined,
-      { callId, approvalId: input.approvalId, args: input.args },
+      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
     return { callId, result };
   } catch (error) {
@@ -1124,7 +1153,7 @@ export const executeApprovedToolCall = async (
       error instanceof RoomGrantError ? 'refused' : 'failed',
       startedAt,
       reason,
-      { callId, approvalId: input.approvalId, args: input.args },
+      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
     throw error;
   }

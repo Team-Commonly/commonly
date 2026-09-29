@@ -74,6 +74,19 @@ beforeEach(() => {
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
 });
 
+test('records a refusal when the approval proposal is refused, naming the owner', async () => {
+  // The `{ ok: false }` branch was unexercised until the trail column needed it:
+  // it is a refusal record of its own, distinct from the throwing branch above.
+  mockProposeAction.mockResolvedValue({ ok: false });
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({ code: 'approval_unavailable' });
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'approval_unavailable', credentialOwnerId: 'owner-1',
+  }));
+  expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));
+});
+
 test('routes a parked call with the seat installation identity', async () => {
   await expect(broker.callTool({
     grantId: 'grant-1', agentUserId: 'agent-1', agentName: 'openclaw', instanceId: 'aria',
@@ -87,6 +100,22 @@ test('routes a parked call with the seat installation identity', async () => {
   }));
 });
 
+test('the record of an executed approval names the credential owner', async () => {
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1',
+    agentUserId: 'agent-1',
+    tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}',
+    approvalId: 'approval-1',
+  })).resolves.toEqual(expect.objectContaining({ callId: expect.any(String) }));
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'ok',
+    approvalId: 'approval-1',
+    credentialOwnerId: 'owner-1',
+  }));
+});
+
 test('parks an irreversible broker call in an owner-bound approval envelope', async () => {
   await expect(broker.callTool({
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
@@ -96,7 +125,9 @@ test('parks an irreversible broker call in an owner-bound approval envelope', as
     toolCall: expect.objectContaining({ grantId: 'grant-1', tool: 'github.create_issue' }),
   }));
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
-    outcome: 'pending_approval', approvalId: 'approval-1',
+    outcome: 'pending_approval',
+    approvalId: 'approval-1',
+    credentialOwnerId: 'owner-1',
   }));
 });
 
@@ -139,7 +170,12 @@ test('does not execute if the budget was exhausted between propose and approve',
     expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}', approvalId: 'approval-1',
   })).rejects.toMatchObject({ code: 'budget_exhausted' });
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
-    outcome: 'refused', reason: 'budget_exhausted', approvalId: 'approval-1',
+    outcome: 'refused',
+    reason: 'budget_exhausted',
+    approvalId: 'approval-1',
+    // The approved execution resolves the connection itself, so its record names
+    // the owner (plan §8) even on a refusal after the resolution.
+    credentialOwnerId: 'owner-1',
   }));
   expect(mockReserveBudgetLineage).toHaveBeenCalled();
 });
@@ -160,6 +196,8 @@ test('captures the pull head SHA in the approval envelope', async () => {
         pullNumber: 42, mergeMethod: 'squash', headSha: 'head-sha-1',
         owner: 'Team-Commonly', repo: 'commonly',
       },
+      // Whose credential the parked call would spend (plan §8).
+      credentialOwnerId: 'owner-1',
     }),
   }));
   expect(github.getPullRequest).toHaveBeenCalledWith(expect.objectContaining({

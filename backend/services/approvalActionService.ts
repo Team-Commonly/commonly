@@ -476,6 +476,7 @@ const recordToolCallDecision = async (
     grantId: toolCall.grantId,
     podId: String(row.podId),
     agentUserId: row.agentUserId || '',
+    credentialOwnerId: toolCall.credentialOwnerId,
     tool: toolCall.tool,
     argsDigest: toolCall.argsDigest || digestArgs({}),
     outcome,

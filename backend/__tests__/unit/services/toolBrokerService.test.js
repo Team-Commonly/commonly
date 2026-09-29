@@ -280,6 +280,9 @@ describe('tool broker guard rails', () => {
       agentUserId: 'agent-a',
       outcome: 'refused',
       reason: 'invalid_tool_args',
+      // A refusal that happened AFTER the connection resolved still names whose
+      // credential it would have spent (plan §8).
+      credentialOwnerId: 'owner-1',
     }));
   });
 
@@ -390,6 +393,48 @@ describe('tool broker guard rails', () => {
     }));
     expect(mockGithub.closeIssue).toHaveBeenCalledTimes(1);
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+  });
+
+  it('records whose credential ran, from the connection rather than the caller', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    await callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      agentUserId: 'agent-a',
+      credentialOwnerId: 'owner-1',
+      outcome: 'ok',
+    }));
+
+    // The owner follows the ROW it resolved, not the calling seat and not a
+    // constant: a second connection answers with its own creator.
+    mockToolCall.create.mockClear();
+    mockIntegration.findOne.mockResolvedValue({
+      type: 'github-app',
+      status: 'connected',
+      createdBy: 'owner-2',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+    });
+    await callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      credentialOwnerId: 'owner-2',
+    }));
+  });
+
+  it('leaves the owner unset when the refusal IS the connection resolution', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(null);
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).rejects.toMatchObject({ code: 'connection_mismatch' });
+    // No connection resolved, so there is no credential to name — recorded as an
+    // absent owner rather than a guess at the grant's row.
+    const [record] = mockToolCall.create.mock.calls[0];
+    expect(record.outcome).toBe('refused');
+    expect(record.credentialOwnerId).toBeUndefined();
   });
 
   it('parks a reversible write under a write-with-confirm grant', async () => {

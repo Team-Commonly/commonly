@@ -41,6 +41,9 @@ const toolCall = {
   tool: 'github.comment_on_issue',
   canonicalArgs: { issueNumber: 7, body: 'approved text' },
   argsDigest: 'digest:{"issueNumber":7,"body":"approved text"}',
+  // Whose credential the parked call would spend (plan §8), copied from the
+  // Connection when the call was parked.
+  credentialOwnerId: 'owner-1',
 };
 
 const row = (overrides = {}) => ({
@@ -147,7 +150,13 @@ test('does not execute on declined', async () => {
   const result = await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'declined' });
   expect(result.status).toBe(200);
   expect(broker.executeApprovedToolCall).not.toHaveBeenCalled();
-  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', reason: 'approval_declined' }));
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused',
+    reason: 'approval_declined',
+    // The decision's record keeps naming the owner: the Connection row may be
+    // gone by the time a person rules (plan §8).
+    credentialOwnerId: 'owner-1',
+  }));
 });
 
 test('a late decide before any sweep answers 409 and leaves no args', async () => {
@@ -158,7 +167,11 @@ test('a late decide before any sweep answers 409 and leaves no args', async () =
   const result = await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
   expect(result.status).toBe(409);
   expect(result.body.error).toBe('expired');
-  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused', reason: 'approval_expired' }));
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused',
+    reason: 'approval_expired',
+    credentialOwnerId: 'owner-1',
+  }));
   expect(mockToolCall.create.mock.calls[0][0].argsDigest).toBe(toolCall.argsDigest);
 });
 

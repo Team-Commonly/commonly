@@ -204,7 +204,11 @@ describe('a hosted-MCP grant through the broker', () => {
       params: { name: 'list_issues', arguments: { limit: 3 } },
     });
     expect(result.result).toEqual({ content: [{ type: 'text', text: 'done' }] });
-    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'ok',
+      // The hosted row's `createdBy` — the member whose credential the vendor saw.
+      credentialOwnerId: 'owner-1',
+    }));
 
     // The credential was read for THIS row, not for the grant id.
     expect(mockCredentialFor).toHaveBeenCalledWith(expect.objectContaining({ _id: ROW_ID }));
@@ -302,6 +306,11 @@ describe('a hosted-MCP grant through the broker', () => {
     // A parked write is not a call: nothing was sent to the vendor.
     expect(global.fetch).not.toHaveBeenCalled();
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));
+    // The parked envelope carries the owner, so the record the DECISION writes
+    // still names it after the row is deleted.
+    expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({
+      toolCall: expect.objectContaining({ credentialOwnerId: 'owner-1' }),
+    }));
   });
 
   it('refuses a hosted write whose row names no owner as a connection mismatch, not a retryable card failure', async () => {

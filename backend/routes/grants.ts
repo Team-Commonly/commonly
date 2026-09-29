@@ -512,6 +512,9 @@ router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: Authenticate
       calls: rows.map((row) => ({
         callId: row.callId,
         agentUserId: row.agentUserId,
+        // Whose credential ran (plan §8). Copied onto the record, so it is still
+        // nameable after the Connection row is deleted.
+        credentialOwnerId: row.credentialOwnerId ?? null,
         tool: row.tool,
         outcome: row.outcome,
         reason: row.reason ?? null,
