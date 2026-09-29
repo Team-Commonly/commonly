@@ -1170,11 +1170,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain('className="v2-pods__list"');
     // `.v2-pods__list` is declared twice (from #251 and #1578 "sidebar at
     // scale"), both top-level, so the LATER block wins every conflicting
-    // declaration and is the effective rule — `ruleBody`, the first match,
-    // reads the superseded one. This asserts that distinction still exists: if
-    // the duplicate is ever removed, re-read this guard rather than letting it
-    // silently switch which block it pins.
-    expect(list).not.toBe(ruleBody(v2, '.v2-pods__list'));
+    // declaration and is the effective rule — hence `lastRuleBody` here, which
+    // reads it, rather than `ruleBody`, which reads the superseded one.
+    //
+    // Do NOT add `expect(list).not.toBe(ruleBody(...))` to pin that choice. It
+    // cannot fail: `lastRuleBody` slices from the leading newline and `ruleBody`
+    // from `lineStart + 1`, so the two differ by whitespace whatever the sheet
+    // contains (measured — deleting the superseded block outright leaves this
+    // suite 153/153 green). Trimming the compare to make it bite is worse: it
+    // then reds on that very de-dup, which is harmless. The two `toContain`s
+    // above are what carry the property, and they fail in both hazard
+    // directions — declaration missing from the effective block, or the
+    // effective block gone so this falls through to the old one.
   });
 
   test('history recovery is positioned against the chat viewport, outside the scroller', () => {
