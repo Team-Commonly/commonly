@@ -160,18 +160,35 @@ const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
 // title + description + highlight checklist on the other. Rows alternate
 // sides via CSS :nth-child. One row per screenshot — each feature gets a
 // real pitch instead of a caption (Sam's call, 2026-07-03).
+// `width` and `height` are the frame's own intrinsic size, and they are required
+// rather than decorative: the frames are lazy, so with no attributes the box is
+// 0 tall until the image arrives, the page grows mid-scroll and a first-click
+// anchor lands short (and, once the frames do load, under the bar). The
+// attributes only give the browser the aspect ratio before load — the CSS keeps
+// `width: 100%; height: auto`, so the rendered size is unchanged. The four
+// values come from each PNG's IHDR and landingFrames.test.ts re-reads it, so a
+// re-shot frame fails CI instead of quietly bringing the shift back.
 const FeatureRow: React.FC<{
   img: string;
   alt: string;
+  width: number;
+  height: number;
   kicker: string;
   title: string;
   text: string;
   points: string[];
-}> = ({ img, alt, kicker, title, text, points }) => (
+}> = ({ img, alt, width, height, kicker, title, text, points }) => (
   <div className="v2-landing__feature-row" data-reveal>
     <div className="v2-landing__feature-media">
       <div className="v2-landing__shot-frame">
-        <img className="v2-landing__feature-img" src={img} alt={alt} loading="lazy" />
+        <img
+          className="v2-landing__feature-img"
+          src={img}
+          alt={alt}
+          width={width}
+          height={height}
+          loading="lazy"
+        />
       </div>
     </div>
     <div className="v2-landing__feature-copy">
@@ -507,6 +524,8 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__features">
             <FeatureRow
               img={activityImg}
+              width={2880}
+              height={1800}
               alt={t('landing.features.needs.alt')}
               kicker={t('landing.features.needs.kicker')}
               title={t('landing.features.needs.title')}
@@ -519,6 +538,8 @@ const V2LandingPage: React.FC = () => {
             />
             <FeatureRow
               img={teamImg}
+              width={2880}
+              height={1800}
               alt={t('landing.features.team.alt')}
               kicker={t('landing.features.team.kicker')}
               title={t('landing.features.team.title')}
@@ -531,6 +552,8 @@ const V2LandingPage: React.FC = () => {
             />
             <FeatureRow
               img={connectorsImg}
+              width={2880}
+              height={1800}
               alt={t('landing.features.connectors.alt')}
               kicker={t('landing.features.connectors.kicker')}
               title={t('landing.features.connectors.title')}
@@ -543,6 +566,8 @@ const V2LandingPage: React.FC = () => {
             />
             <FeatureRow
               img={byoImg}
+              width={2880}
+              height={1880}
               alt={t('landing.features.byo.alt')}
               kicker={t('landing.features.byo.kicker')}
               title={t('landing.features.byo.title')}
