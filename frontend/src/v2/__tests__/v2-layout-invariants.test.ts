@@ -3478,6 +3478,62 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(phone).toContain('.v2-landing__hero-art { margin-top: -180px; }');
   });
 
+  test('the frame is the band\'s sibling, so the pull-up measures from the band', () => {
+    // ux-lead's gate at 532f38bb: as a child of the band, -360 was measured from
+    // the last control and laid the demo over the title, both CTAs and the
+    // install box — every control's hit test returned a demo node at 1440/1200.
+    const sectionEnd = landingTsx.indexOf('</section>', landingTsx.indexOf('v2-landing__hero"'));
+    expect(sectionEnd).toBeGreaterThan(-1);
+    expect(landingTsx.indexOf('v2-landing__hero-art')).toBeGreaterThan(sectionEnd);
+    // The caption stays in the band, as its last child, above the frame; the
+    // frame carries the label and points at it by id, since a figure can no
+    // longer hold both.
+    const cap = landingTsx.indexOf('v2-landing__demo-cap');
+    expect(cap).toBeGreaterThan(landingTsx.indexOf('v2-landing__hero-inner'));
+    expect(cap).toBeLessThan(sectionEnd);
+    expect(landingTsx).toContain('aria-describedby="v2-landing-demo-caption"');
+    // A frame outside the band carries the page measure itself.
+    expect(landing).toContain('.v2-landing__hero-art,\n.v2-landing__trusted,');
+    // The 94 below the frame is left where it is: the board draws that gap as
+    // the frame container's own height (456 − 360) on white, and dropping the
+    // strip's grey is row B's edit to this same rule, so the two move together
+    // there rather than being split across rows.
+    const phone = mediaAt(landing, '@media (max-width: 760px) {');
+    expect(phone).toContain('.v2-landing__hero-art { margin-top: -180px; }');
+    expect(selectorRuleBody(landing, '.v2-landing__trusted {')).toContain('padding-top: 94px');
+  });
+
+  test('the copy column is uncapped, and the title carries the 1000', () => {
+    // 288 + 24 + 784 = 1096 wrapped the install box at 1440 and 1200 while the
+    // inner was capped at 1000 (ux-lead's #2018 finding 3).
+    expect(selectorRuleBody(landing, '.v2-landing__hero-inner {')).not.toContain('max-width');
+    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: 1000px');
+    expect(selectorRuleBody(landing, '.v2-landing__lede {')).toContain('max-width: 780px');
+  });
+
+  test('the hero CTA is white on cobalt; the bar\'s stays primary on white', () => {
+    // --primary measured cobalt on cobalt: only the label showed (finding 2).
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}');
+    expect(landing).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 26px; font-weight: 700; }');
+    const small = mediaAt(landing, '@media (max-width: 680px) {');
+    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 20px; font-size: 16px; }');
+    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }');
+    // The bar CTA sits on the page's white ground and keeps the fill.
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}');
+  });
+
+  test('the bar switch is measured from the bar rather than hard-coded', () => {
+    // 8px early at ≤680, where the bar is 64 (finding 8).
+    expect(landingTsx).toContain('rootMargin: `-${barHeight || 72}px 0px 0px 0px`');
+    expect(landingTsx).toContain("window.addEventListener('resize', measure)");
+  });
+
+  test('the scroller is the containing block for the demo\'s sr-only node', () => {
+    // Without it `.v2-demo__sr` resolved against the document and a
+    // wheel-overscroll at the footer scrolled the window 401px (finding 9).
+    expect(selectorRuleBody(landing, '.v2-root.v2-landing {')).toContain('position: relative');
+  });
+
   test('the bar is cobalt on the band and white past it, wordmark only', () => {
     const band = selectorRuleBody(landing, '.v2-landing__bar--band {');
     expect(band).toContain('background: #1d3fd1');
@@ -3507,10 +3563,11 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
   test('the demo caption is on the band, above the frame, and the old lift is gone', () => {
     const cap = selectorRuleBody(landing, '.v2-landing__demo-cap {');
     expect(cap).toContain('color: #ffffff');
-    expect(cap).toContain('margin: 28px 0 16px');
+    expect(cap).toContain('margin: 44px 0 0');
     expect(cap).not.toContain('var(--v2-font-mono)');
-    expect(mediaAt(landing, '@media (max-width: 760px) {')).toContain('.v2-landing__demo-cap { margin: 12px 0 16px; }');
-    // The caption is the figure's first child now, not its last.
+    expect(mediaAt(landing, '@media (max-width: 760px) {')).toContain('.v2-landing__demo-cap { margin: 28px 0 0; }');
+    // The caption precedes the demo in source, and lives in the band rather than
+    // in the figure (the sibling-fix test above asserts where).
     expect(landingTsx.indexOf('v2-landing__demo-cap')).toBeLessThan(landingTsx.indexOf('<DemoWorkspace />'));
     // The hover lift is out: the frame sits on cobalt, so lifting it lifts the
     // product off the band rather than the card off the page.

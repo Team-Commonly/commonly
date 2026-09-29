@@ -198,6 +198,11 @@ const V2LandingPage: React.FC = () => {
   // tests stay in this state — the past-the-band look is a browser check.
   const [onBand, setOnBand] = useState(true);
   const bandRef = useRef<HTMLElement | null>(null);
+  // The bar is 72 tall at 1440 and 64 at ≤680, so a hard-coded 72 inset turned
+  // the bar white 8px early on a phone (ux-lead's #2018 finding 8). Measure it
+  // instead, and re-measure when a resize crosses the breakpoint.
+  const barRef = useRef<HTMLElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
 
   // TASK-154. The command is wider than the box at 390 (721px line in a 340px
   // box), so most of it is off-screen and the visitor cannot read what they are
@@ -289,16 +294,28 @@ const V2LandingPage: React.FC = () => {
   // change, not a reveal, so it should happen at the crossing rather than after
   // a fraction of a 920px band.
   useEffect(() => {
+    const measure = () => {
+      const h = barRef.current?.offsetHeight;
+      if (h) setBarHeight(h);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return undefined;
     const band = bandRef.current;
     if (!band) return undefined;
     const io = new IntersectionObserver(
       ([entry]) => setOnBand(entry.isIntersecting),
-      { rootMargin: '-72px 0px 0px 0px', threshold: 0 },
+      // 72 is the desktop height and the fallback for a bar that has not laid
+      // out yet; a measured height wins wherever it exists.
+      { rootMargin: `-${barHeight || 72}px 0px 0px 0px`, threshold: 0 },
     );
     io.observe(band);
     return () => io.disconnect();
-  }, []);
+  }, [barHeight]);
 
   const hasStats = Boolean(stats && (
     stats.activePods
@@ -309,7 +326,7 @@ const V2LandingPage: React.FC = () => {
   return (
     <div className={`v2-root v2-landing${motion ? ' v2-landing--motion' : ''}`}>
       {/* ---- Top nav ---- */}
-      <header className={`v2-landing__bar${onBand ? ' v2-landing__bar--band' : ''}`}>
+      <header ref={barRef} className={`v2-landing__bar${onBand ? ' v2-landing__bar--band' : ''}`}>
         <div className="v2-landing__brand">
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
@@ -351,7 +368,9 @@ const V2LandingPage: React.FC = () => {
 
             <div className="v2-landing__hero-actions">
               <div className="v2-landing__cta-row">
-                <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+                {/* White on cobalt (ux-lead's #2018 finding 2): --primary's
+                    fill is the band's own colour, so the button had no shape. */}
+                <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
                 {/* Self-host is the second door onto the product, so it sits
                     beside the first rather than below it: identical height and
                     radius, outline instead of fill, and it goes to the source
@@ -389,32 +408,35 @@ const V2LandingPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="v2-landing__hero-art">
-            {/* The product, not a video (Sam approved 2026-09-23). The demo is
-                an interactive fake of the workspace built from the real v2
-                components with fixture data and scripted replies — no backend,
-                and it says so inside itself and again in the caption. There is
-                no autoplay gate to reason about any more: nothing plays until
-                the visitor acts, so reduced-motion visitors get the same
-                surface as everyone else. */}
-            <figure className="v2-landing__shot">
-              {/* The caption sits above the frame, on the band, as a sentence
-                  (not mono): it is the one line telling a visitor the thing
-                  below is real. The demo says the same thing again inside
-                  itself. */}
-              <figcaption className="v2-landing__shot-cap v2-landing__demo-cap">
-                {t('landing.hero.demoCaption')}
-              </figcaption>
-              <div
-                className="v2-landing__shot-frame v2-landing__demo-frame"
-                role="group"
-                aria-label={t('landing.hero.demoAria')}
-              >
-                <DemoWorkspace />
-              </div>
-            </figure>
-          </div>
+          {/* The caption is the band's LAST child and the frame is the band's
+              SIBLING (ux-lead's #2018 finding 1): the -360 pull-up has to be
+              measured from the band's bottom edge, and a figure/figcaption pair
+              cannot straddle that edge. The frame keeps the label and points at
+              this caption by id instead. */}
+          <p className="v2-landing__demo-cap" id="v2-landing-demo-caption">
+            {t('landing.hero.demoCaption')}
+          </p>
         </section>
+
+        <div className="v2-landing__hero-art">
+          {/* The product, not a video (Sam approved 2026-09-23). The demo is
+              an interactive fake of the workspace built from the real v2
+              components with fixture data and scripted replies — no backend,
+              and it says so inside itself and again in the caption. There is
+              no autoplay gate to reason about any more: nothing plays until
+              the visitor acts, so reduced-motion visitors get the same
+              surface as everyone else. */}
+          <figure className="v2-landing__shot">
+            <div
+              className="v2-landing__shot-frame v2-landing__demo-frame"
+              role="group"
+              aria-label={t('landing.hero.demoAria')}
+              aria-describedby="v2-landing-demo-caption"
+            >
+              <DemoWorkspace />
+            </div>
+          </figure>
+        </div>
 
         {/* Individual affiliations, not organizational endorsements. The
             provenance for every entry — and the source/license of every logo
