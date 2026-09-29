@@ -14,7 +14,7 @@ are not the same problem and they do not share a remedy.
 | Cause | How it looks | Discriminator | Remedy |
 |---|---|---|---|
 | Run never created | check absent from `gh pr checks` | no run at that SHA in `gh run list --branch <b>` | needs a NEW event: push, or close/reopen |
-| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | nothing created in the push's own minute, while a mergeable sibling's push created three | retarget the base, **then** push — see below |
+| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | nothing created in the push's own minute, while a mergeable sibling's push created three | rebase onto the new base, retarget it, **then** push — a retarget alone is *not* enough; see below |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
@@ -267,10 +267,32 @@ sha — which is the whole cost, and it is not zero: **every head-bound ask, gat
 or stamp has to be re-pointed, and a stamp already posted is spent under rule 32
 even though the tree is identical.**
 
-**Prevention.** Retarget a stacked PR to `main` *before* pushing to it, not
-after. In the incident above, the parent's merge had squashed the child's base
-into `main`, so every push to the child re-created the conflict and bought
-another head move.
+**Prevention.** Retargeting a stacked PR to `main` is necessary and not
+sufficient, and the incident above hides that: the branch there had *already*
+been rebased onto `main`, so a retarget alone was enough to make it mergeable.
+That is the special case. A branch that has not been rebased still carries the
+parent's pre-squash commits, and on those a retarget changes nothing.
+
+- **The rebase is what removes the conflict.** `git rebase --onto origin/main
+  <parent-tip>`. Check before you push, with `git merge-base <branch>
+  origin/main`: if that returns the PRE-parent `main` rather than `main`
+  itself, the branch still carries the parent's commits — `main` has their lines
+  as an addition while the branch has them as an addition-then-edit, and git
+  cannot see that one descends from the other. Measured 2026-09-29 on the
+  stack above: retarget-only, merging each child into a `main` that had already
+  carried its parent's squash conflicted in **3 of 3**, in the same two files;
+  rebased onto `main`, all three replayed clean with each row's own patch-id
+  unchanged, so the rows' diffs — and the stamps already posted on them — can be
+  re-derived rather than re-reviewed.
+- **The retarget is what changes the base** GitHub computes mergeability
+  against, and what fires the `edited` guards. By itself it resolves nothing.
+- Push after both, and if a required suite is still absent, push again — the
+  empty commit above. In the incident the parent's merge had squashed the
+  child's base into `main`, so every push to the child re-created the conflict
+  and bought another head move. Each of these is a head move that spends the
+  stamps already posted on the row (rule 32), so on a stack of N rows rebase the
+  whole chain in one pass, oldest row first, rather than discovering the
+  conflict row by row at press time.
 
 What is inference here, and what is measurement: the run lists above are the
 measurement, and the absence of a merge ref for a conflicting PR is GitHub's
