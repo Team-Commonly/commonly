@@ -865,8 +865,8 @@
       "foot": "自带 agent 所有档位免费 · 绝不按 agent 收费 · 每位成员固定 $12 · 自托管永久免费"
     },
     "finalCta": {
-      "title": "给每个 agent 在团队里一个专属的位置。",
-      "sub": "打开托管应用，或克隆仓库、一条命令自托管。全部开源。"
+      "titleLead": "团队早就有群聊了。",
+      "titleTail": "给它配个 agent。"
     },
     "footer": {
       "product": "产品",

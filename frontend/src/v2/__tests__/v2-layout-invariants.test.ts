@@ -3581,9 +3581,15 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
   test('the hero CTA is white on cobalt; the bar\'s stays primary on white', () => {
     // --primary measured cobalt on cobalt: only the label showed (finding 2).
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}');
-    expect(landing).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 26px; font-weight: 700; }');
+    // Row E joins these two rules with the CTA band's own buttons, so the
+    // selector list's tail is optional rather than one literal line.
+    expect(landing).toMatch(
+      /\.v2-landing__hero-actions \.v2-landing__btn--onaccent(?:,\n\.v2-landing__cta \.v2-landing__btn--primary)? \{ padding: 0 26px; font-weight: 700; \}/,
+    );
     const small = mediaAt(landing, '@media (max-width: 680px) {');
-    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 20px; font-size: 16px; }');
+    expect(small).toMatch(
+      /\.v2-landing__hero-actions \.v2-landing__btn--onaccent(?:,\n  \.v2-landing__cta \.v2-landing__btn--primary)? \{ padding: 0 20px; font-size: 16px; \}/,
+    );
     expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }');
     // The bar CTA sits on the page's white ground and keeps the fill.
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}');
@@ -3614,7 +3620,9 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     // on the band: the switch is a browser check. (The stub's existence is why
     // the reason is that and not "jsdom has no IntersectionObserver".)
     expect(landingTsx).toContain("typeof IntersectionObserver === 'undefined'");
-    // Wordmark only in the bar; the mark is a footer element now.
+    // Wordmark only in the bar. (Row E removed the glyph mark entirely, so the
+    // bar assertion below is now a claim about a page that has no mark at all —
+    // the row E pins assert that.)
     const bar = landingTsx.slice(landingTsx.indexOf('v2-landing__bar'), landingTsx.indexOf('</header>'));
     expect(bar).not.toContain('<Mark');
     // The lang trigger is a v2.css <button>; the override has to carry the
@@ -4208,5 +4216,180 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     // a reset for a rule that no longer exists is a claim nothing checks.
     expect(resetBlock).not.toContain('proof-title');
     expect(resetBlock).not.toContain('price-tag');
+  });
+});
+
+// TASK-167 row E (TASK-196). The last row: the close comes off its navy band
+// and onto the page, and the footer becomes the board's wordmark-beside-four-
+// columns grid. Three removals ride along — the navy fill, the subtitle and the
+// glyph mark — and each is asserted absent rather than merely unmentioned.
+describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => {
+  const landing = read('../landing/v2-landing.css');
+  const landingTsx = read('../landing/V2LandingPage.tsx');
+
+  // `.v2-landing__cta` and `.v2-landing__footer` are ALSO the last lines of the
+  // shared 1312 padding-frame selector list at the top of the sheet, so a
+  // first-match reader returns that list's body — the padding — instead of the
+  // rule this row writes. Take the last match at line start.
+  const lastRuleBody = (selector: string): string => {
+    const idx = landing.lastIndexOf(`\n${selector} {`);
+    expect(idx).toBeGreaterThan(-1);
+    const open = landing.indexOf('{', idx);
+    return landing.slice(open + 1, landing.indexOf('}', open));
+  };
+
+  test('the glyph mark is gone: no <Mark in the component, no rule for it', () => {
+    // Rows A and E both touch it; E lands second, so E deletes it. A future
+    // edit that wants the glyph back has to write it, not un-comment it.
+    expect(landingTsx).not.toContain('<Mark');
+    expect(landing).not.toContain('.v2-landing__mark');
+    expect(landing).not.toContain('btn-mark');
+    // The wordmark is still there, in the bar and in the footer.
+    expect(landingTsx).toContain("v2-landing__brand-name");
+  });
+
+  test('the close is type on the page, not a navy band', () => {
+    const cta = lastRuleBody('.v2-landing__cta');
+    expect(cta).toContain('display: flex');
+    expect(cta).toContain('align-items: flex-start');
+    expect(cta).toContain('gap: 24px');
+    expect(cta).toContain('padding-top: 80px');
+    expect(cta).toContain('padding-bottom: 80px');
+    expect(cta).toContain('border-top: 1px solid var(--v2-border-soft)');
+    // The band's fill, centring and its own padding are gone, not overridden.
+    expect(cta).not.toContain('background');
+    expect(cta).not.toContain('text-align');
+    expect(landing).not.toContain('.v2-landing__cta-sub');
+    expect(landingTsx).not.toContain('cta-sub');
+    // The frame above still gives the close its 1312 measure and side padding.
+    // (The frame's selector list is at column 0, one selector per line.)
+    expect(landing).toContain('.v2-landing__cta,\n.v2-landing__footer {');
+  });
+
+  test('the close title is 64/64 on the display face, and not balanced', () => {
+    const title = lastRuleBody('.v2-landing__cta-title');
+    expect(title).toContain('var(--v2-font-display, var(--v2-font))');
+    expect(title).toContain('font-size: 64px');
+    expect(title).toContain('line-height: 64px');
+    expect(title).toContain('font-weight: 800');
+    expect(title).toContain('letter-spacing: -0.03em');
+    expect(title).toContain('color: var(--v2-text-primary)');
+    expect(title).toContain('margin: 0');
+    expect(title).not.toContain('max-width');
+    // The board's note: balance split the sentence ("…has / a chat.").
+    expect(title).not.toContain('text-wrap');
+  });
+
+  test('one sentence in two blocks: the break is the copy\'s, the name is whole', () => {
+    // Two spans joined by {' '} — each starts a line, and the space between two
+    // blocks makes no line box, so the heading's accessible name is the
+    // sentence and not "…chat. Give…" read as two.
+    expect(landingTsx).toContain(
+      "<span className=\"v2-landing__cta-line\">{t('landing.finalCta.titleLead')}</span>{' '}",
+    );
+    expect(landingTsx).toContain(
+      "<span className=\"v2-landing__cta-line\">{t('landing.finalCta.titleTail')}</span>",
+    );
+    expect(landing).toContain('.v2-landing__cta-line { display: block; }');
+
+    const en = JSON.parse(read('../../i18n/locales/en.json'));
+    expect(`${en.landing.finalCta.titleLead} ${en.landing.finalCta.titleTail}`)
+      .toBe('Your team already has a chat. Give it an agent.');
+    const zh = JSON.parse(read('../../i18n/locales/zh-CN.json'));
+    expect(Object.keys(zh.landing.finalCta)).toEqual(['titleLead', 'titleTail']);
+  });
+
+  test('the old close copy is out of both locales', () => {
+    for (const locale of ['en.json', 'zh-CN.json']) {
+      const json = JSON.parse(read(`../../i18n/locales/${locale}`));
+      expect(Object.keys(json.landing.finalCta)).toEqual(['titleLead', 'titleTail']);
+      expect(Object.keys(json.landing.finalCta)).not.toContain('title');
+      expect(Object.keys(json.landing.finalCta)).not.toContain('sub');
+    }
+  });
+
+  test('the footer is two tracks, and the four columns are auto tracks', () => {
+    const footer = lastRuleBody('.v2-landing__footer');
+    expect(footer).toContain('grid-template-columns: minmax(0, 1fr) auto');
+    expect(footer).toContain('column-gap: 64px');
+    expect(footer).toContain('padding-top: 48px');
+    expect(footer).toContain('padding-bottom: 0');
+    expect(footer).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(footer).toContain('font-size: 13px');
+    expect(footer).toContain('line-height: 20px');
+    expect(footer).toContain('color: var(--v2-text-tertiary)');
+    // The columns are NOT a nested count of the container's tracks: 591.1 + 64
+    // + (182.1 + 87.1 + 71.3 + 124.3) with 64s between them is the board's 1312.
+    expect(footer).not.toContain('repeat(4');
+
+    const cols = lastRuleBody('.v2-landing__footer-cols');
+    expect(cols).toContain('grid-template-columns: repeat(4, auto)');
+    expect(cols).toContain('gap: 64px');
+    expect(cols).toContain('padding-bottom: 48px');
+    expect(lastRuleBody('.v2-landing__footer-col')).toContain('min-width: 0');
+  });
+
+  test('the footer wordmark is the 16px one, and its headings are mono', () => {
+    // Row A sets 24 in the bar; the footer is 16/20, and (0,2,0) also beats row
+    // A's phone 22px.
+    expect(landing).toContain(
+      '.v2-landing__footer .v2-landing__brand-name { font-size: 16px; line-height: 20px; }',
+    );
+    const title = lastRuleBody('.v2-landing__footer-title');
+    expect(title).toContain('font-family: var(--v2-font-mono)');
+    expect(title).toContain('font-size: 12px');
+    expect(title).toContain('line-height: 20px');
+    expect(title).toContain('font-weight: 500');
+    expect(title).toContain('letter-spacing: 0.06em');
+    expect(title).toContain('text-transform: uppercase');
+    expect(title).toContain('color: var(--v2-text-primary)');
+    expect(title).toContain('margin-bottom: 4px');
+  });
+
+  test('the legal line spans the footer and is declared before the phone block', () => {
+    // Declared after the ≤680 block it would be an equal-specificity base rule
+    // beating the phone padding — which is where it used to sit.
+    // Base rules only: the phone block's own legal rule is indented, and that
+    // indentation is what distinguishes the two declarations of the class.
+    expect(landing.match(/^\.v2-landing__footer-legal \{/gm) || []).toHaveLength(1);
+    const legalAt = landing.lastIndexOf('\n.v2-landing__footer-legal {');
+    expect(legalAt).toBeLessThan(landing.indexOf('@media (max-width: 680px)'));
+    const legal = lastRuleBody('.v2-landing__footer-legal');
+    expect(legal).toContain('grid-column: 1 / -1');
+    expect(legal).toContain('margin: 0');
+    expect(legal).toContain('padding: 18px 0 22px');
+    expect(legal).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(legal).toContain('font-size: 12px');
+    expect(legal).toContain('line-height: 18px');
+  });
+
+  test('the close joins row A\'s button rules instead of restating them', () => {
+    expect(landing).toContain('.v2-landing__cta .v2-landing__btn { height: 56px; font-size: 17px; }');
+    expect(landing).toContain('.v2-landing__cta .v2-landing__btn--primary { padding: 0 26px; font-weight: 700; }');
+    expect(landing).toContain('.v2-landing__cta .v2-landing__btn--ghost { padding: 0 22px; }');
+    // The section's one cobalt button, on the page's white: base colours.
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}');
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--ghost" href={REPO}');
+  });
+
+  test('the tablet and phone values, and the two rules the tablet values replace', () => {
+    const tablet = mediaAt(landing, '@media (max-width: 900px)');
+    expect(tablet).toContain('.v2-landing__cta-title { font-size: 48px; line-height: 50px; }');
+    expect(tablet).toContain('.v2-landing__footer { grid-template-columns: minmax(0, 1fr); }');
+    expect(tablet).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(tablet).toContain('gap: 28px 24px;');
+    expect(tablet).toContain('padding: 24px 0 32px;');
+
+    const phone = mediaAt(landing, '@media (max-width: 680px)');
+    expect(phone).toContain('.v2-landing__cta { padding-top: 48px; padding-bottom: 48px; gap: 20px; }');
+    expect(phone).toContain('.v2-landing__cta-title { font-size: 36px; line-height: 38px; }');
+    expect(phone).toContain('.v2-landing__cta .v2-landing__btn { height: 48px; }');
+    expect(phone).toContain('.v2-landing__cta .v2-landing__btn--ghost { padding: 0 18px; font-size: 16px; }');
+    expect(phone).toContain('.v2-landing__footer { padding-top: 32px; }');
+    expect(phone).toContain('.v2-landing__footer-legal { padding: 16px 0 20px; }');
+    // The old phone gaps are gone: the 900 block carries the column gaps now,
+    // and a phone rule left behind would beat it on specificity.
+    expect(phone).not.toContain('.v2-landing__footer-cols { gap: 28px; }');
+    expect(phone).not.toContain('.v2-landing__footer { gap: 24px; }');
   });
 });

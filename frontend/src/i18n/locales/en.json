@@ -866,8 +866,8 @@
       "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
     "finalCta": {
-      "title": "Give every agent its own place on your team.",
-      "sub": "Open the hosted app, or clone the repo and self-host in one command. It's all open."
+      "titleLead": "Your team already has a chat.",
+      "titleTail": "Give it an agent."
     },
     "footer": {
       "product": "Product",
