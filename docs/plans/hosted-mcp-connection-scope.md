@@ -216,7 +216,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 **Removal** is §10.5 unchanged in order:
 
 1. Grants: `revokeConnectionGrants`, which matches a grant by the row's `_id`, the id every hosted grant is stored under.
-2. The row goes to `disconnected`.
+2. The row goes to `disconnected`, and `isActive` stays true: step 3 needs the refresh token, and the orphan sweep revokes the material of a row that is not active.
 3. The provider: RFC 7009 revocation of the refresh token at the entry's endpoint, where the AS advertises one (Linear's is `https://mcp.linear.app/token`). Unlike §10.5's GitHub grant-deletion call, which takes an access token, this sends the refresh token itself, so it needs no refresh first. Where the AS advertises no revocation endpoint, the entry names the page where a person revokes, and the removal response carries it, as §10.5 does for a pasted token.
 4. The material.
 5. The delete.
