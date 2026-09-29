@@ -626,7 +626,6 @@
       "copy": "复制",
       "copied": "已复制",
       "copyInstallAria": "复制安装命令",
-      "builtBy": "公开构建者",
       "demoAria": "交互演示：一个示例工作区，有四个 Pod、正在工作的 agent，还有一张你可以直接裁决的决策卡",
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问 agent。",
       "terms": {

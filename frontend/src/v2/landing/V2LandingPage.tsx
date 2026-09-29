@@ -36,7 +36,6 @@ import byoImg from '../../assets/landing/byo.png';
 const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
-const X_LABEL = '@sam_commonly';
 // Kept identical to the README's Quick Start block (README.md, "Quick Start —
 // local installation"). The clone needs the scheme and a directory to enter
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
@@ -193,6 +192,12 @@ const V2LandingPage: React.FC = () => {
   const [motion, setMotion] = useState(false);
   const [installCopied, setInstallCopied] = useState(false);
   const installCmdRef = useRef<HTMLElement | null>(null);
+  // The bar carries the band's colour while the band is under it. Default ON:
+  // the page opens on the band, so this is the correct first paint and the
+  // observer only ever turns it off. jsdom has no IntersectionObserver, so
+  // tests stay in this state — the past-the-band look is a browser check.
+  const [onBand, setOnBand] = useState(true);
+  const bandRef = useRef<HTMLElement | null>(null);
 
   // TASK-154. The command is wider than the box at 390 (721px line in a 340px
   // box), so most of it is off-screen and the visitor cannot read what they are
@@ -278,6 +283,23 @@ const V2LandingPage: React.FC = () => {
     return () => io.disconnect();
   }, [motion, stats]);
 
+  // Bar colour follows the band: the root's top edge is inset by the bar's own
+  // height, so "intersecting" means the band's bottom is still below the bar
+  // and flips exactly when it passes under. threshold 0 — the change is a state
+  // change, not a reveal, so it should happen at the crossing rather than after
+  // a fraction of a 920px band.
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const band = bandRef.current;
+    if (!band) return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setOnBand(entry.isIntersecting),
+      { rootMargin: '-72px 0px 0px 0px', threshold: 0 },
+    );
+    io.observe(band);
+    return () => io.disconnect();
+  }, []);
+
   const hasStats = Boolean(stats && (
     stats.activePods
     || stats.messageCount24h
@@ -287,9 +309,8 @@ const V2LandingPage: React.FC = () => {
   return (
     <div className={`v2-root v2-landing${motion ? ' v2-landing--motion' : ''}`}>
       {/* ---- Top nav ---- */}
-      <header className="v2-landing__bar">
+      <header className={`v2-landing__bar${onBand ? ' v2-landing__bar--band' : ''}`}>
         <div className="v2-landing__brand">
-          <span className="v2-landing__mark"><Mark size={26} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <nav className="v2-landing__nav" aria-label={t('landing.nav.primary')}>
@@ -311,7 +332,7 @@ const V2LandingPage: React.FC = () => {
 
       <main>
         {/* ---- Hero ---- */}
-        <section className="v2-landing__hero">
+        <section className="v2-landing__hero" ref={bandRef}>
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
             {/* The rotating term must sit INSIDE the sentence frame so
@@ -328,34 +349,43 @@ const V2LandingPage: React.FC = () => {
             </h1>
             <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
 
-            <div className="v2-landing__cta-row">
-              <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-            </div>
-
-            <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
-              {/* The scroll region is this wrapper, not the box, so the Copy
-                  control beside it is visible at every width and scroll
-                  position (TASK-154). */}
-              <div className="v2-landing__install-scroll">
-                <span className="v2-landing__install-prompt">$</span>
-                <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+            <div className="v2-landing__hero-actions">
+              <div className="v2-landing__cta-row">
+                <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+                {/* Self-host is the second door onto the product, so it sits
+                    beside the first rather than below it: identical height and
+                    radius, outline instead of fill, and it goes to the source
+                    in a new tab like the pricing tier's own Self-host. */}
+                <a
+                  className="v2-landing__btn v2-landing__btn--onaccent-ghost"
+                  href={REPO}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t('landing.actions.selfHost')}
+                </a>
               </div>
-              <button
-                type="button"
-                className="v2-landing__install-copy"
-                onClick={copyInstallCommand}
-                aria-label={t('landing.hero.copyInstallAria')}
-              >
-                {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
-              </button>
-              <span className="v2-landing__install-status" role="status" aria-live="polite">
-                {installCopied ? t('landing.hero.copied') : ''}
-              </span>
-            </div>
 
-            <div className="v2-landing__hero-by">
-              {t('landing.hero.builtBy')}{' '}
-              <a href={X_HANDLE} target="_blank" rel="noreferrer">{X_LABEL}</a>
+              <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
+                {/* The scroll region is this wrapper, not the box, so the Copy
+                    control beside it is visible at every width and scroll
+                    position (TASK-154). */}
+                <div className="v2-landing__install-scroll">
+                  <span className="v2-landing__install-prompt">$</span>
+                  <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+                </div>
+                <button
+                  type="button"
+                  className="v2-landing__install-copy"
+                  onClick={copyInstallCommand}
+                  aria-label={t('landing.hero.copyInstallAria')}
+                >
+                  {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
+                </button>
+                <span className="v2-landing__install-status" role="status" aria-live="polite">
+                  {installCopied ? t('landing.hero.copied') : ''}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -368,6 +398,13 @@ const V2LandingPage: React.FC = () => {
                 the visitor acts, so reduced-motion visitors get the same
                 surface as everyone else. */}
             <figure className="v2-landing__shot">
+              {/* The caption sits above the frame, on the band, as a sentence
+                  (not mono): it is the one line telling a visitor the thing
+                  below is real. The demo says the same thing again inside
+                  itself. */}
+              <figcaption className="v2-landing__shot-cap v2-landing__demo-cap">
+                {t('landing.hero.demoCaption')}
+              </figcaption>
               <div
                 className="v2-landing__shot-frame v2-landing__demo-frame"
                 role="group"
@@ -375,9 +412,6 @@ const V2LandingPage: React.FC = () => {
               >
                 <DemoWorkspace />
               </div>
-              <figcaption className="v2-landing__shot-cap">
-                {t('landing.hero.demoCaption')}
-              </figcaption>
             </figure>
           </div>
         </section>
@@ -775,7 +809,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__footer-title">{t('landing.footer.community')}</div>
             <a className="v2-landing__footer-link" href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer">{t('landing.footer.discord')}</a>
             <a className="v2-landing__footer-link" href={`${REPO}/discussions`} target="_blank" rel="noreferrer">{t('landing.footer.discussions')}</a>
-            <a className="v2-landing__footer-link" href="https://x.com/sam_commonly" target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
+            <a className="v2-landing__footer-link" href={X_HANDLE} target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
           </div>
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>

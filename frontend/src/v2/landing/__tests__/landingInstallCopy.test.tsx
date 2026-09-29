@@ -181,13 +181,21 @@ describe('landing install line copy control (TASK-154)', () => {
     // would win against.
     const pill = ruleBody(PILL_SELECTOR);
     expect(pill).toContain('padding: 4px 10px');
-    expect(pill).toContain('border: 1px solid var(--v2-border)');
-    expect(pill).toContain('background: var(--v2-surface, #fff)');
-    expect(pill).toContain('color: var(--v2-text-secondary)');
-    expect(pill).toContain('font-size: 12px');
     expect(pill).toContain('flex: none');
+    expect(pill).toContain('font-size: 12px');
+    expect(pill).toContain('font-family: var(--v2-font-mono)');
+    // Row A moved the pill onto the cobalt band, where the tint fill and the
+    // muted label both vanished into the background: the fill is now the
+    // hover-only affordance, and the label is white against the band rather
+    // than anything drawn by the pill itself.
+    expect(pill).toContain('background: transparent');
+    expect(pill).toContain('border: 1px solid transparent');
+    expect(pill).toContain('color: #ffffff');
     // The hover state needs the same tier: at (0,2,0) it lost to the (0,2,1) reset.
-    expect(ruleBody(`${PILL_SELECTOR}:hover`)).toContain('background: var(--v2-accent-soft)');
+    expect(ruleBody(`${PILL_SELECTOR}:hover`)).toContain('background: rgba(255, 255, 255, 0.12)');
+    // Focus is invisible against cobalt without an explicit ring, and the
+    // band's own hairline is too faint to serve as one.
+    expect(ruleBody(`${PILL_SELECTOR}:focus-visible`)).toContain('outline: 2px solid #ffffff');
   });
 
   it('keeps the line 46px tall and gives the pill a 44px target on phones', () => {
@@ -202,6 +210,12 @@ describe('landing install line copy control (TASK-154)', () => {
     expect(phone).toContain('height: 44px');
     // Transparent extension, so the visible pill keeps its size.
     expect(phone).not.toContain('min-height: 44px');
+    // Row A: the box wraps the command at this width instead of scrolling it,
+    // because 86 characters is a value no thumb reaches the end of. The box
+    // also has to stop centring, or the two wrapped lines hang off the pill.
+    expect(phone).toContain('white-space: normal');
+    expect(phone).toContain('overflow-wrap: anywhere');
+    expect(phone).toContain('.v2-landing__install { align-items: flex-start; }');
   });
 
   it('selects the command when the clipboard is unavailable, never a silent no-op', async () => {
