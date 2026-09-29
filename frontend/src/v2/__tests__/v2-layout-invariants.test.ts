@@ -105,6 +105,54 @@ const selectorRuleBody = (css: string, selector: string): string => {
   return bodyStart === -1 || bodyEnd === -1 ? '' : css.slice(bodyStart, bodyEnd);
 };
 
+// Brace-matched slice of one at-rule. `indexOf` to the next `@media` is not
+// enough on a sheet with nested blocks, and which block a naive slice returns
+// depends on the ORDER the file happens to put them in — a guard that asserts on
+// the wrong block reads as a pass. Module-level because three describes need it
+// and three copies is how the fourth one drifts.
+const mediaAt = (css: string, atRule: string): string => {
+  const at = css.indexOf(atRule);
+  if (at < 0) return '';
+  const open = css.indexOf('{', at);
+  let depth = 0;
+  let end = open;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === '{') depth += 1;
+    if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+  }
+  return css.slice(at, end + 1);
+};
+
+// The `@media (prefers-reduced-motion: reduce)` block that carries `needle`, not
+// the first such block in the sheet. There are six of them in v2-landing.css,
+// and a slice from the first `prefers-reduced-motion` runs to EOF — 800 lines
+// past the block it meant, widening as the file grows — so any later block could
+// satisfy a read aimed at one of them. sprint-review measured the consequence on
+// #2019: the fallback's own `flex-wrap: wrap` could be deleted outright and the
+// guard stayed green, because `.v2-landing__footer-cols` declares the same
+// property 300 lines below. A scope with a start and no end is not a scope.
+const reducedMotionBlock = (css: string, needle: string): string => {
+  const marker = '@media (prefers-reduced-motion';
+  for (let at = css.indexOf(marker); at !== -1; at = css.indexOf(marker, at + 1)) {
+    const block = mediaAt(css.slice(at), marker);
+    if (block.includes(needle)) return block;
+  }
+  return '';
+};
+
+// Body of a rule that IS the whole selector — anchored at the start of a line, so
+// it cannot match a rule where this selector is the TAIL of a longer one.
+// `selectorRuleBody` finds the first substring match, which is wrong whenever an
+// override names the class before the base rule does: the even-row rules say
+// `.v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 1 }`
+// two rules above the base `.v2-landing__feature-copy {` — and a substring check
+// reads the override's body instead of the rule's.
+const topLevelRuleBody = (css: string, selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp('^' + escaped + ' \\{([^}]*)\\}', 'm').exec(css);
+  return match ? match[1] : '';
+};
+
 const cssVariable = (css: string, name: string): string | undefined => (
   new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
 );
@@ -1370,10 +1418,42 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('landing trusted-by marquee falls back to a static wrap under reduced motion', () => {
     // prefers-reduced-motion users get the old wrapping strip: animation off,
     // wrap on, duplicate set hidden (it exists only for the seamless loop).
-    const reduced = landing.slice(landing.indexOf('prefers-reduced-motion'));
-    expect(reduced).toContain('flex-wrap: wrap');
-    expect(reduced).toContain("animation: none");
+    // Read from the fallback's OWN block, brace-matched: the base marquee rule is
+    // above it, so a whole-sheet first-match reader returns that body instead,
+    // and a slice from the first `prefers-reduced-motion` runs to EOF and lets a
+    // later block answer for this one. Assert the scope is non-empty first — a
+    // scope that can silently be empty reads as a pass everywhere it is used.
+    const reduced = reducedMotionBlock(landing, '.v2-landing__trusted-track');
+    expect(reduced).not.toBe('');
+    expect(reduced).toContain('animation: none');
     expect(reduced).toContain(".v2-landing__trusted-set[aria-hidden='true']");
+    // The SET has to be the element that wraps. `flex-wrap: wrap` on the TRACK
+    // was the whole assertion here until row B, and it was green while 3 / 4 /
+    // 7 / 8 of the 11 logos were clipped at 1440 / 1200 / 760 / 390: the track's
+    // only visible child is one nowrap set, so the wrap has to be declared on
+    // the child that overflows (ux-lead's #2019 non-blocking finding). Pinned by
+    // the rule's OWN selector, because a substring check cannot say which
+    // element carries the declaration — which is exactly how this stayed green.
+    const wrapped = selectorRuleBody(reduced, '.v2-landing__trusted-marquee .v2-landing__trusted-set {');
+    expect(wrapped).toContain('flex-wrap: wrap');
+    expect(wrapped).toContain('justify-content: center');
+    // ...and the track must NOT carry it. That declaration wrapped nothing (the
+    // track's only visible child is one nowrap set) and it is what kept the old
+    // substring pin green through the whole defect, so its absence is asserted
+    // rather than assumed: re-introducing it is a revert of this fix. Qualified on
+    // the DECLARATION, not the bare word: the rule's own comment says "flex-wrap"
+    // while explaining why it is absent, and a substring pin on the word would
+    // be tripped by the sentence that documents it.
+    const track = selectorRuleBody(reduced, '.v2-landing__trusted-track {');
+    expect(track).not.toMatch(/flex-wrap\s*:/);
+    // The mask would eat the first logo at 390, where its fade is 31px wide.
+    // Both declarations are pinned LINE-ANCHORED, because `'mask-image: none'` is
+    // a substring of `-webkit-mask-image: none;` — the arm that deletes the
+    // unprefixed line came back green until this was qualified, which is the same
+    // defect class as the pin above, one declaration over.
+    const maskOff = selectorRuleBody(reduced, '.v2-landing__trusted-marquee {');
+    expect(maskOff).toMatch(/^\s*mask-image:\s*none;/m);
+    expect(maskOff).toMatch(/^\s*-webkit-mask-image:\s*none;/m);
   });
 
   test('landing adapter code scrolls inside its card instead of widening the page', () => {
@@ -2437,19 +2517,6 @@ describe('the landing hero demo (TASK-147)', () => {
   // 760px)` is a prefix of the 641-760 query beside it, so a prefix match reads
   // whichever the file happens to put first and the guard quietly asserts on the
   // wrong block.
-  const mediaAt = (css: string, atRule: string): string => {
-    const at = css.indexOf(atRule);
-    if (at < 0) return '';
-    const open = css.indexOf('{', at);
-    let depth = 0;
-    let end = open;
-    for (let i = open; i < css.length; i += 1) {
-      if (css[i] === '{') depth += 1;
-      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-    }
-    return css.slice(at, end + 1);
-  };
-
   const phoneBlock = (css: string): string => mediaAt(css, '@media (max-width: 760px) {');
 
   test('the demo is the workspace at its own canvas, not a smaller invention', () => {
@@ -2557,8 +2624,10 @@ describe('the landing hero demo (TASK-147)', () => {
 
   test('even feature rows mirror their columns, and still stack on a phone', () => {
     // Without the mirror, :nth-child(even) only swaps order and rows 2 and 4
-    // put the shot in the narrow column (496.6 px against 571.4 at 1200).
-    expect(ruleBody(landing, '.v2-landing__feature-row:nth-child(even)')).toContain('grid-template-columns: 1fr 1.15fr');
+    // put the shot in the narrow column (423.7 px against 664.3 at 1200, and
+    // 486 against 762 at 1440 — the two columns are 762 + 64 gap + 486, the
+    // whole 1312 measure, exactly as the board draws them).
+    expect(ruleBody(landing, '.v2-landing__feature-row:nth-child(even)')).toContain('grid-template-columns: minmax(0, 486fr) minmax(0, 762fr)');
     // :nth-child(even) (0,2,0) outranks the phone stacking rule (0,1,0), so the
     // phone block must name even rows too or they stay two columns at 390.
     const phone = landing.slice(landing.indexOf('@media (max-width: 680px)'));
@@ -3435,19 +3504,6 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
   const landingTsx = read('../landing/V2LandingPage.tsx');
   const landingEn = read('../../i18n/locales/en.json');
 
-  const mediaAt = (css: string, atRule: string): string => {
-    const at = css.indexOf(atRule);
-    if (at < 0) return '';
-    const open = css.indexOf('{', at);
-    let depth = 0;
-    let end = open;
-    for (let i = open; i < css.length; i += 1) {
-      if (css[i] === '{') depth += 1;
-      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-    }
-    return css.slice(at, end + 1);
-  };
-
   test('one measure: 1312 on the page and on the product frame inside it', () => {
     // The frame padding is the page's measure, so it is asserted as a PAIR of
     // declarations: the left/right pair drifting apart is how a centred column
@@ -3494,13 +3550,18 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(landingTsx).toContain('aria-describedby="v2-landing-demo-caption"');
     // A frame outside the band carries the page measure itself.
     expect(landing).toContain('.v2-landing__hero-art,\n.v2-landing__trusted,');
-    // The 94 below the frame is left where it is: the board draws that gap as
-    // the frame container's own height (456 − 360) on white, and dropping the
-    // strip's grey is row B's edit to this same rule, so the two move together
-    // there rather than being split across rows.
+    // The 94 below the frame is the board's gap between the frame container
+    // (456 − 360) and the strip, and row B landed it as the strip's own
+    // `margin-top` — outside its top hairline, where the board draws it. As top
+    // padding the gap fell inside the hairline, which then sat on the frame's
+    // bottom edge (ux-lead's #2019 finding 1). Both halves are pinned: the
+    // declaration that now carries the gap, and the one whose return is the
+    // defect.
     const phone = mediaAt(landing, '@media (max-width: 760px) {');
     expect(phone).toContain('.v2-landing__hero-art { margin-top: -180px; }');
-    expect(selectorRuleBody(landing, '.v2-landing__trusted {')).toContain('padding-top: 94px');
+    const trusted = selectorRuleBody(landing, '.v2-landing__trusted {');
+    expect(trusted).toContain('margin-top: 94px');
+    expect(trusted).not.toContain('padding-top: 94px');
   });
 
   test('the copy column is uncapped, and the title carries the 1000', () => {
@@ -3601,6 +3662,161 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     const resetBlock = landing.slice(resetStart, landing.indexOf('}', resetStart));
     expect(resetBlock).toContain('letter-spacing: 0');
     for (const sel of negative) {
+      expect(resetBlock).toContain(`:lang(zh) ${sel}`);
+    }
+  });
+});
+
+// TASK-167 row B (TASK-193). The three sections under the band: the trusted
+// strip, the wedge, and the feature rows. The load-bearing parts are the two
+// rules that only work as pairs — a mirrored grid whose halves must add up, and
+// a marquee whose gap and padding-right must move together — plus the removal of
+// the old ✓ mark, which is a glyph the file must not contain again.
+describe('TASK-167 row B — trusted, wedge and In action onto Signal', () => {
+  const landing = read('../landing/v2-landing.css');
+  const landingTsx = read('../landing/V2LandingPage.tsx');
+
+  test('the feature row is 762 + 64 + 486, and the columns cannot outgrow it', () => {
+    const row = selectorRuleBody(landing, '.v2-landing__feature-row {');
+    // `minmax(0, …)` on both sides: bare `fr` has an automatic minimum of
+    // `auto`, so the 760px screenshot in the media column would push the copy
+    // narrower instead of letting the image shrink.
+    expect(row).toContain('grid-template-columns: minmax(0, 762fr) minmax(0, 486fr)');
+    expect(row).toContain('gap: 64px');
+    // 762 + 64 + 486 = 1312, the measure row A set — asserted as arithmetic
+    // rather than as three numbers that happen to sit next to each other.
+    expect(762 + 64 + 486).toBe(1312);
+    // The mirror has to reverse both tracks, or the even rows put the shot in
+    // the narrow column and the shots stop lining up down the page.
+    expect(ruleBody(landing, '.v2-landing__feature-row:nth-child(even)')).toContain('minmax(0, 486fr) minmax(0, 762fr)');
+    expect(selectorRuleBody(landing, '.v2-landing__features {')).toContain('gap: 96px');
+  });
+
+  test('the feature title is set in the display face, and the ✓ is gone', () => {
+    const title = selectorRuleBody(landing, '.v2-landing__feature-title {');
+    expect(title).toContain('font-family: var(--v2-font-display');
+    expect(title).toContain('font-size: 36px');
+    expect(title).toContain('line-height: 40px');
+    expect(title).toContain('text-wrap: balance');
+    // The mark is a square now: a glyph that a font can render 3px wide at one
+    // weight and 14px at another is not a mark, and the off-palette blue was
+    // the only colour on the page outside the tokens.
+    const mark = selectorRuleBody(landing, '.v2-landing__feature-points li::before {');
+    expect(mark).toContain("content: ''");
+    expect(mark).toContain('width: 6px');
+    expect(mark).toContain('height: 6px');
+    expect(mark).not.toContain('✓');
+    expect(landing).not.toContain('✓');
+    expect(landing).not.toContain('#2f6feb');
+    // The row holds the square against a two-line point; a square has no
+    // baseline, so centering is the only thing that lines them up.
+    expect(selectorRuleBody(landing, '.v2-landing__feature-points li {')).toContain('align-items: center');
+  });
+
+  test('the copy column owns its spacing, so the UA margins cannot double it', () => {
+    // Via the anchored helper: two even-row overrides name this class before the
+    // base rule does, so a substring lookup returns `{ order: 1 }`.
+    const copy = topLevelRuleBody(landing, '.v2-landing__feature-copy');
+    expect(copy).toContain('display: flex');
+    expect(copy).toContain('flex-direction: column');
+    expect(copy).toContain('gap: 16px');
+    expect(copy).toContain('min-width: 0');
+    // <p>, <h3> and <ul> all carry margins; without this the column gap would
+    // be added to them and the four blocks would sit at four different
+    // distances, which is what "gap 16" is meant to replace.
+    expect(landing).toContain('.v2-landing__feature-copy .v2-landing__feature-points { margin: 0; }');
+    expect(landing).toContain('.v2-landing__feature-copy .v2-landing__feature-points { margin-top: 4px; }');
+  });
+
+  test('the trusted strip is a band between two rules, with no fill', () => {
+    const strip = selectorRuleBody(landing, '.v2-landing__trusted {');
+    // Declaration-shaped, not a substring: the block's own comment says the word
+    // "background", and a check that trips on prose is a check on the comment.
+    expect(strip).not.toMatch(/\bbackground(-[a-z]+)?\s*:/);
+    expect(strip).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(strip).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(strip).toContain('min-height: 132px');
+    // The 94 sits OUTSIDE the border: inside it the hairline could not straddle
+    // the gap, so it sat on the frame's bottom edge at 0 and the box measured
+    // 178 where the board draws 132 (ux-lead's #2019 finding 1). The min-height
+    // above is the box, this is the gap, and 22 is the inset above and below the
+    // label the centring then splits.
+    expect(strip).toContain('margin-top: 94px');
+    expect(strip).toContain('padding: 22px 0');
+    expect(strip).not.toContain('padding-top: 94px');
+    // And at ≤760 the gap is a margin too, or the ≤680 `padding: 24px 0` below
+    // overrides it and the 48 disappears at 390.
+    const phone760 = mediaAt(landing, '@media (max-width: 760px) {');
+    expect(phone760).toContain('.v2-landing__trusted { margin-top: 48px; }');
+    // Mono, and the same 12/20 as the kickers: a label with a different face
+    // from every other label on the page reads as body copy.
+    const label = selectorRuleBody(landing, '.v2-landing__trusted-label {');
+    expect(label).toContain('font-family: var(--v2-font-mono)');
+    expect(label).toContain('font-weight: 500');
+    expect(label).toContain('letter-spacing: 0.06em');
+    expect(label).toContain('text-transform: uppercase');
+  });
+
+  test('the phone halves of the marquee move together, or the loop jumps', () => {
+    const phone = mediaAt(landing, '@media (max-width: 680px) {');
+    // Two identical sets is what makes `translateX(-50%)` seamless, so the gap
+    // and the padding-right that close each set are one quantity in two
+    // declarations: change one alone and the track jumps 24px every cycle.
+    expect(phone).toContain('.v2-landing__trusted-set { gap: 32px; padding-right: 32px; }');
+    expect(phone).toContain('.v2-landing__trusted-logo { height: 22px; }');
+    expect(phone).toContain('.v2-landing__trusted { min-height: 110px; padding: 24px 0; gap: 12px; }');
+  });
+
+  test('the section rhythm and the head are set once, for every section below', () => {
+    expect(selectorRuleBody(landing, '.v2-landing__section {')).toContain('padding-bottom: 120px');
+    expect(selectorRuleBody(landing, '.v2-landing__section {')).toContain('padding-top: 0');
+    expect(selectorRuleBody(landing, '.v2-landing__section-head {')).toContain('margin: 0 auto 56px');
+    // The features head is the exception, and it is 40 at BOTH widths, so the
+    // rule has to outrank the 56 above it by name rather than by position.
+    expect(selectorRuleBody(landing, '.v2-landing__section--features .v2-landing__section-head {')).toContain('margin-bottom: 40px');
+    expect(landingTsx).toContain('v2-landing__section v2-landing__section--features');
+    const phone = mediaAt(landing, '@media (max-width: 680px) {');
+    expect(phone).toContain('.v2-landing__section { padding-top: 0; padding-bottom: 64px; }');
+    // 24 here plus the wedge's 24 below is the board's 48 at 390, and the
+    // features rule has to sit after the section rule to win on source order.
+    expect(phone.indexOf('.v2-landing__section--features { padding-top: 24px; }'))
+      .toBeGreaterThan(phone.indexOf('.v2-landing__section { padding-top: 0;'));
+    expect(phone).toContain('.v2-landing__section-head { margin-bottom: 32px; }');
+    const h2 = selectorRuleBody(landing, '.v2-landing__h2 {');
+    expect(h2).toContain('font-size: 44px');
+    expect(h2).toContain('line-height: 48px');
+    expect(h2).toContain('font-weight: 800');
+  });
+
+  test('the wedge is left-aligned, unbordered and 56/58', () => {
+    const wedge = selectorRuleBody(landing, '.v2-landing__wedge {');
+    // The trusted strip above carries the hairline now; keeping these drew the
+    // same rule twice, 80px apart.
+    expect(wedge).not.toContain('border-top');
+    expect(wedge).not.toContain('border-bottom');
+    expect(wedge).not.toContain('text-align: center');
+    expect(wedge).toContain('padding-top: 80px');
+    const line = selectorRuleBody(landing, '.v2-landing__wedge-line {');
+    expect(line).toContain('font-size: 56px');
+    expect(line).toContain('line-height: 58px');
+    expect(line).toContain('margin: 0');
+    expect(line).not.toContain('max-width');
+    const phone = mediaAt(landing, '@media (max-width: 680px) {');
+    expect(phone).toContain('.v2-landing__wedge { padding-top: 48px; padding-bottom: 24px; }');
+    expect(phone).toContain('.v2-landing__wedge-line { font-size: 34px; line-height: 36px; }');
+    expect(phone).toContain('.v2-landing__wedge-sub { margin-top: 16px; font-size: 16px; line-height: 26px; }');
+  });
+
+  test('zh-CN: the three trackings this row re-tightens keep their reset', () => {
+    // Row A owns the block; this row is what would break it, because it is the
+    // row that sets the wedge, the h2 and the feature title as display type at
+    // −0.03em. The reset list is read from the sheet, not restated here, so the
+    // three names cannot drift out of it.
+    const resetStart = landing.indexOf(':lang(zh) .v2-landing__brand-name');
+    expect(resetStart).toBeGreaterThan(-1);
+    const resetBlock = landing.slice(resetStart, landing.indexOf('}', resetStart));
+    for (const sel of ['.v2-landing__wedge-line', '.v2-landing__h2', '.v2-landing__feature-title']) {
+      expect(selectorRuleBody(landing, `${sel} {`)).toContain('letter-spacing: -0.03em');
       expect(resetBlock).toContain(`:lang(zh) ${sel}`);
     }
   });

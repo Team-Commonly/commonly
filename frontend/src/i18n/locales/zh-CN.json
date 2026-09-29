@@ -636,8 +636,8 @@
       }
     },
     "trusted": {
-      "label": "我们的用户来自",
-      "ariaLabel": "我们的用户来自 {{affiliations}}"
+      "label": "信任我们的人来自",
+      "ariaLabel": "信任我们的人来自 {{affiliations}}"
     },
     "wedge": {
       "title": "是团队成员，不是用完即弃的 subagent。",

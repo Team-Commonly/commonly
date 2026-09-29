@@ -56,7 +56,7 @@ describe('V2LandingPage public proof', () => {
 
     const { container } = renderLanding();
 
-    expect(screen.getByText('Trusted by users from')).toBeInTheDocument();
+    expect(screen.getByText('Trusted by people from')).toBeInTheDocument();
 
     // First set carries the accessible names (alt text), in provenance order.
     const sets = container.querySelectorAll('.v2-landing__trusted-set');
