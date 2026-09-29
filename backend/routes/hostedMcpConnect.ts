@@ -115,22 +115,37 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // because `req.ip` walks to a cloudflared pod address for every external caller
 // — one bucket for the whole internet (TASK-110's class).
 //
-// Two buckets, not one shared limiter: a client that hammers the static
+// Two limiter instances, not one shared: a client that hammers the static
 // document must not be able to spend the callback's allowance, which is the one
 // that finishes a member's connect.
-const PUBLIC_GET_MAX = 60;
-const publicGetRateLimit = (label: string) => rateLimit({
-  windowMs: 60_000,
-  max: PUBLIC_GET_MAX,
+//
+// The two BOUNDS are deliberately different, because the two callers are, and
+// the guard above cannot check that — it reads names, so any number satisfies it.
+const PUBLIC_GET_WINDOW_MS = 60_000;
+const publicGetRateLimit = (max: number, label: string) => rateLimit({
+  windowMs: PUBLIC_GET_WINDOW_MS,
+  max,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
-    res.status(429).json({ msg: `rate limit exceeded: ${PUBLIC_GET_MAX} requests per 60s (${label})` });
+    res.status(429).json({ msg: `rate limit exceeded: ${max} requests per 60s (${label})` });
   },
 });
-const clientMetadataRateLimit = publicGetRateLimit('client-metadata');
-const callbackRateLimit = publicGetRateLimit('callback');
+
+// Fetched by the AUTHORIZATION SERVER, not by a person, and it is one client id
+// per instance per entry (§4) — so a vendor's handful of egress addresses fetch
+// this document on behalf of every member. A bound tuned for humans would
+// surface at the vendor as a client whose metadata document cannot be read, i.e.
+// as a refused authorization for everyone at once, with nothing in our own logs
+// pointing at a limiter. Loose on purpose: the document is static, identical for
+// every member, and holds no secret.
+const clientMetadataRateLimit = publicGetRateLimit(600, 'client-metadata');
+
+// A browser, once per connect. 60 a minute is far above a human retry pattern
+// and still bounds the route that validates `state` and the browser nonce and
+// then performs a token exchange.
+const callbackRateLimit = publicGetRateLimit(60, 'callback');
 
 router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, res: Response) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
