@@ -176,7 +176,10 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - It refuses `write` (§5).
 - `resolveBrokerFor` (`:352`) takes the row, not its type. For this type it returns that entry's tools, so `invalid_tools` (`:353–360`) refuses a tool from another entry.
 - The granter check (`connectionOwnerId`, `:265–267`) is unchanged, because `createdBy` is the person.
-- TASK-147 comes first. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
+- TASK-147 lands with removal, in step 6 (§10), and the first catalogue entry does not ship without it. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
+  - The legacy Discord delete (`routes/discord.ts:241`) looks its row up by `installationId` and `type: 'discord'`, so the same witness covers it.
+  - Pod deletion's case also needs the row to stay without a `podId`. `PATCH /api/integrations/:id` can set one on a user-scoped row, and it refuses a hosted row only because that row holds no `config.linkedUserId` (`routes/integrations.ts:672`). A witness pins that refusal.
+  - The mint may admit the type before any of this lands. No hosted row can exist while `HOSTED_MCP_ENTRIES` is empty, so no hosted grant can either.
 
 **The broker** (`resolveConnection`, `toolBrokerService.ts:455`):
 
@@ -247,13 +250,14 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a hosted grant cannot name another entry's tool`
    - `a hosted row is found by _id only`
    - the §6 arms
-   - TASK-147's witness per removal path, and TASK-175's refusal at the broker call, both before the mint admits the type
+   - TASK-175's refusal at the broker call, before the mint admits the type
 5. **The trail column.**
    - `every tool call records whose credential ran`
    - `the trail names the credential owner after the Connection is removed`
 6. **Removal.**
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
+   - TASK-147's witness per removal path (§7), before the first entry ships
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
 
 ## 11. What this corrects, and what stays open
