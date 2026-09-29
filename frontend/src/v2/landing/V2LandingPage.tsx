@@ -33,7 +33,32 @@ const X_HANDLE = 'https://x.com/sam_commonly';
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
 // pasted it got a bare clone and no started stack (TASK-152).
 const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
-const ADR_COUNT = 15;
+const ADR_COUNT = 30;
+// A count on a marketing page drifts silently: nothing on the page notices a
+// new ADR, and docs/ is outside this image's build context so the page cannot
+// count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
+// compares it with the constant above, so the PR that adds an ADR is the one
+// that fails.
+/**
+ * The use-case row's arrow. Decorative — the row is already a link and its
+ * title carries the meaning — so it is aria-hidden and inherits the row's
+ * colour rather than carrying one of its own.
+ */
+const UseCaseArrow = () => (
+  <svg
+    className="v2-landing__usecase-arrow"
+    width={16}
+    height={16}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="square"
+    aria-hidden="true"
+  >
+    <path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" />
+  </svg>
+);
 // Issue #708 records the provenance for every affiliation AND the source +
 // license of every logo file (Wikimedia PD-textlogo / official brand assets).
 // Keep this ordered list config-shaped so additions require an explicit,
@@ -641,7 +666,7 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- Use cases ---- */}
-        <section className="v2-landing__section v2-landing__section--tint" id="use-cases">
+        <section className="v2-landing__section" id="use-cases">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.useCases.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.useCases.title')}</h2>
@@ -650,26 +675,27 @@ const V2LandingPage: React.FC = () => {
             <Link className="v2-landing__usecase" to="/use-cases/agent-collab/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.coding.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.coding.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/team-chat/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.chat.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.chat.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/research-desk/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.research.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.research.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/pod-browser/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.browse.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.browse.text')}</p>
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/app-marketplace/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.marketplace.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.marketplace.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/daily-digest/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.digest.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.digest.text')}</p>
+              <UseCaseArrow />
             </Link>
           </div>
         </section>
@@ -683,17 +709,14 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__tiles" data-reveal data-reveal-stagger>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">01</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.shell.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.shell.text')}</p>
             </div>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">02</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.kernel.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.kernel.text')}</p>
             </div>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">03</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.drivers.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.drivers.text')}</p>
             </div>
@@ -701,11 +724,13 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- Built by agents (self-proof) ---- */}
-        <section className="v2-landing__proof">
+        <section className="v2-landing__section v2-landing__proof">
           <div className="v2-landing__proof-inner" data-reveal>
-            <div className="v2-landing__kicker v2-landing__kicker--light">{t('landing.proof.kicker')}</div>
-            <h2 className="v2-landing__proof-title">{t('landing.proof.title')}</h2>
-            <p className="v2-landing__proof-sub">{t('landing.proof.sub', { count: ADR_COUNT })}</p>
+            <div className="v2-landing__proof-copy">
+              <div className="v2-landing__kicker">{t('landing.proof.kicker')}</div>
+              <h2 className="v2-landing__h2">{t('landing.proof.title')}</h2>
+              <p className="v2-landing__proof-sub">{t('landing.proof.sub', { count: ADR_COUNT })}</p>
+            </div>
             {hasStats && (
               <div className="v2-landing__proof-stats">
                 <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.agentCount, locale)}</span><span className="v2-landing__proof-label">{t('landing.proof.stats.agents')}</span></div>
@@ -721,7 +746,7 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.pricing.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.pricing.title')}</h2>
-            <p className="v2-landing__section-sub">{t('landing.pricing.sub')}</p>
+            <p className="v2-landing__sub">{t('landing.pricing.sub')}</p>
           </div>
 
           <div className="v2-landing__tiers" data-reveal data-reveal-stagger>
@@ -779,7 +804,7 @@ const V2LandingPage: React.FC = () => {
               <strong>{t('landing.pricing.enterprise.name')}</strong>
               <span> {t('landing.pricing.enterprise.text')}</span>
             </div>
-            <Link className="v2-landing__btn v2-landing__btn--ghost v2-landing__btn--sm" to={appHref}>{t('landing.actions.talkToUs')}</Link>
+            <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{t('landing.actions.talkToUs')}</Link>
           </div>
 
           <p className="v2-landing__price-foot">

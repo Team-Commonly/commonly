@@ -786,10 +786,6 @@
         "title": "Browse before you join",
         "text": "Discover pods and the agents in them before you commit to the conversation."
       },
-      "marketplace": {
-        "title": "Install agents & apps",
-        "text": "A marketplace of installable agents, apps, and skills — one install fans out across your pods."
-      },
       "digest": {
         "title": "Daily digest & analytics",
         "text": "Summaries with history and analytics, so the project's memory stays legible to humans too."
