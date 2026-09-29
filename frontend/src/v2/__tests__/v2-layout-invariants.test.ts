@@ -3821,3 +3821,157 @@ describe('TASK-167 row B — trusted, wedge and In action onto Signal', () => {
     }
   });
 });
+
+describe('TASK-167 row C — How it works, Why open source and What you get onto Signal', () => {
+  const landing = read('../landing/v2-landing.css');
+  const landingTsx = read('../landing/V2LandingPage.tsx');
+
+  test('a step is a 28px number track and a copy column, not a card', () => {
+    const steps = topLevelRuleBody(landing, '.v2-landing__steps');
+    expect(steps).toContain('repeat(3, minmax(0, 1fr))');
+    expect(steps).toContain('gap: 64px');
+    expect(steps).toContain('margin-bottom: 56px');
+    const step = topLevelRuleBody(landing, '.v2-landing__step');
+    // The card's four declarations are what the board removed; asserting the
+    // grid alone would leave a padding or a background free to come back.
+    expect(step).toContain('grid-template-columns: 28px minmax(0, 1fr)');
+    expect(step).toContain('align-items: baseline');
+    expect(step).not.toContain('padding');
+    expect(step).not.toContain('background');
+    expect(step).not.toContain('border');
+    expect(step).not.toContain('border-radius');
+    expect(topLevelRuleBody(landing, '.v2-landing__step-copy')).toContain('gap: 10px');
+  });
+
+  test('the step number is mono type, not a pill', () => {
+    const num = topLevelRuleBody(landing, '.v2-landing__step-num');
+    expect(num).toContain('var(--v2-font-mono)');
+    expect(num).toContain('font-size: 13px');
+    expect(num).toContain('font-weight: 500');
+    expect(num).not.toContain('--v2-radius-pill');
+    expect(num).not.toContain('--v2-accent-soft');
+    expect(num).not.toContain('width:');
+    expect(num).not.toContain('height:');
+    const title = topLevelRuleBody(landing, '.v2-landing__step-title');
+    expect(title).toContain('font-family: var(--v2-font-display');
+    expect(title).toContain('font-size: 24px');
+    expect(title).toContain('line-height: 28px');
+    expect(title).toContain('letter-spacing: -0.03em');
+    expect(title).toContain('text-wrap: balance');
+    expect(topLevelRuleBody(landing, '.v2-landing__step-text')).toContain('font-size: 16px');
+  });
+
+  test('the numbers are two-digit and the copy is the pod wording', () => {
+    // Two digits because the board draws 01/02/03 and the mono track is what
+    // makes them align; the markup is the only place that can be checked.
+    expect(landingTsx).toContain('v2-landing__step-num">01<');
+    expect(landingTsx).toContain('v2-landing__step-num">02<');
+    expect(landingTsx).toContain('v2-landing__step-num">03<');
+    expect(read('../../i18n/locales/en.json')).toContain('Install your agents into a pod');
+    expect(read('../../i18n/locales/zh-CN.json')).toContain('把智能体安装到 Pod 中');
+    // Row D drops the use-cases tint; this row drops the how-it-works one.
+    expect((landingTsx.match(/v2-landing__section--tint/g) || []).length).toBe(1);
+  });
+
+  test('the adapters sit under a hairline and the command blocks are ink', () => {
+    const adapters = topLevelRuleBody(landing, '.v2-landing__adapters');
+    expect(adapters).toContain('repeat(3, minmax(0, 1fr))');
+    expect(adapters).toContain('gap: 12px');
+    expect(adapters).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(adapters).toContain('padding-top: 56px');
+    const adapter = topLevelRuleBody(landing, '.v2-landing__adapter');
+    expect(adapter).toContain('min-width: 0');
+    expect(adapter).not.toContain('padding');
+    expect(adapter).not.toContain('background');
+    expect(adapter).not.toContain('border');
+    const code = topLevelRuleBody(landing, '.v2-landing__code');
+    expect(code).toContain('background: var(--v2-text-primary)');
+    expect(code).toContain('color: #ffffff');
+    expect(code).toContain('font-size: 14px');
+    expect(code).toContain('line-height: 22px');
+    // 1 1 auto, so the three blocks share the row's height instead of each
+    // ending where its own command ends.
+    expect(code).toContain('flex: 1 1 auto');
+    expect(code).toContain('white-space: pre');
+    expect(code).toContain('overflow-x: auto');
+    // The comment line is still the same text; it is a span now so the copied
+    // bytes stay identical while the colour can differ.
+    expect(topLevelRuleBody(landing, '.v2-landing__code-comment')).toContain('#98a2b3');
+    expect(landingTsx).toContain('v2-landing__code-comment');
+    expect(landingTsx).toContain('commonly agent run my-agent');
+    expect(landingTsx).toContain('# joins pods, replies to @mentions');
+  });
+
+  test('the open-source column is bordered rows and a ghost button', () => {
+    const grid = topLevelRuleBody(landing, '.v2-landing__open-grid');
+    expect(grid).toContain('minmax(0, 608fr) minmax(0, 640fr)');
+    expect(grid).toContain('gap: 64px');
+    expect(grid).toContain('align-items: start');
+    const list = topLevelRuleBody(landing, '.v2-landing__open-list');
+    expect(list).toContain('border: 1px solid var(--v2-border)');
+    expect(list).toContain('border-radius: 4px');
+    expect(list).toContain('gap: 0');
+    const item = topLevelRuleBody(landing, '.v2-landing__open-item');
+    expect(item).toContain('display: block');
+    expect(item).toContain('padding: 20px 24px');
+    expect(item).toContain('font-size: 16px');
+    const strong = topLevelRuleBody(landing, '.v2-landing__open-item strong');
+    expect(strong).toContain('display: block');
+    expect(strong).toContain('font-family: var(--v2-font-display');
+    expect(strong).toContain('font-size: 18px');
+    expect(strong).toContain('line-height: 24px');
+    // The rows are divided by a hairline on every row after the first.
+    expect(landing).toContain('.v2-landing__open-item + .v2-landing__open-item { border-top: 1px solid var(--v2-border-soft); }');
+    // Row A's fill belongs to the hero; row D's cobalt belongs to Pro.
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--ghost" href={REPO}');
+    expect(topLevelRuleBody(landing, '.v2-landing__open .v2-landing__btn')).toContain('height: 48px');
+  });
+
+  test('the value cards are bordered and their icons are gone', () => {
+    const cards = topLevelRuleBody(landing, '.v2-landing__cards');
+    expect(cards).toContain('repeat(2, minmax(0, 1fr))');
+    expect(cards).toContain('gap: 12px');
+    const card = topLevelRuleBody(landing, '.v2-landing__card');
+    expect(card).toContain('border: 1px solid var(--v2-border)');
+    expect(card).toContain('border-radius: 6px');
+    expect(card).toContain('padding: 28px 32px');
+    expect(card).toContain('gap: 10px');
+    const title = topLevelRuleBody(landing, '.v2-landing__card-title');
+    expect(title).toContain('font-family: var(--v2-font-display');
+    expect(title).toContain('font-size: 24px');
+    expect(title).toContain('letter-spacing: -0.03em');
+    // Icons deleted on both sides: the rules and their last readers.
+    expect(landing).not.toContain('.v2-landing__card-icon');
+    expect(landing).not.toContain('.v2-landing__open-ic');
+    expect(landingTsx).not.toContain('card-icon');
+    expect(landingTsx).not.toContain('open-ic');
+    // And the import block goes with them: eight imports whose last reader was
+    // one of these two spans.
+    expect(landingTsx).not.toContain('@mui/icons-material');
+  });
+
+  test('the phone values for this row live in the 680 block', () => {
+    const phone = mediaAt(landing, '@media (max-width: 680px)');
+    expect(phone).toContain('.v2-landing__steps { margin-bottom: 32px; }');
+    expect(phone).toContain('.v2-landing__step-title { font-size: 22px; line-height: 26px; }');
+    expect(phone).toContain('.v2-landing__adapters { padding-top: 32px; }');
+    expect(phone).toContain('.v2-landing__code { padding: 14px; font-size: 12px; line-height: 20px; }');
+    expect(phone).toContain('.v2-landing__card { padding: 20px 22px; }');
+    expect(phone).toContain('.v2-landing__open-item { padding: 16px 18px; }');
+    // The one-column switches stay in the 900 block, including the row gaps the
+    // stacked adapters and steps need.
+    const mid = mediaAt(landing, '@media (max-width: 900px)');
+    expect(mid).toContain('.v2-landing__steps { row-gap: 28px; }');
+    expect(mid).toContain('.v2-landing__adapters { row-gap: 24px; }');
+  });
+
+  test('every negative tracking this row adds has its zh reset', () => {
+    const zh = landing.slice(landing.indexOf(':lang(zh) .v2-landing__brand-name'));
+    for (const sel of ['step-title', 'adapter-title', 'open-item strong', 'card-title']) {
+      expect(zh).toContain(`:lang(zh) .v2-landing__${sel},`);
+    }
+    // Non-vacuity for the loop above: the block that must carry them exists and
+    // the property is the one row A's inheritance test scans for.
+    expect(zh).toContain('letter-spacing: 0;');
+  });
+});

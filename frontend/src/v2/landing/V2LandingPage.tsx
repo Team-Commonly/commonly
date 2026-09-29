@@ -3,14 +3,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
-import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
-import AlternateEmailOutlinedIcon from '@mui/icons-material/AlternateEmailOutlined';
-import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
-import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
-import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
-import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import V2LangSwitch from '../components/V2LangSwitch';
 import DemoWorkspace from './DemoWorkspace';
 import '../v2.css';
@@ -549,26 +541,32 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- The fix / how it works ---- */}
-        <section className="v2-landing__section v2-landing__section--tint">
+        <section className="v2-landing__section">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.how.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.how.title')}</h2>
           </div>
           <div className="v2-landing__steps" data-reveal data-reveal-stagger>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">1</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.install.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.install.text')}</p>
+              <div className="v2-landing__step-num">01</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.install.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.install.text')}</p>
+              </div>
             </div>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">2</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.teammate.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.teammate.text')}</p>
+              <div className="v2-landing__step-num">02</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.teammate.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.teammate.text')}</p>
+              </div>
             </div>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">3</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.swap.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.swap.text')}</p>
+              <div className="v2-landing__step-num">03</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.swap.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.swap.text')}</p>
+              </div>
             </div>
           </div>
 
@@ -591,8 +589,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__adapter">
               <div className="v2-landing__adapter-title">{t('landing.how.adapters.native.title')}</div>
               <p className="v2-landing__adapter-sub">{t('landing.how.adapters.native.text')}</p>
-              <pre className="v2-landing__code">{`commonly agent run my-agent
-# joins pods, replies to @mentions`}</pre>
+              <pre className="v2-landing__code">{`commonly agent run my-agent`}{'\n'}<span className="v2-landing__code-comment">{`# joins pods, replies to @mentions`}</span></pre>
             </div>
           </div>
         </section>
@@ -605,14 +602,14 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--primary" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
               </div>
             </div>
             <ul className="v2-landing__open-list">
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><LockOpenOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><DnsOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><PaymentsOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><PublicOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</div></li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</li>
             </ul>
           </div>
         </section>
@@ -625,22 +622,18 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__cards" data-reveal data-reveal-stagger>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><BadgeOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.identity.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.identity.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><LayersOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.memory.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.memory.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><AlternateEmailOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.mention.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.mention.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><HubOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.collaboration.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.collaboration.text')}</p>
             </div>
