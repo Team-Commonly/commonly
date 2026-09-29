@@ -65,6 +65,13 @@ export interface ToolCallRecord {
   podId?: string;
   installationId?: string;
   agentUserId: string;
+  /**
+   * The Connection's `createdBy` at call time (scope §8): whose credential ran.
+   * Copied onto the record rather than joined to it, because the Connection row
+   * is deleted at the end of removal and the trail outlives it. Present for
+   * every connection type, `github-app` included.
+   */
+  credentialOwnerId?: string;
   tool: string;
   argsDigest: string;
   at?: Date;
@@ -92,9 +99,14 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   outcome VARCHAR(32) NOT NULL CHECK (outcome IN ('ok', 'refused', 'pending_approval', 'failed')),
   reason VARCHAR(255),
   approval_id VARCHAR(255),
-  duration_ms INTEGER
+  duration_ms INTEGER,
+  credential_owner_id VARCHAR(255)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_calls_grant_at ON tool_calls(grant_id, occurred_at DESC);
+-- The table self-bootstraps rather than being part of schema.sql, so an
+-- instance that created it before the trail carried a credential owner needs
+-- the retrofitted column; CREATE TABLE IF NOT EXISTS alone never adds one.
+ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS credential_owner_id VARCHAR(255);
 `;
 
 let ensured = false;
@@ -226,8 +238,9 @@ class ToolCall {
     await db.query(
       `INSERT INTO tool_calls
        (call_id, grant_id, pod_id, installation_id, agent_user_id, tool,
-        args_digest, occurred_at, outcome, reason, approval_id, duration_ms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        args_digest, occurred_at, outcome, reason, approval_id, duration_ms,
+        credential_owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         record.callId,
         record.grantId,
@@ -241,6 +254,7 @@ class ToolCall {
         record.reason || null,
         record.approvalId || null,
         record.durationMs ?? null,
+        record.credentialOwnerId || null,
       ],
     );
   }
@@ -249,7 +263,7 @@ class ToolCall {
     const db = await ensureTables();
     const result = await db.query(
       `SELECT tc.call_id, tc.grant_id, tc.pod_id, tc.installation_id, tc.agent_user_id,
-              tc.tool, tc.args_digest, tc.occurred_at,
+              tc.tool, tc.args_digest, tc.occurred_at, tc.credential_owner_id,
               ${EFFECTIVE_OUTCOME} AS effective_outcome,
               tc.reason, tc.approval_id, tc.duration_ms
        FROM tool_calls tc
@@ -265,6 +279,7 @@ class ToolCall {
       podId: row.pod_id ? String(row.pod_id) : undefined,
       installationId: row.installation_id ? String(row.installation_id) : undefined,
       agentUserId: String(row.agent_user_id),
+      credentialOwnerId: row.credential_owner_id ? String(row.credential_owner_id) : undefined,
       tool: String(row.tool),
       argsDigest: String(row.args_digest),
       at: new Date(String(row.occurred_at)),

@@ -170,7 +170,10 @@ describe('GET /api/pods/:podId/grants', () => {
 describe('GET /api/grants/:grantId/calls', () => {
   test('the trail refuses a non-member and never returns args', async () => {
     const row = await RoomGrant.create(grant());
-    ToolCall.listForGrant.mockResolvedValue([trailRow({ grantId: row.grantId }), trailRow({ grantId: row.grantId, callId: 'call-2', outcome: 'refused', reason: 'not_in_audience' })]);
+    ToolCall.listForGrant.mockResolvedValue([
+      trailRow({ grantId: row.grantId, credentialOwnerId: 'owner-1' }),
+      trailRow({ grantId: row.grantId, callId: 'call-2', outcome: 'refused', reason: 'not_in_audience' }),
+    ]);
     ToolCall.countsForGrant.mockResolvedValue({ total: 3, ok: 1, refused: 1, pending_approval: 1, failed: 0 });
 
     const stranger = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', STRANGER);
@@ -187,6 +190,10 @@ describe('GET /api/grants/:grantId/calls', () => {
     }
     expect(JSON.stringify(member.body)).not.toContain('secret/private');
     expect(member.body.calls[1]).toMatchObject({ callId: 'call-2', outcome: 'refused', reason: 'not_in_audience', agentUserId: SEAT, tool: 'github.list_issues' });
+    // The trail names whose credential ran (plan §8) — and a row that recorded
+    // none says so as null rather than dropping the key.
+    expect(member.body.calls[0].credentialOwnerId).toBe('owner-1');
+    expect(member.body.calls[1]).toHaveProperty('credentialOwnerId', null);
     expect(ToolCall.listForGrant).toHaveBeenCalledWith(row.grantId, 100);
 
     // The seat the pod grant covers reads it too, on its runtime token.
