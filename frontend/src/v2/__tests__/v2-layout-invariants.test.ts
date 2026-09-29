@@ -1157,6 +1157,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(thread).toContain('delete el.dataset.historyAnchor');
   });
 
+  test('the pod list opts out of native anchoring, because the minute poll re-sorts it under the reader', () => {
+    // ux-lead gate on #1989: with Everything open and scrolled, a message to a
+    // pod in view moves that row to the top, native anchoring drags the list
+    // ~14 rows and 4 of 17 rows stayed in view. Opting the scroller out holds
+    // 16 of 17. Same property the chat transcript uses, for the opposite
+    // reason — see the note on the declaration in v2.css.
+    const list = lastRuleBody(v2, '.v2-pods__list');
+    // The rule being reset must still exist, or a green here means nothing.
+    expect(list).toContain('overflow-y: auto');
+    expect(list).toContain('overflow-anchor: none');
+    expect(podsSidebar).toContain('className="v2-pods__list"');
+    // `.v2-pods__list` is declared twice (from #251 and #1578 "sidebar at
+    // scale"), both top-level, so the LATER block wins every conflicting
+    // declaration and is the effective rule — hence `lastRuleBody` here, which
+    // reads it, rather than `ruleBody`, which reads the superseded one.
+    //
+    // Do NOT add `expect(list).not.toBe(ruleBody(...))` to pin that choice. It
+    // cannot fail: `lastRuleBody` slices from the leading newline and `ruleBody`
+    // from `lineStart + 1`, so the two differ by whitespace whatever the sheet
+    // contains (measured — deleting the superseded block outright leaves this
+    // suite 153/153 green). Trimming the compare to make it bite is worse: it
+    // then reds on that very de-dup, which is harmless. The two `toContain`s
+    // above are what carry the property, and they fail in both hazard
+    // directions — declaration missing from the effective block, or the
+    // effective block gone so this falls through to the old one.
+  });
+
   test('history recovery is positioned against the chat viewport, outside the scroller', () => {
     const transcript = ruleBody(v2, '.v2-thread__transcript');
     expect(transcript).toContain('position: relative');

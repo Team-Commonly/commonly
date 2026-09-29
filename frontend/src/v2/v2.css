@@ -11002,6 +11002,13 @@ body.modern-ui.v2-canvas {
   gap: 0;
   padding: 0 0 8px;
   overflow-y: auto;
+  /* The minute poll re-reads /api/pods and the rows re-sort by lastMessage, so
+     a message to any pod moves a row and native anchoring drags the list to
+     keep that row's viewport offset — 4 of 17 rows stayed in view (ux-lead
+     gate on #1989). Opting this scroller out holds 16 of 17. Unlike
+     .v2-chat__messages, which keeps anchoring at rest for late media above the
+     viewport, these rows are fixed-height text with no late layout to lose. */
+  overflow-anchor: none;
 }
 
 .v2-pods__section {

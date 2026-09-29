@@ -197,7 +197,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const { pinned, toggle: togglePin } = useV2Pinned();
   const ownPodsState = useV2Pods();
   const {
-    pods, loading, error, createPod,
+    pods, loading, error, createPod, refresh: refreshPods,
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
@@ -219,14 +219,35 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   }, [createReturnToConnectors]);
 
   // The visit log is written by the layout when a pod opens; re-read it here so
-  // Recent reorders without a reload. Times refresh once a minute.
+  // Recent reorders without a reload.
   useEffect(() => {
     setVisits(readPodVisits());
   }, [selectedPodId]);
+
+  // Every row's time is a DATUM from the last /api/pods; the minute tick only
+  // recomputes the label, so a tab left open keeps ageing a frozen timestamp and
+  // reads further from the truth the longer it stays open (TASK-184). So the tick
+  // also re-reads the datum, and so does becoming visible — the moment a row is
+  // actually read. Silent, so a poll never blinks the list into its spinner; and
+  // foreground-only, so a background tab costs nothing.
+  const refreshPodsRef = useRef(refreshPods);
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60 * 1000);
-    return () => window.clearInterval(timer);
+    refreshPodsRef.current = refreshPods;
+  }, [refreshPods]);
+  const tick = useCallback(() => {
+    setNow(Date.now());
+    if (document.visibilityState === 'visible') void refreshPodsRef.current?.({ silent: true });
   }, []);
+  useEffect(() => {
+    const timer = window.setInterval(tick, 60 * 1000);
+    // visibilitychange fires in both directions; `tick` decides what to do.
+    const onVisibility = () => tick();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [tick]);
 
   // ⌘K / Ctrl+K focuses the search box from anywhere in the shell.
   useEffect(() => {
