@@ -26,7 +26,7 @@
 
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
 import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
-import { getToolDefinitions } from './toolBrokerService';
+import { allToolDefinitions } from './toolBrokerService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 
@@ -177,7 +177,7 @@ export const hostedBrokerToolsForRun = async (
   const grants = byIdentity.get(String(identityId)) || [];
   if (!grants.length) return { tools, dispatch };
 
-  const readable = getToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read');
+  const readable = allToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read');
   const ordered = [...grants].sort((a, b) => String(a.grantId).localeCompare(String(b.grantId)));
 
   for (const grant of ordered) {

@@ -11,7 +11,7 @@ import {
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { judgeSeatConfinement } from './seatGrantConfinement';
-import { findHostedToolDefinition } from './hostedMcpToolDefinitions';
+import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -472,7 +472,23 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [mergePullRequest.name]: mergePullRequest,
 };
 
+/**
+ * The tools that ship with the broker, and only those. Named for what it is
+ * rather than what it returns: `toolInstallables` validates a GitHub grant's
+ * tools against this list, and a hosted name must not make that gate pass.
+ */
 export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS);
+
+/**
+ * Every definition a seat can be offered or call: the seeded GitHub record plus
+ * every hosted catalogue entry's projection. The two surfaces that answer "what
+ * may this seat do" (`listToolsForGrant`, and the runtime projection) read this
+ * one, so a hosted grant cannot be visible on one and invisible on the other.
+ */
+export const allToolDefinitions = (): ToolDefinition[] => [
+  ...getToolDefinitions(),
+  ...hostedToolDefinitions(),
+];
 
 const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Promise<string[]> => {
   const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
@@ -689,7 +705,7 @@ export const listToolsForGrant = async (input: {
   // definitions (TASK-146's rule, now for the seat's own confinement).
   await assertSeatCanConfine(input);
 
-  const allowed = getToolDefinitions().filter((definition) => {
+  const allowed = allToolDefinitions().filter((definition) => {
     try {
       assertGrantToolAllowed(grant, {
         tool: definition.name,
@@ -1103,6 +1119,7 @@ export const executeApprovedToolCall = async (
 export default {
   callTool,
   executeApprovedToolCall,
+  allToolDefinitions,
   getToolDefinitions,
   listToolsForGrant,
   TOOL_DEFINITIONS,
