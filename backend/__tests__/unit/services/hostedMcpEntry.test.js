@@ -185,32 +185,84 @@ describe('drift is a named refusal', () => {
 
     const withdrawn = upstreamOk();
     withdrawn[0] = Object.assign({}, withdrawn[0], { annotations: {} });
-    expect(verdictOf(assessEntryTools(entry, withdrawn), 'list_issues')).toBe('tool_drift');
+    const withdrawal = assessEntryTools(entry, withdrawn).find((a) => a.name === 'list_issues');
+    expect(withdrawal.verdict).toBe('tool_drift');
+    expect(withdrawal.detail).toContain('readOnlyHint withdrawn');
 
-    const destructive = upstreamOk();
-    destructive[0] = Object.assign({}, destructive[0], { annotations: { destructiveHint: true } });
-    expect(verdictOf(assessEntryTools(entry, destructive), 'list_issues')).toBe('tool_drift');
+    // Acceptance control: the same annotations, unchanged. A vendor still
+    // saying exactly what the pin recorded has moved nowhere.
+    expect(verdictOf(assessEntryTools(entry, upstreamOk()), 'list_issues')).toBe('ok');
 
-    // Acceptance control: a tool that gains readOnlyHint, or loses
-    // destructiveHint, is claiming less than it did, not more.
+    // A live `destructiveHint: true` beside a recorded `readOnlyHint: true` is
+    // the pair the entry load refuses, and drift does not admit later what the
+    // entry refuses. The vendor's own `readOnlyHint` has to still be there, or
+    // the withdrawal arm above answers first.
+    const contradictory = upstreamOk();
+    contradictory[0] = { ...contradictory[0], annotations: { readOnlyHint: true, destructiveHint: true } };
+    const contradiction = assessEntryTools(entry, contradictory).find((a) => a.name === 'list_issues');
+    expect(contradiction.verdict).toBe('tool_drift');
+    expect(contradiction.detail).toContain('destructiveHint set upstream');
+
+    // Acceptance control: a tool that gains readOnlyHint is claiming less than
+    // it did, not more. Pinned `write` because #2014 refuses a read pin that
+    // carries `destructiveHint: true`.
     const tightened = linear({
       tools: [pinned({
+        class: 'write',
         annotations: { destructiveHint: true },
         inputSchema: { type: 'object', properties: { team: { type: 'string' } } },
       })],
     });
     expect(verdictOf(assessEntryTools(tightened, upstreamOk()), 'list_issues')).toBe('ok');
+    // The fixture is entry-legal: #2014 refuses a read pin carrying
+    // `destructiveHint: true`, so this one is pinned `write`.
+    expect(() => assertHostedMcpEntries([tightened])).not.toThrow();
 
-    // A pin that carries no annotations at all is still compared, and the
-    // vendor setting one is drift.
+    // A pin that recorded nothing does not drift when the vendor spells a spec
+    // default: there is no claim to withdraw. Both are `write` pins, because
+    // #2014 refuses a read pin that records no `readOnlyHint`.
+    const recordedNothing = () => linear({ tools: [pinned({ class: 'write', annotations: undefined })] });
     const unpinned = upstreamOk();
-    unpinned[0] = Object.assign({}, unpinned[0], { annotations: { destructiveHint: true } });
-    expect(verdictOf(assessEntryTools(linear({ tools: [pinned({ annotations: undefined })] }), unpinned), 'list_issues'))
-      .toBe('tool_drift');
+    unpinned[0] = { ...unpinned[0], annotations: { destructiveHint: true } };
+    expect(verdictOf(assessEntryTools(recordedNothing(), unpinned), 'list_issues')).toBe('ok');
     const silent = upstreamOk();
-    silent[0] = Object.assign({}, silent[0], { annotations: {} });
-    expect(verdictOf(assessEntryTools(linear({ tools: [pinned({ annotations: undefined })] }), silent), 'list_issues'))
-      .toBe('ok');
+    silent[0] = { ...silent[0], annotations: {} };
+    expect(verdictOf(assessEntryTools(recordedNothing(), silent), 'list_issues')).toBe('ok');
+    // And the shape is entry-legal, which a `read` pin recording no
+    // `readOnlyHint` is not (#2014).
+    expect(() => assertHostedMcpEntries([recordedNothing()])).not.toThrow();
+  });
+
+  test('a claim the pin recorded is withdrawn by silence, and the refusal names it', () => {
+    // The spec defaults an absent `destructiveHint` to `true`, so a vendor that
+    // goes quiet has withdrawn a recorded `destructiveHint: false` — drift even
+    // though the tool grew no new capability.
+    const nonDestructive = linear({
+      tools: [pinned({ annotations: { readOnlyHint: true, destructiveHint: false } })],
+    });
+    const quietUpstream = upstreamOk();
+    quietUpstream[0] = { ...quietUpstream[0], annotations: { readOnlyHint: true } };
+    const quiet = assessEntryTools(nonDestructive, quietUpstream).find((a) => a.name === 'list_issues');
+    expect(quiet.verdict).toBe('tool_drift');
+    expect(quiet.detail).toContain('destructiveHint: false');
+
+    // The same claim on a `write` pin, where #2014 constrains nothing: the
+    // withdrawal is drift there too.
+    const writeQuietUpstream = upstreamOk();
+    writeQuietUpstream[0] = { ...writeQuietUpstream[0], annotations: {} };
+    const writeNonDestructive = linear({
+      tools: [pinned({ class: 'write', annotations: { destructiveHint: false } })],
+    });
+    expect(verdictOf(assessEntryTools(writeNonDestructive, writeQuietUpstream), 'list_issues')).toBe('tool_drift');
+
+    // Both claims recorded, and the vendor now says both: two arms apply, and the
+    // refusal names the claim the pin lost rather than the contradiction.
+    const contradictory = upstreamOk();
+    contradictory[0] = { ...contradictory[0], annotations: { readOnlyHint: true, destructiveHint: true } };
+    const both = assessEntryTools(nonDestructive, contradictory).find((a) => a.name === 'list_issues');
+    expect(both.verdict).toBe('tool_drift');
+    expect(both.detail).toContain('destructiveHint: false');
+    expect(both.detail).not.toContain('set upstream');
   });
 });
 

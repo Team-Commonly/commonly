@@ -132,16 +132,31 @@ export const canonicalJson = (value: unknown): string => {
 };
 
 /**
- * Did the vendor's annotations move toward write since the pin? Only the two
- * directions §3 names count. The reverse — a tool gaining `readOnlyHint` or
- * losing `destructiveHint` — tightens the vendor's own claim and is not drift.
+ * Did the vendor's annotations move toward write since the pin? Every arm here
+ * reads the annotations the PIN RECORDED, never its class (§3).
+ *
+ * The spec defaults an absent `readOnlyHint` to `false` and an absent
+ * `destructiveHint` to `true` — the unsafe value both times — so a vendor that
+ * stops saying `readOnlyHint: true`, or stops saying `destructiveHint: false`,
+ * has withdrawn a claim the pin made. A live `destructiveHint: true` also
+ * contradicts a recorded `readOnlyHint: true`; the entry load refuses that pair
+ * (#2014), and drift does not admit later what entry refuses. A default newly
+ * spelled on a pin that recorded neither claim is not drift: there is nothing
+ * to withdraw, and a tool gaining `readOnlyHint` still tightens its own claim.
+ *
+ * The withdrawn-claim arms come first, because a pin that recorded both claims
+ * and now meets the contradiction reports the `destructiveHint: false` it lost
+ * rather than the generic contradiction.
  */
 const movedTowardWrite = (
   pinned: HostedMcpAnnotations,
   live: HostedMcpAnnotations | undefined,
 ): string | null => {
   if (pinned.readOnlyHint === true && live?.readOnlyHint !== true) return 'readOnlyHint withdrawn upstream';
-  if (pinned.destructiveHint !== true && live?.destructiveHint === true) return 'destructiveHint set upstream';
+  if (pinned.destructiveHint === false && live?.destructiveHint !== false) {
+    return 'destructiveHint: false withdrawn upstream';
+  }
+  if (pinned.readOnlyHint === true && live?.destructiveHint === true) return 'destructiveHint set upstream';
   return null;
 };
 

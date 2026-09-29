@@ -46,7 +46,9 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
  * The consequence, stated because it is a cost and not an oversight: a read pin
  * now needs its vendor to keep saying `readOnlyHint: true`, since a vendor that
  * says nothing is read as a withdrawal of the claim. A tool whose vendor
- * annotates nothing can only be pinned `write`.
+ * annotates nothing gets no entry at all, not a write-only one: the class
+ * records what a tool does, so a read tool is never pinned `write` to get past
+ * a missing hint (75440, §3).
  */
 export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
   const seenEntries = new Set<string>();
