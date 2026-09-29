@@ -402,17 +402,22 @@ describe('the winner of the fence', () => {
     expect(h.markError).not.toHaveBeenCalled();
   });
 
-  test('a connection holding no refresh token is refused without marking the row', async () => {
+  test('a connection holding no refresh token goes to error, because only a reconsent can restore it', async () => {
     const row = stale({ refreshTokenRef: undefined });
     const h = harness({ row });
     const error = await refusal(credentialFor(row, h.deps));
 
     expect(error.code).toBe('credential_missing');
     expect(error.retryable).toBe(false);
+    // Scope §4: the row goes to `error` with "reconnect". Without the mark it
+    // reads `connected` on the page while every call fails, and the member is
+    // never told what would fix it. The mark is guarded on the generation the
+    // winner bumped, so a concurrent loser cannot overwrite a newer verdict.
+    expect(h.markError).toHaveBeenCalledTimes(1);
+    expect(h.markError).toHaveBeenCalledWith(row._id, 4, expect.stringContaining('reconnect'));
     expect(h.bumpGeneration).toHaveBeenCalledTimes(1);
     expect(h.refreshAtVendor).not.toHaveBeenCalled();
     expect(h.commit).not.toHaveBeenCalled();
-    expect(h.markError).not.toHaveBeenCalled();
   });
 });
 

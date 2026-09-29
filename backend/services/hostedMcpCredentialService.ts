@@ -217,6 +217,11 @@ const assertUsable = (row: HostedMcpRow): void => {
 const generationOf = (row: HostedMcpRow): number => Number(row.config?.refreshGeneration ?? 0);
 
 const isFresh = (expiresAt: Date | null | undefined, now: Date): boolean => {
+  // An absent lifetime is NOT fresh: `expires_in` is only RECOMMENDED, so a
+  // vendor may omit it, and reading a missing value as "never expires" would
+  // serve a token that has in fact already died. Refreshing is the safe reading;
+  // `credentialFor` is where the case where refreshing is impossible becomes
+  // visible to the member.
   if (!expiresAt) return false;
   const at = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
   if (Number.isNaN(at.getTime())) return false;
@@ -259,21 +264,30 @@ export const credentialFor = async (
     return loseTheRace({ deps, id, startExpiresAt: row.config?.expiresAt });
   }
 
+  // We hold the fence from here on, so this is the value every write below — and
+  // every mark — is guarded on.
+  const nextGeneration = generation + 1;
+
   const refreshTokenRef = row.config?.refreshTokenRef;
   if (!refreshTokenRef) {
-    // Nothing to refresh with: a Connection that never got a refresh token, or
-    // one whose vendor rotates them. Refused rather than attempted, and NOT
-    // marked `error` — a missing refresh token is not the vendor ending the
-    // grant.
-    throw new HostedMcpCredentialError(
-      'credential_missing',
-      'connection holds no refresh token to refresh with',
-    );
+    // Nothing to refresh with, and the access token has already stopped being
+    // fresh (the fast path above did not return). Scope §4 says this row goes to
+    // `error` with "reconnect": the spec allows an AS to issue no refresh token
+    // at all, and nothing the vendor could answer restores such a row — only a
+    // new consent does. Refusing without the mark leaves the row reading
+    // `connected` on the page while every call fails, which is the one outcome
+    // the member cannot act on.
+    //
+    // A rotating vendor does NOT arrive here: a response that omits the new
+    // refresh token keeps the ref the row already holds (the commit below), so
+    // this is only ever a grant that can no longer continue.
+    const message = 'connection holds no refresh token and its access token has expired — reconnect to continue';
+    await deps.row.markError(id, nextGeneration, message);
+    throw new HostedMcpCredentialError('credential_missing', message);
   }
 
   const clientId = deps.clientIdFor(entry);
   const refreshToken = await deps.secrets.get(refreshTokenRef);
-  const nextGeneration = generation + 1;
 
   let refreshed: RefreshResult;
   try {
