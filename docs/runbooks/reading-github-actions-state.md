@@ -6,7 +6,7 @@ commands. Every contradiction came from the same place: **the run object and
 the PR's check list are summaries, and each one is lossy in a different
 direction.** This runbook names which reader answers which question.
 
-## An absent or short check list has at least five causes
+## An absent or short check list has at least six causes
 
 They render identically on the PR page — a row that is missing, or grey. They
 are not the same problem and they do not share a remedy.
@@ -14,6 +14,7 @@ are not the same problem and they do not share a remedy.
 | Cause | How it looks | Discriminator | Remedy |
 |---|---|---|---|
 | Run never created | check absent from `gh pr checks` | no run at that SHA in `gh run list --branch <b>` | needs a NEW event: push, or close/reopen |
+| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | nothing created in the push's own minute, while a mergeable sibling's push created three | rebase onto the new base, retarget it, **then** push — a retarget alone is *not* enough; see below |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
@@ -202,6 +203,120 @@ One collection caveat that cost time here: CodeQL and other app-driven runs are
 recorded against `refs/pull/<n>/head`, not the branch, so
 `?branch=<branch-name>` can return zero for a PR that visibly has runs. Query
 by `head_sha` or via the commit's check-suites instead.
+
+## A PR that cannot merge gets no check suites from a push
+
+`pull_request` workflows run against `refs/pull/<n>/merge`, GitHub's trial merge
+of base and head. A **conflicting** PR has no such commit, and its push creates
+**no run at all** — not the required check, and not the ones you can see either.
+That is a different shape from the misses above: a `paths:` miss costs you one
+workflow, a `branches:` miss costs a stacked PR two guards legitimately, and
+this costs the entire fan-out.
+
+Measured 2026-09-29. PR #2019 was pushed while conflicting against a base that
+had merged and been squashed into `main`; #2020, #2021 and #2022 were pushed in
+the same minute and were mergeable:
+
+| | runs created by that push |
+|---|---|
+| #2019, conflicting | none |
+| #2020 / #2021 / #2022, mergeable | `Tests`, `Playwright Tests`, `Secret Scan` |
+
+The sibling also shows why its list is four runs and not eleven: `PR Base Guard`
+has no `branches:` filter and **failed** — its base was still a feature branch —
+while the four guards that do declare `branches: [main]` are legitimately absent.
+The claim in that row is *created*, not *green*.
+
+Retargeting #2019 with `gh pr edit 2019 --base main` made it mergeable and fired
+`edited`, and only the five workflows that list `edited` in `types:` came back —
+`ADR Numbering Guard`, `PR Base Guard`, `Package Version Guard`, `PR Base
+Freshness`, `Review Checklist Numbering Guard`. `tests.yml`, `playwright.yml`
+and `secret-scan.yml` declare `pull_request:` with no `types:` list — it defaults
+to `[opened, synchronize, reopened]` — so none of the three fires on a base
+change. The required check therefore stayed absent and the PR stayed `BLOCKED`
+with every row that *did* exist passing — the state this document exists to keep
+you from misreading. `gh pr checks` cannot show a suite that was never created;
+read `actions/runs?head_sha=<sha>` instead.
+
+**And `head_sha` is not an event filter, which is the trap that table sets.**
+`event` reads `pull_request` for both `synchronize` and `edited`, so that field
+cannot tell you which one dispatched a run, and a query by `head_sha` silently
+merges the two: read `?head_sha=0dafe74f…` a minute later and you get five runs —
+the five guards just named — every one of them created at `19:38:38Z`.
+
+Prefer the witness that does not read a clock. The four guards that declare
+`branches: [main]` cannot be dispatched while the base is a feature branch, so
+their presence is the `edited` and their absence is the control — the sibling
+push from the same minute has none of them.
+
+Then, secondarily, compare each run's `created_at` against the PR's
+`base_ref_changed` in its timeline, which is `19:38:35Z` here — three seconds
+before the runs, and 73 after the push. **A run listed at your head may belong to
+a later event**, so sort by `created_at` against the push you are reasoning about
+before attributing anything to it.
+
+**Close/reopen is not available to a seat**, which is the lever this document
+prefers when a run was never created. `gh pr close` is refused from a seat
+(`gh pr close is refused from a seat: the room clears, the press merges`), as
+are `gh workflow run` and `gh api -X POST .../workflows/<file>/dispatches`. The
+remaining lever is a push, and an empty commit is enough:
+
+```bash
+git commit --allow-empty -m "chore(ci): re-fire the PR's check suites"
+git push origin <branch>
+```
+
+`git diff <old> <new>` is empty, so nothing about the change moves except its
+sha — which is the whole cost, and it is not zero: **every head-bound ask, gate
+or stamp has to be re-pointed, and a stamp already posted is spent under rule 32
+even though the tree is identical.**
+
+**A RED check is a different case, and it has a cheaper lever.** The push above
+is for a suite that was never created. When the suite ran and failed — a flake,
+not a regression — re-run the failed jobs instead:
+
+```bash
+gh run rerun <run-id> --failed
+```
+
+That works from a seat and costs **no head move**, so no stamp is spent. Verified
+2026-09-29 on run `36620571351`: `run_attempt` went to 2 and the failed check
+returned to pending. Take the run id from the failing check's URL. The REST
+equivalent is refused from a seat (`gh api -X POST
+.../actions/runs/<id>/rerun-failed-jobs`) — the same refusal as the dispatch
+endpoint above. The lever is available; its API form is not.
+
+**Prevention.** Retargeting a stacked PR to `main` is necessary and not
+sufficient, and the incident above hides that: the branch there had *already*
+been rebased onto `main`, so a retarget alone was enough to make it mergeable.
+That is the special case. A branch that has not been rebased still carries the
+parent's pre-squash commits, and on those a retarget changes nothing.
+
+- **The rebase is what removes the conflict.** `git rebase --onto origin/main
+  <parent-tip>`. Check before you push, with `git merge-base <branch>
+  origin/main`: if that returns the PRE-parent `main` rather than `main`
+  itself, the branch still carries the parent's commits — `main` has their lines
+  as an addition while the branch has them as an addition-then-edit, and git
+  cannot see that one descends from the other. Measured 2026-09-29 on the
+  stack above: retarget-only, merging each child into a `main` that had already
+  carried its parent's squash conflicted in **3 of 3**, in the same two files;
+  rebased onto `main`, all three replayed clean with each row's own patch-id
+  unchanged, so the rows' diffs — and the stamps already posted on them — can be
+  re-derived rather than re-reviewed.
+- **The retarget is what changes the base** GitHub computes mergeability
+  against, and what fires the `edited` guards. By itself it resolves nothing.
+- Push after both, and if a required suite is still absent, push again — the
+  empty commit above. In the incident the parent's merge had squashed the
+  child's base into `main`, so every push to the child re-created the conflict
+  and bought another head move. Each of these is a head move that spends the
+  stamps already posted on the row (rule 32), so on a stack of N rows rebase the
+  whole chain in one pass, oldest row first, rather than discovering the
+  conflict row by row at press time.
+
+What is inference here, and what is measurement: the run lists above are the
+measurement, and the absence of a merge ref for a conflicting PR is GitHub's
+documented behaviour — the only explanation consistent with both rows of that
+table, since the two pushes are otherwise identical.
 
 ## A re-trigger may fan out partially, and stragglers arrive minutes later
 
