@@ -134,6 +134,10 @@ interface ConnectorRow {
   mark?: { name: MarkName; label: string; word: string };
   muted?: boolean;
   notEnabled?: boolean;
+  // TASK-024: a row whose provider is built but not offered here. It shares
+  // `notEnabled`'s row class and Ask link, and must not share its kicker —
+  // "not enabled" claims a missing credential this state does not have.
+  notConnectable?: boolean;
   pulse: boolean;
   secondary?: boolean;
   when: string;
@@ -876,6 +880,11 @@ const V2ConnectorsPage: React.FC = () => {
         dot: 'not-yet',
         line: t('connectors.notConnectable', { defaultValue: 'Not connectable yet.' }),
         muted: true,
+        // The class and the Ask link are right for this row; the kicker was the
+        // part that lied. Measured in the keys-set render at #1826: the eyebrow
+        // read "not enabled" directly above "Not connectable yet.", i.e. asking
+        // an operator for credentials the operator had already installed.
+        notConnectable: true,
         notEnabled: true,
         pulse: false,
         when: '—',
@@ -1038,9 +1047,13 @@ const V2ConnectorsPage: React.FC = () => {
     const podId = item.connector ? connectorPodId(item.connector) : null;
     // TASK-140: a not-enabled row has no connection to name a pod for, so the
     // pod slot read `no pod` — which is false, it names the blocker instead.
-    const pod = row.notEnabled
+    let pod = row.notEnabled
       ? t('connectors.notEnabledKicker', { defaultValue: 'not enabled' })
       : podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
+    // `notEnabled` covers two states and the kicker must not: a not-connectable
+    // row has this instance's credentials, so it says "not yet" — the same
+    // string the not-yet roster row renders.
+    if (row.notConnectable) pod = t('connectors.notYetKicker', { defaultValue: 'not yet' });
     // A row with no age (the not-enabled row's '—') carries only the pod.
     return row.when === '—' ? pod : `${pod} · ${row.when}`;
   };

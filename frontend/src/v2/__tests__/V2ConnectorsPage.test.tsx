@@ -980,6 +980,13 @@ describe('V2ConnectorsPage', () => {
       expect(actions).toHaveLength(1);
       expect(actions[0].textContent).toBe('Ask');
 
+      // The eyebrow must not contradict the line under it. `notEnabled` drives
+      // this row's class and Ask link, so it also drove the kicker: the keys-set
+      // render read "not enabled" directly above "Not connectable yet." — asking
+      // an operator for credentials the instance already has (Vera, #1826).
+      expect(roster.querySelector('.v2-connector-row__kicker')).toHaveTextContent(/^not yet$/);
+      expect(roster.querySelector('.v2-connector-row__kicker')).not.toHaveTextContent('not enabled');
+
       // The Add verb itself must be gone, not merely unused: an offered provider
       // is the only thing that may produce it, and there is none in this catalog.
       expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
