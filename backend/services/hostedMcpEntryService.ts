@@ -27,7 +27,7 @@
  * upstream is `tool_unavailable`, and one whose schema or annotations moved is
  * `tool_drift` until a PR re-pins it.
  */
-import type { ToolDefinition } from './toolBrokerService';
+import type { HostedToolDefinition } from './toolBrokerService';
 import type { RoomGrantWriteMode } from '../models/RoomGrant';
 
 /** Read reaches the vendor's APIs; write is offered only where §5's four conditions hold. */
@@ -86,10 +86,7 @@ export interface HostedMcpUpstreamTool {
  * it belongs to the intake slice, which is the first slice that has a row whose
  * credential it can decrypt.
  */
-export type HostedMcpToolProjection = Omit<ToolDefinition, 'call'> & {
-  connectionType: 'hosted-mcp';
-  entryId: string;
-};
+export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call'>;
 
 export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift';
 

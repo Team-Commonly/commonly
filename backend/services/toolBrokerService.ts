@@ -11,32 +11,66 @@ import {
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { judgeSeatConfinement } from './seatGrantConfinement';
+import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
 
-export interface ToolDefinition {
+export interface ToolDefinitionBase {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
-  /** `hosted-mcp` tools are entry-projected; their `call` lands with §4's intake. */
-  connectionType: 'github-app' | 'hosted-mcp';
-  /** Set only on a `hosted-mcp` definition: the catalogue entry it was projected from. */
-  entryId?: string;
   irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
   inputSchema: Record<string, unknown>;
-  /** Enrich the canonical approval payload with provider state captured now. */
-  prepareApproval?: (args: Record<string, unknown>, connection: ToolConnection) => Promise<Record<string, unknown>>;
-  call: (args: Record<string, unknown>, connection: ToolConnection) => Promise<unknown>;
 }
 
-export interface ToolConnection {
+/** A connection to an installed GitHub App: the tenant a call runs against. */
+export interface GithubToolConnection {
   type: 'github-app';
   installationId: string;
   owner: string;
   repo: string;
   ownerUserId?: string;
 }
+
+/**
+ * A connection to a hosted-MCP Connection row. It names the ROW that holds the
+ * credential rather than carrying a token, because the token is fetched inside
+ * the tool's `call` (§4): a seat listing its tools must not trigger a refresh,
+ * and a call that never happens must not spend one.
+ */
+export interface HostedToolConnection {
+  type: 'hosted-mcp';
+  entryId: string;
+  connectionId: string;
+  ownerUserId?: string;
+}
+
+/** What a tool is handed. Discriminated on `type` — narrow before reading a field. */
+export type ToolConnection = GithubToolConnection | HostedToolConnection;
+
+export interface GithubToolDefinition extends ToolDefinitionBase {
+  connectionType: 'github-app';
+  /** Enrich the canonical approval payload with provider state captured now. */
+  prepareApproval?: (
+    args: Record<string, unknown>,
+    connection: GithubToolConnection,
+  ) => Promise<Record<string, unknown>>;
+  call: (args: Record<string, unknown>, connection: GithubToolConnection) => Promise<unknown>;
+}
+
+/**
+ * A hosted-MCP tool. `entryId` is the catalogue entry it was projected from,
+ * and `call` is built by `hostedMcpToolDefinitions` — the only module that
+ * knows how to reach a vendor.
+ */
+export interface HostedToolDefinition extends ToolDefinitionBase {
+  connectionType: 'hosted-mcp';
+  entryId: string;
+  call: (args: Record<string, unknown>, connection: HostedToolConnection) => Promise<unknown>;
+}
+
+export type ToolDefinition = GithubToolDefinition | HostedToolDefinition;
 
 export interface BrokerCallInput {
   grantId: string;
@@ -120,7 +154,7 @@ const nonEmptyString = (value: unknown, field: string): string => {
 // invoking the provider so an approved envelope can never steer the call.
 const pinConnectionRepository = (
   rawArgs: Record<string, unknown>,
-  connection: ToolConnection,
+  connection: GithubToolConnection,
 ): Record<string, unknown> => ({
   ...rawArgs,
   owner: connection.owner,
@@ -129,7 +163,7 @@ const pinConnectionRepository = (
 
 const providerArgsFromApprovedEnvelope = (
   args: Record<string, unknown>,
-  connection: ToolConnection,
+  connection: GithubToolConnection,
 ): Record<string, unknown> => {
   if (args.owner !== connection.owner || args.repo !== connection.repo) {
     throw new RoomGrantError('repo_mismatch', 'connected repository changed since approval', 409);
@@ -138,7 +172,7 @@ const providerArgsFromApprovedEnvelope = (
   return providerArgs;
 };
 
-const listIssues: ToolDefinition = {
+const listIssues: GithubToolDefinition = {
   name: 'github.list_issues',
   description: 'List open issues in this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
@@ -163,7 +197,7 @@ const listIssues: ToolDefinition = {
   },
 };
 
-const createIssue: ToolDefinition = {
+const createIssue: GithubToolDefinition = {
   name: 'github.create_issue',
   description: 'Create an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
@@ -205,7 +239,7 @@ const createIssue: ToolDefinition = {
   },
 };
 
-const getIssue: ToolDefinition = {
+const getIssue: GithubToolDefinition = {
   name: 'github.get_issue',
   description: 'Fetch one issue from this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
@@ -229,7 +263,7 @@ const getIssue: ToolDefinition = {
   },
 };
 
-const getPullRequest: ToolDefinition = {
+const getPullRequest: GithubToolDefinition = {
   name: 'github.get_pull_request',
   description: 'Fetch one pull request from this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
@@ -253,7 +287,7 @@ const getPullRequest: ToolDefinition = {
   },
 };
 
-const listPullRequestFiles: ToolDefinition = {
+const listPullRequestFiles: GithubToolDefinition = {
   name: 'github.list_pull_request_files',
   description: 'List files changed by a pull request in this instance\'s GitHub repository.',
   requiredWriteMode: 'read',
@@ -286,7 +320,7 @@ const listPullRequestFiles: ToolDefinition = {
   },
 };
 
-const commentIssue: ToolDefinition = {
+const commentIssue: GithubToolDefinition = {
   name: 'github.comment_on_issue',
   description: 'Add a comment to an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
@@ -318,7 +352,7 @@ const commentIssue: ToolDefinition = {
   },
 };
 
-const closeIssue: ToolDefinition = {
+const closeIssue: GithubToolDefinition = {
   name: 'github.close_issue',
   description: 'Close an issue in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
@@ -350,7 +384,7 @@ const closeIssue: ToolDefinition = {
   },
 };
 
-const mergePullRequest: ToolDefinition = {
+const mergePullRequest: GithubToolDefinition = {
   name: 'github.merge_pull_request',
   description: 'Merge a pull request in this instance\'s GitHub repository.',
   requiredWriteMode: 'write-with-confirm',
@@ -438,7 +472,23 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [mergePullRequest.name]: mergePullRequest,
 };
 
+/**
+ * The tools that ship with the broker, and only those. Named for what it is
+ * rather than what it returns: `toolInstallables` validates a GitHub grant's
+ * tools against this list, and a hosted name must not make that gate pass.
+ */
 export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS);
+
+/**
+ * Every definition a seat can be offered or call: the seeded GitHub record plus
+ * every hosted catalogue entry's projection. The two surfaces that answer "what
+ * may this seat do" (`listToolsForGrant`, and the runtime projection) read this
+ * one, so a hosted grant cannot be visible on one and invisible on the other.
+ */
+export const allToolDefinitions = (): ToolDefinition[] => [
+  ...getToolDefinitions(),
+  ...hostedToolDefinitions(),
+];
 
 const currentMemberIds = async (grant: IRoomGrant | Record<string, unknown>): Promise<string[]> => {
   const target = (grant as Record<string, unknown>).target as { kind?: string; id?: string } | undefined;
@@ -464,12 +514,84 @@ const createdAtMs = (value: unknown): number | null => {
   return Number.isFinite(time) ? time : null;
 };
 
+/**
+ * The `hosted-mcp` half of `resolveConnection`, kept beside it so the two
+ * branches are read together: both end in a connection a tool can run against,
+ * or a refusal with the same codes.
+ *
+ * A hosted grant's connection id is the Connection row's `_id` — the row has
+ * neither of the GitHub installation-id slots — so the lookup is by `_id` and
+ * never by an external id a later row could reuse.
+ */
+const resolveHostedConnection = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  definition: HostedToolDefinition,
+  connectionId: string,
+): Promise<HostedToolConnection> => {
+  if (!/^[a-f\d]{24}$/i.test(connectionId)) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection is not a hosted-MCP Connection', 403);
+  }
+  const row = await Integration.findById(connectionId).lean() as unknown as {
+    type?: string;
+    status?: string;
+    revokedAt?: Date | null;
+    createdBy?: unknown;
+    createdAt?: unknown;
+    config?: { entryId?: unknown };
+  } | null;
+  if (!row || row.type !== 'hosted-mcp' || row.status !== 'connected' || row.revokedAt) {
+    throw new RoomGrantError(
+      'connection_mismatch',
+      'grant connection is not a connected hosted-MCP Connection',
+      403,
+    );
+  }
+  // The tool list a definition carries comes from ONE entry, so a connection
+  // whose row names another entry cannot pay for this call. `resolveBrokerFor`
+  // keyed the mint on the row's entry for the same reason (§7).
+  const entryId = String(row.config?.entryId || '');
+  if (!entryId || entryId !== definition.entryId) {
+    throw new RoomGrantError(
+      'connection_mismatch',
+      'grant connection does not belong to this tool\'s entry',
+      403,
+    );
+  }
+  const grantCreatedAt = createdAtMs((grant as { createdAt?: unknown }).createdAt);
+  const rowCreatedAt = createdAtMs(row.createdAt);
+  if (grantCreatedAt === null || rowCreatedAt === null) {
+    throw new RoomGrantError(
+      'connection_untracked',
+      'grant or connection row has no creation timestamp',
+      403,
+    );
+  }
+  if (grantCreatedAt < rowCreatedAt) {
+    throw new RoomGrantError(
+      'connection_superseded',
+      'grant predates the connection row it resolves to',
+      403,
+    );
+  }
+  return {
+    type: 'hosted-mcp',
+    entryId,
+    connectionId,
+    // The member who connected the row, so a parked call can open the approval
+    // room for a seat-targeted grant (`resolveApprovalPodId`).
+    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+  };
+};
+
 const resolveConnection = async (
   grant: IRoomGrant | Record<string, unknown>,
   definition: ToolDefinition,
 ): Promise<ToolConnection> => {
   const connectionId = String((grant as Record<string, unknown>).connectionId || '').trim();
   if (!connectionId) throw new RoomGrantError('connection_mismatch', 'grant connection is missing', 403);
+  if (definition.connectionType === 'hosted-mcp') {
+    return resolveHostedConnection(grant, definition, connectionId);
+  }
   let connection = await Integration.findOne({ type: definition.connectionType, installationId: connectionId });
   // Grants commonly retain the Mongo connection _id. Avoid putting an
   // untrusted string into a BSON _id selector when it is not an ObjectId.
@@ -583,7 +705,7 @@ export const listToolsForGrant = async (input: {
   // definitions (TASK-146's rule, now for the seat's own confinement).
   await assertSeatCanConfine(input);
 
-  const allowed = getToolDefinitions().filter((definition) => {
+  const allowed = allToolDefinitions().filter((definition) => {
     try {
       assertGrantToolAllowed(grant, {
         tool: definition.name,
@@ -671,12 +793,72 @@ const resolveApprovalPodId = async (
   return String(room._id);
 };
 
-const providerConnection = (connection: ToolConnection): ToolConnection => ({
-  type: connection.type,
-  installationId: connection.installationId,
-  owner: connection.owner,
-  repo: connection.repo,
-});
+/**
+ * The connection as a provider sees it: enough to run against, and not the
+ * connecting member's user id. Both members are rebuilt field by field rather
+ * than spread, so a field added to a connection later cannot reach a provider
+ * without this line being read.
+ */
+const providerConnection = (connection: ToolConnection): ToolConnection => (connection.type === 'hosted-mcp'
+  ? { type: 'hosted-mcp', entryId: connection.entryId, connectionId: connection.connectionId }
+  : {
+    type: 'github-app',
+    installationId: connection.installationId,
+    owner: connection.owner,
+    repo: connection.repo,
+  });
+
+const asGithubConnection = (connection: ToolConnection): GithubToolConnection => {
+  if (connection.type !== 'github-app') {
+    throw new RoomGrantError('connection_mismatch', 'grant connection is not a GitHub App installation', 403);
+  }
+  return connection;
+};
+
+const asHostedConnection = (connection: ToolConnection): HostedToolConnection => {
+  if (connection.type !== 'hosted-mcp') {
+    throw new RoomGrantError('connection_mismatch', 'grant connection is not a hosted-MCP Connection', 403);
+  }
+  return connection;
+};
+
+/**
+ * Run a definition against a resolved connection. The pair is discriminated
+ * here so a definition can only receive its own connection shape: a hosted tool
+ * handed a GitHub connection (or the reverse) refuses with the code
+ * `resolveConnection` uses, instead of reading fields that are not there.
+ */
+const runDefinition = (
+  definition: ToolDefinition,
+  args: Record<string, unknown>,
+  connection: ToolConnection,
+): Promise<unknown> => {
+  const provider = providerConnection(connection);
+  return definition.connectionType === 'hosted-mcp'
+    ? definition.call(args, asHostedConnection(provider))
+    : definition.call(args, asGithubConnection(provider));
+};
+
+/**
+ * The canonical arguments an approval envelope should be judged on. GitHub's
+ * envelope carries server-owned repository fields that the executor re-validates
+ * and strips; a hosted tool has no such fields, so its arguments are the
+ * member's own and pass through untouched.
+ */
+const prepareApprovalFor = (
+  definition: ToolDefinition,
+  args: Record<string, unknown>,
+  connection: ToolConnection,
+): Promise<Record<string, unknown>> => {
+  if (definition.connectionType === 'hosted-mcp') return Promise.resolve(args);
+  if (!definition.prepareApproval) return Promise.resolve(args);
+  return definition.prepareApproval(args, asGithubConnection(providerConnection(connection)));
+};
+
+/** The definition a tool name resolves to: the seeded GitHub record, or a hosted catalogue entry. */
+const lookupToolDefinition = (name: string): ToolDefinition | undefined => (
+  TOOL_DEFINITIONS[name] || findHostedToolDefinition(name)
+);
 
 const safeReason = (error: unknown): string => {
   if (error instanceof RoomGrantError) return error.code;
@@ -733,7 +915,7 @@ const budgetEntriesFor = async (
  */
 export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult> => {
   const startedAt = Date.now();
-  const definition = TOOL_DEFINITIONS[input.tool];
+  const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
 
   try {
@@ -768,10 +950,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       || (grant.writeMode === 'write-with-confirm' && definition.requiredWriteMode !== 'read');
     if (requiresConfirmation) {
       const callId = `tool_call_${randomUUID()}`;
-      let canonicalArgs = parsedArgs;
-      if (definition.prepareApproval) {
-        canonicalArgs = await definition.prepareApproval(parsedArgs, providerConnection(connection));
-      }
+      // No guard on `prepareApproval`: the helper answers for both members, and
+      // a hosted tool's arguments are simply its own.
+      const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection);
       let proposal: { ok: boolean; approvalId?: string } | undefined;
       try {
         const approvalPodId = await resolveApprovalPodId(
@@ -846,7 +1027,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       if (!reserved) throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
 
-    const result = await definition.call(parsedArgs, providerConnection(connection));
+    const result = await runDefinition(definition, parsedArgs, connection);
     const callId = await recordCall(input, grant, 'ok', startedAt);
     return { callId, result };
   } catch (error) {
@@ -884,7 +1065,7 @@ export const executeApprovedToolCall = async (
   input: ApprovedToolCallInput,
 ): Promise<BrokerCallResult> => {
   const startedAt = Date.now();
-  const definition = TOOL_DEFINITIONS[input.tool];
+  const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
   const callId = `tool_call_${randomUUID()}`;
   try {
@@ -903,12 +1084,14 @@ export const executeApprovedToolCall = async (
       requiredWriteMode: definition.requiredWriteMode,
     });
     const connection = await resolveConnection(grant, definition);
-    const executionArgs = providerArgsFromApprovedEnvelope(input.args, connection);
+    const executionArgs = definition.connectionType === 'github-app'
+      ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
+      : input.args;
     const budgetEntries = await budgetEntriesFor(grant);
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
       throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
-    const result = await definition.call(executionArgs, providerConnection(connection));
+    const result = await runDefinition(definition, executionArgs, connection);
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
@@ -936,6 +1119,7 @@ export const executeApprovedToolCall = async (
 export default {
   callTool,
   executeApprovedToolCall,
+  allToolDefinitions,
   getToolDefinitions,
   listToolsForGrant,
   TOOL_DEFINITIONS,
