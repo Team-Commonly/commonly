@@ -313,3 +313,76 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(hostedMcpToolName(entry, entry.tools[0])).toBe('linear.list_issues');
   });
 });
+
+// The two preconditions a vendor entry has to satisfy before the first one is
+// pinned (TASK-172, the row's notes from Vera). Each guard is measured by its
+// own refusal beside a control, and the two refusals are asserted separately
+// because they are two messages: one could keep working while the other stops,
+// and an arm that accepts either would not say which.
+describe('a pin cannot contradict the class or the namespace it is filed under', () => {
+  const refusal = (entries) => {
+    try {
+      assertHostedMcpEntries(entries);
+    } catch (error) {
+      return error.message;
+    }
+    throw new Error('the catalogue was accepted; this arm expected a refusal');
+  };
+
+  test('a tool name the namespace cannot carry is refused', () => {
+    // Control: a kebab name and the underscore spelling the eight shipped
+    // GitHub tool names already use both pass, so the refusals below are about
+    // the characters named rather than about the guard refusing everything.
+    expect(() => assertHostedMcpEntries([linear({ tools: [pinned({ name: 'list-issues' })] })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+
+    // The separator itself, and two characters no seat-facing tool name carries.
+    expect(refusal([linear({ tools: [pinned({ name: 'list.issues' })] })]))
+      .toContain('not a usable namespace segment: linear.list.issues');
+    expect(refusal([linear({ tools: [pinned({ name: 'list issues' })] })]))
+      .toContain('not a usable namespace segment: linear.list issues');
+    expect(refusal([linear({ tools: [pinned({ name: 'List_issues' })] })]))
+      .toContain('not a usable namespace segment: linear.List_issues');
+  });
+
+  test('a read pin whose own annotations say destructive is refused', () => {
+    // Control: the same annotations on a tool pinned `write` are honest — the
+    // class parks the call, and the drift comparison starts from a write claim.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ name: 'delete_issue', class: 'write', annotations: { destructiveHint: true } })] }),
+    ])).not.toThrow();
+    // A tightened claim is not a contradiction either: `destructiveHint: false`
+    // on a read tool agrees with the class.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ annotations: { readOnlyHint: true, destructiveHint: false } })] }),
+    ])).not.toThrow();
+
+    expect(refusal([linear({ tools: [pinned({ annotations: { destructiveHint: true } })] })]))
+      .toContain('hosted-mcp read tool is pinned against its own destructiveHint: linear.list_issues');
+  });
+
+  test('a read pin whose own annotations deny readOnly is refused', () => {
+    // Control: `readOnlyHint: false` on a `write` pin describes a write tool.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ name: 'create_issue', class: 'write', annotations: { readOnlyHint: false } })] }),
+    ])).not.toThrow();
+    // A pin carrying no annotations is the ordinary case and is not a denial.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ annotations: undefined })] }),
+    ])).not.toThrow();
+
+    expect(refusal([linear({ tools: [pinned({ annotations: { readOnlyHint: false } })] })]))
+      .toContain('hosted-mcp read tool is pinned against its own readOnlyHint: linear.list_issues');
+  });
+
+  test('the two annotation refusals are told apart by name', () => {
+    // Asserting the code is not asserting the message, and here there is no
+    // code at all: a module-load throw is read by whoever ran the build, so the
+    // text is the only thing that says which annotation was found.
+    const destructive = refusal([linear({ tools: [pinned({ annotations: { destructiveHint: true } })] })]);
+    const notReadOnly = refusal([linear({ tools: [pinned({ annotations: { readOnlyHint: false } })] })]);
+    expect(destructive).not.toBe(notReadOnly);
+    expect(destructive).toContain('destructiveHint');
+    expect(notReadOnly).toContain('readOnlyHint');
+  });
+});

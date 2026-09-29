@@ -14,13 +14,27 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
 
 /**
- * The two collisions that would otherwise be silent, checked at module load:
+ * Four defects that would otherwise be silent, checked at module load:
  *
  * - An entry `id` is a tool-name namespace, so `linear.x` must name one entry.
  *   An id carrying a dot would make two entries indistinguishable in the tool
  *   list, and a grant stores those names.
  * - Two entries may not pin the same namespaced name, because a grant's
  *   allowlist and the trail are matched on it.
+ * - A tool name carrying the `.` the namespace is built from would make
+ *   `linear.a.b` name two things, and the segment is what a seat reads, so the
+ *   charset is checked rather than the assembled name. `_` is in it because
+ *   every name this broker already offers carries one (`github.list_issues`,
+ *   `github.list_pull_request_files`, and the other six in
+ *   `toolBrokerService.getToolDefinitions`), so the character to exclude is the
+ *   separator, not the one 8 of 8 shipped names are spelled with.
+ * - A pin whose class is `read` while its own annotations say `destructiveHint:
+ *   true` or `readOnlyHint: false` is a contradiction with a reader: the class
+ *   is what `writeModeFor` turns into `read`, so the call runs unparked, and it
+ *   is what the drift comparison reads, so `movedTowardWrite` can no longer
+ *   report the vendor moving — the pin has already recorded the move §3 says
+ *   has to be a PR. Both directions are refused separately, so the refusal a
+ *   reviewer reads names the annotation it found.
  */
 export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
   const seenEntries = new Set<string>();
@@ -33,6 +47,15 @@ export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
     seenEntries.add(entry.id);
     for (const tool of entry.tools) {
       const name = `${entry.id}.${tool.name}`;
+      if (!/^[a-z0-9_-]+$/.test(tool.name)) {
+        throw new Error(`hosted-mcp tool name is not a usable namespace segment: ${name}`);
+      }
+      if (tool.class === 'read' && tool.annotations?.destructiveHint === true) {
+        throw new Error(`hosted-mcp read tool is pinned against its own destructiveHint: ${name}`);
+      }
+      if (tool.class === 'read' && tool.annotations?.readOnlyHint === false) {
+        throw new Error(`hosted-mcp read tool is pinned against its own readOnlyHint: ${name}`);
+      }
       if (seenTools.has(name)) throw new Error(`duplicate hosted-mcp tool name: ${name}`);
       seenTools.add(name);
     }
