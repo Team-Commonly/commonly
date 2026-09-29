@@ -457,83 +457,29 @@ describe('tool broker guard rails', () => {
   });
 });
 
-describe('a suspended connection owner (TASK-181)', () => {
-  // An owner id of the shape `createdBy` actually holds; the guard keeps
-  // anything else away from `findById`.
+// TASK-181 §7: the owner check is HOSTED ONLY. A `github-app` row's token
+// belongs to the app installation, not to the admin who created the row, so a
+// suspension must not disable the app connector for every pod holding a grant on
+// it. Pinned beside the exclusion so a later reader sees it is deliberate rather
+// than a call site someone forgot.
+describe('a suspended github-app row owner (§7)', () => {
   const OWNER = '6a8f6de2a1dccf2e02f31459';
 
-  const ownerRow = (banned) => ({ select: () => ({ lean: async () => ({ banned }) }) });
-
-  const connectionOwnedBy = (createdBy) => ({
-    type: 'github-app',
-    status: 'connected',
-    createdBy,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
-  });
-
-  it('refuses the call and never reaches the vendor', async () => {
+  it('leaves the call alone, and reads no owner row at all', async () => {
     mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
-    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
-    mockUser.findById.mockReturnValue(ownerRow(true));
-
-    await expect(callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
-    })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
-    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
-    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
-    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
-      outcome: 'refused',
-      reason: 'connection_owner_banned',
-    }));
-  });
-
-  // The acceptance control: a guard that refused every call would pass the arm
-  // above, and a ban that never expires is not the behaviour anyone asked for.
-  it('runs the same call when the owner is not banned', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
-    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
-    mockUser.findById.mockReturnValue(ownerRow(false));
+    mockIntegration.findOne.mockResolvedValue({
+      type: 'github-app',
+      status: 'connected',
+      createdBy: OWNER,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+    });
+    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: true }) }) });
 
     await expect(callTool({
       grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
     })).resolves.toBeTruthy();
     expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
-  });
-
-  it('leans on the row it resolved, so a different owner is read on every call', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
-    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy('6a8f6de2a1dccf2e02f31460'));
-    mockUser.findById.mockReturnValue(ownerRow(false));
-
-    await callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
-    });
-    expect(mockUser.findById).toHaveBeenCalledWith('6a8f6de2a1dccf2e02f31460');
-  });
-
-  it('looks nothing up for an owner value that cannot name an account', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
-    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy('owner-1'));
-
-    await callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
-    });
     expect(mockUser.findById).not.toHaveBeenCalled();
-  });
-
-  // The other boundary: the id is well formed, the row is gone. A deleted
-  // account records no ban, and "no ban recorded" is not "banned" — reading an
-  // absent row as a refusal would break every connection whose owner was
-  // cleaned up.
-  it('runs the call when the owner row no longer exists', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
-    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
-    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
-
-    await expect(callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
-    })).resolves.toBeTruthy();
-    expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
   });
 });

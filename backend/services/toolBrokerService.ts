@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import Pod from '../models/Pod';
 import Integration from '../models/Integration';
-import User from '../models/User';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
 import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
 import {
@@ -11,6 +10,7 @@ import {
   RoomGrantError,
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
+import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 
@@ -579,7 +579,7 @@ const resolveHostedConnection = async (
     );
   }
   const ownerUserId = row.createdBy ? String(row.createdBy) : undefined;
-  await assertOwnerNotBanned(ownerUserId);
+  await assertHostedOwnerUsable(ownerUserId);
   return {
     type: 'hosted-mcp',
     entryId,
@@ -591,37 +591,52 @@ const resolveHostedConnection = async (
 };
 
 /**
- * The ban has to reach the CREDENTIAL, not only the sign-in (TASK-181). A
- * suspended person cannot sign in (`middleware/auth.ts`), but an agent acting on
- * their connection never signs in as them: it presents its own runtime token and
- * the broker spends the owner's stored credential, so the ban stopped nothing at
- * all. Both broker paths — the MCP endpoint and the in-process native runtime —
- * funnel through a resolver below, so the check lives here rather than in a
- * driver.
+ * A hosted row is authorised by the PERSON who connected it, so a ban has to
+ * reach the credential and not only the sign-in (TASK-181). A suspended person
+ * cannot sign in (`middleware/auth.ts`), but an agent acting on their connection
+ * never signs in as them: it presents its own runtime token and the broker spends
+ * the owner's stored credential, so the ban stopped nothing at all. Both broker
+ * paths — the MCP endpoint and the in-process native runtime — funnel through
+ * `resolveHostedConnection`, so the check lives here rather than in a driver.
  *
- * CALLED BY EVERY RESOLVER: a new connection type is a third call site, and
- * omitting it reads as a working connection.
+ * The predicate is read through `sessionAccountService`, the one live-row read
+ * every session verifier shares (`loadSessionAccount` + `sessionRefusal`). That
+ * is not a style preference: a verifier that recomputes the predicate reads
+ * `undefined` for a field it forgot to project and refuses NOTHING, which is
+ * exactly how a bot-owned row would slip through a `select('banned')` check.
  *
- * An absent owner row is NOT a refusal. A `createdBy` that is not an ObjectId
- * shape, or an owner row that no longer exists, is "no ban recorded" rather than
- * "banned", and only an explicit `banned: true` refuses. `createdBy` is written
- * from the authenticated user id at connect time (`integrations.ts`,
- * `hostedMcpConnect.ts`) and typed `Types.ObjectId`, so the shape guard skips
- * only values that cannot name an account in the first place — it keeps the
- * uncastable string away from `findById`, whose CastError would otherwise have
- * to be swallowed. A swallowed database error would allow the call.
+ * HOSTED ONLY. A `github-app` row's token belongs to the app installation, not
+ * to the admin who created the row, so suspending that admin must not disable the
+ * app connector for every pod holding a grant on it (§7).
+ *
+ * The id-shape test is not the predicate: it keeps a value that cannot name an
+ * account away from `findById`, whose CastError would otherwise reach the caller
+ * as a 500. A row with no owner at all is `missing` — it has no person behind it,
+ * and the remedy (remove the row) is the one that code names.
  */
-const assertOwnerNotBanned = async (ownerUserId?: string): Promise<void> => {
-  const ownerId = String(ownerUserId || '').trim();
-  if (!/^[a-f\d]{24}$/i.test(ownerId)) return;
-  const owner = await User.findById(ownerId).select('banned').lean() as { banned?: boolean } | null;
-  if (owner?.banned) {
-    throw new RoomGrantError(
-      'connection_owner_banned',
-      'the owner of this connection is suspended',
-      403,
-    );
-  }
+const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
+  banned: 'connection_owner_banned',
+  missing: 'connection_owner_missing',
+  bot: 'connection_owner_bot',
+};
+
+const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
+  banned: 'the person who connected this connection is suspended',
+  missing: 'the person who connected this connection no longer exists',
+  bot: 'this connection is owned by a bot account, which cannot be its granter',
+};
+
+const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
+  const ownerId = String(ownerUserId ?? '').trim();
+  const refusal = /^[a-f\d]{24}$/i.test(ownerId)
+    ? sessionRefusal(await loadSessionAccount(ownerId))
+    : 'missing';
+  if (!refusal) return;
+  throw new RoomGrantError(
+    HOSTED_OWNER_REFUSALS[refusal],
+    HOSTED_OWNER_MESSAGES[refusal],
+    403,
+  );
 };
 
 const resolveConnection = async (
@@ -686,14 +701,12 @@ const resolveConnection = async (
     );
   }
 
-  const ownerUserId = row.createdBy ? String(row.createdBy) : undefined;
-  await assertOwnerNotBanned(ownerUserId);
   return {
     type: 'github-app',
     installationId: String(config.installationId),
     owner: String(config.owner),
     repo: String(config.repo),
-    ownerUserId,
+    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
   };
 };
 

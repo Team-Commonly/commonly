@@ -92,8 +92,10 @@ jest.mock('../../../services/roomGrantService', () => {
 const broker = require('../../../services/toolBrokerService');
 
 const {
-  callTool, listToolsForGrant, getToolDefinitions, allToolDefinitions,
+  callTool, listToolsForGrant, getToolDefinitions, allToolDefinitions, executeApprovedToolCall,
 } = broker;
+// eslint-disable-next-line import/no-unresolved, import/extensions
+const { digestArgs } = require('../../../models/ToolCall');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const projectionService = require('../../../services/grantBrokerProjectionService');
 
@@ -107,6 +109,11 @@ const { HOSTED_MCP_ENTRIES } = hostedEntries;
 
 const ROW_ID = 'a1b2c3d4e5f60718293a4b5c';
 const POD_ID = 'b1b2c3d4e5f60718293a4b5c';
+// The person the row belongs to. A real `createdBy` is an ObjectId written from
+// the authenticated user id; the TASK-181 owner check reads this id, so a
+// fixture with a placeholder would refuse every hosted call as an owner that
+// cannot name an account.
+const OWNER = '6a8f6de2a1dccf2e02f31459';
 const GRANT_CREATED_AT = new Date('2026-01-02T00:00:00.000Z');
 const ROW_CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
 
@@ -153,7 +160,7 @@ const hostedRow = (overrides = {}) => ({
   _id: ROW_ID,
   type: 'hosted-mcp',
   status: 'connected',
-  createdBy: 'owner-1',
+  createdBy: OWNER,
   createdAt: ROW_CREATED_AT,
   config: { entryId: 'linear', credentialRef: 'cred-1' },
   ...overrides,
@@ -178,10 +185,13 @@ beforeEach(() => {
   // the tool's own row lookup both use `.lean()`.
   mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
   mockIntegration.findOne.mockResolvedValue(null);
-  // The owner row the ban guard reads, in the chain it reads it:
-  // `User.findById(id).select('banned').lean()`. A fixture whose `createdBy` is
-  // not an id shape never reaches this (see the github suite's boundary arm).
-  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
+  // The owner row the TASK-181 check reads, in the chain it reads it:
+  // `loadSessionAccount` -> `User.findById(id).select('banned isBot').lean()`.
+  // Both fields are present because `sessionRefusal` reads them together and
+  // treats `undefined` as neither — a projection missing one refuses nothing.
+  mockUser.findById.mockReturnValue({
+    select: () => ({ lean: async () => ({ banned: false, isBot: false }) }),
+  });
   mockCredentialFor.mockResolvedValue({ token: 'tok-1' });
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
   global.fetch = jest.fn(async () => new Response(JSON.stringify(okReply), {
@@ -305,7 +315,7 @@ describe('a hosted-MCP grant through the broker', () => {
 
     expect(mockDmService.getOrCreateAgentRoom).toHaveBeenCalledWith(
       'agent-a',
-      'owner-1',
+      OWNER,
       expect.objectContaining({ agentName: 'openclaw' }),
     );
     expect(mockProposeAction).toHaveBeenCalledTimes(1);
@@ -319,33 +329,37 @@ describe('a hosted-MCP grant through the broker', () => {
     }));
   });
 
-  it('refuses a hosted write whose row names no owner as a connection mismatch, not a retryable card failure', async () => {
+  it('refuses a hosted write whose grant target is invalid, keeping the cause\'s own code', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      target: { kind: 'seat' },
       tools: ['linear.create_issue'],
       writeMode: 'write-with-confirm',
     }));
-    const orphan = hostedRow({ createdBy: undefined });
-    mockIntegration.findById.mockReturnValue({ ...orphan, lean: async () => orphan });
 
-    // The cause is `ownerUserId` being absent, which `resolveApprovalPodId`
-    // refuses as a permanent `connection_mismatch` (403). The park path's catch
-    // used to relabel every cause `approval_unavailable` (503) — a retryable
-    // verdict for something no retry can fix, with the ledger recording a
-    // reason that was not the cause (recorded on the row as an observation in
-    // slice 3c-2, fixed here). The positive control is the sibling arm in
-    // `toolBrokerApprovalService.test.js` ("records a refusal when the approval
-    // proposal throws"): a cause that is NOT a `RoomGrantError` still reports
-    // `approval_unavailable`.
+    // The cause is `resolveApprovalPodId`'s `invalid_target` (403), a permanent
+    // refusal. The park path's catch used to relabel every cause
+    // `approval_unavailable` (503) — a retryable verdict for something no retry
+    // can fix, with the ledger recording a reason that was not the cause
+    // (recorded on the row as an observation in slice 3c-2, fixed here). The
+    // positive control is the sibling arm in `toolBrokerApprovalService.test.js`
+    // ("records a refusal when the approval proposal throws"): a cause that is
+    // NOT a `RoomGrantError` still reports `approval_unavailable`.
+    //
+    // Re-pointed when TASK-181's owner check landed: this arm used to reach
+    // `resolveApprovalPodId`'s `connection_mismatch` through a row with no
+    // `createdBy`, and the owner check now refuses that fixture earlier and more
+    // specifically. The arm's subject — a permanent refusal keeps its own code —
+    // is unchanged; only the cause it walks through moved.
     await expect(callTool({
       grantId: 'grant-hosted',
       agentUserId: 'agent-a',
       tool: 'linear.create_issue',
       args: { title: 'x' },
-    })).rejects.toMatchObject({ code: 'connection_mismatch', statusCode: 403 });
+    })).rejects.toMatchObject({ code: 'invalid_target', statusCode: 403 });
     // The ledger reason is a code, and it is now the cause's own code.
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'refused',
-      reason: 'connection_mismatch',
+      reason: 'invalid_target',
     }));
     expect(mockDmService.getOrCreateAgentRoom).not.toHaveBeenCalled();
     expect(mockProposeAction).not.toHaveBeenCalled();
@@ -358,48 +372,131 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(listed.map((definition) => definition.name)).toEqual(['linear.list_issues']);
   });
 
-  // TASK-181: a suspended person cannot sign in, but their agent never signs in
-  // as them — it presents its own runtime token and spends the credential they
-  // connected. Without this the ban stops the human and not the authority.
-  describe('a connection whose owner is suspended', () => {
-    const OWNER = '6a8f6de2a1dccf2e02f31459';
-
-    const ownedRow = (banned) => {
-      const row = hostedRow({ createdBy: OWNER });
+  // TASK-181 §7: a hosted row is authorised by the PERSON who connected it, so a
+  // suspension has to reach the credential and not only the sign-in. A banned
+  // person cannot sign in, but an agent acting on their connection never signs in
+  // as them — it presents its own runtime token and the broker spends the
+  // credential they connected, so without this the ban stops the human and not
+  // the authority. The predicate comes from `sessionAccountService`, the one
+  // live-row read the session verifiers share, and each refusal names a
+  // different remedy: lift the ban, or remove the row.
+  describe('a hosted row whose owner is not a usable account', () => {
+    const ownedRow = (owner) => {
+      const row = hostedRow({ createdBy: owner });
       mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
-      mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned }) }) });
     };
+    const ownerRow = (fields) => ({ select: () => ({ lean: async () => fields }) });
 
-    it('refuses the call and never reaches the vendor', async () => {
+    it('refuses a call by a suspended owner, and never reaches the vendor', async () => {
       mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
-      ownedRow(true);
+      ownedRow(OWNER);
+      mockUser.findById.mockReturnValue(ownerRow({ banned: true, isBot: false }));
 
       await expect(callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
       })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
       expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
       expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'refused',
         reason: 'connection_owner_banned',
       }));
     });
 
-    it('refuses the listing too, because a list answers what calling would allow', async () => {
+    // The projection is why this code exists at all: a check written as
+    // `select('banned')` reads `isBot` as `undefined` and refuses nothing, so a
+    // bot-owned row stays callable. `sessionRefusal` reads both fields together.
+    it('refuses a row owned by a bot account', async () => {
       mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
-      ownedRow(true);
+      ownedRow(OWNER);
+      mockUser.findById.mockReturnValue(ownerRow({ banned: false, isBot: true }));
 
-      await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
-        .rejects.toMatchObject({ code: 'connection_owner_banned' });
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_bot', statusCode: 403 });
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it('runs the same call once the owner is not suspended', async () => {
+    it('refuses when the owner row no longer exists', async () => {
       mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
-      ownedRow(false);
+      ownedRow(OWNER);
+      mockUser.findById.mockReturnValue(ownerRow(null));
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_missing', statusCode: 403 });
+    });
+
+    it('refuses a row with no owner at all without asking the database', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(undefined);
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_missing', statusCode: 403 });
+      // The id-shape test is not the predicate: it keeps an uncastable value out
+      // of `findById`, whose CastError would reach the caller as a 500.
+      expect(mockUser.findById).not.toHaveBeenCalled();
+    });
+
+    // The acceptance controls. A guard that refused every call would pass every
+    // arm above, and a ban that never lifts is not the behaviour anyone asked
+    // for: the plan says a lifted ban restores the grants with no reconnect.
+    it('runs the same call when the owner is not suspended', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(OWNER);
 
       await expect(callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
       })).resolves.toBeTruthy();
       expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads the row it resolved, so a different owner is judged on every call', async () => {
+      const other = '6a8f6de2a1dccf2e02f31460';
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(other);
+      mockUser.findById.mockReturnValue(ownerRow({ banned: true, isBot: false }));
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_banned' });
+      expect(mockUser.findById).toHaveBeenCalledWith(other);
+    });
+
+    // A list is not a call, so it writes no ledger row — but it must refuse,
+    // because a capability disclosure that offers tools every call would reject
+    // is the same lie in a quieter form.
+    it('refuses the listing with the same code, and writes no row', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(OWNER);
+      mockUser.findById.mockReturnValue(ownerRow({ banned: true, isBot: false }));
+
+      await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+        .rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+      expect(mockToolCall.create).not.toHaveBeenCalled();
+    });
+
+    // The check is read at call time, so a call approved after the ban refuses
+    // too: `executeApprovedToolCall` resolves the connection again before it
+    // spends anything.
+    it('refuses an approved call whose owner was suspended after the park', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+        tools: ['linear.create_issue'],
+        writeMode: 'write-with-confirm',
+      }));
+      ownedRow(OWNER);
+      mockUser.findById.mockReturnValue(ownerRow({ banned: true, isBot: false }));
+
+      await expect(executeApprovedToolCall({
+        grantId: 'grant-hosted',
+        agentUserId: 'agent-a',
+        tool: 'linear.create_issue',
+        args: { title: 'x' },
+        expectedArgsDigest: digestArgs({ title: 'x' }),
+        approvalId: 'approval-1',
+      })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 
