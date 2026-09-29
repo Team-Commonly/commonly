@@ -54,8 +54,10 @@ Entries live in this repo, one module per vendor, and change only by PR. An entr
 - `issuer`: the authorization server its protected-resource metadata names, checked at intake;
 - `client`: `pre-registered`, `cimd` or `dcr` (§4);
 - `scopes`: requested at authorization;
-- `revoke`: the AS's revocation endpoint, or the vendor page where a person revokes by hand;
+- `revoke`: exactly one of an `endpoint`, the RFC 7009 revocation endpoint the AS's metadata advertises, or a `page`, where a person revokes by hand (§9);
 - `tools`: each with the name and description an agent sees, the upstream name, a class (`read` or `write`), `irreversible`, a pinned `inputSchema`, and the upstream annotations as seen when the tool was pinned.
+
+**`revoke` names its kind because the URL cannot.** Both kinds are https URLs, and the kind alone decides whether removal calls the vendor (§9). A page that answered that call with 200 would read as a revoke that never happened. A 200 proves no more at a real endpoint, which answers 200 "if the token has been revoked successfully or if the client submitted an invalid token" (RFC 7009 §2.2). So the entry load refuses an entry that names neither kind or both, or a URL that is not https, and step 7 (§10) shows the revoke took by something other than its status.
 
 **The entry is the only source for everything an agent sees and everything a grant is checked against.** Upstream can take a tool away or refuse a call. It cannot add a tool, loosen a schema, rename a tool, reword a description or reclassify a tool. The MCP spec (2026-07-28, tools) says "clients MUST consider tool annotations to be untrusted unless they come from trusted servers", and a vendor's server is not one we run. A tool description is also prompt text that reaches every seat holding a grant. An edit made upstream would change every seat's prompt with no review; pinned here, the same change is a PR a gate reads.
 
@@ -232,7 +234,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 
 1. Grants: `revokeConnectionGrants`, which matches a grant by the row's `_id`, the id every hosted grant is stored under.
 2. The row goes to `disconnected`, and `isActive` stays true: step 3 needs the refresh token, and the orphan sweep revokes the material of a row that is not active.
-3. The provider: RFC 7009 revocation of the refresh token at the entry's endpoint, where the AS advertises one (Linear's is `https://mcp.linear.app/token`). Unlike §10.5's GitHub grant-deletion call, which takes an access token, this sends the refresh token itself, so it needs no refresh first. Where the AS advertises no revocation endpoint, the entry names the page where a person revokes, and the removal response carries it, as §10.5 does for a pasted token.
+3. The provider, by the kind the entry's `revoke` names (§3), never by its URL. An `endpoint` gets RFC 7009 revocation of the refresh token (Linear's is `https://mcp.linear.app/token`). Unlike §10.5's GitHub grant-deletion call, which takes an access token, this sends the refresh token itself, so it needs no refresh first. A `page` gets no provider call, and the removal response carries it as `revokeAt`, as §10.5 does for a pasted token.
 4. The material.
 5. The delete.
 
@@ -273,6 +275,8 @@ Each step can be tested without the vendor, except the live measurements in step
 6. **Removal, and an owner who leaves.**
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
+   - `a page entry's removal calls no provider and returns the page as revokeAt`
+   - `an entry whose revoke names neither kind or both, or a URL that is not https, is refused at load`
    - TASK-147's witness per removal path (§7), before the first entry ships
    - `deleting a member who owns a hosted row is refused with the rows named, and the row, its grants and its material are unchanged`
    - TASK-181's three, each made by banning or deleting a member who owns the row and then calling through the broker, not by calling the check:
@@ -282,6 +286,7 @@ Each step can be tested without the vendor, except the live measurements in step
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
    - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
    - `the page's call to start is credentialed`, before the walk (§4)
+   - Measured live: that a removal's revoke took at Linear, shown by something other than its 200 (§3). Linear advertises one URL as both its `token_endpoint` and its `revocation_endpoint` (fetched 2026-09-29), so only a live removal shows which request that URL treats as a revoke.
 
 ## 11. What this corrects, and what stays open
 
