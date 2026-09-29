@@ -20,6 +20,7 @@ import rateLimit from 'express-rate-limit';
 const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { upstreamFetch } from '../services/upstreamFetch';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -352,7 +353,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
 
   let tokens: TokenResponse;
   try {
-    const response = await fetch(tokenEndpoint, {
+    const response = await upstreamFetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
