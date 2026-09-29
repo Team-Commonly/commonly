@@ -57,20 +57,28 @@ export const relativeTime = (value: string | number | Date | null | undefined, n
   return `${Math.floor(delta / YEAR)}y`;
 };
 
-// A wide glyph fills the mark on its own. The mark is 22px with 11px mono
-// characters, so two Han characters wrap to a second line inside the square.
-const WIDE_GLYPH = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+// The mark is 22px with 11px mono characters, so two Han characters wrap to a
+// second line inside the square — that is why a CJK pick is cut to one glyph.
+//
+// This is a SCRIPT list, so the rule it states is a CJK rule and not a width
+// rule. JS `\p{…}` expresses General_Category, Script and binary properties but
+// not East_Asian_Width, so `ＡＢ` (fullwidth Latin, EAW=Fullwidth) is out of
+// scope by decision and shows both glyphs. The 22px sentence above is the
+// motivation for the rule, not a contract this predicate can compute.
+const CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
 // Two-letter mark for a pod without an avatar: initials of the first two words,
 // or the first two letters of a one-word name.
 //
-// Tokenised the way `initialsFor` does, so punctuation and dashes separate words
-// instead of becoming initials: "Sharpen — pod model" is SP rather than S—, and
-// "Team-Commonly" is TC. An emoji drops out the way punctuation does, which is
-// why "🚀 Launch" is LA rather than 🚀L. A name whose initials include a wide
-// glyph shows that one glyph — "设计评审" is 设, not the two characters that
-// would wrap. Code points rather than UTF-16 units throughout, so a surrogate
-// pair is never cut in half.
+// Tokenising matches `initialsFor`: the same split, the same [^\p{L}\p{N}]
+// strip and the same filter, so punctuation and dashes separate words instead
+// of becoming initials and "Sharpen — pod model" is SP rather than S—. It does
+// not copy initialsFor's parenthetical drop, deliberately: "(v2)" distinguishes
+// a pod name even though "(lead)" never distinguishes an agent. An emoji drops
+// out the way punctuation does, which is why "🚀 Launch" is LA rather than 🚀L. A
+// name whose picked glyphs are CJK shows one glyph — "设计评审" is 设, not the
+// two characters that would wrap. Code points rather than UTF-16 units
+// throughout, so a surrogate pair is never cut in half.
 export const podInitials = (name: string): string => {
   const words = String(name || '')
     .trim()
@@ -85,6 +93,6 @@ export const podInitials = (name: string): string => {
     : first(words[0]) + first(words[1]);
 
   const picked = Array.from(pick);
-  if (picked.some((char) => WIDE_GLYPH.test(char))) return picked[0];
+  if (picked.some((char) => CJK_SCRIPT.test(char))) return picked[0];
   return pick.toUpperCase();
 };

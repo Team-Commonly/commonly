@@ -47,9 +47,12 @@ describe('podRecency', () => {
     expect(podInitials('—')).toBe('·');
   });
 
-  test('podInitials shows one glyph when a wide glyph is picked', () => {
+  test('podInitials shows one glyph when a CJK glyph is picked', () => {
     expect(podInitials('设计评审')).toBe('设');
     expect(podInitials('Growth 团队')).toBe('G');
+    // Stated scope rather than an oversight: the predicate is a script list and
+    // JS \p{…} cannot express East_Asian_Width, so fullwidth Latin shows two.
+    expect(podInitials('ＡＢＣ')).toBe('ＡＢ');
   });
 
   test('podInitials drops an emoji the way it drops punctuation', () => {
@@ -60,5 +63,12 @@ describe('podRecency', () => {
     // Synthetic on purpose: a two-unit slice of 'A𝔘' ends between the halves of
     // 𝔘 and returns a replacement character, which no real pod name would show.
     expect(podInitials('A𝔘')).toBe('A𝔘');
+  });
+
+  test('podInitials reads the first code point of each of two words', () => {
+    // Pins the two-word branch's own code-point read. 'A𝔘' above is a single
+    // token, so it only exercises the one-word slice; a UTF-16 read here would
+    // cut 𐐀 in half and return a replacement character.
+    expect(podInitials('𐐀lpha Beta')).toBe('𐐀B');
   });
 });
