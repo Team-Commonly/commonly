@@ -59,10 +59,19 @@ describe('initialsFor', () => {
     // UTF-16 unit inside the surrogate range, whereas a whole astral character
     // iterates as a two-unit string. Names with no letters at all reach the
     // fallback branch, so an emoji-only name is the input that pins THAT read.
+    //
+    // '—😀' is the shape that makes the fallback read visible to THIS assertion
+    // rather than only to its own test, and it is the only shape that does both
+    // of the two things the fallback needs. Reaching the fallback takes a name
+    // with no letter or digit token at all; splitting a pair there takes the
+    // second code point to sit across the cut. '😀😀' does the first and not the
+    // second, so with its read reverted it comes back as '😀' — a truncation, and
+    // zero lone surrogates, which is a green class assertion over a regression.
+    // Measured: fixed gives '—😀', reverted gives '—' + '\ud83d'.
     const loneSurrogates = (s: string) =>
       Array.from(s).filter((ch) => ch.length === 1 && ch >= '\uD800' && ch <= '\uDFFF');
     const names = [
-      '𐐀lpha Beta', 'Deseret 𐐀team', 'A𝔘', '𝔘', '😀😀', '😀 Launch',
+      '𐐀lpha Beta', 'Deseret 𐐀team', 'A𝔘', '𝔘', '😀😀', '😀 Launch', '—😀',
       '奶龙', 'Sprint Review', 'Fable (lead)', '(lead)', '—', '', 'A—𝔘',
     ];
     for (const name of names) {
