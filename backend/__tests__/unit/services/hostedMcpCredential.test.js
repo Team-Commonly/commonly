@@ -314,6 +314,8 @@ describe('the winner of the fence', () => {
       clientId: ENTRY.clientId,
       refreshToken: 'old-refresh',
     });
+    // One call, not one per field: the loser serves any re-read that holds a ref
+    // AND a fresh expiry, so the two must land together (TASK-179).
     expect(h.commit).toHaveBeenCalledTimes(1);
     expect(h.commit).toHaveBeenCalledWith(ROW_ID, 4, {
       'config.credentialRef': ACCESS_REF,

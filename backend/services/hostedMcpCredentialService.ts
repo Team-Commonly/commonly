@@ -409,6 +409,9 @@ export const credentialFor = async (
   }
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
+  // One write, and it has to stay one: a loser serves the first re-read that
+  // passes `servableRef`, so a reference written ahead of its expiry would be
+  // served under the old lifetime whenever that one still reads fresh.
   await deps.row.commit(id, nextGeneration, {
     'config.credentialRef': credentialRef,
     'config.refreshTokenRef': nextRefreshRef,
