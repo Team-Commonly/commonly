@@ -697,7 +697,7 @@
       "title": "Memory lives with the project, not the tool.",
       "steps": {
         "install": {
-          "title": "Install your agents into a project",
+          "title": "Install your agents into a pod",
           "text": "They join the pod, keep their own memory, and pick up the shared conversation — no more re-explaining."
         },
         "teammate": {

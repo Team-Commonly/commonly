@@ -705,99 +705,130 @@
   color: var(--v2-text-secondary);
 }
 
-/* How-it-works steps */
-.v2-landing__steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+/* How-it-works steps. The card treatment is gone: on the board a step is a
+   number and a copy column, so the 28px track is the number's own width and
+   the grid is what holds them apart. */
+.v2-landing__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; margin-bottom: 56px; }
 .v2-landing__step {
-  padding: 22px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: baseline;
 }
+.v2-landing__step-copy { display: flex; flex-direction: column; gap: 10px; }
 .v2-landing__step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--v2-radius-pill);
-  background: var(--v2-accent-soft);
+  margin: 0;
+  font-family: var(--v2-font-mono);
+  font-size: 13px;
+  font-weight: 500;
   color: var(--v2-accent);
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 14px;
 }
-.v2-landing__step-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__step-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
+.v2-landing__step-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--v2-text-primary);
+}
+.v2-landing__step-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
-/* Adapters */
-.v2-landing__adapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+/* Adapters. A hairline above the row replaces the three cards; the ink blocks
+   below each label are what the board draws. */
+.v2-landing__adapters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 56px;
+}
 .v2-landing__adapter {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 18px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
 }
-.v2-landing__adapter-title { font-size: 15px; font-weight: 700; color: var(--v2-text-primary); }
-.v2-landing__adapter-sub { margin: 4px 0 12px; font-size: 13px; color: var(--v2-text-secondary); }
-.v2-landing__code {
-  margin: auto 0 0;
-  padding: 12px;
-  background: var(--v2-surface-tint);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
-  font-family: var(--v2-font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+.v2-landing__adapter-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--v2-text-primary);
+}
+.v2-landing__adapter-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-landing__code {
+  /* 1 1 auto, not auto 0 0: the three blocks sit on one line and must share a
+     height, so the tallest command is what the row agrees on. */
+  margin: 12px 0 0;
+  flex: 1 1 auto;
+  padding: 16px 18px;
+  background: var(--v2-text-primary);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--v2-font-mono);
+  font-size: 14px;
+  line-height: 22px;
+  color: #ffffff;
   overflow-x: auto;
   white-space: pre;
 }
+.v2-landing__code-comment { color: #98a2b3; }
 
 /* Why open-source */
-.v2-landing__open-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
-.v2-landing__open-lede { margin: 16px 0 24px; font-size: 17px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__open .v2-landing__cta-row { margin-top: 0; }
-.v2-landing__open-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.v2-landing__open-item { display: flex; gap: 12px; font-size: 15px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__open-item strong { color: var(--v2-text-primary); font-weight: 650; }
-.v2-landing__open-ic {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--v2-radius);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent);
-  font-size: 20px;
+.v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }
+.v2-landing__open-lede { margin: 20px 0 0; font-size: 20px; line-height: 32px; color: var(--v2-text-secondary); }
+.v2-landing__open .v2-landing__cta-row { margin-top: 24px; }
+/* This section's own button is the bordered one: row A's hero owns the page's
+   fill, and row D's Pro tier takes the one cobalt button. */
+.v2-landing__open .v2-landing__btn { height: 48px; padding: 0 20px; font-size: 16px; font-weight: 600; }
+/* One bordered list, rows divided by hairlines, with the corners on the frame
+   so a hovered row cannot paint outside the radius. */
+.v2-landing__open-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+}
+.v2-landing__open-item { display: block; padding: 20px 24px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__open-item + .v2-landing__open-item { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__open-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
 }
 
 /* Value cards */
-.v2-landing__cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.v2-landing__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .v2-landing__card {
-  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 32px;
   background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
 }
-.v2-landing__card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--v2-radius);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent);
-  font-size: 22px;
-  margin-bottom: 14px;
+.v2-landing__card-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
 }
-.v2-landing__card-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__card-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
+.v2-landing__card-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
 /* Use cases */
 .v2-landing__usecases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -1038,12 +1069,14 @@
   /* The hero's own responsive values live in the 760 and 680 blocks: the band,
      its bottom padding and the demo's negative margin change together, so
      splitting them across a third breakpoint is how they drift apart. */
-  .v2-landing__open-grid { grid-template-columns: 1fr; gap: 28px; }
+  .v2-landing__open-grid { grid-template-columns: 1fr; gap: 32px; }
   .v2-landing__tiles,
   .v2-landing__adapters,
   .v2-landing__steps,
   .v2-landing__cards,
   .v2-landing__tiers { grid-template-columns: 1fr; }
+  .v2-landing__steps { row-gap: 28px; }
+  .v2-landing__adapters { row-gap: 24px; }
   .v2-landing__tier-enterprise { flex-direction: column; align-items: flex-start; }
   .v2-landing__proof-stats { gap: 28px; }
 }
@@ -1120,6 +1153,15 @@
   .v2-landing__feature-copy { gap: 12px; }
   .v2-landing__feature-title { font-size: 26px; line-height: 30px; }
   .v2-landing__feature-text { font-size: 16px; line-height: 26px; }
+  .v2-landing__steps { margin-bottom: 32px; }
+  .v2-landing__step-title { font-size: 22px; line-height: 26px; }
+  .v2-landing__adapters { padding-top: 32px; }
+  .v2-landing__code { padding: 14px; font-size: 12px; line-height: 20px; }
+  .v2-landing__open-lede { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__open .v2-landing__cta-row { margin-top: 20px; }
+  .v2-landing__open-item { padding: 16px 18px; }
+  .v2-landing__card { padding: 20px 22px; }
+  .v2-landing__card-title { font-size: 22px; line-height: 26px; }
   .v2-landing__usecases { grid-template-columns: 1fr; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
@@ -1332,6 +1374,10 @@
 :lang(zh) .v2-landing__feature-title,
 :lang(zh) .v2-landing__wedge-line,
 :lang(zh) .v2-landing__h2,
+:lang(zh) .v2-landing__step-title,
+:lang(zh) .v2-landing__adapter-title,
+:lang(zh) .v2-landing__open-item strong,
+:lang(zh) .v2-landing__card-title,
 :lang(zh) .v2-landing__proof-title,
 :lang(zh) .v2-landing__proof-num,
 :lang(zh) .v2-landing__price-tag,
