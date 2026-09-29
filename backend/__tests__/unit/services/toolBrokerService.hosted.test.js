@@ -156,6 +156,12 @@ const hostedGrant = (overrides = {}) => ({
   ...overrides,
 });
 
+// The ledger row a refusal wrote. Read it off the mock rather than with
+// `objectContaining`, because the property is present-and-undefined when no
+// owner can be named, and that is a different claim from an absent one.
+const refusedRow = () => mockToolCall.create.mock.calls
+  .map(([row]) => row).find((row) => row.outcome === 'refused');
+
 const hostedRow = (overrides = {}) => ({
   _id: ROW_ID,
   type: 'hosted-mcp',
@@ -223,7 +229,7 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'ok',
       // The hosted row's `createdBy` — the member whose credential the vendor saw.
-      credentialOwnerId: 'owner-1',
+      credentialOwnerId: OWNER,
     }));
 
     // The credential was read for THIS row, not for the grant id.
@@ -273,6 +279,10 @@ describe('a hosted-MCP grant through the broker', () => {
       grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
     })).rejects.toMatchObject({ code: 'connection_untracked' });
     expect(global.fetch).not.toHaveBeenCalled();
+    // A record names the owner only once the row is PROVEN the grant's own.
+    // This row carries `createdBy`, and still names nobody: the proof is what
+    // makes the creator this call's credential owner.
+    expect(refusedRow().credentialOwnerId).toBeUndefined();
   });
 
   it('refuses a grant that predates the row it names (TASK-148, unchanged for this type)', async () => {
@@ -282,6 +292,10 @@ describe('a hosted-MCP grant through the broker', () => {
       grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
     })).rejects.toMatchObject({ code: 'connection_superseded' });
     expect(global.fetch).not.toHaveBeenCalled();
+    // A superseded row is the re-added one, whose `createdBy` never made the
+    // grant — so it is the case where reading the row's owner would be exactly
+    // wrong. The owner check runs after this proof, never before it.
+    expect(refusedRow().credentialOwnerId).toBeUndefined();
   });
 
   it('reports a vendor 401 as the credential being gone, after the call was made', async () => {
@@ -325,7 +339,7 @@ describe('a hosted-MCP grant through the broker', () => {
     // The parked envelope carries the owner, so the record the DECISION writes
     // still names it after the row is deleted.
     expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({
-      toolCall: expect.objectContaining({ credentialOwnerId: 'owner-1' }),
+      toolCall: expect.objectContaining({ credentialOwnerId: OWNER }),
     }));
   });
 
@@ -386,7 +400,6 @@ describe('a hosted-MCP grant through the broker', () => {
       mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
     };
     const ownerRow = (fields) => ({ select: () => ({ lean: async () => fields }) });
-
     it('refuses a call by a suspended owner, and never reaches the vendor', async () => {
       mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
       ownedRow(OWNER);
@@ -401,6 +414,11 @@ describe('a hosted-MCP grant through the broker', () => {
         outcome: 'refused',
         reason: 'connection_owner_banned',
       }));
+      // The audit ask, not a second authority check: the guard refuses INSIDE
+      // `resolveConnection`, and `callTool` fills its own owner only once that
+      // returns — so without the id carried on the error, the one row whose
+      // reason names the owner is the one row that does not say who they were.
+      expect(refusedRow().credentialOwnerId).toBe(OWNER);
     });
 
     // The projection is why this code exists at all: a check written as
@@ -425,6 +443,9 @@ describe('a hosted-MCP grant through the broker', () => {
       await expect(callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
       })).rejects.toMatchObject({ code: 'connection_owner_missing', statusCode: 403 });
+      // The row is gone, but the row that said who owned it is not: the id is
+      // what makes "whose connection was this" answerable after the fact.
+      expect(refusedRow().credentialOwnerId).toBe(OWNER);
     });
 
     it('refuses a row with no owner at all without asking the database', async () => {
@@ -437,6 +458,24 @@ describe('a hosted-MCP grant through the broker', () => {
       // The id-shape test is not the predicate: it keeps an uncastable value out
       // of `findById`, whose CastError would reach the caller as a 500.
       expect(mockUser.findById).not.toHaveBeenCalled();
+      // And nothing is recorded as the owner: the column is read as an owner id,
+      // and a malformed value names no account. Recording it would be a guess
+      // dressed as a fact, which is worse than the blank.
+      expect(refusedRow().credentialOwnerId).toBeUndefined();
+    });
+
+    // A non-empty value that is not an account id at all: refused as `missing`,
+    // never looked up, and NOT written to the audit column. `'owner-1'` is the
+    // value the merged fixtures used before TASK-181 needed a real owner.
+    it('refuses a row whose owner value names no account, and records no owner', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow('owner-1');
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_missing', statusCode: 403 });
+      expect(mockUser.findById).not.toHaveBeenCalled();
+      expect(refusedRow().credentialOwnerId).toBeUndefined();
     });
 
     // The acceptance controls. A guard that refused every call would pass every

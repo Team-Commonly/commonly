@@ -628,14 +628,18 @@ const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
 
 const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
   const ownerId = String(ownerUserId ?? '').trim();
-  const refusal = /^[a-f\d]{24}$/i.test(ownerId)
-    ? sessionRefusal(await loadSessionAccount(ownerId))
+  // Only a value that names an account is carried onto the ledger: a malformed
+  // one names nobody, and the column is read as an owner id.
+  const accountId = /^[a-f\d]{24}$/i.test(ownerId) ? ownerId : undefined;
+  const refusal = accountId
+    ? sessionRefusal(await loadSessionAccount(accountId))
     : 'missing';
   if (!refusal) return;
   throw new RoomGrantError(
     HOSTED_OWNER_REFUSALS[refusal],
     HOSTED_OWNER_MESSAGES[refusal],
     403,
+    accountId ? { credentialOwnerId: accountId } : undefined,
   );
 };
 
@@ -923,6 +927,29 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
+/**
+ * Whose credential a refused call would have spent (scope §8, TASK-181).
+ *
+ * Both catches below record `credentialOwnerId` from a local that is filled the
+ * moment `resolveConnection` returns — but the owner refusals happen INSIDE that
+ * call, so without this the one trail row whose REASON names the owner is the
+ * one row that does not say who they were, and "which suspended person's
+ * connection was this" is unanswerable from the ledger. The guard knows the id
+ * at the moment it refuses, so it carries it on the error and the catch prefers
+ * it. It runs only after the row is proven the grant's own, so the proof-failing
+ * refusals carry nothing and still record nobody; a refusal that happens before
+ * anything resolves (`tool_not_found`, a grant that does not load) has nothing
+ * to name either.
+ */
+const refusedCredentialOwner = (
+  error: unknown,
+  resolved: string | undefined,
+): string | undefined => (
+  error instanceof RoomGrantError && typeof error.details?.credentialOwnerId === 'string'
+    ? error.details.credentialOwnerId
+    : resolved
+);
+
 const recordCall = async (
   input: BrokerCallInput,
   grant: IRoomGrant | Record<string, unknown> | undefined,
@@ -936,8 +963,13 @@ const recordCall = async (
     /**
      * The Connection's owner, supplied by the BROKER from the row it resolved
      * (`connection.ownerUserId`) — never by the caller, which is why it sits
-     * here rather than in `BrokerCallInput`. Absent when the call was refused
-     * before a connection resolved: there is no credential to name.
+     * here rather than in `BrokerCallInput`. A record names the owner only once
+     * the row is PROVEN the grant's own: the proof-failing refusals
+     * (`connection_mismatch`, `connection_untracked`, `connection_superseded`)
+     * name nobody — a superseded row is the re-added one, whose `createdBy`
+     * never made the grant — and neither does a refusal that never reached a
+     * connection at all. The owner refusals run AFTER that proof, so they carry
+     * their id on the error (see `refusedCredentialOwner`).
      */
     credentialOwnerId?: string;
   },
@@ -986,8 +1018,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
   // Whose credential ran (scope §8). Filled the moment the connection resolves,
-  // so the refusals and failures below record it too — and left unset when the
-  // refusal IS the resolution, where no credential can be named.
+  // so the refusals and failures below record it too. A refusal that happens
+  // before anything resolves leaves it unset — except an owner refusal, which
+  // names the owner on the error and is preferred by the catch.
   let credentialOwnerId: string | undefined;
 
   try {
@@ -1132,7 +1165,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
     const callId = alreadyRecorded
       ? String(error.details?.callId || '')
-      : await recordCall(input, grant, outcome, startedAt, reason, { credentialOwnerId });
+      : await recordCall(input, grant, outcome, startedAt, reason, {
+        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+      });
     if (error instanceof RoomGrantError) {
       Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
@@ -1161,7 +1196,8 @@ export const executeApprovedToolCall = async (
   const callId = `tool_call_${randomUUID()}`;
   // Whose credential ran (scope §8), filled when the connection resolves — the
   // parked envelope carries the same value, so a decision after the row's
-  // deletion still names the owner.
+  // deletion still names the owner. An owner refusal happens inside that
+  // resolution and carries its id on the error; the catch prefers it.
   let credentialOwnerId: string | undefined;
   try {
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
@@ -1205,7 +1241,12 @@ export const executeApprovedToolCall = async (
       error instanceof RoomGrantError ? 'refused' : 'failed',
       startedAt,
       reason,
-      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
+      {
+        callId,
+        approvalId: input.approvalId,
+        args: input.args,
+        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+      },
     );
     throw error;
   }
