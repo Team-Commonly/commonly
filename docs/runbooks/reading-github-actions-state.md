@@ -14,7 +14,7 @@ are not the same problem and they do not share a remedy.
 | Cause | How it looks | Discriminator | Remedy |
 |---|---|---|---|
 | Run never created | check absent from `gh pr checks` | no run at that SHA in `gh run list --branch <b>` | needs a NEW event: push, or close/reopen |
-| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | PR reads `CONFLICTING`/`DIRTY`, and `actions/runs?head_sha=<sha>` returns only the `edited`-listening guards | retarget the base, **then** push — see below |
+| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | nothing created in the push's own minute, while a mergeable sibling's push created three | retarget the base, **then** push — see below |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
@@ -222,6 +222,11 @@ the same minute and were mergeable:
 | #2019, conflicting | none |
 | #2020 / #2021 / #2022, mergeable | `Tests`, `Playwright Tests`, `Secret Scan` |
 
+The sibling also shows why its list is four runs and not eleven: `PR Base Guard`
+has no `branches:` filter and **failed** — its base was still a feature branch —
+while the four guards that do declare `branches: [main]` are legitimately absent.
+The claim in that row is *created*, not *green*.
+
 Retargeting #2019 with `gh pr edit 2019 --base main` made it mergeable and fired
 `edited`, and only the five workflows that list `edited` in `types:` came back —
 `ADR Numbering Guard`, `PR Base Guard`, `Package Version Guard`, `PR Base
@@ -232,6 +237,19 @@ change. The required check therefore stayed absent and the PR stayed `BLOCKED`
 with every row that *did* exist passing — the state this document exists to keep
 you from misreading. `gh pr checks` cannot show a suite that was never created;
 read `actions/runs?head_sha=<sha>` instead.
+
+**And `head_sha` is not an event filter, which is the trap that table sets.**
+Read `?head_sha=0dafe74f…` a minute later and you get five runs — the five
+guards just named — every one of them created at `19:38:38Z`. `event` reads
+`pull_request` for both `synchronize` and `edited`, so that field cannot tell you
+which one dispatched it; compare each run's `created_at` against the PR's
+`base_ref_changed` in its timeline, which is `19:38:35Z` here — three seconds
+before the runs, and 73 after the push. A second witness makes the attribution
+independent of clock-reading: the four guards that declare `branches: [main]`
+cannot be dispatched while the base is a feature branch, and the sibling push
+from that same minute has none of them. **A run listed at your head may belong to
+a later event**, so sort by `created_at` against the push you are reasoning about
+before attributing anything to it.
 
 **Close/reopen is not available to a seat**, which is the lever this document
 prefers when a run was never created. `gh pr close` is refused from a seat
