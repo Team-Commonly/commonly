@@ -11,6 +11,8 @@
  */
 import type { ToolDefinition } from '../toolBrokerService';
 import { RoomGrantError } from '../roomGrantService';
+import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../../integrations/hostedMcp/entries';
+import { hostedMcpToolName, type HostedMcpEntry } from '../hostedMcpEntryService';
 
 // Resolved on first use, not at import: the broker module loads
 // githubAppService (jsonwebtoken), and routes/grants.ts must stay loadable
@@ -117,11 +119,45 @@ export interface ResolvedBroker {
 }
 
 /**
- * The broker a grant on this connection type names, read from the seeded
- * catalogue row. `brokerId` is never a client input (ADR-001: it names the
- * proxy that holds the material, and since #1662 that proxy is Commonly's own).
+ * The broker a grant on this connection names, read from the source that owns
+ * the tool list for its type. `brokerId` is never a client input (ADR-001: it
+ * names the proxy that holds the material, and since #1662 that proxy is
+ * Commonly's own).
+ *
+ * A `github-app` connection reads the seeded catalogue row, because the
+ * allow-list the page offered and the list the broker enforces must be one
+ * list. A `hosted-mcp` connection reads its catalogue ENTRY instead: the entry
+ * is the only source for what a grant on that row may name (scope §3), and
+ * because there is one entry per vendor rather than one Installable per type,
+ * keying this lookup on the connection TYPE would let a grant on one vendor's
+ * row name another vendor's tool (scope §7). `entries` is a parameter so that
+ * lookup is testable against a fixture catalogue while `HOSTED_MCP_ENTRIES` is
+ * still empty.
  */
-export const resolveBrokerFor = async (connectionType: string): Promise<ResolvedBroker> => {
+export const resolveBrokerFor = async (
+  connection: { type?: unknown; config?: { entryId?: unknown } | null },
+  entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
+): Promise<ResolvedBroker> => {
+  const connectionType = String(connection?.type || '').trim();
+  if (connectionType === 'hosted-mcp') {
+    const entryId = String(connection?.config?.entryId || '').trim();
+    const entry = findHostedMcpEntry(entries, entryId);
+    if (!entry) {
+      throw new RoomGrantError(
+        'broker_unavailable',
+        `no hosted-mcp catalogue entry named ${entryId || '(none)'}`,
+        503,
+      );
+    }
+    return {
+      installableId: entry.id,
+      // One proxy serves every grant, whichever type and entry it came from:
+      // `grantBrokerProjectionService` selects a seat's grants by this one id,
+      // so a per-entry value here would make the grant invisible to the seat.
+      brokerId: GRANT_BROKER_ID,
+      enabledTools: entry.tools.map((tool) => hostedMcpToolName(entry, tool)),
+    };
+  }
   const installableId = Object.keys(TOOL_INSTALLABLES)
     .find((id) => TOOL_INSTALLABLES[id].connectionType === connectionType);
   const row = installableId
