@@ -20,6 +20,7 @@ import rateLimit from 'express-rate-limit';
 const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { upstreamFetch } from '../services/upstreamFetch';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -121,17 +122,35 @@ const router: ReturnType<typeof express.Router> = express.Router();
 //
 // The two BOUNDS are deliberately different, because the two callers are, and
 // the guard above cannot check that — it reads names, so any number satisfies it.
+// So are the two REFUSALS: this route file's contract is that every callback
+// outcome is a redirect to the page, a contract a shared JSON handler breaks on
+// exactly the one path where the caller is a person mid-navigation.
 const PUBLIC_GET_WINDOW_MS = 60_000;
-const publicGetRateLimit = (max: number, label: string) => rateLimit({
+const publicGetRateLimit = (
+  max: number,
+  label: string,
+  refuse: (res: Response, detail: { max: number, label: string }) => void,
+) => rateLimit({
   windowMs: PUBLIC_GET_WINDOW_MS,
   max,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: cloudflareIpRateLimitKeyGenerator,
-  handler: (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
-    res.status(429).json({ msg: `rate limit exceeded: ${max} requests per 60s (${label})` });
-  },
+  handler: (_req: unknown, res: Response) => refuse(res, { max, label }),
 });
+
+// `client-metadata`'s caller is a server, so its refusal is machine-readable.
+const jsonRefusal = (res: Response, detail: { max: number; label: string }) => {
+  res.status(429).json({ msg: `rate limit exceeded: ${detail.max} requests per 60s (${detail.label})` });
+};
+
+// `callback`'s caller is a browser mid-navigation, and a throttled person is the
+// one least able to work out why the address bar says JSON. The refusal is the
+// same redirect the rest of the route uses, carrying a code the page can speak
+// to rather than a body only a developer would read.
+const browserRefusal = (res: Response) => {
+  callbackRedirect(res, 'error', 'rate_limited');
+};
 
 // Fetched by the AUTHORIZATION SERVER, not by a person, and it is one client id
 // per instance per entry (§4) — so a vendor's handful of egress addresses fetch
@@ -140,12 +159,12 @@ const publicGetRateLimit = (max: number, label: string) => rateLimit({
 // as a refused authorization for everyone at once, with nothing in our own logs
 // pointing at a limiter. Loose on purpose: the document is static, identical for
 // every member, and holds no secret.
-const clientMetadataRateLimit = publicGetRateLimit(600, 'client-metadata');
+const clientMetadataRateLimit = publicGetRateLimit(600, 'client-metadata', jsonRefusal);
 
 // A browser, once per connect. 60 a minute is far above a human retry pattern
 // and still bounds the route that validates `state` and the browser nonce and
 // then performs a token exchange.
-const callbackRateLimit = publicGetRateLimit(60, 'callback');
+const callbackRateLimit = publicGetRateLimit(60, 'callback', browserRefusal);
 
 router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, res: Response) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
@@ -334,7 +353,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
 
   let tokens: TokenResponse;
   try {
-    const response = await fetch(tokenEndpoint, {
+    const response = await upstreamFetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

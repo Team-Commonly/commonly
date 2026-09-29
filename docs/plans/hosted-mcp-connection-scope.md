@@ -32,7 +32,7 @@ Vendors do offer an app identity on these same servers. Linear's bearer path let
     providerSubject,                // the provider's stable id for the account, when the AS gives one (§4)
     grantedScope: 'read openid',    // the token response's `scope`, what the person consented to
     expiresAt, credentialRef, refreshTokenRef, refreshGeneration, credentialHint, // §10.1, unchanged
-    pendingAuth } }                 // state nonce, PKCE verifier, expiry; present only mid-connect (§4)
+    pendingAuth } }                 // state, browser nonce, PKCE verifier, expiry; present only mid-connect (§4)
 ```
 
 The row has no `podId`, no `owner`/`repo` and no `providerRole`. A hosted entry is not repo-shaped: the account's reach is what the provider enforces, and the entry's tools decide which parts of it an agent can touch. `grantedScope` is what a later write tool will check to tell a row that needs re-consent from one that does not (§5).
@@ -97,6 +97,8 @@ Its protected-resource metadata names `https://mcp.linear.app/mcp` as the resour
 
 With CIMD, our `client_id` is an HTTPS URL on the instance's own API host. That document names the client, its one redirect URI and `token_endpoint_auth_method: none`, and its own `client_id` is its URL. There is **one document per instance per entry**. Each AS therefore sees its own client id with exactly one redirect URI, and the callback path identifies the entry. That is the redirect-per-AS defence against mix-up.
 
+The document has a rate limiter, as every route does (`backend/__tests__/unit/routes/routeRateLimitGuard.test.js`), and a deliberately loose one. The AS fetches it for every member of the instance from a few addresses of its own. A bound sized for one browser would refuse the vendor, and every connect on the instance would fail at once (Vera 75265).
+
 Nothing is registered and no client secret is stored anywhere. A self-hosted instance connects with no setup at the vendor, which a pre-registered client cannot offer, since every instance would register its own app with every vendor. It is a public client: PKCE `S256` on every flow.
 
 **Whether Linear's AS accepts our CIMD end to end is a build measurement.** The research behind this note made unauthenticated GETs of discovery documents only. If it refuses, the fallback is DCR (advertised at `/register`), with one registration per instance per entry and never one per person; its storage is specified then.
@@ -105,9 +107,11 @@ Nothing is registered and no client secret is stored anywhere. A self-hosted ins
 
 **GitHub is the case CIMD cannot serve.** `github.com/login/oauth` advertises neither DCR nor CIMD, so a GitHub entry uses a pre-registered client: the GitHub App's own, through the user authorization of §10.2 path 1. GitHub's server accepts "GitHub Apps that sign in (are authorized by) a user" (the same `docs/policies-and-governance.md` as §1). That is how per-person GitHub is the same §10 layer (74820).
 
-**The flow** is the §10.2 route family, one per entry. `GET /api/integrations/connect/hosted-mcp/:entryId/start` takes `auth` and is rate-limited like the Slack connect flow. It upserts the caller's row for the entry at `status: 'pending'` if none exists, writes `config.pendingAuth` (a single-use state nonce bound to the caller and the entry, the PKCE verifier and a short expiry) and redirects to the vendor. A row that is already connected keeps working while this happens, the way Slack's `pendingBind` works.
+**The flow** is the §10.2 route family, one per entry, in the shape of Slack's connect flow (`routes/installables.ts:174`). `POST /api/integrations/connect/hosted-mcp/:entryId/start` takes `auth` and is rate-limited like Slack's. It upserts the caller's row for the entry at `status: 'pending'` if none exists, and writes `config.pendingAuth`: a single-use state bound to the caller and the entry, a second nonce for the browser, the PKCE verifier and a short expiry. It answers with the `authorizeUrl` and sets the browser nonce as an `httpOnly`, `sameSite: 'lax'`, `secure` cookie whose path is the callback's. The page then sends the browser to the vendor. A row that is already connected keeps working while this happens, the way Slack's `pendingBind` works.
 
-`GET …/:entryId/callback` is a browser redirect with no bearer token, so the state is its only binding. It refuses a state it did not issue, a used state and an expired state. It refuses an `iss` that is not the entry's `issuer`, per RFC 9207, since Linear advertises it. It exchanges the code at the entry's token endpoint with `code_verifier` and `resource`, then writes the pair through the §10.3 fence and clears `pendingAuth`. A pending row is never grantable, because the mint requires `connected`. Once its expiry passes it holds nothing secret, and the next start overwrites it.
+The page's call to start passes `withCredentials: true`, as Slack's does (`frontend/src/v2/components/V2ConnectorsPage.tsx:588`). The API is on another origin from the app, so without it the browser drops the cookie and every callback refuses. A backend test sets the cookie itself and cannot see this. The page's test asserts the flag, as the Slack arms do (`frontend/src/v2/__tests__/V2ConnectorsPage.test.tsx`), and step 7's walk on the deployed build shows that a real browser keeps the cookie.
+
+`GET …/:entryId/callback` is a browser redirect with no bearer token, so it checks two secrets, as Slack's does (`routes/installables.ts:283–301`). The state names the flow, and the cookie proves that the browser finishing it is the one that started it. The state alone binds nothing. It travels in a URL that the starter holds and can hand to someone else, and if that person approved, their tokens would land on the starter's row (Vera 75250). A callback with no cookie refuses `invalid_state` before it looks up the row. A cookie that does not match the row's nonce, compared in constant time, refuses `browser_mismatch` without consuming `pendingAuth`, so a wrong browser cannot burn a real flow. The callback is rate-limited by address, as Slack's is (`:383`). Unlike Slack's, a throttled callback still redirects to the page, with `rate_limited`. Its caller is a browser mid-navigation, and every outcome of the callback lands where Connect can be offered again, not on raw JSON (Vera 75269). It refuses a state it did not issue, a used state and an expired state. It refuses an `iss` that is not the entry's `issuer`, per RFC 9207, since Linear advertises it. It exchanges the code at the entry's token endpoint with `code_verifier` and `resource`, then writes the pair through the §10.3 fence and clears `pendingAuth`. A pending row is never grantable, because the mint requires `connected`. Once its expiry passes it holds nothing secret, and the next start overwrites it.
 
 **`credentialFor(connection)`** (§10.3, not on `main` yet) is the only place the access token is decrypted. It refreshes behind the fence, and `call` sends the token as a bearer to the vendor's Streamable HTTP endpoint and nowhere else. Every refresh is treated as rotating, whatever the vendor does, which is the case the fence exists for. The spec says clients "MUST NOT assume refresh tokens will be issued"; an AS that issues none gives a row whose `expiresAt` is the access token's, and when that passes the row goes to `error` with "reconnect". Linear's MCP token lifetimes are not in its metadata and are measured at build. No agent environment, tool result or trail row ever holds the token.
 
@@ -176,7 +180,10 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - It refuses `write` (§5).
 - `resolveBrokerFor` (`:352`) takes the row, not its type. For this type it returns that entry's tools, so `invalid_tools` (`:353–360`) refuses a tool from another entry.
 - The granter check (`connectionOwnerId`, `:265–267`) is unchanged, because `createdBy` is the person.
-- TASK-147 comes first. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
+- TASK-147 lands with removal, in step 6 (§10), and the first catalogue entry does not ship without it. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
+  - The legacy Discord delete (`routes/discord.ts:241`) looks its row up by `installationId` and `type: 'discord'`, so the same witness covers it.
+  - Pod deletion's case also needs the row to stay without a `podId`. `PATCH /api/integrations/:id` can set one on a user-scoped row, and it refuses a hosted row only because that row holds no `config.linkedUserId` (`routes/integrations.ts:672`). A witness pins that refusal.
+  - The mint may admit the type before any of this lands. No hosted row can exist while `HOSTED_MCP_ENTRIES` is empty, so no hosted grant can either.
 
 **The broker** (`resolveConnection`, `toolBrokerService.ts:455`):
 
@@ -238,6 +245,8 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a pinned tool whose schema changed upstream is refused tool_drift`
 3. **Intake.** The CIMD document, start and callback.
    - `the callback refuses a state it did not issue, a used state and an expired state`
+   - `the callback refuses a valid state from a browser that did not start the flow, and the flow stays pending`, with no cookie, with another flow's cookie, and on a row that stores no nonce
+   - `a throttled callback lands on the page with rate_limited`, as every other outcome does
    - `the callback refuses an iss that is not the entry's issuer`
    - `every authorization and token request carries the entry's resource`
    - `a reconnect as a different provider account revokes every grant on the row`
@@ -247,14 +256,16 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a hosted grant cannot name another entry's tool`
    - `a hosted row is found by _id only`
    - the §6 arms
-   - TASK-147's witness per removal path, and TASK-175's refusal at the broker call, both before the mint admits the type
+   - TASK-175's refusal at the broker call, before the mint admits the type
 5. **The trail column.**
    - `every tool call records whose credential ran`
    - `the trail names the credential owner after the Connection is removed`
 6. **Removal.**
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
+   - TASK-147's witness per removal path (§7), before the first entry ships
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
+   - `the page's call to start is credentialed`, before the walk (§4)
 
 ## 11. What this corrects, and what stays open
 
