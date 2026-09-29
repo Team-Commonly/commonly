@@ -3422,4 +3422,186 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(layout).toContain('<V2MobileTabs');
     expect(read('../components/V2PodsSidebar.tsx')).toContain("' v2-pods-aside--page'");
   });
+
+});
+
+// TASK-167 row A (TASK-192). The hero moved onto Signal: cobalt as a BLOCK on
+// the front door, one 1312 measure shared by the page and the product, and a
+// bar that is part of the band until the band ends. Most assertions below are
+// pairings, because the failure mode for these is two rules drifting apart
+// rather than a rule going missing.
+describe('TASK-167 row A — the landing hero onto Signal', () => {
+  const landing = read('../landing/v2-landing.css');
+  const landingTsx = read('../landing/V2LandingPage.tsx');
+  const landingEn = read('../../i18n/locales/en.json');
+
+  const mediaAt = (css: string, atRule: string): string => {
+    const at = css.indexOf(atRule);
+    if (at < 0) return '';
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    return css.slice(at, end + 1);
+  };
+
+  test('one measure: 1312 on the page and on the product frame inside it', () => {
+    // The frame padding is the page's measure, so it is asserted as a PAIR of
+    // declarations: the left/right pair drifting apart is how a centred column
+    // silently becomes an off-centre one.
+    const frameStart = landing.indexOf('.v2-landing__bar,');
+    const frameBody = landing.slice(
+      landing.indexOf('{', frameStart),
+      landing.indexOf('}', landing.indexOf('{', frameStart)),
+    );
+    expect(frameBody).toContain('padding-left: max(24px, calc((100% - 1312px) / 2))');
+    expect(frameBody).toContain('padding-right: max(24px, calc((100% - 1312px) / 2))');
+    // ...and no section keeps the old 1120 cap, or the page has two measures
+    // and which one wins depends on the section.
+    expect(landing).not.toContain('1120');
+  });
+
+  test('the band is a block of cobalt with the demo half on it', () => {
+    const hero = selectorRuleBody(landing, '.v2-landing__hero {');
+    expect(hero).toContain('background: #1d3fd1');
+    expect(hero).toContain('padding-top: 72px');
+    expect(hero).toContain('padding-bottom: 376px');
+    // The overlap is a pair: 376 of band padding against a 360 pull-up leaves
+    // the 16px the caption sits in. 196/180 is the same relationship at ≤760,
+    // and either half moving alone moves the caption.
+    expect(selectorRuleBody(landing, '.v2-landing__hero-art {')).toContain('margin-top: -360px');
+    const phone = mediaAt(landing, '@media (max-width: 760px) {');
+    expect(phone).toContain('.v2-landing__hero { padding-bottom: 196px; }');
+    expect(phone).toContain('.v2-landing__hero-art { margin-top: -180px; }');
+  });
+
+  test('the frame is the band\'s sibling, so the pull-up measures from the band', () => {
+    // ux-lead's gate at 532f38bb: as a child of the band, -360 was measured from
+    // the last control and laid the demo over the title, both CTAs and the
+    // install box — every control's hit test returned a demo node at 1440/1200.
+    const sectionEnd = landingTsx.indexOf('</section>', landingTsx.indexOf('v2-landing__hero"'));
+    expect(sectionEnd).toBeGreaterThan(-1);
+    expect(landingTsx.indexOf('v2-landing__hero-art')).toBeGreaterThan(sectionEnd);
+    // The caption stays in the band, as its last child, above the frame; the
+    // frame carries the label and points at it by id, since a figure can no
+    // longer hold both.
+    const cap = landingTsx.indexOf('v2-landing__demo-cap');
+    expect(cap).toBeGreaterThan(landingTsx.indexOf('v2-landing__hero-inner'));
+    expect(cap).toBeLessThan(sectionEnd);
+    expect(landingTsx).toContain('aria-describedby="v2-landing-demo-caption"');
+    // A frame outside the band carries the page measure itself.
+    expect(landing).toContain('.v2-landing__hero-art,\n.v2-landing__trusted,');
+    // The 94 below the frame is left where it is: the board draws that gap as
+    // the frame container's own height (456 − 360) on white, and dropping the
+    // strip's grey is row B's edit to this same rule, so the two move together
+    // there rather than being split across rows.
+    const phone = mediaAt(landing, '@media (max-width: 760px) {');
+    expect(phone).toContain('.v2-landing__hero-art { margin-top: -180px; }');
+    expect(selectorRuleBody(landing, '.v2-landing__trusted {')).toContain('padding-top: 94px');
+  });
+
+  test('the copy column is uncapped, and the title carries the 1000', () => {
+    // 288 + 24 + 784 = 1096 wrapped the install box at 1440 and 1200 while the
+    // inner was capped at 1000 (ux-lead's #2018 finding 3).
+    expect(selectorRuleBody(landing, '.v2-landing__hero-inner {')).not.toContain('max-width');
+    expect(selectorRuleBody(landing, '.v2-landing__title {')).toContain('max-width: 1000px');
+    expect(selectorRuleBody(landing, '.v2-landing__lede {')).toContain('max-width: 780px');
+  });
+
+  test('the hero CTA is white on cobalt; the bar\'s stays primary on white', () => {
+    // --primary measured cobalt on cobalt: only the label showed (finding 2).
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}');
+    expect(landing).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 26px; font-weight: 700; }');
+    const small = mediaAt(landing, '@media (max-width: 680px) {');
+    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 20px; font-size: 16px; }');
+    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }');
+    // The bar CTA sits on the page's white ground and keeps the fill.
+    expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}');
+  });
+
+  test('the bar switch is measured from the bar rather than hard-coded', () => {
+    // 8px early at ≤680, where the bar is 64 (finding 8).
+    expect(landingTsx).toContain('rootMargin: `-${barHeight || 72}px 0px 0px 0px`');
+    expect(landingTsx).toContain("window.addEventListener('resize', measure)");
+  });
+
+  test('the scroller is the containing block for the demo\'s sr-only node', () => {
+    // Without it `.v2-demo__sr` resolved against the document and a
+    // wheel-overscroll at the footer scrolled the window 401px (finding 9).
+    expect(selectorRuleBody(landing, '.v2-root.v2-landing {')).toContain('position: relative');
+  });
+
+  test('the bar is cobalt on the band and white past it, wordmark only', () => {
+    const band = selectorRuleBody(landing, '.v2-landing__bar--band {');
+    expect(band).toContain('background: #1d3fd1');
+    expect(band).toContain('backdrop-filter: none');
+    expect(band).toContain('border-bottom-color: rgba(255, 255, 255, 0.22)');
+    // The state starts ON in the component, so first paint is the band state
+    // and there is no white flash before the observer runs.
+    expect(landingTsx).toContain('const [onBand, setOnBand] = useState(true)');
+    expect(landingTsx).toContain("v2-landing__bar--band' : ''");
+    // The test stub's `observe()` never calls back, so every render test stays
+    // on the band: the switch is a browser check. (The stub's existence is why
+    // the reason is that and not "jsdom has no IntersectionObserver".)
+    expect(landingTsx).toContain("typeof IntersectionObserver === 'undefined'");
+    // Wordmark only in the bar; the mark is a footer element now.
+    const bar = landingTsx.slice(landingTsx.indexOf('v2-landing__bar'), landingTsx.indexOf('</header>'));
+    expect(bar).not.toContain('<Mark');
+    // The lang trigger is a v2.css <button>; the override has to carry the
+    // .v2-root prefix plus the band class to outrank the rail pin.
+    expect(landing).toContain('.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }');
+  });
+
+  test('the rotator is white on the band — the accent is cobalt and would vanish', () => {
+    const rotator = selectorRuleBody(landing, '.v2-landing__rotator {');
+    expect(rotator).toContain('color: #ffffff');
+    expect(rotator).not.toContain('var(--v2-accent)');
+  });
+
+  test('the demo caption is on the band, above the frame, and the old lift is gone', () => {
+    const cap = selectorRuleBody(landing, '.v2-landing__demo-cap {');
+    expect(cap).toContain('color: #ffffff');
+    expect(cap).toContain('margin: 44px 0 0');
+    expect(cap).not.toContain('var(--v2-font-mono)');
+    expect(mediaAt(landing, '@media (max-width: 760px) {')).toContain('.v2-landing__demo-cap { margin: 28px 0 0; }');
+    // The caption precedes the demo in source, and lives in the band rather than
+    // in the figure (the sibling-fix test above asserts where).
+    expect(landingTsx.indexOf('v2-landing__demo-cap')).toBeLessThan(landingTsx.indexOf('<DemoWorkspace />'));
+    // The hover lift is out: the frame sits on cobalt, so lifting it lifts the
+    // product off the band rather than the card off the page.
+    expect(landing).not.toContain('translateY(-2px)');
+    expect(landing).not.toContain('.v2-landing__shot:hover .v2-landing__shot-frame');
+  });
+
+  test('the built-by line is gone from the hero and its string is out of both locales', () => {
+    expect(landingTsx).not.toContain('hero.builtBy');
+    expect(landingTsx).not.toContain('v2-landing__hero-by');
+    expect(landing).not.toContain('v2-landing__hero-by');
+    // Both locales, or the key survives in the one nothing reads.
+    expect(landingEn).not.toContain('"builtBy"');
+    expect(read('../../i18n/locales/zh-CN.json')).not.toContain('"builtBy"');
+    // X_HANDLE still has a reader — it moved to the footer's own link.
+    expect(landingTsx).toContain('href={X_HANDLE}');
+  });
+
+  test('zh-CN: every negative-tracked landing selector is reset — the twin of the shell test', () => {
+    // The same rule as the v2.css test above, one sheet over: CJK glyphs have
+    // no side bearings, so the latin optical tightening crushes them. Reading
+    // the landing sheet is what makes rows B–E inherit it — a new negative
+    // tracking without its :lang(zh) twin fails here instead of in a browser.
+    const negative = [...landing.matchAll(/\n((?:[^\n{}]+,\n)*[^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative.length).toBeGreaterThan(0);
+    const resetStart = landing.indexOf(':lang(zh) .v2-landing__brand-name');
+    expect(resetStart).toBeGreaterThan(-1);
+    const resetBlock = landing.slice(resetStart, landing.indexOf('}', resetStart));
+    expect(resetBlock).toContain('letter-spacing: 0');
+    for (const sel of negative) {
+      expect(resetBlock).toContain(`:lang(zh) ${sel}`);
+    }
+  });
 });

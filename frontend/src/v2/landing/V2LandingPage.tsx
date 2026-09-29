@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -36,7 +36,6 @@ import byoImg from '../../assets/landing/byo.png';
 const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
-const X_LABEL = '@sam_commonly';
 // Kept identical to the README's Quick Start block (README.md, "Quick Start —
 // local installation"). The clone needs the scheme and a directory to enter
 // before install.sh runs; the earlier one-liner skipped both, so anyone who
@@ -193,6 +192,21 @@ const V2LandingPage: React.FC = () => {
   const [motion, setMotion] = useState(false);
   const [installCopied, setInstallCopied] = useState(false);
   const installCmdRef = useRef<HTMLElement | null>(null);
+  // The bar carries the band's colour while the band is under it. Default ON:
+  // the page opens on the band, so this is the correct first paint and the
+  // observer only ever turns it off. In tests the stubbed observer's
+  // `observe()` never calls back, so they stay in this state — the
+  // past-the-band look is a browser check.
+  const [onBand, setOnBand] = useState(true);
+  const bandRef = useRef<HTMLElement | null>(null);
+  // The bar is 72 tall at 1440 and 64 at ≤680, so a hard-coded 72 inset turned
+  // the bar white 8px early on a phone (ux-lead's #2018 finding 8). Measure it
+  // instead, and re-measure when a resize crosses the breakpoint. This is a
+  // LAYOUT effect on purpose: the observer below is built in the same commit at
+  // the 72 fallback and only re-arms on the next render, so useEffect would
+  // leave a phone one frame at the wrong inset.
+  const barRef = useRef<HTMLElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
 
   // TASK-154. The command is wider than the box at 390 (721px line in a 340px
   // box), so most of it is off-screen and the visitor cannot read what they are
@@ -278,6 +292,35 @@ const V2LandingPage: React.FC = () => {
     return () => io.disconnect();
   }, [motion, stats]);
 
+  // Bar colour follows the band: the root's top edge is inset by the bar's own
+  // height, so "intersecting" means the band's bottom is still below the bar
+  // and flips exactly when it passes under. threshold 0 — the change is a state
+  // change, not a reveal, so it should happen at the crossing rather than after
+  // a fraction of a 920px band.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const h = barRef.current?.offsetHeight;
+      if (h) setBarHeight(h);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const band = bandRef.current;
+    if (!band) return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setOnBand(entry.isIntersecting),
+      // 72 is the desktop height and the fallback for a bar that has not laid
+      // out yet; a measured height wins wherever it exists.
+      { rootMargin: `-${barHeight || 72}px 0px 0px 0px`, threshold: 0 },
+    );
+    io.observe(band);
+    return () => io.disconnect();
+  }, [barHeight]);
+
   const hasStats = Boolean(stats && (
     stats.activePods
     || stats.messageCount24h
@@ -287,9 +330,8 @@ const V2LandingPage: React.FC = () => {
   return (
     <div className={`v2-root v2-landing${motion ? ' v2-landing--motion' : ''}`}>
       {/* ---- Top nav ---- */}
-      <header className="v2-landing__bar">
+      <header ref={barRef} className={`v2-landing__bar${onBand ? ' v2-landing__bar--band' : ''}`}>
         <div className="v2-landing__brand">
-          <span className="v2-landing__mark"><Mark size={26} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <nav className="v2-landing__nav" aria-label={t('landing.nav.primary')}>
@@ -311,7 +353,7 @@ const V2LandingPage: React.FC = () => {
 
       <main>
         {/* ---- Hero ---- */}
-        <section className="v2-landing__hero">
+        <section className="v2-landing__hero" ref={bandRef}>
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
             {/* The rotating term must sit INSIDE the sentence frame so
@@ -328,59 +370,77 @@ const V2LandingPage: React.FC = () => {
             </h1>
             <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
 
-            <div className="v2-landing__cta-row">
-              <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-            </div>
-
-            <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
-              {/* The scroll region is this wrapper, not the box, so the Copy
-                  control beside it is visible at every width and scroll
-                  position (TASK-154). */}
-              <div className="v2-landing__install-scroll">
-                <span className="v2-landing__install-prompt">$</span>
-                <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+            <div className="v2-landing__hero-actions">
+              <div className="v2-landing__cta-row">
+                {/* White on cobalt (ux-lead's #2018 finding 2): --primary's
+                    fill is the band's own colour, so the button had no shape. */}
+                <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
+                {/* Self-host is the second door onto the product, so it sits
+                    beside the first rather than below it: identical height and
+                    radius, outline instead of fill, and it goes to the source
+                    in a new tab like the pricing tier's own Self-host. */}
+                <a
+                  className="v2-landing__btn v2-landing__btn--onaccent-ghost"
+                  href={REPO}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t('landing.actions.selfHost')}
+                </a>
               </div>
-              <button
-                type="button"
-                className="v2-landing__install-copy"
-                onClick={copyInstallCommand}
-                aria-label={t('landing.hero.copyInstallAria')}
-              >
-                {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
-              </button>
-              <span className="v2-landing__install-status" role="status" aria-live="polite">
-                {installCopied ? t('landing.hero.copied') : ''}
-              </span>
-            </div>
 
-            <div className="v2-landing__hero-by">
-              {t('landing.hero.builtBy')}{' '}
-              <a href={X_HANDLE} target="_blank" rel="noreferrer">{X_LABEL}</a>
+              <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
+                {/* The scroll region is this wrapper, not the box, so the Copy
+                    control beside it is visible at every width and scroll
+                    position (TASK-154). */}
+                <div className="v2-landing__install-scroll">
+                  <span className="v2-landing__install-prompt">$</span>
+                  <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+                </div>
+                <button
+                  type="button"
+                  className="v2-landing__install-copy"
+                  onClick={copyInstallCommand}
+                  aria-label={t('landing.hero.copyInstallAria')}
+                >
+                  {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
+                </button>
+                <span className="v2-landing__install-status" role="status" aria-live="polite">
+                  {installCopied ? t('landing.hero.copied') : ''}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="v2-landing__hero-art">
-            {/* The product, not a video (Sam approved 2026-09-23). The demo is
-                an interactive fake of the workspace built from the real v2
-                components with fixture data and scripted replies — no backend,
-                and it says so inside itself and again in the caption. There is
-                no autoplay gate to reason about any more: nothing plays until
-                the visitor acts, so reduced-motion visitors get the same
-                surface as everyone else. */}
-            <figure className="v2-landing__shot">
-              <div
-                className="v2-landing__shot-frame v2-landing__demo-frame"
-                role="group"
-                aria-label={t('landing.hero.demoAria')}
-              >
-                <DemoWorkspace />
-              </div>
-              <figcaption className="v2-landing__shot-cap">
-                {t('landing.hero.demoCaption')}
-              </figcaption>
-            </figure>
-          </div>
+          {/* The caption is the band's LAST child and the frame is the band's
+              SIBLING (ux-lead's #2018 finding 1): the -360 pull-up has to be
+              measured from the band's bottom edge, and a figure/figcaption pair
+              cannot straddle that edge. The frame keeps the label and points at
+              this caption by id instead. */}
+          <p className="v2-landing__demo-cap" id="v2-landing-demo-caption">
+            {t('landing.hero.demoCaption')}
+          </p>
         </section>
+
+        <div className="v2-landing__hero-art">
+          {/* The product, not a video (Sam approved 2026-09-23). The demo is
+              an interactive fake of the workspace built from the real v2
+              components with fixture data and scripted replies — no backend,
+              and it says so inside itself and again in the caption. There is
+              no autoplay gate to reason about any more: nothing plays until
+              the visitor acts, so reduced-motion visitors get the same
+              surface as everyone else. */}
+          <figure className="v2-landing__shot">
+            <div
+              className="v2-landing__shot-frame v2-landing__demo-frame"
+              role="group"
+              aria-label={t('landing.hero.demoAria')}
+              aria-describedby="v2-landing-demo-caption"
+            >
+              <DemoWorkspace />
+            </div>
+          </figure>
+        </div>
 
         {/* Individual affiliations, not organizational endorsements. The
             provenance for every entry — and the source/license of every logo
@@ -775,7 +835,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__footer-title">{t('landing.footer.community')}</div>
             <a className="v2-landing__footer-link" href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer">{t('landing.footer.discord')}</a>
             <a className="v2-landing__footer-link" href={`${REPO}/discussions`} target="_blank" rel="noreferrer">{t('landing.footer.discussions')}</a>
-            <a className="v2-landing__footer-link" href="https://x.com/sam_commonly" target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
+            <a className="v2-landing__footer-link" href={X_HANDLE} target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
           </div>
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>

@@ -2,7 +2,9 @@
  * surface: the deep-navy proof/CTA bands and the one allowed soft shadow (on
  * floating screenshot cards) are the only departures from in-app chrome rules.
  * Sentence case, no emoji in chrome, calm motion. Full-bleed bands; content
- * centered at 1120px via a max() padding trick.
+ * centered at 1312px via a max() padding trick (row A, TASK-192: the product
+ * frame and the demo inside it are the same 1312 wide, so the page and the
+ * product share one measure).
  */
 
 /* The landing is its own scroll container. .v2-root (the app shell) is
@@ -13,6 +15,12 @@
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The scroller is the containing block for the absolutely-positioned
+     `.v2-demo__sr` inside the hero demo (TASK-167 row A, ux-lead's #2018 finding
+     9: without it that node resolves against the document and extends it — a
+     wheel-overscroll at the footer scrolled the WINDOW 401px on live, pushing the
+     bar off and showing blank grey). Nothing moves: measured at 1440 and 390. */
+  position: relative;
   background: var(--v2-bg, #ffffff);
   color: var(--v2-text-primary);
   font-family: var(--v2-font);
@@ -22,14 +30,18 @@
 
 .v2-landing__bar,
 .v2-landing__hero,
+/* The product frame is OUTSIDE the band (row A, ux-lead's #2018 finding 1), and
+   it carries the page measure like every band does, so the demo does not drift
+   to the viewport edge once it stops being a child of the hero. */
+.v2-landing__hero-art,
 .v2-landing__trusted,
 .v2-landing__section,
 .v2-landing__wedge,
 .v2-landing__proof,
 .v2-landing__cta,
 .v2-landing__footer {
-  padding-left: max(24px, calc((100% - 1120px) / 2));
-  padding-right: max(24px, calc((100% - 1120px) / 2));
+  padding-left: max(24px, calc((100% - 1312px) / 2));
+  padding-right: max(24px, calc((100% - 1312px) / 2));
 }
 
 /* Suffix after the rotating term (zh: 「与你的___对话」). Same visual
@@ -46,28 +58,66 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  height: 72px;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--v2-border-soft);
 }
+/* One element, two states. While the cobalt band is under the bar the bar is
+   cobalt too — #1d3fd1, a white hairline, no blur — so the band reads as one
+   block from the top of the page; past the band's bottom edge it is the white
+   bar above. The class is set once by an IntersectionObserver on the band (see
+   V2LandingPage), and the class starts ON so first paint is the band state and
+   there is no white flash before the observer runs. */
+.v2-landing__bar--band {
+  background: #1d3fd1;
+  backdrop-filter: none;
+  border-bottom-color: rgba(255, 255, 255, 0.22);
+}
 .v2-landing__brand { display: flex; align-items: center; gap: 8px; }
+/* The footer keeps the glyph beside the wordmark; the bar does not (row A). */
 .v2-landing__mark { display: inline-flex; color: var(--v2-accent); }
+/* Wordmark only — the band carries no glyph mark, and the board sets the name
+   in the display face at 24. */
 .v2-landing__brand-name {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__nav { display: flex; align-items: center; gap: 22px; }
+.v2-landing__nav { display: flex; align-items: center; gap: 28px; }
 .v2-landing__navlink {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--v2-text-secondary);
   text-decoration: none;
   transition: color 80ms ease;
 }
 .v2-landing__navlink:hover { color: var(--v2-text-primary); }
+.v2-landing__bar--band .v2-landing__brand-name { color: #ffffff; }
+.v2-landing__bar--band .v2-landing__navlink { color: rgba(255, 255, 255, 0.86); }
+.v2-landing__bar--band .v2-landing__navlink:hover { color: #ffffff; }
+/* The language trigger is a <button> owned by v2.css (.v2-lang-switch__trigger,
+   (0,1,0)) and already re-pinned at the rail by a (0,2,0) override in the
+   layout invariants. The band override has to outrank both, so it carries the
+   same .v2-root prefix plus the band class. The dropdown menu keeps v2.css. */
+.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }
+.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+/* Bar CTA: 40 tall in both states (the board's own height), white with cobalt
+   text while the band is under it. */
+.v2-landing__bar .v2-landing__btn--sm { height: 40px; padding: 0 16px; font-size: 15px; font-weight: 600; }
+.v2-root .v2-landing__bar--band .v2-landing__btn--primary {
+  color: #1d3fd1;
+  background: #ffffff;
+  border-color: #ffffff;
+}
+.v2-root .v2-landing__bar--band .v2-landing__btn--primary:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.9);
+}
 
 /* ---------- Buttons (anchors / links — not affected by the v2 <button> reset) ---------- */
 .v2-landing__btn {
@@ -107,7 +157,7 @@
 .v2-landing__btn--onaccent-ghost {
   color: #ffffff;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 .v2-landing__btn--onaccent-ghost:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
 
@@ -122,42 +172,81 @@
 .v2-root .v2-landing__btn--onaccent-ghost { color: #ffffff; }
 
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+/* The hero's two CTAs are one group and the install box follows them in the
+   same wrap row, so at 1440 and 1200 all three sit inline (~1,099 of 1,152 at
+   1200) and anywhere narrower the box takes its own row — the 390 board draws
+   both states. */
+.v2-landing__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px 24px;
+  margin-top: 10px;
+}
+.v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
+.v2-landing__hero-actions .v2-landing__btn { height: 56px; font-size: 17px; }
+/* White on cobalt, not cobalt on cobalt (ux-lead's #2018 finding 2: the primary
+   fill IS the band's colour, so the button had no shape). Self-host is the
+   outlined sibling of the same pair, so the two rules move together. */
+.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 26px; font-weight: 700; }
+.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 22px; }
 
 /* ---------- Hero ----------
 /* Copy above, the product below. The hero demo (TASK-147) is the real thing
    at 1312 itself, so it needs the full content column rather than the old
    two-column split with a screenshot beside the copy. */
+/* The band. Cobalt as a BLOCK on the front door (signal-identity rule 1) rather
+   than as an accent: the whole hero is the colour, and everything inside it is
+   white at one of four opacities. The band's own box ends 376 below the last
+   control and the demo pulls back up by 360 of that, so the frame sits half on
+   the band (board: band 920 tall, demo starting at 560) and the 16 left over is
+   the gap the caption occupies. */
 .v2-landing__hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 40px;
-  align-items: center;
+  /* No grid gap: the art column's -360 pull-up has to be measured from the
+     band's own bottom padding, and a row gap here would add to it silently. */
+  gap: 0;
+  align-items: start;
   padding-top: 72px;
-  padding-bottom: 72px;
+  padding-bottom: 376px;
+  background: #1d3fd1;
+  color: #ffffff;
+}
+/* No width cap here: the copy column and the actions row share this box, and a
+   1000px cap wrapped the install box onto its own line at 1440 and 1200
+   (ux-lead's #2018 finding 3 — 288 + 24 + 784 = 1096). The 1000 is on the title
+   and the 780 on the lede, which is what the board caps. */
+.v2-landing__hero-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .v2-landing__eyebrow {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--v2-accent);
-  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 0;
 }
 .v2-landing__title {
   margin: 0;
+  max-width: 1000px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: clamp(34px, 4.4vw, 50px);
-  line-height: 1.06;
+  font-size: clamp(44px, 7vw, 84px);
+  line-height: 1;
   font-weight: 850;
   letter-spacing: -0.03em;
-  color: var(--v2-text-primary);
+  color: #ffffff;
 }
 .v2-landing__lede {
-  margin: 20px 0 0;
-  max-width: 560px;
-  font-size: 18px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
+  margin: 0;
+  max-width: 780px;
+  font-size: 20px;
+  line-height: 32px;
+  color: rgba(255, 255, 255, 0.88);
 }
 .v2-landing__inline-code {
   font-family: var(--v2-font-mono);
@@ -194,15 +283,19 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 24px;
+  margin-top: 0;
   padding: 8px 16px;
   /* The line stays 46px tall: the copy pill is taller than the command text, so
      its height comes out of this padding, and min-height pins the box against a
      future pill/line-height change rather than letting the row grow. */
   min-height: 46px;
-  background: var(--v2-surface-tint);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
+  /* On the band the box is a transparent outline: the tint surface and the
+     accent prompt both vanish against cobalt, which is the disappearances the
+     board avoids by drawing the prompt and the command in text white. The
+     pinned 8px 16px padding and 46 min-height win over the board's 10 12. */
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
 }
 .v2-landing__install-scroll {
   display: flex;
@@ -212,11 +305,11 @@
   min-width: 0;
   overflow-x: auto;
 }
-.v2-landing__install-prompt { color: var(--v2-accent); font-family: var(--v2-font-mono); font-weight: 700; }
+.v2-landing__install-prompt { color: rgba(255, 255, 255, 0.72); font-family: var(--v2-font-mono); font-weight: 700; }
 .v2-landing__install-cmd {
   font-family: var(--v2-font-mono);
   font-size: 13px;
-  color: var(--v2-text-primary);
+  color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
 }
 /* The BYO add-computer pill (.v2-byo__copy), restated under this surface's own
@@ -233,21 +326,27 @@
   flex: none;
   padding: 4px 10px;
   border-radius: 6px;
-  background: var(--v2-surface, #fff);
-  border: 1px solid var(--v2-border);
-  color: var(--v2-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-family: var(--v2-font-mono);
   font-size: 12px;
   line-height: 18px;
   cursor: pointer;
 }
 .v2-root button.v2-landing__install-copy:hover {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+.v2-root button.v2-landing__install-copy:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 /* The Copied state is announced by a live region, not read from the button's own
    label swap, so it is out of flow and silent to sighted users. */
 .v2-landing__install-status {
+  color: #ffffff;
   position: absolute;
   width: 1px;
   height: 1px;
@@ -258,32 +357,33 @@
   white-space: nowrap;
   border: 0;
 }
-@media (max-width: 760px) {
-  /* A thumb-sized target (44px) without growing the visible pill: the extension
-     is transparent and stays inside the box's own padding. */
-  .v2-landing__install-copy { position: relative; }
-  .v2-landing__install-copy::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 44px;
-    transform: translateY(-50%);
-  }
+/* The demo is half on the band: this column is the band's NEXT SIBLING and
+   pulls up 360 of the band's 376 bottom padding (board line 45), so the frame's
+   top third is cobalt and the pull-up is measured from the band's bottom edge
+   rather than from the last control inside it (ux-lead's #2018 finding 1: as a
+   child of the band, -360 measured from the last control and laid the demo over
+   the title, both CTAs and the install box). Its 94 below the frame stays on the
+   strip's own top padding for now: on the board that gap is the frame
+   container's 456 minus the 360 pull-up, on the page's white, and dropping the
+   strip's grey is row B's own edit to this rule (measured: row B's first CSS
+   hunk inserts inside `.v2-landing__trusted`), so the gap and the grey move
+   together there rather than being split across two rows. */
+.v2-landing__hero-art {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: -360px;
 }
-.v2-landing__hero-by { margin-top: 20px; font-size: 13px; color: var(--v2-text-tertiary); }
-.v2-landing__hero-by a { color: var(--v2-accent); text-decoration: none; }
-.v2-landing__hero-by a:hover { text-decoration: underline; }
-
-.v2-landing__hero-art { display: flex; justify-content: center; min-width: 0; max-width: 100%; }
 
 /* Overflow guard: grid/flex children default to min-width:auto, so the hero's
    nowrap install line (and the wide screenshot) can force the column past the
    viewport — the root's overflow-x:hidden then CLIPS the hero text + caption on
    mobile. min-width:0 lets the column shrink so the install line scrolls inside
    its own overflow-x:auto instead of blowing out the page width. */
-.v2-landing__hero > * { min-width: 0; }
+.v2-landing__hero > *,
+.v2-landing__hero-art,
+.v2-landing__hero-art > * { min-width: 0; }
 .v2-landing__shot,
 .v2-landing__shot-frame { max-width: 100%; }
 
@@ -296,12 +396,19 @@
   overflow: hidden;
 }
 .v2-landing__shot-img { display: block; width: 100%; height: auto; }
-.v2-landing__shot-cap {
-  margin: 12px 4px 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--v2-text-tertiary);
-  text-align: center;
+/* `.v2-landing__shot-cap` lived here until row A's rework: the caption left the
+   figure for the band (finding 1), so nothing rendered it. */
+/* The demo's caption is the band's LAST child and sits ABOVE the frame — 44
+   below the last control (28 at ≤760), with no bottom margin. The 16 above the
+   frame is the band's leftover padding (376 − 360), not this box's own margin,
+   which is why the caption has to stay inside the band while the frame leaves
+   it. A sentence, so not mono. */
+.v2-landing__demo-cap {
+  margin: 44px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #ffffff;
+  text-align: left;
 }
 
 /* ---------- Affiliation proof strip ---------- */
@@ -311,7 +418,10 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding-top: 22px;
+  /* 94 below the demo frame (48 at ≤760) — the strip is the first thing after
+     the band, so its top padding is the band-to-strip distance the board
+     draws. Row B owns this rule and drops the grey here. */
+  padding-top: 94px;
   padding-bottom: 22px;
   background: var(--v2-bg-subtle);
   color: var(--v2-text-tertiary);
@@ -482,7 +592,7 @@
 /* ---------- Sections ---------- */
 .v2-landing__section { padding-top: 72px; padding-bottom: 72px; }
 .v2-landing__section--tint { background: var(--v2-bg-subtle); }
-.v2-landing__section-head { max-width: 1120px; margin: 0 auto 32px; }
+.v2-landing__section-head { max-width: 1312px; margin: 0 auto 32px; }
 .v2-landing__kicker {
   font-size: 12px;
   font-weight: 600;
@@ -665,7 +775,7 @@
 .v2-landing__proof-label { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
 
 /* ---------- Pricing ---------- */
-.v2-landing__price { max-width: 1120px; margin: 0 auto; }
+.v2-landing__price { max-width: 1312px; margin: 0 auto; }
 .v2-landing__price-card {
   max-width: 560px;
   margin: 0 auto;
@@ -707,7 +817,7 @@
 
 /* ---------- Pricing tiers ---------- */
 .v2-landing__tiers {
-  max-width: 1120px;
+  max-width: 1312px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -753,7 +863,7 @@
 .v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; }
 
 .v2-landing__tier-enterprise {
-  max-width: 1120px;
+  max-width: 1312px;
   margin: 20px auto 0;
   display: flex;
   align-items: center;
@@ -770,7 +880,7 @@
 .v2-landing__tier-enterprise strong { color: var(--v2-text-primary); }
 .v2-landing__tier-enterprise .v2-landing__btn { flex-shrink: 0; }
 .v2-landing__price-foot {
-  max-width: 1120px;
+  max-width: 1312px;
   margin: 24px auto 0;
   text-align: center;
   font-size: 13px;
@@ -839,11 +949,9 @@
 }
 
 @media (max-width: 900px) {
-  .v2-landing__hero { grid-template-columns: 1fr; gap: 28px; padding-top: 48px; padding-bottom: 48px; }
-  /* The demo stays BELOW the copy on a phone: it is the thing being explained,
-     and a 390 visitor who has not read the headline has no reason to poke at a
-     pod switcher. It used to be lifted above on mobile, when it was a video
-     that explained itself. */
+  /* The hero's own responsive values live in the 760 and 680 blocks: the band,
+     its bottom padding and the demo's negative margin change together, so
+     splitting them across a third breakpoint is how they drift apart. */
   .v2-landing__open-grid { grid-template-columns: 1fr; gap: 28px; }
   .v2-landing__tiles,
   .v2-landing__adapters,
@@ -854,7 +962,52 @@
   .v2-landing__proof-stats { gap: 28px; }
 }
 
+@media (max-width: 760px) {
+  /* The overlap shrinks with the band: 376/360 becomes 196/180, so the frame
+     still sits half on the cobalt at 390 rather than swallowing it. The
+     caption's own offsets shrink with it (44 → 28), which is the 16px the band
+     gave up, not a separate decision. */
+  .v2-landing__hero { padding-bottom: 196px; }
+  .v2-landing__hero-art { margin-top: -180px; }
+  .v2-landing__demo-cap { margin: 28px 0 0; }
+  .v2-landing__trusted { padding-top: 48px; }
+  /* A thumb-sized target (44px) without growing the visible pill: the extension
+     is transparent and stays inside the box's own padding. */
+  .v2-landing__install-copy { position: relative; }
+  .v2-landing__install-copy::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  /* The command wraps instead of scrolling: 86 characters at 390 is a value no
+     thumb reaches the end of, and the board draws it on two lines. The scroll
+     wrapper stays for the widths in between. */
+  .v2-landing__install { align-items: flex-start; }
+  .v2-landing__install-cmd {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
 @media (max-width: 680px) {
+  .v2-landing__bar { height: 64px; }
+  .v2-landing__brand-name { font-size: 22px; }
+  .v2-landing__hero { padding-top: 40px; }
+  .v2-landing__hero-inner { gap: 16px; }
+  .v2-landing__hero-actions { gap: 16px; margin-top: 8px; }
+  .v2-landing__hero-actions .v2-landing__btn { height: 48px; }
+  .v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 20px; font-size: 16px; }
+  /* Self-host takes the board's 16 as well (finding 4); it inherited 17 from
+     the row above, which the fill button does not. */
+  .v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }
+  .v2-landing__title { font-size: 44px; line-height: 46px; }
+  .v2-landing__lede { font-size: 16px; line-height: 26px; }
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
   .v2-landing__section { padding-top: 52px; padding-bottom: 52px; }
@@ -865,8 +1018,6 @@
   .v2-landing__feature-row:nth-child(even) { grid-template-columns: 1fr; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 1; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 2; }
-  .v2-landing__title { font-size: clamp(30px, 8vw, 40px); }
-  .v2-landing__lede { font-size: 16px; }
   .v2-landing__footer { gap: 24px; }
   .v2-landing__footer-cols { gap: 28px; }
 }
@@ -939,15 +1090,21 @@
   .v2-landing {
     scroll-behavior: smooth;
   }
+}
 
-  /* Screenshot cards get the existing 120ms card-hover treatment plus a
-     1px lift — still borders-not-shadows, no new shadow tokens. */
-  .v2-landing__shot-frame {
-    transition: transform 120ms ease;
+/* The bar's two states are the one place colour moves in the hero: 120ms, and
+   only for visitors who have not asked for reduced motion — inside the
+   no-preference block, so a reduced-motion visitor gets the switch instantly
+   rather than a transition with no duration. */
+@media (prefers-reduced-motion: no-preference) {
+  .v2-landing__bar {
+    transition: background 120ms ease, border-color 120ms ease;
   }
-
-  .v2-landing__shot:hover .v2-landing__shot-frame {
-    transform: translateY(-2px);
+  .v2-landing__brand-name,
+  .v2-landing__navlink,
+  .v2-landing__bar .v2-landing__btn,
+  .v2-root .v2-landing__bar button.v2-lang-switch__trigger {
+    transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
   }
 }
 
@@ -1002,7 +1159,7 @@
   display: inline-block;
   overflow: hidden;
   vertical-align: bottom;
-  color: var(--v2-accent);
+  color: #ffffff;
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
   /* Width tracks the active term (via the sizer) — smooth the resize so the
      suffix glides rather than jumps when a shorter/longer term rotates in. */
@@ -1048,4 +1205,28 @@
   border-top: 1px solid var(--v2-border-soft);
   font-size: 12px;
   color: var(--v2-text-tertiary);
+}
+
+/* ---------- zh: no optical negative tracking ----------
+   Every negative letter-spacing below is a latin optical adjustment — the
+   display face tightened at 40px+ so a line of English reads as one shape.
+   Han and Kana glyphs are already set on their own fixed advance, so the same
+   tightening pulls them into each other instead, which is what the shell's
+   `.v2-root :lang(zh) .v2-lang-switch__trigger { letter-spacing: 0 }` reset
+   exists for. This is that reset for the landing, and it lists the same ten
+   selectors the sheet tightens, so the two move together: `v2-landing`
+   carries 10 negative trackings and this block answers all 10 (asserted in
+   `v2-layout-invariants.test.ts`, which reads this file and fails on
+   disagreement in either direction). */
+:lang(zh) .v2-landing__brand-name,
+:lang(zh) .v2-landing__title,
+:lang(zh) .v2-landing__feature-title,
+:lang(zh) .v2-landing__wedge-line,
+:lang(zh) .v2-landing__h2,
+:lang(zh) .v2-landing__proof-title,
+:lang(zh) .v2-landing__proof-num,
+:lang(zh) .v2-landing__price-tag,
+:lang(zh) .v2-landing__tier-price,
+:lang(zh) .v2-landing__cta-title {
+  letter-spacing: 0;
 }
