@@ -53,6 +53,9 @@ app.use('/connect/hosted-mcp', connectRoutes);
 
 const DOC_URL = '/connect/hosted-mcp/linear/client-metadata';
 const AS_METADATA = {
+  // The required claim (§3.3): this stub stands in for discovery today, but a
+  // fixture a conformant vendor would not send is a trap for whoever wires it up.
+  issuer: 'https://mcp.linear.app',
   authorization_endpoint: 'https://mcp.linear.app/authorize',
   token_endpoint: 'https://mcp.linear.app/token',
 };
