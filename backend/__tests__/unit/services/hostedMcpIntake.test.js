@@ -42,6 +42,7 @@ const jsonResponse = (body, status = 200) => ({
 });
 
 const AS_METADATA = {
+  issuer: 'https://mcp.linear.app',
   authorization_endpoint: 'https://mcp.linear.app/authorize',
   token_endpoint: 'https://mcp.linear.app/token',
 };
@@ -168,7 +169,10 @@ describe('hosted-mcp intake: discovery', () => {
     const seen = [];
     await discoverAuthorizationServer(
       'https://api.example.test/tenant/',
-      async (url) => { seen.push(url); return jsonResponse(AS_METADATA); },
+      // The document answers for the issuer it was asked about, trailing slash and
+      // all: §3.3 compares the two strings exactly, which is also why this fixture
+      // has to echo the requested issuer rather than the entry's.
+      async (url) => { seen.push(url); return jsonResponse({ ...AS_METADATA, issuer: 'https://api.example.test/tenant/' }); },
     );
     expect(seen).toEqual(['https://api.example.test/.well-known/oauth-authorization-server/tenant']);
     // Control: the shape that appends instead of inserts is not what was sent.
@@ -206,6 +210,57 @@ describe('hosted-mcp intake: discovery', () => {
     // is a refusal rather than a stub that never runs.
     await discoverAuthorizationServer('https://mcp.linear.app', stub);
     expect(calls).toBe(1);
+  });
+});
+
+describe('hosted-mcp intake: the document\'s own issuer claim (RFC 8414 §3.3)', () => {
+  it('refuses a document written for a different issuer, and accepts it for its own', async () => {
+    // What this defends is the next line of the flow: `authorization_endpoint` is
+    // where the person's browser is sent, so a document fetched for this URL but
+    // written for another issuer hands the consent to whoever wrote it.
+    const foreign = await discoverAuthorizationServer(
+      'https://mcp.linear.app',
+      async () => jsonResponse({ ...AS_METADATA, issuer: 'https://mcp.example.test' }),
+    ).catch((error) => error);
+    expect(foreign.code).toBe('issuer_mismatch');
+    // The message names the DOCUMENT's issuer, not the one we asked about: the
+    // reader is an operator whose next question is what the vendor actually said.
+    expect(foreign.message).toContain('https://mcp.example.test');
+
+    // Acceptance control, differing ONLY in the issuer: without it, a stub that
+    // never answered would look identical to a refusal.
+    const accepted = await discoverAuthorizationServer(
+      'https://mcp.linear.app',
+      async () => jsonResponse({ ...AS_METADATA, issuer: 'https://mcp.linear.app' }),
+    );
+    expect(accepted.authorization_endpoint).toBe(AS_METADATA.authorization_endpoint);
+  });
+
+  it('refuses a document that states no issuer at all', async () => {
+    // §2 makes `issuer` REQUIRED; a document without one has no identity to match,
+    // and it is incomplete rather than foreign.
+    const noIssuer = {
+      authorization_endpoint: AS_METADATA.authorization_endpoint,
+      token_endpoint: AS_METADATA.token_endpoint,
+    };
+    const thrown = await discoverAuthorizationServer(
+      'https://mcp.linear.app',
+      async () => jsonResponse(noIssuer),
+    ).catch((error) => error);
+    expect(thrown.code).toBe('issuer_metadata_incomplete');
+    expect(thrown.message).toBe('authorization server metadata names no issuer');
+  });
+
+  it('compares the two values as given, so a trailing slash is a different issuer', async () => {
+    // §3.3 says the values must be IDENTICAL, and a trailing-slash allowance is how
+    // an identity check quietly becomes a prefix check. Measured against the four
+    // first-wave vendors: each echoes its issuer byte-for-byte, and every entry's
+    // issuer is ours to write, so nothing needs the allowance.
+    const thrown = await discoverAuthorizationServer(
+      'https://mcp.linear.app',
+      async () => jsonResponse({ ...AS_METADATA, issuer: 'https://mcp.linear.app/' }),
+    ).catch((error) => error);
+    expect(thrown.code).toBe('issuer_mismatch');
   });
 });
 

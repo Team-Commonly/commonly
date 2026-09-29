@@ -166,6 +166,13 @@ export const resolvedClientId = (
 
 /** The authorization server's metadata, of which intake needs two fields. */
 export interface HostedMcpAuthorizationServer {
+  /**
+   * RFC 8414 §2 makes this REQUIRED, so it is optional here only to be checked:
+   * a document that omits it cannot be matched against the issuer we asked, and
+   * `discoverAuthorizationServer` refuses it rather than reading endpoints from a
+   * document whose identity is unstated.
+   */
+  issuer?: string;
   authorization_endpoint: string;
   token_endpoint: string;
   revocation_endpoint?: string;
@@ -228,6 +235,27 @@ export const discoverAuthorizationServer = async (
     );
   }
   const body = (await response.json()) as Partial<HostedMcpAuthorizationServer>;
+  // §3.3: the document's `issuer` must be IDENTICAL to the issuer the URL was
+  // built from, and identity is checked before any endpoint is read out of it.
+  // This is the mix-up defence, and what it defends is the strongest thing in
+  // this file: `authorization_endpoint` is where the browser is sent next, so a
+  // document fetched for this URL but written for another issuer would hand the
+  // person's consent to whoever wrote it. Exact comparison, with no
+  // trailing-slash allowance — the entry's issuer is ours to write, so a document
+  // that does not match it character for character is not the identity we asked
+  // for.
+  if (!body.issuer) {
+    throw new HostedMcpClientError(
+      'issuer_metadata_incomplete',
+      'authorization server metadata names no issuer',
+    );
+  }
+  if (body.issuer !== issuer) {
+    throw new HostedMcpClientError(
+      'issuer_mismatch',
+      `authorization server metadata is for a different issuer: ${body.issuer}`,
+    );
+  }
   if (!body.authorization_endpoint || !body.token_endpoint) {
     // Named rather than defaulted: guessing an endpoint from the issuer is how a
     // flow sends a code to a host the metadata never named.

@@ -220,6 +220,19 @@ describe('hosted-mcp connect: start', () => {
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('gives a foreign-issuer document the same status as an unreachable one', async () => {
+    // The document was reached and answered; it is still the vendor's failure and
+    // still not a 4xx, so it joins the same bucket rather than falling to the
+    // generic 503 a caller would read as "try again later".
+    intake.discoverAuthorizationServer.mockRejectedValue(
+      Object.assign(new Error('boom'), { code: 'issuer_mismatch' }),
+    );
+    const res = await start();
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'issuer_mismatch' });
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('refuses an unconfigured pre-registered client before it touches the vendor', async () => {
     const entries = jest.requireMock('../../../integrations/hostedMcp/entries');
     entries.HOSTED_MCP_ENTRIES.push({ ...FIXTURE_ENTRY, id: 'notion', client: 'pre-registered' });
