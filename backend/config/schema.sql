@@ -182,7 +182,12 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   outcome VARCHAR(32) NOT NULL CHECK (outcome IN ('ok', 'refused', 'pending_approval', 'failed')),
   reason VARCHAR(255),
   approval_id VARCHAR(255),
-  duration_ms INTEGER
+  duration_ms INTEGER,
+  -- Whose credential ran (plan §8, §10 step 5): the Connection's `createdBy` at
+  -- call time. Copied, not joined — removal ends by deleting the Connection and
+  -- the trail outlives it. Nullable, and NULL means "no owner was recorded",
+  -- which is what a call refused before a connection resolved reports.
+  credential_owner_id VARCHAR(255)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_calls_grant_at ON tool_calls(grant_id, occurred_at DESC);
 -- Per-user, per-thread state (W-T, TASK-029). ONE record carrying both
