@@ -40,10 +40,14 @@
  *     means "predates", not "deleted" — and it is not distinguishable from a
  *     tail deletion without more history. A rule deleted from the middle is
  *     caught anyway, by the gap in check 2.
- *   - an in-place edit of a rule's BODY. Only the bold lead sentence is
- *     compared, since that is the rule's name. Editing the lead itself is
- *     reported as a number claimed twice, because a rewritten lead and a
- *     foreign rule at the same number are the same bytes; keep leads stable.
+ *   - an in-place edit of a rule's BODY. The rule's name is its bold lead
+ *     sentence, of which only the first 60 normalised characters are compared —
+ *     `fingerprint` strips the emphasis markers, collapses whitespace and
+ *     slices. Editing a lead inside those first 60 is reported as a number
+ *     claimed twice, because a rewritten lead and a foreign rule at the same
+ *     number are the same bytes; an edit past character 60 is NOT seen by this
+ *     guard at all. Keep leads stable, and do not read a green run as proof
+ *     that a lead is unchanged.
  *   - citations from other files (`ADR-028` rule 23 and friends). Resolving
  *     those needs to know which `rule N` a document means, which is the
  *     ambiguity this guard exists to keep from growing; they are protected by
@@ -80,9 +84,9 @@ const FILE = path.resolve(argValue('--file', DEFAULT));
 const PREVIOUS = argValue('--previous', null);
 
 // A rule begins with its literal number followed by a bold lead. Nothing else
-// in the file currently looks like this (35 rules, 35 matches); a bold-lead
-// list item nested inside a rule's body would be read as a rule, which is why
-// the file keeps its numbered lists un-bolded.
+// in the file looks like this; a bold-lead list item nested inside a rule's
+// body would be read as a rule, which is why the file keeps its numbered lists
+// un-bolded.
 const DEF = /^(\d+)\.\s+\*\*/;
 // `rule 5`, `rules 27–28`, `rules 5, 7 and 9` — the separators are what a list
 // of citations uses. Ranges accept hyphen, en dash and em dash.
