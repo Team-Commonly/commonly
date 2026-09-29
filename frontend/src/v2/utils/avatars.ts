@@ -107,9 +107,23 @@ export const initialsFor = (name: string | undefined | null): string => {
     .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ''))
     .filter(Boolean);
 
-  if (parts.length === 0) return trimmed.slice(0, 2).toUpperCase() || '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  // Every read below is by CODE POINT, not by UTF-16 unit. A JS string indexes
+  // UTF-16 units, so `parts[0][0]` on a name that starts with an astral
+  // character — Deseret 𐐀, a CJK extension glyph, an emoji — returns the high
+  // surrogate ALONE: not a character, and drawn as a replacement box or a blank
+  // by fonts that have nothing to render. The same cut lands in a two-character
+  // slice that falls between the halves of the second code point: "A𝔘" is three
+  // units, so `slice(0, 2)` was "A" plus half of 𝔘. Array.from splits on code
+  // points, so a glyph is either whole or absent. Note the strip above is
+  // already code-point aware (`\p{L}`/`\p{N}`) — the mismatch was in the
+  // picking, not the matching, which is why it never showed up as mojibake in a
+  // name that was merely non-Latin.
+  const firstCodePoints = (part: string, count: number): string =>
+    Array.from(part).slice(0, count).join('');
+
+  if (parts.length === 0) return firstCodePoints(trimmed, 2).toUpperCase() || '?';
+  if (parts.length === 1) return firstCodePoints(parts[0], 2).toUpperCase();
+  return `${firstCodePoints(parts[0], 1)}${firstCodePoints(parts[parts.length - 1], 1)}`.toUpperCase();
 };
 
 // ── Character tier ──────────────────────────────────────────────────────────
