@@ -313,3 +313,113 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(hostedMcpToolName(entry, entry.tools[0])).toBe('linear.list_issues');
   });
 });
+
+// The three preconditions a vendor entry has to satisfy before the first one is
+// pinned (TASK-172, the row's notes from Vera). Each guard is measured by its
+// own refusal beside a control, and the refusals are asserted separately
+// because they are separate messages: one could keep working while another
+// stops, and an arm that accepts any of them would not say which.
+const refusal = (entries) => {
+  try {
+    assertHostedMcpEntries(entries);
+  } catch (error) {
+    return error.message;
+  }
+  throw new Error('the catalogue was accepted; this arm expected a refusal');
+};
+
+describe('a pin cannot contradict the class or the namespace it is filed under', () => {
+  test('a tool name the namespace cannot carry is refused', () => {
+    // Control: a kebab name and the underscore spelling the eight shipped
+    // GitHub tool names already use both pass, so the refusals below are about
+    // the characters named rather than about the guard refusing everything.
+    expect(() => assertHostedMcpEntries([linear({ tools: [pinned({ name: 'list-issues' })] })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+
+    // The separator itself, and two characters no seat-facing tool name carries.
+    expect(refusal([linear({ tools: [pinned({ name: 'list.issues' })] })]))
+      .toContain('not a usable namespace segment: linear.list.issues');
+    expect(refusal([linear({ tools: [pinned({ name: 'list issues' })] })]))
+      .toContain('not a usable namespace segment: linear.list issues');
+    expect(refusal([linear({ tools: [pinned({ name: 'List_issues' })] })]))
+      .toContain('not a usable namespace segment: linear.List_issues');
+  });
+
+  test('a read pin whose own annotations say destructive is refused', () => {
+    // Control: the same annotations on a tool pinned `write` are honest — the
+    // class parks the call, and the drift comparison starts from a write claim.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ name: 'delete_issue', class: 'write', annotations: { destructiveHint: true } })] }),
+    ])).not.toThrow();
+    // A tightened claim is not a contradiction either: `destructiveHint: false`
+    // on a read tool agrees with the class.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ annotations: { readOnlyHint: true, destructiveHint: false } })] }),
+    ])).not.toThrow();
+
+    expect(refusal([linear({ tools: [pinned({ annotations: { destructiveHint: true } })] })]))
+      .toContain('hosted-mcp read tool is pinned against its own destructiveHint: linear.list_issues');
+  });
+
+  test('a read pin whose own annotations deny readOnly is refused', () => {
+    // Control: `readOnlyHint: false` on a `write` pin describes a write tool.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ name: 'create_issue', class: 'write', annotations: { readOnlyHint: false } })] }),
+    ])).not.toThrow();
+
+    expect(refusal([linear({ tools: [pinned({ annotations: { readOnlyHint: false } })] })]))
+      .toContain('hosted-mcp read tool is pinned against its own readOnlyHint: linear.list_issues');
+  });
+
+  test('the annotation refusals are told apart by name', () => {
+    // Asserting the code is not asserting the message, and here there is no
+    // code at all: a module-load throw is read by whoever ran the build, so the
+    // text is the only thing that says what was found. `readOnlyHint: false` is
+    // refused by the guard that names it even though the claim guard below also
+    // reaches it, which is why that guard is not simply the only one kept.
+    const destructive = refusal([linear({ tools: [pinned({ annotations: { destructiveHint: true } })] })]);
+    const notReadOnly = refusal([linear({ tools: [pinned({ annotations: { readOnlyHint: false } })] })]);
+    expect(destructive).not.toBe(notReadOnly);
+    expect(destructive).toContain('destructiveHint');
+    expect(notReadOnly).toContain('pinned against its own readOnlyHint');
+  });
+});
+
+// Vera's third arm: the two guards above refuse a read pin that CONTRADICTS an
+// annotation. This one refuses a read pin that never made the claim, which is
+// the state an author writes by default.
+describe('a read pin has to claim the class, not just avoid denying it', () => {
+  test('a read pin carrying no readOnlyHint is refused', () => {
+    // Control: a `write` pin needs no claim — the class parks the call and no
+    // drift direction is keyed on it — and a read pin that claims read-only is
+    // the shipped fixture's own shape.
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({ name: 'create_issue', class: 'write', annotations: undefined })] }),
+    ])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+
+    expect(refusal([linear({ tools: [pinned({ annotations: undefined })] })]))
+      .toContain('hosted-mcp read tool does not claim readOnlyHint: linear.list_issues');
+    expect(refusal([linear({ tools: [pinned({ annotations: { destructiveHint: false } })] })]))
+      .toContain('hosted-mcp read tool does not claim readOnlyHint: linear.list_issues');
+  });
+
+  test('the claim is what keeps the withdrawal direction live', () => {
+    // Measured through `assessEntryTools`, which is what the guard protects: a
+    // read pin with no claim is answered `ok` while the vendor says
+    // `readOnlyHint: false`, so a read grant would stand against an explicit
+    // upstream denial. The pin below is not a catalogue state any more — the
+    // load guard refuses it — and that is the point of keeping the hole on the
+    // record: the drift comparison cannot see it on its own.
+    const silentPin = linear({ tools: [pinned({ annotations: undefined })] });
+    const denial = [{ ...upstreamOk()[0], annotations: { readOnlyHint: false } }];
+    expect(assessEntryTools(silentPin, denial)[0]).toMatchObject({ verdict: 'ok' });
+
+    // The same vendor answer against the claim the guard now requires.
+    const claimedPin = linear();
+    expect(assessEntryTools(claimedPin, denial)[0]).toMatchObject({
+      verdict: 'tool_drift',
+      detail: 'readOnlyHint withdrawn upstream',
+    });
+  });
+});
