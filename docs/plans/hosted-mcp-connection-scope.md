@@ -187,7 +187,8 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - TASK-147 lands with removal, in step 6 (§10), and the first catalogue entry does not ship without it. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
   - The legacy Discord delete (`routes/discord.ts:241`) looks its row up by `installationId` and `type: 'discord'`, so the same witness covers it.
   - Pod deletion's case also needs the row to stay without a `podId`. `PATCH /api/integrations/:id` can set one on a user-scoped row, and it refuses a hosted row only because that row holds no `config.linkedUserId` (`routes/integrations.ts:672`). A witness pins that refusal.
-  - Deleting a member's Commonly account (`DELETE /api/admin/users/:userId`, `routes/admin/users.ts:267`, behind both admin pages' Delete) moves no row. It deletes the person and nothing else: `User` has no delete hook, and the broker never reads whether `createdBy` still exists. The person's grants would keep resolving until they expire, and only the granter, now gone, sees Revoke. The row would stay active, so the orphan sweep would keep a live refresh token for a person Commonly no longer has. The route therefore refuses `409` while the person owns a hosted row, and names the rows. An admin removes them first through `DELETE /api/integrations/:id`, which admits an admin (`canDeleteIntegration`, `routes/integrations.ts:171`) and runs §9's removal. Removal stays one path with one retry, not a second copy inside account deletion.
+  - Deleting a member's Commonly account (`DELETE /api/admin/users/:userId`, `routes/admin/users.ts:267`, behind both admin pages' Delete) moves no row. It deletes the person and nothing else, because `User` has no delete hook. The broker's owner check (below) stops the grants, but the row stays active, so the orphan sweep would keep a live refresh token for a person Commonly no longer has, and nothing would revoke it at the provider. The route therefore refuses `409` while the person owns a hosted row. Its body lists each row's `_id` and entry, which is what `DELETE /api/integrations/:id` takes; that route admits an admin (`canDeleteIntegration`, `routes/integrations.ts:171`) and runs §9's removal. Removal stays one path with one retry, not a second copy inside account deletion.
+  - A ban (`PATCH /api/admin/users/:userId/ban`, `:233`) moves no row either, and it is the likelier way a member leaves (Vera 75492). From then on `auth` refuses the person (`middleware/auth.ts:74`), so they cannot revoke anything themselves. The ban route stays unguarded, because a ban may be urgent and it can be lifted. The broker's owner check refuses the person's grants for as long as the ban lasts, and lifting it restores them with no reconnect. The material stays for the same reason; an admin who wants the credential gone removes the row.
   - The mint may admit the type before any of this lands. No hosted row can exist while `HOSTED_MCP_ENTRIES` is empty, so no hosted grant can either.
 
 **The broker** (`resolveConnection`, `toolBrokerService.ts:455`):
@@ -196,6 +197,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - It checks the type, `status`, `revokedAt`, that the entry exists and that a `credentialRef` is present.
 - It checks that the definition's `entryId` equals the row's, the same `connection_mismatch` class it applies to type today (`:476–486`).
 - It keeps the TASK-148 `createdAt` guard (`:488–512`) unchanged.
+- It refuses `connection_owner_unavailable` (403, beside `connection_superseded`) when the row's owner is banned or no longer exists, reading the owner with the row. `listToolsForGrant`, `callTool` and `executeApprovedToolCall` all resolve through it, so one check covers the offer, the call and the approved call. It reads live state, so a lifted ban needs no reconnect.
 - `ToolConnection` (`:28–34`) widens to both types; `owner`/`repo` belong to `github-app`, and `entryId` to `hosted-mcp`.
 
 **The catalogue.**
@@ -267,11 +269,13 @@ Each step can be tested without the vendor, except the live measurements in step
 5. **The trail column.**
    - `every tool call records whose credential ran`
    - `the trail names the credential owner after the Connection is removed`
-6. **Removal.**
+6. **Removal, and an owner who leaves.**
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
    - TASK-147's witness per removal path (§7), before the first entry ships
-   - `deleting a member who owns a hosted row is refused, and the row, its grants and its material are unchanged`
+   - `deleting a member who owns a hosted row is refused with the rows named, and the row, its grants and its material are unchanged`
+   - `a banned owner's hosted grant is refused, and runs again once the ban is lifted`
+   - `a hosted grant whose owner no longer exists is refused`
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
    - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
    - `the page's call to start is credentialed`, before the walk (§4)
