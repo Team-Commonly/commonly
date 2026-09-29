@@ -313,7 +313,14 @@ router.get('/:entryId/callback', async (req: Request, res: Response) => {
         'config.refreshGeneration': 0,
         'config.grantedScope': tokens.scope || entry.scopes.join(' '),
         'config.expiresAt': tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
-        'config.providerSubject': providerSubject,
+        // `|| null`, not the bare value: `$set` with `undefined` is a NO-OP on
+        // this strict subdocument (measured on a real mongod — the old value
+        // survives), and a surviving subject is a durable lie about which
+        // vendor account is connected. The next reconnect would compare
+        // against it, read "same account", and keep grants minted under the
+        // account that held the row in between. Cleared, the comparison is two
+        // unknowns and revokes, which is the safe reading.
+        'config.providerSubject': providerSubject || null,
         revokedAt: null,
         errorMessage: null,
       },
