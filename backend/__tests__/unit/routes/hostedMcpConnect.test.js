@@ -53,6 +53,9 @@ app.use('/connect/hosted-mcp', connectRoutes);
 
 const DOC_URL = '/connect/hosted-mcp/linear/client-metadata';
 const AS_METADATA = {
+  // The required claim (§3.3): this stub stands in for discovery today, but a
+  // fixture a conformant vendor would not send is a trap for whoever wires it up.
+  issuer: 'https://mcp.linear.app',
   authorization_endpoint: 'https://mcp.linear.app/authorize',
   token_endpoint: 'https://mcp.linear.app/token',
 };
@@ -217,6 +220,19 @@ describe('hosted-mcp connect: start', () => {
     expect(res.body).toEqual({ error: 'issuer_unreachable' });
     // A pending row whose nonce can never be spent would show the connector as
     // mid-connect on the page forever.
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gives a foreign-issuer document the same status as an unreachable one', async () => {
+    // The document was reached and answered; it is still the vendor's failure and
+    // still not a 4xx, so it joins the same bucket rather than falling to the
+    // generic 503 a caller would read as "try again later".
+    intake.discoverAuthorizationServer.mockRejectedValue(
+      Object.assign(new Error('boom'), { code: 'issuer_mismatch' }),
+    );
+    const res = await start();
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'issuer_mismatch' });
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 

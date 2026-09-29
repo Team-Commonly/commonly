@@ -21,9 +21,25 @@ export const isTimeoutError = (error: unknown): boolean => (
   typeof error === 'object' && error !== null && (error as Error).name === 'TimeoutError'
 );
 
+/**
+ * A bounded fetch.
+ *
+ * A caller's own signal is COMPOSED with the deadline rather than replaced: the
+ * two are independent reasons to stop, and `{ ...init, signal: deadline }` reads
+ * as though `init` were honoured while silently dropping the one field in it that
+ * cancels (Vera, on #2006). No caller passes one today — all three call sites take
+ * the default — so this is the difference between a wrapper that is bounded and a
+ * wrapper that is bounded *and* cancellable, and the composition costs nothing.
+ */
 export const upstreamFetch = (
   input: string,
   init: RequestInit = {},
   fetchImpl: typeof fetch = fetch,
   timeoutMs: number = UPSTREAM_TIMEOUT_MS,
-): Promise<Response> => fetchImpl(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+): Promise<Response> => {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return fetchImpl(input, {
+    ...init,
+    signal: init.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+  });
+};

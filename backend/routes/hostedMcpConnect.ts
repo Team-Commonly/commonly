@@ -53,7 +53,9 @@ type AuthedRequest = Request & { user?: { id?: string; role?: string } };
 
 /** A vendor-side failure is not the caller's fault and not a 4xx. */
 const vendorFailureStatus = (code?: string): number => (
-  code === 'issuer_unreachable' || code === 'issuer_metadata_incomplete' ? 502 : 503
+  code === 'issuer_unreachable' || code === 'issuer_metadata_incomplete' || code === 'issuer_mismatch'
+    ? 502
+    : 503
 );
 
 /**

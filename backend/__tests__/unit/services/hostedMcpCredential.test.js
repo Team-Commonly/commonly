@@ -567,6 +567,10 @@ describe('the refresh call carries the shared deadline', () => {
   afterEach(() => { global.fetch = realFetch; });
 
   const METADATA = {
+    // §3.3 makes `issuer` REQUIRED, and discovery now checks it: a fixture that
+    // models a conformant vendor has to carry it, or the arm fails for a reason
+    // that has nothing to do with the deadline it is testing.
+    issuer: 'https://mcp.linear.app',
     authorization_endpoint: 'https://mcp.linear.app/authorize',
     token_endpoint: 'https://mcp.linear.app/token',
   };

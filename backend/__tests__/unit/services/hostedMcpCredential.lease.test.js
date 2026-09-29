@@ -117,24 +117,32 @@ const gate = () => {
 };
 
 /**
- * The winner's bump, observed AT the seam instead of polled from outside it.
+ * The winner's TWO seams — its won bump and its commit — observed AT the seam
+ * instead of polled from outside them.
  *
  * `deps.row` is replaced wholesale when it is overridden — the deps merge is one
  * level deep — and this suite's store injects no row at all, so the base has to
- * be the service's own `defaultRowDeps()`. The wrapper then delegates to the REAL
- * conditional update, so the fence under test is unchanged.
+ * be the service's own `defaultRowDeps()`. The wrappers then delegate to the REAL
+ * conditional updates, so the fence under test is unchanged.
  *
  * Resolving on a WON bump is what makes the mid-flight pre-image deterministic:
  * the winner cannot reach its vendor call until the update has returned, and it
- * cannot commit until the arm opens its own gate. Nothing here is measured
- * against the wall clock, so there is no budget left to expire under a slow
- * mongod — a spurious failure that would read as the fence having broken.
+ * cannot commit until the arm opens its own gate.
+ *
+ * The COMMIT seam exists because the loser's budget is virtual while the
+ * winner's progress is not. `sleep` advances this file's `clock`, so a poll loop
+ * can spend the whole `WINNER_WAIT_MS` in microseconds of real time and refuse
+ * `credential_refreshing` while the winner is still writing the row — measured:
+ * 4 failures in 8 isolated runs of this arm before the loser's first poll was
+ * made to wait here instead. A budget that expires faster than the work it waits
+ * for is not a budget.
  *
  * If the winner never wins its bump this promise never resolves, and the arm
  * fails on jest's `testTimeout` instead of asserting something false.
  */
-const bumpSignal = (store, over = {}) => {
+const fenceSignal = (store, over = {}) => {
   const bumped = gate();
+  const committed = gate();
   const real = defaultRowDeps();
   const deps = depsWith(store, {
     ...over,
@@ -145,9 +153,14 @@ const bumpSignal = (store, over = {}) => {
         if (won) bumped.open();
         return won;
       },
+      commit: async (id, generation, fields) => {
+        const result = await real.commit(id, generation, fields);
+        committed.open();
+        return result;
+      },
     },
   });
-  return { deps, bumped };
+  return { deps, bumped, committed };
 };
 
 test('a caller that reads the row mid-flight loses the fence instead of winning its own', async () => {
@@ -161,7 +174,7 @@ test('a caller that reads the row mid-flight loses the fence instead of winning 
   };
 
   const store = secretStore();
-  const { deps, bumped } = bumpSignal(store, { refreshAtVendor });
+  const { deps, bumped, committed } = fenceSignal(store, { refreshAtVendor });
   const first = credentialFor(await preImage(id), deps);
   await bumped.promise;
   const midFlight = await preImage(id);
@@ -172,10 +185,21 @@ test('a caller that reads the row mid-flight loses the fence instead of winning 
   let opened = false;
   const second = credentialFor(midFlight, depsWith(store, {
     refreshAtVendor,
-    // The loser's first poll is the moment the winner is allowed to finish.
+    // The loser's first poll is the moment the winner is allowed to finish, and
+    // then it WAITS for that finish instead of spending its budget: this sleep
+    // advances the virtual clock, so polling on it refuses `credential_refreshing`
+    // in microseconds of real time while the winner is still writing the row.
+    // Waiting at the commit seam makes the outcome turn on the store's state, which
+    // is what this arm is about; the deadline keeps its deterministic witness in
+    // `a live lease is not takeable` below.
     sleep: async (ms) => {
+      if (!opened) {
+        opened = true;
+        winner.open();
+        await committed.promise;
+        return;
+      }
       clock += ms;
-      if (!opened) { opened = true; winner.open(); }
     },
   }));
 
@@ -204,7 +228,7 @@ test('an elapsed lease is takeable, and the late winner\'s commit is refused', a
   };
 
   const store = secretStore();
-  const { deps, bumped } = bumpSignal(store, { refreshAtVendor: slowVendor });
+  const { deps, bumped } = fenceSignal(store, { refreshAtVendor: slowVendor });
   const lateWinner = credentialFor(await preImage(id), deps);
   // The same instrument as the arm above, for the same reason: the landing is a
   // signal, so this arm has no wall-clock wait and nothing that can expire.

@@ -118,6 +118,8 @@ const okTokenResponse = {
 beforeEach(() => {
   jest.clearAllMocks();
   intake.discoverAuthorizationServer.mockResolvedValue({
+    // §3.3's required claim, so the stub matches what real discovery returns.
+    issuer: 'https://mcp.linear.app',
     authorization_endpoint: 'https://mcp.linear.app/authorize',
     token_endpoint: TOKEN_ENDPOINT,
   });
