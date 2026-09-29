@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -194,13 +194,17 @@ const V2LandingPage: React.FC = () => {
   const installCmdRef = useRef<HTMLElement | null>(null);
   // The bar carries the band's colour while the band is under it. Default ON:
   // the page opens on the band, so this is the correct first paint and the
-  // observer only ever turns it off. jsdom has no IntersectionObserver, so
-  // tests stay in this state — the past-the-band look is a browser check.
+  // observer only ever turns it off. In tests the stubbed observer's
+  // `observe()` never calls back, so they stay in this state — the
+  // past-the-band look is a browser check.
   const [onBand, setOnBand] = useState(true);
   const bandRef = useRef<HTMLElement | null>(null);
   // The bar is 72 tall at 1440 and 64 at ≤680, so a hard-coded 72 inset turned
   // the bar white 8px early on a phone (ux-lead's #2018 finding 8). Measure it
-  // instead, and re-measure when a resize crosses the breakpoint.
+  // instead, and re-measure when a resize crosses the breakpoint. This is a
+  // LAYOUT effect on purpose: the observer below is built in the same commit at
+  // the 72 fallback and only re-arms on the next render, so useEffect would
+  // leave a phone one frame at the wrong inset.
   const barRef = useRef<HTMLElement | null>(null);
   const [barHeight, setBarHeight] = useState(0);
 
@@ -293,7 +297,7 @@ const V2LandingPage: React.FC = () => {
   // and flips exactly when it passes under. threshold 0 — the change is a state
   // change, not a reveal, so it should happen at the crossing rather than after
   // a fraction of a 920px band.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const measure = () => {
       const h = barRef.current?.offsetHeight;
       if (h) setBarHeight(h);

@@ -3543,8 +3543,9 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     // and there is no white flash before the observer runs.
     expect(landingTsx).toContain('const [onBand, setOnBand] = useState(true)');
     expect(landingTsx).toContain("v2-landing__bar--band' : ''");
-    // jsdom has no IntersectionObserver, so the effect returns early there and
-    // every render test stays on the band: the switch is a browser check.
+    // The test stub's `observe()` never calls back, so every render test stays
+    // on the band: the switch is a browser check. (The stub's existence is why
+    // the reason is that and not "jsdom has no IntersectionObserver".)
     expect(landingTsx).toContain("typeof IntersectionObserver === 'undefined'");
     // Wordmark only in the bar; the mark is a footer element now.
     const bar = landingTsx.slice(landingTsx.indexOf('v2-landing__bar'), landingTsx.indexOf('</header>'));
