@@ -6,7 +6,7 @@ commands. Every contradiction came from the same place: **the run object and
 the PR's check list are summaries, and each one is lossy in a different
 direction.** This runbook names which reader answers which question.
 
-## An absent or short check list has at least five causes
+## An absent or short check list has at least six causes
 
 They render identically on the PR page — a row that is missing, or grey. They
 are not the same problem and they do not share a remedy.
@@ -14,6 +14,7 @@ are not the same problem and they do not share a remedy.
 | Cause | How it looks | Discriminator | Remedy |
 |---|---|---|---|
 | Run never created | check absent from `gh pr checks` | no run at that SHA in `gh run list --branch <b>` | needs a NEW event: push, or close/reopen |
+| PR cannot merge (conflicting) | the **whole** fan-out absent for that push, not one row | PR reads `CONFLICTING`/`DIRTY`, and `actions/runs?head_sha=<sha>` returns only the `edited`-listening guards | retarget the base, **then** push — see below |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
@@ -202,6 +203,61 @@ One collection caveat that cost time here: CodeQL and other app-driven runs are
 recorded against `refs/pull/<n>/head`, not the branch, so
 `?branch=<branch-name>` can return zero for a PR that visibly has runs. Query
 by `head_sha` or via the commit's check-suites instead.
+
+## A PR that cannot merge gets no check suites from a push
+
+`pull_request` workflows run against `refs/pull/<n>/merge`, GitHub's trial merge
+of base and head. A **conflicting** PR has no such commit, and its push creates
+**no run at all** — not the required check, and not the ones you can see either.
+That is a different shape from the misses above: a `paths:` miss costs you one
+workflow, a `branches:` miss costs a stacked PR two guards legitimately, and
+this costs the entire fan-out.
+
+Measured 2026-09-29. PR #2019 was pushed while conflicting against a base that
+had merged and been squashed into `main`; #2020, #2021 and #2022 were pushed in
+the same minute and were mergeable:
+
+| | runs created by that push |
+|---|---|
+| #2019, conflicting | none |
+| #2020 / #2021 / #2022, mergeable | `Tests`, `Playwright Tests`, `Secret Scan` |
+
+Retargeting #2019 with `gh pr edit 2019 --base main` made it mergeable and fired
+`edited`, and only the five workflows that list `edited` in `types:` came back —
+`ADR Numbering Guard`, `PR Base Guard`, `Package Version Guard`, `PR Base
+Freshness`, `Review Checklist Numbering Guard`. `tests.yml`, `playwright.yml`
+and `secret-scan.yml` declare `pull_request:` with no `types:` list — it defaults
+to `[opened, synchronize, reopened]` — so none of the three fires on a base
+change. The required check therefore stayed absent and the PR stayed `BLOCKED`
+with every row that *did* exist passing — the state this document exists to keep
+you from misreading. `gh pr checks` cannot show a suite that was never created;
+read `actions/runs?head_sha=<sha>` instead.
+
+**Close/reopen is not available to a seat**, which is the lever this document
+prefers when a run was never created. `gh pr close` is refused from a seat
+(`gh pr close is refused from a seat: the room clears, the press merges`), as
+are `gh workflow run` and `gh api -X POST .../workflows/<file>/dispatches`. The
+remaining lever is a push, and an empty commit is enough:
+
+```bash
+git commit --allow-empty -m "chore(ci): re-fire the PR's check suites"
+git push origin <branch>
+```
+
+`git diff <old> <new>` is empty, so nothing about the change moves except its
+sha — which is the whole cost, and it is not zero: **every head-bound ask, gate
+or stamp has to be re-pointed, and a stamp already posted is spent under rule 32
+even though the tree is identical.**
+
+**Prevention.** Retarget a stacked PR to `main` *before* pushing to it, not
+after. In the incident above, the parent's merge had squashed the child's base
+into `main`, so every push to the child re-created the conflict and bought
+another head move.
+
+What is inference here, and what is measurement: the run lists above are the
+measurement, and the absence of a merge ref for a conflicting PR is GitHub's
+documented behaviour — the only explanation consistent with both rows of that
+table, since the two pushes are otherwise identical.
 
 ## A re-trigger may fan out partially, and stragglers arrive minutes later
 
