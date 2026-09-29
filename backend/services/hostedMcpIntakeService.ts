@@ -24,6 +24,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
+import { upstreamFetch } from './upstreamFetch';
 
 /** Long enough for a person to finish a consent screen, short enough to be worthless afterwards. */
 export const HOSTED_MCP_PENDING_TTL_MS = 10 * 60 * 1000;
@@ -171,6 +172,36 @@ export interface HostedMcpAuthorizationServer {
 }
 
 /**
+ * The metadata URL for an issuer, per RFC 8414 §3.1: the well-known segment is
+ * inserted between the host and the issuer's path, so an issuer mounted under a
+ * path resolves at `/.well-known/oauth-authorization-server/tenant` and NOT at
+ * `/tenant/.well-known/oauth-authorization-server`. A bare origin — the shape
+ * every vendor in the first wave uses — has no path to insert before, which is
+ * why the two agree there and why the bare case alone cannot witness the rule.
+ *
+ * A malformed issuer, or one carrying a query or fragment (which §2 forbids),
+ * is refused rather than repaired: interpolating it builds a URL that reaches a
+ * host the entry never named and then reports the result as that entry's
+ * metadata.
+ */
+const authorizationServerMetadataUrl = (issuer: string): string => {
+  let parsed: URL;
+  try {
+    parsed = new URL(issuer);
+  } catch {
+    throw new HostedMcpClientError('issuer_unreachable', `issuer is not a URL: ${issuer}`);
+  }
+  if (parsed.search || parsed.hash) {
+    throw new HostedMcpClientError(
+      'issuer_unreachable',
+      `issuer carries a query or fragment, which RFC 8414 forbids: ${issuer}`,
+    );
+  }
+  const path = parsed.pathname.replace(/\/$/, '');
+  return `${parsed.origin}/.well-known/oauth-authorization-server${path}`;
+};
+
+/**
  * Discovery is a GET of the issuer's well-known document. `fetchImpl` is a
  * parameter because intake is measured against a stub authorization server: the
  * ruling pins that every step except the live lines is testable without the
@@ -180,10 +211,10 @@ export const discoverAuthorizationServer = async (
   issuer: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<HostedMcpAuthorizationServer> => {
-  const url = `${issuer.replace(/\/$/, '')}/.well-known/oauth-authorization-server`;
+  const url = authorizationServerMetadataUrl(issuer);
   let response: Response;
   try {
-    response = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+    response = await upstreamFetch(url, { headers: { Accept: 'application/json' } }, fetchImpl);
   } catch (error) {
     throw new HostedMcpClientError(
       'issuer_unreachable',
@@ -228,7 +259,15 @@ export const buildAuthorizeUrl = (
     scope: entry.scopes.join(' '),
     resource: entry.resource,
   });
-  return `${authorizationEndpoint}?${query.toString()}`;
+  // `?` only when the endpoint carries no query yet: an authorization endpoint
+  // that already has one is joined with `&`, and one that ends in `?` or `&`
+  // (a vendor inviting parameters) takes no separator at all — appending `?`
+  // blindly turns both into a second, empty parameter and moves `client_id` out
+  // of the query the vendor parses.
+  const separator = /[?&]$/.test(authorizationEndpoint)
+    ? ''
+    : (authorizationEndpoint.includes('?') ? '&' : '?');
+  return `${authorizationEndpoint}${separator}${query.toString()}`;
 };
 
 /** The token request's body, carrying the same `resource` the authorization request did. */

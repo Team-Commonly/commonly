@@ -152,6 +152,9 @@ describe('hosted-mcp connect: callback', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = global.fetch.mock.calls[0];
     expect(url).toBe(TOKEN_ENDPOINT);
+    // The exchange carries the same deadline every other vendor call does, or a
+    // silently accepting vendor leaves the browser on a spinner.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const body = new URLSearchParams(String(init.body));
     expect(body.get('grant_type')).toBe('authorization_code');
     expect(body.get('code')).toBe('code-1');

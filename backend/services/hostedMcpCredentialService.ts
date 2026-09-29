@@ -56,6 +56,7 @@ import {
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
+import { upstreamFetch } from './upstreamFetch';
 
 /** Refresh this long before the vendor's expiry: a token that expires in flight is a failed call. */
 export const EXPIRY_SKEW_MS = 60 * 1000;
@@ -169,7 +170,7 @@ const defaultDeps = (): CredentialDeps => ({
   clientIdFor: (entry) => resolvedClientId(entry),
   refreshAtVendor: async ({ entry, clientId, refreshToken }) => {
     const { token_endpoint: tokenEndpoint } = await discoverAuthorizationServer(entry.issuer);
-    const response = await fetch(tokenEndpoint, {
+    const response = await upstreamFetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

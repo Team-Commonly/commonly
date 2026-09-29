@@ -561,3 +561,58 @@ describe('the loser of the fence', () => {
     expect(error.message).toBe('connection is not connected (error)');
   });
 });
+
+describe('the refresh call carries the shared deadline', () => {
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  const METADATA = {
+    authorization_endpoint: 'https://mcp.linear.app/authorize',
+    token_endpoint: 'https://mcp.linear.app/token',
+  };
+
+  test('the shipped refresh path reaches the vendor through upstreamFetch, deadline included', async () => {
+    // Everything EXCEPT `refreshAtVendor` is injected, so the shipped one runs
+    // and the socket is the only stub. BOTH hops are asserted: a deadline on
+    // discovery that is missing on the token request is the half-fix, and the
+    // token request is the one a stalled vendor holds open.
+    const calls = [];
+    global.fetch = async (url, init) => {
+      calls.push([String(url), init]);
+      const body = String(url).includes('/.well-known/')
+        ? METADATA
+        : { access_token: 'vendor-access', refresh_token: 'vendor-refresh', expires_in: 60 };
+      return { ok: true, status: 200, json: async () => body };
+    };
+
+    const h = harness({ row: stale() });
+    delete h.deps.refreshAtVendor;
+    const got = await credentialFor(stale(), h.deps);
+
+    expect(got).toEqual({ token: 'vendor-access', expiresAt: new Date(T0 + 60 * 1000).toISOString() });
+    expect(calls.map(([url]) => url)).toEqual([
+      'https://mcp.linear.app/.well-known/oauth-authorization-server',
+      METADATA.token_endpoint,
+    ]);
+    calls.forEach(([, init]) => expect(init.signal).toBeInstanceOf(AbortSignal));
+  });
+
+  test('a vendor that times out is a retryable failure, and the lease stays held', async () => {
+    // What a deadline produces: a TimeoutError out of `upstreamFetch`, which
+    // reaches the fence as a transport failure. Without one this call would sit
+    // on the socket, holding the lease for as long as the OS allowed.
+    global.fetch = async () => {
+      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    };
+
+    const h = harness({ row: stale() });
+    delete h.deps.refreshAtVendor;
+    const error = await refusal(credentialFor(stale(), h.deps));
+
+    expect(error.code).toBe('refresh_unreachable');
+    expect(error.retryable).toBe(true);
+    expect(h.markError).not.toHaveBeenCalled();
+    // Deliberate backoff, not a leak: the expiry is what releases it.
+    expect(h.state().config.refreshingUntil).toEqual(new Date(T0 + 30 * 1000));
+  });
+});
