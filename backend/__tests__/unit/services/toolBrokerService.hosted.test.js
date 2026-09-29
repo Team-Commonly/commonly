@@ -215,9 +215,14 @@ describe('a hosted-MCP grant through the broker', () => {
     const wrong = hostedRow({ config: { entryId: 'sentry', credentialRef: 'cred-1' } });
     mockIntegration.findById.mockReturnValue({ ...wrong, lean: async () => wrong });
 
+    // The MESSAGE, not just the code: the tool's own call refuses the same
+    // mismatch one layer down, so only naming the layer says which guard fired.
     await expect(callTool({
       grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
-    })).rejects.toMatchObject({ code: 'connection_mismatch' });
+    })).rejects.toMatchObject({
+      code: 'connection_mismatch',
+      message: "grant connection does not belong to this tool's entry",
+    });
     expect(global.fetch).not.toHaveBeenCalled();
     expect(mockCredentialFor).not.toHaveBeenCalled();
     expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
