@@ -187,6 +187,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - TASK-147 lands with removal, in step 6 (§10), and the first catalogue entry does not ship without it. This is the second grantable type, so every path that can remove the row must call `revokeConnectionGrants` before the row moves, witnessed per path. `DELETE /api/integrations/:id` already does (`routes/integrations.ts:797`). Pod deletion (`controllers/podController.ts:730`, `deleteMany({ podId })`) and the reconciler's and admin Installable routes' updates, which match on the top-level `installationId`, cannot reach a row that has no `podId` and no installationId slot. The witness for those paths is that a hosted row and its grants come through untouched. §2's account change is the one new path, and it revokes.
   - The legacy Discord delete (`routes/discord.ts:241`) looks its row up by `installationId` and `type: 'discord'`, so the same witness covers it.
   - Pod deletion's case also needs the row to stay without a `podId`. `PATCH /api/integrations/:id` can set one on a user-scoped row, and it refuses a hosted row only because that row holds no `config.linkedUserId` (`routes/integrations.ts:672`). A witness pins that refusal.
+  - Deleting a member's Commonly account (`DELETE /api/admin/users/:userId`, `routes/admin/users.ts:267`, behind both admin pages' Delete) moves no row. It deletes the person and nothing else: `User` has no delete hook, and the broker never reads whether `createdBy` still exists. The person's grants would keep resolving until they expire, and only the granter, now gone, sees Revoke. The row would stay active, so the orphan sweep would keep a live refresh token for a person Commonly no longer has. The route therefore refuses `409` while the person owns a hosted row, and names the rows. An admin removes them first through `DELETE /api/integrations/:id`, which admits an admin (`canDeleteIntegration`, `routes/integrations.ts:171`) and runs §9's removal. Removal stays one path with one retry, not a second copy inside account deletion.
   - The mint may admit the type before any of this lands. No hosted row can exist while `HOSTED_MCP_ENTRIES` is empty, so no hosted grant can either.
 
 **The broker** (`resolveConnection`, `toolBrokerService.ts:455`):
@@ -208,7 +209,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 
 `ToolCallRecord` (`models/ToolCall.ts:62–75`) records the grant, the agent, the tool and the outcome, but not whose credential ran. With per-person Connections, that is the first question a trail reader asks: whose Linear was this?
 
-**Every record gains `credentialOwnerId`, the Connection's `createdBy` at call time, for every type.** That includes `github-app`, whose owner is the admin who created the row. It is copied onto the record, because once §10.5's last step deletes the row there is nothing left to join to. Soft-deleting the row instead was considered and rejected: §10.5 ends with the delete, and a soft-deleted row is one that the sweeps, the catalogue and the mint would all have to learn to skip.
+**Every record gains `credentialOwnerId`, the Connection's `createdBy` at call time, for every type.** That includes `github-app`, whose owner is the admin who created the row. It is copied onto the record, because once §10.5's last step deletes the row there is nothing left to join to. The copy holds against the row's delete, not the person's. A deleted Commonly account leaves the id resolving to no one, as it leaves every other reference to that account (§7). Keeping a name here would make the trail the one place a deleted person's name survives, and that is a retention decision for account deletion as a whole, not for this column. Soft-deleting the row instead was considered and rejected: §10.5 ends with the delete, and a soft-deleted row is one that the sweeps, the catalogue and the mint would all have to learn to skip.
 
 ## 9. Failure is named (C9, C10)
 
@@ -270,6 +271,7 @@ Each step can be tested without the vendor, except the live measurements in step
    - §10.5's named tests, run over a hosted row, except `removal refreshes before it revokes at the provider`, which is GitHub's grant-deletion case
    - `the provider revoke sends the refresh token to the entry's revocation endpoint`
    - TASK-147's witness per removal path (§7), before the first entry ships
+   - `deleting a member who owns a hosted row is refused, and the row, its grants and its material are unchanged`
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
    - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
    - `the page's call to start is credentialed`, before the walk (§4)
