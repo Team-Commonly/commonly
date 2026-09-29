@@ -669,7 +669,6 @@
    the next one, so the gap belongs to the section above rather than being split
    across two top paddings that can drift. */
 .v2-landing__section { padding-top: 0; padding-bottom: 120px; }
-.v2-landing__section--tint { background: var(--v2-bg-subtle); }
 .v2-landing__section-head { max-width: 1312px; margin: 0 auto 56px; }
 /* The features head is the exception: the board draws it 40 above the rows, and
    at a phone width the section's 24 top padding plus the wedge's 24 below is the
@@ -685,7 +684,6 @@
   color: var(--v2-accent);
   margin-bottom: 12px;
 }
-.v2-landing__kicker--light { color: rgba(255, 255, 255, 0.6); }
 .v2-landing__h2 {
   margin: 0;
   max-width: 900px;
@@ -697,11 +695,13 @@
   text-wrap: balance;
   color: var(--v2-text-primary);
 }
+/* The section head's sub, shared by architecture and pricing: the board's
+   lede scale, and the head's own gap supplies the 12 above it. */
 .v2-landing__sub {
-  margin: 12px 0 0;
-  max-width: 620px;
-  font-size: 16px;
-  line-height: 1.5;
+  margin: 20px 0 0;
+  max-width: 900px;
+  font-size: 20px;
+  line-height: 32px;
   color: var(--v2-text-secondary);
 }
 
@@ -830,106 +830,121 @@
 }
 .v2-landing__card-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
-/* Use cases */
-.v2-landing__usecases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+/* Use cases: one bordered list, a row per case, price-list-shaped. The frame
+   carries the radius and clips the hover fill, so a row's own corners never
+   round. */
+.v2-landing__usecases {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  overflow: hidden;
+}
 .v2-landing__usecase {
-  display: block;
-  padding: 20px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr) 16px;
+  grid-template-areas: 'title text arrow';
+  gap: 32px;
+  align-items: baseline;
+  padding: 22px 28px;
   text-decoration: none;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: background 120ms ease;
 }
-.v2-landing__usecase:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-hover); }
-.v2-landing__usecase-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 6px; }
-.v2-landing__usecase-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
-
-/* 3-tile architecture */
-.v2-landing__tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.v2-landing__tile {
-  padding: 22px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-}
-.v2-landing__tile-num {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--v2-accent);
-  margin-bottom: 12px;
-}
-.v2-landing__tile-title { font-size: 17px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__tile-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
-
-/* ---------- Built-by-agents proof band (deep navy) ---------- */
-.v2-landing__proof {
-  background: var(--v2-accent-deep);
-  padding-top: 64px;
-  padding-bottom: 64px;
-}
-.v2-landing__proof-inner { max-width: 820px; margin: 0 auto; text-align: center; }
-.v2-landing__proof-title {
+.v2-landing__usecase + .v2-landing__usecase { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__usecase:hover { background: var(--v2-surface-hover); }
+/* v2.css's focus ring is an OUTER box-shadow, which the frame's overflow:hidden
+   clips — the ring would simply not appear on these rows. The inset form draws
+   it inside the row; (0,3,0) outranks the shared (0,2,1) `.v2-root a` rule. */
+.v2-root .v2-landing__usecase:focus-visible { box-shadow: inset var(--v2-focus-ring); }
+.v2-landing__usecase-title {
+  grid-area: title;
   margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #ffffff;
-}
-.v2-landing__proof-sub {
-  margin: 14px auto 0;
-  max-width: 640px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.8);
-}
-.v2-landing__proof-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 48px; margin-top: 36px; }
-.v2-landing__proof-stat { display: flex; flex-direction: column; gap: 2px; }
-.v2-landing__proof-num { font-size: 30px; font-weight: 750; letter-spacing: -0.02em; color: #ffffff; }
-.v2-landing__proof-label { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
-
-/* ---------- Pricing ---------- */
-.v2-landing__price { max-width: 1312px; margin: 0 auto; }
-.v2-landing__price-card {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 32px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  text-align: center;
-}
-.v2-landing__price-tag {
-  font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 48px;
-  font-weight: 850;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__price-text { margin: 8px auto 20px; max-width: 460px; font-size: 16px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__price-list { list-style: none; margin: 0 auto 24px; padding: 0; max-width: 420px; text-align: left; display: flex; flex-direction: column; gap: 10px; }
-.v2-landing__price-list li { display: flex; align-items: center; font-size: 14px; color: var(--v2-text-secondary); }
+.v2-landing__usecase-text { grid-area: text; margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__usecase-arrow { grid-area: arrow; align-self: center; display: block; color: var(--v2-text-tertiary); }
+
+/* Architecture: shell over kernel over drivers, drawn as one bordered stack.
+   A layer is not a step, so the 01/02/03 are gone with the cards. */
+.v2-landing__tiles {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+.v2-landing__tile {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 32px;
+  align-items: baseline;
+  padding: 28px 32px;
+}
+.v2-landing__tile + .v2-landing__tile { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__tile-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__tile-text { margin: 0; max-width: 760px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+
+/* ---------- Built-by-agents proof — ruling A, a quiet panel ---------- */
+/* The band is gone: no navy, no padding of its own, the frame above supplies
+   the margins like every other section, and the proof is a bordered panel on
+   --v2-bg-subtle (the card surface the board draws). */
+.v2-landing__proof-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 28px 64px;
+  padding: 56px 64px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-lg);
+}
+/* 1 1 480px: the copy takes the rest of the row beside the stats at 1440 and
+   1200 — a four-digit count still fits — and the stats wrap under it below
+   about 1140, so no breakpoint is needed for the two arrangements. */
+.v2-landing__proof-copy { flex: 1 1 480px; min-width: 0; }
+.v2-landing__proof-sub { margin: 20px 0 0; max-width: 640px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__proof-stats { display: flex; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; gap: 56px; margin: 0; }
+.v2-landing__proof-stat { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.v2-landing__proof-num {
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__proof-label { font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; font-weight: 500; color: var(--v2-text-tertiary); white-space: nowrap; }
+
+/* ---------- Pricing ---------- */
+/* The tier lists: the same 6px ink square as the feature rows, not a glyph and
+   not an accent dot. Every tier's list is this one rule — the tiers carry no
+   override, because the board's own list margin is the base margin. */
+.v2-landing__price-list {
+  list-style: none;
+  margin: 24px 0 32px;
+  padding: 24px 0 0;
+  border-top: 1px solid var(--v2-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2-landing__price-list li { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 20px; color: var(--v2-text-primary); }
 .v2-landing__price-list li::before {
   content: "";
-  flex-shrink: 0;
+  flex: none;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
-  background: var(--v2-accent);
-  margin-right: 12px;
-}
-.v2-landing__price-card .v2-landing__cta-row { justify-content: center; }
-
-/* Section subtitle (used under the pricing head) */
-.v2-landing__section-sub {
-  margin: 12px auto 0;
-  max-width: 640px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
+  /* 7px centres the 6px square on the 20px line box. */
+  margin-top: 7px;
+  background: var(--v2-text-primary);
 }
 
 /* ---------- Pricing tiers ---------- */
@@ -937,70 +952,92 @@
   max-width: 1312px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
   align-items: stretch;
 }
 .v2-landing__tier {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 28px 24px;
+  min-width: 0;
+  padding: 32px;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
   text-align: left;
 }
-/* Featured tier: accent border (borders-not-shadows), no elevation. */
-.v2-landing__tier--featured { border-color: var(--v2-accent); }
+/* Featured tier: a 2px cobalt rule, and the padding drops by the extra pixel
+   so Pro's contents stay on the same lines as the two beside it. Still
+   borders-not-shadows; no elevation. The name carries the cobalt too. */
+.v2-landing__tier--featured { border: 2px solid var(--v2-accent); padding: 31px; }
+.v2-landing__tier--featured .v2-landing__tier-name { color: var(--v2-accent); }
 .v2-landing__tier-name {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 700;
+  line-height: 20px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--v2-text-tertiary);
 }
+/* The price and its period share a baseline and wrap together at 390. */
 .v2-landing__tier-price {
-  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 34px;
-  font-weight: 850;
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
 .v2-landing__tier-price span {
   font-family: var(--v2-font);
   font-size: 15px;
+  line-height: 20px;
   font-weight: 500;
   letter-spacing: 0;
   color: var(--v2-text-tertiary);
 }
-.v2-landing__tier-note { margin: 6px 0 18px; font-size: 14px; line-height: 1.45; color: var(--v2-text-secondary); }
-.v2-landing__tier .v2-landing__price-list { margin: 0 0 24px; max-width: none; }
-.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; }
+.v2-landing__tier-note { margin: 12px 0 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+/* Pro's button is the section's one cobalt fill, and it is the widest type in
+   the row: 700 rather than the 600 the bordered buttons carry. */
+.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; height: 48px; padding: 0 20px; font-size: 16px; }
+.v2-landing__tier--featured .v2-landing__btn { font-weight: 700; }
 
+/* Enterprise is a row, not a third box: same frame as the lists above it. */
 .v2-landing__tier-enterprise {
   max-width: 1312px;
-  margin: 20px auto 0;
-  display: flex;
+  margin: 12px auto 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 24px;
   padding: 18px 24px;
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-  font-size: 15px;
-  line-height: 1.5;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  font-size: 16px;
+  line-height: 26px;
   color: var(--v2-text-secondary);
 }
-.v2-landing__tier-enterprise strong { color: var(--v2-text-primary); }
-.v2-landing__tier-enterprise .v2-landing__btn { flex-shrink: 0; }
+.v2-landing__tier-enterprise strong {
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__tier-enterprise .v2-landing__btn { padding: 0 20px; }
 .v2-landing__price-foot {
   max-width: 1312px;
   margin: 24px auto 0;
-  text-align: center;
+  text-align: left;
   font-size: 13px;
+  line-height: 20px;
   color: var(--v2-text-tertiary);
 }
 
@@ -1061,7 +1098,6 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
-  .v2-landing__usecases { grid-template-columns: repeat(2, 1fr); }
   .v2-landing__feature-row { gap: 32px; }
 }
 
@@ -1070,15 +1106,25 @@
      its bottom padding and the demo's negative margin change together, so
      splitting them across a third breakpoint is how they drift apart. */
   .v2-landing__open-grid { grid-template-columns: 1fr; gap: 32px; }
-  .v2-landing__tiles,
   .v2-landing__adapters,
   .v2-landing__steps,
   .v2-landing__cards,
   .v2-landing__tiers { grid-template-columns: 1fr; }
   .v2-landing__steps { row-gap: 28px; }
   .v2-landing__adapters { row-gap: 24px; }
-  .v2-landing__tier-enterprise { flex-direction: column; align-items: flex-start; }
-  .v2-landing__proof-stats { gap: 28px; }
+  /* A use-case row keeps its frame and drops to two tracks: title beside the
+     arrow, and the text under both of them. */
+  .v2-landing__usecase {
+    grid-template-columns: minmax(0, 1fr) 16px;
+    grid-template-areas: 'title arrow' 'text text';
+    align-items: center;
+    gap: 4px 12px;
+  }
+  /* The stack stays ONE bordered box, so it is deliberately not in the
+     one-column group above; its rows become a column instead — a layer's title
+     sits over its own text rather than in a track beside it. */
+  .v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
+  .v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }
 }
 
 @media (max-width: 760px) {
@@ -1162,7 +1208,24 @@
   .v2-landing__open-item { padding: 16px 18px; }
   .v2-landing__card { padding: 20px 22px; }
   .v2-landing__card-title { font-size: 22px; line-height: 26px; }
-  .v2-landing__usecases { grid-template-columns: 1fr; }
+  /* Row D: the same rows, tighter. The use-case frame keeps its 18px side
+     padding, and the proof panel's stats spread the full width under the copy
+     rather than sitting beside it. */
+  .v2-landing__usecase { padding: 16px 18px; }
+  .v2-landing__tile { padding: 18px 20px; }
+  .v2-landing__tile-title { font-size: 22px; line-height: 26px; }
+  .v2-landing__sub { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__proof-inner { padding: 28px 22px; }
+  .v2-landing__proof-sub { margin-top: 16px; }
+  .v2-landing__proof-stats { flex: 1 1 100%; justify-content: space-between; gap: 16px; }
+  .v2-landing__proof-stat { gap: 6px; }
+  .v2-landing__proof-num { font-size: 36px; line-height: 36px; }
+  .v2-landing__tier { padding: 24px; }
+  .v2-landing__tier--featured { padding: 23px; }
+  .v2-landing__tier-price { font-size: 44px; line-height: 44px; }
+  .v2-landing__price-list { margin: 24px 0 24px; }
+  .v2-landing__tier-enterprise { padding: 16px 18px; }
+  .v2-landing__price-foot { margin-top: 20px; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
   /* (0,2,0) outranks the stacking rule above, so even rows must stack by name. */
@@ -1364,11 +1427,11 @@
    Han and Kana glyphs are already set on their own fixed advance, so the same
    tightening pulls them into each other instead, which is what the shell's
    `.v2-root :lang(zh) .v2-lang-switch__trigger { letter-spacing: 0 }` reset
-   exists for. This is that reset for the landing, and it lists the same ten
-   selectors the sheet tightens, so the two move together: `v2-landing`
-   carries 10 negative trackings and this block answers all 10 (asserted in
+   exists for. This is that reset for the landing, and it lists every selector
+   the sheet tightens, so the two move together (asserted in
    `v2-layout-invariants.test.ts`, which reads this file and fails on
-   disagreement in either direction). */
+   disagreement in either direction — the count is deliberately not repeated
+   here, because a number in this comment is one more thing that goes stale). */
 :lang(zh) .v2-landing__brand-name,
 :lang(zh) .v2-landing__title,
 :lang(zh) .v2-landing__feature-title,
@@ -1378,10 +1441,11 @@
 :lang(zh) .v2-landing__adapter-title,
 :lang(zh) .v2-landing__open-item strong,
 :lang(zh) .v2-landing__card-title,
-:lang(zh) .v2-landing__proof-title,
+:lang(zh) .v2-landing__usecase-title,
+:lang(zh) .v2-landing__tile-title,
 :lang(zh) .v2-landing__proof-num,
-:lang(zh) .v2-landing__price-tag,
 :lang(zh) .v2-landing__tier-price,
+:lang(zh) .v2-landing__tier-enterprise strong,
 :lang(zh) .v2-landing__cta-title {
   letter-spacing: 0;
 }

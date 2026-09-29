@@ -2619,7 +2619,13 @@ describe('the landing hero demo (TASK-147)', () => {
     // selector's first match is the max-width rule, so a shadow on the later
     // rule would pass a ruleBody check (ux-lead, #1918).
     expect(landingPage).not.toContain('v2-landing__shot-bar');
-    expect(landing).not.toContain('box-shadow');
+    // Row D's use-case row draws its focus ring with an INSET box-shadow, because
+    // the list's `overflow: hidden` clips v2.css's outer one. That is not the
+    // card elevation this test bans, so the ban is narrowed to NON-inset shadows
+    // rather than dropped: anything with an offset or blur still fails here.
+    const shadows = [...landing.matchAll(/box-shadow:\s*([^;]+);/g)].map((m) => m[1].trim());
+    expect(shadows).toContain('inset var(--v2-focus-ring)');
+    expect(shadows.filter((s) => !s.startsWith('inset '))).toEqual([]);
   });
 
   test('even feature rows mirror their columns, and still stack on a phone', () => {
@@ -3870,7 +3876,10 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(read('../../i18n/locales/en.json')).toContain('Install your agents into a pod');
     expect(read('../../i18n/locales/zh-CN.json')).toContain('把智能体安装到 Pod 中');
     // Row D drops the use-cases tint; this row drops the how-it-works one.
-    expect((landingTsx.match(/v2-landing__section--tint/g) || []).length).toBe(1);
+    // Row D therefore takes this count to zero and deletes the class from the
+    // sheet with it — the pinned property (no section carries a tint) is the
+    // same claim at either value, and row D's own test checks the sheet half.
+    expect((landingTsx.match(/v2-landing__section--tint/g) || []).length).toBe(0);
   });
 
   test('the adapters sit under a hairline and the command blocks are ink', () => {
@@ -3973,5 +3982,231 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     // Non-vacuity for the loop above: the block that must carry them exists and
     // the property is the one row A's inheritance test scans for.
     expect(zh).toContain('letter-spacing: 0;');
+  });
+});
+
+// TASK-167 row D (TASK-195). The page's second half: use cases as a bordered
+// list, architecture as a bordered stack, the proof as a quiet panel on the
+// card surface, and pricing onto Signal. Two of these are REMOVALS a later edit
+// could quietly undo — the navy proof band and the round accent dot — so both
+// are asserted absent rather than left unmentioned.
+describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricing onto Signal', () => {
+  const landing = read('../landing/v2-landing.css');
+  const landingTsx = read('../landing/V2LandingPage.tsx');
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+
+  test("the page's ADR count equals the ADR files in docs/adr", () => {
+    // docs/ sits outside the frontend image's build context, so the page cannot
+    // count at build time and the number is a literal in the TSX. This test is
+    // the only thing that notices when the two disagree — and it fails in the
+    // PR that adds the ADR, which is the PR whose author can fix it (tests.yml
+    // carries no path filter, which is what makes that true).
+    const count = Number(/^const ADR_COUNT = (\d+);$/m.exec(landingTsx)?.[1]);
+    expect(Number.isInteger(count)).toBe(true);
+    const files = fs.readdirSync(path.join(repoRoot, 'docs/adr'))
+      .filter((f) => /^ADR-\d+.*\.md$/.test(f));
+    expect(files).toHaveLength(count);
+  });
+
+  test('a use case is a row in one bordered list, not a card in a grid', () => {
+    const list = topLevelRuleBody(landing, '.v2-landing__usecases');
+    expect(list).toContain('border: 1px solid var(--v2-border)');
+    expect(list).toContain('border-radius: var(--v2-radius)');
+    expect(list).toContain('overflow: hidden');
+    expect(list).not.toContain('grid-template-columns');
+
+    const row = topLevelRuleBody(landing, '.v2-landing__usecase');
+    expect(row).toContain('grid-template-columns: 340px minmax(0, 1fr) 16px');
+    expect(row).toContain("grid-template-areas: 'title text arrow'");
+    expect(row).toContain('gap: 32px');
+    expect(row).toContain('padding: 22px 28px');
+    // The card treatment is gone, not merely overridden.
+    expect(row).not.toContain('background: var(--v2-surface)');
+    expect(row).not.toContain('border:');
+    expect(row).not.toContain('border-radius');
+
+    // Hairlines between rows are what make the frame one list.
+    expect(landing).toContain(
+      '.v2-landing__usecase + .v2-landing__usecase { border-top: 1px solid var(--v2-border-soft); }',
+    );
+    // `overflow: hidden` clips v2.css's OUTER focus ring, so the row has to draw
+    // it inset — the same ring, inside the frame. (0,3,0) beats the shared
+    // (0,2,1) `.v2-root a:focus-visible` rule, which is why the override holds.
+    expect(landing).toContain(
+      '.v2-root .v2-landing__usecase:focus-visible { box-shadow: inset var(--v2-focus-ring); }',
+    );
+  });
+
+  test("the use-case arrow is the board's 16px path, one per row, decorative", () => {
+    expect(landingTsx.match(/<UseCaseArrow \/>/g) || []).toHaveLength(5);
+    expect(landingTsx).toContain('M3 8h9M8.5 4.5L12 8l-3.5 3.5');
+    expect(landingTsx).toContain('strokeLinecap="square"');
+    expect(landingTsx).toContain('stroke="currentColor"');
+    expect(landingTsx).toContain('aria-hidden="true"');
+    expect(topLevelRuleBody(landing, '.v2-landing__usecase-arrow')).toContain('grid-area: arrow');
+  });
+
+  test('the marketplace case is gone from the page and from both locales', () => {
+    expect(landingTsx).not.toContain('app-marketplace');
+    for (const locale of ['en.json', 'zh-CN.json']) {
+      const json = JSON.parse(read(`../../i18n/locales/${locale}`));
+      expect(Object.keys(json.landing.useCases)).toEqual(
+        ['kicker', 'title', 'coding', 'chat', 'research', 'browse', 'digest'],
+      );
+    }
+  });
+
+  test('architecture is one bordered stack, and a layer is not a step', () => {
+    const stack = topLevelRuleBody(landing, '.v2-landing__tiles');
+    expect(stack).toContain('border: 1px solid var(--v2-border)');
+    expect(stack).toContain('border-radius: var(--v2-radius)');
+    expect(stack).not.toContain('grid-template-columns');
+
+    const row = topLevelRuleBody(landing, '.v2-landing__tile');
+    expect(row).toContain('grid-template-columns: 280px minmax(0, 1fr)');
+    expect(row).toContain('padding: 28px 32px');
+    expect(row).toContain('align-items: baseline');
+    expect(landing).toContain(
+      '.v2-landing__tile + .v2-landing__tile { border-top: 1px solid var(--v2-border-soft); }',
+    );
+    expect(topLevelRuleBody(landing, '.v2-landing__tile-text')).toContain('max-width: 760px');
+
+    // The 01/02/03 are gone from the markup AND the sheet, so a card treatment
+    // cannot come back by restoring a single rule.
+    expect(landingTsx).not.toContain('tile-num');
+    expect(landing).not.toContain('tile-num');
+  });
+
+  test('the proof is a quiet panel on the card surface, not a navy band', () => {
+    const panel = topLevelRuleBody(landing, '.v2-landing__proof-inner');
+    expect(panel).toContain('background: var(--v2-bg-subtle)');
+    expect(panel).toContain('border: 1px solid var(--v2-border-soft)');
+    expect(panel).toContain('border-radius: var(--v2-radius-lg)');
+    expect(panel).toContain('padding: 56px 64px');
+    expect(panel).toContain('flex-wrap: wrap');
+    expect(panel).toContain('align-items: flex-end');
+    expect(panel).toContain('gap: 28px 64px');
+    // The band's own navy fill and padding are gone, so the frame above (which
+    // every section shares) is what holds the proof's margins.
+    expect(topLevelRuleBody(landing, '.v2-landing__proof')).toBe('');
+    expect(landingTsx).toContain('<section className="v2-landing__section v2-landing__proof">');
+    // The copy takes one track and the stats the other, and the wrap below
+    // ~1140 is what puts them in a column at 390 without a breakpoint.
+    expect(topLevelRuleBody(landing, '.v2-landing__proof-copy')).toContain('flex: 1 1 480px');
+    const stats = topLevelRuleBody(landing, '.v2-landing__proof-stats');
+    expect(stats).toContain('flex: 0 0 auto');
+    expect(stats).toContain('flex-wrap: nowrap');
+    expect(stats).toContain('gap: 56px');
+    expect(topLevelRuleBody(landing, '.v2-landing__proof-num')).toContain('font-size: 56px');
+    // The title is row B's h2, not a band-specific size.
+    expect(landingTsx).toContain('<h2 className="v2-landing__h2">{t(\'landing.proof.title\')}</h2>');
+    expect(landing).not.toContain('proof-title');
+    expect(landing).not.toContain('kicker--light');
+    expect(landingTsx).not.toContain('kicker--light');
+  });
+
+  test('a pricing bullet is a 6px ink square, and Pro carries the 2px cobalt rule', () => {
+    const marker = selectorRuleBody(landing, '.v2-landing__price-list li::before');
+    expect(marker).toContain('width: 6px');
+    expect(marker).toContain('height: 6px');
+    expect(marker).toContain('background: var(--v2-text-primary)');
+    expect(marker).toContain('margin-top: 7px');
+    // Round and accent is the old dot: both gone, so neither can come back
+    // alone. `flex: none` keeps the square from being squeezed by a long item.
+    expect(marker).not.toContain('border-radius');
+    expect(marker).not.toContain('var(--v2-accent)');
+    expect(marker).toContain('flex: none');
+
+    // The list is ONE rule: the tiers carry no override of it, because the
+    // board's own tier list margin is the base margin.
+    expect(landing).not.toContain('.v2-landing__tier .v2-landing__price-list');
+
+    const featured = topLevelRuleBody(landing, '.v2-landing__tier--featured');
+    expect(featured).toContain('border: 2px solid var(--v2-accent)');
+    expect(featured).toContain('padding: 31px');
+    expect(landing).toContain(
+      '.v2-landing__tier--featured .v2-landing__btn { font-weight: 700; }',
+    );
+    expect(topLevelRuleBody(landing, '.v2-landing__tier')).toContain('padding: 32px');
+    const btn = landing.match(/\.v2-landing__tier \.v2-landing__btn \{[^}]*\}/)?.[0] ?? '';
+    expect(btn).toContain('height: 48px');
+    expect(btn).toContain('padding: 0 20px');
+    expect(btn).toContain('font-size: 16px');
+  });
+
+  test('the enterprise row is a bordered grid, and the price foot is left-aligned', () => {
+    const ent = topLevelRuleBody(landing, '.v2-landing__tier-enterprise');
+    expect(ent).toContain('grid-template-columns: minmax(0, 1fr) auto');
+    expect(ent).toContain('gap: 24px');
+    expect(ent).toContain('border: 1px solid var(--v2-border)');
+    expect(ent).toContain('border-radius: var(--v2-radius)');
+    expect(ent).not.toContain('background');
+    // Dropped from the markup with the class: the base 44/15/600 is the board's.
+    expect(landingTsx).not.toContain('btn--sm" to={appHref}}>{t(\'landing.actions.talkToUs\')}');
+    expect(topLevelRuleBody(landing, '.v2-landing__price-foot')).toContain('text-align: left');
+  });
+
+  test('the tint class is dead in both places, so no section carries it back', () => {
+    // Row C left it with exactly one user (use cases) and asserted that count.
+    // This row removes the last one, so the rule goes too rather than sitting
+    // in the sheet as a class nothing can name.
+    expect(landingTsx).not.toContain('section--tint');
+    expect(landing).not.toContain('section--tint');
+  });
+
+  test("the head's sub is architecture's and pricing's, at the board's 20/32", () => {
+    const sub = topLevelRuleBody(landing, '.v2-landing__sub');
+    expect(sub).toContain('margin: 20px 0 0');
+    expect(sub).toContain('max-width: 900px');
+    expect(sub).toContain('font-size: 20px');
+    expect(sub).toContain('line-height: 32px');
+    // The pricing-only variant is gone, so the two heads cannot drift apart.
+    expect(landing).not.toContain('.v2-landing__section-sub');
+    expect(landingTsx).toContain('<p className="v2-landing__sub">{t(\'landing.pricing.sub\')}</p>');
+  });
+
+  test('the phone block carries this row, and the one-column switches sit at 900', () => {
+    const phone = mediaAt(landing, '@media (max-width: 680px)');
+    expect(phone).toContain('.v2-landing__usecase { padding: 16px 18px; }');
+    expect(phone).toContain('.v2-landing__tile { padding: 18px 20px; }');
+    expect(phone).toContain('.v2-landing__proof-inner { padding: 28px 22px; }');
+    expect(phone).toContain(
+      '.v2-landing__proof-stats { flex: 1 1 100%; justify-content: space-between; gap: 16px; }',
+    );
+    expect(phone).toContain('.v2-landing__proof-num { font-size: 36px; line-height: 36px; }');
+    expect(phone).toContain('.v2-landing__tier { padding: 24px; }');
+    expect(phone).toContain('.v2-landing__tier--featured { padding: 23px; }');
+    expect(phone).toContain('.v2-landing__tier-price { font-size: 44px; line-height: 44px; }');
+    // The use-case frame is no longer a grid at any width, so neither of the
+    // old column counts may survive in the blocks they were written for.
+    expect(phone).not.toContain('.v2-landing__usecases { grid-template-columns: 1fr; }');
+    expect(mediaAt(landing, '@media (max-width: 1024px)')).not.toContain('.v2-landing__usecases');
+
+    const tablet = mediaAt(landing, '@media (max-width: 900px)');
+    expect(tablet).toContain("grid-template-areas: 'title arrow' 'text text'");
+    expect(tablet).toContain('.v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }');
+    expect(tablet).toContain(
+      '.v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }',
+    );
+    // The stack stays one box, so it must NOT be in the one-column group.
+    expect(tablet).not.toContain('.v2-landing__tiles,');
+    expect(tablet).not.toContain('.v2-landing__proof-stats');
+  });
+
+  test('every negative tracking this row adds has its zh reset', () => {
+    const resetStart = landing.indexOf(':lang(zh) .v2-landing__brand-name');
+    const resetBlock = landing.slice(resetStart, landing.indexOf('}', resetStart));
+    for (const selector of [
+      '.v2-landing__usecase-title',
+      '.v2-landing__tile-title',
+      '.v2-landing__tier-enterprise strong',
+    ]) {
+      expect(topLevelRuleBody(landing, selector)).toContain('letter-spacing: -0.03em');
+      expect(resetBlock).toContain(`:lang(zh) ${selector}`);
+    }
+    // The two selectors this row deletes may not linger in the reset list:
+    // a reset for a rule that no longer exists is a claim nothing checks.
+    expect(resetBlock).not.toContain('proof-title');
+    expect(resetBlock).not.toContain('price-tag');
   });
 });
