@@ -103,7 +103,11 @@ const fingerprint = (text) => text
   .trim()
   .slice(0, 60);
 
-/** Parse a rule file into [{number, line, lead, fingerprint}]. */
+/**
+ * Parse a rule file into [{number, line, lead}]. `lead` holds the rule's NAME as
+ * this guard compares it — `fingerprint`'s output, not the lead sentence itself
+ * (see the pin note in the header).
+ */
 function parseRules(body) {
   const lines = body.split('\n');
   const rules = [];
