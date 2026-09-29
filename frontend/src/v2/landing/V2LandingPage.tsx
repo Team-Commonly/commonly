@@ -78,15 +78,6 @@ const TRUSTED_AFFILIATIONS = [
   { name: 'Ajaib', logo: '/logos/ajaib.svg' },
 ] as const;
 
-const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-    <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
-    <circle cx="25" cy="32" r="2.4" fill="currentColor" />
-    <circle cx="32" cy="32" r="2.4" fill="currentColor" />
-    <circle cx="39" cy="32" r="2.4" fill="currentColor" />
-  </svg>
-);
-
 interface Stats {
   activePods?: number;
   activeAgents?: number;
@@ -814,19 +805,24 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">
-          <h2 className="v2-landing__cta-title" data-reveal>{t('landing.finalCta.title')}</h2>
-          <p className="v2-landing__cta-sub" data-reveal>{t('landing.finalCta.sub')}</p>
+          {/* Two blocks, one sentence: the break is the copy's, not the
+              viewport's, and the space between blocks makes no line box — so
+              the heading's accessible name still reads as one sentence. */}
+          <h2 className="v2-landing__cta-title" data-reveal>
+            <span className="v2-landing__cta-line">{t('landing.finalCta.titleLead')}</span>{' '}
+            <span className="v2-landing__cta-line">{t('landing.finalCta.titleTail')}</span>
+          </h2>
           <div className="v2-landing__cta-row">
-            <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
-            <a className="v2-landing__btn v2-landing__btn--onaccent-ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
+            <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+            <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           </div>
         </section>
       </main>
 
       {/* ---- Footer ---- */}
       <footer className="v2-landing__footer">
+        {/* No glyph mark: the wordmark alone (row E). */}
         <div className="v2-landing__footer-brand">
-          <span className="v2-landing__mark"><Mark size={22} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <div className="v2-landing__footer-cols">

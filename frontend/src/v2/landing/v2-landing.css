@@ -1,6 +1,8 @@
 /* V2 landing — token-aligned, single accent, borders not shadows. A marketing
- * surface: the deep-navy proof/CTA bands and the one allowed soft shadow (on
- * floating screenshot cards) are the only departures from in-app chrome rules.
+ * surface: the one allowed soft shadow (on floating screenshot cards) is the
+ * only departure from in-app chrome rules — rows D and E took the navy out of
+ * the proof and the close, so both are panels and type on the page's own
+ * white.
  * Sentence case, no emoji in chrome, calm motion. Full-bleed bands; content
  * centered at 1312px via a max() padding trick (row A, TASK-192: the product
  * frame and the demo inside it are the same 1312 wide, so the page and the
@@ -75,8 +77,6 @@
   border-bottom-color: rgba(255, 255, 255, 0.22);
 }
 .v2-landing__brand { display: flex; align-items: center; gap: 8px; }
-/* The footer keeps the glyph beside the wordmark; the bar does not (row A). */
-.v2-landing__mark { display: inline-flex; color: var(--v2-accent); }
 /* Wordmark only — the band carries no glyph mark, and the board sets the name
    in the display face at 24. */
 .v2-landing__brand-name {
@@ -135,7 +135,6 @@
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 .v2-landing__btn--sm { height: 36px; padding: 0 16px; font-size: 14px; }
-.v2-landing__btn-mark { display: inline-flex; }
 .v2-landing__btn--primary {
   color: #ffffff;
   background: var(--v2-accent);
@@ -184,12 +183,16 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
-.v2-landing__hero-actions .v2-landing__btn { height: 56px; font-size: 17px; }
+.v2-landing__hero-actions .v2-landing__btn,
+.v2-landing__cta .v2-landing__btn { height: 56px; font-size: 17px; }
 /* White on cobalt, not cobalt on cobalt (ux-lead's #2018 finding 2: the primary
    fill IS the band's colour, so the button had no shape). Self-host is the
-   outlined sibling of the same pair, so the two rules move together. */
-.v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 26px; font-weight: 700; }
-.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 22px; }
+   outlined sibling of the same pair, so the two rules move together. The CTA
+   band's own button sits on the page's white and keeps --primary. */
+.v2-landing__hero-actions .v2-landing__btn--onaccent,
+.v2-landing__cta .v2-landing__btn--primary { padding: 0 26px; font-weight: 700; }
+.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost,
+.v2-landing__cta .v2-landing__btn--ghost { padding: 0 22px; }
 
 /* ---------- Hero ----------
 /* Copy above, the product below. The hero demo (TASK-147) is the real thing
@@ -1041,60 +1044,92 @@
   color: var(--v2-text-tertiary);
 }
 
-/* ---------- Closing CTA band (deep navy) ---------- */
+/* ---------- Closing CTA ---------- */
+/* Row E: the band is gone. No navy, no centring — the close is type on the
+   page like every other section, and its own hairline is what separates it
+   from pricing. The frame above still sets its 1312 measure. */
 .v2-landing__cta {
-  background: var(--v2-accent-deep);
-  padding-top: 64px;
-  padding-bottom: 64px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  padding-top: 80px;
+  padding-bottom: 80px;
+  border-top: 1px solid var(--v2-border-soft);
 }
+/* 64/64 and no text-wrap: balance: the board's note records that balancing
+   split the sentence ("…has / a chat."). */
 .v2-landing__cta-title {
-  margin: 0 auto;
-  max-width: 680px;
+  margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #ffffff;
+  font-size: 64px;
+  line-height: 64px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
 }
-.v2-landing__cta-sub {
-  margin: 14px auto 0;
-  max-width: 600px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.8);
-}
-.v2-landing__cta .v2-landing__cta-row { justify-content: center; }
+/* One sentence, two blocks: each span starts a line, and the space between two
+   blocks makes no line box — so the heading's accessible name still reads as
+   one sentence while the break belongs to the copy rather than the viewport. */
+.v2-landing__cta-line { display: block; }
+/* The flex gap spaces the row from the title; the row's own margin goes. */
+.v2-landing__cta .v2-landing__cta-row { margin-top: 0; }
 
 /* ---------- Footer ---------- */
+/* Row E: the wordmark, then the four link columns on one row. The board's 1440
+   tracks are 591.1 / 182.1 / 87.1 / 71.3 / 124.3 — a 1fr brand track, a 64px
+   gap, and the columns as auto tracks summing to the rest of the 1312. */
 .v2-landing__footer {
-  padding-top: 40px;
-  padding-bottom: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 64px;
+  padding-top: 48px;
+  padding-bottom: 0;
   border-top: 1px solid var(--v2-border-soft);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 32px;
-  justify-content: space-between;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--v2-text-tertiary);
 }
-.v2-landing__footer-brand { display: flex; align-items: center; gap: 8px; color: var(--v2-text-primary); }
-.v2-landing__footer-cols { display: flex; flex-wrap: wrap; gap: 48px; }
-.v2-landing__footer-col { display: flex; flex-direction: column; gap: 8px; }
+.v2-landing__footer-brand { align-self: start; }
+/* Row A's 24px wordmark is the bar's; the footer's is 16/20. (0,2,0), so this
+   also outranks row A's ≤680 22px. */
+.v2-landing__footer .v2-landing__brand-name { font-size: 16px; line-height: 20px; }
+.v2-landing__footer-cols {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 64px;
+  padding-bottom: 48px;
+}
+.v2-landing__footer-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .v2-landing__footer-title {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 700;
+  line-height: 20px;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--v2-text-tertiary, var(--v2-text-secondary));
-  margin-bottom: 2px;
+  color: var(--v2-text-primary);
+  margin-bottom: 4px;
 }
+/* No colour here on purpose: `.v2-root a { color: inherit }` (0,1,1) outranks a
+   single class, so the links take the container's tertiary — which is why the
+   container carries it. The hover is (0,2,0) and still wins. */
 .v2-landing__footer-link {
-  font-size: 14px;
-  color: var(--v2-text-secondary);
   text-decoration: none;
   transition: color 80ms ease;
 }
 .v2-landing__footer-link:hover { color: var(--v2-accent); }
+/* The legal line spans both tracks and closes the footer. It sits HERE, beside
+   the rest of the footer, because an equal-specificity base rule declared after
+   the phone block beats the phone padding it would have to give up. */
+.v2-landing__footer-legal {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 18px 0 22px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 12px;
+  line-height: 18px;
+}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
@@ -1125,6 +1160,16 @@
      sits over its own text rather than in a track beside it. */
   .v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
   .v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }
+  /* Row E: at 64 the close's first line is 820.7 wide, so "chat." orphans below
+     a viewport of 869 — it steps down here. The footer's column track moves
+     under the wordmark and the four columns pair into 2×2. */
+  .v2-landing__cta-title { font-size: 48px; line-height: 50px; }
+  .v2-landing__footer { grid-template-columns: minmax(0, 1fr); }
+  .v2-landing__footer-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px 24px;
+    padding: 24px 0 32px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1169,11 +1214,18 @@
   .v2-landing__hero { padding-top: 40px; }
   .v2-landing__hero-inner { gap: 16px; }
   .v2-landing__hero-actions { gap: 16px; margin-top: 8px; }
-  .v2-landing__hero-actions .v2-landing__btn { height: 48px; }
-  .v2-landing__hero-actions .v2-landing__btn--onaccent { padding: 0 20px; font-size: 16px; }
+  .v2-landing__hero-actions .v2-landing__btn,
+  .v2-landing__cta .v2-landing__btn { height: 48px; }
+  .v2-landing__hero-actions .v2-landing__btn--onaccent,
+  .v2-landing__cta .v2-landing__btn--primary { padding: 0 20px; font-size: 16px; }
   /* Self-host takes the board's 16 as well (finding 4); it inherited 17 from
      the row above, which the fill button does not. */
   .v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }
+  .v2-landing__cta .v2-landing__btn--ghost { padding: 0 18px; font-size: 16px; }
+  .v2-landing__cta { padding-top: 48px; padding-bottom: 48px; gap: 20px; }
+  .v2-landing__cta-title { font-size: 36px; line-height: 38px; }
+  .v2-landing__footer { padding-top: 32px; }
+  .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
   .v2-landing__lede { font-size: 16px; line-height: 26px; }
   .v2-landing__nav { gap: 14px; }
@@ -1232,8 +1284,6 @@
   .v2-landing__feature-row:nth-child(even) { grid-template-columns: 1fr; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 1; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 2; }
-  .v2-landing__footer { gap: 24px; }
-  .v2-landing__footer-cols { gap: 28px; }
 }
 
 /* ============================================================
@@ -1412,14 +1462,6 @@
   }
 }
 
-/* Footer legal line — © + license + trademark note. */
-.v2-landing__footer-legal {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--v2-border-soft);
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-}
 
 /* ---------- zh: no optical negative tracking ----------
    Every negative letter-spacing below is a latin optical adjustment — the
