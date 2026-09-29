@@ -1,6 +1,7 @@
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
+const mockUser = { findById: jest.fn() };
 const mockToolCall = { create: jest.fn() };
 const mockGithub = {
   listOpenIssues: jest.fn(),
@@ -14,6 +15,7 @@ const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
   default: mockToolCall,
@@ -95,6 +97,9 @@ beforeEach(() => {
     config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockIntegration.findById.mockResolvedValue(null);
+  // An owner row exists and is not banned unless an arm says otherwise. The
+  // shape is the real chain: `User.findById(id).select('banned').lean()`.
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockGithub.listOpenIssues.mockResolvedValue([]);
   mockGithub.createIssue.mockResolvedValue({
@@ -449,5 +454,32 @@ describe('tool broker guard rails', () => {
       outcome: 'pending_approval', reason: 'approval_required',
     }));
     expect(mockGithub.closeIssue).not.toHaveBeenCalled();
+  });
+});
+
+// TASK-181 §7: the owner check is HOSTED ONLY. A `github-app` row's token
+// belongs to the app installation, not to the admin who created the row, so a
+// suspension must not disable the app connector for every pod holding a grant on
+// it. Pinned beside the exclusion so a later reader sees it is deliberate rather
+// than a call site someone forgot.
+describe('a suspended github-app row owner (§7)', () => {
+  const OWNER = '6a8f6de2a1dccf2e02f31459';
+
+  it('leaves the call alone, and reads no owner row at all', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue({
+      type: 'github-app',
+      status: 'connected',
+      createdBy: OWNER,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+    });
+    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: true }) }) });
+
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).resolves.toBeTruthy();
+    expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
+    expect(mockUser.findById).not.toHaveBeenCalled();
   });
 });

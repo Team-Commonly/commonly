@@ -10,6 +10,7 @@ import {
   RoomGrantError,
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
+import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 
@@ -577,14 +578,69 @@ const resolveHostedConnection = async (
       403,
     );
   }
+  const ownerUserId = row.createdBy ? String(row.createdBy) : undefined;
+  await assertHostedOwnerUsable(ownerUserId);
   return {
     type: 'hosted-mcp',
     entryId,
     connectionId,
     // The member who connected the row, so a parked call can open the approval
     // room for a seat-targeted grant (`resolveApprovalPodId`).
-    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+    ownerUserId,
   };
+};
+
+/**
+ * A hosted row is authorised by the PERSON who connected it, so a ban has to
+ * reach the credential and not only the sign-in (TASK-181). A suspended person
+ * cannot sign in (`middleware/auth.ts`), but an agent acting on their connection
+ * never signs in as them: it presents its own runtime token and the broker spends
+ * the owner's stored credential, so the ban stopped nothing at all. Both broker
+ * paths — the MCP endpoint and the in-process native runtime — funnel through
+ * `resolveHostedConnection`, so the check lives here rather than in a driver.
+ *
+ * The predicate is read through `sessionAccountService`, the one live-row read
+ * every session verifier shares (`loadSessionAccount` + `sessionRefusal`). That
+ * is not a style preference: a verifier that recomputes the predicate reads
+ * `undefined` for a field it forgot to project and refuses NOTHING, which is
+ * exactly how a bot-owned row would slip through a `select('banned')` check.
+ *
+ * HOSTED ONLY. A `github-app` row's token belongs to the app installation, not
+ * to the admin who created the row, so suspending that admin must not disable the
+ * app connector for every pod holding a grant on it (§7).
+ *
+ * The id-shape test is not the predicate: it keeps a value that cannot name an
+ * account away from `findById`, whose CastError would otherwise reach the caller
+ * as a 500. A row with no owner at all is `missing` — it has no person behind it,
+ * and the remedy (remove the row) is the one that code names.
+ */
+const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
+  banned: 'connection_owner_banned',
+  missing: 'connection_owner_missing',
+  bot: 'connection_owner_bot',
+};
+
+const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
+  banned: 'the person who connected this connection is suspended',
+  missing: 'the person who connected this connection no longer exists',
+  bot: 'this connection is owned by a bot account, which cannot be its granter',
+};
+
+const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
+  const ownerId = String(ownerUserId ?? '').trim();
+  // Only a value that names an account is carried onto the ledger: a malformed
+  // one names nobody, and the column is read as an owner id.
+  const accountId = /^[a-f\d]{24}$/i.test(ownerId) ? ownerId : undefined;
+  const refusal = accountId
+    ? sessionRefusal(await loadSessionAccount(accountId))
+    : 'missing';
+  if (!refusal) return;
+  throw new RoomGrantError(
+    HOSTED_OWNER_REFUSALS[refusal],
+    HOSTED_OWNER_MESSAGES[refusal],
+    403,
+    accountId ? { credentialOwnerId: accountId } : undefined,
+  );
 };
 
 const resolveConnection = async (
@@ -871,6 +927,29 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
+/**
+ * Whose credential a refused call would have spent (scope §8, TASK-181).
+ *
+ * Both catches below record `credentialOwnerId` from a local that is filled the
+ * moment `resolveConnection` returns — but the owner refusals happen INSIDE that
+ * call, so without this the one trail row whose REASON names the owner is the
+ * one row that does not say who they were, and "which suspended person's
+ * connection was this" is unanswerable from the ledger. The guard knows the id
+ * at the moment it refuses, so it carries it on the error and the catch prefers
+ * it. It runs only after the row is proven the grant's own, so the proof-failing
+ * refusals carry nothing and still record nobody; a refusal that happens before
+ * anything resolves (`tool_not_found`, a grant that does not load) has nothing
+ * to name either.
+ */
+const refusedCredentialOwner = (
+  error: unknown,
+  resolved: string | undefined,
+): string | undefined => (
+  error instanceof RoomGrantError && typeof error.details?.credentialOwnerId === 'string'
+    ? error.details.credentialOwnerId
+    : resolved
+);
+
 const recordCall = async (
   input: BrokerCallInput,
   grant: IRoomGrant | Record<string, unknown> | undefined,
@@ -884,8 +963,13 @@ const recordCall = async (
     /**
      * The Connection's owner, supplied by the BROKER from the row it resolved
      * (`connection.ownerUserId`) — never by the caller, which is why it sits
-     * here rather than in `BrokerCallInput`. Absent when the call was refused
-     * before a connection resolved: there is no credential to name.
+     * here rather than in `BrokerCallInput`. A record names the owner only once
+     * the row is PROVEN the grant's own: the proof-failing refusals
+     * (`connection_mismatch`, `connection_untracked`, `connection_superseded`)
+     * name nobody — a superseded row is the re-added one, whose `createdBy`
+     * never made the grant — and neither does a refusal that never reached a
+     * connection at all. The owner refusals run AFTER that proof, so they carry
+     * their id on the error (see `refusedCredentialOwner`).
      */
     credentialOwnerId?: string;
   },
@@ -934,8 +1018,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
   // Whose credential ran (scope §8). Filled the moment the connection resolves,
-  // so the refusals and failures below record it too — and left unset when the
-  // refusal IS the resolution, where no credential can be named.
+  // so the refusals and failures below record it too. A refusal that happens
+  // before anything resolves leaves it unset — except an owner refusal, which
+  // names the owner on the error and is preferred by the catch.
   let credentialOwnerId: string | undefined;
 
   try {
@@ -1080,7 +1165,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
     const callId = alreadyRecorded
       ? String(error.details?.callId || '')
-      : await recordCall(input, grant, outcome, startedAt, reason, { credentialOwnerId });
+      : await recordCall(input, grant, outcome, startedAt, reason, {
+        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+      });
     if (error instanceof RoomGrantError) {
       Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
@@ -1109,7 +1196,8 @@ export const executeApprovedToolCall = async (
   const callId = `tool_call_${randomUUID()}`;
   // Whose credential ran (scope §8), filled when the connection resolves — the
   // parked envelope carries the same value, so a decision after the row's
-  // deletion still names the owner.
+  // deletion still names the owner. An owner refusal happens inside that
+  // resolution and carries its id on the error; the catch prefers it.
   let credentialOwnerId: string | undefined;
   try {
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
@@ -1153,7 +1241,12 @@ export const executeApprovedToolCall = async (
       error instanceof RoomGrantError ? 'refused' : 'failed',
       startedAt,
       reason,
-      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
+      {
+        callId,
+        approvalId: input.approvalId,
+        args: input.args,
+        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+      },
     );
     throw error;
   }
