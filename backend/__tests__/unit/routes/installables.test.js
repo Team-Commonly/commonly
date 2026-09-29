@@ -16,6 +16,7 @@ jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/installable/installableCatalogService', () => ({
   catalogFor: jest.fn(),
   providerReadiness: jest.fn(() => ({ available: true })),
+  providerOffered: jest.fn(() => true),
   publicIntegration: jest.fn((integration) => {
     if (!integration?.config?.adminPause) return integration;
     return {
@@ -67,6 +68,7 @@ describe('installable connector routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     catalogService.providerReadiness.mockReturnValue({ available: true });
+    catalogService.providerOffered.mockResolvedValue(true);
   });
 
   it('requires auth for the user-scoped catalog', async () => {
@@ -107,6 +109,46 @@ describe('installable connector routes', () => {
     expect(res.body).toEqual({ code: 'provider_not_configured' });
     expect(Pod.findById).not.toHaveBeenCalled();
     expect(installationService.install).not.toHaveBeenCalled();
+  });
+
+  it('refuses a usable provider this instance does not offer, before the pod lookup', async () => {
+    // Capability is not offerability (Wren 71174). This is the request a stranger
+    // made after the page showed them an Add for Discord: readiness passed, and
+    // the install then died further in as installable_not_found. Refused at the
+    // same place as the missing-credential case, so the API cannot be driven into
+    // a state the UI will not offer.
+    catalogService.providerReadiness.mockReturnValue({ available: true });
+    catalogService.providerOffered.mockResolvedValue(false);
+
+    const res = await request(app)
+      .post('/api/installables/discord/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ code: 'provider_not_offered' });
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(installationService.install).not.toHaveBeenCalled();
+  });
+
+  it('lets a provider through when it is both usable and offered', async () => {
+    // The paired control: the new guard must not refuse everything. Without this,
+    // a predicate that always returned false would pass the test above.
+    catalogService.providerOffered.mockResolvedValue(true);
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => '64b64c48c4f37a6b2f34c111' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+    installationService.install.mockResolvedValue({ httpStatus: 201, state: 'installing', installation: null, integration: null });
+
+    const res = await request(app)
+      .post('/api/installables/discord/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(201);
+    expect(installationService.install).toHaveBeenCalled();
   });
 
   it('rejects a non-member before any install row is claimed', async () => {

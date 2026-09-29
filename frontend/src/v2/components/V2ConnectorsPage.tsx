@@ -86,6 +86,14 @@ interface CatalogEntry {
   label?: string;
   description?: string;
   available: boolean;
+  // Capability vs offerability (Wren 71169/71174). `available` says this
+  // instance holds the credentials; `offered` says a builtin Installable row
+  // exists to install. Only both together may show an Add. Absent is read as
+  // offered: the field's only producer always emits it, so a missing value
+  // means a server older than this page, and defaulting the other way would
+  // blank every channel for the length of a rolling update instead of briefly
+  // restoring what this page did before the field existed.
+  offered?: boolean;
   unavailableReason?: string;
   installation: CatalogInstallation | null;
   integration: Connector | null;
@@ -126,6 +134,10 @@ interface ConnectorRow {
   mark?: { name: MarkName; label: string; word: string };
   muted?: boolean;
   notEnabled?: boolean;
+  // TASK-024: a row whose provider is built but not offered here. It shares
+  // `notEnabled`'s row class and Ask link, and must not share its kicker —
+  // "not enabled" claims a missing credential this state does not have.
+  notConnectable?: boolean;
   pulse: boolean;
   secondary?: boolean;
   when: string;
@@ -148,13 +160,33 @@ const TYPE_LABELS: Record<string, string> = {
   instagram: 'Instagram',
 };
 
+// The onboarding sentence for a provider you can connect right now. Keyed by
+// provider and deliberately without a default: an unmapped provider renders no
+// detail line at all. The two-branch ternary this replaces gave every provider
+// that was not telegram Slack's "one click in your workspace", so a stranger
+// reading a Discord row was told to click something in a workspace they may not
+// have (Vera 71165).
+const CONNECT_DETAIL: Record<string, { key: string; defaultValue: string }> = {
+  telegram: { key: 'connectors.availableTelegram', defaultValue: 'one message' },
+  slack: { key: 'connectors.availableSlack', defaultValue: 'one click in your workspace' },
+};
+
 // Fallback only: when the catalog cannot be read the page still offers the
 // two providers it can drive, exactly as it did before the catalog existed.
 const ADD_PLATFORMS = [
   { type: 'telegram', enabled: true },
   { type: 'slack', enabled: true },
 ];
-const UNAVAILABLE_PLATFORM_LABELS = ['Discord', 'WhatsApp'];
+// Providers we have not built at all. This is NOT the same claim as either
+// state the catalog can report: "not enabled on this instance" is a missing
+// credential, and "not connectable yet" is a provider we have built and this
+// instance cannot offer because no builtin Installable row carries it. Both of
+// those arrive through the catalog, with their own state line, so this list
+// holds only the providers that have no manifest to arrive through. Discord
+// used to sit here, which made the page say "we don't build this" about a
+// shipping connector (routes/discord.ts) whose only defect was a missing
+// readiness() declaration; it now renders the roster state line instead.
+const UNAVAILABLE_PLATFORM_LABELS = ['WhatsApp'];
 
 const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 const RECENT_MS = 10 * 60_000;
@@ -823,6 +855,11 @@ const V2ConnectorsPage: React.FC = () => {
     if (!entry.available) {
       return {
         action: null,
+        // The copy decision here is main's, not this branch's: this commit set
+        // `detail: ''` citing Wren's 09-04 one-state-line rule, but #1557 landed
+        // the detail AFTER that ruling and its tests assert the text is present.
+        // A rebase is not the place to re-open it, so the line is restored and
+        // raised on the row; everything else in the commit is unchanged.
         detail: t('connectors.askOperator', { defaultValue: 'ask your operator' }),
         dot: 'not-yet',
         line: t('connectors.notEnabled', { defaultValue: 'Not enabled on this instance.' }),
@@ -832,16 +869,38 @@ const V2ConnectorsPage: React.FC = () => {
         when: '—',
       };
     }
+    // Usable here, but with nothing to install: declaring readiness is a claim
+    // about this instance's keys, not about whether a row exists to install.
+    // Showing the Add anyway is what produced a lowercase `discord` row whose
+    // click ended in 404 installable_not_found (Wren 71162/71163).
+    if (entry.offered === false) {
+      return {
+        action: null,
+        detail: '',
+        dot: 'not-yet',
+        line: t('connectors.notConnectable', { defaultValue: 'Not connectable yet.' }),
+        muted: true,
+        // The class and the Ask link are right for this row; the kicker was the
+        // part that lied. Measured in the keys-set render at #1826: the eyebrow
+        // read "not enabled" directly above "Not connectable yet.", i.e. asking
+        // an operator for credentials the operator had already installed.
+        notConnectable: true,
+        notEnabled: true,
+        pulse: false,
+        when: '—',
+      };
+    }
     if (!installation) {
+      const connectDetail = CONNECT_DETAIL[entry.installableId];
       return {
         action: 'connect',
         // The row action opens the pod picker; the form's Connect button is
         // the actual install action. Distinct labels keep the two-step flow
         // legible to a stranger.
         actionLabel: t('connectors.add', { defaultValue: 'Add' }),
-        detail: entry.installableId === 'telegram'
-          ? t('connectors.availableTelegram', { defaultValue: 'one message' })
-          : t('connectors.availableSlack', { defaultValue: 'one click in your workspace' }),
+        detail: connectDetail
+          ? t(connectDetail.key, { defaultValue: connectDetail.defaultValue })
+          : '',
         dot: 'empty',
         line: entry.description || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
         pulse: false,
@@ -988,9 +1047,13 @@ const V2ConnectorsPage: React.FC = () => {
     const podId = item.connector ? connectorPodId(item.connector) : null;
     // TASK-140: a not-enabled row has no connection to name a pod for, so the
     // pod slot read `no pod` — which is false, it names the blocker instead.
-    const pod = row.notEnabled
+    let pod = row.notEnabled
       ? t('connectors.notEnabledKicker', { defaultValue: 'not enabled' })
       : podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
+    // `notEnabled` covers two states and the kicker must not: a not-connectable
+    // row has this instance's credentials, so it says "not yet" — the same
+    // string the not-yet roster row renders.
+    if (row.notConnectable) pod = t('connectors.notYetKicker', { defaultValue: 'not yet' });
     // A row with no age (the not-enabled row's '—') carries only the pod.
     return row.when === '—' ? pod : `${pod} · ${row.when}`;
   };
@@ -1078,9 +1141,9 @@ const V2ConnectorsPage: React.FC = () => {
                 <span className="v2-connector-row__mark" title={row.mark.word} role="img" aria-label={row.mark.word}><MarkGlyph name={row.mark.name} size={14} /></span>
                 <span className="v2-connector-row__mark-text">{row.mark.label}</span>
               </span>
-            ) : (
+            ) : row.detail ? (
               <span className="v2-connector-row__detail">{row.detail}</span>
-            )}
+            ) : null}
           </span>
         </button>
         {row.action === 'manage' && (
@@ -1427,7 +1490,7 @@ const V2ConnectorsPage: React.FC = () => {
     (connector) => connector.type === type && Boolean(connector.installationId),
   );
   const availableProviders = catalog
-    ? catalog.filter((entry) => entry.available && !entry.installation).map((entry) => ({ type: entry.installableId }))
+    ? catalog.filter((entry) => entry.available && entry.offered !== false && !entry.installation).map((entry) => ({ type: entry.installableId }))
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
   const renderAddForm = (aside = false) => {
     const rowClass = `v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`;
@@ -1492,7 +1555,7 @@ const V2ConnectorsPage: React.FC = () => {
               <article className="v2-connector-row v2-connector-row--not-yet">
                 <span className="v2-connector-row__name">
                   <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
-                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="discord" /></span>
+                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="whatsapp" /></span>
                   <span className="v2-connector-row__names">
                     {UNAVAILABLE_PLATFORM_LABELS.map((name, index) => (
                       <React.Fragment key={name}>
