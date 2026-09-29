@@ -362,12 +362,14 @@
    top third is cobalt and the pull-up is measured from the band's bottom edge
    rather than from the last control inside it (ux-lead's #2018 finding 1: as a
    child of the band, -360 measured from the last control and laid the demo over
-   the title, both CTAs and the install box). Its 94 below the frame stays on the
-   strip's own top padding for now: on the board that gap is the frame
-   container's 456 minus the 360 pull-up, on the page's white, and dropping the
-   strip's grey is row B's own edit to this rule (measured: row B's first CSS
-   hunk inserts inside `.v2-landing__trusted`), so the gap and the grey move
-   together there rather than being split across two rows. */
+   the title, both CTAs and the install box). Its 94 below the frame is now the
+   strip's own `margin-top`: on the board that gap is the frame container's 456
+   minus the 360 pull-up, on the page's white, and dropping the strip's grey is
+   row B's own edit to this rule (measured: row B's first CSS hunk inserts
+   inside `.v2-landing__trusted`), so the gap and the grey moved together there
+   rather than being split across two rows. It is a MARGIN because as top
+   padding the gap fell inside the strip's top hairline and the hairline sat on
+   the frame's bottom edge (ux-lead's #2019 finding 1). */
 .v2-landing__hero-art {
   display: flex;
   justify-content: center;
@@ -419,20 +421,38 @@
   justify-content: center;
   gap: 14px;
   /* 94 below the demo frame (48 at ≤760) — the strip is the first thing after
-     the band, so its top padding is the band-to-strip distance the board
-     draws. Row B owns this rule and drops the grey here. */
-  padding-top: 94px;
-  padding-bottom: 22px;
-  background: var(--v2-bg-subtle);
+     the band, so this is the band-to-strip distance the board draws. A MARGIN,
+     not padding: inside the border it was a gap the hairline could not straddle,
+     so the hairline sat on the frame's bottom edge (0 px) and the box measured
+     178 where the board draws 132 (ux-lead's #2019 finding 1, measured on a
+     production build of row B at 1440/1200/760/390). Outside the border the gap
+     is the gap and the 132 min-height is the box — 94 / 132 / 36 / 36 at 1440
+     and 1200, 48 / 132 / 36 / 36 at 760, 48 / 110 / 28 / 28 at 390. It is also
+     why the ≤680 `padding: 24px 0` below can no longer eat the 48. Row B owns
+     this rule and drops the grey here. */
+  margin-top: 94px;
+  /* 22 above and below, and a floor rather than the board's spacing: with the
+     min-height and `justify-content: center` doing the centring, this is what
+     the reduced-motion wrap falls back to when the logos need a second line. */
+  padding: 22px 0;
+  min-height: 132px;
+  /* No fill: the board draws the strip on the page background and frames it
+     with two hairlines instead. The tint fill was what made it read as a card. */
+  border-top: 1px solid var(--v2-border-soft);
+  border-bottom: 1px solid var(--v2-border-soft);
   color: var(--v2-text-tertiary);
   text-align: center;
 }
 
+/* Mono, like every other label on the page (signal-identity §1 rule 3: a label
+   is mono, a sentence is Plex). */
 .v2-landing__trusted-label {
   flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--v2-text-muted);
 }
@@ -484,11 +504,33 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* No `flex-wrap` on the track. It wrapped nothing — the track's only visible
+     child is one nowrap set — and it was the declaration that satisfied the old
+     substring pin (`toContain('flex-wrap: wrap')`) while 3 / 4 / 7 / 8 of the 11
+     logos clipped. The wrap belongs to the child that overflows, below; the test
+     asserts this rule does NOT carry it. */
   .v2-landing__trusted-track {
     animation: none;
     width: auto;
+    justify-content: center;
+  }
+  /* The SET is the element that has to wrap. Putting `flex-wrap` on the track
+     alone was the whole fix until row B, and it wrapped nothing: the track's
+     only visible child is one nowrap set, so the set ran past the marquee's
+     `overflow: hidden` and clipped 3 / 4 / 7 / 8 of the 11 logos at 1440 / 1200 /
+     760 / 390 (ux-lead's #2019 non-blocking finding). Two classes deliberately:
+     the ≤680 `.v2-landing__trusted-set` rule below is a one-class selector
+     declared later in the sheet and would win a specificity tie. The mask comes
+     off with it — at 390 its fade is 31px wide and would eat the first logo. */
+  .v2-landing__trusted-marquee .v2-landing__trusted-set {
     flex-wrap: wrap;
     justify-content: center;
+    row-gap: 12px;
+    padding: 0 24px;
+  }
+  .v2-landing__trusted-marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
   /* Without motion the duplicate set is pure noise — hide it. */
   .v2-landing__trusted-set[aria-hidden='true'] {
@@ -501,19 +543,24 @@
 .v2-landing__features {
   display: flex;
   flex-direction: column;
-  gap: 72px;
+  gap: 96px;
 }
 
+/* 762 + 64 + 486 is the whole 1312 measure, so the row fills it exactly instead
+   of leaving a remainder that lands on whichever column the browser rounds
+   down. `minmax(0, …)` on both sides is load-bearing: `fr` alone has an
+   automatic minimum of `auto`, so a wide screenshot in the media column would
+   push the copy narrower rather than letting the image shrink. */
 .v2-landing__feature-row {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 48px;
+  grid-template-columns: minmax(0, 762fr) minmax(0, 486fr);
+  gap: 64px;
   align-items: center;
 }
 
 /* Alternate sides: even rows put the copy first, and mirror the columns so the
    shot keeps the wide one (Landing.dc.html rows 2 and 4). */
-.v2-landing__feature-row:nth-child(even) { grid-template-columns: 1fr 1.15fr; }
+.v2-landing__feature-row:nth-child(even) { grid-template-columns: minmax(0, 486fr) minmax(0, 762fr); }
 .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 2; }
 .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 1; }
 
@@ -523,20 +570,43 @@
   height: auto;
 }
 
+/* The copy column owns its spacing: `gap` on the column replaces the UA margins
+   on <p>/<h3>/<ul> plus the per-element margins the old stacked layout needed,
+   so the four blocks sit 16 apart rather than 16 plus whatever each element
+   happens to carry. */
+.v2-landing__feature-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.v2-landing__feature-copy .v2-landing__kicker,
+.v2-landing__feature-copy .v2-landing__feature-title,
+.v2-landing__feature-copy .v2-landing__feature-text,
+.v2-landing__feature-copy .v2-landing__feature-points { margin: 0; }
+
+/* 4 on top of the column's 16, so the list sits 20 below the paragraph and 4
+   further from it than the kicker and the title sit from the text. */
+.v2-landing__feature-copy .v2-landing__feature-points { margin-top: 4px; }
+
+/* `--font-display` was never defined, so these titles fell back to Plex while
+   the wedge and the h2 beside them were set in the display face. */
 .v2-landing__feature-title {
   margin: 10px 0 12px;
-  font-family: var(--font-display, inherit);
-  font-size: 26px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 36px;
+  line-height: 40px;
   font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--v2-text-primary);
 }
 
 .v2-landing__feature-text {
-  margin: 0 0 16px;
-  font-size: 15px;
-  line-height: 1.65;
-  color: #4b5563;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--v2-text-secondary);
 }
 
 .v2-landing__feature-points {
@@ -545,70 +615,86 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
+/* The mark is a flex item rather than an absolutely-positioned glyph: a square
+   has no baseline, so `align-items: center` on the row is what holds it against
+   a two-line point. */
 .v2-landing__feature-points li {
-  position: relative;
-  padding-left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 0;
   font-size: 14px;
-  color: #111827;
+  line-height: 20px;
+  color: var(--v2-text-primary);
 }
 
 .v2-landing__feature-points li::before {
-  content: '✓';
-  position: absolute;
-  left: 0;
-  color: #2f6feb;
-  font-weight: 700;
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--v2-text-primary);
 }
 
 /* ---------- Wedge band ---------- */
+/* No rules of its own: the trusted strip above it now carries the hairline, and
+   keeping these drew the same line twice, 80px apart. Left-aligned like every
+   other section — the centered band was the last of the old page's shapes. */
 .v2-landing__wedge {
-  padding-top: 56px;
-  padding-bottom: 56px;
-  text-align: center;
-  border-top: 1px solid var(--v2-border-soft);
-  border-bottom: 1px solid var(--v2-border-soft);
+  padding-top: 80px;
+  padding-bottom: 80px;
 }
 .v2-landing__wedge-line {
-  margin: 0 auto;
-  max-width: 820px;
+  margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: clamp(24px, 3vw, 34px);
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
+  font-size: 56px;
+  line-height: 58px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
 .v2-landing__wedge-sub {
-  margin: 16px auto 0;
-  max-width: 680px;
-  font-size: 16px;
-  line-height: 1.5;
+  margin: 22px 0 0;
+  max-width: 900px;
+  font-size: 20px;
+  line-height: 32px;
   color: var(--v2-text-secondary);
 }
 
 /* ---------- Sections ---------- */
-.v2-landing__section { padding-top: 72px; padding-bottom: 72px; }
+/* The rhythm is bottom-only: each section carries the 120 that separates it from
+   the next one, so the gap belongs to the section above rather than being split
+   across two top paddings that can drift. */
+.v2-landing__section { padding-top: 0; padding-bottom: 120px; }
 .v2-landing__section--tint { background: var(--v2-bg-subtle); }
-.v2-landing__section-head { max-width: 1312px; margin: 0 auto 32px; }
+.v2-landing__section-head { max-width: 1312px; margin: 0 auto 56px; }
+/* The features head is the exception: the board draws it 40 above the rows, and
+   at a phone width the section's 24 top padding plus the wedge's 24 below is the
+   48 the board draws. */
+.v2-landing__section--features .v2-landing__section-head { margin-bottom: 40px; }
 .v2-landing__kicker {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--v2-accent);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .v2-landing__kicker--light { color: rgba(255, 255, 255, 0.6); }
 .v2-landing__h2 {
   margin: 0;
+  max-width: 900px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.15;
-  font-weight: 750;
-  letter-spacing: -0.025em;
+  font-size: 44px;
+  line-height: 48px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
   color: var(--v2-text-primary);
 }
 .v2-landing__sub {
@@ -970,7 +1056,10 @@
   .v2-landing__hero { padding-bottom: 196px; }
   .v2-landing__hero-art { margin-top: -180px; }
   .v2-landing__demo-cap { margin: 28px 0 0; }
-  .v2-landing__trusted { padding-top: 48px; }
+  /* 48 at ≤760, also a margin so that the ≤680 block's `padding: 24px 0` below
+     cannot override it (it did while this was padding-top, which is how the 48
+     went missing at 390). */
+  .v2-landing__trusted { margin-top: 48px; }
   /* A thumb-sized target (44px) without growing the visible pill: the extension
      is transparent and stays inside the box's own padding. */
   .v2-landing__install-copy { position: relative; }
@@ -1010,7 +1099,27 @@
   .v2-landing__lede { font-size: 16px; line-height: 26px; }
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
-  .v2-landing__section { padding-top: 52px; padding-bottom: 52px; }
+  /* Square-ish phone rhythm: the section's own bottom padding is the gap, and
+     the features section gets 24 on top so the board's 48 under the wedge is
+     24 (wedge) + 24 (here). */
+  .v2-landing__section { padding-top: 0; padding-bottom: 64px; }
+  .v2-landing__section--features { padding-top: 24px; }
+  .v2-landing__section-head { margin-bottom: 32px; }
+  .v2-landing__kicker { margin-bottom: 10px; }
+  .v2-landing__h2 { font-size: 30px; line-height: 34px; }
+  .v2-landing__trusted { min-height: 110px; padding: 24px 0; gap: 12px; }
+  .v2-landing__trusted-logo { height: 22px; }
+  /* Both halves of the loop move together: the gap and the padding-right are
+     what make the two sets identical, so changing one alone makes the track
+     jump by 24px every cycle. */
+  .v2-landing__trusted-set { gap: 32px; padding-right: 32px; }
+  .v2-landing__wedge { padding-top: 48px; padding-bottom: 24px; }
+  .v2-landing__wedge-line { font-size: 34px; line-height: 36px; }
+  .v2-landing__wedge-sub { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__features { gap: 56px; }
+  .v2-landing__feature-copy { gap: 12px; }
+  .v2-landing__feature-title { font-size: 26px; line-height: 30px; }
+  .v2-landing__feature-text { font-size: 16px; line-height: 26px; }
   .v2-landing__usecases { grid-template-columns: 1fr; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }

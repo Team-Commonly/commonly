@@ -491,7 +491,7 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- In action ---- */}
-        <section className="v2-landing__section" id="features">
+        <section className="v2-landing__section v2-landing__section--features" id="features">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.features.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.features.title')}</h2>

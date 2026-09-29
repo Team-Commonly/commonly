@@ -637,8 +637,8 @@
       }
     },
     "trusted": {
-      "label": "Trusted by users from",
-      "ariaLabel": "Trusted by users from {{affiliations}}"
+      "label": "Trusted by people from",
+      "ariaLabel": "Trusted by people from {{affiliations}}"
     },
     "wedge": {
       "title": "Teammates, not subagents.",
