@@ -1,12 +1,14 @@
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
+const mockUser = { findById: jest.fn() };
 const mockToolCall = { create: jest.fn(), digestArgs: (args) => `digest:${JSON.stringify(args || {})}` };
 const mockReserveBudgetLineage = jest.fn().mockResolvedValue(true);
 const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true, default: mockToolCall,
   digestArgs: mockToolCall.digestArgs,
@@ -71,6 +73,7 @@ beforeEach(() => {
     config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
 });
 
@@ -178,6 +181,57 @@ test('does not execute if the budget was exhausted between propose and approve',
     credentialOwnerId: 'owner-1',
   }));
   expect(mockReserveBudgetLineage).toHaveBeenCalled();
+});
+
+test('does not execute if the owner was suspended between propose and approve', async () => {
+  // TASK-181, on the path where it matters most: an approval parked while the
+  // person was in good standing, and a ban applied before anyone ruled. The
+  // decision is a human act, but the AUTHORITY is still the suspended owner's,
+  // and the broker resolves the connection again before spending it.
+  const OWNER = '6a8f6de2a1dccf2e02f31459';
+  mockIntegration.findOne.mockResolvedValue({
+    type: 'github-app',
+    status: 'connected',
+    createdBy: OWNER,
+    createdAt: ROW_CREATED_AT,
+    config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
+  });
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: true }) }) });
+
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1',
+    agentUserId: 'agent-1',
+    tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}',
+    approvalId: 'approval-1',
+  })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused',
+    reason: 'connection_owner_banned',
+    approvalId: 'approval-1',
+  }));
+});
+
+test('executes the approved call when the owner is in good standing', async () => {
+  const OWNER = '6a8f6de2a1dccf2e02f31459';
+  mockIntegration.findOne.mockResolvedValue({
+    type: 'github-app',
+    status: 'connected',
+    createdBy: OWNER,
+    createdAt: ROW_CREATED_AT,
+    config: { installationId: 'gh-1', owner: 'Team-Commonly', repo: 'commonly' },
+  });
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
+
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1',
+    agentUserId: 'agent-1',
+    tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}',
+    approvalId: 'approval-1',
+  })).resolves.toEqual(expect.objectContaining({ callId: expect.any(String) }));
 });
 
 test('captures the pull head SHA in the approval envelope', async () => {

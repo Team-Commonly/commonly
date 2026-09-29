@@ -12,6 +12,7 @@
 const mockRoomGrant = { findOne: jest.fn(), find: jest.fn() };
 const mockPod = { findById: jest.fn(), find: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
+const mockUser = { findById: jest.fn() };
 const mockToolCall = { create: jest.fn() };
 const mockReserveBudgetLineage = jest.fn(async () => true);
 const mockCredentialFor = jest.fn();
@@ -21,6 +22,7 @@ const mockProposeAction = jest.fn(async () => ({ ok: true, approvalId: 'approval
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
   default: mockToolCall,
@@ -176,6 +178,10 @@ beforeEach(() => {
   // the tool's own row lookup both use `.lean()`.
   mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
   mockIntegration.findOne.mockResolvedValue(null);
+  // The owner row the ban guard reads, in the chain it reads it:
+  // `User.findById(id).select('banned').lean()`. A fixture whose `createdBy` is
+  // not an id shape never reaches this (see the github suite's boundary arm).
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
   mockCredentialFor.mockResolvedValue({ token: 'tok-1' });
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
   global.fetch = jest.fn(async () => new Response(JSON.stringify(okReply), {
@@ -350,6 +356,51 @@ describe('a hosted-MCP grant through the broker', () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' });
     expect(listed.map((definition) => definition.name)).toEqual(['linear.list_issues']);
+  });
+
+  // TASK-181: a suspended person cannot sign in, but their agent never signs in
+  // as them — it presents its own runtime token and spends the credential they
+  // connected. Without this the ban stops the human and not the authority.
+  describe('a connection whose owner is suspended', () => {
+    const OWNER = '6a8f6de2a1dccf2e02f31459';
+
+    const ownedRow = (banned) => {
+      const row = hostedRow({ createdBy: OWNER });
+      mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+      mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned }) }) });
+    };
+
+    it('refuses the call and never reaches the vendor', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(true);
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'refused',
+        reason: 'connection_owner_banned',
+      }));
+    });
+
+    it('refuses the listing too, because a list answers what calling would allow', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(true);
+
+      await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+        .rejects.toMatchObject({ code: 'connection_owner_banned' });
+    });
+
+    it('runs the same call once the owner is not suspended', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      ownedRow(false);
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      })).resolves.toBeTruthy();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('projects the hosted tool into a run\'s tool list, under a name LiteLLM accepts', async () => {

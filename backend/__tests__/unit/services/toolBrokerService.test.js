@@ -1,6 +1,7 @@
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
+const mockUser = { findById: jest.fn() };
 const mockToolCall = { create: jest.fn() };
 const mockGithub = {
   listOpenIssues: jest.fn(),
@@ -14,6 +15,7 @@ const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
   default: mockToolCall,
@@ -95,6 +97,9 @@ beforeEach(() => {
     config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
   });
   mockIntegration.findById.mockResolvedValue(null);
+  // An owner row exists and is not banned unless an arm says otherwise. The
+  // shape is the real chain: `User.findById(id).select('banned').lean()`.
+  mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockGithub.listOpenIssues.mockResolvedValue([]);
   mockGithub.createIssue.mockResolvedValue({
@@ -449,5 +454,86 @@ describe('tool broker guard rails', () => {
       outcome: 'pending_approval', reason: 'approval_required',
     }));
     expect(mockGithub.closeIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe('a suspended connection owner (TASK-181)', () => {
+  // An owner id of the shape `createdBy` actually holds; the guard keeps
+  // anything else away from `findById`.
+  const OWNER = '6a8f6de2a1dccf2e02f31459';
+
+  const ownerRow = (banned) => ({ select: () => ({ lean: async () => ({ banned }) }) });
+
+  const connectionOwnedBy = (createdBy) => ({
+    type: 'github-app',
+    status: 'connected',
+    createdBy,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    config: { installationId: 'gh-install-1', owner: 'Team-Commonly', repo: 'commonly' },
+  });
+
+  it('refuses the call and never reaches the vendor', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
+    mockUser.findById.mockReturnValue(ownerRow(true));
+
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused',
+      reason: 'connection_owner_banned',
+    }));
+  });
+
+  // The acceptance control: a guard that refused every call would pass the arm
+  // above, and a ban that never expires is not the behaviour anyone asked for.
+  it('runs the same call when the owner is not banned', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
+    mockUser.findById.mockReturnValue(ownerRow(false));
+
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).resolves.toBeTruthy();
+    expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
+  });
+
+  it('leans on the row it resolved, so a different owner is read on every call', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy('6a8f6de2a1dccf2e02f31460'));
+    mockUser.findById.mockReturnValue(ownerRow(false));
+
+    await callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    });
+    expect(mockUser.findById).toHaveBeenCalledWith('6a8f6de2a1dccf2e02f31460');
+  });
+
+  it('looks nothing up for an owner value that cannot name an account', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy('owner-1'));
+
+    await callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    });
+    expect(mockUser.findById).not.toHaveBeenCalled();
+  });
+
+  // The other boundary: the id is well formed, the row is gone. A deleted
+  // account records no ban, and "no ban recorded" is not "banned" — reading an
+  // absent row as a refusal would break every connection whose owner was
+  // cleaned up.
+  it('runs the call when the owner row no longer exists', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockIntegration.findOne.mockResolvedValue(connectionOwnedBy(OWNER));
+    mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
+
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    })).resolves.toBeTruthy();
+    expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
   });
 });

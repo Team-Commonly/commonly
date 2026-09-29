@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import Pod from '../models/Pod';
 import Integration from '../models/Integration';
+import User from '../models/User';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
 import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
 import {
@@ -577,14 +578,50 @@ const resolveHostedConnection = async (
       403,
     );
   }
+  const ownerUserId = row.createdBy ? String(row.createdBy) : undefined;
+  await assertOwnerNotBanned(ownerUserId);
   return {
     type: 'hosted-mcp',
     entryId,
     connectionId,
     // The member who connected the row, so a parked call can open the approval
     // room for a seat-targeted grant (`resolveApprovalPodId`).
-    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+    ownerUserId,
   };
+};
+
+/**
+ * The ban has to reach the CREDENTIAL, not only the sign-in (TASK-181). A
+ * suspended person cannot sign in (`middleware/auth.ts`), but an agent acting on
+ * their connection never signs in as them: it presents its own runtime token and
+ * the broker spends the owner's stored credential, so the ban stopped nothing at
+ * all. Both broker paths — the MCP endpoint and the in-process native runtime —
+ * funnel through a resolver below, so the check lives here rather than in a
+ * driver.
+ *
+ * CALLED BY EVERY RESOLVER: a new connection type is a third call site, and
+ * omitting it reads as a working connection.
+ *
+ * An absent owner row is NOT a refusal. A `createdBy` that is not an ObjectId
+ * shape, or an owner row that no longer exists, is "no ban recorded" rather than
+ * "banned", and only an explicit `banned: true` refuses. `createdBy` is written
+ * from the authenticated user id at connect time (`integrations.ts`,
+ * `hostedMcpConnect.ts`) and typed `Types.ObjectId`, so the shape guard skips
+ * only values that cannot name an account in the first place — it keeps the
+ * uncastable string away from `findById`, whose CastError would otherwise have
+ * to be swallowed. A swallowed database error would allow the call.
+ */
+const assertOwnerNotBanned = async (ownerUserId?: string): Promise<void> => {
+  const ownerId = String(ownerUserId || '').trim();
+  if (!/^[a-f\d]{24}$/i.test(ownerId)) return;
+  const owner = await User.findById(ownerId).select('banned').lean() as { banned?: boolean } | null;
+  if (owner?.banned) {
+    throw new RoomGrantError(
+      'connection_owner_banned',
+      'the owner of this connection is suspended',
+      403,
+    );
+  }
 };
 
 const resolveConnection = async (
@@ -649,12 +686,14 @@ const resolveConnection = async (
     );
   }
 
+  const ownerUserId = row.createdBy ? String(row.createdBy) : undefined;
+  await assertOwnerNotBanned(ownerUserId);
   return {
     type: 'github-app',
     installationId: String(config.installationId),
     owner: String(config.owner),
     repo: String(config.repo),
-    ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+    ownerUserId,
   };
 };
 
