@@ -37,7 +37,28 @@ describe('podRecency', () => {
   test('podInitials takes two words, or two letters of one', () => {
     expect(podInitials('Connectors v2')).toBe('CV');
     expect(podInitials('Sharpen')).toBe('SH');
-    expect(podInitials('  Payments — memory demo ')).toBe('P—');
     expect(podInitials('')).toBe('·');
+  });
+
+  test('podInitials separates on punctuation and dashes instead of taking them as initials', () => {
+    expect(podInitials('  Payments — memory demo ')).toBe('PM');
+    expect(podInitials('Sharpen — pod model')).toBe('SP');
+    expect(podInitials('Team-Commonly')).toBe('TC');
+    expect(podInitials('—')).toBe('·');
+  });
+
+  test('podInitials shows one glyph when a wide glyph is picked', () => {
+    expect(podInitials('设计评审')).toBe('设');
+    expect(podInitials('Growth 团队')).toBe('G');
+  });
+
+  test('podInitials drops an emoji the way it drops punctuation', () => {
+    expect(podInitials('🚀 Launch')).toBe('LA');
+  });
+
+  test('podInitials slices by code point, so a surrogate pair is never cut in half', () => {
+    // Synthetic on purpose: a two-unit slice of 'A𝔘' ends between the halves of
+    // 𝔘 and returns a replacement character, which no real pod name would show.
+    expect(podInitials('A𝔘')).toBe('A𝔘');
   });
 });

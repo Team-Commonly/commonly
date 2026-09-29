@@ -57,11 +57,34 @@ export const relativeTime = (value: string | number | Date | null | undefined, n
   return `${Math.floor(delta / YEAR)}y`;
 };
 
+// A wide glyph fills the mark on its own. The mark is 22px with 11px mono
+// characters, so two Han characters wrap to a second line inside the square.
+const WIDE_GLYPH = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
 // Two-letter mark for a pod without an avatar: initials of the first two words,
 // or the first two letters of a one-word name.
+//
+// Tokenised the way `initialsFor` does, so punctuation and dashes separate words
+// instead of becoming initials: "Sharpen — pod model" is SP rather than S—, and
+// "Team-Commonly" is TC. An emoji drops out the way punctuation does, which is
+// why "🚀 Launch" is LA rather than 🚀L. A name whose initials include a wide
+// glyph shows that one glyph — "设计评审" is 设, not the two characters that
+// would wrap. Code points rather than UTF-16 units throughout, so a surrogate
+// pair is never cut in half.
 export const podInitials = (name: string): string => {
-  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  const words = String(name || '')
+    .trim()
+    .split(/[\s_\-/|]+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter(Boolean);
   if (words.length === 0) return '·';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
+
+  const first = (word: string): string => Array.from(word)[0] || '';
+  const pick = words.length === 1
+    ? Array.from(words[0]).slice(0, 2).join('')
+    : first(words[0]) + first(words[1]);
+
+  const picked = Array.from(pick);
+  if (picked.some((char) => WIDE_GLYPH.test(char))) return picked[0];
+  return pick.toUpperCase();
 };
