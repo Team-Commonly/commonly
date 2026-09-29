@@ -15,9 +15,11 @@
  */
 const express = require('express');
 import type { Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -101,7 +103,36 @@ type TokenResponse = {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/:entryId/client-metadata', (req: Request, res: Response) => {
+// Both GETs below are public and unauthenticated on purpose: `client-metadata`
+// is fetched by the authorization server before any member has consented, and
+// `callback` is a browser navigation from the vendor, where the httpOnly cookie
+// is the flow binding rather than an authorization. `routeRateLimitGuard` and
+// CodeQL's js/missing-rate-limiting both require a limiter AHEAD of auth on
+// every registration, and here there is no auth at all — so this limiter is the
+// only thing in front of an unauthenticated row lookup and token exchange.
+//
+// Keyed by the Cloudflare-aware IP rule (`middleware/ipRateLimit.ts:49`),
+// because `req.ip` walks to a cloudflared pod address for every external caller
+// — one bucket for the whole internet (TASK-110's class).
+//
+// Two buckets, not one shared limiter: a client that hammers the static
+// document must not be able to spend the callback's allowance, which is the one
+// that finishes a member's connect.
+const PUBLIC_GET_MAX = 60;
+const publicGetRateLimit = (label: string) => rateLimit({
+  windowMs: 60_000,
+  max: PUBLIC_GET_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
+    res.status(429).json({ msg: `rate limit exceeded: ${PUBLIC_GET_MAX} requests per 60s (${label})` });
+  },
+});
+const clientMetadataRateLimit = publicGetRateLimit('client-metadata');
+const callbackRateLimit = publicGetRateLimit('callback');
+
+router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, res: Response) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry) {
     // An unknown entry is a 404 and not a document with empty fields: a
@@ -218,7 +249,7 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
  * is atomic on the same terms and hands back the verifier in the pre-image,
  * which is the only place it is kept.
  */
-router.get('/:entryId/callback', async (req: Request, res: Response) => {
+router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry) {
     return callbackRedirect(res, 'error', 'unknown_entry');
