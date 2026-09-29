@@ -154,6 +154,68 @@ interface CredentialDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+/**
+ * The row deps, as a factory so that a test can wrap ONE of them and leave the
+ * other three standing: the bump's landing is observable from inside the
+ * winner's own call but not from outside it, so a test that wants the mid-flight
+ * pre-image without a wall-clock poll has to wrap `bumpGeneration` around the
+ * REAL implementation. (`row` is replaced wholesale when it is overridden — the
+ * deps merge is one level deep — so there is nothing on the store to spread a
+ * wrapper onto.)
+ */
+export const defaultRowDeps = (): CredentialDeps['row'] => ({
+  findById: (id) => Integration.findById(id).lean() as unknown as Promise<HostedMcpRow | null>,
+  bumpGeneration: (id, from, now) => Integration.findOneAndUpdate(
+    {
+      _id: id,
+      'config.refreshGeneration': from,
+      // The lease in its takeable states: never taken, already released (a
+      // clear is a VALUE, so the field is present and null), and expired. The
+      // first two are one condition in MongoDB — `$eq: null` matches a missing
+      // field as well as a null one, which a mutant that drops the
+      // `$exists: false` arm confirms by changing no test — but both are
+      // written out so that reading the filter does not require knowing that.
+      // `$lte` alone would NOT do: its range operators are type-bracketed, so
+      // it matches neither a null nor a missing value, and a released lease
+      // would then wedge every later refresh.
+      $or: [
+        { 'config.refreshingUntil': { $exists: false } },
+        { 'config.refreshingUntil': null },
+        { 'config.refreshingUntil': { $lte: now } },
+      ],
+    },
+    {
+      $inc: { 'config.refreshGeneration': 1 },
+      $set: { 'config.refreshingUntil': new Date(now.getTime() + REFRESH_LEASE_MS) },
+    },
+    { new: false },
+  ).lean() as unknown as Promise<HostedMcpRow | null>,
+  commit: async (id, generation, fields) => {
+    await Integration.findOneAndUpdate(
+      { _id: id, 'config.refreshGeneration': generation },
+      { $set: fields },
+      { new: true },
+    );
+  },
+  markError: async (id, generation, message) => {
+    await Integration.findOneAndUpdate(
+      { _id: id, 'config.refreshGeneration': generation },
+      {
+        $set: {
+          status: 'error',
+          errorMessage: message,
+          // Every exit the winner has releases the lease, including this one:
+          // a row marked while still looking "in flight" refuses the next
+          // call's bump for no reason. `null`, not an absent value — on a
+          // STRICT subdocument a `$set` of `undefined` is a silent no-op.
+          'config.refreshingUntil': null,
+        },
+      },
+      { new: true },
+    );
+  },
+});
+
 const defaultDeps = (): CredentialDeps => ({
   now: () => new Date(),
   entryFor: (row) => {
@@ -201,58 +263,7 @@ const defaultDeps = (): CredentialDeps => ({
     };
   },
   secrets: connectorSecrets,
-  row: {
-    findById: (id) => Integration.findById(id).lean() as unknown as Promise<HostedMcpRow | null>,
-    bumpGeneration: (id, from, now) => Integration.findOneAndUpdate(
-      {
-        _id: id,
-        'config.refreshGeneration': from,
-        // The lease in its takeable states: never taken, already released (a
-        // clear is a VALUE, so the field is present and null), and expired. The
-        // first two are one condition in MongoDB — `$eq: null` matches a missing
-        // field as well as a null one, which a mutant that drops the
-        // `$exists: false` arm confirms by changing no test — but both are
-        // written out so that reading the filter does not require knowing that.
-        // `$lte` alone would NOT do: its range operators are type-bracketed, so
-        // it matches neither a null nor a missing value, and a released lease
-        // would then wedge every later refresh.
-        $or: [
-          { 'config.refreshingUntil': { $exists: false } },
-          { 'config.refreshingUntil': null },
-          { 'config.refreshingUntil': { $lte: now } },
-        ],
-      },
-      {
-        $inc: { 'config.refreshGeneration': 1 },
-        $set: { 'config.refreshingUntil': new Date(now.getTime() + REFRESH_LEASE_MS) },
-      },
-      { new: false },
-    ).lean() as unknown as Promise<HostedMcpRow | null>,
-    commit: async (id, generation, fields) => {
-      await Integration.findOneAndUpdate(
-        { _id: id, 'config.refreshGeneration': generation },
-        { $set: fields },
-        { new: true },
-      );
-    },
-    markError: async (id, generation, message) => {
-      await Integration.findOneAndUpdate(
-        { _id: id, 'config.refreshGeneration': generation },
-        {
-          $set: {
-            status: 'error',
-            errorMessage: message,
-            // Every exit the winner has releases the lease, including this one:
-            // a row marked while still looking "in flight" refuses the next
-            // call's bump for no reason. `null`, not an absent value — on a
-            // STRICT subdocument a `$set` of `undefined` is a silent no-op.
-            'config.refreshingUntil': null,
-          },
-        },
-        { new: true },
-      );
-    },
-  },
+  row: defaultRowDeps(),
   sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 });
 
@@ -363,6 +374,17 @@ export const credentialFor = async (
       // only on the vendor's own refusal.
       await deps.row.markError(id, nextGeneration, failure.message);
     }
+    // A RETRYABLE failure deliberately LEAVES the lease held. The three things
+    // that release it are the commit below, the mark above, and its own expiry —
+    // so holding it for the rest of `REFRESH_LEASE_MS` IS the backoff, and
+    // releasing it here would let every caller queued behind this one retry a
+    // vendor that has just answered 500 or 429, which is the storm the lease
+    // exists to damp. The price is that a transient failure costs up to 30s of
+    // `credential_refreshing` — retryable, so the caller is told to come back —
+    // instead of an immediate retry, and the generation this call bumped is left
+    // uncommitted. That bump is harmless in the window: the fence is relative to
+    // the generation the caller read, so whatever refresh follows the lapsed
+    // lease starts from the value ON THE ROW and commits normally.
     throw failure;
   }
 

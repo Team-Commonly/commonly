@@ -20,6 +20,7 @@ const mongoose = require('mongoose');
 
 const {
   credentialFor,
+  defaultRowDeps,
   HostedMcpCredentialError,
   REFRESH_LEASE_MS,
   WINNER_WAIT_MS,
@@ -116,18 +117,37 @@ const gate = () => {
 };
 
 /**
- * The winner's bump is visible on the row only after its awaits have run, so the
- * mid-flight pre-image is taken by polling the store rather than by guessing a
- * tick count.
+ * The winner's bump, observed AT the seam instead of polled from outside it.
+ *
+ * `deps.row` is replaced wholesale when it is overridden — the deps merge is one
+ * level deep — and this suite's store injects no row at all, so the base has to
+ * be the service's own `defaultRowDeps()`. The wrapper then delegates to the REAL
+ * conditional update, so the fence under test is unchanged.
+ *
+ * Resolving on a WON bump is what makes the mid-flight pre-image deterministic:
+ * the winner cannot reach its vendor call until the update has returned, and it
+ * cannot commit until the arm opens its own gate. Nothing here is measured
+ * against the wall clock, so there is no budget left to expire under a slow
+ * mongod — a spurious failure that would read as the fence having broken.
+ *
+ * If the winner never wins its bump this promise never resolves, and the arm
+ * fails on jest's `testTimeout` instead of asserting something false.
  */
-const waitForGeneration = async (id, generation) => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const row = await live(id);
-    if (row.config.refreshGeneration === generation) return row;
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => { setTimeout(resolve, 5); });
-  }
-  throw new Error(`row never reached refreshGeneration ${generation}`);
+const bumpSignal = (store, over = {}) => {
+  const bumped = gate();
+  const real = defaultRowDeps();
+  const deps = depsWith(store, {
+    ...over,
+    row: {
+      ...real,
+      bumpGeneration: async (id, from, now) => {
+        const won = await real.bumpGeneration(id, from, now);
+        if (won) bumped.open();
+        return won;
+      },
+    },
+  });
+  return { deps, bumped };
 };
 
 test('a caller that reads the row mid-flight loses the fence instead of winning its own', async () => {
@@ -141,8 +161,10 @@ test('a caller that reads the row mid-flight loses the fence instead of winning 
   };
 
   const store = secretStore();
-  const first = credentialFor(await preImage(id), depsWith(store, { refreshAtVendor }));
-  const midFlight = await waitForGeneration(id, 4);
+  const { deps, bumped } = bumpSignal(store, { refreshAtVendor });
+  const first = credentialFor(await preImage(id), deps);
+  await bumped.promise;
+  const midFlight = await preImage(id);
   // The lease is ON THE ROW: this is the strict subdocument write landing, and
   // the value a second caller's filter has to see.
   expect(midFlight.config.refreshingUntil).toBeInstanceOf(Date);
@@ -182,8 +204,11 @@ test('an elapsed lease is takeable, and the late winner\'s commit is refused', a
   };
 
   const store = secretStore();
-  const lateWinner = credentialFor(await preImage(id), depsWith(store, { refreshAtVendor: slowVendor }));
-  await waitForGeneration(id, 4);
+  const { deps, bumped } = bumpSignal(store, { refreshAtVendor: slowVendor });
+  const lateWinner = credentialFor(await preImage(id), deps);
+  // The same instrument as the arm above, for the same reason: the landing is a
+  // signal, so this arm has no wall-clock wait and nothing that can expire.
+  await bumped.promise;
 
   // Only the lease bounds a winner that never returns; past it the fence is
   // takeable, which is what stops the fix trading a double-spend for a
@@ -282,5 +307,51 @@ test('a definitive refusal marks the row and releases the lease in the same writ
   expect(after.errorMessage).toMatch(/invalid_grant/);
   expect(after.config.refreshGeneration).toBe(4);
   // Released on every exit, or the row would read as "in flight" to the next call.
+  expect(after.config.refreshingUntil).toBeNull();
+});
+
+test('a retryable failure keeps the lease, and the expiry is what releases it', async () => {
+  const id = await seedRow();
+  const store = secretStore();
+  let vendorCalls = 0;
+  const unreachable = async () => {
+    vendorCalls += 1;
+    if (vendorCalls === 1) {
+      throw new HostedMcpCredentialError('refresh_unreachable', 'refresh refused (500)', true);
+    }
+    return { accessToken: 'later-access', refreshToken: 'later-refresh', expiresIn: 3600 };
+  };
+
+  await expect(credentialFor(await preImage(id), depsWith(store, { refreshAtVendor: unreachable })))
+    .rejects.toMatchObject({ code: 'refresh_unreachable', retryable: true });
+
+  // The lease stays held ON PURPOSE — see the comment on the retryable throw. The
+  // generation was bumped, nothing was marked, and the Connection is still usable,
+  // so the only thing standing between callers and the vendor is this lease.
+  const held = await live(id);
+  expect(held.status).toBe('connected');
+  expect(held.config.refreshGeneration).toBe(4);
+  expect(held.config.refreshingUntil).toBeInstanceOf(Date);
+  expect(held.config.refreshingUntil.getTime()).toBe(T0 + 30 * 1000);
+
+  // While it is held, a queued caller is told to come back and does NOT touch the
+  // vendor. `vendorCalls` is the only witness that can tell this apart from a
+  // caller that hammered a vendor which had just answered 500.
+  const queued = await preImage(id);
+  await expect(credentialFor(queued, depsWith(store, { refreshAtVendor: unreachable })))
+    .rejects.toMatchObject({ code: 'credential_refreshing', retryable: true });
+  expect(vendorCalls).toBe(1);
+
+  // The expiry is the whole recovery path, so it has to be witnessed: without
+  // this half, "keeps the lease" and "strands the Connection" are the same
+  // observation, which is exactly what the comment claims they are not.
+  clock = T0 + 30 * 1000 + 1;
+  const recovered = await credentialFor(await preImage(id), depsWith(store, { refreshAtVendor: unreachable }));
+  expect(recovered.token).toBe('later-access');
+  expect(vendorCalls).toBe(2);
+
+  const after = await live(id);
+  expect(after.status).toBe('connected');
+  expect(after.config.refreshGeneration).toBe(5);
   expect(after.config.refreshingUntil).toBeNull();
 });
