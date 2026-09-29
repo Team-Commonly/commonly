@@ -179,6 +179,7 @@ export interface IIntegration extends Document {
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
+    refreshingUntil?: Date;
     credentialHint?: string;
     pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date };
   };
@@ -370,6 +371,14 @@ const IntegrationSchema = new Schema<IIntegration>(
       credentialRef: String, // ConnectorSecret ref: the access token
       refreshTokenRef: String, // ConnectorSecret ref: the refresh token
       refreshGeneration: Number, // the §10.3 fence's generation at the last refresh
+      // The §10.3 fence's LEASE: taken by whoever won the bump, released by its
+      // commit or its error mark, and treated as takeable once it is in the
+      // past. Without it a caller that reads the row mid-round-trip sees a
+      // generation nobody has consumed and wins its OWN fence, spending a
+      // single-use refresh token twice. Declared here because this subdocument
+      // is STRICT — an undeclared path is dropped in silence, so the lease would
+      // simply never land and the fence would read worse than it behaves.
+      refreshingUntil: Date,
       credentialHint: String,
       // Present only mid-connect, and holding nothing secret once it expires.
       pendingAuth: {
