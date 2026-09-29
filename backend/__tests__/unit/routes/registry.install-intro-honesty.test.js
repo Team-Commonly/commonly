@@ -109,4 +109,36 @@ describe('install intro — the promise matches reality', () => {
 
     expect(intro).toMatch(/Whoever installed me/);
   });
+
+  test('a state claim is scoped to its posting and points at what changes', () => {
+    // TASK-178. This intro is posted once and nothing supersedes it, so a
+    // present-tense reachability sentence is accurate for minutes and false
+    // forever after — and it is in the seat's own voice, which is why the
+    // reader believes it over an absent signal. Measured 2026-09-29: the seat
+    // attached at 11:15:3xZ posted this line, its runner started, its first
+    // turn posted at 11:15:52, and at ~11:5xZ a peer routed a PR away from it
+    // because "it isn't running" — 53 minutes of live process, contradicted by
+    // one sentence, while the derived state had said otherwise throughout.
+    //
+    // Both arms that assert a state carry both halves. The first assertion is
+    // what makes the sentence timeless; the second is what makes the reader's
+    // next move the right one. Either alone leaves the trap open: a scoped
+    // claim with no pointer still ends the reader's search, and a pointer with
+    // no scoping still reads as present tense.
+    const never = composeInstallIntro({ ...base, state: 'never-connected' });
+    const dark = composeInstallIntro({ ...base, state: 'gone-dark' });
+
+    [never, dark].forEach((intro) => {
+      expect(intro).toMatch(/As I post this/);
+      expect(intro).toMatch(/never updates/);
+      expect(intro).toMatch(/type @ngoc-tran-agent and the pod shows my current state/);
+    });
+
+    // The invitation arm asserts no state, so it makes no claim that can age
+    // and gets no pointer — the fix must not add the caveat where there is
+    // nothing to caveat.
+    const live = composeInstallIntro({ ...base, state: 'listening' });
+    expect(live).not.toMatch(/never updates/);
+    expect(live).not.toMatch(/As I post this/);
+  });
 });

@@ -304,6 +304,27 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
  * the copy rules testable without a DB, which is the whole reason
  * agentStateService is pure too.
  */
+/**
+ * The intro is posted ONCE, at install, and a chat message cannot be
+ * superseded — nothing later edits it or retracts it. So a state-dependent arm
+ * has to do what a present-tense sentence cannot: scope its claim to the
+ * moment it was posted, and name the surface that DOES change. Without the
+ * first the line is accurate for minutes and false forever after; without the
+ * second the reader has no way to find out (TASK-178).
+ *
+ * The reader is usually another agent, which cannot see the process — a
+ * sentence in the seat's own voice is the most authoritative thing in the pod,
+ * so it is believed over a signal that is merely absent. Measured 2026-09-29:
+ * an attached seat's intro said "Nothing is running me yet"; the runner was up
+ * within the minute and the seat posted its first turn before the intro had
+ * scrolled, and 40 minutes later a peer routed a PR away from that seat
+ * because of the sentence. The roster's derived state said otherwise the whole
+ * time; nobody asked it, because the seat had already answered.
+ */
+const snapshotPointer = (handle: string): string =>
+  `That was true as I posted it and it never updates — type @${handle} and `
+  + 'the pod shows my current state.';
+
 const composeInstallIntro = ({
   displayName, blurb, handle, state, fixCommand,
 }: {
@@ -331,17 +352,23 @@ const composeInstallIntro = ({
     ? `Hi all — I'm ${displayName}, just joined the pod.`
     : `Hi all — I'm ${displayName}. ${trimmed}`;
 
-  // Certain, and never ran: flat declarative.
+  // Certain, and never ran: flat declarative, and SCOPED to the posting. The
+  // certainty is about THIS MOMENT (no token has ever been used yet), which is
+  // precisely what a reader an hour later mistakes for a claim about then.
   if (state === 'never-connected') {
-    return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
+    return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
       + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
-      + `where I should live — then @${handle} will get through.`;
+      + `where I should live — then @${handle} will get through. `
+      + snapshotPointer(handle);
   }
-  // Inferred, and it DID run: hedge the claim, keep the instruction.
+  // Inferred, and it DID run: hedge the claim, keep the instruction, and scope
+  // it the same way — a gone-dark seat that comes back leaves the same stale
+  // sentence behind it.
   if (state === 'gone-dark') {
-    return `${lead} I don't look connected right now — I was running earlier and `
+    return `${lead} As I post this I don't look connected — I was running earlier and `
       + `have gone quiet, so a mention may not reach me. Whoever installed me can `
-      + `start me again with \`${fixCommand}\` — then @${handle} will get through.`;
+      + `start me again with \`${fixCommand}\` — then @${handle} will get through. `
+      + snapshotPointer(handle);
   }
   // reachable / listening / unknown — anything we cannot show to be down keeps
   // the invitation. Wrongly telling a live agent's room that nothing listens is
