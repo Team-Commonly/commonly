@@ -537,6 +537,52 @@ describe('the loser of the fence', () => {
     expect(h.reads.length).toBeGreaterThan(1);
   });
 
+  test('serves the winner credential on a row that was fenced for holding no ref, not for its expiry', async () => {
+    // The fast path needs a ref AND a fresh expiry, so a row missing only the
+    // ref is fenced while its expiry still reads fresh. The winner refreshes it
+    // (see the fast-path arm for a ref-less row); a re-read that then carries a
+    // ref under a fresh expiry is that write, and a retry would be served from
+    // it without a fence, so refusing it would be the wrong answer.
+    const preImage = live({ credentialRef: undefined });
+    const h = harness({
+      loseRace: true,
+      onRead: (readCount, secrets) => {
+        if (readCount < 2) return preImage;
+        secrets.set(ACCESS_REF, 'winner-access');
+        return live({ expiresAt: new Date(T0 + 7200 * 1000) });
+      },
+    });
+
+    const got = await credentialFor(preImage, h.deps);
+
+    expect(got).toEqual({
+      token: 'winner-access',
+      expiresAt: new Date(T0 + 7200 * 1000).toISOString(),
+    });
+    expect(h.reads).toHaveLength(2);
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+    expect(h.commit).not.toHaveBeenCalled();
+  });
+
+  test('does not serve a row that still names no ref, however fresh its expiry reads', async () => {
+    // The other half of that corner: `put` may already hold the winner's secret
+    // while the row names no ref. That expiry was fresh before anyone wrote, so
+    // it is no evidence of a write; only the ref arriving is.
+    const preImage = live({ credentialRef: undefined });
+    const h = harness({
+      loseRace: true,
+      onRead: (readCount, secrets) => {
+        secrets.set(ACCESS_REF, 'winner-access');
+        return preImage;
+      },
+    });
+    const error = await refusal(credentialFor(preImage, h.deps));
+
+    expect(error.code).toBe('credential_refreshing');
+    expect(error.retryable).toBe(true);
+    expect(h.reads.length).toBeGreaterThan(1);
+  });
+
   test('refuses as a mismatch when the connection is removed while waiting', async () => {
     const h = harness({
       loseRace: true,

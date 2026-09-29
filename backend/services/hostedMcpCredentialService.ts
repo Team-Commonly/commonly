@@ -302,6 +302,16 @@ const isFresh = (expiresAt: Date | null | undefined, now: Date): boolean => {
   return at.getTime() - EXPIRY_SKEW_MS > now.getTime();
 };
 
+/**
+ * The row's access-token reference when its credential can be served as it
+ * stands — a reference AND a fresh lifetime — and null otherwise. The fast path
+ * and the fence's loser both ask this one question, so a loser serves exactly
+ * when a retry of the same call would be served without a fence.
+ */
+const servableRef = (config: HostedMcpRow['config'], now: Date): string | null => (
+  config?.credentialRef && isFresh(config.expiresAt, now) ? config.credentialRef : null
+);
+
 const isoOrEmpty = (expiresAt: Date | null | undefined): string => (
   expiresAt instanceof Date && !Number.isNaN(expiresAt.getTime()) ? expiresAt.toISOString() : ''
 );
@@ -325,17 +335,18 @@ export const credentialFor = async (
   const now = deps.now();
   const startRef = row.config?.credentialRef;
 
-  if (startRef && isFresh(row.config?.expiresAt, now)) {
+  const liveRef = servableRef(row.config, now);
+  if (liveRef) {
     // The common case, and the only one that touches nothing: a live access
     // token is returned without a fence, because there is nothing to race on.
-    return { token: await deps.secrets.get(startRef), expiresAt: isoOrEmpty(row.config?.expiresAt) };
+    return { token: await deps.secrets.get(liveRef), expiresAt: isoOrEmpty(row.config?.expiresAt) };
   }
 
   const generation = generationOf(row);
   const won = await deps.row.bumpGeneration(id, generation, now);
 
   if (!won) {
-    return loseTheRace({ deps, id, startExpiresAt: row.config?.expiresAt });
+    return loseTheRace({ deps, id });
   }
 
   // We hold the fence from here on, so this is the value every write below — and
@@ -436,19 +447,24 @@ export const credentialFor = async (
  * finished committing milliseconds in.
  *
  * The signal that is actually observable is the one the caller could not have
- * seen before: the row's credential is FRESH. This path is entered only because
- * the pre-image was not fresh, so a fresh re-read is the winner's commit — or
- * another writer's, which is equally correct to serve. A re-read that finds the
- * old expiry (even though `put` has already overwritten the secret in place)
- * means the commit has not landed yet, and the loser keeps waiting: serving the
- * new token under the stale expiry would hand the caller a credential it would
- * immediately discard.
+ * seen before: the row's credential is SERVABLE, by the fast path's own test. This
+ * path is entered only because the pre-image failed that test, so a re-read that
+ * passes it is a write — the winner's commit, or another writer's, which is
+ * equally correct to serve. The write supplied whichever half the pre-image
+ * lacked: a fresh expiry where the old one had lapsed, or a reference where the
+ * row held none. The loser needs no memory of which, and asking the pre-image
+ * instead would refuse the second kind while the winner's pair sat on the row.
+ *
+ * A re-read that finds the old expiry (even though `put` has already overwritten
+ * the secret in place) means the commit has not landed yet, and the loser keeps
+ * waiting: serving the new token under the stale expiry would hand the caller a
+ * credential it would immediately discard. A row that held no reference waits
+ * the same way — `put` may have written the secret, but the row names no
+ * reference until the commit does.
  */
 const loseTheRace = async (input: {
   deps: CredentialDeps;
   id: unknown;
-  /** The pre-image's expiry, which was NOT fresh — that is why this path is running. */
-  startExpiresAt: Date | null | undefined;
 }): Promise<HostedMcpCredential> => {
   const { deps, id } = input;
   const deadline = deps.now().getTime() + WINNER_WAIT_MS;
@@ -462,13 +478,9 @@ const loseTheRace = async (input: {
     }
     assertUsable(current);
 
-    const ref = current.config?.credentialRef;
     const now = deps.now();
-    // The pre-image's staleness is restated here rather than assumed: it is what
-    // makes the check below mean "the winner wrote" instead of "it always was".
-    const preImageWasStale = !isFresh(input.startExpiresAt, now);
-
-    if (preImageWasStale && ref && isFresh(current.config?.expiresAt, now)) {
+    const ref = servableRef(current.config, now);
+    if (ref) {
       return { token: await deps.secrets.get(ref), expiresAt: isoOrEmpty(current.config?.expiresAt) };
     }
 
