@@ -14,7 +14,7 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
 
 /**
- * Four defects that would otherwise be silent, checked at module load:
+ * Five defects that would otherwise be silent, checked at module load:
  *
  * - An entry `id` is a tool-name namespace, so `linear.x` must name one entry.
  *   An id carrying a dot would make two entries indistinguishable in the tool
@@ -35,6 +35,18 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
  *   report the vendor moving — the pin has already recorded the move §3 says
  *   has to be a PR. Both directions are refused separately, so the refusal a
  *   reviewer reads names the annotation it found.
+ * - A read pin has to CLAIM read-only, not merely avoid denying it. The first
+ *   direction of `movedTowardWrite` is keyed on the pin's own claim
+ *   (`pinned.readOnlyHint === true`), so a read pin carrying no annotation can
+ *   never be told the vendor withdrew the claim: `assessEntryTools` answers
+ *   `ok` while the vendor says `readOnlyHint: false`, and a read grant stands
+ *   against an explicit upstream denial. Requiring the claim keeps that
+ *   direction live for every read pin in the catalogue.
+ *
+ * The consequence, stated because it is a cost and not an oversight: a read pin
+ * now needs its vendor to keep saying `readOnlyHint: true`, since a vendor that
+ * says nothing is read as a withdrawal of the claim. A tool whose vendor
+ * annotates nothing can only be pinned `write`.
  */
 export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
   const seenEntries = new Set<string>();
@@ -55,6 +67,9 @@ export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
       }
       if (tool.class === 'read' && tool.annotations?.readOnlyHint === false) {
         throw new Error(`hosted-mcp read tool is pinned against its own readOnlyHint: ${name}`);
+      }
+      if (tool.class === 'read' && tool.annotations?.readOnlyHint !== true) {
+        throw new Error(`hosted-mcp read tool does not claim readOnlyHint: ${name}`);
       }
       if (seenTools.has(name)) throw new Error(`duplicate hosted-mcp tool name: ${name}`);
       seenTools.add(name);
