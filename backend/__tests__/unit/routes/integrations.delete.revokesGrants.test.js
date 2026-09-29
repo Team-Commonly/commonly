@@ -13,6 +13,21 @@
 // SlowBuffer dependency is irrelevant to these suites.
 jest.mock('jsonwebtoken', () => ({}));
 
+// The catalogue is empty on this head, so a hosted removal reaches the sequence
+// but never a real entry. `findHostedMcpEntry` is the one seam the sequence
+// reads, and a page entry has to be reachable through the ROUTE for the
+// response's `revokeAt` to have a witness at all — nothing else asserts that
+// the route passes it on. Setting the override is the only arm that does.
+let mockHostedEntryOverride = null;
+jest.mock('../../../integrations/hostedMcp/entries', () => {
+  const actual = jest.requireActual('../../../integrations/hostedMcp/entries');
+  return {
+    ...actual,
+    findHostedMcpEntry: (entries, id) => mockHostedEntryOverride
+      || actual.findHostedMcpEntry(entries, id),
+  };
+});
+
 const express = require('express');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -218,5 +233,119 @@ describe('DELETE /api/integrations/:id ends the connection\'s grants first', () 
     expect(await Integration.findById(connection._id)).not.toBeNull();
     const row = await RoomGrant.findOne({ grantId: root.grantId }).lean();
     expect(row.revokedAt).toBeNull();
+  });
+});
+
+// TASK-172 §10 step 6 — the same route, over a hosted-MCP row. A hosted row is
+// the only type whose removal has a provider step, so it takes the whole §9
+// sequence rather than the grants-then-delete path the arms above pin.
+describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
+  // §2: a hosted row is a per-person Connection, so `scope: 'user'` and no
+  // `podId` — the schema requires `podId` only when `scope === 'pod'`, which is
+  // also what keeps pod deletion from ever reaching one of these rows.
+  const seedHostedRow = async () => Integration.create({
+    type: 'hosted-mcp',
+    status: 'connected',
+    scope: 'user',
+    createdBy: OWNER,
+    isActive: true,
+    config: {
+      entryId: 'linear',
+      credentialRef: 'access-ref',
+      refreshTokenRef: 'refresh-ref',
+    },
+  });
+
+  it('refuses with provider_revoke_failed and keeps the row, its refs and its grants state', async () => {
+    const connection = await seedHostedRow();
+    const root = grantFixture({
+      connectionId: String(connection._id),
+      installationId: 'install-none-hosted',
+    });
+    await RoomGrant.create(root);
+
+    const res = await request(app)
+      .delete(`/api/integrations/${connection._id}`)
+      .set('x-test-user', OWNER);
+
+    // `HOSTED_MCP_ENTRIES` is empty on this head, so every hosted removal takes
+    // the "no known entry" branch. That is the shipped state, and it is worth an
+    // arm of its own: it proves the route dispatches to the sequence rather than
+    // falling through to the delete, and that a removal which cannot finish
+    // answers a named state instead of a 500 or a silent success.
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe('provider_revoke_failed');
+    expect(res.body.message).toMatch(/names no known entry/);
+
+    const row = await Integration.findById(connection._id).lean();
+    expect(row).not.toBeNull();
+    // Step 2 ran before the entry lookup, so the row the broker would still
+    // honour is refused from the instant of the failed attempt.
+    expect(row.status).toBe('disconnected');
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    // The material is untouched, which is what makes the retry possible: the
+    // refresh token the vendor revoke needs is still there.
+    expect(row.config.credentialRef).toBe('access-ref');
+    expect(row.config.refreshTokenRef).toBe('refresh-ref');
+    // And the row is not active-flagged off, or the orphan sweep would take the
+    // material out from under the retry.
+    expect(row.isActive).toBe(true);
+
+    const grant = await RoomGrant.findOne({ grantId: root.grantId }).lean();
+    expect(grant.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it('carries a page entry back as revokeAt and completes the removal', async () => {
+    const page = 'https://linear.app/settings/security';
+    mockHostedEntryOverride = {
+      id: 'linear',
+      title: 'Linear',
+      resource: 'https://mcp.linear.app/mcp',
+      issuer: 'https://mcp.linear.app',
+      client: 'cimd',
+      scopes: ['read'],
+      revoke: { page },
+      tools: [],
+    };
+    try {
+      // Real secret-id-shaped refs: the page path completes the removal, so
+      // unlike the refusal arm above it reaches `material` — and a real
+      // `ConnectorSecret.deleteOne` on a non-ObjectId ref is a CastError, not a
+      // no-op. The refs are what the sequence must destroy, so they have to be
+      // the shape the sequence is handed in production.
+      const connection = await Integration.create({
+        type: 'hosted-mcp',
+        status: 'connected',
+        scope: 'user',
+        createdBy: OWNER,
+        isActive: true,
+        config: {
+          entryId: 'linear',
+          credentialRef: new mongoose.Types.ObjectId().toString(),
+          refreshTokenRef: new mongoose.Types.ObjectId().toString(),
+        },
+      });
+      const root = grantFixture({
+        connectionId: String(connection._id),
+        installationId: 'install-page-hosted',
+      });
+      await RoomGrant.create(root);
+
+      const res = await request(app)
+        .delete(`/api/integrations/${connection._id}`)
+        .set('x-test-user', OWNER);
+
+      // §10.5: a page entry calls no vendor, so the removal completes — and the
+      // response has to name the page a person finishes at, or the last step of
+      // the removal is a URL only the entry knows.
+      expect(res.status).toBe(200);
+      expect(res.body.revokeAt).toBe(page);
+      expect(await Integration.findById(connection._id).lean()).toBeNull();
+      const grant = await RoomGrant.findOne({ grantId: root.grantId }).lean();
+      expect(grant.revokedAt).toBeInstanceOf(Date);
+    } finally {
+      // A leaked override would silently rewrite every arm that follows.
+      mockHostedEntryOverride = null;
+    }
   });
 });
