@@ -197,7 +197,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 - It checks the type, `status`, `revokedAt`, that the entry exists and that a `credentialRef` is present.
 - It checks that the definition's `entryId` equals the row's, the same `connection_mismatch` class it applies to type today (`:476–486`).
 - It keeps the TASK-148 `createdAt` guard (`:488–512`) unchanged.
-- For a hosted row, it refuses `connection_owner_unavailable` (403, beside `connection_superseded`) when the row's owner is banned or no longer exists, reading the owner with the row (TASK-181). `listToolsForGrant`, `callTool` and `executeApprovedToolCall` all resolve through it, so one check covers the offer, the call, and a call approved after the ban. It reads live state at call time, so nothing is written when the ban is set and a lifted ban needs no reconnect. A `github-app` row is unchanged: its token belongs to the app installation, not to the admin who created the row.
+- For a hosted row, it refuses when the row's owner is no longer a usable account (TASK-181). It reads the owner through `sessionAccountService` (`loadSessionAccount`, `sessionRefusal`), the one definition the session verifiers share, and renders the answer as `connection_owner_banned`, `connection_owner_missing` or `connection_owner_bot` (403, beside `connection_superseded`). Separate codes tell an admin which remedy applies: lift the ban, or remove the row so its owner can be replaced (Vera 75498). `listToolsForGrant`, `callTool` and `executeApprovedToolCall` all resolve through it, so one check covers the offer, the call, and a call approved after the ban. It reads live state at call time, so nothing is written when the ban is set and a lifted ban needs no reconnect. Both call paths' existing catch writes the refusal to `tool_calls` as `refused`, with the code as `reason` (`safeReason`, §9). A refused list writes no row, because a list is not a call; the seat gets the code as a JSON-RPC error (`routes/mcpGrants.ts:73`). A `github-app` row is unchanged: its token belongs to the app installation, not to the admin who created the row.
 - `ToolConnection` (`:28–34`) widens to both types; `owner`/`repo` belong to `github-app`, and `entryId` to `hosted-mcp`.
 
 **The catalogue.**
@@ -224,7 +224,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 | 5xx, a timeout, no connection | fails the call | `failed`, `provider_unavailable` | untouched |
 | a result with `isError: true` | returns the vendor's text as the tool's error | `failed` | untouched |
 | a pinned tool missing, or drifted (§3) | refuses before calling | `refused`, `tool_unavailable` or `tool_drift` | untouched |
-| the row's owner banned or gone (§7) | refuses before calling | `refused`, `connection_owner_unavailable` | untouched, and so is the grant |
+| the row's owner banned or gone (§7) | refuses before calling | `refused`, `connection_owner_banned`, `connection_owner_missing` or `connection_owner_bot` | untouched, and so is the grant |
 
 `refused` is for answers about authority, whether ours or the vendor's; `failed` is for a call that could not complete (`ToolCallOutcome`, `models/ToolCall.ts:21`). Each row reaches the person as a named state, never as a silent empty result.
 
@@ -276,9 +276,9 @@ Each step can be tested without the vendor, except the live measurements in step
    - TASK-147's witness per removal path (§7), before the first entry ships
    - `deleting a member who owns a hosted row is refused with the rows named, and the row, its grants and its material are unchanged`
    - TASK-181's three, each made by banning or deleting a member who owns the row and then calling through the broker, not by calling the check:
-     - `a banned owner's hosted grant is refused, and runs again once the ban is lifted`
+     - `a banned owner's hosted grant is refused as connection_owner_banned and trailed refused, and runs again once the ban is lifted`
      - `a call approved after its owner is banned is refused`
-     - `a hosted grant whose owner no longer exists is refused`
+     - `a hosted grant whose owner no longer exists is refused as connection_owner_missing`
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
    - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
    - `the page's call to start is credentialed`, before the walk (§4)
