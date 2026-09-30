@@ -244,6 +244,12 @@ Playwright's model encodes WAI-ARIA's "name from author prohibited" role set in
 `presentation`, `strong`, `subscript`, `superscript` — which is why it answers
 "no name" where Chromium answers with one.
 
+That table was read, and the behaviour re-measured, in **both** `playwright-core`
+1.63.0 and the `1.64.0-alpha` build that `@playwright/mcp` bundles, so this is not a
+one-version artifact. The inverse is the useful lever: the roles that *do* print a
+name in the model are the ones ARIA permits naming — `group`, `region`, `img` — so a
+container that needs a name takes `role="group"` rather than losing its `aria-label`.
+
 Rules that follow:
 
 - **Cite the call, not the concept.** "The accessibility tree says X" is not
