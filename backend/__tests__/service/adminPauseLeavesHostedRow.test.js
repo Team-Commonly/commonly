@@ -30,12 +30,17 @@ jest.mock('../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../middleware/adminAuth', () => (_req, _res, next) => next());
 
+jest.mock('../../models/User', () => ({ findById: jest.fn(), countDocuments: jest.fn() }));
+jest.mock('../../services/emailService', () => ({ sendEmail: jest.fn() }));
+
 const Integration = require('../../models/Integration');
 const InstallableInstallation = require('../../models/InstallableInstallation');
+const User = require('../../models/User');
 
 const app = express();
 app.use(express.json());
 app.use('/admin/installables', require('../../routes/admin/installables'));
+app.use('/admin/users', require('../../routes/admin/users'));
 
 const boundRow = () => ({
   type: 'slack',
@@ -169,4 +174,39 @@ test('the projection misses the hosted row because the key is ABSENT, not empty'
 
   const raw = await Integration.collection.findOne({ _id: hosted._id });
   expect('installationId' in raw).toBe(false);
+});
+
+describe('the admin user delete is not a connection-removal path either', () => {
+  // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) deletes the
+  // person and says nothing about their connections: no Integration reference in
+  // the handler at all. So it is a witness on the same terms as the others —
+  // and a hazard, because the owner is the only caller the hosted row's own
+  // routes accept (PATCH refuses it by kind, DELETE /api/integrations/:id wants
+  // the owner or an admin), which is why the row it strands needs a person to
+  // finish the job.
+  it('removes the person and leaves their hosted row standing, material intact', async () => {
+    const target = { _id: new mongoose.Types.ObjectId(), isBot: false, role: 'user', deleteOne: jest.fn().mockResolvedValue({}) };
+    User.findById.mockResolvedValue(target);
+    User.countDocuments.mockResolvedValue(5);
+    const hosted = await Integration.create({
+      type: 'hosted-mcp',
+      scope: 'user',
+      status: 'connected',
+      createdBy: target._id,
+      config: { entryId: 'linear', intake: 'oauth', credentialRef: 'secret-access-1' },
+    });
+
+    const res = await request(app).delete(`/admin/users/${target._id}`);
+
+    expect(res.status).toBe(200);
+    // The control: the handler ran and deleted the person it selected.
+    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+    const raw = await Integration.collection.findOne({ _id: hosted._id });
+    expect(raw).not.toBeNull();
+    expect(raw.config.credentialRef).toBe('secret-access-1');
+    // Not even marked: no row-removing step is reached, so the vendor revoke and
+    // the grant sweep that a removal owes do not run either.
+    expect(raw.status).toBe('connected');
+    expect('providerRevokedAt' in raw.config).toBe(false);
+  });
 });
