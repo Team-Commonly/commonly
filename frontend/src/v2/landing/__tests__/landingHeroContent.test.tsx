@@ -134,19 +134,28 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     expect(zhSuffix.length).toBeGreaterThan(0);
 
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
-    const zh = renderLanding();
-    const node = zh.container.querySelector('.v2-landing__title-suffix');
-    expect(node).not.toBeNull();
-    expect(node?.textContent).toBe(zhSuffix);
-    expect(node?.closest('h1.v2-landing__title')).not.toBeNull();
-    zh.unmount();
+    try {
+      const zh = renderLanding();
+      const node = zh.container.querySelector('.v2-landing__title-suffix');
+      expect(node).not.toBeNull();
+      expect(node?.textContent).toBe(zhSuffix);
+      expect(node?.closest('h1.v2-landing__title')).not.toBeNull();
+      zh.unmount();
 
-    // en ships an empty suffix, so no span is rendered there and the rule is
-    // zh-only by construction — this is the control that keeps the pin from
-    // quietly becoming an English-hero assertion.
-    await act(async () => { await i18n.changeLanguage('en'); });
-    const en = renderLanding();
-    expect(en.container.querySelector('.v2-landing__title-suffix')).toBeNull();
-    en.unmount();
+      // en ships an empty suffix, so no span is rendered there and the rule is
+      // zh-only by construction — this is the control that keeps the pin from
+      // quietly becoming an English-hero assertion.
+      await act(async () => { await i18n.changeLanguage('en'); });
+      const en = renderLanding();
+      expect(en.container.querySelector('.v2-landing__title-suffix')).toBeNull();
+      en.unmount();
+    } finally {
+      // TASK-213: the language is the suite's ambient state, so the restore has
+      // to survive a failure above it. Unguarded, a red assertion in here left
+      // every later test rendering zh, and their English misses read as defects
+      // in the page rather than in this test (found by sprint-review on #2033,
+      // reproduced with a forced-failure probe).
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 });

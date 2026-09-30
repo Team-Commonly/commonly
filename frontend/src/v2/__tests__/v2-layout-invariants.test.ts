@@ -1467,15 +1467,37 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the zh hero title suffix cannot be split across lines', () => {
     // TASK-211. The zh hero reads 「与你的___对话」: the rotator swaps the object
     // and 对话 trails it. At 390px with the "Claude Code" term the suffix
-    // straddled the wrap — 对 ended line 2 at x=348.5 in a 342px column and 话
-    // sat alone on line 3 (measured live; at 320 the 整个团队 term did the same).
-    // `white-space: nowrap` is what produces the measured fix, so that is what
-    // is pinned here — jsdom has no line boxes, and the browser is the gate.
+    // straddled the wrap — the h1's content box ran 24 → 366, 对 fitted
+    // (348.5), and 话 is 44.3px wide and would have ended 26.8px past the edge,
+    // so 话 sat alone on line 3 (measured live; at 320 the 整个团队 term did the
+    // same). `white-space: nowrap` is what produces the measured fix, so that is
+    // what is pinned here — jsdom has no line boxes, and the browser is the gate.
     // The companion assertion that the suffix is rendered as its own element
     // (so this rule has something to bind to) lives in
     // landingHeroContent.test.tsx; a declaration pin alone would survive the
     // suffix being inlined as bare text.
     expect(ruleBody(landing, '.v2-landing__title-suffix')).toContain('white-space: nowrap');
+  });
+
+  test('the zh hero suffix takes its own line on a phone', () => {
+    // TASK-213. Even with the suffix unbreakable (the test above), the zh h1
+    // gains a line whenever a term is long enough to push 对话 onto a third
+    // line: at 320–414 it measures 94.6px under three terms and 140.6px under
+    // the fourth, so the lede, the CTAs and everything below move 46px once per
+    // rotation cycle. lily-shen ruled option 1 (2026-09-30 00:23Z): the suffix
+    // is a block at ≤680, which makes the height the same under every term.
+    // Scoped with `mediaAt` rather than a whole-sheet read or an `indexOf`: the
+    // sheet has one (max-width: 680px) block today, and the helper is what makes
+    // a later one unable to satisfy this assertion by accident — `mediaAt`
+    // returns '' when the at-rule is absent, so a dropped block reds rather than
+    // silently matching some other rule. The declaration pin binds to the
+    // browser gate in ux-lead's sweep; `margin-left: 0` is asserted separately
+    // from `display: block` because it is what puts 对 on the column's left
+    // edge (the base rule's .18em indent would otherwise move with it).
+    const phone = mediaAt(landing, '@media (max-width: 680px) {');
+    expect(phone).not.toBe('');
+    expect(selectorRuleBody(phone, '.v2-landing__title-suffix')).toContain('display: block');
+    expect(selectorRuleBody(phone, '.v2-landing__title-suffix')).toContain('margin-left: 0');
   });
 
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {

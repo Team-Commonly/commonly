@@ -63,8 +63,10 @@
   margin-left: 0.18em;
   /* TASK-211: the zh hero is 「与你的___对话」, so this suffix is a word the
      reader has to see whole. At 390 with the "Claude Code" term the two
-     characters straddled the wrap — 对 ended line 2 at x=348.5 in a 342px
-     column and 话 sat alone on line 3. nowrap makes the suffix one unbreakable
+     characters straddled the wrap: the h1's content box ran 24 → 366, so 对
+     fitted (348.5, i.e. 17.5px inside the right edge) and it was 话 — 44.3px
+     wide, which would have ended at 392.8, 26.8px past it — that sat alone on
+     line 3. nowrap makes the suffix one unbreakable
      unit: it moves to the next line as a pair instead of splitting. Measured
      live at 390 (44px/46px) and again at 320, where the 整个团队 term split it
      the same way. en ships an empty suffix and renders no span, so this is
@@ -1250,6 +1252,18 @@
   .v2-landing__footer { padding-top: 32px; }
   .v2-landing__footer-legal { padding: 16px 0 20px; }
   .v2-landing__title { font-size: 44px; line-height: 46px; }
+  /* TASK-213 (lily-shen's ruling, option 1): on a phone the suffix takes its own
+     line, so the title is 「与你的 / <term> / 对话」 at every width and only the
+     term rotates. Without this the h1 is 94.6px under three of the four terms
+     and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
+     section below jumped 46px once per cycle (measured on main abe19fe0 and
+     again on #2033). `margin-left: 0` is part of the rule rather than tidying:
+     the base rule's .18em is the inline separator, and on its own line it would
+     indent 对 by 7.9px. Specificity is the base rule's (0,1,0) and this block is
+     later in the sheet, so it wins by order — the same mechanism the TASK-205
+     scroll-padding-top above documents. TASK-211's nowrap still applies here;
+     this rule changes `display`, so the two compose. */
+  .v2-landing__title-suffix { display: block; margin-left: 0; }
   .v2-landing__lede { font-size: 16px; line-height: 26px; }
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
