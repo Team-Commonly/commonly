@@ -388,12 +388,32 @@
   border-radius: var(--v2-radius-sm);
 }
 
+/* Visually hidden, in the shape the two other copies in the frontend already use
+   (.v2-landing__install-status, .v2-board__focus-live). This was the one member
+   of that family missing declarations the others carried, which is how the gap
+   was found.
+   THE CAUSE IS OPEN, and this comment does not claim one. ux-lead measured the
+   consequence on the live landing page (UX-GATE on #2018, finding 9) — the
+   document ran 1301px tall at a 1440x900 viewport and a wheel overscroll at the
+   footer scrolled the window — and named this box, which has no positioned
+   ancestor inside the scroller, as what extends it; they marked it pre-existing,
+   not introduced by #2018. sprint-review's browser harness (code gate on #2024)
+   could not reproduce a mechanism for it: the box stays 1px whether or not the
+   label's text wraps. So the declarations below are pattern conformance with the
+   rest of the family — which is checkable without knowing which one does the
+   work — and the census in src/v2/__tests__/srOnlyPattern.test.ts fails any
+   future copy that drops one. */
 .v2-demo__sr {
   position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .v2-demo__input {
