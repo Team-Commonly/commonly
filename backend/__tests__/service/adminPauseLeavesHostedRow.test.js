@@ -178,11 +178,18 @@ test('the projection misses the hosted row because the key is ABSENT, not empty'
 
 describe('the admin user delete refuses while the user owns a hosted row (wren 75845)', () => {
   // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) references
-  // Integration nowhere but this guard. Deleting the person would strand their
-  // hosted connections: the owner is the only caller the row's own routes accept
-  // (PATCH refuses it by kind, `DELETE /api/integrations/:id` wants the owner or
-  // an admin), so nothing could finish the removal — not even the vendor revoke
-  // owed on a row only they can reach. The arm pins the REFUSAL, not the strand.
+  // Integration nowhere but this guard. Deleting the person leaves their hosted
+  // rows owned by an account that no longer exists — and the reason is the GAP,
+  // not a strand: an admin CAN finish such a row, because
+  // `canDeleteIntegration` answers true on `role === 'admin'` before it reads
+  // `createdBy` (`routes/integrations.ts:173`) and the orphan still lists under
+  // `GET /api/integrations/admin/all` (which filters on `isActive`). Nothing
+  // prompts that look, though, so until someone happens to take it the grants
+  // and the material outlive the person they act for. The arm pins the REFUSAL,
+  // and the admin-can-finish arm beside it (in
+  // `integrations.delete.revokesGrants.test.js`) pins the capability this comment
+  // would otherwise have to be believed about: a capability claim beside an arm
+  // needs its own arm, because a probe is not a witness.
   const person = () => ({
     _id: new mongoose.Types.ObjectId(),
     isBot: false,
@@ -198,7 +205,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     ...overrides,
   });
 
-  it('refuses with a code and the row ids, and does not delete the person', async () => {
+  it("refuses with a code and each row's id and entry, and does not delete the person", async () => {
     const target = person();
     User.findById.mockResolvedValue(target);
     const live = await Integration.create(hostedFor(target._id));
@@ -218,9 +225,12 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     // token — a row can be in that state with no access token written yet — and
     // the point of listing it is that it is not ``connected``: a guard keyed on
     // status answers 200 here and deletes the person who owes the cleanup.
-    expect([...res.body.connectionIds].sort()).toEqual(
+    expect([...res.body.connections.map((row) => row.id)].sort()).toEqual(
       [String(live._id), String(stranded._id)].sort(),
     );
+    // The body names the app each row is for, because that pair is what the
+    // removal route takes: an admin who gets only ids has to look each one up.
+    expect(res.body.connections.map((row) => row.entryId).sort()).toEqual(['linear', 'notion']);
     // The control: the refusal is what stopped it, not a failed lookup.
     expect(target.deleteOne).not.toHaveBeenCalled();
     expect(await Integration.countDocuments({ createdBy: target._id })).toBe(2);
@@ -242,8 +252,10 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     // and does not write `config.credentialRef` until `:427`, so for the length
     // of its upstream calls the row carries neither — and every failure branch
     // in between returns a redirect with the row left in exactly that state.
-    // Letting it through deletes the only person who can finish the removal
-    // while the material is either seconds away or already owed.
+    // Letting it through deletes the only person whose account is bound to this
+    // row while the material is either seconds away or already owed. An admin
+    // could finish it — that is pinned, not assumed — but nothing would tell one
+    // it is there, so the connect lands into an ownerless row.
     const target = person();
     User.findById.mockResolvedValue(target);
     const midExchange = await Integration.create(hostedFor(target._id, {
@@ -255,14 +267,14 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('hosted_mcp_connection_owned');
-    expect(res.body.connectionIds).toEqual([String(midExchange._id)]);
+    expect(res.body.connections).toEqual([{ id: String(midExchange._id), entryId: 'linear' }]);
     expect(target.deleteOne).not.toHaveBeenCalled();
   });
 
   it('does not refuse for a row that is not a hosted one', async () => {
     // Narrowness, in the same shape as the pod-delete control: a github-app row
-    // is `scope: 'user'` too, and the guard is about the hosted rows whose
-    // removal only their owner can finish. Widening the filter to every
+    // is `scope: 'user'` too, and the guard is about the hosted rows that belong
+    // to the person being deleted. Widening the filter to every
     // Integration turns this arm red, which is what keeps it honest.
     const target = person();
     User.findById.mockResolvedValue(target);

@@ -296,7 +296,7 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
     // with `createdBy: null`) — but nothing prompts the look, so until someone
     // takes it the grants and the material outlive the person they act for.
     // Refusing here does that cleanup at the one moment an admin is already
-    // acting on this user, and hands over the ids to do it with.
+    // acting on this user, and hands over the ids and entries to do it with.
     //
     // The predicate is the EXISTENCE of the row — not `status`, not the presence
     // of material (wren 75857, reverting my material-keyed version). Both
@@ -324,12 +324,19 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
     const ownedConnections = await Integration.find({
       type: HOSTED_MCP_TYPE,
       createdBy: target._id,
-    }).select('_id').lean() as Array<{ _id: unknown }>;
+    }).select('_id config.entryId').lean() as Array<{ _id: unknown; config?: { entryId?: string } }>;
     if (ownedConnections.length > 0) {
       return res.status(409).json({
         error: 'This user still owns hosted connections. Remove them first.',
         code: 'hosted_mcp_connection_owned',
-        connectionIds: ownedConnections.map((connection) => String(connection._id)),
+        // The id AND the entry, per the plan's §7 body (plan doc :192): the pair
+        // is exactly what `DELETE /api/integrations/:id` takes, so an admin
+        // reading this knows which row to delete for which app without a second
+        // lookup. A parallel array of entries would couple by index and drift.
+        connections: ownedConnections.map((connection) => ({
+          id: String(connection._id),
+          entryId: connection.config?.entryId || null,
+        })),
       });
     }
 
