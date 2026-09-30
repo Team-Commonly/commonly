@@ -242,17 +242,21 @@ Playwright's model encodes WAI-ARIA's "name from author prohibited" role set:
 `aria-label` is dropped for `caption`, `code`, `deletion`, `emphasis`,
 `generic`, `insertion`, `paragraph`, `presentation`, `strong`, `subscript`,
 `superscript` — which is why it answers "no name" where Chromium answers with
-one. That list is byte-identical in all three cached builds; the file carrying it
-moves — `playwright-core/lib/coreBundle.js` at 1.63.0 and 1.64.0-alpha,
-`playwright-core/lib/generated/injectedScriptSource.js` at 1.56.0 — so pin the
-path to the version you are grepping, or the citation decays the same way an
-unqualified "the accessibility tree" does.
+one. That list is the same 150 bytes in all three cached builds (sha1
+`9bad9754c6d2`), but it does not live at the same path: it is in
+`playwright-core/lib/coreBundle.js` at 1.63.0 and 1.64.0-alpha, and in
+`playwright-core/lib/generated/injectedScriptSource.js` at 1.56.0 — where
+`coreBundle.js` does not exist at all, so this is a bundling reorganisation
+rather than the list relocating between two existing files. Pin the path to the
+version you are grepping, or the citation decays the same way an unqualified
+"the accessibility tree" does.
 
 Both readings above are pinned to `9ac94e95`, and their subject then moved:
 **#2042 removes that `aria-label`**, replacing a prohibited *name* with clipped
 *content* — the remedy the last rule below prescribes. Once it lands, a reader at
-HEAD finds `paragraph name=""` with the sentence as a `StaticText` child, and the
-markup above is history rather than a live reading. The disagreement does not
+HEAD finds `paragraph name=""` with the sentence as a `StaticText` child, in both
+languages — measured with CDP against a static build of that head, not inferred
+from the diff — and the markup above is history rather than a live reading. The disagreement does not
 expire; the mount point does.
 
 That table was read, and the behaviour re-measured, in **both** `playwright-core`
@@ -274,6 +278,9 @@ prints:
 - paragraph [ref=e7]: para text
 - heading "CTRL_HEADING" [level=2] [ref=e8]: heading text
 ```
+
+That block is verbatim, including `- generic "CTRL_EMPTY"` printing without the
+`[ref=eN]` its siblings carry.
 
 Three deltas against `ariaSnapshot()` on the same page: it **names an implicitly
 generic `<div aria-label>`** while suppressing the name for an explicit
@@ -309,6 +316,15 @@ Rules that follow:
   not academic: a missing line is what opened the investigation this section came
   from, and it is read as evidence of a missing name far too easily.
 - **Neither instrument is a screen reader.** An AT-level claim needs an AT.
+- **Your shell is an instrument too, and it fails the same way.** While measuring
+  this section, `ls node_modules/…` beside `grep $d/node_modules/…` in the same
+  loop printed `coreBundle.js: ABSENT` for all three builds — a bare relative path
+  reporting a confident absence about a file that was present in two of them — and
+  in the same session a `gh pr diff 2>/dev/null | grep -c` reported a count from a
+  command that never ran. A check that cannot name what it read is not a
+  measurement: echo the path, and treat a hash as covering exactly the bytes it
+  hashed (the same 150 bytes give `9bad9754c6d2`, or `e437154061da` with a trailing
+  newline — both are correct about different inputs).
 - `page.accessibility.snapshot()` was **removed** in Playwright 1.63 — a snippet
   using it predates the version in this repo's npx cache.
 
