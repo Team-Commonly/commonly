@@ -176,37 +176,94 @@ test('the projection misses the hosted row because the key is ABSENT, not empty'
   expect('installationId' in raw).toBe(false);
 });
 
-describe('the admin user delete is not a connection-removal path either', () => {
-  // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) deletes the
-  // person and says nothing about their connections: no Integration reference in
-  // the handler at all. So it is a witness on the same terms as the others —
-  // and a hazard, because the owner is the only caller the hosted row's own
-  // routes accept (PATCH refuses it by kind, DELETE /api/integrations/:id wants
-  // the owner or an admin), which is why the row it strands needs a person to
-  // finish the job.
-  it('removes the person and leaves their hosted row standing, material intact', async () => {
-    const target = { _id: new mongoose.Types.ObjectId(), isBot: false, role: 'user', deleteOne: jest.fn().mockResolvedValue({}) };
+describe('the admin user delete refuses while the user owns a hosted row (wren 75845)', () => {
+  // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) references
+  // Integration nowhere but this guard. Deleting the person would strand their
+  // hosted connections: the owner is the only caller the row's own routes accept
+  // (PATCH refuses it by kind, `DELETE /api/integrations/:id` wants the owner or
+  // an admin), so nothing could finish the removal — not even the vendor revoke
+  // owed on a row only they can reach. The arm pins the REFUSAL, not the strand.
+  const person = () => ({
+    _id: new mongoose.Types.ObjectId(),
+    isBot: false,
+    role: 'user',
+    deleteOne: jest.fn().mockResolvedValue({}),
+  });
+  const hostedFor = (userId, overrides = {}) => ({
+    type: 'hosted-mcp',
+    scope: 'user',
+    status: 'connected',
+    createdBy: userId,
+    config: { entryId: 'linear', intake: 'oauth', credentialRef: 'secret-access-1' },
+    ...overrides,
+  });
+
+  it('refuses with a code and the row ids, and does not delete the person', async () => {
+    const target = person();
     User.findById.mockResolvedValue(target);
-    User.countDocuments.mockResolvedValue(5);
-    const hosted = await Integration.create({
-      type: 'hosted-mcp',
+    const live = await Integration.create(hostedFor(target._id));
+    // Any status counts: a failed revoke leaves a `disconnected` row whose
+    // material is still present, and that is the one a person has to finish.
+    const stranded = await Integration.create(hostedFor(target._id, {
+      status: 'disconnected',
+      config: { entryId: 'notion', intake: 'oauth', credentialRef: 'secret-access-2' },
+    }));
+
+    const res = await request(app).delete(`/admin/users/${target._id}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('hosted_mcp_connection_owned');
+    expect([...res.body.connectionIds].sort()).toEqual(
+      [String(live._id), String(stranded._id)].sort(),
+    );
+    // The control: the refusal is what stopped it, not a failed lookup.
+    expect(target.deleteOne).not.toHaveBeenCalled();
+    expect(await Integration.countDocuments({ createdBy: target._id })).toBe(2);
+  });
+
+  it('accepts the delete for a person who owns no hosted row', async () => {
+    const target = person();
+    User.findById.mockResolvedValue(target);
+
+    const res = await request(app).delete(`/admin/users/${target._id}`);
+
+    expect(res.status).toBe(200);
+    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses for a row whose revoke already failed, with no live row present', async () => {
+    // The case the guard exists for. Nothing here is `connected`, so a guard
+    // that filtered on status would let the person go and take the only caller
+    // able to finish this removal with them.
+    const target = person();
+    User.findById.mockResolvedValue(target);
+    const stranded = await Integration.create(hostedFor(target._id, { status: 'disconnected' }));
+
+    const res = await request(app).delete(`/admin/users/${target._id}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.connectionIds).toEqual([String(stranded._id)]);
+    expect(target.deleteOne).not.toHaveBeenCalled();
+  });
+
+  it('does not refuse for a row that is not a hosted one', async () => {
+    // Narrowness, in the same shape as the pod-delete control: a github-app row
+    // is `scope: 'user'` too, and the guard is about the hosted rows whose
+    // removal only their owner can finish. Widening the filter to every
+    // Integration turns this arm red, which is what keeps it honest.
+    const target = person();
+    User.findById.mockResolvedValue(target);
+    await Integration.create({
+      type: 'github-app',
       scope: 'user',
       status: 'connected',
       createdBy: target._id,
-      config: { entryId: 'linear', intake: 'oauth', credentialRef: 'secret-access-1' },
+      config: { repo: 'Team-Commonly/commonly' },
     });
 
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
     expect(res.status).toBe(200);
-    // The control: the handler ran and deleted the person it selected.
     expect(target.deleteOne).toHaveBeenCalledTimes(1);
-    const raw = await Integration.collection.findOne({ _id: hosted._id });
-    expect(raw).not.toBeNull();
-    expect(raw.config.credentialRef).toBe('secret-access-1');
-    // Not even marked: no row-removing step is reached, so the vendor revoke and
-    // the grant sweep that a removal owes do not run either.
-    expect(raw.status).toBe('connected');
-    expect('providerRevokedAt' in raw.config).toBe(false);
   });
 });

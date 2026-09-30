@@ -31,6 +31,16 @@ jest.mock('axios', () => ({
   post: jest.fn(),
 }));
 
+// The delete route reads the person's hosted connections before it removes
+// them (`routes/admin/users.ts`). This suite drives the handlers with every
+// model mocked and no database, so the read has to be answered here too — and
+// answering it with "no rows" is what keeps these arms about the route's own
+// branches. The refusal itself is pinned service-tier, against a real mongod
+// (`__tests__/service/adminPauseLeavesHostedRow.test.js`).
+jest.mock('../../../models/Integration', () => ({
+  find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })),
+}));
+
 const axios = require('axios');
 const User = require('../../../models/User');
 const InvitationCode = require('../../../models/InvitationCode');

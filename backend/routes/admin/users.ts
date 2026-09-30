@@ -9,6 +9,8 @@ const InvitationCode = require('../../models/InvitationCode');
 const WaitlistRequest = require('../../models/WaitlistRequest');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { sendEmail } = require('../../services/emailService');
+const Integration = require('../../models/Integration');
+const { HOSTED_MCP_TYPE } = require('../../services/connectionRemovalService');
 
 const router = express.Router();
 
@@ -284,6 +286,29 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
       if (adminCount <= 1) {
         return res.status(400).json({ error: 'Cannot delete the last global admin' });
       }
+    }
+
+    // Deleting the person would strand their hosted connections: the owner is
+    // the only caller the row's own routes accept (PATCH refuses it by kind,
+    // `DELETE /api/integrations/:id` wants the owner or an admin), so once the
+    // account is gone nothing can finish the removal — not even the vendor
+    // revoke, which is owed on a row they are the only one able to reach. Any
+    // status counts: a failed revoke leaves a `disconnected` row whose material
+    // is still present, and that is exactly the one a person has to finish.
+    //
+    // The remedy is the ordinary removal, which admits admins and runs the
+    // whole sequence (grants first); this endpoint never calls a vendor, the
+    // same way pod delete does not.
+    const ownedConnections = await Integration.find({
+      type: HOSTED_MCP_TYPE,
+      createdBy: target._id,
+    }).select('_id').lean() as Array<{ _id: unknown }>;
+    if (ownedConnections.length > 0) {
+      return res.status(409).json({
+        error: 'This user still owns hosted connections. Remove them first.',
+        code: 'hosted_mcp_connection_owned',
+        connectionIds: ownedConnections.map((connection) => String(connection._id)),
+      });
     }
 
     await target.deleteOne();
