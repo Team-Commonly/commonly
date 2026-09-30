@@ -348,4 +348,39 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
       mockHostedEntryOverride = null;
     }
   });
+
+  it('lets an admin finish a row whose owner no longer exists', async () => {
+    // The premise behind 6b's user-delete refusal, pinned instead of asserted:
+    // an orphaned hosted row is NOT a permanent strand. The removal admits an
+    // admin — `canDeleteIntegration` answers true on `role === 'admin'` before
+    // it ever reads `createdBy` (`routes/integrations.ts:173`) — and it runs
+    // whole on a row with no owner left to ask. What the 409 closes is the gap
+    // before anyone looks, not an inability to clean up.
+    //
+    // The row carries no `revokePage` entry (the catalogue is empty on this
+    // head), so this is also the arm that says the page copied onto the row is
+    // what finishes a removal whose entry is gone.
+    const page = 'https://linear.app/settings/security';
+    User.findById.mockResolvedValue({ _id: 'admin-1', role: 'admin' });
+    const connection = await Integration.create({
+      type: 'hosted-mcp',
+      status: 'connected',
+      scope: 'user',
+      createdBy: 'bbbbbbbbbbbbbbbbbbbbbb09',
+      isActive: true,
+      config: { entryId: 'linear', credentialRef: new mongoose.Types.ObjectId().toString(), revokePage: page },
+    });
+    const root = grantFixture({ connectionId: String(connection._id), installationId: 'install-orphan' });
+    await RoomGrant.create(root);
+
+    const res = await request(app)
+      .delete(`/api/integrations/${connection._id}`)
+      .set('x-test-user', 'admin-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.revokeAt).toBe(page);
+    expect(await Integration.findById(connection._id).lean()).toBeNull();
+    const grant = await RoomGrant.findOne({ grantId: root.grantId }).lean();
+    expect(grant.revokedAt).toBeInstanceOf(Date);
+  });
 });

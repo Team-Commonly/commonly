@@ -288,16 +288,20 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
       }
     }
 
-    // Deleting the person would strand their hosted connections: the owner is
-    // the only caller the row's own routes accept (PATCH refuses it by kind,
-    // `DELETE /api/integrations/:id` wants the owner or an admin), so once the
-    // account is gone nothing can finish the removal — not even the vendor
-    // revoke, which is owed on a row they are the only one able to reach. Any
-    // status counts: a failed revoke leaves a `disconnected` row whose material
-    // is still present, and that is exactly the one a person has to finish.
+    // Deleting the person leaves their hosted connections behind for whoever
+    // happens to look. An admin CAN finish the removal — `canDeleteIntegration`
+    // answers true on `role === 'admin'` before it reads `createdBy`
+    // (`routes/integrations.ts:173`), and `GET /api/integrations/admin/all`
+    // still lists the row (it filters on `isActive`, so the orphan comes back
+    // with `createdBy: null`) — but nothing prompts the look, so until someone
+    // takes it the grants and the material outlive the person they act for.
+    // Refusing here does that cleanup at the one moment an admin is already
+    // acting on this user, and hands over the ids to do it with.
     //
-    // The remedy is the ordinary removal, which admits admins and runs the
-    // whole sequence (grants first); this endpoint never calls a vendor, the
+    // Any status counts: a failed revoke leaves a `disconnected` row whose
+    // material is still present, and that is exactly the one a person has to
+    // finish. The remedy is the ordinary removal, which admits admins and runs
+    // the whole sequence (grants first); this endpoint never calls a vendor, the
     // same way pod delete does not.
     const ownedConnections = await Integration.find({
       type: HOSTED_MCP_TYPE,
