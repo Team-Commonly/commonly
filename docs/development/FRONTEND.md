@@ -222,6 +222,156 @@ The application uses Material-UI with a custom theme:
 - **Integration Tests**: Testing component interactions
 - **End-to-End Tests**: Testing complete user flows
 
+### Measuring the accessibility tree — name the instrument
+
+Three different things get called "the accessibility tree", and they can
+disagree about the same element in the same browser session. Measured
+2026-09-30 on live `commonly.me` (`9ac94e95`, Playwright 1.63.0, Chromium
+153.0.8010.12) against `.v2-landing__wedge-line` — a
+`<p aria-label="Teammates, not subagents.">` whose every word child is
+`aria-hidden` — and against the lede paragraph beside it, whose name comes from
+its contents:
+
+| call | what it actually is | result for the labelled `<p>` |
+|---|---|---|
+| CDP `Accessibility.getFullAXTree` / `getPartialAXTree` | Chromium's **own** tree, the source the platform bridge to a real AT is built from | `paragraph name="Teammates, not subagents."`, `ignored=false`, `childIds=[]` |
+| `page.locator('body').ariaSnapshot()` | Playwright's **own spec model**, implemented in its injected `roleUtils.ts` — not a browser API | `- paragraph`, with no name |
+| the same snapshot, on the contents-named lede | control | renders with its full text |
+
+Playwright's model encodes WAI-ARIA's "name from author prohibited" role set,
+and the array that implements it is `elementProhibitsNaming` — inside
+`computeAccessibleNameComposite` at 1.63.0 and 1.64.0-alpha, and inside
+`getElementAccessibleName` at 1.56.0, where `computeAccessibleNameComposite`
+does not exist: 16 roles, 186 bytes — `caption`, `code`,
+`definition`, `deletion`, `emphasis`, `generic`, `insertion`, `mark`,
+`paragraph`, `presentation`, `strong`, `subscript`, `suggestion`, `superscript`,
+`term`, `time`. It sits in the same file as a second list that looks like it and
+is not: `kGlobalAriaAttributes` answers a different question — which ARIA
+attributes count as global, and on which roles they do not — and its one
+`aria-label` entry lists 11 of the same roles inside a `[attribute, roles]` pair
+consumed by `hasGlobalAriaAttribute`. **An early draft of this section pinned
+that 150-byte entry and called it the prohibited-name list**, which is the error
+this section is about, one level down: a list that sits beside the right one, in
+the same file, matching roles, answering a different question. A list is
+identified by what reads it.
+
+Both arrays are byte-identical across the three cached builds — 186 bytes, sha1
+`3db163e92043`; 150 bytes, sha1 `9bad9754c6d2` (`e437154061da` with a trailing
+newline) — and neither lives at the same path: both are in
+`playwright-core/lib/coreBundle.js` at 1.63.0 and 1.64.0-alpha, and in
+`playwright-core/lib/generated/injectedScriptSource.js` at 1.56.0 — where
+`coreBundle.js` does not exist at all, so this is a bundling reorganisation
+rather than either list relocating between two existing files. Pin the path to the
+version you are grepping, or the citation decays the same way an unqualified
+"the accessibility tree" does.
+
+Both readings above are pinned to `9ac94e95`, and their subject then moved:
+**#2042 removes that `aria-label`**, replacing a prohibited *name* with clipped
+*content* — the remedy the last rule below prescribes. Once it lands, a reader at
+HEAD finds `paragraph name=""` with the sentence as a `StaticText` child, in both
+languages — measured with CDP against a static build of that head, not inferred
+from the diff — and the markup above is history rather than a live reading. The disagreement does not
+expire; the mount point does.
+
+That table was read, and the behaviour re-measured, in **both** `playwright-core`
+1.63.0 and the `1.64.0-alpha` build that `@playwright/mcp` bundles, so this is not a
+one-version artifact. The inverse is the useful lever: the roles that *do* print a
+name in the model are the ones ARIA permits naming — `group`, `region`, `img` — so a
+container that needs a name takes `role="group"` rather than losing its `aria-label`.
+
+`@playwright/mcp`'s `browser_snapshot` is **not** a fourth instrument — it is the
+same `ariaSnapshot` in a different mode. Its implementation is
+`page.ariaSnapshot({ mode: "ai", depth, boxes })`, in `playwright-core`'s bundled
+`tools` (the 747-byte `@playwright/mcp` `index.js` re-exports
+`tools.createConnection` from it; there is no second serializer to find). That is
+not bookkeeping: it means the disagreement is reachable from Playwright alone,
+with no MCP transport in the path — which is how it was re-measured below.
+Driven over stdio against the same pinned binary, `browser_snapshot` (annotating
+nodes with `[ref=eN]`) prints:
+
+```
+- generic "CTRL_PLAIN_DIV" [ref=e4]: plain div text
+- generic [ref=e5]: explicit generic text
+- group "CTRL_GROUP" [ref=e6]: group text
+- generic "CTRL_EMPTY"
+- paragraph [ref=e7]: para text
+- heading "CTRL_HEADING" [level=2] [ref=e8]: heading text
+```
+
+That block is verbatim, including `- generic "CTRL_EMPTY"` printing without the
+`[ref=eN]` its siblings carry.
+
+Three deltas against `ariaSnapshot()` in its default mode: it **names an
+implicitly generic `<div aria-label>`** while suppressing the name for an
+explicit `role="generic"`; it **prints the empty labelled div** that the default
+mode prunes entirely; and it agrees on `paragraph` (no name) and on `group` /
+`heading` (named). Re-measured as a two-axis table on the alpha build, direct
+(no MCP transport), one variable per row, CDP as the browser's answer — every
+element carries the same kind of attribute and differs only in role and
+declaration:
+
+| element | role declared | role (CDP) | mode `ai` | mode `default` | CDP name |
+|---|---|---|---|---|---|
+| `<div aria-label>` | implicit | `generic` | **named** | no name | `IMPLICIT_GENERIC` |
+| `<div role="generic" aria-label>` | explicit | `generic` | no name | no name | `EXPLICIT_GENERIC` |
+| `<p aria-label>` | implicit | `paragraph` | no name | no name | `IMPLICIT_PARA` |
+| `<div role="paragraph" aria-label>` | explicit | `paragraph` | no name | no name | `EXPLICIT_PARA` |
+| `<section aria-label>` | implicit | `region` | named | named | `IMPLICIT_SECTION` |
+| `<div role="region" aria-label>` | explicit | `region` | named | named | `EXPLICIT_REGION` |
+| `<div role="group" aria-label>` | explicit | `group` | named | named | `EXPLICIT_GROUP` |
+| `<div role="heading" aria-label>` | explicit | `heading` | named | named | `EXPLICIT_HEADING` |
+| `<div aria-label>` (empty) | implicit | `generic` | named, no `[ref]` | no line | `EMPTY_LABELLED` |
+
+CDP names all nine. So beyond the role itself, **two** variables move the answer
+— the mode, and inside `ai` whether the role was implicit or declared — which is
+why this looked like a property of "the serialiser" to each of us in turn. Both
+instruments can still be right about the same element: they are answering
+different questions.
+
+Rules that follow:
+
+- **Cite the call, not the concept.** "The accessibility tree says X" is not
+  checkable; "CDP `getPartialAXTree` at head H says X" is. Two people here
+  reported opposite results for the same page within an hour and both were right
+  about their own instrument: one read the browser, one read the model.
+- **A positive control has to hold every variable but the one under test — and
+  here there are three: the mode, the role, and whether the role was declared.**
+  The false reading this section came from survived a control, because the
+  control was a `heading` — a role whose names the instrument does print — while
+  the element under test was a `paragraph`, which it drops. Holding only the
+  *role* fixed is not enough either: the `ai` column flips twice, once per axis
+  — at role `generic`, implicit is named and declared is not; at implicit,
+  `generic` is named and `paragraph` is not. A single control element would have
+  "confirmed" whichever half you happened to pick and been wrong about the
+  other. Where a claim spans more than one variable the control set is a table,
+  not a specimen.
+- **`ariaSnapshot()` is a model, and a useful one** — it is what a conforming
+  consumer *may* do. It is not evidence about what Chromium computes, and
+  Chrome's own Accessibility pane is a third thing again.
+- **When they disagree, prefer a fix that does not depend on which is right.**
+  Moving text out of a prohibited *name* and into *content* reads the same in
+  both, and in a real AT; swapping one attribute for another does not.
+- **Absence of a line is not absence of a node.** An empty `<div
+  aria-label="X">` prints *no line at all* in `ariaSnapshot()`, while CDP reports
+  `generic name="X" ignored=false` for that same element — the snapshot selects
+  what to print, so "pruned" describes the line list and never the tree. (The
+  `mode: "ai"` renderer above prints that same node as `- generic
+  "CTRL_EMPTY"`, which is the disagreement in miniature.) This is
+  not academic: a missing line is what opened the investigation this section came
+  from, and it is read as evidence of a missing name far too easily.
+- **Neither instrument is a screen reader.** An AT-level claim needs an AT.
+- **Your shell is an instrument too, and it fails the same way.** While measuring
+  this section, `ls node_modules/…` beside `grep $d/node_modules/…` in the same
+  loop printed `coreBundle.js: ABSENT` for all three builds — a bare relative path
+  reporting a confident absence about a file that was present in two of them — and
+  in the same session a `gh pr diff 2>/dev/null | grep -c` reported a count from a
+  command that never ran. A check that cannot name what it read is not a
+  measurement: echo the path, and treat a hash as covering exactly the bytes it
+  hashed (the same 150 bytes give `9bad9754c6d2`, or `e437154061da` with a trailing
+  newline — both are correct about different inputs).
+- `page.accessibility.snapshot()` was **removed** in Playwright 1.63 — a snippet
+  using it predates the version in this repo's npx cache.
+
 ## Development Guidelines
 
 ### Code Style
