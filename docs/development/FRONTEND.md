@@ -238,11 +238,22 @@ its contents:
 | `page.locator('body').ariaSnapshot()` | Playwright's **own spec model**, implemented in its injected `roleUtils.ts` — not a browser API | `- paragraph`, with no name |
 | the same snapshot, on the contents-named lede | control | renders with its full text |
 
-Playwright's model encodes WAI-ARIA's "name from author prohibited" role set in
-`playwright-core/lib/coreBundle.js` — `aria-label` is dropped for `caption`,
-`code`, `deletion`, `emphasis`, `generic`, `insertion`, `paragraph`,
-`presentation`, `strong`, `subscript`, `superscript` — which is why it answers
-"no name" where Chromium answers with one.
+Playwright's model encodes WAI-ARIA's "name from author prohibited" role set:
+`aria-label` is dropped for `caption`, `code`, `deletion`, `emphasis`,
+`generic`, `insertion`, `paragraph`, `presentation`, `strong`, `subscript`,
+`superscript` — which is why it answers "no name" where Chromium answers with
+one. That list is byte-identical in all three cached builds; the file carrying it
+moves — `playwright-core/lib/coreBundle.js` at 1.63.0 and 1.64.0-alpha,
+`playwright-core/lib/generated/injectedScriptSource.js` at 1.56.0 — so pin the
+path to the version you are grepping, or the citation decays the same way an
+unqualified "the accessibility tree" does.
+
+Both readings above are pinned to `9ac94e95`, and their subject then moved:
+**#2042 removes that `aria-label`**, replacing a prohibited *name* with clipped
+*content* — the remedy the last rule below prescribes. Once it lands, a reader at
+HEAD finds `paragraph name=""` with the sentence as a `StaticText` child, and the
+markup above is history rather than a live reading. The disagreement does not
+expire; the mount point does.
 
 That table was read, and the behaviour re-measured, in **both** `playwright-core`
 1.63.0 and the `1.64.0-alpha` build that `@playwright/mcp` bundles, so this is not a
