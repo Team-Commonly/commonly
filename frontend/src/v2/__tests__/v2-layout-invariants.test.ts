@@ -23,64 +23,63 @@ import path from 'path';
 const read = (rel: string): string =>
   fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
-// Grab the body of the first `<selector> { ... }` block. Selectors here have no
-// nested braces, so a naive slice to the next `}` is sufficient.
+// The block that opens at the first `{` at or after `from`, brace-matched to
+// its own closing brace — or '' when nothing opens there. This is THE walk:
+// three hand-rolled copies of it is how the fourth one drifts, and a copy that
+// stops at the next `}` reads a base rule after the block as part of it.
+const blockAt = (css: string, from: number): string => {
+  const open = css.indexOf('{', from);
+  if (open === -1) return '';
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === '{') depth += 1;
+    if (css[i] === '}') { depth -= 1; if (depth === 0) return css.slice(from, i + 1); }
+  }
+  return '';
+};
+
+// The first block introduced by `marker` whose OWN text carries `needle`. A
+// scope with a start and no end is not a scope, so both ends come from
+// `blockAt` and a later block can never answer for this one.
+const blockContaining = (css: string, marker: string, needle: string): string => {
+  for (let at = css.indexOf(marker); at !== -1; at = css.indexOf(marker, at + 1)) {
+    const block = blockAt(css, at);
+    if (block.includes(needle)) return block;
+  }
+  return '';
+};
+
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
-const teamPhoneBlock = (css: string): string => {
-  const marker = '@media (max-width: 760px)';
-  let from = 0;
-  for (;;) {
-    const at = css.indexOf(marker, from);
-    if (at < 0) return '';
-    // Walk to the block's own closing brace so a base rule after the block
-    // can never be read as part of it.
-    const open = css.indexOf('{', at);
-    let depth = 0;
-    let end = open;
-    for (let i = open; i < css.length; i += 1) {
-      if (css[i] === '{') depth += 1;
-      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-    }
-    const block = css.slice(at, end + 1);
-    if (block.includes('.v2-team__grid')) return block;
-    from = end + 1;
-  }
-};
+const teamPhoneBlock = (css: string): string =>
+  blockContaining(css, '@media (max-width: 760px)', '.v2-team__grid');
 
 // The `@media (max-width: 760px)` block that carries `selector`, wherever it
 // sits in the sheet. A phone override is indented inside a media query, so
 // `ruleBody` (which prefers a line-start selector) silently returns the desktop
 // rule instead — and a guard reading the wrong rule is green while the phone
 // layout is broken (TASK-140).
-const mediaBlockContaining = (css: string, selector: string): string => {
-  const marker = '@media (max-width: 760px)';
-  let from = 0;
-  for (;;) {
-    const at = css.indexOf(marker, from);
-    if (at < 0) return '';
-    const open = css.indexOf('{', at);
-    let depth = 0;
-    let end = open;
-    for (let i = open; i < css.length; i += 1) {
-      if (css[i] === '{') depth += 1;
-      if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-    }
-    const block = css.slice(at, end + 1);
-    if (block.includes(selector)) return block;
-    from = end + 1;
-  }
-};
+const mediaBlockContaining = (css: string, selector: string): string =>
+  blockContaining(css, '@media (max-width: 760px)', selector);
 
-const ruleBody = (css: string, selector: string): string => {
+// `within` bounds the read to a slice already taken out of the sheet (an
+// at-rule's block, a media query's body). Pass it rather than passing the slice
+// as `css`: the call then names the sheet it read AND the scope it read in, so a
+// scoped read cannot be mistaken for a whole-sheet one.
+const ruleBody = (
+  css: string,
+  selector: string,
+  { within }: { within?: string } = {},
+): string => {
+  const scope = within ?? css;
   // Prefer a selector at the start of a CSS line. A descendant selector can
   // contain the same text (`.parent .target {`) and is not the rule being
   // pinned.
-  const lineStart = css.indexOf(`\n${selector} {`);
-  const start = lineStart === -1 ? css.indexOf(`${selector} {`) : lineStart + 1;
+  const lineStart = scope.indexOf(`\n${selector} {`);
+  const start = lineStart === -1 ? scope.indexOf(`${selector} {`) : lineStart + 1;
   if (start === -1) return '';
-  const end = css.indexOf('}', start);
-  return end === -1 ? '' : css.slice(start, end);
+  const end = scope.indexOf('}', start);
+  return end === -1 ? '' : scope.slice(start, end);
 };
 
 // TASK-129 supersedes a large sidebar block in place. The current artboard
@@ -113,32 +112,27 @@ const selectorRuleBody = (css: string, selector: string): string => {
 const mediaAt = (css: string, atRule: string): string => {
   const at = css.indexOf(atRule);
   if (at < 0) return '';
-  const open = css.indexOf('{', at);
-  let depth = 0;
-  let end = open;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    if (css[i] === '}') { depth -= 1; if (depth === 0) { end = i; break; } }
-  }
-  return css.slice(at, end + 1);
+  return blockAt(css, at);
 };
 
 // The `@media (prefers-reduced-motion: reduce)` block that carries `needle`, not
-// the first such block in the sheet. There are six of them in v2-landing.css,
-// and a slice from the first `prefers-reduced-motion` runs to EOF — 800 lines
-// past the block it meant, widening as the file grows — so any later block could
-// satisfy a read aimed at one of them. sprint-review measured the consequence on
-// #2019: the fallback's own `flex-wrap: wrap` could be deleted outright and the
-// guard stayed green, because `.v2-landing__footer-cols` declares the same
-// property 300 lines below. A scope with a start and no end is not a scope.
-const reducedMotionBlock = (css: string, needle: string): string => {
-  const marker = '@media (prefers-reduced-motion';
-  for (let at = css.indexOf(marker); at !== -1; at = css.indexOf(marker, at + 1)) {
-    const block = mediaAt(css.slice(at), marker);
-    if (block.includes(needle)) return block;
-  }
-  return '';
-};
+// the first such block in the sheet. v2-landing.css carries FIVE of these
+// at-rules (531 / 1395 / 1421 / 1447 / 1517); a plain `grep -c
+// prefers-reduced-motion` reports six because the prose comment at 1356 mentions
+// it. The read this replaced took `split('@media (prefers-reduced-motion')[1]` —
+// from just after the first at-rule to just BEFORE the second one: 865 lines and
+// 33,883 characters, opening inside the block it meant and closing at an
+// unrelated at-rule 831 lines past that block's own `}` at 564. Any rule in that
+// span could satisfy a read aimed at this block. Measured at main `16917532`:
+// move `.v2-landing__trusted-set[aria-hidden='true']` from inside the first
+// block to just past its close and the bounded read reds (1 failure of 205)
+// while the old slice still contains it and stays green. sprint-review measured
+// the consequence on #2019 — the fallback's own `flex-wrap: wrap` could be
+// deleted outright and the guard stayed green, because
+// `.v2-landing__footer-cols` declares the same property further down. A scope
+// with a start and no end is not a scope.
+const reducedMotionBlock = (css: string, needle: string): string =>
+  blockContaining(css, '@media (prefers-reduced-motion', needle);
 
 // Body of a rule that IS the whole selector — anchored at the start of a line, so
 // it cannot match a rule where this selector is the TAIL of a longer one.
@@ -829,7 +823,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // at ≤760 — the same guarantee (a column never wider than its container)
     // expressed on the new grid.
     expect(ruleBody(v2, '.v2-team__grid')).toContain('repeat(3, minmax(0, 1fr))');
-    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhoneBlock(v2) })).toContain('repeat(1, minmax(0, 1fr))');
   });
 
   test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
@@ -1149,8 +1143,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
     const teamPhone = teamPhoneBlock(v2);
-    expect(ruleBody(teamPhone, '.v2-team__heading')).toContain('flex-direction: column');
-    expect(ruleBody(teamPhone, '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-team__heading', { within: teamPhone })).toContain('flex-direction: column');
+    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
     expect(v2).not.toContain('.v2-team-feature ');
     expect(v2).not.toContain('.v2-team-quiet');
@@ -1919,7 +1913,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   it('team card on a phone: one column, so the name column never one-chars (spec §5, #568 class, re-pinned on direction C)', () => {
     // The featured row is gone; the same guarantee on the card grid is one
     // column at ≤760 and a card head whose name column can shrink.
-    expect(ruleBody(teamPhoneBlock(v2), '.v2-team__grid')).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhoneBlock(v2) })).toContain('repeat(1, minmax(0, 1fr))');
     expect(ruleBody(v2, '.v2-team-card__title')).toContain('min-width: 0');
   });
 
