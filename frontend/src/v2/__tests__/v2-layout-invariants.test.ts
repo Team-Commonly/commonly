@@ -116,21 +116,12 @@ const mediaAt = (css: string, atRule: string): string => {
 };
 
 // The `@media (prefers-reduced-motion: reduce)` block that carries `needle`, not
-// the first such block in the sheet. v2-landing.css carries FIVE of these
-// at-rules (531 / 1395 / 1421 / 1447 / 1517); a plain `grep -c
-// prefers-reduced-motion` reports six because the prose comment at 1356 mentions
-// it. The read this replaced took `split('@media (prefers-reduced-motion')[1]` —
-// from just after the first at-rule to just BEFORE the second one: 865 lines and
-// 33,883 characters, opening inside the block it meant and closing at an
-// unrelated at-rule 831 lines past that block's own `}` at 564. Any rule in that
-// span could satisfy a read aimed at this block. Measured at main `16917532`:
-// move `.v2-landing__trusted-set[aria-hidden='true']` from inside the first
-// block to just past its close and the bounded read reds (1 failure of 205)
-// while the old slice still contains it and stays green. sprint-review measured
-// the consequence on #2019 — the fallback's own `flex-wrap: wrap` could be
-// deleted outright and the guard stayed green, because
-// `.v2-landing__footer-cols` declares the same property further down. A scope
-// with a start and no end is not a scope.
+// the first such block in the sheet: v2-landing.css carries FIVE of them
+// (531 / 1395 / 1421 / 1447 / 1517) and a plain `grep -c prefers-reduced-motion`
+// reports six because the prose comment at 1356 mentions it. Each occurrence is
+// brace-matched, not sliced to the next `@media` — which block a slice lands in
+// depends on the order the file happens to put them in, so an assertion can end
+// up made about the wrong block and still read as a pass.
 const reducedMotionBlock = (css: string, needle: string): string =>
   blockContaining(css, '@media (prefers-reduced-motion', needle);
 
@@ -1413,9 +1404,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // prefers-reduced-motion users get the old wrapping strip: animation off,
     // wrap on, duplicate set hidden (it exists only for the seamless loop).
     // Read from the fallback's OWN block, brace-matched: the base marquee rule is
-    // above it, so a whole-sheet first-match reader returns that body instead,
-    // and a slice from the first `prefers-reduced-motion` runs to EOF and lets a
-    // later block answer for this one. Assert the scope is non-empty first — a
+    // above it, so a whole-sheet first-match reader returns that body instead.
+    // Assert the scope is non-empty first — a
     // scope that can silently be empty reads as a pass everywhere it is used.
     const reduced = reducedMotionBlock(landing, '.v2-landing__trusted-track');
     expect(reduced).not.toBe('');
