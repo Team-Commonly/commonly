@@ -355,6 +355,19 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(() => assertHostedMcpEntries([linear(), linear({ id: 'notion', title: 'Notion' })])).not.toThrow();
     expect(() => assertHostedMcpEntries([linear(), linear()])).toThrow(/duplicate hosted-mcp entry id/);
     expect(() => assertHostedMcpEntries([linear({ id: 'lin.ear' })])).toThrow(/not a usable tool namespace/);
+    // Control: the shipped shape is accepted, so the three refusals above are
+    // about the value and not about the field being read at all.
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
+    expect(() => assertHostedMcpEntries([
+      linear(),
+      linear({ id: 'notion', title: 'Notion', tools: [pinned({ name: 'list_issues' })] }),
+    ])).not.toThrow();
+    expect(() => assertHostedMcpEntries([
+      linear({ tools: [pinned({}), pinned({})] }),
+    ])).toThrow(/duplicate hosted-mcp tool name: linear.list_issues/);
+  });
+
+  test('a revoke target is a page plus an optional https endpoint, and every URL it names is checked', () => {
     // §3: every entry names a `page`, and an `endpoint` only when the AS's
     // metadata advertises one. Both are https URLs, so the URL cannot say which
     // one decides the vendor call — presence of `endpoint` does, and that is
@@ -403,16 +416,6 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toEqual({ page: bothURLs.page, endpoint: bothURLs.endpoint });
     expect(hostedMcpRevokeTarget(linear({ revoke: { page: bothURLs.page } })))
       .toEqual({ page: bothURLs.page });
-    // Control: the shipped shape is accepted, so the three refusals above are
-    // about the value and not about the field being read at all.
-    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
-    expect(() => assertHostedMcpEntries([
-      linear(),
-      linear({ id: 'notion', title: 'Notion', tools: [pinned({ name: 'list_issues' })] }),
-    ])).not.toThrow();
-    expect(() => assertHostedMcpEntries([
-      linear({ tools: [pinned({}), pinned({})] }),
-    ])).toThrow(/duplicate hosted-mcp tool name: linear.list_issues/);
   });
 
   test('a namespaced name is the entry id and the pinned name', () => {

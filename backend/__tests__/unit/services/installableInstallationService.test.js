@@ -990,4 +990,46 @@ describe('installable connector projection', () => {
     expect(completed.status).toBe('active');
     expect(unchanged.config.connectCode).toBe(originalCode);
   });
+
+  it('does not mistake a hosted-MCP row for the integration an installation owns', async () => {
+    // TASK-172 §10 step 6b: the reconciler looks an active installation's own
+    // integration up by `installationId` (`:94`), and a hosted-MCP row carries
+    // none — the connect route writes type/scope/status/createdBy/config and
+    // nothing else. So the row cannot stand in for a connector the installation
+    // is missing. That matters because the branch it would take is `continue`:
+    // an installation whose channel record vanished would stay `active` with a
+    // dead relay, and the sweep would never report it.
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const installationId = String(installed.installation._id);
+    await Integration.deleteMany({ _id: installed.integration._id });
+    const hosted = await Integration.create({
+      type: 'hosted-mcp',
+      scope: 'user',
+      status: 'connected',
+      createdBy: userId,
+      config: { entryId: 'notion', intake: 'oauth', credentialRef: 'secret-access-1' },
+    });
+
+    const reconciled = await sweep(new Date());
+
+    // The installation IS reported: the lookup did not accept the hosted row.
+    const after = await InstallableInstallation.findById(installationId);
+    expect(reconciled.staleComponents).toBeGreaterThanOrEqual(1);
+    expect(after.status).toBe('error');
+    expect(after.errorMessageUserFacing).toBe(true);
+    expect(after.components.every((component) => component.status === 'stale')).toBe(true);
+    // …and the hosted row is untouched, read raw: not marked, not deactivated,
+    // still holding the material a later removal needs.
+    const raw = await Integration.collection.findOne({ _id: hosted._id });
+    expect(raw.status).toBe('connected');
+    expect(raw.config.entryId).toBe('notion');
+    expect(raw.config.credentialRef).toBe('secret-access-1');
+    // Neither of the two things this sweep can write reaches it: the pause
+    // restamp (`config.adminPause`) and the stale-projection clear are both
+    // keyed on `installationId`. A raw config is not deep-equal here — the
+    // record carries schema defaults — so the absence is asserted by key.
+    expect('adminPause' in raw.config).toBe(false);
+    expect('providerRevokedAt' in raw.config).toBe(false);
+  });
 });

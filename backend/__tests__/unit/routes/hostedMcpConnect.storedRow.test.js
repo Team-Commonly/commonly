@@ -21,13 +21,23 @@ const FIXTURE_ENTRY = {
   issuer: 'https://mcp.linear.app',
   client: 'cimd',
   scopes: ['read', 'openid'],
-  revoke: 'https://mcp.linear.app/token',
+  // Both keys on purpose: the callback copies the `page` and must NOT copy the
+  // `endpoint`, and a fixture carrying only a page cannot tell those apart.
+  revoke: {
+    page: 'https://linear.app/settings/security',
+    endpoint: 'https://mcp.linear.app/token/does-not-exist',
+  },
   tools: [],
 };
 
 jest.mock('../../../integrations/hostedMcp/entries', () => {
   const actual = jest.requireActual('../../../integrations/hostedMcp/entries');
-  return { HOSTED_MCP_ENTRIES: [FIXTURE_ENTRY], findHostedMcpEntry: actual.findHostedMcpEntry };
+  return {
+    HOSTED_MCP_ENTRIES: [FIXTURE_ENTRY],
+    findHostedMcpEntry: actual.findHostedMcpEntry,
+    // Read by the callback when it copies the entry's page onto the row.
+    hostedMcpRevokeTarget: actual.hostedMcpRevokeTarget,
+  };
 });
 
 jest.mock('../../../services/hostedMcpIntakeService', () => {
@@ -189,6 +199,36 @@ test('so a later reconnect to the old subject revokes, instead of matching the s
   expect((await callback('st-again')).status).toBe(302);
   expect(revokeConnectionGrants).toHaveBeenCalled();
   expect((await stored(id)).providerSubject).toBe('acct-old');
+});
+
+test('the page the entry names is copied onto the row, so a removal can finish without the entry', async () => {
+  const id = await seedPending({ state: 'st-page' });
+  exchange();
+
+  expect((await callback('st-page')).status).toBe(302);
+  // Ruling 75780: the entry is code and can be deleted while this row lives, so
+  // the page it named has to survive on the row that outlives it.
+  const page = 'https://linear.app/settings/security';
+  // Both reads, on purpose. The model read is the one a caller sees; the RAW
+  // read is the one that cannot be satisfied by a default, a cast or a
+  // re-declaration — this is the shape the mark needed, and a write by the TEST
+  // (the generic RECORD_KEYS arm) cannot say the CALLBACK wrote anything.
+  expect((await stored(id)).revokePage).toBe(page);
+  const raw = await Integration.collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+  expect(raw.config.revokePage).toBe(page);
+});
+
+test('the endpoint the entry names is NOT copied — the entry keeps that decision', async () => {
+  const id = await seedPending({ state: 'st-endpoint' });
+  exchange();
+
+  expect((await callback('st-endpoint')).status).toBe(302);
+  const config = await stored(id);
+  // A stored endpoint is a URL a row carries into a POST. Only the entry decides
+  // where a token goes (§3), and it is read at removal time, so no row may hold
+  // one — the fixture's endpoint value must appear nowhere on this document.
+  expect(Object.keys(config).filter((key) => /endpoint/i.test(key))).toEqual([]);
+  expect(JSON.stringify(config)).not.toContain('mcp.linear.app/token/does-not-exist');
 });
 
 test('a vendor that DOES issue a subject stores it — the clear is not unconditional', async () => {

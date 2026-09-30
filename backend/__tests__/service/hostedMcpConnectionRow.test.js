@@ -51,6 +51,14 @@ const RECORD_KEYS = {
   'config.refreshTokenRef': 'secret-refresh-1',
   'config.refreshGeneration': 3,
   'config.credentialHint': 'a…1',
+  // The two keys the removal step writes. They were absent from this list when
+  // they shipped, and absent from the schema's declaration too — which is how a
+  // `$set` that mongoose drops in silence looked green everywhere else: the
+  // removal suite asserts the payload handed to a MOCKED model, and a payload
+  // arm cannot see a strict subdocument refuse it. Both are read back through
+  // the raw collection here, so the mark exists on the row or this arm fails.
+  'config.providerRevokedAt': new Date('2026-09-30T03:00:00.000Z'),
+  'config.revokePage': 'https://linear.app/settings/security',
   'config.pendingAuth.state': 'state-1',
   'config.pendingAuth.codeVerifier': 'verifier-1',
   'config.pendingAuth.expiresAt': new Date('2026-09-27T14:30:00.000Z'),
@@ -103,6 +111,22 @@ describe('the hosted-mcp connection row', () => {
     }));
 
     expect(dropped).toEqual([]);
+  });
+
+  test('the mark the removal step writes is really on the row', async () => {
+    // The instrument above is generic; this arm names the consequence, because
+    // the field it writes is the only record that a vendor revoke happened —
+    // #2035 shipped it as server-owned and unwritable while the schema dropped
+    // every write of it. Read through `defaultDeps()`, so the assertion is about
+    // the shipped writer and not about a fixture.
+    const { defaultDeps, PROVIDER_REVOKED_MARK } = require('../../services/connectionRemovalService');
+    const doc = await Integration.create(shape());
+    const at = new Date('2026-09-30T03:00:00.000Z');
+
+    await defaultDeps().markProviderRevoked(String(doc._id), at);
+
+    const raw = await Integration.collection.findOne({ _id: doc._id });
+    expect(raw.config[PROVIDER_REVOKED_MARK]).toEqual(at);
   });
 
   test('positive control: the same instrument sees an undeclared key dropped', async () => {
@@ -200,6 +224,37 @@ describe('the hosted-mcp connection row', () => {
       scope: 'user', type: 'slack', status: 'connected', createdBy: owner,
       config: { teamId: 'T-scoped', slackUserId: 'U-scoped' },
     })).resolves.toBeDefined();
+  });
+
+  test('the row carries neither key EITHER removal sweep selects on', async () => {
+    // TASK-147, as a tripwire rather than a note. Two sweeps can remove a
+    // connection row without running the shared revoke step, and each selects
+    // on a field this row does not have: `podController.deletePod` filters
+    // `Integration.deleteMany({ podId })` (podController.ts:730) and
+    // `installableReconciler` selects on `installationId`
+    // (:48, :86, :94, :127, :157, :190, :217, :240). A grant on a hosted row is
+    // keyed by the row's own `_id` (grants.ts:310-316), so a sweep that reached
+    // the row would strand that grant.
+    //
+    // What it does NOT cover, stated so a green here is not read as wider than
+    // it is: the arm builds the row from the record's own shape, so it fires on
+    // a SCHEMA change that stamps either field and NOT on a writer that adds
+    // one to its payload. The writer's payload cannot be traced yet — the
+    // hosted connect route refuses before it writes while `HOSTED_MCP_ENTRIES`
+    // is empty, which is the same first-catalogue-entry trigger the row carries
+    // for its witnesses. When that entry lands, this arm is the shape half and
+    // the writer half is driven through the callback.
+    //
+    // The remedy, whenever it fires, is not to invert the assertion but to
+    // route the row through the shared removal step in the sweep that now
+    // reaches it.
+    const doc = await Integration.create(shape());
+    const raw = await Integration.collection.findOne({ _id: doc._id });
+
+    expect(Object.keys(raw)).not.toContain('podId');
+    expect(Object.keys(raw)).not.toContain('installationId');
+    expect(raw.podId).toBeUndefined();
+    expect(raw.installationId).toBeUndefined();
   });
 
   test('positive control: a duplicate on a declared unique index is observable', async () => {

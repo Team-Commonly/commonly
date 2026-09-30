@@ -665,6 +665,25 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const currentConfig = integration.config?.toObject ? integration.config.toObject() : (integration.config || {}) as Record<string, unknown>;
     const requesterId = req.user?.id || '';
+    // A hosted-mcp row has no PATCH surface: `entryId`, the granted scope and
+    // the credential references are written by the entry's OAuth callback, and
+    // the row is removed by DELETE, the one path that revokes the grants and the
+    // vendor token in the order `connectionRemovalService` owns. Such a row is
+    // already refused here, but only INCIDENTALLY — the branch below requires a
+    // `config.linkedUserId` equal to the requester, and a hosted row never gets
+    // one. That is a comparison the row cannot satisfy by accident of a field
+    // another writer owns, so it stops being a guard the day anyone links one.
+    // The rule is stated by the row's own kind instead, and the CODE is what a
+    // caller can act on: the incidental refusal answers the same 403 (with the
+    // same body) a wrong-owner PATCH gets, so "not yours" and "not patchable"
+    // were indistinguishable from outside.
+    if (integration.type === HOSTED_MCP_TYPE) {
+      return res.status(409).json({
+        code: 'hosted_mcp_managed_by_consent_flow',
+        message: 'hosted-mcp connections are managed by the vendor consent flow; '
+          + 'DELETE /api/integrations/:id removes the connection',
+      });
+    }
     if (integration.scope === 'user') {
       // A user-scoped connector is a private attention surface. A pod creator
       // or instance admin must not turn on a gate (or live relay) for someone

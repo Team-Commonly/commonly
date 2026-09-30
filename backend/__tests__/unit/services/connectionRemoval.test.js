@@ -350,6 +350,89 @@ describe('removeConnection (a hosted-MCP row)', () => {
   });
 });
 
+// Ruling 75780: an entry is code, so it can be deleted while rows naming it
+// live on. The connect step copies the entry's `page` onto the row for exactly
+// that state, and a removal that finds no entry finishes through the copy —
+// which is the authority that outlives the entry. A row connected before the
+// copy existed has neither, and keeps the refusal.
+describe('a row whose entry is gone', () => {
+  const COPIED_PAGE = 'https://linear.app/settings/security/legacy';
+
+  it('sends nothing, finishes, and hands over the page copied at connect', async () => {
+    const { calls, deps, revokeGrants } = recorder({
+      entryFor: jest.fn(() => null),
+    });
+    const row = hostedRow({ config: { ...hostedRow().config, revokePage: COPIED_PAGE } });
+    const result = await remove(row, deps, revokeGrants);
+
+    // Nothing is known about where to revoke — the entry named the endpoint —
+    // so no vendor call is attempted, and the material still goes: the row and
+    // the secret are ours regardless of what the catalogue holds.
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE });
+    expect(calls).toEqual(['grants', 'row', 'material:refresh-ref', 'material:access-ref', 'delete']);
+  });
+
+  it("the copy is returned even when the material step fails, so the person still has it", async () => {
+    const { deps, revokeGrants } = recorder({
+      entryFor: jest.fn(() => null),
+    });
+    deps.remove = jest.fn(async () => { throw new Error('row delete unavailable'); });
+    const row = hostedRow({ config: { ...hostedRow().config, revokePage: COPIED_PAGE } });
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(result).toEqual({
+      removed: false,
+      code: 'provider_revoked_removal_incomplete',
+      message: 'row delete unavailable',
+      grantsRevoked: 2,
+      revokeAt: COPIED_PAGE,
+    });
+  });
+
+  it('with no copy it keeps the refusal, and the row keeps everything', async () => {
+    const { deps, revokeGrants } = recorder({ entryFor: jest.fn(() => null) });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+
+    expect(result).toMatchObject({ removed: false, code: 'provider_revoke_failed' });
+    expect(result.message).toMatch(/names no known entry \(linear\)/);
+    expect(deps.secrets.revoke).not.toHaveBeenCalled();
+    expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('a page the entry still names wins over the copy', async () => {
+    const { deps, revokeGrants } = recorder({
+      entryFor: jest.fn(() => ({ ...ENTRY, revoke: { page: PAGE } })),
+    });
+    const row = hostedRow({ config: { ...hostedRow().config, revokePage: COPIED_PAGE } });
+    const result = await remove(row, deps, revokeGrants);
+
+    // The entry is the live authority for as long as it exists; the copy is a
+    // fallback, not a second opinion. A stale copy that won here would send a
+    // person to a page the catalogue has since corrected.
+    expect(result.revokeAt).toBe(PAGE);
+  });
+
+  it('an endpoint planted on the row is never read', async () => {
+    // The entry is the only thing that decides where a token goes, and the copy
+    // carries a page — so a row-carried endpoint must not turn a hand-back into
+    // a POST at a URL nothing server-owned named. `revokeEndpoint` is not in
+    // `SERVER_OWNED_CONFIG_KEYS`, which is the point: a body *could* write it.
+    const { deps, revokeGrants } = recorder({ entryFor: jest.fn(() => null) });
+    const row = hostedRow({
+      config: {
+        ...hostedRow().config,
+        revokePage: COPIED_PAGE,
+        revokeEndpoint: 'https://attacker.example/token',
+      },
+    });
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE });
+  });
+});
+
 describe('revokeTokenAtVendor (RFC 7009)', () => {
   const call = (response) => {
     const fetchImpl = jest.fn(async () => response);

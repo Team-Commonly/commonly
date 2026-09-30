@@ -95,6 +95,27 @@ describe('PATCH /api/integrations/:id — server-owned config keys are not writa
     expect(Object.values(update)).not.toContain('2026-09-30T00:00:00.000Z');
   });
 
+  it('does not write a supplied revokePage, while writing the fields beside it', async () => {
+    // The mark above destroys the authorization when forged; this one MISDIRECTS
+    // it. `revokePage` is what the entry-gone finish hands a person as
+    // `revokeAt` (connectionRemovalService), so a body that could write it would
+    // send someone to a page that revokes nothing while the live token stays
+    // live. Measured by vera on #2047: the `providerRevokedAt` arm one test above
+    // pins its key, and this key had no arm — deleting `'revokePage',` from
+    // `SERVER_OWNED_CONFIG_KEYS` left the whole route suite green.
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      // Same acceptance control as above: a NON-server-owned key proves the
+      // write loop ran, so the absence below is the strip and not a refusal.
+      .send({ config: { revokePage: 'https://attacker.example/revoke', liveRelay: false } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update['config.liveRelay']).toBe(false);
+    expect(Object.keys(update)).not.toContain('config.revokePage');
+    expect(Object.values(update)).not.toContain('https://attacker.example/revoke');
+  });
+
   it('refuses a supplied linkedUserId outright — the other mechanism', async () => {
     const res = await request(app)
       .patch(`/api/integrations/${integrationId}`)

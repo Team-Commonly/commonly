@@ -30,7 +30,7 @@ const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../servic
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
-const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../integrations/hostedMcp/entries');
+const { HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget } = require('../integrations/hostedMcp/entries');
 // eslint-disable-next-line global-require
 const {
   HOSTED_MCP_NONCE_COOKIE,
@@ -417,6 +417,13 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         // subdocument, so an unprefixed `credentialRef` is dropped in silence
         // and this handler reports a Connection whose row holds no token (see
         // the model's note, and the arm that now reads the schema).
+        // The page this entry names, copied onto the row because the entry
+        // itself can leave the catalogue and the row must still be finishable
+        // (ruling 75780; `connectionRemovalService.REVOKE_PAGE_KEY`). The
+        // `endpoint` is deliberately NOT copied: a stored endpoint would be a
+        // URL a row carries into a POST, and the entry is the only thing that
+        // decides where a token goes.
+        'config.revokePage': hostedMcpRevokeTarget(entry)?.page || null,
         'config.credentialRef': credentialRef,
         'config.refreshTokenRef': refreshTokenRef || null,
         'config.refreshGeneration': 0,
