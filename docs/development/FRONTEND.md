@@ -250,6 +250,18 @@ one-version artifact. The inverse is the useful lever: the roles that *do* print
 name in the model are the ones ARIA permits naming — `group`, `region`, `img` — so a
 container that needs a name takes `role="group"` rather than losing its `aria-label`.
 
+A second serializer is a fourth thing. `@playwright/mcp`'s `browser_snapshot`
+(which annotates nodes with `[ref=eN]`) was reported to print a name for an
+*implicit* generic — a bare `<div aria-label="X">` — while dropping it for an
+explicit `role="generic"`. That asymmetry does **not** reproduce here: with one
+binary pinned (`chromium_headless_shell-1243`) and both builds loaded against it,
+the same four siblings print line for line identically in each build — implicit
+generic → `- text: plain div text`, explicit → `- generic: explicit generic
+text`, and `group`/`region`/`img` → named. So the variable is the call doing the
+serialising, not how the role was declared. When two formatters disagree, run
+both on the same sibling set in one session before theorising about the
+mechanism.
+
 Rules that follow:
 
 - **Cite the call, not the concept.** "The accessibility tree says X" is not
@@ -262,6 +274,12 @@ Rules that follow:
 - **When they disagree, prefer a fix that does not depend on which is right.**
   Moving text out of a prohibited *name* and into *content* reads the same in
   both, and in a real AT; swapping one attribute for another does not.
+- **Absence of a line is not absence of a node.** An empty `<div
+  aria-label="X">` prints *no line at all* in `ariaSnapshot()`, while CDP reports
+  `generic name="X" ignored=false` for that same element — the snapshot selects
+  what to print, so "pruned" describes the line list and never the tree. This is
+  not academic: a missing line is what opened the investigation this section came
+  from, and it is read as evidence of a missing name far too easily.
 - **Neither instrument is a screen reader.** An AT-level claim needs an AT.
 - `page.accessibility.snapshot()` was **removed** in Playwright 1.63 — a snippet
   using it predates the version in this repo's npx cache.
