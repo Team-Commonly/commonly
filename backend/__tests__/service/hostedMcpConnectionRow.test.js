@@ -202,6 +202,37 @@ describe('the hosted-mcp connection row', () => {
     })).resolves.toBeDefined();
   });
 
+  test('the row carries neither key EITHER removal sweep selects on', async () => {
+    // TASK-147, as a tripwire rather than a note. Two sweeps can remove a
+    // connection row without running the shared revoke step, and each selects
+    // on a field this row does not have: `podController.deletePod` filters
+    // `Integration.deleteMany({ podId })` (podController.ts:730) and
+    // `installableReconciler` selects on `installationId`
+    // (:48, :86, :94, :127, :157, :190, :217, :240). A grant on a hosted row is
+    // keyed by the row's own `_id` (grants.ts:310-316), so a sweep that reached
+    // the row would strand that grant.
+    //
+    // What it does NOT cover, stated so a green here is not read as wider than
+    // it is: the arm builds the row from the record's own shape, so it fires on
+    // a SCHEMA change that stamps either field and NOT on a writer that adds
+    // one to its payload. The writer's payload cannot be traced yet — the
+    // hosted connect route refuses before it writes while `HOSTED_MCP_ENTRIES`
+    // is empty, which is the same first-catalogue-entry trigger the row carries
+    // for its witnesses. When that entry lands, this arm is the shape half and
+    // the writer half is driven through the callback.
+    //
+    // The remedy, whenever it fires, is not to invert the assertion but to
+    // route the row through the shared removal step in the sweep that now
+    // reaches it.
+    const doc = await Integration.create(shape());
+    const raw = await Integration.collection.findOne({ _id: doc._id });
+
+    expect(Object.keys(raw)).not.toContain('podId');
+    expect(Object.keys(raw)).not.toContain('installationId');
+    expect(raw.podId).toBeUndefined();
+    expect(raw.installationId).toBeUndefined();
+  });
+
   test('positive control: a duplicate on a declared unique index is observable', async () => {
     // The 11000 assertions above are only evidence if this connection can
     // produce one from an index unrelated to this type. `installationId` is
