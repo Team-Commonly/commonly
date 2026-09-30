@@ -137,9 +137,13 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
 
 // Word-level entrance for the two highest-persuasion lines (hero H1, wedge
 // thesis). Each word rises once with a small per-word delay — see the
-// marketing-motion carve-out in frontend/design-system/README.md. Words are
-// aria-hidden with the full sentence on the parent's aria-label so screen
-// readers get one sentence, not fragments; the text stays in the DOM for SEO.
+// marketing-motion carve-out in frontend/design-system/README.md. Every word is
+// aria-hidden so screen readers get one sentence rather than fragments, and the
+// text stays in the DOM for SEO. HOW the sentence is exposed differs by line:
+// a heading takes `aria-label` (the h1 does), a paragraph does not — ARIA
+// prohibits naming `paragraph`, so the wedge line carries its sentence as
+// CONTENT in a clipped span (TASK-216) rather than leaning on an attribute a
+// lenient browser computes and a conforming consumer need not.
 const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
   <>
     {text.split(' ').map((word, i) => (
@@ -514,7 +518,15 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Wedge band ---- */}
         <section className="v2-landing__wedge">
-          <p className="v2-landing__wedge-line" data-reveal aria-label={t('landing.wedge.title')}>
+          <p className="v2-landing__wedge-line" data-reveal>
+            {/* The sentence is CONTENT here, not a label. ARIA prohibits
+                naming role=paragraph: Chromium does compute the name from
+                `aria-label` (measured on live `9ac94e95`, en and zh), but a
+                consumer that follows the spec may drop it, and the staggered
+                words below are all aria-hidden — so a name is this line's only
+                exposure. Out of flow and clipped: see
+                `.v2-landing__wedge-sr`. */}
+            <span className="v2-landing__wedge-sr">{t('landing.wedge.title')}</span>
             <StaggerWords text={t('landing.wedge.title')} />
           </p>
           <p className="v2-landing__wedge-sub" data-reveal>{t('landing.wedge.copy')}</p>

@@ -71,6 +71,30 @@ const readmeQuickStartCommand = (): string => {
     .join(' && ');
 };
 
+const LANDING_CSS = fs.readFileSync(path.join(__dirname, '..', 'v2-landing.css'), 'utf8');
+
+/** The `landing.wedge.title` string a locale actually ships. */
+const wedgeTitle = (fileName: string): string => (
+  ((readLocale(fileName).landing as TranslationTree).wedge as TranslationTree).title
+) as string;
+
+/**
+ * The declarations between a rule's braces in v2-landing.css. Throws rather
+ * than returning empty, so a renamed selector is a red test instead of an
+ * assertion over nothing.
+ */
+const cssRuleBody = (selector: string): string => {
+  const start = LANDING_CSS.indexOf(selector);
+  if (start === -1) throw new Error(`${selector} is no longer in v2-landing.css`);
+  const open = LANDING_CSS.indexOf('{', start);
+  return LANDING_CSS.slice(open + 1, LANDING_CSS.indexOf('}', open));
+};
+
+const cssDeclarations = (body: string): string[] => body
+  .split(';')
+  .map((decl) => decl.trim().replace(/\s+/g, ' '))
+  .filter(Boolean);
+
 const renderLanding = () => render(
   <MemoryRouter>
     <V2LandingPage />
@@ -132,6 +156,66 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     for (const term of localeTermValues('en.json')) {
       expect(screen.getAllByText(term).length).toBeGreaterThan(0);
     }
+  });
+
+  it('exposes the wedge sentence as text, because a paragraph cannot carry a name', async () => {
+    // TASK-216. `.v2-landing__wedge-line` is a `<p>`, and ARIA prohibits naming
+    // role=paragraph — so `aria-label` is not a name this role may have, however
+    // leniently a browser computes one. Measured in Chromium on live `9ac94e95`
+    // (CDP `Accessibility.getPartialAXTree`, en and zh): the name IS computed,
+    // from the attribute, so the row's "reads as nothing" is not what that
+    // instrument shows. What is true, and is the defect: the name was the
+    // sentence's ONLY exposure — every word under it is aria-hidden — which
+    // makes the sentence's reach a property of the engine rather than of the
+    // markup. It is CONTENT now, and this sweeps the line for text a reader
+    // would get rather than naming the span, so a later re-shuffle of the line
+    // has to keep exposing it.
+    for (const [lang, locale] of [['en', 'en.json'], ['zh-CN', 'zh-CN.json']] as const) {
+      const sentence = wedgeTitle(locale);
+      expect(sentence.length).toBeGreaterThan(0);
+      await act(async () => { await i18n.changeLanguage(lang); });
+      try {
+        const view = renderLanding();
+        const line = view.container.querySelector('p.v2-landing__wedge-line');
+        expect(line).not.toBeNull();
+        // The premise, stated as an assertion: this role may not carry a name,
+        // so an `aria-label` here is the defect this arm exists for.
+        expect((line as Element).getAttribute('aria-label')).toBeNull();
+        expect((line as Element).getAttribute('aria-hidden')).toBeNull();
+
+        const nodes = visibleTextNodes(line as Element);
+        const exposed = nodes.filter((node) => !hasHiddenAncestor(node, line as Element));
+        expect(exposed.map((node) => (node.textContent ?? '').trim()).join(' ')).toContain(sentence);
+        // The markup carries the class the rule is read by. Without this the
+        // pair can drift by a rename: the sentence stays text (sweep green),
+        // the rule stays clipped (sheet green), and a sighted reader gets the
+        // line twice.
+        expect((line as Element).querySelector('.v2-landing__wedge-sr')).not.toBeNull();
+
+        // Non-vacuity: the line has to still hold the aria-hidden words, or a
+        // paragraph that had no hidden fragment left would satisfy the
+        // assertion above for a reason this arm is not about.
+        expect(exposed.length).toBeGreaterThan(0);
+        expect(nodes.length).toBeGreaterThan(exposed.length);
+        view.unmount();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
+    }
+
+    // The span is out of flow and clipped. jsdom has no layout engine, so a
+    // sentence rendered visibly TWICE is invisible to every assertion above;
+    // the declarations are read from the sheet instead, and the required set is
+    // DERIVED from the family's existing member rather than restated here, so a
+    // declaration the family grows is required of this copy too. The span is
+    // looked up by the same class the rule is looked up by, which is what binds
+    // the markup to the rule — a renamed class reds instead of rendering the
+    // sentence in the open.
+    const family = cssDeclarations(cssRuleBody('.v2-landing__install-status {'))
+      .filter((decl) => !decl.startsWith('color:'));
+    expect(family.length).toBeGreaterThan(0);
+    const wedgeSr = cssDeclarations(cssRuleBody('.v2-landing__wedge-sr {'));
+    expect(family.filter((decl) => !wedgeSr.includes(decl))).toEqual([]);
   });
 
   it('renders the self-host one-liner identical to the README quick start', () => {
