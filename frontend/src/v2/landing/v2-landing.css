@@ -369,7 +369,10 @@
   outline-offset: 2px;
 }
 /* The Copied state is announced by a live region, not read from the button's own
-   label swap, so it is out of flow and silent to sighted users. */
+   label swap, so it is out of flow and silent to sighted users. It carries the
+   whole visually-hidden pattern including `clip-path`, because it is the member
+   the wedge copy's required set is DERIVED from — a declaration missing here is
+   a declaration nothing requires of the copy (TASK-218). */
 .v2-landing__install-status {
   color: #ffffff;
   position: absolute;
@@ -379,6 +382,7 @@
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
