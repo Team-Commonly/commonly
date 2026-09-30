@@ -165,7 +165,7 @@ Recommendation: verify GroupMe and X inside the freeze, since they are existing 
 
 ## Decisions for Sam
 
-1. Release the GitHub App credentials on commonly.me, installed on our own repository only, and widen once the GitHub row is green. **Done:** live on our repository since 09-18. The only room grant lapsed 2026-09-25 11:32Z, and a new grant from the connection's owner is what C3 and C4 now wait on.
+1. Release the GitHub App credentials on commonly.me, installed on our own repository only, and widen once the GitHub row is green. **Done:** live on our repository since 09-18. The 09-18 room grant lapsed 2026-09-25 11:32Z. **Renewed 2026-09-29** on Sam's approval: `grant_3c4d6ad5`, the same scope, runs to 2026-10-06 (see the GitHub row). C3 and C4 now wait on the walk, not on a grant.
 2. Provide a dedicated Slack workspace and a Telegram account on a spare number, for the automated C1 checks. **Ruled 2026-09-26:** the test accounts are set up by Sam in his own browser. Agents do not create accounts or enter credentials, so C1 with a real account waits on those sign-ins.
 3. Choose the next app. **Ruled 2026-09-26:** Linear, one build only, and only after Slack, GitHub and Telegram are green. No Linear code exists on main, so Wren scopes it first. **Re-ruled 2026-09-27 (74820):** "Start now, Linear first", as the first entry of the `hosted-mcp` type, with no wait on those three rows ([hosted-mcp-connection-scope.md](hosted-mcp-connection-scope.md)). That type has no inbound path, so it does not exercise C6.
 4. Read the #1826 renders, which unblock the Discord page row. **Done 2026-09-29:** approved, merged as `96cc9711` and live; see the Discord row.
