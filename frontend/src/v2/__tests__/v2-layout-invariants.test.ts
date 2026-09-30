@@ -1464,6 +1464,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(landing, '.v2-landing__adapter')).toContain('min-width: 0');
   });
 
+  test('the zh hero title suffix cannot be split across lines', () => {
+    // TASK-211. The zh hero reads 「与你的___对话」: the rotator swaps the object
+    // and 对话 trails it. At 390px with the "Claude Code" term the suffix
+    // straddled the wrap — 对 ended line 2 at x=348.5 in a 342px column and 话
+    // sat alone on line 3 (measured live; at 320 the 整个团队 term did the same).
+    // `white-space: nowrap` is what produces the measured fix, so that is what
+    // is pinned here — jsdom has no line boxes, and the browser is the gate.
+    // The companion assertion that the suffix is rendered as its own element
+    // (so this rule has something to bind to) lives in
+    // landingHeroContent.test.tsx; a declaration pin alone would survive the
+    // suffix being inlined as bare text.
+    expect(ruleBody(landing, '.v2-landing__title-suffix')).toContain('white-space: nowrap');
+  });
+
   test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
     // align-items: center centers the spans' layout boxes, but Apple Color
     // Emoji ink extends below the baseline while digit ink does not, so the
