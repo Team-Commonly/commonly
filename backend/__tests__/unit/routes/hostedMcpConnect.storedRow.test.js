@@ -208,7 +208,14 @@ test('the page the entry names is copied onto the row, so a removal can finish w
   expect((await callback('st-page')).status).toBe(302);
   // Ruling 75780: the entry is code and can be deleted while this row lives, so
   // the page it named has to survive on the row that outlives it.
-  expect((await stored(id)).revokePage).toBe('https://linear.app/settings/security');
+  const page = 'https://linear.app/settings/security';
+  // Both reads, on purpose. The model read is the one a caller sees; the RAW
+  // read is the one that cannot be satisfied by a default, a cast or a
+  // re-declaration — this is the shape the mark needed, and a write by the TEST
+  // (the generic RECORD_KEYS arm) cannot say the CALLBACK wrote anything.
+  expect((await stored(id)).revokePage).toBe(page);
+  const raw = await Integration.collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+  expect(raw.config.revokePage).toBe(page);
 });
 
 test('the endpoint the entry names is NOT copied — the entry keeps that decision', async () => {
