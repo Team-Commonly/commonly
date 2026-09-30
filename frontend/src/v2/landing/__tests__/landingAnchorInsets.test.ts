@@ -20,6 +20,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { blockContaining } from '../../lib/cssBlocks';
 
 const CSS = fs.readFileSync(path.join(__dirname, '..', 'v2-landing.css'), 'utf8');
 /** Comments quote the declarations these tests count, so they are read without them. */
@@ -35,22 +36,6 @@ const ruleBody = (css: string, selector: string): string => {
   return css.slice(open + 1, close);
 };
 
-/** The body of a media block, brace-matched so nested rules stay inside it. */
-const mediaBlock = (css: string, query: string): string => {
-  const at = css.indexOf(query);
-  if (at === -1) throw new Error(`no ${query}`);
-  const open = css.indexOf('{', at);
-  let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    else if (css[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return css.slice(open + 1, i);
-    }
-  }
-  throw new Error(`unbalanced braces after ${query}`);
-};
-
 /** A declaration's value inside a rule body, or a throw naming the miss. */
 const declaration = (body: string, property: string): number => {
   const match = new RegExp(`(?:^|[;{\\s])${property}:\\s*(\\d+)px\\s*;`).exec(body);
@@ -58,8 +43,20 @@ const declaration = (body: string, property: string): number => {
   return Number(match[1]);
 };
 
-const PHONE = mediaBlock(BARE, '@media (max-width: 680px)');
-const NO_PREFERENCE = mediaBlock(BARE, '@media (prefers-reduced-motion: no-preference)');
+/**
+ * TASK-221: these two reads used to run at module scope through a private,
+ * throwing brace walker. A renamed marker then failed the suite at IMPORT —
+ * jest counted the suite but not its 3 assertions, so the total went DOWN
+ * instead of red (measured 981 -> 978 on #2038's mutant). Each read now happens
+ * inside the test that needs it, through the shared bounded reader, which
+ * returns '' rather than throwing: a missing marker is a failed assertion and
+ * stays in the total. The block is identified by the selector it must carry,
+ * so a marker that moves cannot match a neighbouring block.
+ */
+const phoneBlock = (): string =>
+  blockContaining(BARE, '@media (max-width: 680px)', '.v2-root.v2-landing');
+const noPreferenceBlock = (): string =>
+  blockContaining(BARE, '@media (prefers-reduced-motion: no-preference)', 'scroll-behavior: smooth');
 
 describe('the landing scroller reserves the sticky bar (TASK-205)', () => {
   test('the scroller carries the inset, not each section', () => {
@@ -76,8 +73,8 @@ describe('the landing scroller reserves the sticky bar (TASK-205)', () => {
   test('the phone block drops the inset with the bar', () => {
     // The bar is 64 below 680, and the same specificity as the base rule
     // (0,2,0) later in the file is what makes this win.
-    const inset = declaration(ruleBody(PHONE, '.v2-root.v2-landing'), 'scroll-padding-top');
-    const bar = ruleBody(PHONE, '.v2-landing__bar');
+    const inset = declaration(ruleBody(phoneBlock(), '.v2-root.v2-landing'), 'scroll-padding-top');
+    const bar = ruleBody(phoneBlock(), '.v2-landing__bar');
 
     expect(inset).toBeGreaterThan(declaration(bar, 'height'));
     expect(inset).toBe(88);
@@ -86,7 +83,7 @@ describe('the landing scroller reserves the sticky bar (TASK-205)', () => {
   test('smooth scrolling has exactly one source, and it is the no-preference block', () => {
     const declarations = BARE.match(/scroll-behavior/g) ?? [];
     expect(declarations).toHaveLength(1);
-    expect(NO_PREFERENCE).toContain('scroll-behavior: smooth');
+    expect(noPreferenceBlock()).toContain('scroll-behavior: smooth');
     // The base rule is the one that used to carry it, and the one that outranked
     // the block above.
     expect(ruleBody(BARE, '.v2-root.v2-landing')).not.toContain('scroll-behavior');
