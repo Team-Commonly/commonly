@@ -202,17 +202,21 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     const target = person();
     User.findById.mockResolvedValue(target);
     const live = await Integration.create(hostedFor(target._id));
-    // Any status counts: a failed revoke leaves a `disconnected` row whose
-    // material is still present, and that is the one a person has to finish.
+    // The case the predicate exists for (vera 75850): the provider step failed,
+    // so the row sits at step 2 of the removal — `disconnected`, its material
+    // not yet gone. A guard keyed on `connected` waves this one through.
     const stranded = await Integration.create(hostedFor(target._id, {
       status: 'disconnected',
-      config: { entryId: 'notion', intake: 'oauth', credentialRef: 'secret-access-2' },
+      config: { entryId: 'notion', intake: 'oauth', refreshTokenRef: 'secret-refresh-2' },
     }));
 
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('hosted_mcp_connection_owned');
+    // Both keys count as material: a row can carry a refresh token with no
+    // access token written yet, and dropping either branch of the predicate
+    // takes one of these ids out of the answer.
     expect([...res.body.connectionIds].sort()).toEqual(
       [String(live._id), String(stranded._id)].sort(),
     );
@@ -231,19 +235,23 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     expect(target.deleteOne).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses for a row whose revoke already failed, with no live row present', async () => {
-    // The case the guard exists for. Nothing here is `connected`, so a guard
-    // that filtered on status would let the person go and take the only caller
-    // able to finish this removal with them.
+  it('does not refuse for an abandoned connection attempt, which holds neither material nor a grant', async () => {
+    // Production mints exactly this: `hostedMcpConnect.ts:237` inserts a
+    // `pending` row with `config.entryId` and nothing else, and `credentialRef`
+    // is not written until the callback. `routes/grants.ts:319` refuses to mint
+    // from such a row, so there is no material to revoke and no grant to end —
+    // refusing the delete would protect nothing and block a legitimate cleanup.
     const target = person();
     User.findById.mockResolvedValue(target);
-    const stranded = await Integration.create(hostedFor(target._id, { status: 'disconnected' }));
+    await Integration.create(hostedFor(target._id, {
+      status: 'pending',
+      config: { entryId: 'linear', intake: 'oauth', pendingAuth: { state: 's', expiresAt: new Date() } },
+    }));
 
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
-    expect(res.status).toBe(409);
-    expect(res.body.connectionIds).toEqual([String(stranded._id)]);
-    expect(target.deleteOne).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(target.deleteOne).toHaveBeenCalledTimes(1);
   });
 
   it('does not refuse for a row that is not a hosted one', async () => {

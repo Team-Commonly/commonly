@@ -298,14 +298,27 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
     // Refusing here does that cleanup at the one moment an admin is already
     // acting on this user, and hands over the ids to do it with.
     //
-    // Any status counts: a failed revoke leaves a `disconnected` row whose
-    // material is still present, and that is exactly the one a person has to
-    // finish. The remedy is the ordinary removal, which admits admins and runs
-    // the whole sequence (grants first); this endpoint never calls a vendor, the
+    // The predicate is MATERIAL, not status (vera 75850). A removal that failed
+    // at the provider step leaves the row `disconnected` — `markDisconnected`
+    // writes that at step 2 and the material does not go until step 4 — so a
+    // guard keyed on `connected` would wave through the one row whose removal
+    // already went wrong. The refs are the right key because the grants follow
+    // the material: `routes/grants.ts:319` refuses to mint from a row that has
+    // none. That is also what makes this exact: an abandoned connection attempt
+    // leaves a material-less `pending` row (`hostedMcpConnect.ts:237`
+    // `$setOnInsert`), which can hold neither material nor a grant, so refusing
+    // the delete for it would protect nothing.
+    //
+    // The remedy is the ordinary removal, which admits admins and runs the
+    // whole sequence (grants first); this endpoint never calls a vendor, the
     // same way pod delete does not.
     const ownedConnections = await Integration.find({
       type: HOSTED_MCP_TYPE,
       createdBy: target._id,
+      $or: [
+        { 'config.credentialRef': { $exists: true, $ne: null } },
+        { 'config.refreshTokenRef': { $exists: true, $ne: null } },
+      ],
     }).select('_id').lean() as Array<{ _id: unknown }>;
     if (ownedConnections.length > 0) {
       return res.status(409).json({
