@@ -214,9 +214,10 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('hosted_mcp_connection_owned');
-    // Both keys count as material: a row can carry a refresh token with no
-    // access token written yet, and dropping either branch of the predicate
-    // takes one of these ids out of the answer.
+    // Both rows are held by EXISTENCE. The second one carries only a refresh
+    // token — a row can be in that state with no access token written yet — and
+    // the point of listing it is that it is not ``connected``: a guard keyed on
+    // status answers 200 here and deletes the person who owes the cleanup.
     expect([...res.body.connectionIds].sort()).toEqual(
       [String(live._id), String(stranded._id)].sort(),
     );
@@ -235,23 +236,27 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     expect(target.deleteOne).toHaveBeenCalledTimes(1);
   });
 
-  it('does not refuse for an abandoned connection attempt, which holds neither material nor a grant', async () => {
-    // Production mints exactly this: `hostedMcpConnect.ts:237` inserts a
-    // `pending` row with `config.entryId` and nothing else, and `credentialRef`
-    // is not written until the callback. `routes/grants.ts:319` refuses to mint
-    // from such a row, so there is no material to revoke and no grant to end —
-    // refusing the delete would protect nothing and block a legitimate cleanup.
+  it('refuses for a row that is mid-exchange, which carries no ref yet', async () => {
+    // Wren 75857: the costly shape, and the one a material-keyed predicate waves
+    // past. The callback unsets `config.pendingAuth` at `hostedMcpConnect.ts:341`
+    // and does not write `config.credentialRef` until `:427`, so for the length
+    // of its upstream calls the row carries neither — and every failure branch
+    // in between returns a redirect with the row left in exactly that state.
+    // Letting it through deletes the only person who can finish the removal
+    // while the material is either seconds away or already owed.
     const target = person();
     User.findById.mockResolvedValue(target);
-    await Integration.create(hostedFor(target._id, {
+    const midExchange = await Integration.create(hostedFor(target._id, {
       status: 'pending',
-      config: { entryId: 'linear', intake: 'oauth', pendingAuth: { state: 's', expiresAt: new Date() } },
+      config: { entryId: 'linear', intake: 'oauth' },
     }));
 
     const res = await request(app).delete(`/admin/users/${target._id}`);
 
-    expect(res.status).toBe(200);
-    expect(target.deleteOne).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('hosted_mcp_connection_owned');
+    expect(res.body.connectionIds).toEqual([String(midExchange._id)]);
+    expect(target.deleteOne).not.toHaveBeenCalled();
   });
 
   it('does not refuse for a row that is not a hosted one', async () => {
