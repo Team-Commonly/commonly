@@ -87,3 +87,74 @@ describe('POST /api/integrations — hosted-mcp is refused by name', () => {
     expect(res.body.message).not.toContain('/api/integrations/connect/hosted-mcp');
   });
 });
+
+// TASK-147 witness: PATCH /api/integrations/:id refuses a hosted row, and the
+// refusal is the only thing that keeps the row without a podId. The row below is
+// built with a `config.linkedUserId` no production writer would set — a hosted
+// row always lacks one — so it SATISFIES the `scope === 'user'` comparison it
+// would otherwise die on. That is what makes this arm a witness for the guard
+// rather than a second test of the comparison: with the guard removed the row
+// passes that branch and the write lands, which the mutant confirms.
+const hostedUserRow = () => ({
+  _id: 'integration-hosted',
+  type: 'hosted-mcp',
+  scope: 'user',
+  createdBy: { toString: () => 'user-1' },
+  config: {
+    entryId: 'linear',
+    linkedUserId: 'user-1',
+    toObject() { return { entryId: 'linear', linkedUserId: 'user-1' }; },
+  },
+});
+
+describe('PATCH /api/integrations/:id — a hosted row is refused by its kind', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Pod.findById.mockResolvedValue({ _id: 'pod-1', members: [{ toString: () => 'user-1' }] });
+  });
+
+  const patch = (id, body) => request(app).patch(`/api/integrations/${id}`).send(body);
+
+  it('refuses it with a code naming the kind, and names the verb that works', async () => {
+    const Integration = require('../../../models/Integration');
+    Integration.findById.mockResolvedValue(hostedUserRow());
+    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({ _id: 'integration-hosted' });
+
+    const res = await patch('64b64c7f8a9e2f0012345678', { config: { liveRelay: false } });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('hosted_mcp_managed_by_consent_flow');
+    // The remedy, not just the refusal: a caller that reads only the code still
+    // needs to know the row is removable rather than stuck.
+    expect(res.body.message).toMatch(/DELETE \/api\/integrations\/:id/);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  // The control the refusal would be unreadable without: the SAME request on a
+  // row of another kind, with the same scope and the same owner. It reaches the
+  // write, so the arm above is refusing the kind rather than the request.
+  it('positive control: the same request on another user-scoped kind is applied', async () => {
+    const Integration = require('../../../models/Integration');
+    Integration.findById.mockResolvedValue({
+      _id: 'integration-telegram',
+      type: 'telegram',
+      scope: 'user',
+      createdBy: { toString: () => 'user-1' },
+      config: {
+        chatId: '42',
+        chatType: 'private',
+        linkedUserId: 'user-1',
+        toObject() {
+          return { chatId: '42', chatType: 'private', linkedUserId: 'user-1' };
+        },
+      },
+    });
+    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({ _id: 'integration-telegram' });
+
+    const res = await patch('64b64c7f8a9e2f0012345679', { config: { liveRelay: false } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update['config.liveRelay']).toBe(false);
+  });
+});
