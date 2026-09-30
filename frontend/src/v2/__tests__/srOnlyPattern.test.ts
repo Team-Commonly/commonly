@@ -72,9 +72,13 @@ const visuallyHiddenRules = (): HiddenRule[] => {
       // neither idiom, which is the defect itself) must still be discovered.
       // Measured at this head: the four candidate keys (this one, this one plus
       // `clip: rect(`, this one plus `clip-path`, and `position: absolute` +
-      // 1px with no overflow clause) all return the same three rules out of
-      // 2,893 in src/, so the broader key costs nothing today and cannot be the
-      // reason a future copy is missed.
+      // 1px with no overflow clause) all return the same FOUR rules out of
+      // 2,970 in src/, so the broader key costs nothing today and cannot be the
+      // reason a future copy is missed. The `clip-path` key disagreed until
+      // TASK-220 — it returned three, because `.v2-board__focus-live` carried
+      // `clip: rect()` alone. That is exactly the copy a narrower key would
+      // have missed, which is why the key is the DEFECT’S PRECONDITION and not
+      // the idiom.
       const looksHidden = /position:\s*absolute;/.test(body)
         && /width:\s*1px;/.test(body)
         && /height:\s*1px;/.test(body)
@@ -104,7 +108,15 @@ const declarations = (body: string): string[] =>
 // copy's text is visible, which is a loud defect rather than this silent one.
 // `text-indent: -9999px` hiding is out of scope (0 rules in src/ today, measured)
 // because it creates no absolutely positioned box.
-const REQUIRED = ['padding: 0', 'margin: -1px', 'white-space: nowrap', 'border: 0'];
+const REQUIRED = ['padding: 0', 'margin: -1px', 'white-space: nowrap', 'border: 0',
+  // TASK-220. `clip-path` joins the set now that every copy carries it. It was
+  // held out while three rows were mid-flight and the family was non-uniform
+  // (#2024, #2042, #2046); holding it out is what left the one declaration that
+  // matters here unpinned on the copies that already had it — drop it from any
+  // of them and nothing red. `clip: rect()` is deprecated and `clip-path` is
+  // what actually clips in current engines, so a copy with the old idiom alone
+  // is the defect this file exists to find.
+  'clip-path: inset(50%)'];
 
 const rules = visuallyHiddenRules();
 
@@ -116,6 +128,7 @@ describe('the visually-hidden pattern has one shape', () => {
       expect.arrayContaining([
         '.v2-demo__sr',
         '.v2-landing__install-status',
+        '.v2-landing__wedge-sr',
         '.v2-board__focus-live',
       ]),
     );
@@ -129,16 +142,5 @@ describe('the visually-hidden pattern has one shape', () => {
         .map((decl) => `${file} -> ${selector} is missing \`${decl}\``);
     });
     expect(missing).toEqual([]);
-  });
-
-  it('keeps clip-path on the demo label, as the set this fix ships', () => {
-    // Pattern conformance, not a certified mechanism (see the header). The
-    // family is not uniform here on purpose: this declaration was added to the
-    // one copy under repair, and the two other sheets are under active edit by
-    // other rows, so this pins what this row declares rather than a uniformity
-    // the family does not yet have.
-    const demo = rules.find((r) => r.selector === '.v2-demo__sr');
-    expect(demo).toBeDefined();
-    expect(declarations(demo?.body ?? '')).toContain('clip-path: inset(50%)');
   });
 });
