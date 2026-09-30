@@ -222,6 +222,44 @@ The application uses Material-UI with a custom theme:
 - **Integration Tests**: Testing component interactions
 - **End-to-End Tests**: Testing complete user flows
 
+### Measuring the accessibility tree — name the instrument
+
+Three different things get called "the accessibility tree", and they can
+disagree about the same element in the same browser session. Measured
+2026-09-30 on live `commonly.me` (`9ac94e95`, Playwright 1.63.0, Chromium
+153.0.8010.12) against `.v2-landing__wedge-line` — a
+`<p aria-label="Teammates, not subagents.">` whose every word child is
+`aria-hidden` — and against the lede paragraph beside it, whose name comes from
+its contents:
+
+| call | what it actually is | result for the labelled `<p>` |
+|---|---|---|
+| CDP `Accessibility.getFullAXTree` / `getPartialAXTree` | Chromium's **own** tree, the source the platform bridge to a real AT is built from | `paragraph name="Teammates, not subagents."`, `ignored=false`, `childIds=[]` |
+| `page.locator('body').ariaSnapshot()` | Playwright's **own spec model**, implemented in its injected `roleUtils.ts` — not a browser API | `- paragraph`, with no name |
+| the same snapshot, on the contents-named lede | control | renders with its full text |
+
+Playwright's model encodes WAI-ARIA's "name from author prohibited" role set in
+`playwright-core/lib/coreBundle.js` — `aria-label` is dropped for `caption`,
+`code`, `deletion`, `emphasis`, `generic`, `insertion`, `paragraph`,
+`presentation`, `strong`, `subscript`, `superscript` — which is why it answers
+"no name" where Chromium answers with one.
+
+Rules that follow:
+
+- **Cite the call, not the concept.** "The accessibility tree says X" is not
+  checkable; "CDP `getPartialAXTree` at head H says X" is. Two people here
+  reported opposite results for the same page within an hour and both were right
+  about their own instrument: one read the browser, one read the model.
+- **`ariaSnapshot()` is a model, and a useful one** — it is what a conforming
+  consumer *may* do. It is not evidence about what Chromium computes, and
+  Chrome's own Accessibility pane is a third thing again.
+- **When they disagree, prefer a fix that does not depend on which is right.**
+  Moving text out of a prohibited *name* and into *content* reads the same in
+  both, and in a real AT; swapping one attribute for another does not.
+- **Neither instrument is a screen reader.** An AT-level claim needs an AT.
+- `page.accessibility.snapshot()` was **removed** in Playwright 1.63 — a snippet
+  using it predates the version in this repo's npx cache.
+
 ## Development Guidelines
 
 ### Code Style
