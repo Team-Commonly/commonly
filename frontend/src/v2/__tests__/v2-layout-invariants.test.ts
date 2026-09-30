@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { blockAt, blockContaining } from '../lib/cssBlocks';
 
 /**
  * Layout-invariant guards for v2 CSS rules that regressed in production.
@@ -22,32 +23,6 @@ import path from 'path';
 
 const read = (rel: string): string =>
   fs.readFileSync(path.join(__dirname, rel), 'utf8');
-
-// The block that opens at the first `{` at or after `from`, brace-matched to
-// its own closing brace — or '' when nothing opens there. This is THE walk:
-// three hand-rolled copies of it is how the fourth one drifts, and a copy that
-// stops at the next `}` reads a base rule after the block as part of it.
-const blockAt = (css: string, from: number): string => {
-  const open = css.indexOf('{', from);
-  if (open === -1) return '';
-  let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    if (css[i] === '}') { depth -= 1; if (depth === 0) return css.slice(from, i + 1); }
-  }
-  return '';
-};
-
-// The first block introduced by `marker` whose OWN text carries `needle`. A
-// scope with a start and no end is not a scope, so both ends come from
-// `blockAt` and a later block can never answer for this one.
-const blockContaining = (css: string, marker: string, needle: string): string => {
-  for (let at = css.indexOf(marker); at !== -1; at = css.indexOf(marker, at + 1)) {
-    const block = blockAt(css, at);
-    if (block.includes(needle)) return block;
-  }
-  return '';
-};
 
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
