@@ -51,6 +51,14 @@ const RECORD_KEYS = {
   'config.refreshTokenRef': 'secret-refresh-1',
   'config.refreshGeneration': 3,
   'config.credentialHint': 'a…1',
+  // The two keys the removal step writes. They were absent from this list when
+  // they shipped, and absent from the schema's declaration too — which is how a
+  // `$set` that mongoose drops in silence looked green everywhere else: the
+  // removal suite asserts the payload handed to a MOCKED model, and a payload
+  // arm cannot see a strict subdocument refuse it. Both are read back through
+  // the raw collection here, so the mark exists on the row or this arm fails.
+  'config.providerRevokedAt': new Date('2026-09-30T03:00:00.000Z'),
+  'config.revokePage': 'https://linear.app/settings/security',
   'config.pendingAuth.state': 'state-1',
   'config.pendingAuth.codeVerifier': 'verifier-1',
   'config.pendingAuth.expiresAt': new Date('2026-09-27T14:30:00.000Z'),
@@ -103,6 +111,22 @@ describe('the hosted-mcp connection row', () => {
     }));
 
     expect(dropped).toEqual([]);
+  });
+
+  test('the mark the removal step writes is really on the row', async () => {
+    // The instrument above is generic; this arm names the consequence, because
+    // the field it writes is the only record that a vendor revoke happened —
+    // #2035 shipped it as server-owned and unwritable while the schema dropped
+    // every write of it. Read through `defaultDeps()`, so the assertion is about
+    // the shipped writer and not about a fixture.
+    const { defaultDeps, PROVIDER_REVOKED_MARK } = require('../../services/connectionRemovalService');
+    const doc = await Integration.create(shape());
+    const at = new Date('2026-09-30T03:00:00.000Z');
+
+    await defaultDeps().markProviderRevoked(String(doc._id), at);
+
+    const raw = await Integration.collection.findOne({ _id: doc._id });
+    expect(raw.config[PROVIDER_REVOKED_MARK]).toEqual(at);
   });
 
   test('positive control: the same instrument sees an undeclared key dropped', async () => {

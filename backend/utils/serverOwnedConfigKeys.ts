@@ -91,6 +91,10 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // revoke that never happened — the one field in this list whose forgery
   // destroys the authorization instead of merely mislabelling it.
   'providerRevokedAt',
+  // The page the connect step copies off the entry (ruling 75780). Forging it
+  // cannot un-revoke anything, but it does decide where a person is sent to
+  // revoke by hand — a body that could write it would repoint that.
+  'revokePage',
 ];
 
 export const isServerOwnedConfigKey = (key: string): boolean => SERVER_OWNED_CONFIG_KEYS.includes(key);

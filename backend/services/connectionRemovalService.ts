@@ -35,6 +35,13 @@
  * vendor nothing — no endpoint, or no token we hold — still finishes and hands
  * the person that page: a kept row there only waits for a retry that can never
  * succeed.
+ *
+ * The entry is read AGAIN at removal time, and code is deletable, so a row can
+ * name an entry we no longer hold. The connect step copies the entry's `page`
+ * onto the row (`config.revokePage`, also server-owned) for exactly that case:
+ * the removal sends nothing, finishes, and hands over the copy — because the
+ * authority to revoke by hand outlives the entry that named the endpoint. A row
+ * connected before this copy existed has neither, and keeps the refusal.
  */
 import Integration from '../models/Integration';
 import {
@@ -58,6 +65,13 @@ export const HOSTED_MCP_TYPE = 'hosted-mcp';
  */
 export const PROVIDER_REVOKED_MARK = 'providerRevokedAt';
 
+/**
+ * The row config key carrying the entry's `page` as it stood when the row was
+ * connected. Server-owned for the same reason as the mark, and a sharper one: a
+ * body that could write it would repoint the revocation a person is sent to.
+ */
+export const REVOKE_PAGE_KEY = 'revokePage';
+
 /** The row fields this sequence reads. Deliberately loose: a strict row type hides the schema change that matters. */
 export interface RemovableConnection {
   _id?: unknown;
@@ -68,6 +82,7 @@ export interface RemovableConnection {
     entryId?: string;
     credentialRef?: string;
     refreshTokenRef?: string;
+    revokePage?: string;
     [PROVIDER_REVOKED_MARK]?: string | Date | null;
   };
 }
@@ -223,28 +238,31 @@ export const removeConnection = async (options: {
   // token directly, so a row left `disconnected` is still finishable.
   await deps.markDisconnected(id, deps.now());
 
-  if (!entry) {
-    // A hosted row naming an entry we no longer hold. Nothing is known about
-    // where to revoke it, so nothing is thrown away: the row keeps its material
-    // and the caller renders the named state. No page exists to hand over —
-    // the entry that names one is exactly what is missing.
-    return {
-      removed: false,
-      code: 'provider_revoke_failed',
-      message: `hosted-mcp row names no known entry (${String(connection?.config?.entryId || '')})`,
-      grantsRevoked,
-    };
-  }
-
   // The entry decides, and the decision is read once, here (§3). No endpoint
   // means no provider call at all; an endpoint means the token goes to it,
   // which is why the material must still exist at this point.
-  const target = hostedMcpRevokeTarget(entry);
-  if (!target) {
+  const target = entry ? hostedMcpRevokeTarget(entry) : null;
+  if (entry && !target) {
     return {
       removed: false,
       code: 'provider_revoke_failed',
       message: `hosted-mcp entry does not say how to revoke (${entry.id})`,
+      grantsRevoked,
+    };
+  }
+
+  // The page the person is handed: the entry's, when we still hold the entry;
+  // otherwise the copy the connect step left on the row. A row naming an entry
+  // we no longer hold is finishable ONLY through that copy — nothing is known
+  // about where to revoke, so nothing is sent, and this is the authority the
+  // person keeps. A row with neither keeps the refusal below, which is the only
+  // case left: `entry` present with an unusable `revoke` returned above.
+  const revokePage = target ? target.page : String(connection?.config?.[REVOKE_PAGE_KEY] || '');
+  if (!revokePage) {
+    return {
+      removed: false,
+      code: 'provider_revoke_failed',
+      message: `hosted-mcp row names no known entry (${String(connection?.config?.entryId || '')})`,
       grantsRevoked,
     };
   }
@@ -260,7 +278,7 @@ export const removeConnection = async (options: {
   // the material may be half-swept, and the token is already dead.
   const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
 
-  if (target.endpoint && !alreadyRevokedAtVendor) {
+  if (entry && target?.endpoint && !alreadyRevokedAtVendor) {
     // The refresh token when the row has one, else the access token. A row can
     // carry either: what matters is that the token sent is one we HOLD, and
     // that an absent reference never becomes `token: ""` — RFC 7009 answers
@@ -288,7 +306,7 @@ export const removeConnection = async (options: {
           code: 'provider_revoke_failed',
           message: (error as { message?: string })?.message || 'connector secret unreadable',
           grantsRevoked,
-          revokeAt: target.page,
+          revokeAt: revokePage,
         };
       }
       token = null;
@@ -310,7 +328,7 @@ export const removeConnection = async (options: {
           code: 'provider_revoke_failed',
           message: (error as { message?: string })?.message || 'provider revoke failed',
           grantsRevoked,
-          revokeAt: target.page,
+          revokeAt: revokePage,
         };
       }
 
@@ -332,16 +350,17 @@ export const removeConnection = async (options: {
       code: 'provider_revoked_removal_incomplete',
       message: (error as { message?: string })?.message || 'removal incomplete after the provider revoke',
       grantsRevoked,
-      revokeAt: target.page,
+      revokeAt: revokePage,
     };
   }
 
-  return { removed: true, grantsRevoked, revokeAt: target.page };
+  return { removed: true, grantsRevoked, revokeAt: revokePage };
 };
 
 module.exports = {
   HOSTED_MCP_TYPE,
   PROVIDER_REVOKED_MARK,
+  REVOKE_PAGE_KEY,
   defaultDeps,
   removeConnection,
   revokeTokenAtVendor,

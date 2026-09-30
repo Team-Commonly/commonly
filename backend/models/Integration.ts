@@ -380,6 +380,22 @@ const IntegrationSchema = new Schema<IIntegration>(
       // simply never land and the fence would read worse than it behaves.
       refreshingUntil: Date,
       credentialHint: String,
+      // The two keys the REMOVAL step writes (TASK-172 §10 step 6,
+      // `services/connectionRemovalService`). `providerRevokedAt` is the mark
+      // that says the provider revoke TOOK, written so a retry finds it and
+      // skips the vendor; `revokePage` is the entry's page as it stood when the
+      // row was connected, so a removal whose entry has left the catalogue can
+      // still finish and hand a person the authority to revoke by hand. Both
+      // are written by `$set` on this path — and both were MISSING from this
+      // declaration until 2026-09-30, which is not a cosmetic omission: `config`
+      // is STRICT, so every one of those writes was dropped in silence. The mark
+      // therefore never landed anywhere, and the retry-after-a-crash it exists
+      // for read a row that never carried it. Measured on a real mongod through
+      // the service's own `defaultDeps()`, and pinned now in
+      // `__tests__/service/hostedMcpConnectionRow.test.js` (RECORD_KEYS), which
+      // is the instrument that catches a key the payload arms cannot see.
+      providerRevokedAt: Date,
+      revokePage: String,
       // Present only mid-connect, and holding nothing secret once it expires.
       pendingAuth: {
         state: String,

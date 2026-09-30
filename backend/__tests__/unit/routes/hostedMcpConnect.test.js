@@ -10,7 +10,7 @@ const FIXTURE_ENTRY = {
   issuer: 'https://mcp.linear.app',
   client: 'cimd',
   scopes: ['read', 'openid'],
-  revoke: 'https://mcp.linear.app/token',
+  revoke: { page: 'https://linear.app/settings/security' },
   tools: [],
 };
 
@@ -19,6 +19,10 @@ jest.mock('../../../integrations/hostedMcp/entries', () => {
   return {
     HOSTED_MCP_ENTRIES: [FIXTURE_ENTRY],
     findHostedMcpEntry: actual.findHostedMcpEntry,
+    // The callback copies this off the entry onto the row, so the partial mock
+    // has to carry it: an unforwarded accessor reads as `undefined` and throws
+    // at the write rather than at the import.
+    hostedMcpRevokeTarget: actual.hostedMcpRevokeTarget,
   };
 });
 
