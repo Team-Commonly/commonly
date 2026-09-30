@@ -85,6 +85,12 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // reason at lower stakes: no browser decides how a credential is obtained.
   'entryId', 'intake', 'providerSubject', 'grantedScope', 'expiresAt',
   'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'credentialHint', 'pendingAuth',
+  // The mark step 3b of the removal sequence records (`connectionRemovalService`)
+  // after the provider revoke TAKES. A body that could write it would make a
+  // retry skip the vendor call and delete live material while recording a
+  // revoke that never happened — the one field in this list whose forgery
+  // destroys the authorization instead of merely mislabelling it.
+  'providerRevokedAt',
 ];
 
 export const isServerOwnedConfigKey = (key: string): boolean => SERVER_OWNED_CONFIG_KEYS.includes(key);

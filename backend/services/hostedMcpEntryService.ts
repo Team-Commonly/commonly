@@ -69,7 +69,13 @@ export interface HostedMcpEntry {
   issuer: string;
   client: 'pre-registered' | 'cimd' | 'dcr';
   scopes: string[];
-  revoke: string;
+  /**
+   * Where the authorization dies, naming its kind because the URL cannot (§3).
+   * Exactly one key: an `endpoint` is the RFC 7009 revocation endpoint the AS's
+   * metadata advertises, a `page` is where a person revokes by hand. Both are
+   * https, and only the kind decides whether removal calls the vendor.
+   */
+  revoke: { page: string; endpoint?: string };
   tools: HostedMcpPinnedTool[];
 }
 

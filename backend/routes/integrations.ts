@@ -45,6 +45,8 @@ const {
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
+// eslint-disable-next-line global-require
+const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { Types } from 'mongoose';
 import {
   invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
@@ -810,6 +812,30 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const canDelete = await canDeleteIntegration(integration, deletedBy);
     if (!canDelete) return res.status(403).json({ message: 'Access denied' });
+    // A hosted row takes the whole §10.5 sequence, because it is the only type
+    // whose removal has a provider step to run: it holds a refresh token to
+    // revoke at the entry's endpoint before the material goes. The order is the
+    // control (services/connectionRemovalService.ts), and a failed provider
+    // revoke answers 502 with the row left `disconnected` and its references
+    // intact, so the retry from the page can finish it.
+    if (integration.type === HOSTED_MCP_TYPE) {
+      const result = await removeConnection({
+        connection: integration,
+        removedBy: deletedBy,
+        revokeGrants: revokeConnectionGrants,
+      });
+      if (!result.removed) {
+        return res.status(502).json({
+          code: result.code,
+          message: result.message,
+          ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
+        });
+      }
+      return res.json({
+        message: 'Integration deleted successfully',
+        ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
+      });
+    }
     // §10.5's grants step, and it has to run here: the deletion below removes
     // the row, and the granter's own revoke route resolves ownership through
     // `findConnection` (routes/grants.ts:421) — after the row is gone every

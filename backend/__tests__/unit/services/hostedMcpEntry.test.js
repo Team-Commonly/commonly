@@ -13,6 +13,7 @@ const {
   HOSTED_MCP_ENTRIES,
   assertHostedMcpEntries,
   findHostedMcpEntry,
+  hostedMcpRevokeTarget,
 } = require('../../../integrations/hostedMcp/entries');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
@@ -34,7 +35,10 @@ const linear = (over) => Object.assign({
   issuer: 'https://mcp.linear.app',
   client: 'cimd',
   scopes: ['read', 'openid'],
-  revoke: 'https://mcp.linear.app/token',
+  revoke: {
+    page: 'https://linear.app/settings/security',
+    endpoint: 'https://mcp.linear.app/token',
+  },
   tools: [
     pinned({}),
     pinned({
@@ -351,6 +355,57 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(() => assertHostedMcpEntries([linear(), linear({ id: 'notion', title: 'Notion' })])).not.toThrow();
     expect(() => assertHostedMcpEntries([linear(), linear()])).toThrow(/duplicate hosted-mcp entry id/);
     expect(() => assertHostedMcpEntries([linear({ id: 'lin.ear' })])).toThrow(/not a usable tool namespace/);
+    // §3: every entry names a `page`, and an `endpoint` only when the AS's
+    // metadata advertises one. Both are https URLs, so the URL cannot say which
+    // one decides the vendor call — presence of `endpoint` does, and that is
+    // why a page is required even on an entry that has one: a removal that
+    // cannot revoke at the vendor hands the person that page.
+    const bothURLs = {
+      endpoint: 'https://mcp.linear.app/token',
+      page: 'https://linear.app/settings/security',
+    };
+    const noRevoke = linear();
+    delete noRevoke.revoke;
+    expect(() => assertHostedMcpEntries([noRevoke]))
+      .toThrow(/names no page/);
+    // A page-less entry is refused even when it has an endpoint: the endpoint
+    // revoke can fail, and then the page is the only thing left to hand over.
+    expect(() => assertHostedMcpEntries([linear({ revoke: { endpoint: bothURLs.endpoint } })]))
+      .toThrow(/names no page/);
+    // A key the entry format does not have, including a `kind`/`url` pair:
+    // the key IS the kind, so naming it in a value is naming nothing.
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: bothURLs.page, kind: 'endpoint' } })]))
+      .toThrow(/names a key that is neither `page` nor `endpoint` \(kind\)/);
+    expect(() => assertHostedMcpEntries([linear({ revoke: '/token' })]))
+      .toThrow(/names no page/);
+    // Every URL present is checked, not just the first. This arm could not fire
+    // while a two-key `revoke` was refused outright, and it is the arm that
+    // keeps a person from being handed a page nothing can open.
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: 'linear.app/settings', endpoint: bothURLs.endpoint } })]))
+      .toThrow(/is not an absolute https URL \(page\)/);
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: bothURLs.page, endpoint: 'http://mcp.linear.app/token' } })]))
+      .toThrow(/is not an absolute https URL \(endpoint\)/);
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: bothURLs.page, endpoint: '' } })]))
+      .toThrow(/is not an absolute https URL \(endpoint\)/);
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: '' } })]))
+      .toThrow(/is not an absolute https URL \(page\)/);
+    // Acceptance controls: BOTH shapes load — a page alone, and a page with an
+    // endpoint — so the refusals above are about the shape and not about
+    // `revoke` being refused in general, or about two keys being refused.
+    expect(() => assertHostedMcpEntries([linear({ revoke: { page: bothURLs.page } })]))
+      .not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ revoke: bothURLs })]))
+      .not.toThrow();
+    // The target is read from the same place, and it keeps both URLs: which one
+    // the vendor call uses is `endpoint`'s presence, and which one a person is
+    // handed is always the page.
+    expect(hostedMcpRevokeTarget(linear({ revoke: bothURLs })))
+      .toEqual({ page: bothURLs.page, endpoint: bothURLs.endpoint });
+    expect(hostedMcpRevokeTarget(linear({ revoke: { page: bothURLs.page } })))
+      .toEqual({ page: bothURLs.page });
+    // Control: the shipped shape is accepted, so the three refusals above are
+    // about the value and not about the field being read at all.
+    expect(() => assertHostedMcpEntries([linear()])).not.toThrow();
     expect(() => assertHostedMcpEntries([
       linear(),
       linear({ id: 'notion', title: 'Notion', tools: [pinned({ name: 'list_issues' })] }),
