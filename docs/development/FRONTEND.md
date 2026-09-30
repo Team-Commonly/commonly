@@ -239,8 +239,10 @@ its contents:
 | the same snapshot, on the contents-named lede | control | renders with its full text |
 
 Playwright's model encodes WAI-ARIA's "name from author prohibited" role set,
-and the array that implements it is `elementProhibitsNaming`, inside
-`computeAccessibleNameComposite`: 16 roles, 186 bytes — `caption`, `code`,
+and the array that implements it is `elementProhibitsNaming` — inside
+`computeAccessibleNameComposite` at 1.63.0 and 1.64.0-alpha, and inside
+`getElementAccessibleName` at 1.56.0, where `computeAccessibleNameComposite`
+does not exist: 16 roles, 186 bytes — `caption`, `code`,
 `definition`, `deletion`, `emphasis`, `generic`, `insertion`, `mark`,
 `paragraph`, `presentation`, `strong`, `subscript`, `suggestion`, `superscript`,
 `term`, `time`. It sits in the same file as a second list that looks like it and
@@ -301,11 +303,12 @@ That block is verbatim, including `- generic "CTRL_EMPTY"` printing without the
 
 Three deltas against `ariaSnapshot()` in its default mode: it **names an
 implicitly generic `<div aria-label>`** while suppressing the name for an
-explicit `role="generic"`; it **prints the empty labelled div** that the model
-prunes entirely; and it agrees on `paragraph` (no name) and on `group` /
+explicit `role="generic"`; it **prints the empty labelled div** that the default
+mode prunes entirely; and it agrees on `paragraph` (no name) and on `group` /
 `heading` (named). Re-measured as a two-axis table on the alpha build, direct
-(no MCP transport), one variable per row, CDP as ground truth — every element
-carries the same kind of attribute and differs only in role and declaration:
+(no MCP transport), one variable per row, CDP as the browser's answer — every
+element carries the same kind of attribute and differs only in role and
+declaration:
 
 | element | role declared | role (CDP) | mode `ai` | mode `default` | CDP name |
 |---|---|---|---|---|---|
@@ -319,10 +322,11 @@ carries the same kind of attribute and differs only in role and declaration:
 | `<div role="heading" aria-label>` | explicit | `heading` | named | named | `EXPLICIT_HEADING` |
 | `<div aria-label>` (empty) | implicit | `generic` | named, no `[ref]` | no line | `EMPTY_LABELLED` |
 
-CDP names all nine. So **two** variables move the answer — the mode, and inside
-`ai` whether the role was implicit or declared — which is why this looked like a
-property of "the serialiser" to each of us in turn. Both instruments can still be
-right about the same element: they are answering different questions.
+CDP names all nine. So beyond the role itself, **two** variables move the answer
+— the mode, and inside `ai` whether the role was implicit or declared — which is
+why this looked like a property of "the serialiser" to each of us in turn. Both
+instruments can still be right about the same element: they are answering
+different questions.
 
 Rules that follow:
 
@@ -331,15 +335,16 @@ Rules that follow:
   reported opposite results for the same page within an hour and both were right
   about their own instrument: one read the browser, one read the model.
 - **A positive control has to hold every variable but the one under test — and
-  here there are two.** The false reading this section came from survived a
-  control, because the control was a `heading` — a role whose names the
-  instrument does print — while the element under test was a `paragraph`, which
-  it drops. Holding only the *role* fixed is not enough either: the table above
-  flips twice, once per axis — at role `generic`, implicit is named and declared
-  is not; at implicit, `generic` is named and `paragraph` is not. A single
-  control element would have "confirmed" whichever half you happened to pick and
-  been wrong about the other. Where a claim spans two variables the control set
-  is a table, not a specimen.
+  here there are three: the mode, the role, and whether the role was declared.**
+  The false reading this section came from survived a control, because the
+  control was a `heading` — a role whose names the instrument does print — while
+  the element under test was a `paragraph`, which it drops. Holding only the
+  *role* fixed is not enough either: the `ai` column flips twice, once per axis
+  — at role `generic`, implicit is named and declared is not; at implicit,
+  `generic` is named and `paragraph` is not. A single control element would have
+  "confirmed" whichever half you happened to pick and been wrong about the
+  other. Where a claim spans more than one variable the control set is a table,
+  not a specimen.
 - **`ariaSnapshot()` is a model, and a useful one** — it is what a conforming
   consumer *may* do. It is not evidence about what Chromium computes, and
   Chrome's own Accessibility pane is a third thing again.
