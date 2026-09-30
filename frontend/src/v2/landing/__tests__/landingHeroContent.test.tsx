@@ -77,6 +77,32 @@ const renderLanding = () => render(
   </MemoryRouter>,
 );
 
+/** Every text node under `root` that carries something a reader would see. */
+const visibleTextNodes = (root: Element): Text[] => {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if ((node.textContent ?? '').trim().length > 0) nodes.push(node);
+  }
+  return nodes;
+};
+
+/**
+ * True when some ancestor of `node` below `root` is `aria-hidden`. The bound
+ * matters: the hero h1 is deliberately NOT hidden (its `aria-label` is the
+ * whole sentence), so an `aria-hidden` on the h1 itself would be a different
+ * defect and must not satisfy the check.
+ */
+const hasHiddenAncestor = (node: Text, root: Element): boolean => {
+  let el = node.parentElement;
+  while (el && el !== root) {
+    if (el.getAttribute('aria-hidden') === 'true') return true;
+    el = el.parentElement;
+  }
+  return false;
+};
+
 describe('V2LandingPage hero content (TASK-152)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -155,6 +181,56 @@ describe('V2LandingPage hero content (TASK-152)', () => {
       // every later test rendering zh, and their English misses read as defects
       // in the page rather than in this test (found by sprint-review on #2033,
       // reproduced with a forced-failure probe).
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  it('leaves no fragment of the zh hero sentence exposed beside its aria-label', async () => {
+    // TASK-215. The h1 states the sentence once, on `aria-label`
+    // (V2LandingPage.tsx: "screen readers get one sentence, not fragments"),
+    // and every fragment under it is supposed to be `aria-hidden`. The rotator
+    // (line 122) and each staggered word are; the zh suffix span was not, so
+    // the accessibility tree read the sentence AND a stray 「对话」 after it —
+    // `heading "与你的 …, 以及整个团队对话。" [level=1]: 对话` — on main since
+    // #717, on every renderer. This walks the h1 rather than naming the span,
+    // so a NEW fragment added later has to declare its own aria-hidden instead
+    // of inheriting the silence this arm is checking.
+    const zhSuffix = (((readLocale('zh-CN.json').landing as TranslationTree).hero as TranslationTree)
+      .titleSuffix) as string;
+    expect(zhSuffix.length).toBeGreaterThan(0);
+
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      const zh = renderLanding();
+      const h1 = zh.container.querySelector('h1.v2-landing__title');
+      expect(h1).not.toBeNull();
+      // The premise the sweep rests on: the sentence is on the label and the
+      // heading itself is announced, not hidden.
+      expect(h1?.getAttribute('aria-label')).toBeTruthy();
+      expect(h1?.getAttribute('aria-hidden')).toBeNull();
+
+      const exposed = visibleTextNodes(h1 as Element)
+        .filter((node) => !hasHiddenAncestor(node, h1 as Element))
+        .map((node) => node.textContent);
+      expect(exposed).toEqual([]);
+
+      // Non-vacuity: the sweep has to be looking at a heading that really does
+      // carry the visible fragments (the rotator stack renders every term), or
+      // an empty h1 would pass it.
+      expect(visibleTextNodes(h1 as Element).length).toBeGreaterThan(1);
+      expect(zh.container.textContent).toContain(zhSuffix);
+      zh.unmount();
+
+      // en ships an empty suffix and the rotator is hidden there too, so the
+      // control keeps this from becoming an en-shaped assertion.
+      await act(async () => { await i18n.changeLanguage('en'); });
+      const en = renderLanding();
+      const enH1 = en.container.querySelector('h1.v2-landing__title');
+      expect(
+        visibleTextNodes(enH1 as Element).filter((node) => !hasHiddenAncestor(node, enH1 as Element)),
+      ).toEqual([]);
+      en.unmount();
+    } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
   });
