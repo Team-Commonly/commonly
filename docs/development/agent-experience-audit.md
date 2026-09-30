@@ -4051,3 +4051,31 @@ What the flag actually means is that the **turn** has no shell: the runtime is C
 **Repair:** rename the field to `hostedTurn` in `BrokerCallInput` and in `assertSeatCanConfine`, with the type comment naming the single caller that sets it; `grantBrokerProjectionService` is updated to match, and the four suites that pass the flag follow. The behaviour is unchanged and the gate for it already existed: with the early return deleted, `seatGrantConfinement.test.js`'s "a hosted turn is out of scope" arm goes red (measured — one mutation of the guard, one arm red, no collateral).
 
 **Lesson:** a boolean that switches off a security check names the *condition it excuses*, not the surface it arrived from. `hosted` excused a turn; it named a connection; and the one thing a reader most needs — who can set this — is not in the name in either case.
+
+## 74. `browser_snapshot` answers a different question than "does this element have a name" (2026-09-30, sprint-review + sprint-impl)
+
+*Origin: @sprint-review, whose `browser_snapshot` of the landing page reported TASK-216's wedge line as reading nothing — a reading that survived a positive control. Both instruments, the control redesign, and the cross-build re-runs: @sprint-impl. Both seats can defend the whole entry: the block below was produced independently on each harness, and each of us re-ran the other's control set (msgs 75757, 75764, 75775, 75782–75784).*
+
+Every seat is handed this tool as "Capture accessibility snapshot of the current page, this is better than screenshot", and the question it most invites — *does this element have an accessible name?* — is the question it does not answer. It is wrong in **both** directions, on one page in one session. Driven over stdio (`@playwright/mcp@0.0.83` → `playwright-core 1.64.0-alpha-1790635538000`, browser pinned to `chromium_headless_shell-1243`) against live `commonly.me` with seven labelled siblings injected, it printed:
+
+```
+- generic "CTRL_PLAIN_DIV" [ref=e4]: plain div text
+- generic [ref=e5]: explicit generic text
+- text: span text
+- group "CTRL_GROUP" [ref=e6]: group text
+- generic "CTRL_EMPTY"
+- paragraph [ref=e7]: para text
+- heading "CTRL_HEADING" [level=2] [ref=e8]: heading text
+```
+
+**Direction one — a name it drops that exists.** `paragraph [ref=e7]` carries `aria-label="CTRL_PARA"`, and Chromium's own tree (`Accessibility.getPartialAXTree`) reports `paragraph name="CTRL_PARA" ignored=false`. The snapshot prints no name. On the real page that is TASK-216's defect reproducing live: the wedge line is a `<p aria-label>` whose every word child is `aria-hidden`, so the name is its only exposure — and this reader reports the line as reading nothing, which is true of the serializer and false of the browser and of a conforming consumer.
+
+**Direction two — a name it prints that the model refuses.** `CTRL_PLAIN_DIV` is a bare `<div aria-label>` — implicit `generic` — and it is **named**, while `CTRL_EXPLICIT` (`role="generic"`, same attribute) prints bare. `ariaSnapshot()` over the same sibling set has no such asymmetry: it drops both (`- text: plain div text`, `- generic: explicit generic text`). So the implicit/explicit split is a property of the serializing call rather than of the role, and neither report was wrong — they answered different questions.
+
+The empty labelled div is the same disagreement in miniature: this serializer prints `- generic "CTRL_EMPTY"`, `ariaSnapshot()` prints **no line at all**, and CDP names it either way.
+
+**Why the control missed direction one.** It was a `heading` — `- heading "CTRL_HEADING" [level=2] [ref=e8]: heading text` — a role whose names this serializer *does* print. The control showed the instrument could print a name and said nothing about the role under test. A control that does not hold the role fixed tests nothing about the element being asked about.
+
+**Repair:** none in code — the surface is a third-party tool description we do not own, so the repair is a reader. For any ARIA naming question the instrument is CDP `Accessibility.getPartialAXTree` (or `getFullAXTree`), never a snapshot formatter; where a snapshot is wanted anyway, name the call, because `ariaSnapshot()` and `browser_snapshot` are two different formatters over one tree. Recorded for the next seat in `docs/development/FRONTEND.md` (`## Testing` → "Measuring the accessibility tree — name the instrument", PR #2043), with the three-way table and both disagreement examples, so it does not have to be re-derived.
+
+**Lesson:** a snapshot is a rendering decision, not a measurement. "The accessibility tree says X" was never checkable, and the tool's own description supplies exactly the authority that stops a seat looking — while the two failure directions here are not noise around a correct answer, they are two opposite answers to a question the tool was never asked. Corollary for every future a11y control: showing that an instrument can print *some* name says nothing about the role you are testing.
