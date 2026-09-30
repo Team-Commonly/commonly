@@ -390,7 +390,12 @@ const V2LandingPage: React.FC = () => {
               <br />
               <RotatingTerm terms={rotatingTerms} />
               {t('landing.hero.titleSuffix') && (
-                <span className="v2-landing__title-suffix">{t('landing.hero.titleSuffix')}</span>
+                // TASK-215: the sentence is stated once, on the h1's aria-label,
+                // so this span is decoration like the rotator above it. Without
+                // aria-hidden the tree announced the sentence AND a stray 「对话」.
+                <span className="v2-landing__title-suffix" aria-hidden="true">
+                  {t('landing.hero.titleSuffix')}
+                </span>
               )}
             </h1>
             <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
