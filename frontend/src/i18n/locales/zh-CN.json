@@ -2066,6 +2066,8 @@
     "notEnabled": "此实例尚未启用 · 联系实例管理员",
     "notGranted": "未授权",
     "nothingMatches": "没有匹配项。",
+    "unknownConnector": "未知连接器",
+    "unknownWritePolicy": "写入策略不可用",
     "outcomeFailed": "失败",
     "outcomeOk": "成功",
     "outcomeRefused": "已拒绝",

@@ -20,7 +20,6 @@
  * this module receives carries the row's ID rather than a token.
  */
 import { randomUUID } from 'crypto';
-import Integration from '../models/Integration';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { RoomGrantError } from './roomGrantService';
 import {
@@ -59,6 +58,10 @@ const defaultDeps = (): HostedMcpToolDeps => ({
     // A grant's connection id is an ObjectId string by construction, but an
     // untrusted value must not reach a BSON `_id` selector as a CastError.
     if (!/^[a-f\d]{24}$/i.test(connectionId)) return null;
+    // This module also provides the pure catalogue projection. Keep mongoose
+    // (and the Integration model) out of import-time consumers such as the
+    // frontend glyph-catalogue test; only an actual hosted tool call needs it.
+    const { default: Integration } = await import('../models/Integration');
     const row = await Integration.findById(connectionId).lean();
     return (row as unknown as HostedMcpRow | null) || null;
   },

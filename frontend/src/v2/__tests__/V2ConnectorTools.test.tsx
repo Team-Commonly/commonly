@@ -62,11 +62,12 @@ const githubEntry = {
 
 const linearEntry = {
   installableId: 'linear', list: 'tools', label: 'Linear', description: 'Issues in Linear.', available: true,
+  connectionType: 'hosted-mcp', entryId: 'linear',
   broker: { id: 'commonly-grant-broker' },
-  tools: [{ name: 'linear.create_issue', requiredWriteMode: 'write', irreversible: true }],
+  tools: [{ name: 'linear.list_issues', requiredWriteMode: 'read', irreversible: false }],
   connections: [{ connectionId: 'conn-2', owner: 'Team-Commonly', repo: 'linear' }],
 };
-const grantLinear = { ...grantLive, grantId: 'grant_lin', installationId: 'inst-2', tools: ['linear.create_issue'] };
+const grantLinear = { ...grantLive, grantId: 'grant_lin', installationId: 'inst-2', writeMode: 'read', tools: ['linear.list_issues'] };
 
 // Two tools entries and one grant: the shape the page has to survive once a
 // second tool Installable ships. The old single-entry accounting hid the entry
@@ -103,7 +104,7 @@ const renderTools = (props = {}) => render(
   </AuthContext.Provider>,
 );
 
-beforeEach(() => { jest.clearAllMocks(); mockApi(); });
+beforeEach(() => { jest.clearAllMocks(); mockApi([githubEntry]); });
 
 test('TASK-131: a grant age advances in place, and a returning tab re-reads, without a reload', async () => {
   jest.useFakeTimers();
@@ -169,10 +170,11 @@ test('rows carry the states table: a live grant pulses when used in the last 10 
   expect(within(gone).getByText('revoked by sam 10m ago')).toBeInTheDocument();
   expect(gone.closest('.v2-connector-row')).toHaveClass('v2-connector-row--dead');
   expect(gone.querySelector('.v2-connector-row__dot')).toHaveClass('v2-connector-row__dot--empty');
-  // No not-yet row and no Add without a catalogue: nothing the server does not enforce.
+  // Every catalogue entry is granted, so there is no not-yet row or Add action.
   expect(screen.queryByText('not granted')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
-  expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Grant again' })).toBeInTheDocument();
   // Direction A: Manage is the gear (word in title + aria-label), and the age rides the kicker.
   for (const manage of screen.getAllByRole('button', { name: 'Manage' })) {
     expect(manage).toHaveClass('v2-connector-row__action--icon');
@@ -593,6 +595,36 @@ test('TASK-133: with every entry granted the header carries no "more"', async ()
   expect(await screen.findByText('2 granted')).toBeInTheDocument();
   expect(screen.queryByText(/· \d+ more/)).not.toBeInTheDocument();
   expect(container.querySelectorAll('.v2-connector-row--not-yet')).toHaveLength(0);
+});
+
+test('a hosted grant whose entry is missing stays unknown and never falls back to GitHub', async () => {
+  const orphanedLinearGrant = { ...grantLinear, grantId: 'grant_orphan', writeMode: 'write', tools: ['linear.list_issues'] };
+  mockTwoEntries({ catalog: [githubEntry], grants: { p1: [orphanedLinearGrant], p2: [] } });
+  renderTools();
+
+  const row = await screen.findByRole('button', { name: 'View Unknown connector in Launch pod' });
+  expect(row).toBeInTheDocument();
+  expect(row).not.toHaveTextContent('GitHub');
+  expect(row).toHaveTextContent('write policy unavailable');
+  expect(row.querySelector('.v2-connector-row__glyph svg')).toBeNull();
+});
+
+test('Linear exposes only its pinned read mode in the not-yet row and Add form', async () => {
+  mockTwoEntries({ grants: { p1: [grantLive], p2: [] } });
+  const { container } = renderTools();
+  await screen.findByText('1 granted · 1 more');
+
+  const linearRow = Array.from(container.querySelectorAll('.v2-connector-row--not-yet'))
+    .find((candidate) => candidate.textContent.includes('Linear'));
+  expect(linearRow).toBeTruthy();
+  expect(linearRow).toHaveTextContent('read');
+  expect(linearRow).not.toHaveTextContent('read, or read and write');
+
+  fireEvent.click(within(linearRow).getByRole('button', { name: 'Add' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  const modeGroup = within(form).getByRole('group', { name: 'what it may do' });
+  expect(within(modeGroup).getAllByRole('button')).toHaveLength(1);
+  expect(within(modeGroup).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('search filters by tool name and the segment hides not-yet rows; with no grants and no catalogue it renders nothing', async () => {

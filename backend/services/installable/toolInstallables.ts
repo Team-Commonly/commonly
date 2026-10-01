@@ -16,7 +16,11 @@ import {
   assertHostedMcpEntries,
   findHostedMcpEntry,
 } from '../../integrations/hostedMcp/entries';
-import { hostedMcpToolName, type HostedMcpEntry } from '../hostedMcpEntryService';
+import {
+  hostedMcpToolName,
+  type HostedMcpEntry,
+} from '../hostedMcpEntryService';
+import { hostedToolDefinitions } from '../hostedMcpToolDefinitions';
 import { isHostedMcpClientConfigured } from '../hostedMcpIntakeService';
 
 // Resolved on first use, not at import: the broker module loads
@@ -191,10 +195,20 @@ export const mcpComponentOf = (installable: { components?: McpComponentLike[] } 
 );
 
 /** The tools a component exposes, in the shape the page draws. Absent `enabledTools` means all; empty means none. */
-export const projectTools = (component: McpComponentLike | null): ProjectedTool[] => {
-  if (!component) return [];
+export const projectTools = (
+  component: McpComponentLike | null,
+  hostedEntry?: HostedMcpEntry | null,
+): ProjectedTool[] => {
+  // `null` is a defensive fail-closed input. Catalogue rows are filtered
+  // against HOSTED_MCP_ENTRIES before reaching this projector, so a removed
+  // entry cannot currently reach this branch through the production path.
+  if (!component || hostedEntry === null) return [];
   const enabled = Array.isArray(component.enabledTools) ? new Set(component.enabledTools) : null;
-  return toolDefinitions()
+  // Include only this entry's namespaced broker definitions. A GitHub
+  // component still reads the GitHub-only map above, and its own enabledTools
+  // remains the final allow-list for either source.
+  const definitions = hostedEntry ? hostedToolDefinitions([hostedEntry]) : toolDefinitions();
+  return definitions
     .filter((definition) => !enabled || enabled.has(definition.name))
     .map((definition) => ({
       name: definition.name,
