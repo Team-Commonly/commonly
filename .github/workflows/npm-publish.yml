@@ -13,14 +13,20 @@ name: Publish npm packages
 #   repo > registry  → publish, then read it back from the registry
 #   repo < registry  → fail loudly; the repo walked backwards (see the guard)
 #
-# Needs one secret: NPM_TOKEN — an npm granular access token with
-# read+write on @commonlyai/*, "bypass 2FA" enabled, no IP allowlist.
-# Publishes with --provenance (OIDC; needs id-token: write) so each version on
-# npm links back to the exact commit and run that produced it.
+# Auth: npm trusted publishing (OIDC). No token is stored anywhere. Each package
+# on npmjs.com names this repo and this workflow file as its trusted publisher,
+# and the job's id-token is exchanged for a short-lived publish credential.
+# That needs npm >= 11.5.1, which the job installs, and `id-token: write`.
+# Provenance is attached automatically.
+#
+# Why: until 2026-10-01 this used an NPM_TOKEN granular token (set 2026-08-29).
+# It stopped being accepted, and the cli 0.1.82 publish failed with
+# `E404 Not Found - PUT .../@commonlyai%2fcli` (run 36872618263): a token that
+# can expire is a release outage on a timer.
 #
 # This file is deliberately NOT in its own path filter: merging it must not
-# fire a publish before the secret exists. First release goes through
-# workflow_dispatch once NPM_TOKEN is in place.
+# fire a publish before the trusted publisher is configured on npmjs.com.
+# The first release after the switch goes through workflow_dispatch.
 
 on:
   push:
@@ -39,7 +45,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # npm --provenance
+  id-token: write   # npm trusted publishing (OIDC) + provenance
 
 concurrency:
   group: npm-publish
@@ -120,17 +126,10 @@ jobs:
             exit 1
           fi
 
-      - name: Refuse to publish without a token
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Use an npm that supports trusted publishing
         if: steps.cmp.outputs.action == 'publish'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NAME: ${{ steps.cmp.outputs.name }}
-          WANT: ${{ steps.cmp.outputs.repo_v }}
-        run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "::error::NPM_TOKEN secret is not set. $NAME@$WANT is on main but cannot reach npm — add the secret (Settings → Secrets → Actions) and re-run this workflow."
-            exit 1
-          fi
+        run: npm install -g npm@^11.5.1 && npm --version
 
       - name: Install
         if: steps.cmp.outputs.action == 'publish'
@@ -138,8 +137,8 @@ jobs:
 
       - name: Publish
         if: steps.cmp.outputs.action == 'publish'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # No NODE_AUTH_TOKEN: npm exchanges this job's OIDC id-token with the
+        # registry, because the package names this workflow as trusted publisher.
         run: npm publish --provenance --access public
 
       # The poll, its budget (READBACK_TIMEOUT_SECONDS; the script prints the
