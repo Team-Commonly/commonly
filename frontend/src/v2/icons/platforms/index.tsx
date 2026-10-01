@@ -1,11 +1,10 @@
-// Platform glyphs for connector tiles — single inline SVG per platform, no
-// CDN, no PNG (Wren's connectors-v2 spec §2.1). Drawn as simplified marks:
-// recognizable at 18px, one brand color via currentColor. Tile tint + brand
-// color come from the --v2-platform-* tokens added in the same PR.
+// Platform glyphs for connector rows — single inline SVG per platform, no
+// CDN, no PNG (Wren's connectors-v2 spec §2.1). The 20px marks use an ink path
+// with currentColor, so brand colors never compete with the row's state.
 import React from 'react';
 
 const S = ({ children }: { children: React.ReactNode }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     {children}
   </svg>
 );
@@ -55,8 +54,15 @@ const GitHub = () => (
   <S><path d="M12 2C6.48 2 2 6.58 2 12.23c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.9 1.57 2.35 1.12 2.92.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.4 9.4 0 0 1 12 6.94c.85 0 1.71.12 2.5.35 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.24 10.24 0 0 0 22 12.23C22 6.58 17.52 2 12 2z" /></S>
 );
 
+// Simple Icons Linear mark, CC0 1.0. The path is monochrome and inherits the
+// row's ink through `currentColor` rather than using Linear's brand fill.
+const Linear = () => (
+  <S><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z" /></S>
+);
+
 export const PLATFORM_GLYPHS: Record<string, React.FC> = {
   github: GitHub,
+  linear: Linear,
   telegram: Telegram,
   slack: Slack,
   discord: Discord,

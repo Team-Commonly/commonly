@@ -2038,8 +2038,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
-    expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
-    expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toContain('color: var(--v2-text-placeholder)');
+    expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toBe('');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('text-overflow');
     expect(ruleBody(v2, '.v2-connector-row__detail')).not.toContain('nowrap');
     // Line 1 and the gate's pod name wrap too; the 390 clips were the defect (64144).

@@ -9938,9 +9938,8 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__name { display: inline-flex; align-items: center; gap: 10px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
 .v2-connector-row--not-yet .v2-connector-row__name { color: var(--v2-text-tertiary); }
 .v2-connector-row__dot { width: 8px; height: 8px; flex: none; border-radius: var(--v2-radius-sm); background: var(--v2-border-soft); }
-.v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: inherit; }
+.v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: var(--v2-ink); }
 .v2-connector-row__glyph svg { width: 20px; height: 20px; }
-.v2-connector-row--not-yet .v2-connector-row__glyph { color: var(--v2-text-placeholder); }
 /* Direction A: the state dot is a mark — ink filled, hollow, dashed, grey — never
    cobalt (cobalt is who asks) and never a status colour (ux-lead 70159). */
 .v2-connector-row__dot--live { background: var(--v2-ink); }
