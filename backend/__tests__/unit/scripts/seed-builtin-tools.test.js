@@ -68,7 +68,7 @@ describe('seed-builtin-tools', () => {
     const linear = rows.find((row) => row.installableId === 'linear');
     expect(linear.name).toBe('Linear');
     expect(linear.components[0].enabledTools).toContain('linear.list_issues');
-    expect(linear.components[0].enabledTools).toHaveLength(38);
+    expect(linear.components[0].enabledTools).toHaveLength(36);
     // Re-seeded on every boot, so the second run has to update in place rather
     // than collide on the unique installableId.
     await seedBuiltinTools();

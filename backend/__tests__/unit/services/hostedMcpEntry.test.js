@@ -356,17 +356,18 @@ describe('the shipped catalogue cannot land half-wired', () => {
 
   test('the shipped Linear entry is read-only, fully annotated and names a revoke page', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
-    // 38 is the measured `tools/list` at scope `read` (2026-10-01). It is pinned
-    // so a pin that silently loses tools is a failure rather than a narrower
-    // offer nobody notices.
-    expect(entry.tools).toHaveLength(38);
+    // 38 tools were measured at scope `read`; two caller-chosen fetch paths are
+    // excluded by the v1 target-fetch rule, leaving the reviewed 36-tool pin.
+    expect(entry.tools).toHaveLength(36);
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('get_attachment');
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('extract_images');
     expect(new Set(entry.tools.map((tool) => tool.class))).toEqual(new Set(['read']));
     expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
     expect(entry.tools.every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
     // Every name an agent sees is the upstream name, which the entry load
     // requires and the broker calls with.
     expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
-    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(38);
+    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(36);
     expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/security' });
     // The three identity fields the intake reads: `resource` is the RFC 8707
     // value every authorization and token request carries, `issuer` is what the
@@ -378,7 +379,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
   });
 
-  test('the Linear pin is the measured list, not a retyping of it', () => {
+  test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
     // The capture `connector-ops` took on 2026-10-01 is committed beside this
     // suite, so the pin's schemas are compared with the measurement rather than
     // with themselves. Drift is checked against the LIVE list at call time; this
@@ -389,7 +390,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(capture.server).toBe(entry.resource);
     expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
-    expect(entry.tools.map((tool) => tool.name)).toEqual(capture.tools.map((tool) => tool.name));
+    const excludedForCallerChosenFetch = new Set(['get_attachment', 'extract_images']);
+    expect(entry.tools.map((tool) => tool.name)).toEqual(
+      capture.tools.filter((tool) => !excludedForCallerChosenFetch.has(tool.name)).map((tool) => tool.name),
+    );
+    expect(capture.tools.filter((tool) => !entry.tools.some((pinned) => pinned.name === tool.name))
+      .map((tool) => tool.name).sort()).toEqual([...excludedForCallerChosenFetch].sort());
     for (const tool of entry.tools) {
       const found = measured.get(tool.name);
       expect(found).toBeDefined();
@@ -401,6 +407,8 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // and what makes a single `READ_ANNOTATIONS` honest.
     expect(new Set(capture.tools.map((tool) => JSON.stringify(tool.annotations))).size).toBe(1);
     expect(capture.tools).toHaveLength(38);
+    expect(entry.tools.find((tool) => tool.name === 'get_diff').description).toContain('not fetch targets');
+    expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
   });
 
   test('a colliding entry id or tool name is refused', () => {

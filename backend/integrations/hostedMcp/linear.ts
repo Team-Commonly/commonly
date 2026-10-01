@@ -5,7 +5,7 @@
  * Pinned from a real `tools/list` taken on a consenting account at
  * 2026-10-01T11:18:49Z against `https://mcp.linear.app/mcp` (`Linear MCP`
  * 1.0.0), with the token at scope `read openid`. The measurement and the raw
- * capture are connector-ops's; the `inputSchema` of every tool below is
+ * capture are connector-ops's; the `inputSchema` of every pinned tool below is
  * transcribed from it unchanged, because drift compares the pin with the live
  * list — a schema that is "close enough" would refuse every call as
  * `tool_drift` rather than approve args under what upstream accepts.
@@ -15,15 +15,23 @@
  * nothing to guard in v1 — the fence is the vendor's, and the entry's class
  * agrees with it rather than being the only thing standing.
  *
- * Every one of the 38 tools arrived carrying ONE annotation set —
+ * All 38 measured tools arrived carrying ONE annotation set —
  * `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`,
- * `openWorldHint: false` — so nothing here is unannotated and no tool was
- * dropped for a missing hint. The entry load refuses a `read` pin that does not
+ * `openWorldHint: false` — so nothing in the capture is unannotated, and neither
+ * exclusion below is for a missing hint. The entry load refuses a `read` pin that does not
  * carry `readOnlyHint: true`; `idempotentHint` and `openWorldHint` are recorded
  * as they arrived and are not read by the drift comparison, which only asks
  * whether a claim the pin made has been withdrawn.
  *
- * Three facts about this vendor are NOT in this file, because they are the
+ * v1 excludes `extract_images` and `get_attachment`. The former accepts free
+ * markdown and fetches image URLs from it; the latter takes an attachment id
+ * and, with `format: content`, can fetch an external URL named by that
+ * attachment. These provider-side fetches can return results into agent context
+ * from caller-chosen targets, outside the seat's confinement. Annotations do
+ * not constrain that behavior, and the pinned schema cannot narrow one
+ * argument without drifting from the live schema.
+ *
+ * Two facts about this vendor are NOT in this file, because they are the
  * live walk's to settle (§10 step 7): that a removal's revoke took at Linear
  * (shown by something other than the 200 the shared token/revocation endpoint
  * answers either way), and the exact Settings URL a person lands on. The page
@@ -72,27 +80,6 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   scopes: ['read', 'openid'],
   revoke: { page: 'https://linear.app/settings/security' },
   tools: [
-  readTool(
-    'get_attachment',
-    'Read one attachment by id, either its content or a short-lived download URL.',
-    {
-      type: 'object',
-      properties: {
-        id: {
-          type: 'string',
-          description: 'Attachment ID',
-        },
-        format: {
-          description: 'Response format. Defaults to content.',
-          type: 'string',
-          enum: ['content', 'url'],
-        },
-      },
-      required: ['id'],
-      $schema: 'https://json-schema.org/draft/2020-12/schema',
-      additionalProperties: false,
-    },
-  ),
   readTool(
     'list_agent_skills',
     'List the Linear Agent skills this workspace can use.',
@@ -351,22 +338,6 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           },
         },
       },
-      $schema: 'https://json-schema.org/draft/2020-12/schema',
-      additionalProperties: false,
-    },
-  ),
-  readTool(
-    'extract_images',
-    'Fetch the images a piece of markdown refers to, so a screenshot or diagram in an issue, comment or document can be looked at.',
-    {
-      type: 'object',
-      properties: {
-        markdown: {
-          type: 'string',
-          description: 'Markdown content containing image references (e.g., issue description, comment body)',
-        },
-      },
-      required: ['markdown'],
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       additionalProperties: false,
     },
@@ -1346,7 +1317,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   ),
   readTool(
     'get_diff',
-    'Read one diff — a code change surfaced in Linear — by its review URL, pull request URL, identifier or id.',
+    'Exact lookup for a Linear diff. Review URLs and GitHub PR URLs are lookup keys in Linear, not fetch targets.',
     {
       type: 'object',
       properties: {
@@ -1419,7 +1390,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   ),
   readTool(
     'get_diff_threads',
-    'Read the review threads on one diff, or a single thread, by the same identifiers the diff lookup takes.',
+    'Read review threads for the exact Linear diff lookup; supplied URLs are lookup keys, not fetch targets.',
     {
       type: 'object',
       properties: {

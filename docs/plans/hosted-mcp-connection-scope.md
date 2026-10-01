@@ -64,6 +64,8 @@ Entries live in this repo, one module per vendor, and change only by PR. An entr
 
 **The entry is the only source for everything an agent sees and everything a grant is checked against.** Upstream can take a tool away or refuse a call. It cannot add a tool, loosen a schema, rename a tool, reword a description or reclassify a tool. The MCP spec (2026-07-28, tools) says "clients MUST consider tool annotations to be untrusted unless they come from trusted servers", and a vendor's server is not one we run. A tool description is also prompt text that reaches every seat holding a grant. An edit made upstream would change every seat's prompt with no review; pinned here, the same change is a PR a gate reads.
 
+**Read permission does not bound egress.** A read tool can make the provider fetch a caller-chosen URL, then return the result into the agent's context. OAuth scope bounds what the credential can change; annotations describe the vendor's claim, and neither constrains where a read result goes. The pinned schema is also not an argument validator: the broker forwards arguments, and narrowing a property in the pin only makes the live schema drift. So v1 excludes a whole tool whenever its input lets the caller choose a provider-side fetch target. Linear's `extract_images` accepts free markdown, and `get_attachment` can fetch an external URL named by an attachment when `format` is `content`; both are out. `get_diff` and `get_diff_threads` accept review and GitHub PR URLs as exact keys into Linear, not as URLs to fetch, so they remain.
+
 **Each entry tool becomes a `ToolDefinition`** (`toolBrokerService.ts:16–26`) with:
 
 - `connectionType: 'hosted-mcp'` and the new `entryId`;
@@ -88,7 +90,7 @@ Upstream tools that are not in the entry are never offered and never callable, a
 
 **A tool pinned `read` carries the vendor's own `readOnlyHint: true`.** The spec's default for an absent `readOnlyHint` is `false` (schema 2026-07-28, `ToolAnnotations`), so a tool whose vendor says nothing is one the vendor has not called read-only. A pin without the hint would also leave the drift row above dead for that tool, because a pin that never held the hint cannot see it withdrawn (Vera 75423–75424). The entry load refuses such a pin, as it refuses a `read` pin whose annotations say `readOnlyHint: false` or `destructiveHint: true` (#2014). The hint still grants nothing; its absence refuses. **A vendor that sends no `readOnlyHint` gets no entry, not a write-only one** (75440). The class records what a tool does, so a read tool is never pinned `write` to get past a missing hint, and §5's answer on attribution cannot arrive that way.
 
-**The Linear entry is pinned at build** from a `tools/list` taken on a consenting test account, with read tools only, each re-described by us. This note names no Linear tool: the research behind it made unauthenticated requests only. Linear's MCP docs never mention annotations, so whether its read tools carry the hint is known only from that list (§11).
+**The Linear entry is pinned at build** from a `tools/list` taken on a consenting test account, with read tools only, each re-described by us. The measurement contains 38 tools; the entry pins 36 and leaves out the two caller-chosen fetch paths above. The earlier unauthenticated research named no Linear tools. Linear's MCP docs never mention annotations, so whether its read tools carry the hint is known only from the authenticated list (§11).
 
 ## 4. Credentials and intake
 
@@ -301,6 +303,7 @@ Each step can be tested without the vendor, except the live measurements in step
      - `a hosted grant whose owner no longer exists is refused as connection_owner_missing`
 7. **The Linear entry**, pinned from a real `tools/list` with read tools only, then the readiness matrix walked for it on the deployed build, including a pi seat's refusal shown on the grant's page (§6).
    - Read first: whether the list's read tools carry `readOnlyHint: true` (§3). If they do not, stop for §11's question before the rest of the step.
+   - `the Linear pin is the measured list minus caller-chosen fetch paths`: retain all 38 raw tools in the capture, pin the other 36, and keep the exact-lookup URL keys while excluding `extract_images` and `get_attachment` (§3).
    - `the page's call to start is credentialed`, before the walk (§4)
    - Measured live: that a removal's revoke took at Linear, shown by something other than its 200 (§3). Linear advertises one URL as both its `token_endpoint` and its `revocation_endpoint` (fetched 2026-09-29), so only a live removal shows which request that URL treats as a revoke.
    - The entry's `page`: Linear's Security & access settings, whose "Authorized applications" list has "Revoke access" on each app (Linear docs, *Security & Access*, fetched 2026-09-30). Its URL is pinned from the signed-in walk.
