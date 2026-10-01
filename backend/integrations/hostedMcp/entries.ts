@@ -4,16 +4,18 @@
  * changes only by PR.
  *
  * Linear is the first entry (build-order step 7), pinned from a real
- * `tools/list` taken on a consenting account. Every other candidate lists only
- * once its own docs verify the URL, transport, auth mode, token lifetime,
- * refresh and revocation, and once its list shows `readOnlyHint: true` on each
- * tool the entry pins `read` (§3, §11). The lookup and the invariant check
- * below ship for every entry, so a vendor module cannot land half-wired.
+ * `tools/list` taken on a consenting account. Google Calendar is the next
+ * entry: its official MCP and OAuth docs were checked, and its five read tools
+ * are pinned from an unauthenticated capture with the first authenticated list
+ * reserved as the drift check. Other candidates list only once their own docs
+ * verify the URL, transport, auth mode, token lifetime, refresh and revocation,
+ * and their pinned read tools claim `readOnlyHint: true` (§3, §11).
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
+import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
 import { LINEAR_ENTRY } from './linear';
 
-export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY];
+export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY];
 
 /**
  * Six entry-local defects that would otherwise be silent, checked at module

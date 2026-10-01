@@ -15,6 +15,8 @@ const {
   findHostedMcpEntry,
   hostedMcpRevokeTarget,
 } = require('../../../integrations/hostedMcp/entries');
+const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
+const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -341,17 +343,17 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear and nothing else, and a lookup names the entry it was asked for', () => {
-    // Step 7: the catalogue's first entry. A second vendor landing here changes
-    // this line, which is the point — it is the one place that says what an
-    // instance offers before any member has connected anything.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear']);
+  test('ships Linear first and Google Calendar second, and lookup names the requested entry', () => {
+    // The catalogue is the one place that says what an instance offers before
+    // any member has connected anything. Its ordering follows the build plan.
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(catalogue, 'atlassian')).toBeUndefined();
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion')).toBeUndefined();
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear').title).toBe('Linear');
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
 
   test('the shipped Linear entry is read-only, fully annotated and names a revoke page', () => {
@@ -379,13 +381,65 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
   });
 
+  test('the Google Calendar entry is pre-registered and pins only its five read tools', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar');
+    expect(entry).toMatchObject({
+      title: 'Google Calendar',
+      resource: 'https://calendarmcp.googleapis.com/mcp/v1',
+      issuer: 'https://accounts.google.com',
+      client: 'pre-registered',
+      authorizationParams: { access_type: 'offline' },
+      scopes: [
+        'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+        'https://www.googleapis.com/auth/calendar.events.freebusy',
+        'https://www.googleapis.com/auth/calendar.events.readonly',
+      ],
+      revoke: {
+        page: 'https://myaccount.google.com/permissions',
+        endpoint: 'https://oauth2.googleapis.com/revoke',
+      },
+    });
+    expect(entry.tools.map((tool) => tool.name)).toEqual([
+      'list_events', 'get_event', 'list_calendars', 'suggest_time', 'search_events',
+    ]);
+    expect(entry.tools.every((tool) => tool.class === 'read')).toBe(true);
+    expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    expect(entry.tools.every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
+    expect(hostedMcpRevokeTarget(entry)).toEqual(entry.revoke);
+  });
+
+  test('the Google Calendar pin matches its unauthenticated measured list minus four writers', () => {
+    // This capture is intentionally unauthenticated; the first authenticated
+    // tools/list in the live walk must repeat the drift check.
+    const capture = GOOGLE_CALENDAR_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar');
+    const measured = capture.result.tools;
+    const readNames = ['list_events', 'get_event', 'list_calendars', 'suggest_time', 'search_events'];
+    const excludedWriters = ['create_event', 'update_event', 'delete_event', 'respond_to_event'];
+    expect(measured).toHaveLength(9);
+    expect(measured.every((tool) => typeof tool.annotations?.readOnlyHint === 'boolean')).toBe(true);
+    expect(measured.every((tool) => typeof tool.annotations?.destructiveHint === 'boolean')).toBe(true);
+    expect(entry.tools.map((tool) => tool.name)).toEqual(
+      measured.filter((tool) => readNames.includes(tool.name)).map((tool) => tool.name),
+    );
+    expect(measured.filter((tool) => !entry.tools.some((pin) => pin.name === tool.name))
+      .map((tool) => tool.name).sort()).toEqual([...excludedWriters].sort());
+    entry.tools.forEach((tool) => {
+      const source = measured.find((candidate) => candidate.name === tool.name);
+      expect(source).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(source.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(source.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(source.annotations.destructiveHint);
+    });
+  });
+
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
     // The capture `connector-ops` took on 2026-10-01 is committed beside this
     // suite, so the pin's schemas are compared with the measurement rather than
     // with themselves. Drift is checked against the LIVE list at call time; this
     // is the other end, catching a hand-edit of the entry that would otherwise
     // only surface as every tool refusing `tool_drift` in production.
-    const capture = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+    const capture = LINEAR_CAPTURE;
     const [entry] = HOSTED_MCP_ENTRIES;
     expect(capture.server).toBe(entry.resource);
     expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());

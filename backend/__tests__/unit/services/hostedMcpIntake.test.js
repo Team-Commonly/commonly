@@ -23,6 +23,7 @@ const {
   resolvedClientId,
   resolvedHostedMcpClient,
 } = require('../../../services/hostedMcpIntakeService');
+const { GOOGLE_CALENDAR_ENTRY } = require('../../../integrations/hostedMcp/googleCalendar');
 
 const API = 'https://api.example.test';
 const RESOURCE = 'https://mcp.linear.app/mcp';
@@ -488,6 +489,29 @@ describe('hosted-mcp intake: the authorization request and PKCE', () => {
     expect(url.searchParams.get('client_id')).toBe('cid');
     expect(url.searchParams.get('redirect_uri')).toBe('https://api.example.test/cb');
     expect(url.searchParams.get('scope')).toBe('read openid');
+  });
+
+  it('requests Google offline access with the entry scopes and PKCE', () => {
+    const url = new URL(buildAuthorizeUrl(GOOGLE_CALENDAR_ENTRY, 'https://accounts.google.com/o/oauth2/v2/auth', {
+      clientId: 'google-client',
+      redirectUri: 'https://api.example.test/google-callback',
+      state: 'google-state',
+      codeChallenge: 'google-challenge',
+    }));
+    expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('scope')).toBe(GOOGLE_CALENDAR_ENTRY.scopes.join(' '));
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('resource')).toBe(GOOGLE_CALENDAR_ENTRY.resource);
+  });
+
+  it('does not let an entry-specific auth parameter replace a required OAuth parameter', () => {
+    expect(() => buildAuthorizeUrl({ ...entry(), authorizationParams: { resource: 'https://other.test' } },
+      AS_METADATA.authorization_endpoint, {
+        clientId: 'cid',
+        redirectUri: 'https://api.example.test/cb',
+        state: 'the-state',
+        codeChallenge: 'the-challenge',
+      })).toThrow(/authorization parameter conflicts with resource/);
   });
 
   it('derives the challenge from the verifier by sha256, in base64url', () => {
