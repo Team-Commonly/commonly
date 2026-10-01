@@ -1,6 +1,6 @@
 // Platform glyphs for connector rows — single inline SVG per platform, no
-// CDN, no PNG (Wren's connectors-v2 spec §2.1). The 20px marks use an ink path
-// with currentColor, so brand colors never compete with the row's state.
+// CDN, no PNG (Wren's connectors-v2 spec §2.1). The 20px marks use currentColor
+// so each row controls the glyph color through its state.
 import React from 'react';
 
 const S = ({ children }: { children: React.ReactNode }) => (
