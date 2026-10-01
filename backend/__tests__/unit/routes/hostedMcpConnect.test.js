@@ -215,6 +215,36 @@ describe('hosted-mcp connect: start', () => {
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('an instance without the entry client id and secret does not offer the entry', async () => {
+    const original = { id: FIXTURE_ENTRY.id, client: FIXTURE_ENTRY.client };
+    const originalId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    const originalSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    try {
+      Object.assign(FIXTURE_ENTRY, { id: 'google-calendar', client: 'pre-registered' });
+      delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+      delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+
+      const noCredentials = await request(app).post('/connect/hosted-mcp/google-calendar/start');
+      expect(noCredentials.status).toBe(503);
+      expect(noCredentials.body).toEqual({ error: 'client_not_configured' });
+      expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+
+      process.env.GOOGLE_CALENDAR_CLIENT_ID = 'registered-client';
+      const idOnly = await request(app).post('/connect/hosted-mcp/google-calendar/start');
+      expect(idOnly.status).toBe(503);
+      expect(idOnly.body).toEqual({ error: 'client_not_configured' });
+      expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(FIXTURE_ENTRY, original);
+      if (originalId === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+      else process.env.GOOGLE_CALENDAR_CLIENT_ID = originalId;
+      if (originalSecret === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+      else process.env.GOOGLE_CALENDAR_CLIENT_SECRET = originalSecret;
+    }
+  });
+
   it('writes no pending row when the vendor is unreachable', async () => {
     intake.discoverAuthorizationServer.mockRejectedValue(
       Object.assign(new Error('boom'), { code: 'issuer_unreachable' }),

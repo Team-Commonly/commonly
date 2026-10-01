@@ -30,6 +30,7 @@ const ROW_ID = '68e1f2a4b5c6d7e8f9a0b1c2';
 const ENTRY = {
   id: 'linear',
   issuer: 'https://mcp.linear.app',
+  client: 'cimd',
   clientId: 'https://commonly.me/connect/hosted-mcp/linear/client-metadata',
 };
 
@@ -48,6 +49,7 @@ const hostedRow = (config = {}, top = {}) => ({
   ...top,
   config: {
     entryId: ENTRY.id,
+    clientId: ENTRY.clientId,
     credentialRef: ACCESS_REF,
     refreshTokenRef: REFRESH_REF,
     refreshGeneration: 3,
@@ -158,6 +160,8 @@ const harness = (options = {}) => {
       now: () => new Date(nowMs),
       entryFor: options.entryFor || (() => ENTRY),
       clientIdFor: () => ENTRY.clientId,
+      clientSecretFor: () => undefined,
+      markClientMismatch: jest.fn(async () => {}),
       refreshAtVendor,
       secrets: {
         get: async (ref) => {
@@ -298,6 +302,38 @@ describe('the gates before any refresh', () => {
 
     const control = harness({ row: stale() });
     await expect(credentialFor(stale(), control.deps)).resolves.toMatchObject({ token: 'new-access' });
+  });
+
+  test('a row minted under another client is refused reconnect_required before any call', async () => {
+    const h = harness();
+    const row = live({ clientId: 'previously-registered-client' });
+
+    const error = await refusal(credentialFor(row, h.deps));
+
+    expect(error.code).toBe('reconnect_required');
+    expect(h.deps.markClientMismatch).toHaveBeenCalledWith(
+      ROW_ID,
+      'previously-registered-client',
+      'OAuth client changed; reconnect to continue',
+    );
+    expect(h.secrets.has(ACCESS_REF)).toBe(true);
+    expect(h.bumpGeneration).not.toHaveBeenCalled();
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+
+    const erroredRow = { ...row, status: 'error' };
+    const repeated = await refusal(credentialFor(erroredRow, h.deps));
+    expect(repeated.code).toBe('reconnect_required');
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+  });
+
+  test('a legacy connected row without a client snapshot remains usable until the backfill runs', async () => {
+    const h = harness();
+    const row = live({ clientId: undefined });
+
+    await expect(credentialFor(row, h.deps)).resolves.toMatchObject({ token: 'old-access' });
+    expect(h.deps.markClientMismatch).not.toHaveBeenCalled();
+    expect(h.bumpGeneration).not.toHaveBeenCalled();
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
   });
 });
 

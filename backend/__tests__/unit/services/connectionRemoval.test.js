@@ -37,16 +37,19 @@ const ENTRY = {
   resource: 'https://mcp.linear.app/mcp',
 };
 
-const hostedRow = (over) => ({
+const hostedRow = (over = {}) => ({
   _id: 'row-1',
   type: 'hosted-mcp',
   status: 'connected',
-  config: {
-    entryId: 'linear',
-    credentialRef: 'access-ref',
-    refreshTokenRef: 'refresh-ref',
-  },
   ...over,
+  config: over.config
+    ? { clientId: 'commonly-client', ...over.config }
+    : {
+      entryId: 'linear',
+      clientId: 'commonly-client',
+      credentialRef: 'access-ref',
+      refreshTokenRef: 'refresh-ref',
+    },
 });
 
 /** An error carrying the code `connectorSecrets` throws, without importing it. */
@@ -61,6 +64,7 @@ const recorder = (over = {}) => {
     markProviderRevoked: jest.fn(async () => { calls.push('mark'); }),
     entryFor: jest.fn(() => ENTRY),
     clientIdFor: jest.fn(() => 'commonly-client'),
+    clientSecretFor: jest.fn(() => undefined),
     revokeAtVendor: jest.fn(async () => { calls.push('provider'); }),
     secrets: {
       get: jest.fn(async (ref) => { calls.push(`get:${ref}`); return 'refresh-token-value'; }),
@@ -219,6 +223,50 @@ describe('removeConnection (a hosted-MCP row)', () => {
       clientId: 'commonly-client',
       token: 'refresh-token-value',
       tokenTypeHint: 'access_token',
+    });
+  });
+
+  it('a removal whose row was minted under another client sends nothing and returns the page as revokeAt', async () => {
+    const { calls, deps, revokeGrants } = recorder({
+      clientIdFor: jest.fn(() => 'rotated-client'),
+    });
+    const row = hostedRow({ config: {
+      entryId: 'linear',
+      clientId: 'commonly-client',
+      credentialRef: 'access-ref',
+      refreshTokenRef: 'refresh-ref',
+    } });
+
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(deps.secrets.get).not.toHaveBeenCalled();
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+    expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-ref');
+    expect(deps.remove).toHaveBeenCalledWith('row-1');
+    expect(calls).toEqual([
+      'grants', 'row', 'material:refresh-ref', 'material:access-ref', 'delete',
+    ]);
+  });
+
+  it('a legacy removal without a client snapshot uses Linear until the backfill completes', async () => {
+    const { deps, revokeGrants } = recorder();
+    const row = hostedRow({ config: {
+      entryId: 'linear',
+      clientId: undefined,
+      credentialRef: 'access-ref',
+      refreshTokenRef: 'refresh-ref',
+    } });
+
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(deps.revokeAtVendor).toHaveBeenCalledWith({
+      entry: ENTRY,
+      clientId: 'commonly-client',
+      token: 'refresh-token-value',
+      tokenTypeHint: 'refresh_token',
     });
   });
 
@@ -458,6 +506,54 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
     expect(body.get('token')).toBe('refresh-token-value');
     expect(body.get('token_type_hint')).toBe('refresh_token');
     expect(body.get('client_id')).toBe('commonly-client');
+  });
+
+  it('a pre-registered client authenticates at token and revocation endpoints, and still sends PKCE', async () => {
+    const { buildTokenExchangeRequest } = require('../../../services/hostedMcpIntakeService');
+    const staticEntry = {
+      ...ENTRY,
+      id: 'google-calendar',
+      issuer: 'https://accounts.google.test',
+      client: 'pre-registered',
+      resource: 'https://calendar.google.test/mcp',
+      revoke: { page: 'https://accounts.google.test/security', endpoint: 'https://accounts.google.test/revoke' },
+    };
+    const metadata = {
+      issuer: staticEntry.issuer,
+      authorization_endpoint: 'https://accounts.google.test/authorize',
+      token_endpoint: 'https://accounts.google.test/token',
+      revocation_endpoint: 'https://accounts.google.test/revoke',
+      token_endpoint_auth_methods_supported: ['client_secret_basic'],
+      revocation_endpoint_auth_methods_supported: ['client_secret_basic'],
+    };
+    const client = { clientId: 'registered-client', clientSecret: 'registered-secret' };
+    const exchange = buildTokenExchangeRequest(staticEntry, metadata, client, {
+      redirectUri: 'https://api.commonly.me/callback',
+      code: 'authorization-code',
+      codeVerifier: 'pkce-verifier',
+    });
+    const exchangeBody = exchange.body;
+    expect(exchange.headers.Authorization).toBe(`Basic ${Buffer.from('registered-client:registered-secret').toString('base64')}`);
+    expect(exchangeBody.get('code_verifier')).toBe('pkce-verifier');
+    expect(exchangeBody.get('client_id')).toBeNull();
+
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+    await revokeTokenAtVendor({
+      entry: staticEntry,
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
+      token: 'held-refresh-token',
+      tokenTypeHint: 'refresh_token',
+    }, fetchImpl);
+    const [url, init] = fetchImpl.mock.calls[1];
+    expect(url).toBe('https://accounts.google.test/revoke');
+    expect(init.headers.Authorization).toBe(exchange.headers.Authorization);
+    const revokeBody = new URLSearchParams(init.body);
+    expect(revokeBody.get('token')).toBe('held-refresh-token');
+    expect(revokeBody.get('client_id')).toBeNull();
+    expect(revokeBody.get('client_secret')).toBeNull();
   });
 
   // Only a 2xx on a token we HOLD counts as revoked. `invalid_grant` used to be

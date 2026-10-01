@@ -125,7 +125,18 @@ const callHostedTool = async (
   if (!row) {
     throw new RoomGrantError('connection_mismatch', 'hosted-MCP connection row no longer exists', 403);
   }
-  const { token } = await deps.credentialFor(row);
+  let token: string;
+  try {
+    ({ token } = await deps.credentialFor(row));
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'reconnect_required' || code === 'connection_mismatch') {
+      // A client-id drift is an authority refusal, not a failed vendor call.
+      // RoomGrantError makes the broker trail it as `refused` before any fetch.
+      throw new RoomGrantError(code, (error as Error).message, 403);
+    }
+    throw error;
+  }
 
   const callId = deps.newCallId();
   const controller = new AbortController();

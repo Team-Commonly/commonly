@@ -15,6 +15,7 @@
  */
 const express = require('express');
 import type { Request, Response } from 'express';
+import type { HostedMcpAuthorizationServer } from '../services/hostedMcpIntakeService';
 import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -38,7 +39,7 @@ const {
   browserNonceMatches,
   buildAuthorizeUrl,
   buildClientMetadataDocument,
-  buildTokenExchangeBody,
+  buildTokenExchangeRequest,
   createBrowserNonce,
   createPkcePair,
   createStateNonce,
@@ -46,7 +47,7 @@ const {
   hostedMcpCallbackUrl,
   hostedMcpNonceCookiePath,
   readCookie,
-  resolvedClientId,
+  resolvedHostedMcpClient,
 } = require('../services/hostedMcpIntakeService');
 
 type AuthedRequest = Request & { user?: { id?: string; role?: string } };
@@ -176,6 +177,9 @@ router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, 
     // still accept as a client with nowhere to send a code.
     return res.status(404).json({ error: 'unknown_entry' });
   }
+  if (entry.client !== 'cimd') {
+    return res.status(404).json({ error: 'client_metadata_not_used' });
+  }
   return res.json(buildClientMetadataDocument(entry));
 });
 
@@ -200,17 +204,17 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     return res.status(404).json({ error: 'unknown_entry' });
   }
 
-  let clientId: string;
+  let client: { clientId: string; clientSecret?: string };
   try {
-    clientId = resolvedClientId(entry);
+    client = resolvedHostedMcpClient(entry);
   } catch (error) {
     const code = (error as { code?: string }).code;
     return res.status(vendorFailureStatus(code)).json({ error: code });
   }
 
-  let authorizationEndpoint: string;
+  let authorizationServer: HostedMcpAuthorizationServer;
   try {
-    ({ authorization_endpoint: authorizationEndpoint } = await discoverAuthorizationServer(entry.issuer));
+    authorizationServer = await discoverAuthorizationServer(entry.issuer);
   } catch (error) {
     const code = (error as { code?: string }).code;
     return res.status(vendorFailureStatus(code)).json({ error: code });
@@ -259,8 +263,8 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
   });
 
   return res.json({
-    authorizeUrl: buildAuthorizeUrl(entry, authorizationEndpoint, {
-      clientId, redirectUri, state, codeChallenge: challenge,
+    authorizeUrl: buildAuthorizeUrl(entry, authorizationServer.authorization_endpoint, {
+      clientId: client.clientId, redirectUri, state, codeChallenge: challenge,
     }),
     expiresAt,
     integrationId: row?._id,
@@ -346,27 +350,35 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     return callbackRedirect(res, 'error', 'state_consumed');
   }
 
-  let tokenEndpoint: string;
+  let authorizationServer: HostedMcpAuthorizationServer;
   try {
-    ({ token_endpoint: tokenEndpoint } = await discoverAuthorizationServer(entry.issuer));
+    authorizationServer = await discoverAuthorizationServer(entry.issuer);
   } catch (error) {
     return callbackRedirect(res, 'error', (error as { code?: string }).code || 'issuer_unreachable');
   }
 
+  let client: { clientId: string; clientSecret?: string };
+  try {
+    client = resolvedHostedMcpClient(entry);
+  } catch (error) {
+    return callbackRedirect(res, 'error', (error as { code?: string }).code || 'client_not_configured');
+  }
+
   let tokens: TokenResponse;
   try {
-    const response = await upstreamFetch(tokenEndpoint, {
+    const tokenRequest = buildTokenExchangeRequest(entry, authorizationServer, client, {
+      redirectUri: hostedMcpCallbackUrl(entry.id),
+      code,
+      codeVerifier,
+    });
+    const response = await upstreamFetch(authorizationServer.token_endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...tokenRequest.headers,
       },
-      body: buildTokenExchangeBody(entry, {
-        clientId: resolvedClientId(entry),
-        redirectUri: hostedMcpCallbackUrl(entry.id),
-        code,
-        codeVerifier,
-      }),
+      body: tokenRequest.body,
     });
     if (!response.ok) {
       return callbackRedirect(res, 'error', 'exchange_refused');
@@ -413,6 +425,9 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     {
       $set: {
         status: 'connected',
+        // The id used on this exact exchange is the durable pair discriminator
+        // (§2). Instance configuration remains the source used by later calls.
+        'config.clientId': client.clientId,
         // Every one of these is a `config.*` path: `config` is a STRICT
         // subdocument, so an unprefixed `credentialRef` is dropped in silence
         // and this handler reports a Connection whose row holds no token (see

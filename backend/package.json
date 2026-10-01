@@ -26,6 +26,7 @@
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
     "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",
     "sweep:leftover-runtime-tokens": "ts-node scripts/sweep-leftover-runtime-tokens.ts",
+    "backfill:hosted-mcp-client-id": "ts-node scripts/backfill-hosted-mcp-client-id.ts",
     "revive:native-installations": "ts-node scripts/revive-native-installations.ts",
     "set:agent-descriptions": "ts-node scripts/set-agent-descriptions.ts",
     "tsc:check": "tsc --noEmit -p tsconfig.typescheck.json",

@@ -116,6 +116,24 @@ describe('PATCH /api/integrations/:id — server-owned config keys are not writa
     expect(Object.values(update)).not.toContain('https://attacker.example/revoke');
   });
 
+  it('does not write a supplied hosted-MCP client id or secret, while writing the field beside them', async () => {
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: {
+        clientId: 'attacker-client',
+        clientSecret: 'attacker-secret',
+        liveRelay: false,
+      } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update['config.liveRelay']).toBe(false);
+    expect(Object.keys(update)).not.toContain('config.clientId');
+    expect(Object.keys(update)).not.toContain('config.clientSecret');
+    expect(Object.values(update)).not.toContain('attacker-client');
+    expect(Object.values(update)).not.toContain('attacker-secret');
+  });
+
   it('refuses a supplied linkedUserId outright — the other mechanism', async () => {
     const res = await request(app)
       .patch(`/api/integrations/${integrationId}`)

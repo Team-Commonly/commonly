@@ -44,6 +44,7 @@ const shape = (overrides = {}) => ({
 const RECORD_KEYS = {
   'config.entryId': 'linear',
   'config.intake': 'oauth',
+  'config.clientId': 'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/client-metadata',
   'config.providerSubject': 'subject-1',
   'config.grantedScope': 'read openid',
   'config.expiresAt': new Date('2026-09-27T15:00:00.000Z'),
