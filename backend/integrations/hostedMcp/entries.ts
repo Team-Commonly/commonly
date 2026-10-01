@@ -16,15 +16,13 @@ import { LINEAR_ENTRY } from './linear';
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY];
 
 /**
- * Seven defects that would otherwise be silent, checked at module load:
+ * Six entry-local defects that would otherwise be silent, checked at module
+ * load. The collision with builtin tool Installable ids is checked by
+ * `toolInstallables.ts` at the load site that owns both maps.
  *
  * - An entry `id` is a tool-name namespace, so `linear.x` must name one entry.
  *   An id carrying a dot would make two entries indistinguishable in the tool
  *   list, and a grant stores those names.
- * - An entry id may not reuse a builtin tool Installable id. The catalogue
- *   projection combines both maps; allowing `github` here shadows GitHub's
- *   metadata and readiness check. The installable load site supplies that
- *   reserved set without creating an import cycle.
  * - Two entries may not pin the same namespaced name, because a grant's
  *   allowlist and the trail are matched on it.
  * - A tool name carrying the `.` the namespace is built from would make
