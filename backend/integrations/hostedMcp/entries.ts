@@ -112,6 +112,8 @@ export const hostedMcpRevokeTarget = (entry: HostedMcpEntry): HostedMcpRevokeTar
   return { page: named.page, ...(named.endpoint ? { endpoint: named.endpoint } : {}) };
 };
 
+const ALLOWED_AUTHORIZATION_PARAMS = new Set(['access_type', 'prompt']);
+
 export const assertHostedMcpEntries = (
   entries: HostedMcpEntry[],
   reservedIds: ReadonlySet<string> = new Set(),
@@ -124,6 +126,20 @@ export const assertHostedMcpEntries = (
     }
     if (reservedIds.has(entry.id)) {
       throw new Error(`hosted-mcp entry id collides with a builtin tool installable: ${entry.id}`);
+    }
+    if (entry.authorizationParams !== undefined) {
+      if (!entry.authorizationParams || typeof entry.authorizationParams !== 'object'
+        || Array.isArray(entry.authorizationParams)) {
+        throw new Error(`hosted-mcp entry authorization parameters are not an object: ${entry.id}`);
+      }
+      const invalidParam = Object.entries(entry.authorizationParams).find(([key, value]) => (
+        !ALLOWED_AUTHORIZATION_PARAMS.has(key) || typeof value !== 'string' || value.length === 0
+      ));
+      if (invalidParam) {
+        throw new Error(
+          `hosted-mcp entry authorization parameter outside the closed set: ${entry.id}.${invalidParam[0]}`,
+        );
+      }
     }
     // What removal will do with this entry
     // (services/connectionRemovalService.ts). A `revoke` that names no kind,

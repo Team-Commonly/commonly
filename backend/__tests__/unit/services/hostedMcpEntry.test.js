@@ -388,7 +388,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
       resource: 'https://calendarmcp.googleapis.com/mcp/v1',
       issuer: 'https://accounts.google.com',
       client: 'pre-registered',
-      authorizationParams: { access_type: 'offline' },
+      authorizationParams: { access_type: 'offline', prompt: 'consent' },
       scopes: [
         'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
         'https://www.googleapis.com/auth/calendar.events.freebusy',
@@ -484,6 +484,15 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(() => assertHostedMcpEntries([
       linear({ tools: [pinned({}), pinned({})] }),
     ])).toThrow(/duplicate hosted-mcp tool name: linear.list_issues/);
+  });
+
+  test('an entry declaring an authorization parameter outside the closed set is refused at load', () => {
+    const calendar = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar');
+    expect(() => assertHostedMcpEntries([calendar])).not.toThrow();
+    expect(() => assertHostedMcpEntries([{
+      ...calendar,
+      authorizationParams: { include_granted_scopes: 'true' },
+    }])).toThrow(/authorization parameter outside the closed set: google-calendar\.include_granted_scopes/);
   });
 
   test('a revoke target is a page plus an optional https endpoint, and every URL it names is checked', () => {

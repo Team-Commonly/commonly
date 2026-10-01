@@ -491,7 +491,7 @@ describe('hosted-mcp intake: the authorization request and PKCE', () => {
     expect(url.searchParams.get('scope')).toBe('read openid');
   });
 
-  it('requests Google offline access with the entry scopes and PKCE', () => {
+  it("an entry's declared authorization parameters reach the request with its scopes and PKCE", () => {
     const url = new URL(buildAuthorizeUrl(GOOGLE_CALENDAR_ENTRY, 'https://accounts.google.com/o/oauth2/v2/auth', {
       clientId: 'google-client',
       redirectUri: 'https://api.example.test/google-callback',
@@ -499,6 +499,7 @@ describe('hosted-mcp intake: the authorization request and PKCE', () => {
       codeChallenge: 'google-challenge',
     }));
     expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('prompt')).toBe('consent');
     expect(url.searchParams.get('scope')).toBe(GOOGLE_CALENDAR_ENTRY.scopes.join(' '));
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('resource')).toBe(GOOGLE_CALENDAR_ENTRY.resource);

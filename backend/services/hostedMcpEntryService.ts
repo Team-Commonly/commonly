@@ -75,8 +75,11 @@ export interface HostedMcpEntry {
   issuer: string;
   client: 'pre-registered' | 'cimd' | 'dcr';
   scopes: string[];
-  /** Static vendor-specific authorization query values, such as Google's offline access request. */
-  authorizationParams?: Record<string, string>;
+  /** Only the vendor-specific authorization parameters supported by this code. */
+  authorizationParams?: {
+    access_type?: string;
+    prompt?: string;
+  };
   /**
    * Where the authorization dies, naming its kind because the URL cannot (§3).
    * Exactly one key: an `endpoint` is the RFC 7009 revocation endpoint the AS's

@@ -15,10 +15,14 @@
  * unauthenticated; the first authenticated tools/list in the live walk is the
  * required drift check. Google currently labels Calendar MCP Developer Preview.
  * Google's web-server OAuth guide recommends `access_type=offline` so the
- * authorization-code flow can return a refresh token.
+ * authorization-code flow can return a refresh token. `prompt=consent` also
+ * asks Google to issue a fresh refresh token when a member reconnects; without
+ * it, this callback would drop the still-live token already held by the row.
  *
- * Sources: https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server
- * https://developers.google.com/identity/openid-connect/reference
+ * Sources:
+ * - https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server
+ * - https://developers.google.com/identity/openid-connect/reference
+ * - https://developers.google.com/identity/protocols/oauth2/web-server
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 
@@ -44,7 +48,7 @@ export const GOOGLE_CALENDAR_ENTRY: HostedMcpEntry = {
   resource: 'https://calendarmcp.googleapis.com/mcp/v1',
   issuer: 'https://accounts.google.com',
   client: 'pre-registered',
-  authorizationParams: { access_type: 'offline' },
+  authorizationParams: { access_type: 'offline', prompt: 'consent' },
   scopes: [
     'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
     'https://www.googleapis.com/auth/calendar.events.freebusy',
