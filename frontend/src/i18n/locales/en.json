@@ -1907,7 +1907,7 @@
     "gateOff": "off",
     "gateSwitch": "Relay {{pod}}",
     "gatesTitle": "Pods that reach this channel",
-    "hostedMcpManualRevoke": "{{provider}} may still list your previous account.",
+    "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
     "installInProgress": "Still setting up — try again in a moment.",
     "installInProgressForPod": "Still setting up for {{pod}} — try again in a moment.",
