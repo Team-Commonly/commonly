@@ -62,9 +62,10 @@ const connectors = [
   },
 ];
 
-const mockGets = (list = connectors) => {
+const mockGets = (list = connectors, installables = null) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/integrations/user/all') return Promise.resolve({ data: list });
+    if (url === '/api/installables' && installables) return Promise.resolve({ data: { installables } });
     if (url === '/api/pods') {
       return Promise.resolve({
         data: [
@@ -76,6 +77,20 @@ const mockGets = (list = connectors) => {
     return Promise.resolve({ data: [] });
   });
 };
+
+const hostedLinearCatalogEntry = (connectionId = 'i-linear') => ({
+  installableId: 'linear',
+  list: 'tools',
+  label: 'Linear',
+  description: 'Read Linear issues and projects.',
+  connectionType: 'hosted-mcp',
+  entryId: 'linear',
+  available: true,
+  tools: [],
+  connections: [{ connectionId, owner: 'sam', repo: '' }],
+  installation: null,
+  integration: null,
+});
 
 const renderPage = () => render(
   <AuthContext.Provider value={authValue}>
@@ -664,6 +679,47 @@ describe('V2ConnectorsPage', () => {
       axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length,
     ).toBeGreaterThanOrEqual(2));
     expect(window.location.search).toBe('');
+  });
+
+  it('shows the server-owned provider revoke page after a hosted-MCP reconnect needs manual withdrawal', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage },
+    }], [hostedLinearCatalogEntry()]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: "Open Linear's connected apps" });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(reviewLink).toHaveAttribute('target', '_blank');
+    expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('Linear may still list your previous account.');
+    expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
+    expect(window.location.search).toBe('');
+  });
+
+  it('does not turn a callback query into a provider link unless it matches the row', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=https%3A%2F%2Fevil.example%2F',
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage: 'https://linear.app/settings/security' },
+    }], [hostedLinearCatalogEntry()]);
+    renderPage();
+
+    const linearDescription = await screen.findByText('Read Linear issues and projects.');
+    expect(linearDescription.closest('.v2-connector-row')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(''));
+    expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
   });
 
   it('shows the error reconnect action and retains the separate removal action', async () => {

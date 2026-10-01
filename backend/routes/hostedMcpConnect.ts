@@ -31,6 +31,8 @@ const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../servic
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
+const { revokeTokenAtVendor } = require('../services/connectionRemovalService');
+// eslint-disable-next-line global-require
 const { HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget } = require('../integrations/hostedMcp/entries');
 // eslint-disable-next-line global-require
 const {
@@ -71,9 +73,18 @@ const publicAppUrl = (): string => {
   return (configured || 'https://commonly.me').replace(/\/+$/, '');
 };
 
-const callbackRedirect = (res: Response, status: string, code?: string) => {
+const callbackRedirect = (
+  res: Response,
+  status: string,
+  code?: string,
+  manualRevoke?: { entryId: string; revokeAt: string },
+) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
+  if (manualRevoke) {
+    query.set('entryId', manualRevoke.entryId);
+    query.set('revokeAt', manualRevoke.revokeAt);
+  }
   return res.redirect(302, `${publicAppUrl()}/v2/connectors?${query.toString()}`);
 };
 
@@ -398,14 +409,63 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   // never be dropped. The arms below read the same shape.
   const previousSubject = consumed.config?.providerSubject || undefined;
   const providerSubject = idTokenSubject(tokens.id_token);
+  const hasPreviousCredential = Boolean(
+    consumed.config?.credentialRef || consumed.config?.refreshTokenRef,
+  );
+  const subjectsComparable = Boolean(previousSubject && providerSubject);
+  const subjectChanged = subjectsComparable && previousSubject !== providerSubject;
   // §2: a grant was made against the reach of the account connected at the
   // time, and the row's `createdAt` survives a reconnect, so the broker's
-  // TASK-148 guard cannot see this one. An unknowable subject revokes too —
-  // assuming the account is unchanged is the assumption that costs the most.
-  const accountChanged = Boolean(consumed.config?.credentialRef)
-    && (!providerSubject || !previousSubject || providerSubject !== previousSubject);
+  // TASK-148 guard cannot see this one. An unknowable subject is not proof of a
+  // same-account reconnect, so its grants are revoked and the person gets the
+  // vendor page to decide whether an older authorization still needs removing.
+  const accountChanged = hasPreviousCredential && (!subjectsComparable || subjectChanged);
   if (accountChanged) {
     await revokeConnectionGrants({ connection: consumed, revokedBy: owner });
+  }
+
+  let manualRevokeAt: string | undefined;
+  if (hasPreviousCredential && !subjectsComparable) {
+    // Never send an uncomparable token: it may be the same account that just
+    // authorized the new pair, and some vendors revoke all grants for that
+    // account/client together.
+    manualRevokeAt = hostedMcpRevokeTarget(entry)?.page;
+  } else if (hasPreviousCredential && subjectChanged) {
+    const revokeTarget = hostedMcpRevokeTarget(entry);
+    const recordedClientId = consumed.config?.clientId;
+    const clientMatches = !recordedClientId || recordedClientId === client.clientId;
+    const previousTokenRef = consumed.config?.refreshTokenRef || consumed.config?.credentialRef;
+    let withdrawn = false;
+
+    if (revokeTarget?.endpoint && clientMatches && previousTokenRef) {
+      let previousToken: unknown;
+      try {
+        // This read must precede the first put below. connectorSecrets.put
+        // replaces the ciphertext under this same kind/ref on reconnect.
+        previousToken = await connectorSecrets.get(String(previousTokenRef));
+      } catch {
+        // The callback still finishes; the provider page is the only recovery
+        // once the new token pair overwrites this one.
+      }
+
+      if (typeof previousToken === 'string' && previousToken) {
+        try {
+          await revokeTokenAtVendor({
+            entry,
+            clientId: client.clientId,
+            ...(client.clientSecret ? { clientSecret: client.clientSecret } : {}),
+            token: previousToken,
+            tokenTypeHint: consumed.config?.refreshTokenRef ? 'refresh_token' : 'access_token',
+          });
+          withdrawn = true;
+        } catch {
+          // Do not stop the successful reconnect or expose provider details.
+          // The old token cannot be retried after the secret ref is overwritten.
+        }
+      }
+    }
+
+    if (!withdrawn) manualRevokeAt = revokeTarget?.page;
   }
 
   const credentialRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token);
@@ -459,7 +519,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     { new: true },
   );
 
-  return callbackRedirect(res, 'connected');
+  return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
+    entryId: entry.id,
+    revokeAt: manualRevokeAt,
+  } : undefined);
 });
 
 module.exports = router;
