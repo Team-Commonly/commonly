@@ -160,6 +160,10 @@ const TYPE_LABELS: Record<string, string> = {
   instagram: 'Instagram',
 };
 
+const TOOL_ONLY_CONNECTION_TYPES = new Set(['github-app', 'hosted-mcp']);
+
+const mappedTypeLabel = (type: string): string | null => TYPE_LABELS[type] || null;
+
 // The onboarding sentence for a provider you can connect right now. Keyed by
 // provider and deliberately without a default: an unmapped provider renders no
 // detail line at all. The two-branch ternary this replaces gave every provider
@@ -1013,7 +1017,7 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const catalogTypes = new Set((catalog || []).map((entry) => entry.installableId));
-  const items: ListItem[] = [
+  const allItems: ListItem[] = [
     ...(catalog || []).map((entry): ListItem => ({
       kind: 'catalog',
       key: `catalog:${entry.installableId}`,
@@ -1023,7 +1027,10 @@ const V2ConnectorsPage: React.FC = () => {
     // Rows the catalog does not describe: legacy pod-scoped connectors, and
     // installable rows only while the catalog itself cannot be read.
     ...connectors
-      .filter((connector) => !(connector.installationId && catalogTypes.has(connector.type)))
+      .filter((connector) => (
+        !TOOL_ONLY_CONNECTION_TYPES.has(connector.type)
+        && !(connector.installationId && catalogTypes.has(connector.type))
+      ))
       .map((connector): ListItem => ({ kind: 'legacy', key: `legacy:${connector._id}`, connector })),
   ];
 
@@ -1031,11 +1038,15 @@ const V2ConnectorsPage: React.FC = () => {
     item.kind === 'catalog' ? rowForEntry(item.entry, item.connector) : rowFor(item.connector)
   );
 
-  const itemLabel = (item: ListItem): string => (
+  const itemLabel = (item: ListItem): string | null => (
     item.kind === 'catalog'
-      ? (item.entry.label || TYPE_LABELS[item.entry.installableId] || item.entry.installableId)
-      : (TYPE_LABELS[item.connector.type] || item.connector.type)
+      ? (item.entry.label?.trim() || mappedTypeLabel(item.entry.installableId))
+      : mappedTypeLabel(item.connector.type)
   );
+
+  // A backend type is an identifier, not a customer-facing name. Unknown types
+  // have no Channels row until the catalog provides a label or this map does.
+  const items = allItems.filter((item) => Boolean(itemLabel(item)));
 
   const itemType = (item: ListItem): string => (item.kind === 'catalog' ? item.entry.installableId : item.connector.type);
 
