@@ -341,13 +341,66 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('v1 lists no vendor, and a lookup names the entry it was asked for', () => {
-    expect(HOSTED_MCP_ENTRIES).toEqual([]);
+  test('ships Linear and nothing else, and a lookup names the entry it was asked for', () => {
+    // Step 7: the catalogue's first entry. A second vendor landing here changes
+    // this line, which is the point — it is the one place that says what an
+    // instance offers before any member has connected anything.
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(catalogue, 'atlassian')).toBeUndefined();
-    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear').title).toBe('Linear');
+  });
+
+  test('the shipped Linear entry is read-only, fully annotated and names a revoke page', () => {
+    const [entry] = HOSTED_MCP_ENTRIES;
+    // 38 is the measured `tools/list` at scope `read` (2026-10-01). It is pinned
+    // so a pin that silently loses tools is a failure rather than a narrower
+    // offer nobody notices.
+    expect(entry.tools).toHaveLength(38);
+    expect(new Set(entry.tools.map((tool) => tool.class))).toEqual(new Set(['read']));
+    expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    expect(entry.tools.every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
+    // Every name an agent sees is the upstream name, which the entry load
+    // requires and the broker calls with.
+    expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
+    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(38);
+    expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/security' });
+    // The three identity fields the intake reads: `resource` is the RFC 8707
+    // value every authorization and token request carries, `issuer` is what the
+    // callback checks a returned `iss` against (RFC 9207), and `client: 'cimd'`
+    // is what keeps a client secret out of the instance entirely.
+    expect(entry.resource).toBe('https://mcp.linear.app/mcp');
+    expect(entry.issuer).toBe('https://mcp.linear.app');
+    expect(entry.client).toBe('cimd');
+    expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
+  });
+
+  test('the Linear pin is the measured list, not a retyping of it', () => {
+    // The capture `connector-ops` took on 2026-10-01 is committed beside this
+    // suite, so the pin's schemas are compared with the measurement rather than
+    // with themselves. Drift is checked against the LIVE list at call time; this
+    // is the other end, catching a hand-edit of the entry that would otherwise
+    // only surface as every tool refusing `tool_drift` in production.
+    const capture = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+    const [entry] = HOSTED_MCP_ENTRIES;
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    expect(entry.tools.map((tool) => tool.name)).toEqual(capture.tools.map((tool) => tool.name));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.name);
+      expect(found).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+    }
+    // One annotation set across the whole list, which is what the header claims
+    // and what makes a single `READ_ANNOTATIONS` honest.
+    expect(new Set(capture.tools.map((tool) => JSON.stringify(tool.annotations))).size).toBe(1);
+    expect(capture.tools).toHaveLength(38);
   });
 
   test('a colliding entry id or tool name is refused', () => {

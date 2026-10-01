@@ -1,0 +1,1514 @@
+/**
+ * Linear — the first hosted-MCP catalogue entry (TASK-172, scope §3; build-order
+ * step 7).
+ *
+ * Pinned from a real `tools/list` taken on a consenting account at
+ * 2026-10-01T11:18:49Z against `https://mcp.linear.app/mcp` (`Linear MCP`
+ * 1.0.0), with the token at scope `read openid`. The measurement and the raw
+ * capture are connector-ops's; the `inputSchema` of every tool below is
+ * transcribed from it unchanged, because drift compares the pin with the live
+ * list — a schema that is "close enough" would refuse every call as
+ * `tool_drift` rather than approve args under what upstream accepts.
+ *
+ * Read tools only, and the credential itself carries only `read`: Linear's docs
+ * say a `read` token "can't reach write APIs", so §5's attribution rule has
+ * nothing to guard in v1 — the fence is the vendor's, and the entry's class
+ * agrees with it rather than being the only thing standing.
+ *
+ * Every one of the 38 tools arrived carrying ONE annotation set —
+ * `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`,
+ * `openWorldHint: false` — so nothing here is unannotated and no tool was
+ * dropped for a missing hint. The entry load refuses a `read` pin that does not
+ * carry `readOnlyHint: true`; `idempotentHint` and `openWorldHint` are recorded
+ * as they arrived and are not read by the drift comparison, which only asks
+ * whether a claim the pin made has been withdrawn.
+ *
+ * Three facts about this vendor are NOT in this file, because they are the
+ * live walk's to settle (§10 step 7): that a removal's revoke took at Linear
+ * (shown by something other than the 200 the shared token/revocation endpoint
+ * answers either way), and the exact Settings URL a person lands on. The page
+ * below is the one the plan names.
+ *
+ * No tool returned an `outputSchema` in the capture, which is why none is
+ * pinned: nothing arrives to pin, and the field is not part of `HostedMcpPinnedTool`.
+ */
+import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
+
+/**
+ * The vendor's annotations as the pin recorded them, in one place because they
+ * are one set: a review of the entry should be able to see at a glance that no
+ * tool carries a different claim, and a tool that ever does will have to say so
+ * here rather than in a line 900 further down.
+ */
+const READ_ANNOTATIONS = { readOnlyHint: true, destructiveHint: false };
+
+/** One read tool: the name an agent sees is the upstream name, checked by the entry load. */
+const readTool = (
+  name: string,
+  description: string,
+  inputSchema: Record<string, unknown>,
+): HostedMcpPinnedTool => ({
+  name,
+  upstreamName: name,
+  description,
+  class: 'read',
+  inputSchema,
+  annotations: { ...READ_ANNOTATIONS },
+});
+
+export const LINEAR_ENTRY: HostedMcpEntry = {
+  id: 'linear',
+  title: 'Linear',
+  description: 'Issues, projects, cycles and releases in your own Linear workspace.',
+  resource: 'https://mcp.linear.app/mcp',
+  issuer: 'https://mcp.linear.app',
+  // Linear advertises `client_id_metadata_document_supported: true`, so nothing
+  // is registered and no secret is stored: the client id is this instance's own
+  // metadata URL. §4's `cimd` is the preferred mode, not the fallback.
+  client: 'cimd',
+  // `openid` only for `providerSubject` (§2's account-change rule): the token
+  // response carries an ID token, measured at the same time as the tool list.
+  // `write` is deliberately absent — see the header.
+  scopes: ['read', 'openid'],
+  revoke: { page: 'https://linear.app/settings/security' },
+  tools: [
+  readTool(
+    'get_attachment',
+    'Read one attachment by id, either its content or a short-lived download URL.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Attachment ID',
+        },
+        format: {
+          description: 'Response format. Defaults to content.',
+          type: 'string',
+          enum: ['content', 'url'],
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_agent_skills',
+    'List the Linear Agent skills this workspace can use.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_agent_skill',
+    'Read one Linear Agent skill by id, with its full instructions.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Agent skill ID',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_comments',
+    'List comments, optionally narrowed to one issue, project, initiative, document, milestone or status update.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        issueId: {
+          description: 'Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues (provide exactly one parent)',
+          type: 'string',
+        },
+        projectId: {
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug (provide exactly one parent)',
+          type: 'string',
+        },
+        initiativeId: {
+          description: 'Initiative name, ID, identifier (e.g., I-123), or slug (provide exactly one parent)',
+          type: 'string',
+        },
+        documentId: {
+          description: 'Document ID or slug (provide exactly one parent)',
+          type: 'string',
+        },
+        milestoneId: {
+          description: 'Milestone UUID (provide exactly one parent). Resolve milestone names via `list_milestones` first.',
+          type: 'string',
+        },
+        statusUpdateId: {
+          description: 'Status update UUID (provide exactly one parent). Resolve status updates via `get_status_updates` first.',
+          type: 'string',
+        },
+        statusUpdateType: {
+          description: 'Type of status update named by `statusUpdateId`, as returned by `get_status_updates`. Only valid together with `statusUpdateId`; omit to check both project and initiative status updates.',
+          type: 'string',
+          enum: ['project', 'initiative'],
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_cycles',
+    'List one team\'s cycles.',
+    {
+      type: 'object',
+      properties: {
+        teamId: {
+          type: 'string',
+          description: 'Team ID',
+        },
+        type: {
+          description: 'Filter: current, previous, next, or all',
+          type: 'string',
+          enum: ['current', 'previous', 'next'],
+        },
+      },
+      required: ['teamId'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_custom_views',
+    'List the saved issue, project and initiative views this account can see. The views come back, not the records they match.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search custom view names',
+          type: 'string',
+        },
+        type: {
+          description: 'Entity type displayed by the view',
+          type: 'string',
+          enum: ['Issue', 'Project', 'Initiative'],
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        shared: {
+          description: 'True for shared views, false for personal views',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_document',
+    'Read one document by id.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Document ID or slug',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_documents',
+    'List documents, optionally filtered by project, initiative, team, creator or a date range.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search query',
+          type: 'string',
+        },
+        projectId: {
+          description: 'Filter by project ID, identifier (e.g., \'P-ENG-123\'), or slug',
+          type: 'string',
+        },
+        initiativeId: {
+          description: 'Filter by initiative ID, identifier (e.g., \'I-123\'), or slug',
+          type: 'string',
+        },
+        teamId: {
+          description: 'Filter by team ID',
+          type: 'string',
+        },
+        creatorId: {
+          description: 'Filter by creator ID',
+          type: 'string',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+        fields: {
+          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'id',
+              'title',
+              'content',
+              'url',
+              'createdAt',
+              'updatedAt',
+              'archivedAt',
+              'creator',
+              'updatedBy',
+              'project',
+              'initiative',
+              'team',
+              'issue',
+            ],
+          },
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'extract_images',
+    'Fetch the images a piece of markdown refers to, so a screenshot or diagram in an issue, comment or document can be looked at.',
+    {
+      type: 'object',
+      properties: {
+        markdown: {
+          type: 'string',
+          description: 'Markdown content containing image references (e.g., issue description, comment body)',
+        },
+      },
+      required: ['markdown'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_issue',
+    'Read one issue by id or identifier, optionally with its relations, customer needs and releases.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues',
+        },
+        includeRelations: {
+          default: false,
+          description: 'Include blocking/related/duplicate relations',
+          type: 'boolean',
+        },
+        includeCustomerNeeds: {
+          default: false,
+          description: 'Include associated customer needs',
+          type: 'boolean',
+        },
+        includeReleases: {
+          default: false,
+          description: 'Include associated releases',
+          type: 'boolean',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_issues',
+    'List issues, optionally filtered by team, state, cycle, label, assignee, creator, delegate, project, release, priority, parent or a search query.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search issue title or description. Cannot be combined with customView',
+          type: 'string',
+        },
+        customView: {
+          description: 'Saved view ID, URL, slug, or exact name. Use list_custom_views to discover views. Applies saved filters and scope; other filters narrow the results. Uses list ordering, not saved display settings',
+          type: 'string',
+          minLength: 1,
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        state: {
+          description: 'State type, name, or ID',
+          type: 'string',
+        },
+        cycle: {
+          description: 'Cycle name, number, or ID',
+          type: 'string',
+        },
+        label: {
+          description: 'Label name or ID',
+          type: 'string',
+        },
+        assignee: {
+          description: 'User ID, name, email, or "me"',
+          type: ['string', 'null'],
+        },
+        creator: {
+          description: 'User ID, name, email, or "me"',
+          type: 'string',
+        },
+        delegate: {
+          description: 'Agent name or ID. When the user asks to delegate to "Linear" or "the Linear agent", this refers to the "Linear" app user specifically',
+          type: 'string',
+        },
+        project: {
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug',
+          type: 'string',
+        },
+        release: {
+          description: 'Release ID or slug',
+          type: 'string',
+        },
+        priority: {
+          description: '0=None, 1=Urgent, 2=High, 3=Medium, 4=Low',
+          type: 'number',
+        },
+        parentId: {
+          description: 'Parent issue ID or identifier (e.g., LIN-123)',
+          type: 'string',
+        },
+        fields: {
+          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'id',
+              'uuid',
+              'title',
+              'description',
+              'projectMilestone',
+              'priority',
+              'estimate',
+              'url',
+              'gitBranchName',
+              'createdAt',
+              'updatedAt',
+              'archivedAt',
+              'completedAt',
+              'startedAt',
+              'canceledAt',
+              'startedTriageAt',
+              'triagedAt',
+              'dueDate',
+              'slaStartedAt',
+              'slaMediumRiskAt',
+              'slaHighRiskAt',
+              'slaBreachesAt',
+              'slaType',
+              'status',
+              'statusType',
+              'labels',
+              'triageIntel',
+              'createdBy',
+              'createdById',
+              'assignee',
+              'assigneeId',
+              'delegate',
+              'delegateId',
+              'project',
+              'projectId',
+              'parentId',
+              'team',
+              'teamId',
+              'cycleId',
+            ],
+          },
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        triagedAt: {
+          description: 'Left triage after: ISO-8601 date/duration (e.g., -P1D). Issues still in triage have no triagedAt; list them with state "triage"',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_issue_statuses',
+    'List the workflow statuses of one team.',
+    {
+      type: 'object',
+      properties: {
+        team: {
+          type: 'string',
+          description: 'Team name or ID',
+        },
+      },
+      required: ['team'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_issue_status',
+    'Read one workflow status by id, or by name within a team.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Status ID',
+        },
+        name: {
+          type: 'string',
+          description: 'Status name',
+        },
+        team: {
+          type: 'string',
+          description: 'Team name or ID',
+        },
+      },
+      required: ['id', 'name', 'team'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_issue_labels',
+    'List issue labels, optionally filtered by name or team, and optionally including label groups.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        name: {
+          description: 'Filter by name',
+          type: 'string',
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+        includeGroups: {
+          default: false,
+          description: 'Include label groups in the results, marked with `isGroup`. A group cannot be applied directly; retiring or restoring one cascades to its child labels',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_projects',
+    'List projects, optionally filtered by state, initiative, team, member, label or a search query.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 50)',
+          type: 'number',
+          maximum: 50,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        customView: {
+          description: 'Saved view ID, URL, slug, or exact name. Use list_custom_views to discover views. Applies saved filters and scope; other filters narrow the results. Uses list ordering, not saved display settings',
+          type: 'string',
+          minLength: 1,
+        },
+        query: {
+          description: 'Search project name',
+          type: 'string',
+        },
+        state: {
+          description: 'State type, name, or ID',
+          type: 'string',
+        },
+        initiative: {
+          description: 'Initiative name, ID, identifier (e.g., I-123), or slug',
+          type: 'string',
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        member: {
+          description: 'User ID, name, email, or "me"',
+          type: 'string',
+        },
+        label: {
+          description: 'Label name or ID',
+          type: 'string',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeMilestones: {
+          default: false,
+          description: 'Include milestones',
+          type: 'boolean',
+        },
+        includeMembers: {
+          default: false,
+          description: 'Include project members',
+          type: 'boolean',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+        fields: {
+          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'id',
+              'uuid',
+              'name',
+              'summary',
+              'description',
+              'url',
+              'trashed',
+              'createdAt',
+              'updatedAt',
+              'startedAt',
+              'completedAt',
+              'canceledAt',
+              'startDate',
+              'startDateResolution',
+              'targetDate',
+              'targetDateResolution',
+              'priority',
+              'sortOrder',
+              'labels',
+              'initiatives',
+              'lead',
+              'leadTeam',
+              'status',
+              'teams',
+              'members',
+              'milestones',
+            ],
+          },
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_project',
+    'Read one project by name or id, optionally with its milestones, members, resources and customer needs.',
+    {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug',
+        },
+        includeCustomerNeeds: {
+          default: false,
+          description: 'Include one page of customer needs attached directly to the project',
+          type: 'boolean',
+        },
+        customerNeedsLimit: {
+          default: 10,
+          description: 'Customer needs per page when includeCustomerNeeds is true (default 10, max 50)',
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+        },
+        customerNeedsCursor: {
+          description: 'Next customer-needs page: pass customerNeedsPageInfo.endCursor with includeCustomerNeeds true',
+          type: 'string',
+        },
+        includeMilestones: {
+          default: false,
+          description: 'Include milestones',
+          type: 'boolean',
+        },
+        includeMembers: {
+          default: false,
+          description: 'Include project members',
+          type: 'boolean',
+        },
+        includeResources: {
+          default: false,
+          description: 'Include resources (documents, links, attachments)',
+          type: 'boolean',
+        },
+      },
+      required: ['query'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_project_labels',
+    'List project labels, optionally filtered by name or team, and optionally including label groups.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        name: {
+          description: 'Filter by name',
+          type: 'string',
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+        includeGroups: {
+          default: false,
+          description: 'Include label groups in the results, marked with `isGroup`. A group cannot be applied directly; retiring or restoring one cascades to its child labels',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_release_pipelines',
+    'List release pipelines, optionally narrowed to one team or to the production pipelines.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search pipeline name',
+          type: 'string',
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+        type: {
+          description: 'Pipeline type: continuous | scheduled',
+          type: 'string',
+          enum: ['continuous', 'scheduled'],
+        },
+        isProduction: {
+          description: 'Filter by production pipeline flag',
+          type: 'boolean',
+        },
+        includeStages: {
+          default: false,
+          description: 'Include each pipeline\'s stages',
+          type: 'boolean',
+        },
+        includeTeams: {
+          default: false,
+          description: 'Include each pipeline\'s teams',
+          type: 'boolean',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_releases',
+    'List releases, optionally filtered by pipeline, stage, stage type, version or a search query.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search release name or version',
+          type: 'string',
+        },
+        pipeline: {
+          description: 'Release pipeline ID, slug, or exact name',
+          type: 'string',
+        },
+        stage: {
+          description: 'Release stage ID or exact name',
+          type: 'string',
+        },
+        stageType: {
+          description: 'Filter by stage lifecycle type',
+          type: 'string',
+          enum: ['planned', 'started', 'completed', 'canceled'],
+        },
+        version: {
+          description: 'Exact version match',
+          type: 'string',
+        },
+        hasReleaseNotes: {
+          description: 'Filter to releases that do (true) or do not (false) have release notes',
+          type: 'boolean',
+        },
+        includeReleaseNotes: {
+          default: false,
+          description: 'Include associated release notes',
+          type: 'boolean',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_release',
+    'Read one release by id, optionally with its release notes.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Release ID or slug',
+        },
+        includeReleaseNotes: {
+          default: false,
+          description: 'Include associated release notes',
+          type: 'boolean',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_release_notes',
+    'List release notes, optionally filtered by pipeline, release or a search query.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search release notes title',
+          type: 'string',
+        },
+        pipeline: {
+          description: 'Release pipeline ID, slug, or exact name',
+          type: 'string',
+        },
+        release: {
+          description: 'Release ID or slug',
+          type: 'string',
+        },
+        includeContent: {
+          default: false,
+          description: 'Include markdown release notes content',
+          type: 'boolean',
+        },
+        includeReleases: {
+          default: false,
+          description: 'Include associated releases',
+          type: 'boolean',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_release_note',
+    'Read one release note by id or slug, including its markdown.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Release notes ID or slug',
+        },
+        includeReleases: {
+          default: false,
+          description: 'Include associated releases',
+          type: 'boolean',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_milestones',
+    'List the milestones of one project.',
+    {
+      type: 'object',
+      properties: {
+        project: {
+          type: 'string',
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug',
+        },
+      },
+      required: ['project'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_milestone',
+    'Read one project milestone by id or name.',
+    {
+      type: 'object',
+      properties: {
+        project: {
+          type: 'string',
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug',
+        },
+        query: {
+          type: 'string',
+          description: 'Milestone name or ID',
+        },
+      },
+      required: ['project', 'query'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_notifications',
+    'Read a page of the connected account\'s notifications, optionally the unread ones only.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        unreadOnly: {
+          default: false,
+          description: 'Only return unread notifications',
+          type: 'boolean',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_teams',
+    'List the workspace\'s teams.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Search query',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_team',
+    'Read one team by name or id.',
+    {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Team UUID, key, or name',
+        },
+      },
+      required: ['query'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_triage_responsibility',
+    'Read a team\'s triage rotation: who is on triage now, what triage does, and the upcoming shifts.',
+    {
+      type: 'object',
+      properties: {
+        team: {
+          type: 'string',
+          description: 'Team name or ID',
+        },
+        user: {
+          description: 'Only return shifts of this user: User ID, name, email, or "me"',
+          type: 'string',
+        },
+        limit: {
+          default: 10,
+          description: 'Max upcoming shifts to return (default 10, max 50)',
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+      required: ['team'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_templates',
+    'List issue and project templates, optionally for one team.',
+    {
+      type: 'object',
+      properties: {
+        type: {
+          description: 'Filter by template type. Omit to return every type',
+          type: 'string',
+          enum: ['issue', 'project', 'document'],
+        },
+        team: {
+          description: 'Team name or ID. Returns that team\'s templates plus workspace-level ones',
+          type: 'string',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_template',
+    'Read one template by id.',
+    {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Template ID or name',
+        },
+      },
+      required: ['id'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_users',
+    'List workspace users, optionally filtered by team or a search query.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Filter by name or email',
+          type: 'string',
+        },
+        team: {
+          description: 'Team name or ID',
+          type: 'string',
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_user',
+    'Read one user by name, email or id.',
+    {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'User ID, name, email, or "me"',
+        },
+      },
+      required: ['query'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_workspace',
+    'Read the connected workspace.',
+    {
+      type: 'object',
+      properties: {},
+    },
+  ),
+  readTool(
+    'search_documentation',
+    'Search Linear\'s documentation for how a feature works.',
+    {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query',
+        },
+        page: {
+          default: 0,
+          description: 'Page number',
+          type: 'number',
+        },
+      },
+      required: ['query'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_diff',
+    'Read one diff — a code change surfaced in Linear — by its review URL, pull request URL, identifier or id.',
+    {
+      type: 'object',
+      properties: {
+        urlOrId: {
+          type: 'string',
+          minLength: 1,
+          description: 'Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL',
+        },
+      },
+      required: ['urlOrId'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'list_diffs',
+    'List the diffs this account can see, optionally filtered by owner, repository, status, author or reviewer.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        query: {
+          description: 'Broad search by title, branch, PR number, or bare slug',
+          type: 'string',
+        },
+        owner: {
+          description: 'Filter returned diffs by repository owner',
+          type: 'string',
+        },
+        repo: {
+          description: 'Filter returned diffs by repository name',
+          type: 'string',
+        },
+        status: {
+          description: 'Filter returned diffs by pull request status',
+          type: 'string',
+        },
+        author: {
+          description: 'Filter by author ID, name, email, or "me"',
+          type: 'string',
+        },
+        reviewer: {
+          description: 'Filter by reviewer ID, name, email, or "me"',
+          type: 'string',
+        },
+        reviewState: {
+          description: 'Reviewer state; requires reviewer and defaults to pending when reviewer is set',
+          type: 'string',
+          enum: ['pending', 'approved', 'changesRequested', 'commented', 'dismissed'],
+        },
+      },
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_diff_threads',
+    'Read the review threads on one diff, or a single thread, by the same identifiers the diff lookup takes.',
+    {
+      type: 'object',
+      properties: {
+        urlOrId: {
+          type: 'string',
+          minLength: 1,
+          description: 'Linear review URL, diff slug, pull request ID, Linear full identifier, or GitHub PR URL',
+        },
+        threadId: {
+          description: 'Optional Linear comment UUID of any comment in the thread (not its `externalThreadId`); a reply\'s UUID resolves to its thread root',
+          type: 'string',
+        },
+        resolved: {
+          description: 'Filter returned threads by resolved state',
+          type: 'boolean',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+      },
+      required: ['urlOrId'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  readTool(
+    'get_status_updates',
+    'List project status updates of one type, optionally for a project, initiative or user, or one update by id.',
+    {
+      type: 'object',
+      properties: {
+        limit: {
+          default: 50,
+          description: 'Max results (default 50, max 250)',
+          type: 'number',
+          maximum: 250,
+        },
+        cursor: {
+          description: 'Next page cursor',
+          type: 'string',
+        },
+        orderBy: {
+          default: 'updatedAt',
+          description: 'Sort: createdAt | updatedAt',
+          type: 'string',
+          enum: ['createdAt', 'updatedAt'],
+        },
+        type: {
+          type: 'string',
+          enum: ['project', 'initiative'],
+          description: 'Type of status update',
+        },
+        id: {
+          description: 'Status update ID - if provided, returns this specific update',
+          type: 'string',
+        },
+        project: {
+          description: 'Project name, ID, identifier (e.g., P-ENG-123), or slug',
+          type: 'string',
+        },
+        initiative: {
+          description: 'Initiative name, ID, identifier (e.g., I-123), or slug',
+          type: 'string',
+        },
+        user: {
+          description: 'User ID, name, email, or "me"',
+          type: 'string',
+        },
+        createdAt: {
+          description: 'Created after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        updatedAt: {
+          description: 'Updated after: ISO-8601 date/duration (e.g., -P1D)',
+          type: 'string',
+        },
+        includeArchived: {
+          default: false,
+          description: 'Include archived items',
+          type: 'boolean',
+        },
+      },
+      required: ['type'],
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      additionalProperties: false,
+    },
+  ),
+  ],
+};

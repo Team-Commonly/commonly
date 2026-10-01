@@ -610,3 +610,40 @@ test('search filters by tool name and the segment hides not-yet rows; with no gr
   await waitFor(() => expect(container.textContent).not.toContain('Loading tools'));
   expect(container.querySelector('.v2-tools')).toBeNull();
 });
+
+/**
+ * Scope §4, step 7's named test: "the page's call to start is credentialed".
+ *
+ * The start route binds a connect to the browser that began it with an
+ * httpOnly cookie on its OWN response, and the API is a different origin from
+ * the app. Without `withCredentials` the browser drops the `Set-Cookie`, so a
+ * person consents at the vendor and comes back to a row that is still not
+ * connected, every callback refusing `invalid_state`. A backend suite sets the
+ * cookie itself and cannot witness this flag; this arm is the one that can.
+ */
+test('step 7: the page\'s call to start a hosted connect is credentialed', async () => {
+  const hosted = {
+    installableId: 'linear', list: 'tools', label: 'Linear', description: 'Issues and projects in Linear.',
+    connectionType: 'hosted-mcp', entryId: 'linear', available: true,
+    broker: { id: 'commonly-grant-broker' },
+    tools: [{ name: 'linear.list_issues', requiredWriteMode: 'read', irreversible: false }],
+    connections: [],
+  };
+  mockApi([hosted]);
+  axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://mcp.linear.app/authorize?state=s' } });
+  const opened = { opener: null, location: { assign: jest.fn() }, close: jest.fn() };
+  const open = jest.spyOn(window, 'open').mockReturnValue(opened as never);
+  try {
+    renderTools();
+    const connect = await screen.findByRole('button', { name: 'Connect' });
+    fireEvent.click(connect);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/integrations/connect/hosted-mcp/linear/start',
+      {},
+      expect.objectContaining({ withCredentials: true }),
+    ));
+    expect(opened.location.assign).toHaveBeenCalledWith('https://mcp.linear.app/authorize?state=s');
+  } finally {
+    open.mockRestore();
+  }
+});

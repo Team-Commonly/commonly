@@ -69,6 +69,13 @@ export interface ToolCatalogEntry {
   list?: 'channels' | 'tools';
   label: string;
   description: string;
+  /**
+   * The connection type this row's tools run through, and — on a hosted entry —
+   * the catalogue entry the start route takes. `entryId` is absent on
+   * `github-app`, whose connections are not per entry.
+   */
+  connectionType?: 'github-app' | 'hosted-mcp';
+  entryId?: string;
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
@@ -422,6 +429,44 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     }
   };
 
+  /**
+   * Connect a hosted-MCP entry (scope §4): the start route answers with the
+   * vendor's authorize URL and sets the flow's browser nonce as an httpOnly
+   * cookie on the SAME response.
+   *
+   * `withCredentials` is what keeps that cookie: the API is a different origin
+   * from the app, so without it the browser drops the `Set-Cookie` and every
+   * callback refuses `invalid_state` — a person consents at the vendor and comes
+   * back to a row that is still not connected. A backend test sets the cookie
+   * itself and cannot witness this, which is why it is asserted here.
+   */
+  const connectHostedMcp = async (entry: ToolCatalogEntry) => {
+    if (busy || !entry.entryId) return;
+    const authorizationWindow = window.open('', '_blank');
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.post<{ authorizeUrl?: string }>(
+        `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.entryId)}/start`,
+        {},
+        { withCredentials: true },
+      );
+      if (!result.authorizeUrl) throw new Error('authorization URL was missing');
+      if (authorizationWindow) {
+        authorizationWindow.opener = null;
+        authorizationWindow.location.assign(result.authorizeUrl);
+      } else {
+        window.location.assign(result.authorizeUrl);
+      }
+    } catch (err) {
+      authorizationWindow?.close();
+      const data = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(data?.message || data?.error || t('tools.connectError', { defaultValue: 'Could not begin connecting. Try again in a moment.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submitGithubAppSetup = async () => {
     if (!githubAppSetup || !isAdmin) return;
     const installationId = githubAppSetup.installationId.trim();
@@ -578,6 +623,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const renderNotYet = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
     const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
+    // A hosted entry is connected by the person who will grant it (§1: member
+    // mode), so the action belongs on the row and needs no admin.
+    const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
+    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
     return (
       <article key={entry.installableId} className={`v2-connector-row v2-connector-row--not-yet${!entry.available ? ' v2-connector-row--not-enabled' : ''}`}>
         <span className="v2-connector-row__name">
@@ -592,7 +641,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             {!entry.available
               ? t('tools.notEnabled', { defaultValue: 'not enabled on this instance · ask your operator' })
               : entry.connections.length === 0
-                ? t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' })
+                ? (isHosted
+                  ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+                  : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
                 : t('tools.readOrWrite', { defaultValue: 'read, or read and write' })}
           </span>
         </span>
@@ -600,6 +651,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
             {t('tools.ask', { defaultValue: 'Ask' })}
           </a>
+        )}
+        {canConnectHosted && (
+          <button type="button" className="v2-connector-row__action" onClick={() => { void connectHostedMcp(entry); }}>
+            {t('tools.connect', { defaultValue: 'Connect' })}
+          </button>
         )}
         {canAdd && (
           <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry)}>

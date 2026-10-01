@@ -11,6 +11,7 @@ const Installable = require('../../../models/Installable');
 const { TOOL_DEFINITIONS } = require('../../../services/toolBrokerService');
 const {
   GRANT_BROKER_ID, buildGithubToolInstallable, projectTools, mcpComponentOf, resolveBrokerFor,
+  builtinToolInstallables, buildHostedMcpToolInstallable, toolInstallableMetas,
 } = require('../../../services/installable/toolInstallables');
 
 const brokerTools = Object.values(TOOL_DEFINITIONS).filter((d) => d.connectionType === 'github-app').map((d) => d.name);
@@ -137,5 +138,48 @@ describe('resolveBrokerFor on a hosted-mcp connection', () => {
       installableId: 'github', brokerId: GRANT_BROKER_ID, enabledTools: brokerTools,
     });
     expect(Installable.findOne).toHaveBeenCalledWith({ installableId: 'github', source: 'builtin', status: 'active' });
+  });
+});
+
+/**
+ * Scope §7, catalogue half: an entry becomes a tool Installable, so the row the
+ * Tools page draws and the tool list the mint enables come from ONE source — the
+ * entry — and the catalogue can no longer offer a vendor whose tools the broker
+ * would refuse.
+ */
+describe('one tool Installable per catalogue entry', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("a hosted entry's Installable enables exactly the entry's tools, namespaced by the entry", () => {
+    const installable = buildHostedMcpToolInstallable(ENTRY);
+    expect(installable).toMatchObject({
+      installableId: 'linear', name: 'Linear', source: 'builtin', kind: 'app', scope: 'pod', status: 'active',
+    });
+    expect(installable.components).toHaveLength(1);
+    expect(installable.components[0]).toMatchObject({ type: 'mcp-server', transport: 'http', name: GRANT_BROKER_ID });
+    expect(installable.components[0].enabledTools).toEqual(['linear.list_issues', 'linear.get_issue']);
+    // The titles are ours, and the sweep the concurrency of two vendors is the
+    // reason this is a list rather than one row: acme's row must carry acme's
+    // tools and not linear's.
+    expect(buildHostedMcpToolInstallable(OTHER_ENTRY).components[0].enabledTools).toEqual(['acme.list_tickets']);
+  });
+
+  test('the seed list carries GitHub and one row per entry, and no entry id is reused', () => {
+    const rows = builtinToolInstallables([ENTRY, OTHER_ENTRY]);
+    expect(rows.map((row) => row.installableId)).toEqual(['github', 'linear', 'acme']);
+    // An entry that is dropped from the catalogue stops being seeded, which is
+    // how a vendor leaves the Tools page.
+    expect(builtinToolInstallables([]).map((row) => row.installableId)).toEqual(['github']);
+  });
+
+  test('the meta map keys a hosted row by its entry, and leaves github-app without one', () => {
+    const metas = toolInstallableMetas([ENTRY]);
+    expect(Object.keys(metas).sort()).toEqual(['github', 'linear']);
+    expect(metas.linear).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'linear' });
+    expect(metas.linear.readiness()).toEqual({ available: true });
+    // The half that makes the catalogue's per-entry connection filter load-bearing:
+    // a github-app row has no entry, so the filter cannot scope it.
+    expect(metas.github.connectionType).toBe('github-app');
+    expect(metas.github.entryId).toBeUndefined();
   });
 });

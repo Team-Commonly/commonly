@@ -47,7 +47,14 @@ interface McpComponentLike {
 }
 
 interface ToolInstallableMeta {
-  connectionType: 'github-app';
+  connectionType: 'github-app' | 'hosted-mcp';
+  /**
+   * Present on a hosted-mcp meta: the ONE catalogue entry whose tools this
+   * Installable enables. The catalogue reads it to scope a row's Connections,
+   * because `connectionType` alone would put every vendor's Linear-shaped row
+   * under every vendor's entry (scope §7).
+   */
+  entryId?: string;
   readiness: () => ToolReadiness;
 }
 
@@ -65,6 +72,31 @@ export const TOOL_INSTALLABLES: Record<string, ToolInstallableMeta> = {
       : { available: false, reason: 'not_configured' }),
   },
 };
+
+/**
+ * One tool Installable per hosted-MCP catalogue entry (scope §7).
+ *
+ * The entry is the vendor's whole configuration: it names the server, the
+ * authorization server and the client id kind, and a CIMD client id is this
+ * instance's own URL (§4), so there is nothing for an operator to set and the
+ * entry is available the moment it is pinned. That is why this readiness is a
+ * constant and GitHub's is not — GitHub's needs an App's credentials.
+ */
+export const hostedMcpToolInstallables = (
+  entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
+): Record<string, ToolInstallableMeta> => Object.fromEntries(entries.map((entry) => [
+  entry.id,
+  { connectionType: 'hosted-mcp' as const, entryId: entry.id, readiness: () => ({ available: true as const }) },
+]));
+
+/**
+ * Every tool Installable the catalogue may offer: the static ones plus one per
+ * catalogue entry. The catalogue and its seed both read this, so a pinned entry
+ * cannot be offered by one and missing from the other.
+ */
+export const toolInstallableMetas = (
+  entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
+): Record<string, ToolInstallableMeta> => ({ ...TOOL_INSTALLABLES, ...hostedMcpToolInstallables(entries) });
 
 const githubToolNames = (): string[] => toolDefinitions()
   .filter((definition) => definition.connectionType === 'github-app')
@@ -93,6 +125,44 @@ export const buildGithubToolInstallable = () => ({
     },
   ],
 });
+
+/**
+ * The hosted-MCP twin of `buildGithubToolInstallable`, driven by the entry
+ * rather than hand-written: the allow-list is the entry's own tool names, so
+ * what the page offers and what `resolveBrokerFor` enables are one list. Its
+ * `scope` is `pod` for the same reason GitHub's is — a grant targets a room or
+ * a seat in it, while the CONNECTION is per person.
+ */
+export const buildHostedMcpToolInstallable = (entry: HostedMcpEntry) => ({
+  installableId: entry.id,
+  name: entry.title,
+  description: entry.description || `${entry.title}, through the grant broker.`,
+  version: '1.0.0',
+  kind: 'app',
+  source: 'builtin',
+  scope: 'pod',
+  status: 'active',
+  requires: [],
+  components: [
+    {
+      name: GRANT_BROKER_ID,
+      type: 'mcp-server',
+      description: 'Commonly-hosted MCP server, one URL per grant. The agent authenticates with its own runtime token and never holds the credential.',
+      transport: 'http',
+      source: { spec: `builtin:${entry.id}` },
+      url: GRANT_BROKER_URL,
+      enabledTools: entry.tools.map((tool) => hostedMcpToolName(entry, tool)),
+    },
+  ],
+});
+
+/** Every builtin tool Installable row the seed writes, in one list. */
+export const builtinToolInstallables = (
+  entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
+): (ReturnType<typeof buildGithubToolInstallable> | ReturnType<typeof buildHostedMcpToolInstallable>)[] => [
+  buildGithubToolInstallable(),
+  ...entries.map(buildHostedMcpToolInstallable),
+];
 
 export const mcpComponentOf = (installable: { components?: McpComponentLike[] } | null | undefined): McpComponentLike | null => (
   (installable?.components || []).find((component) => component?.type === 'mcp-server') || null

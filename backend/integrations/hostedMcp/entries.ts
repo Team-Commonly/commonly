@@ -3,15 +3,17 @@
  * beside this file and is listed here; an entry is server-owned data that
  * changes only by PR.
  *
- * v1 lists no vendor: the Linear entry is build-order step 7, pinned from a
- * real `tools/list` taken on a consenting account, and every other candidate
- * lists only once its own docs verify the URL, transport, auth mode, token
- * lifetime, refresh and revocation. The lookup and the invariant check ship
- * first so a vendor module cannot land half-wired.
+ * Linear is the first entry (build-order step 7), pinned from a real
+ * `tools/list` taken on a consenting account. Every other candidate lists only
+ * once its own docs verify the URL, transport, auth mode, token lifetime,
+ * refresh and revocation, and once its list shows `readOnlyHint: true` on each
+ * tool the entry pins `read` (§3, §11). The lookup and the invariant check
+ * below ship for every entry, so a vendor module cannot land half-wired.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
+import { LINEAR_ENTRY } from './linear';
 
-export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
+export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY];
 
 /**
  * Six defects that would otherwise be silent, checked at module load:

@@ -174,12 +174,22 @@ const hostedRow = (overrides = {}) => ({
 
 const okReply = { jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text', text: 'done' }] } };
 
+// The shipped catalogue, kept so this suite can put it back: the fixtures below
+// pin their own entry, and since step 7 the real Linear entry is a member of
+// this array — a fixture PUSHED beside it would be shadowed by the shipped one
+// (`findHostedMcpEntry` answers first-wins on the id both call `linear`), and
+// every arm here would quietly run against the vendor instead of the stub it
+// names.
+const shippedEntries = [...HOSTED_MCP_ENTRIES];
+
 beforeAll(() => {
+  HOSTED_MCP_ENTRIES.length = 0;
   HOSTED_MCP_ENTRIES.push(ENTRY);
 });
 
 afterAll(() => {
   HOSTED_MCP_ENTRIES.length = 0;
+  HOSTED_MCP_ENTRIES.push(...shippedEntries);
 });
 
 beforeEach(() => {
