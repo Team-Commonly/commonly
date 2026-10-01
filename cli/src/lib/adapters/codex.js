@@ -39,6 +39,7 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
+import { accessSync, constants } from 'fs';
 import {
   chmod,
   lstat,
@@ -57,6 +58,7 @@ import {
   resolve as pathResolve,
 } from 'path';
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
@@ -296,13 +298,29 @@ const preparePublicCodexHome = async (ctx) => {
   return publicHome;
 };
 
-const publicPermissionProfileFlags = (mode) => {
+const publicPermissionProfileFlags = (
+  mode,
+  commitHooksPath = null,
+  originalHooksPath = null,
+) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
       `public codex agents require sandbox.mode=workspace or read-only, got ${mode || 'unset'}`,
     );
   }
   const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+  const originalHookPaths = originalHooksPath
+    ? supportedGitHooks()
+      .map((hookName) => join(originalHooksPath, hookName))
+      .filter((hookPath) => {
+        try {
+          accessSync(hookPath, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    : [];
   const filesystem = [
     '":minimal"="read"',
     '"~/.commonly"="deny"',
@@ -313,16 +331,36 @@ const publicPermissionProfileFlags = (mode) => {
     '"~/.config"="deny"',
     '"/private/tmp"="deny"',
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
+    ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
+    ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
   ].join(',');
+  const shellEnvironment = [
+    'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
+    ...(commitHooksPath ? [
+      'GIT_CONFIG_COUNT',
+      'GIT_CONFIG_KEY_0',
+      'GIT_CONFIG_VALUE_0',
+      'COMMONLY_AGENT_GIT_CONFIG_INDEX',
+      'COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT',
+      'COMMONLY_AGENT_HOOKS_PATH',
+      'COMMONLY_AGENT_ORIGINAL_HOOKS_PATH',
+      'COMMONLY_AGENT_SEAT_NAME',
+      'COMMONLY_AGENT_SEAT_ID',
+      'COMMONLY_AGENT_ADAPTER',
+      'COMMONLY_AGENT_MODEL',
+      'COMMONLY_AGENT_EFFORT',
+    ] : []),
+  ];
   return [
     '-c', `default_permissions=${toml(PUBLIC_PERMISSION_PROFILE)}`,
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.network.enabled=false`,
     // The MCP launcher receives explicitly forwarded env_vars separately.
-    // Model-generated shell commands inherit only a small non-secret core.
+    // Model-generated shell commands inherit a small non-secret core plus
+    // Commonly's per-spawn Git hook metadata when attribution is active.
     '-c', 'shell_environment_policy.inherit="core"',
     '-c', 'shell_environment_policy.ignore_default_excludes=false',
-    '-c', 'shell_environment_policy.include_only=["PATH","HOME","TMPDIR","LANG","LC_*"]',
+    '-c', `shell_environment_policy.include_only=${JSON.stringify(shellEnvironment)}`,
   ];
 };
 
@@ -337,6 +375,7 @@ const buildArgs = ({
   publicSandboxMode = null,
   model = null,
   effort = null,
+  commitAttributionEnv = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -356,7 +395,11 @@ const buildArgs = ({
     ? [
       '--ignore-user-config',
       '--ignore-rules',
-      ...publicPermissionProfileFlags(publicSandboxMode),
+      ...publicPermissionProfileFlags(
+        publicSandboxMode,
+        commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null,
+        commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null,
+      ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
@@ -562,6 +605,7 @@ export default {
         publicSandboxMode,
         model: ctx.environment?.model,
         effort: ctx.environment?.effort,
+        commitAttributionEnv: ctx.commitAttributionEnv,
       });
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
       // Derived from the process environment, so the bootstrap export has to be
@@ -573,6 +617,9 @@ export default {
         credentialFile: credential?.path || null,
         keepsValue: mcp.forwardedEnv[CREDENTIAL_KEY] !== undefined,
       });
+      if (publicSandboxMode !== null && ctx.commitAttributionEnv) {
+        Object.assign(childEnv, ctx.commitAttributionEnv);
+      }
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
       }

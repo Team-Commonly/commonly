@@ -45,7 +45,7 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { realpathSync } from 'fs';
+import { accessSync, constants, realpathSync } from 'fs';
 import {
   chmod,
   lstat,
@@ -73,6 +73,7 @@ import {
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
@@ -501,6 +502,23 @@ const prepareArgv = async (innerArgv, ctx) => {
   // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
   // the operator's own Claude settings inside the namespace (Vera 69578).
   const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
+  const commitHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
+  const originalHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
+  const commitHookExecutables = commitHooksPath
+    ? supportedGitHooks().map((hookName) => join(commitHooksPath, hookName))
+    : [];
+  const originalHookExecutables = originalHooksPath
+    ? supportedGitHooks()
+      .map((hookName) => join(originalHooksPath, hookName))
+      .filter((hookPath) => {
+        try {
+          accessSync(hookPath, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    : [];
   // A public trust MUST resolve to an enforced mode. Absent mode is resolved
   // above; anything else that lands here (the literal 'none', a typo, a
   // non-string) used to fall through to the bare `claude` spawn below — an
@@ -539,7 +557,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       claudePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
-      executablePaths: mcpExecutables,
+      executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
     });
     return {
       cmd: wrapped[0],
@@ -568,7 +586,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
-      readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
+      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath].filter(Boolean),
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
@@ -691,17 +709,21 @@ export default {
           agentName: ctx.agentName,
         });
       }
+      const claudeEnv = buildClaudeEnv(
+        ctx.env,
+        publicClaudeState,
+        mcpConfig?.expansionEnv,
+        mcpConfig?.credential?.path || null,
+      );
+      if (publicNativeSandbox && ctx.commitAttributionEnv) {
+        Object.assign(claudeEnv, ctx.commitAttributionEnv);
+      }
       const spawnCtx = {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
         publicClaudeState,
-        claudeEnv: buildClaudeEnv(
-          ctx.env,
-          publicClaudeState,
-          mcpConfig?.expansionEnv,
-          mcpConfig?.credential?.path || null,
-        ),
+        claudeEnv,
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({

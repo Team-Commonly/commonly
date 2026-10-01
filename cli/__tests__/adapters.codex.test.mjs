@@ -392,6 +392,25 @@ describe('codex adapter — spawn()', () => {
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-public"}\n'],
       outputContents: 'ok',
     });
+    const hookPath = '/workspace/.git/commonly-agent-hooks-test';
+    const originalHooksPath = join(operatorHome, 'existing-hooks');
+    await mkdir(originalHooksPath, { recursive: true });
+    const originalHookPath = join(originalHooksPath, 'pre-commit');
+    await writeFile(originalHookPath, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    const commitAttributionEnv = {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: hookPath,
+      COMMONLY_AGENT_GIT_CONFIG_INDEX: '0',
+      COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: '0',
+      COMMONLY_AGENT_HOOKS_PATH: hookPath,
+      COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath,
+      COMMONLY_AGENT_SEAT_NAME: 'Public Seat',
+      COMMONLY_AGENT_SEAT_ID: 'public%3Adefault',
+      COMMONLY_AGENT_ADAPTER: 'codex',
+      COMMONLY_AGENT_MODEL: 'gpt-test',
+      COMMONLY_AGENT_EFFORT: 'high',
+    };
 
     await codex.spawn('work safely', {
       sessionId: null,
@@ -400,6 +419,7 @@ describe('codex adapter — spawn()', () => {
         sandbox: { mode: 'workspace', trust: 'public' },
       },
       env: { ...process.env, CODEX_HOME: operatorHome },
+      commitAttributionEnv,
       agentName: 'public-test-agent',
       _publicCodexHome: publicHome,
       _spawnImpl: impl,
@@ -427,6 +447,9 @@ describe('codex adapter — spawn()', () => {
     expect(filesystem).toContain('":workspace_roots"={"."="write"');
     expect(filesystem).toContain('".commonly/**"="deny"');
     expect(filesystem).toContain('".codex/**"="deny"');
+    expect(filesystem).toContain(`"${hookPath}"="read"`);
+    expect(filesystem).toContain(`"${originalHookPath}"="read"`);
+    expect(filesystem).not.toContain(`"${originalHooksPath}"="read"`);
     expect(filesystem).not.toContain('".commonly"="deny"');
     expect(filesystem).not.toContain('".codex"="deny"');
     for (const secretPath of [
@@ -441,9 +464,14 @@ describe('codex adapter — spawn()', () => {
       expect(filesystem).toContain(`"${secretPath}"="deny"`);
     }
     expect(cFlags).toContain('permissions.commonly_public.network.enabled=false');
-    expect(cFlags).toContain(
-      'shell_environment_policy.include_only=["PATH","HOME","TMPDIR","LANG","LC_*"]',
-    );
+    const shellEnvironment = cFlags.find((flag) => (
+      flag.startsWith('shell_environment_policy.include_only=')
+    ));
+    expect(shellEnvironment).toContain('"GIT_CONFIG_COUNT"');
+    expect(shellEnvironment).toContain('"GIT_CONFIG_KEY_0"');
+    expect(shellEnvironment).toContain('"COMMONLY_AGENT_SEAT_NAME"');
+    expect(shellEnvironment).toContain('"COMMONLY_AGENT_ORIGINAL_HOOKS_PATH"');
+    expect(calls[0].opts.env.GIT_CONFIG_VALUE_0).toBe(hookPath);
   });
 
   test('public read-only mode keeps the workspace read-only and applies on resume', async () => {

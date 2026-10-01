@@ -1,0 +1,139 @@
+#!/usr/bin/env node
+'use strict';
+
+const { execFileSync, spawnSync } = require('node:child_process');
+
+const refExists = (ref) => spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
+  stdio: 'ignore',
+}).status === 0;
+
+const requestedRef = process.argv[2];
+if (requestedRef === '--help' || requestedRef === '-h') {
+  process.stdout.write('Usage: scripts/agent-commit-census [git-ref]\n');
+  process.exit(0);
+}
+
+const ref = requestedRef || (refExists('main') ? 'main' : 'origin/main');
+if (!refExists(ref)) {
+  process.stderr.write(`Git ref not found: ${ref}\n`);
+  process.exit(1);
+}
+
+let log;
+try {
+  log = execFileSync(
+    'git',
+    ['log', '--format=%H%x00%(trailers:key=Co-authored-by)%x00%B%x00', ref],
+    { encoding: 'utf8' },
+  );
+} catch (error) {
+  process.stderr.write(`Could not read commits from ${ref}: ${error.message}\n`);
+  process.exit(1);
+}
+
+const counts = new Map();
+const models = new Map();
+const attributionWarnings = [];
+let unattributedModelCommits = 0;
+const parseSeatLine = (line) => {
+  const match = /^Co-authored-by:\s*(.*?)\s+<([^<>@\s]+@agents\.commonly\.invalid)>$/i.exec(line);
+  if (!match) return null;
+  return {
+    displayName: match[1],
+    seatId: match[2].slice(0, match[2].indexOf('@')),
+  };
+};
+const fields = log.split('\0');
+for (let index = 0; index + 2 < fields.length; index += 3) {
+  const commitId = fields[index].trim();
+  const coAuthors = fields[index + 1];
+  const message = fields[index + 2];
+  if (!commitId) continue;
+
+  const parsedSeatIds = new Set();
+  const seatsInCommit = new Map();
+  for (const line of coAuthors.split(/\r?\n/)) {
+    const seat = parseSeatLine(line);
+    if (!seat) continue;
+    parsedSeatIds.add(seat.seatId);
+    seatsInCommit.set(seat.seatId, seat.displayName);
+  }
+
+  // GitHub may leave a source commit's co-author line inline instead of lifting
+  // it into the final trailer block. Count that exact line as a fallback and
+  // report when the trailer reader missed it.
+  const bodySeatIds = new Set();
+  for (const line of message.split(/\r?\n/)) {
+    const seat = parseSeatLine(line);
+    if (!seat) continue;
+    bodySeatIds.add(seat.seatId);
+    seatsInCommit.set(seat.seatId, seat.displayName);
+  }
+  const bodyOnlySeatIds = [...bodySeatIds].filter((seatId) => !parsedSeatIds.has(seatId));
+  if (bodyOnlySeatIds.length > 0) {
+    attributionWarnings.push(
+      `${commitId.slice(0, 12)}: ${bodyOnlySeatIds.length} Commonly seat line(s) did not parse as trailers; counted the exact message-body line(s).`,
+    );
+  }
+
+  for (const [seatId, displayName] of seatsInCommit) {
+    const row = counts.get(seatId) || { commits: 0, displayNames: new Set() };
+    row.commits += 1;
+    row.displayNames.add(displayName);
+    counts.set(seatId, row);
+  }
+
+  // GitHub may lift co-author lines into the final paragraph on a squash, but
+  // Agent-Model lines stay inline as body text. Match those exact lines instead
+  // of parsing arbitrary key:value prose, which can false-match.
+  let modelLinesInCommit = 0;
+  for (const line of message.split(/\r?\n/)) {
+    const match = /^Agent-Model: (.+)$/.exec(line);
+    if (!match) continue;
+    modelLinesInCommit += 1;
+    const model = match[1].trim();
+    const row = models.get(model) || { lines: 0, commits: new Set() };
+    row.lines += 1;
+    row.commits.add(commitId);
+    models.set(model, row);
+  }
+
+  if (modelLinesInCommit > 0 && parsedSeatIds.size === 0) {
+    if (seatsInCommit.size > 0) {
+      attributionWarnings.push(
+        `${commitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer; counting ${seatsInCommit.size} seat(s) from message-body lines.`,
+      );
+    } else {
+      unattributedModelCommits += 1;
+      attributionWarnings.push(
+        `${commitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer or Commonly seat line in the body; possible co-author lift failure.`,
+      );
+    }
+  }
+}
+
+if (counts.size === 0) {
+  process.stdout.write(`No Commonly seat attribution found on ${ref}.\n`);
+} else {
+  process.stdout.write(`Commonly seat-attributed commits on ${ref}\n`);
+  process.stdout.write('COMMITS\tSEAT ID\tDISPLAY NAME(S)\n');
+  for (const [seatId, row] of [...counts.entries()].sort((left, right) => (
+    right[1].commits - left[1].commits || left[0].localeCompare(right[0])
+  ))) {
+    process.stdout.write(`${row.commits}\t${seatId}\t${[...row.displayNames].sort().join(', ')}\n`);
+  }
+}
+
+for (const warning of attributionWarnings) {
+  process.stderr.write(`Warning: ${warning}\n`);
+}
+if (unattributedModelCommits > 0) process.exitCode = 1;
+
+if (models.size > 0) {
+  process.stdout.write('MODEL LINES\tCOMMIT BODIES\tADAPTER/MODEL/EFFORT\n');
+  for (const [model, row] of [...models.entries()].sort((left, right) => (
+    right[1].lines - left[1].lines || left[0].localeCompare(right[0])
+  ))) {
+    process.stdout.write(`${row.lines}\t${row.commits.size}\t${model}\n`);
+  }
+}

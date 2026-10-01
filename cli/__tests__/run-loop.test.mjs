@@ -105,7 +105,7 @@ describe('performRun', () => {
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
 
     const spawn = jest.fn(async () => ({ text: 'hello back' }));
-    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const adapter = { name: 'codex', detect: stubAdapter.detect, spawn };
 
     const { stop } = performRun({
       instanceUrl: 'http://localhost:5000',
@@ -128,6 +128,19 @@ describe('performRun', () => {
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
     expect(spawn).toHaveBeenCalledTimes(1);
+    const spawnedEnv = spawn.mock.calls[0][1].env;
+    const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);
+    expect(spawnedEnv[`GIT_CONFIG_KEY_${configIndex}`]).toBe('core.hooksPath');
+    expect(spawnedEnv.COMMONLY_AGENT_SEAT_NAME).toBe('my-stub');
+    expect(spawnedEnv.COMMONLY_AGENT_SEAT_ID).toBe('WyJteS1zdHViIiwiZGVmYXVsdCJd');
+    expect(spawnedEnv.COMMONLY_AGENT_ADAPTER).toBe('codex');
+    expect(spawnedEnv.COMMONLY_AGENT_MODEL).toBe('default');
+    expect(fs.existsSync(spawnedEnv[`GIT_CONFIG_VALUE_${configIndex}`])).toBe(false);
+    const sandboxEnv = spawn.mock.calls[0][1].commitAttributionEnv;
+    expect(sandboxEnv.GIT_CONFIG_COUNT).toBe('1');
+    expect(sandboxEnv.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
+    expect(sandboxEnv.GIT_CONFIG_VALUE_0).toBe(spawnedEnv[`GIT_CONFIG_VALUE_${configIndex}`]);
+    expect(sandboxEnv.COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT).toBe('0');
     expect(spawn.mock.calls[0][0]).toContain('[Inbox batch: 1 new event');
     expect(spawn.mock.calls[0][0]).toContain('hello from tester');
 
