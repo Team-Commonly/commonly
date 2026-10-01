@@ -666,6 +666,43 @@ describe('V2ConnectorsPage', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('shows the server-owned provider revoke page after a hosted-MCP reconnect needs manual withdrawal', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage },
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: 'Review provider access' });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(reviewLink).toHaveAttribute('target', '_blank');
+    expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByRole('status')).toHaveTextContent('could not confirm withdrawal');
+    expect(window.location.search).toBe('');
+  });
+
+  it('does not turn a callback query into a provider link unless it matches the row', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=https%3A%2F%2Fevil.example%2F',
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage: 'https://linear.app/settings/security' },
+    }]);
+    renderPage();
+
+    await waitFor(() => expect(window.location.search).toBe(''));
+    expect(screen.queryByRole('link', { name: 'Review provider access' })).toBeNull();
+  });
+
   it('shows the error reconnect action and retains the separate removal action', async () => {
     mockGets([{
       _id: 'i-slack-error', installationId: 'install-slack-u1', type: 'slack', status: 'error',

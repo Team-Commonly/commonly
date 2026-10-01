@@ -121,6 +121,10 @@ const okTokenResponse = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete FIXTURE_ENTRY.revoke.endpoint;
+  connectorSecrets.get.mockReset();
+  connectorSecrets.put.mockReset();
+  connectorSecrets.revoke.mockReset();
   intake.discoverAuthorizationServer.mockResolvedValue({
     // §3.3's required claim, so the stub matches what real discovery returns.
     issuer: 'https://mcp.linear.app',
@@ -148,7 +152,16 @@ const setStoredRow = (overrides = {}) => {
 
 const outcome = (res) => {
   const url = new URL(res.headers.location, 'https://commonly.me');
-  return { status: res.status, hostedMcp: url.searchParams.get('hostedMcp'), code: url.searchParams.get('code') };
+  const result = {
+    status: res.status,
+    hostedMcp: url.searchParams.get('hostedMcp'),
+    code: url.searchParams.get('code'),
+  };
+  const entryId = url.searchParams.get('entryId');
+  const revokeAt = url.searchParams.get('revokeAt');
+  if (entryId) result.entryId = entryId;
+  if (revokeAt) result.revokeAt = revokeAt;
+  return result;
 };
 
 describe('hosted-mcp connect: callback', () => {
@@ -360,9 +373,233 @@ describe('hosted-mcp connect: callback', () => {
     expect(revokeOrder).toBeLessThan(connectorSecrets.put.mock.invocationCallOrder[0]);
   });
 
-  it('leaves the grants alone when the same account reconnects', async () => {
+  it('a reconnect as a different provider account withdraws the old refresh token before either new secret overwrites it', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
     setStoredRow({
       credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    const secretValues = new Map([
+      ['ref-old-access', 'old-access-token'],
+      ['ref-old-refresh', 'old-refresh-token'],
+    ]);
+    connectorSecrets.get.mockImplementation(async (ref) => secretValues.get(String(ref)));
+    connectorSecrets.put.mockReset();
+    connectorSecrets.put.mockImplementation(async (_rowId, kind, value) => {
+      const ref = kind.kind === 'hosted-mcp-refresh-token' ? 'ref-old-refresh' : 'ref-old-access';
+      secretValues.set(ref, value);
+      return ref;
+    });
+    global.fetch.mockReset();
+    global.fetch
+      .mockResolvedValueOnce(okTokenResponse)
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    expect(outcome(res).revokeAt).toBeUndefined();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
+    const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+    expect(revokeBody.get('token')).toBe('old-refresh-token');
+    expect(revokeBody.get('token')).not.toBe('refresh-1');
+    expect(revokeBody.get('token_type_hint')).toBe('refresh_token');
+    // This is the ordering contract: connectorSecrets.put updates the old ref
+    // in place, so moving the get below either put sends the newly authorized
+    // token to the revocation endpoint instead.
+    expect(connectorSecrets.get.mock.invocationCallOrder[0])
+      .toBeLessThan(connectorSecrets.put.mock.invocationCallOrder[0]);
+    expect(secretValues.get('ref-old-refresh')).toBe('refresh-1');
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['the stored subject is missing', { credentialRef: 'ref-old-access', refreshTokenRef: 'ref-old-refresh' }, idToken('acct-new')],
+    ['the exchanged subject is missing', {
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+    }, undefined],
+  ])('a reconnect whose subjects cannot be compared sends nothing and names the revoke page when %s', async (_label, oldConfig, newIdToken) => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow(oldConfig);
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        ...(newIdToken ? { id_token: newIdToken } : {}),
+      }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refused provider withdrawal still finishes the reconnect and names the revoke page', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    connectorSecrets.get.mockResolvedValue('old-refresh-token');
+    global.fetch.mockReset();
+    global.fetch
+      .mockResolvedValueOnce(okTokenResponse)
+      .mockResolvedValueOnce({ ok: false, status: 503 });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('an unreachable provider withdrawal still finishes the reconnect and names the revoke page', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    connectorSecrets.get.mockResolvedValue('old-refresh-token');
+    global.fetch.mockReset();
+    global.fetch
+      .mockResolvedValueOnce(okTokenResponse)
+      .mockRejectedValueOnce(new Error('socket hang up'));
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('an unreadable old token does not stop reconnect and names the revoke page', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    connectorSecrets.get.mockRejectedValue(new Error('connector_secret_key_missing'));
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+  });
+
+  it('a reconnect whose old pair was minted by another client sends no token and names the revoke page', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: 'retired-client-id',
+    });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the old access token when the row has no refresh-token reference', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    connectorSecrets.get.mockResolvedValue('old-access-token');
+    global.fetch.mockReset();
+    global.fetch
+      .mockResolvedValueOnce(okTokenResponse)
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    expect(outcome(res).revokeAt).toBeUndefined();
+    const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+    expect(revokeBody.get('token')).toBe('old-access-token');
+    expect(revokeBody.get('token_type_hint')).toBe('access_token');
+  });
+
+  it('hands the person the revoke page when a different-account reconnect has no vendor endpoint', async () => {
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'connected',
+      code: null,
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+    expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the grants alone when the same account reconnects', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    setStoredRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
       providerSubject: 'acct-1',
     });
     const res = await callback();
@@ -370,6 +607,8 @@ describe('hosted-mcp connect: callback', () => {
     // Without this arm the one above passes on a callback that revokes on every
     // reconnect, which is a different defect wearing the same green tick.
     expect(revokeConnectionGrants).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
   });
 
   it('revokes the row\'s grants when neither side has a subject to compare', async () => {
