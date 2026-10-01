@@ -635,7 +635,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(revokeConnectionGrants).toHaveBeenCalled();
   });
 
-  it('drops a refresh token the vendor no longer issues instead of keeping a dead one', async () => {
+  it('drops the stored refresh token when reconnect cannot confirm its grant binding', async () => {
     setStoredRow({ refreshTokenRef: 'ref-old-refresh' });
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ access_token: 'access-1' }) });
     connectorSecrets.put.mockReset();
