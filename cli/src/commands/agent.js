@@ -48,6 +48,7 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
+import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
@@ -190,6 +191,7 @@ export const bootstrapAgentRecordFromEnv = async ({
 
   return {
     agentName,
+    displayName: identity?.displayName || primary?.displayName || agentName,
     instanceId: identity?.instanceId || primary?.instanceId || 'default',
     podId: primary?.podId || null,
     instanceUrl,
@@ -731,6 +733,7 @@ export const performAttach = async ({
     runtimeToken,
     detected,
     wrappedCli: adapter.name,
+    displayName: installation.displayName || displayName || agentName,
     environment,
     workspace,
   };
@@ -907,6 +910,7 @@ export const performRun = ({
   token,
   adapter,
   agentName,
+  displayName = null,
   instanceId = 'default',
   podId = null,
   environment = null,
@@ -1370,11 +1374,28 @@ export const performRun = ({
       };
     }
     let result;
+    let commitAttribution = null;
     try {
+      // The local CLI is a wrapper for a Commonly seat, so its Git commits
+      // carry the seat and the adapter's selected model/effort. `stub` exists
+      // only for tests and has no commit-making child process.
+      if (adapter?.name !== 'stub') {
+        commitAttribution = prepareCommitAttribution({
+          cwd: agentCwd,
+          env: process.env,
+          agentName,
+          displayName,
+          instanceId,
+          adapter: adapter?.name,
+          model: seatEnvironment?.model,
+          effort: seatEnvironment?.effort,
+        });
+      }
       result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
         sessionId,
         cwd: agentCwd,
-        env: process.env,
+        env: commitAttribution?.env || process.env,
+        commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
         environment: seatEnvironment,
         // Runtime context the Claude/Codex adapters expose only to their
@@ -1389,10 +1410,14 @@ export const performRun = ({
         metadata: { event },
       });
     } finally {
-      // Best-effort by construction: `close` logs and returns on a failed
-      // revoke, so a turn that already produced an answer is not failed by
-      // cleanup. The boot sweep collects anything left behind.
-      await lease.close();
+      try {
+        commitAttribution?.cleanup();
+      } finally {
+        // Best-effort by construction: `close` logs and returns on a failed
+        // revoke, so a turn that already produced an answer is not failed by
+        // cleanup. The boot sweep collects anything left behind.
+        await lease.close();
+      }
     }
 
     if (result.newSessionId) {
@@ -2511,7 +2536,7 @@ Docs:
         const envAbsPath = opts.env ? pathResolve(opts.env) : null;
         const {
           installation, instanceId, runtimeToken, detected, wrappedCli,
-          environment, workspace,
+          displayName, environment, workspace,
         } = await performAttach({
           client,
           adapterName,
@@ -2525,6 +2550,7 @@ Docs:
 
         saveAgentToken(opts.name, {
           agentName: opts.name,
+          displayName,
           instanceId,
           podId: opts.pod,
           instanceUrl,
@@ -2717,6 +2743,7 @@ Docs:
         token: record.runtimeToken,
         adapter,
         agentName: record.agentName,
+        displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
         environment: record.environment || null,

@@ -347,6 +347,24 @@ describe('claude adapter — ctx.environment', () => {
   test('public workspace mode wraps Claude in deny-default Seatbelt with isolated state and env', async () => {
     const originalPlatform = process.platform;
     const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const hooksPath = path.join(cwd, '.git', 'commonly-agent-hooks-test');
+    const originalHooksPath = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-existing-hooks-'));
+    const originalPreCommit = path.join(originalHooksPath, 'pre-commit');
+    fs.writeFileSync(originalPreCommit, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    const commitAttributionEnv = {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: hooksPath,
+      COMMONLY_AGENT_GIT_CONFIG_INDEX: '0',
+      COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: '0',
+      COMMONLY_AGENT_HOOKS_PATH: hooksPath,
+      COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath,
+      COMMONLY_AGENT_SEAT_NAME: 'Public Seat',
+      COMMONLY_AGENT_SEAT_ID: 'public%3Adefault',
+      COMMONLY_AGENT_ADAPTER: 'claude',
+      COMMONLY_AGENT_MODEL: 'model-test',
+      COMMONLY_AGENT_EFFORT: 'high',
+    };
     const { impl, calls } = makeSpawnImpl();
     try {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -367,6 +385,7 @@ describe('claude adapter — ctx.environment', () => {
           COMMONLY_HOST_SECRET: 'must-not-inherit',
           cm_agent_probe: 'must-not-inherit',
         },
+        commitAttributionEnv,
         environment: {
           sandbox: { mode: 'workspace', trust: 'public' },
           mcp: [{
@@ -386,6 +405,8 @@ describe('claude adapter — ctx.environment', () => {
       const profile = call.args[1];
       expect(profile).toContain('(deny default)');
       expect(profile).toContain(`(subpath "${fs.realpathSync(cwd)}")`);
+      expect(profile).toContain(`(literal "${path.join(hooksPath, 'prepare-commit-msg')}")`);
+      expect(profile).toContain(`(literal "${fs.realpathSync(originalPreCommit)}")`);
       expect(profile).toContain(
         `(deny file-read* file-write* (subpath "${path.join(fs.realpathSync(cwd), '.commonly')}"))`,
       );
@@ -400,6 +421,10 @@ describe('claude adapter — ctx.environment', () => {
       expect(call.opts.env.USER).toBe('safe-user');
       expect(call.opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
       expect(call.opts.env.cm_agent_probe).toBeUndefined();
+      expect(call.opts.env.GIT_CONFIG_COUNT).toBe('1');
+      expect(call.opts.env.GIT_CONFIG_VALUE_0).toBe(hooksPath);
+      expect(call.opts.env.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH).toBe(originalHooksPath);
+      expect(call.opts.env.COMMONLY_AGENT_SEAT_NAME).toBe('Public Seat');
 
       const sanitized = JSON.parse(
         fs.readFileSync(path.join(publicState, '.claude.json'), 'utf8'),
@@ -417,6 +442,7 @@ describe('claude adapter — ctx.environment', () => {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
       spawnSync.mockReset();
       fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(originalHooksPath, { recursive: true, force: true });
     }
   });
 
