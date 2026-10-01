@@ -10,6 +10,8 @@ const { toPublicIntegration, withoutConnectCode } = require('../../models/integr
 const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -139,6 +141,9 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
   return rows.map((row) => {
     const meta = metas[row.installableId];
     const component = mcpComponentOf(row);
+    const hostedEntry = meta.connectionType === 'hosted-mcp'
+      ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, meta.entryId || '') || null
+      : undefined;
     const readiness = meta.readiness();
     return {
       installableId: row.installableId,
@@ -150,7 +155,7 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },
-      tools: projectTools(component),
+      tools: projectTools(component, hostedEntry),
       connections: connections
         // Two vendors' rows share one connection type, so an entry-scoped meta
         // matches its own rows only: without the entryId half, a person

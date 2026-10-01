@@ -264,15 +264,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     return () => { cancelled = true; };
   }, [api, selectedId]);
 
-  // Grants on main are GitHub App connections; the catalogue entry carries the label and what it does.
-  // The entry a grant belongs to, by the tools it names. The github fallback is
-  // for a grant whose tools the catalogue no longer describes: a label beats none.
-  const entryFor = (grant?: ToolGrant | null): ToolCatalogEntry | null => (
-    (grant ? catalog.find((entry) => entryCovers(entry, grant)) : null)
-    || catalog.find((entry) => entry.installableId === 'github')
-    || null
+  // The entry a grant belongs to is the one whose namespaced tools it carries.
+  // If the catalogue no longer has that entry, keep the row visibly unknown;
+  // assigning it to GitHub would misstate who owns the grant and its policy.
+  const entryFor = (grant: ToolGrant): ToolCatalogEntry | null => (
+    catalog.find((entry) => entryCovers(entry, grant)) || null
   );
-  const toolLabel = (grant?: ToolGrant | null): string => entryFor(grant)?.label || 'GitHub';
+  const toolLabel = (grant: ToolGrant): string => entryFor(grant)?.label
+    || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
   const memberName = (userId: string | null): string | null => {
@@ -314,7 +313,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
     if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'every write asks first' });
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
-    const list = irreversibleTools(entryFor(grant), grant.tools);
+    const entry = entryFor(grant);
+    if (!entry) return t('tools.unknownWritePolicy', { defaultValue: 'write policy unavailable' });
+    const list = irreversibleTools(entry, grant.tools);
     return list.length
       ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(list) })
       : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
@@ -331,6 +332,20 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
     write: t('tools.modeWrite', { defaultValue: 'read and write' }),
   })[mode];
+
+  const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
+    if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
+    return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
+      ? ['read', 'write-with-confirm']
+      : ['read'];
+  };
+
+  const entryModeCopy = (entry: ToolCatalogEntry): string => {
+    const modes = entryGrantModes(entry);
+    return modes.length === 1
+      ? modeLabel(modes[0])
+      : t('tools.readOrWrite', { defaultValue: 'read, or read and write' });
+  };
 
   const usedRecently = (grant: ToolGrant): boolean => {
     const at = lastUse[grant.grantId];
@@ -363,11 +378,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
 
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
     const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    const modes = entryGrantModes(entry);
     setDraft({
       installableId: entry.installableId,
       podId,
       connectionId: entry.connections[0]?.connectionId || '',
-      writeMode: from?.writeMode || 'read',
+      writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
       audience: from ? from.effectiveAudience : (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)),
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
@@ -574,7 +590,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
         >
           <span className="v2-connector-row__name">
             <span className={`v2-connector-row__dot ${dead ? 'v2-connector-row__dot--empty' : `v2-connector-row__dot--live${usedRecently(grant) ? ' v2-connector-row__dot--pulse' : ''}`}`} aria-hidden="true" />
-            <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry?.installableId || 'github'} /></span>
+            <span className="v2-connector-row__glyph" aria-hidden="true">
+              {entry && <PlatformGlyph type={entry.installableId} />}
+            </span>
             <span>{label}</span>
           </span>
           <span className="v2-connector-row__details">
@@ -644,7 +662,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
                 ? (isHosted
                   ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
                   : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
-                : t('tools.readOrWrite', { defaultValue: 'read, or read and write' })}
+                : entryModeCopy(entry)}
           </span>
         </span>
         {!entry.available && (
@@ -763,7 +781,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
-                {WRITE_MODES.map((mode) => (
+                {entryGrantModes(draftEntry).map((mode) => (
                   <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>

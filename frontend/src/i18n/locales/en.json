@@ -2074,6 +2074,8 @@
     "notEnabled": "not enabled on this instance · ask your operator",
     "notGranted": "not granted",
     "nothingMatches": "Nothing matches.",
+    "unknownConnector": "Unknown connector",
+    "unknownWritePolicy": "write policy unavailable",
     "outcomeFailed": "failed",
     "outcomeOk": "ok",
     "outcomeRefused": "refused",

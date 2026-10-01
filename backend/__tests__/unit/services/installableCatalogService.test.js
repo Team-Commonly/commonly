@@ -5,8 +5,6 @@ jest.mock('../../../services/toolBrokerService', () => ({
   getToolDefinitions: () => [
     { name: 'github.list_issues', description: 'List issues', requiredWriteMode: 'read', connectionType: 'github-app' },
     { name: 'github.create_issue', description: 'Create an issue', requiredWriteMode: 'write-with-confirm', connectionType: 'github-app', irreversible: true },
-    { name: 'linear.list_issues', description: 'List issues', requiredWriteMode: 'read', connectionType: 'hosted-mcp', entryId: 'linear' },
-    { name: 'acme.list_tickets', description: 'List tickets', requiredWriteMode: 'read', connectionType: 'hosted-mcp', entryId: 'acme' },
   ],
 }));
 jest.mock('../../../services/roomGrantService', () => ({
@@ -24,6 +22,7 @@ const InstallableInstallation = require('../../../models/InstallableInstallation
 const Integration = require('../../../models/Integration');
 const { catalogFor } = require('../../../services/installable/installableCatalogService');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
+const { buildHostedMcpToolInstallable } = require('../../../services/installable/toolInstallables');
 
 const userId = '64b64c48c4f37a6b2f34c111';
 const installationId = '64b64c48c4f37a6b2f34c222';
@@ -255,9 +254,11 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   const shipped = [...HOSTED_MCP_ENTRIES];
   HOSTED_MCP_ENTRIES.push(acme);
   try {
+    const linearEntry = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'linear');
+    expect(linearEntry).toBeDefined();
     mockInstallables([], [
-      { ...githubTool(), installableId: 'linear', name: 'Linear', description: 'Issues, projects and cycles.', components: [{ name: 'commonly-grant-broker', type: 'mcp-server', enabledTools: ['linear.list_issues'] }] },
-      { ...githubTool(), installableId: 'acme', name: 'Acme', description: 'Tickets.', components: [{ name: 'commonly-grant-broker', type: 'mcp-server', enabledTools: ['acme.list_tickets'] }] },
+      buildHostedMcpToolInstallable(linearEntry),
+      buildHostedMcpToolInstallable(acme),
     ]);
     InstallableInstallation.find.mockReturnValue(lean([]));
     Integration.find.mockReturnValue(lean([
@@ -287,6 +288,13 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(acmeRow.connections).toEqual([
       { connectionId: 'conn-acme', owner: '', repo: '' },
     ]);
+    expect(linear.tools).toEqual(linearEntry.tools.map((tool) => expect.objectContaining({
+      name: `linear.${tool.name}`,
+      description: tool.description,
+      requiredWriteMode: 'read',
+      irreversible: Boolean(tool.irreversible),
+    })));
+    expect(acmeRow.tools).toEqual([{ name: 'acme.list_tickets', description: 'List tickets', requiredWriteMode: 'read', irreversible: false }]);
     expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: { $in: ['hosted-mcp'] }, createdBy: userId, status: 'connected', revokedAt: null,
     }));
