@@ -18,6 +18,7 @@
  */
 
 import { jest } from '@jest/globals';
+import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'events';
 import os from 'os';
 import path from 'path';
@@ -69,7 +70,7 @@ const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   return proc;
 };
 
-const captureImpl = () => {
+const captureImpl = ({ onSpawn } = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
     const i = args.indexOf('--mcp-config');
@@ -77,8 +78,10 @@ const captureImpl = () => {
     const config = configPath ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : null;
     const declared = config?.mcpServers?.commonly?.env || {};
     const fileVar = declared.COMMONLY_TOKEN_FILE;
-    const resolved = fileVar && opts.env?.['COMMONLY_TOKEN_FILE'];
-    calls.push({
+    const hasHeadersHelper = Object.values(config?.mcpServers || {})
+      .some((entry) => typeof entry.headersHelper === 'string');
+    const resolved = (fileVar || hasHeadersHelper) && opts.env?.['COMMONLY_TOKEN_FILE'];
+    const call = {
       cmd,
       args,
       env: opts.env,
@@ -89,7 +92,9 @@ const captureImpl = () => {
       tokenInEnv: opts.env?.['COMMONLY_AGENT_TOKEN'],
       fileText: resolved && fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : null,
       fileMode: resolved && fs.existsSync(resolved) ? fs.statSync(resolved).mode & 0o777 : null,
-    });
+    };
+    calls.push(call);
+    if (onSpawn) onSpawn(call);
     return fakeChild({ stdout: 'ok', code: 0 });
   };
   return { calls, impl };
@@ -210,10 +215,10 @@ describe('claude: the seat credential arrives as a path, never as a value (TASK-
   });
 });
 
-describe('claude: the carve-out for a reference the rewrite cannot move (TASK-082/TASK-083)', () => {
-  const spawnWithImpl = async (mcp) => {
+describe('claude: HTTP token headers use the per-spawn credential file (TASK-228)', () => {
+  const spawnWithImpl = async (mcp, onSpawn) => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kai-claude-carve-'));
-    const { calls, impl } = captureImpl();
+    const { calls, impl } = captureImpl({ onSpawn });
     let warned = [];
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -235,27 +240,84 @@ describe('claude: the carve-out for a reference the rewrite cannot move (TASK-08
     return { call: calls[0], warned };
   };
 
-  test('a header reference keeps the value in the environment, and the seat is told', async () => {
-    // Measured shape, and the reason this carve-out exists at all: an HTTP entry
-    // hands claude a header string to substitute. There is no file channel for a
-    // bearer header, so refusing would take the broker away from every seat that
-    // has one. The value is supplied, and the warning names the trade.
+  const runHeadersHelper = (call, serverName = 'github-grant') => {
+    const command = call.config.mcpServers[serverName].headersHelper;
+    return JSON.parse(execFileSync('/bin/sh', ['-c', command], {
+      encoding: 'utf8',
+      env: call.env,
+    }));
+  };
+
+  test('a broker header uses a helper and keeps the token out of Claude env and MCP config', async () => {
+    let headers;
     const { call, warned } = await spawnWithImpl([{
       name: 'github-grant',
       transport: 'http',
       url: 'https://api.commonly.me/api/mcp/grants/grant-live',
-      headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
-    }]);
-    expect(call.tokenInEnv).toBe(TOKEN);
-    expect(call.config.mcpServers['github-grant'].headers.Authorization).toBe('Bearer ${COMMONLY_AGENT_TOKEN}');
-    // The value kept is THIS spawn's credential, not whatever the launcher
-    // exported: those are different strings, so the carve-out cannot pass by
-    // inheriting the bootstrap variable.
-    expect(call.tokenInEnv).not.toBe(LAUNCHER_TOKEN);
-    expect(warned.join('\n')).toMatch(/Put the credential on the entry's env to get the file channel/);
+      headers: {
+        Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}',
+        'X-Commonly-Instance': 'prod',
+      },
+    }], (spawnCall) => { headers = runHeadersHelper(spawnCall); });
+    const entry = call.config.mcpServers['github-grant'];
+    expect(call.tokenInEnv).toBeUndefined();
+    expect(Object.keys(call.env)).not.toContain('COMMONLY_AGENT_TOKEN');
+    expect(call.env.COMMONLY_TOKEN_FILE).toBe(call.resolvedFile);
+    expect(entry.headers).toEqual({ 'X-Commonly-Instance': 'prod' });
+    expect(entry.headersHelper).toContain(path.dirname(call.configPath));
+    expect(JSON.stringify(call.config)).not.toContain('${COMMONLY_AGENT_TOKEN}');
+    expect(JSON.stringify(call.config)).not.toContain(TOKEN);
+    expect(warned.join('\n')).not.toMatch(/COMMONLY_AGENT_TOKEN/);
+    expect(headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
   });
 
-  test('an embedded reference in an env value also keeps the value', async () => {
+  test('a 401 retry reruns the helper and reads a rotated token during one spawn', async () => {
+    const rotated = 'cm_agent_'.padEnd(73, 'R');
+    const headers = [];
+    const statuses = [];
+    await spawnWithImpl([{
+      name: 'github-grant',
+      transport: 'http',
+      url: 'https://api.commonly.me/api/mcp/grants/grant-live',
+      headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+    }], (call) => {
+      const fakeBroker = (requestHeaders) => {
+        if (requestHeaders.Authorization === `Bearer ${rotated}`) return 200;
+        if (requestHeaders.Authorization === `Bearer ${TOKEN}`) return 401;
+        return 500;
+      };
+      headers.push(runHeadersHelper(call));
+      // Model Claude's documented auth retry: the connection's existing
+      // headers get one stale-token response, then the helper runs again.
+      statuses.push(fakeBroker(headers[0]));
+      fs.writeFileSync(call.resolvedFile, rotated, { mode: 0o600 });
+      fs.chmodSync(call.resolvedFile, 0o600);
+      headers.push(runHeadersHelper(call));
+      statuses.push(fakeBroker(headers[1]));
+    });
+    expect(headers).toEqual([
+      { Authorization: `Bearer ${TOKEN}` },
+      { Authorization: `Bearer ${rotated}` },
+    ]);
+    expect(statuses).toEqual([401, 200]);
+  });
+
+  test('streamable HTTP headers use the helper while unrelated HTTP headers stay static', async () => {
+    let headers;
+    const { call } = await spawnWithImpl([{
+      name: 'github-grant',
+      transport: 'streamable-http',
+      url: 'https://api.commonly.me/api/mcp/grants/grant-live',
+      headers: {
+        Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}',
+        'X-Commonly-Instance': 'prod',
+      },
+    }], (spawnCall) => { headers = runHeadersHelper(spawnCall); });
+    expect(call.config.mcpServers['github-grant'].headers).toEqual({ 'X-Commonly-Instance': 'prod' });
+    expect(headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
+  });
+
+  test('an embedded reference in an env value remains on the literal expansion path', async () => {
     const { call } = await spawnWithImpl([{
       name: 'commonly',
       transport: 'stdio',
@@ -266,7 +328,8 @@ describe('claude: the carve-out for a reference the rewrite cannot move (TASK-08
     expect(call.declared.NOTE).toBe('prefix-${COMMONLY_AGENT_TOKEN}');
   });
 
-  test('both channels at once: the env entry moves to the file, the header still needs the value', async () => {
+  test('stdio and HTTP credential declarations both use the file, never the Claude env', async () => {
+    let headers;
     const { call } = await spawnWithImpl([
       {
         name: 'commonly',
@@ -280,11 +343,13 @@ describe('claude: the carve-out for a reference the rewrite cannot move (TASK-08
         url: 'https://api.commonly.me/api/mcp/grants/grant-live',
         headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
       },
-    ]);
-    // Our own server stops depending on the value even in the spawn that still
-    // needs it for the header — the two decisions are per declaration.
+    ], (spawnCall) => { headers = runHeadersHelper(spawnCall); });
+    // The stdio child reads the file through its env declaration; the HTTP
+    // connection's helper reads that same per-spawn file when Claude invokes it.
     expect(call.declared.COMMONLY_TOKEN_FILE).toBe('${COMMONLY_TOKEN_FILE}');
     expect(call.declared.COMMONLY_AGENT_TOKEN).toBeUndefined();
-    expect(call.tokenInEnv).toBe(TOKEN);
+    expect(call.tokenInEnv).toBeUndefined();
+    expect(call.env.COMMONLY_TOKEN_FILE).toBe(call.resolvedFile);
+    expect(headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
   });
 });

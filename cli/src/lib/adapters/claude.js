@@ -91,6 +91,22 @@ const DEFAULT_TIMEOUT_MS = (() => {
 })();
 
 const buildPrompt = buildMemoryPreamble;
+const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
+
+const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+const HEADER_TOKEN_HELPER_SOURCE = `import { readFileSync } from 'node:fs';
+
+const credentialFile = process.env.${CREDENTIAL_FILE_VAR};
+if (!credentialFile) throw new Error('missing ${CREDENTIAL_FILE_VAR}');
+const token = readFileSync(credentialFile, 'utf8').trim();
+if (!token) throw new Error('empty ${CREDENTIAL_FILE_VAR}');
+const templates = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const headers = Object.fromEntries(
+  Object.entries(templates).map(([name, parts]) => [name, parts.join(token)]),
+);
+process.stdout.write(JSON.stringify(headers) + '\\n');
+`;
 
 const PUBLIC_DENIED_TOOLS = [
   'WebSearch',
@@ -290,9 +306,9 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl
 
 // Keep Commonly placeholders in the MCP JSON and expose their values only in
 // Claude's per-spawn environment. Claude Code natively expands ${VAR} in MCP
-// command/args/env/url/headers fields. Substituting here used to materialize the raw
-// cm_agent_* bearer token in a transient JSON file, which made the token
-// readable to any co-confined child allowed to read that config directory.
+// command/args/env/url/header fields. Token-bearing HTTP headers are routed
+// through headersHelper below, because a literal expansion would put the
+// credential in Claude's environment and every MCP child's environment.
 //
 // Recognised placeholders:
 //   ${COMMONLY_TOKEN_FILE}    — the PATH of this spawn's credential file
@@ -324,18 +340,65 @@ const buildMcpExpansionEnv = (mcpConfig, ctx) => {
     // added only when the value is non-empty AND the declaration still references
     // it — and `serialized` is the config AFTER the credential rewrite, which is
     // what moves the default declaration off this value and onto the file. A
-    // reference the rewrite cannot move (args, url, headers, or a string that
-    // merely contains the placeholder) keeps the value for that spawn, because
-    // claude substitutes those literally and there is no file channel for them.
-    // That is the measured carve-out, and createMcpConfig warns when it applies
-    // so the seat still carrying the value is named rather than assumed fixed.
+    // reference that cannot use the file channel (args, url, unsupported or
+    // non-HTTP headers, or a string that merely contains the placeholder) keeps
+    // the value for that spawn. createMcpConfig warns when this carve-out applies.
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
   };
   const output = {};
   for (const [key, value] of Object.entries(values)) {
-    if (value && serialized.includes(`\${${key}}`)) output[key] = value;
+    const referenced = serialized.includes(`\${${key}}`)
+      || (key === CREDENTIAL_FILE_VAR && ctx.headersHelperUsesCredentialFile === true);
+    if (value && referenced) output[key] = value;
   }
   return output;
+};
+
+const isHttpTransport = (server) => {
+  const transport = String(server?.transport || server?.type || '').trim().toLowerCase();
+  return transport === 'http' || transport === 'streamable-http';
+};
+
+const getTokenHeaderTemplates = (server) => {
+  if (!isHttpTransport(server) || !server.headers || typeof server.headers !== 'object') return null;
+  const templates = Object.fromEntries(
+    Object.entries(server.headers)
+      .filter(([, value]) => typeof value === 'string' && value.includes(RUNTIME_CREDENTIAL_PLACEHOLDER))
+      .map(([name, value]) => [name, value.split(RUNTIME_CREDENTIAL_PLACEHOLDER)]),
+  );
+  return Object.keys(templates).length > 0 ? templates : null;
+};
+
+const writePrivateFile = async (path, contents) => {
+  await writeFile(path, contents, { encoding: 'utf8', mode: 0o600 });
+  await chmod(path, 0o600);
+};
+
+// Claude's headersHelper is invoked when an HTTP connection is established and
+// again after an authentication retry. Keep the token out of its config and
+// environment: the helper reads the current per-spawn file on every invocation.
+const createTokenHeaderHelpers = async (mcpServers, dir) => {
+  const servers = mcpServers
+    .map((server, index) => ({ server, index, templates: getTokenHeaderTemplates(server) }))
+    .filter((item) => item.templates);
+  if (servers.length === 0) return new Map();
+
+  const scriptPath = join(dir, 'headers-helper.mjs');
+  await writePrivateFile(scriptPath, HEADER_TOKEN_HELPER_SOURCE);
+  const helpers = new Map();
+  for (const { server, index, templates } of servers) {
+    const templatesPath = join(dir, `headers-${index}.json`);
+    await writePrivateFile(templatesPath, JSON.stringify(templates));
+    helpers.set(server.name, {
+      command: [
+        QUOTE_SHELL_ARGUMENT(process.execPath),
+        QUOTE_SHELL_ARGUMENT(scriptPath),
+        QUOTE_SHELL_ARGUMENT(templatesPath),
+      ].join(' '),
+      headerNames: Object.keys(templates),
+    });
+  }
+  return helpers;
 };
 
 const buildMcpConfig = (mcpServers, ctx = {}) => {
@@ -368,7 +431,13 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
         label: 'claude',
       }).env;
     }
-    if (server.headers) entry.headers = { ...server.headers };
+    const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
+    if (server.headers) {
+      const headers = { ...server.headers };
+      for (const headerName of headerHelper?.headerNames || []) delete headers[headerName];
+      if (Object.keys(headers).length > 0 || !headerHelper) entry.headers = headers;
+    }
+    if (headerHelper) entry.headersHelper = headerHelper.command;
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
@@ -390,7 +459,14 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     // config — no second lifecycle to get wrong — and so it is inside the one
     // non-workspace path the Seatbelt profile admits.
     credential = writeCredentialFile(ctx.runtimeToken, { agentName: ctx.agentName || 'agent', root: dir });
-    const config = buildMcpConfig(mcpServers, { ...ctx, credentialFile: credential?.path || null });
+    const dynamicHeaderHelpers = credential?.path
+      ? await createTokenHeaderHelpers(mcpServers, dir)
+      : new Map();
+    const config = buildMcpConfig(mcpServers, {
+      ...ctx,
+      credentialFile: credential?.path || null,
+      dynamicHeaderHelpers,
+    });
     await writeFile(
       file,
       JSON.stringify(config, null, 2),
@@ -402,12 +478,13 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     const expansionEnv = buildMcpExpansionEnv(config, {
       ...ctx,
       credentialFile: credential?.path || null,
+      headersHelperUsesCredentialFile: dynamicHeaderHelpers.size > 0,
     });
     if (expansionEnv[CREDENTIAL_KEY]) {
       // eslint-disable-next-line no-console
       console.warn(
         `[claude] this declaration references ${CREDENTIAL_KEY} in a field claude `
-        + 'substitutes literally (args, url, headers, or a larger string), so the '
+        + 'substitutes literally (args, url, unsupported headers, or a larger string), so the '
         + "value stays in claude's environment for this spawn and every MCP child "
         + `inherits it. Put the credential on the entry's env to get the file channel.`,
       );
