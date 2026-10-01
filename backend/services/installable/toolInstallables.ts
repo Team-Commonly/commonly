@@ -11,7 +11,11 @@
  */
 import type { ToolDefinition } from '../toolBrokerService';
 import { RoomGrantError } from '../roomGrantService';
-import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../../integrations/hostedMcp/entries';
+import {
+  HOSTED_MCP_ENTRIES,
+  assertHostedMcpEntries,
+  findHostedMcpEntry,
+} from '../../integrations/hostedMcp/entries';
 import { hostedMcpToolName, type HostedMcpEntry } from '../hostedMcpEntryService';
 
 // Resolved on first use, not at import: the broker module loads
@@ -73,6 +77,14 @@ export const TOOL_INSTALLABLES: Record<string, ToolInstallableMeta> = {
   },
 };
 
+// The catalogue module cannot import this map without creating a cycle. Check
+// against its keys here, at the load site that merges both sets of Installables.
+const assertNoHostedMcpInstallableCollisions = (entries: HostedMcpEntry[]): void => {
+  assertHostedMcpEntries(entries, new Set(Object.keys(TOOL_INSTALLABLES)));
+};
+
+assertNoHostedMcpInstallableCollisions(HOSTED_MCP_ENTRIES);
+
 /**
  * One tool Installable per hosted-MCP catalogue entry (scope §7).
  *
@@ -84,10 +96,13 @@ export const TOOL_INSTALLABLES: Record<string, ToolInstallableMeta> = {
  */
 export const hostedMcpToolInstallables = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
-): Record<string, ToolInstallableMeta> => Object.fromEntries(entries.map((entry) => [
-  entry.id,
-  { connectionType: 'hosted-mcp' as const, entryId: entry.id, readiness: () => ({ available: true as const }) },
-]));
+): Record<string, ToolInstallableMeta> => {
+  assertNoHostedMcpInstallableCollisions(entries);
+  return Object.fromEntries(entries.map((entry) => [
+    entry.id,
+    { connectionType: 'hosted-mcp' as const, entryId: entry.id, readiness: () => ({ available: true as const }) },
+  ]));
+};
 
 /**
  * Every tool Installable the catalogue may offer: the static ones plus one per

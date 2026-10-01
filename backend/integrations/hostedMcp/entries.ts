@@ -16,11 +16,15 @@ import { LINEAR_ENTRY } from './linear';
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY];
 
 /**
- * Six defects that would otherwise be silent, checked at module load:
+ * Seven defects that would otherwise be silent, checked at module load:
  *
  * - An entry `id` is a tool-name namespace, so `linear.x` must name one entry.
  *   An id carrying a dot would make two entries indistinguishable in the tool
  *   list, and a grant stores those names.
+ * - An entry id may not reuse a builtin tool Installable id. The catalogue
+ *   projection combines both maps; allowing `github` here shadows GitHub's
+ *   metadata and readiness check. The installable load site supplies that
+ *   reserved set without creating an import cycle.
  * - Two entries may not pin the same namespaced name, because a grant's
  *   allowlist and the trail are matched on it.
  * - A tool name carrying the `.` the namespace is built from would make
@@ -108,12 +112,18 @@ export const hostedMcpRevokeTarget = (entry: HostedMcpEntry): HostedMcpRevokeTar
   return { page: named.page, ...(named.endpoint ? { endpoint: named.endpoint } : {}) };
 };
 
-export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
+export const assertHostedMcpEntries = (
+  entries: HostedMcpEntry[],
+  reservedIds: ReadonlySet<string> = new Set(),
+): void => {
   const seenEntries = new Set<string>();
   const seenTools = new Set<string>();
   for (const entry of entries) {
     if (!/^[a-z0-9-]+$/.test(entry.id)) {
       throw new Error(`hosted-mcp entry id is not a usable tool namespace: ${entry.id}`);
+    }
+    if (reservedIds.has(entry.id)) {
+      throw new Error(`hosted-mcp entry id collides with a builtin tool installable: ${entry.id}`);
     }
     // What removal will do with this entry
     // (services/connectionRemovalService.ts). A `revoke` that names no kind,

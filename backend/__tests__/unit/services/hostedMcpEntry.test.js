@@ -414,6 +414,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
   test('a colliding entry id or tool name is refused', () => {
     // Control: a valid catalogue passes, so a throw below is about the collision.
     expect(() => assertHostedMcpEntries([linear(), linear({ id: 'notion', title: 'Notion' })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ id: 'github' })], new Set(['github'])))
+      .toThrow(/collides with a builtin tool installable: github/);
+    // The optional set allows callers to validate only hosted-MCP collisions.
+    expect(() => assertHostedMcpEntries([linear({ id: 'github' })], new Set())).not.toThrow();
     expect(() => assertHostedMcpEntries([linear(), linear()])).toThrow(/duplicate hosted-mcp entry id/);
     expect(() => assertHostedMcpEntries([linear({ id: 'lin.ear' })])).toThrow(/not a usable tool namespace/);
     // Control: the shipped shape is accepted, so the three refusals above are

@@ -13,6 +13,7 @@ const {
   GRANT_BROKER_ID, buildGithubToolInstallable, projectTools, mcpComponentOf, resolveBrokerFor,
   builtinToolInstallables, buildHostedMcpToolInstallable, toolInstallableMetas,
 } = require('../../../services/installable/toolInstallables');
+const { LINEAR_ENTRY } = require('../../../integrations/hostedMcp/linear');
 
 const brokerTools = Object.values(TOOL_DEFINITIONS).filter((d) => d.connectionType === 'github-app').map((d) => d.name);
 
@@ -68,7 +69,7 @@ describe('the builtin GitHub tool Installable', () => {
  */
 const pinned = (over) => ({
   name: 'list_issues', upstreamName: 'list_issues', description: 'List issues',
-  class: 'read', inputSchema: { type: 'object' }, ...over,
+  class: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true }, ...over,
 });
 
 const ENTRY = {
@@ -78,7 +79,7 @@ const ENTRY = {
   issuer: 'https://mcp.linear.app',
   client: 'cimd',
   scopes: ['read'],
-  revoke: 'https://mcp.linear.app/token',
+  revoke: { page: 'https://linear.app/settings/security', endpoint: 'https://mcp.linear.app/token' },
   tools: [pinned({}), pinned({ name: 'get_issue', upstreamName: 'get_issue', description: 'Get an issue' })],
 };
 
@@ -181,5 +182,10 @@ describe('one tool Installable per catalogue entry', () => {
     // a github-app row has no entry, so the filter cannot scope it.
     expect(metas.github.connectionType).toBe('github-app');
     expect(metas.github.entryId).toBeUndefined();
+  });
+
+  test('a hosted entry cannot shadow the builtin GitHub Installable meta', () => {
+    expect(() => toolInstallableMetas([{ ...LINEAR_ENTRY, id: 'github' }]))
+      .toThrow(/collides with a builtin tool installable: github/);
   });
 });
