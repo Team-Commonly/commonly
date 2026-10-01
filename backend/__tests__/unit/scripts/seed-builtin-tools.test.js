@@ -11,6 +11,7 @@ jest.mock('jsonwebtoken', () => ({ sign: jest.fn().mockReturnValue('test-jwt-tok
 const Installable = require('../../../models/Installable');
 const { seedBuiltinTools } = require('../../../scripts/seed-builtin-tools');
 const { buildGithubToolInstallable } = require('../../../services/installable/toolInstallables');
+const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 
 describe('seed-builtin-tools', () => {
@@ -62,16 +63,24 @@ describe('seed-builtin-tools', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     await seedBuiltinTools();
     const rows = await Installable.find({ source: 'builtin' }).sort({ installableId: 1 }).lean();
-    // The shipped catalogue, as the Tools page sees it: GitHub plus the one
-    // pinned entry.
-    expect(rows.map((row) => row.installableId)).toEqual(['github', 'linear']);
-    const linear = rows.find((row) => row.installableId === 'linear');
-    expect(linear.name).toBe('Linear');
-    expect(linear.components[0].enabledTools).toContain('linear.list_issues');
-    expect(linear.components[0].enabledTools).toHaveLength(36);
+    // Derive the expected rows from the catalogue so adding an entry does not
+    // make this fixture reject the new installable.
+    expect(rows.map((row) => row.installableId)).toEqual(
+      ['github', ...HOSTED_MCP_ENTRIES.map(({ id }) => id)].sort(),
+    );
+    HOSTED_MCP_ENTRIES.forEach((entry) => {
+      const row = rows.find((candidate) => candidate.installableId === entry.id);
+      expect(row).toBeDefined();
+      expect(row.name).toBe(entry.title);
+      expect(row.components[0].enabledTools).toEqual(
+        entry.tools.map(({ name }) => `${entry.id}.${name}`),
+      );
+    });
     // Re-seeded on every boot, so the second run has to update in place rather
     // than collide on the unique installableId.
     await seedBuiltinTools();
-    expect(await Installable.countDocuments({ installableId: 'linear' })).toBe(1);
+    await Promise.all(HOSTED_MCP_ENTRIES.map(async ({ id }) => {
+      expect(await Installable.countDocuments({ installableId: id })).toBe(1);
+    }));
   });
 });

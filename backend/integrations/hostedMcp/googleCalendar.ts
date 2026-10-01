@@ -9,11 +9,13 @@
  * part of this entry. Until both exist, readiness projects `not_configured` and
  * the Tools page offers no Connect action.
  *
- * Google documents the three requested Calendar read scopes below. This entry
- * pins only tools whose captured annotation has `readOnlyHint: true`, and keeps
- * all four writers out. The committed `tools/list` fixture was captured
- * unauthenticated; the first authenticated tools/list in the live walk is the
- * required drift check. Google currently labels Calendar MCP Developer Preview.
+ * Google documents the three requested Calendar read scopes below. The OIDC
+ * `openid` scope supplies the account subject used to detect a changed Google
+ * account on reconnect. This entry pins only tools whose captured annotation
+ * has `readOnlyHint: true`, and keeps all four writers out. The committed
+ * `tools/list` fixture was captured unauthenticated; the first authenticated
+ * tools/list in the live walk is the required drift check. Google currently
+ * labels Calendar MCP Developer Preview.
  * Google's web-server OAuth guide recommends `access_type=offline` so the
  * authorization-code flow can return a refresh token. `prompt=consent` also
  * asks Google to issue a fresh refresh token when a member reconnects; without
@@ -50,6 +52,7 @@ export const GOOGLE_CALENDAR_ENTRY: HostedMcpEntry = {
   client: 'pre-registered',
   authorizationParams: { access_type: 'offline', prompt: 'consent' },
   scopes: [
+    'openid',
     'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
     'https://www.googleapis.com/auth/calendar.events.freebusy',
     'https://www.googleapis.com/auth/calendar.events.readonly',

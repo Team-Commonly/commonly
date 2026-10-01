@@ -390,6 +390,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
       client: 'pre-registered',
       authorizationParams: { access_type: 'offline', prompt: 'consent' },
       scopes: [
+        'openid',
         'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
         'https://www.googleapis.com/auth/calendar.events.freebusy',
         'https://www.googleapis.com/auth/calendar.events.readonly',
