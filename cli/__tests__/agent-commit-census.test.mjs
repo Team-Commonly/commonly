@@ -127,4 +127,38 @@ describe('agent-commit-census', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test('streams commit history larger than the child-process buffer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-agent-census-large-'));
+    const messageFile = join(root, 'message.txt');
+    const seatTrailer = 'Co-authored-by: Seat Large <WyJzZWF0LWxhcmdlIiwiZGVmYXVsdCJd@agents.commonly.invalid>';
+    try {
+      execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: root });
+      execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: root });
+      execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: root });
+      writeFileSync(join(root, 'file'), 'fixture\n');
+      execFileSync('git', ['add', 'file'], { cwd: root });
+      writeFileSync(messageFile, [
+        'large-history fixture',
+        '',
+        'Agent-Model: codex/model-large/high',
+        '',
+        'x'.repeat(1024 * 1024 + 64),
+        '',
+        seatTrailer,
+        '',
+      ].join('\n'));
+      execFileSync('git', ['commit', '-F', messageFile], { cwd: root });
+
+      const result = spawnSync(process.execPath, [censusScript, 'main'], {
+        cwd: root,
+        encoding: 'utf8',
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('1\tWyJzZWF0LWxhcmdlIiwiZGVmYXVsdCJd\tSeat Large');
+      expect(result.stdout).toContain('1\t1\tcodex/model-large/high');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
