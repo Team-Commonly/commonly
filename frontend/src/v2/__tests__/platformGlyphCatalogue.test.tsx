@@ -29,4 +29,14 @@ describe('platform glyph catalogue contract', () => {
     expect(svg).toHaveAttribute('fill', 'currentColor');
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe(LINEAR_PATH);
   });
+
+  it('renders Google Calendar with a calendar mark instead of the unknown-platform dot', () => {
+    const { container } = render(React.createElement(PlatformGlyph, { type: 'google-calendar' }));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '20');
+    expect(svg?.querySelector('rect')).toHaveAttribute('x', '3.5');
+    expect(svg?.querySelector('rect')).toHaveAttribute('y', '5');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M3.5 10h17');
+    expect(svg?.querySelector('circle')).toBeNull();
+  });
 });
