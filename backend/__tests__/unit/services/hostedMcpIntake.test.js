@@ -428,6 +428,48 @@ describe('hosted-mcp intake: pre-registered client authentication', () => {
     expect(exchange.body.get('code_verifier')).toBe('pkce');
     expect(revoke.body.get('token')).toBe('held-refresh-token');
   });
+
+  it.each([
+    [
+      'token endpoint advertises private_key_jwt only',
+      { token_endpoint_auth_methods_supported: ['private_key_jwt'] },
+      (staticEntry, metadata, client) => buildTokenExchangeRequest(staticEntry, metadata, client, {
+        redirectUri: 'https://api.example.test/callback', code: 'authorization-code', codeVerifier: 'pkce',
+      }),
+    ],
+    [
+      'token endpoint advertises an empty list',
+      { token_endpoint_auth_methods_supported: [] },
+      (staticEntry, metadata, client) => buildTokenExchangeRequest(staticEntry, metadata, client, {
+        redirectUri: 'https://api.example.test/callback', code: 'authorization-code', codeVerifier: 'pkce',
+      }),
+    ],
+    [
+      'revocation endpoint advertises private_key_jwt only',
+      { revocation_endpoint_auth_methods_supported: ['private_key_jwt'] },
+      (staticEntry, metadata, client) => buildRevocationRequest(staticEntry, metadata, client, {
+        token: 'held-refresh-token', tokenTypeHint: 'refresh_token',
+      }),
+    ],
+    [
+      'revocation endpoint advertises an empty list',
+      { revocation_endpoint_auth_methods_supported: [] },
+      (staticEntry, metadata, client) => buildRevocationRequest(staticEntry, metadata, client, {
+        token: 'held-refresh-token', tokenTypeHint: 'refresh_token',
+      }),
+    ],
+  ])('refuses pre-registered client auth when %s', (_case, metadata, build) => {
+    const staticEntry = entry({ id: 'google-calendar', client: 'pre-registered' });
+    const client = { clientId: 'registered-client', clientSecret: 'registered-secret' };
+    let thrown;
+    try {
+      build(staticEntry, metadata, client);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HostedMcpClientError);
+    expect(thrown?.code).toBe('client_auth_unsupported');
+  });
 });
 
 describe('hosted-mcp intake: the authorization request and PKCE', () => {
