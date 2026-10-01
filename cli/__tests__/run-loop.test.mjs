@@ -92,13 +92,28 @@ const drainMicrotasks = async () => {
   }
 };
 
+let savedGitConfig;
+
 describe('performRun', () => {
   beforeEach(() => {
+    savedGitConfig = new Map(['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
+      .map((name) => [name, process.env[name]]));
     jest.clearAllMocks();
     fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
   });
 
-  test('event with content → adapter.spawn → message posted → event acked', async () => {
+  afterEach(() => {
+    for (const [name, value] of savedGitConfig) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
+    // Make the full attribution env differ from sandboxEnv at the adapter seam.
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = 'http.extraHeader';
+    process.env.GIT_CONFIG_VALUE_0 = 'Authorization: Bearer planted-caller-value';
     const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'delivery-abc' } })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});

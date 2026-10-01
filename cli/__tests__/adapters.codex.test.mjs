@@ -489,16 +489,12 @@ describe('codex adapter — spawn()', () => {
       'COMMONLY_AGENT_SEAT_NAME',
       'COMMONLY_AGENT_ORIGINAL_HOOKS_PATH',
     ]));
-    expect(allowedShellEnvironment).not.toEqual(expect.arrayContaining([
-      'GIT_CONFIG_KEY_1',
-      'GIT_CONFIG_VALUE_1',
-    ]));
-    expect(allowedShellEnvironment).not.toEqual(expect.arrayContaining([
-      'COMMONLY_AGENT_TOKEN',
-      'COMMONLY_TOKEN_FILE',
-      'OPENAI_API_KEY',
-      'SOME_SECRET',
-    ]));
+    expect(allowedShellEnvironment).not.toContain('GIT_CONFIG_KEY_1');
+    expect(allowedShellEnvironment).not.toContain('GIT_CONFIG_VALUE_1');
+    expect(allowedShellEnvironment).not.toContain('COMMONLY_AGENT_TOKEN');
+    expect(allowedShellEnvironment).not.toContain('COMMONLY_TOKEN_FILE');
+    expect(allowedShellEnvironment).not.toContain('OPENAI_API_KEY');
+    expect(allowedShellEnvironment).not.toContain('SOME_SECRET');
     const shellEnvironmentSet = cFlags.find((flag) => (
       flag.startsWith('shell_environment_policy.set=')
     ));
