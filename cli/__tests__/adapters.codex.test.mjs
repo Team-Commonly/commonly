@@ -397,6 +397,9 @@ describe('codex adapter — spawn()', () => {
     await mkdir(originalHooksPath, { recursive: true });
     const originalHookPath = join(originalHooksPath, 'pre-commit');
     await writeFile(originalHookPath, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    // Public Codex receives prepareCommitAttribution().sandboxEnv from
+    // commands/agent.js: the sealed Git config contains only the hook path.
+    // Caller config values are intentionally absent at this boundary.
     const commitAttributionEnv = {
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'core.hooksPath',
@@ -418,7 +421,14 @@ describe('codex adapter — spawn()', () => {
       environment: {
         sandbox: { mode: 'workspace', trust: 'public' },
       },
-      env: { ...process.env, CODEX_HOME: operatorHome },
+      env: {
+        ...process.env,
+        CODEX_HOME: operatorHome,
+        COMMONLY_AGENT_TOKEN: 'dummy-seat-token',
+        COMMONLY_TOKEN_FILE: '/private/tmp/dummy-token-file',
+        OPENAI_API_KEY: 'dummy-provider-key',
+        SOME_SECRET: 'dummy-secret',
+      },
       commitAttributionEnv,
       agentName: 'public-test-agent',
       _publicCodexHome: publicHome,
@@ -464,13 +474,40 @@ describe('codex adapter — spawn()', () => {
       expect(filesystem).toContain(`"${secretPath}"="deny"`);
     }
     expect(cFlags).toContain('permissions.commonly_public.network.enabled=false');
+    expect(cFlags).toContain('shell_environment_policy.inherit="all"');
+    expect(cFlags).toContain('shell_environment_policy.ignore_default_excludes=false');
     const shellEnvironment = cFlags.find((flag) => (
       flag.startsWith('shell_environment_policy.include_only=')
     ));
-    expect(shellEnvironment).toContain('"GIT_CONFIG_COUNT"');
-    expect(shellEnvironment).toContain('"GIT_CONFIG_KEY_0"');
-    expect(shellEnvironment).toContain('"COMMONLY_AGENT_SEAT_NAME"');
-    expect(shellEnvironment).toContain('"COMMONLY_AGENT_ORIGINAL_HOOKS_PATH"');
+    const allowedShellEnvironment = JSON.parse(shellEnvironment.slice(
+      'shell_environment_policy.include_only='.length,
+    ));
+    expect(allowedShellEnvironment).toEqual(expect.arrayContaining([
+      'GIT_CONFIG_COUNT',
+      'GIT_CONFIG_KEY_0',
+      'GIT_CONFIG_VALUE_0',
+      'COMMONLY_AGENT_SEAT_NAME',
+      'COMMONLY_AGENT_ORIGINAL_HOOKS_PATH',
+    ]));
+    expect(allowedShellEnvironment).not.toEqual(expect.arrayContaining([
+      'GIT_CONFIG_KEY_1',
+      'GIT_CONFIG_VALUE_1',
+    ]));
+    expect(allowedShellEnvironment).not.toEqual(expect.arrayContaining([
+      'COMMONLY_AGENT_TOKEN',
+      'COMMONLY_TOKEN_FILE',
+      'OPENAI_API_KEY',
+      'SOME_SECRET',
+    ]));
+    const shellEnvironmentSet = cFlags.find((flag) => (
+      flag.startsWith('shell_environment_policy.set=')
+    ));
+    expect(shellEnvironmentSet).toContain('"GIT_CONFIG_KEY_0"="core.hooksPath"');
+    expect(shellEnvironmentSet).not.toContain('user.name');
+    expect(shellEnvironmentSet).not.toContain('GIT_CONFIG_VALUE_0');
+    expect(shellEnvironmentSet).not.toContain('COMMONLY_AGENT_TOKEN');
+    expect(calls[0].opts.env.GIT_CONFIG_COUNT).toBe('1');
+    expect(calls[0].opts.env.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
     expect(calls[0].opts.env.GIT_CONFIG_VALUE_0).toBe(hookPath);
   });
 

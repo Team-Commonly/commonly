@@ -300,8 +300,7 @@ const preparePublicCodexHome = async (ctx) => {
 
 const publicPermissionProfileFlags = (
   mode,
-  commitHooksPath = null,
-  originalHooksPath = null,
+  commitAttributionEnv = null,
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -309,6 +308,8 @@ const publicPermissionProfileFlags = (
     );
   }
   const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+  const commitHooksPath = commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
+  const originalHooksPath = commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
   const originalHookPaths = originalHooksPath
     ? supportedGitHooks()
       .map((hookName) => join(originalHooksPath, hookName))
@@ -321,6 +322,14 @@ const publicPermissionProfileFlags = (
         }
       })
     : [];
+  // Preserve caller-supplied git config entries alongside the appended
+  // hooksPath entry. The explicit allowlist below admits only these concrete
+  // variable names, not arbitrary environment variables.
+  const gitConfigEnv = Object.keys(commitAttributionEnv || {})
+    .filter((name) => /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(name));
+  const gitConfigKeySet = Object.entries(commitAttributionEnv || {})
+    .filter(([name]) => /^GIT_CONFIG_KEY_\d+$/.test(name))
+    .map(([name, value]) => `${toml(name)}=${toml(value)}`);
   const filesystem = [
     '":minimal"="read"',
     '"~/.commonly"="deny"',
@@ -337,9 +346,7 @@ const publicPermissionProfileFlags = (
   const shellEnvironment = [
     'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
     ...(commitHooksPath ? [
-      'GIT_CONFIG_COUNT',
-      'GIT_CONFIG_KEY_0',
-      'GIT_CONFIG_VALUE_0',
+      ...gitConfigEnv,
       'COMMONLY_AGENT_GIT_CONFIG_INDEX',
       'COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT',
       'COMMONLY_AGENT_HOOKS_PATH',
@@ -356,11 +363,19 @@ const publicPermissionProfileFlags = (
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.network.enabled=false`,
     // The MCP launcher receives explicitly forwarded env_vars separately.
-    // Model-generated shell commands inherit a small non-secret core plus
-    // Commonly's per-spawn Git hook metadata when attribution is active.
-    '-c', 'shell_environment_policy.inherit="core"',
+    // `core` drops explicit GIT_CONFIG_* and hook metadata before include_only
+    // can admit them. When attribution is active, inherit all then constrain
+    // model shells to the exact allowlist below; keep Codex's default secret
+    // filters enabled.
+    '-c', `shell_environment_policy.inherit="${commitHooksPath ? 'all' : 'core'}"`,
     '-c', 'shell_environment_policy.ignore_default_excludes=false',
     '-c', `shell_environment_policy.include_only=${JSON.stringify(shellEnvironment)}`,
+    // Codex's default name filter treats GIT_CONFIG_KEY_n as sensitive. Set
+    // only those key names after filtering; their corresponding values stay
+    // in the allowlisted environment instead of riding argv.
+    ...(gitConfigKeySet.length
+      ? ['-c', `shell_environment_policy.set={${gitConfigKeySet.join(',')}}`]
+      : []),
   ];
 };
 
@@ -397,8 +412,7 @@ const buildArgs = ({
       '--ignore-rules',
       ...publicPermissionProfileFlags(
         publicSandboxMode,
-        commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null,
-        commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null,
+        commitAttributionEnv,
       ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
