@@ -184,6 +184,27 @@ describe('one tool Installable per catalogue entry', () => {
     expect(metas.github.entryId).toBeUndefined();
   });
 
+  test('a pre-registered entry is not offered until both instance client values are configured', () => {
+    const entry = { ...ENTRY, id: 'google-calendar', client: 'pre-registered' };
+    const noConfig = toolInstallableMetas([entry], {});
+    expect(noConfig['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const idOnly = toolInstallableMetas([entry], { GOOGLE_CALENDAR_CLIENT_ID: 'google-client' });
+    expect(idOnly['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const blankValues = toolInstallableMetas([entry], {
+      GOOGLE_CALENDAR_CLIENT_ID: '   ',
+      GOOGLE_CALENDAR_CLIENT_SECRET: '   ',
+    });
+    expect(blankValues['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const configured = toolInstallableMetas([entry], {
+      GOOGLE_CALENDAR_CLIENT_ID: 'google-client',
+      GOOGLE_CALENDAR_CLIENT_SECRET: 'instance-secret',
+    });
+    expect(configured['google-calendar'].readiness()).toEqual({ available: true });
+  });
+
   test('a hosted entry cannot shadow the builtin GitHub Installable meta', () => {
     expect(() => toolInstallableMetas([{ ...LINEAR_ENTRY, id: 'github' }]))
       .toThrow(/collides with a builtin tool installable: github/);

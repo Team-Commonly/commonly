@@ -50,9 +50,10 @@ import Integration from '../models/Integration';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
 import {
-  buildRefreshBody,
+  buildRefreshRequest,
   discoverAuthorizationServer,
   resolvedClientId,
+  resolvedClientSecret,
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
@@ -79,6 +80,7 @@ export const REFRESH_LEASE_MS = 30 * 1000;
 
 export type HostedMcpCredentialErrorCode =
   | 'connection_mismatch'
+  | 'reconnect_required'
   | 'credential_missing'
   | 'refresh_unreachable'
   | 'connection_error'
@@ -111,6 +113,7 @@ export interface HostedMcpRow {
   revokedAt?: Date | null;
   config?: {
     entryId?: string;
+    clientId?: string;
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
@@ -128,9 +131,13 @@ interface CredentialDeps {
   now: () => Date;
   entryFor: (row: HostedMcpRow) => HostedMcpEntry;
   clientIdFor: (entry: HostedMcpEntry) => string;
+  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  /** Conditional on the client-id snapshot, so a concurrent reconnect wins. */
+  markClientMismatch: (id: unknown, recordedClientId: string | undefined, message: string) => Promise<void>;
   refreshAtVendor: (input: {
     entry: HostedMcpEntry;
     clientId: string;
+    clientSecret?: string;
     refreshToken: string;
   }) => Promise<RefreshResult>;
   secrets: Pick<typeof connectorSecrets, 'get' | 'put' | 'revoke'>;
@@ -230,15 +237,30 @@ const defaultDeps = (): CredentialDeps => ({
     return entry;
   },
   clientIdFor: (entry) => resolvedClientId(entry),
-  refreshAtVendor: async ({ entry, clientId, refreshToken }) => {
-    const { token_endpoint: tokenEndpoint } = await discoverAuthorizationServer(entry.issuer);
-    const response = await upstreamFetch(tokenEndpoint, {
+  clientSecretFor: (entry) => resolvedClientSecret(entry),
+  markClientMismatch: async (id, recordedClientId, message) => {
+    const clientIdFilter = recordedClientId
+      ? { 'config.clientId': recordedClientId }
+      : { 'config.clientId': { $in: [null, ''] } };
+    await Integration.findOneAndUpdate(
+      { _id: id, status: 'connected', ...clientIdFilter },
+      { $set: { status: 'error', errorMessage: message, errorMessageUserFacing: true } },
+      { new: true },
+    );
+  },
+  refreshAtVendor: async ({ entry, clientId, clientSecret, refreshToken }) => {
+    const metadata = await discoverAuthorizationServer(entry.issuer);
+    const tokenRequest = buildRefreshRequest(entry, metadata, { clientId, ...(clientSecret ? { clientSecret } : {}) }, {
+      refreshToken,
+    });
+    const response = await upstreamFetch(metadata.token_endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...tokenRequest.headers,
       },
-      body: buildRefreshBody(entry, { clientId, refreshToken }),
+      body: tokenRequest.body,
     });
     const body = await response.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
     if (!response.ok) {
@@ -328,10 +350,39 @@ export const credentialFor = async (
   overrides: Partial<CredentialDeps> = {},
 ): Promise<HostedMcpCredential> => {
   const deps: CredentialDeps = { ...defaultDeps(), ...overrides };
-  assertUsable(row);
+  if (row.revokedAt) {
+    throw new HostedMcpCredentialError('connection_mismatch', 'connection was removed');
+  }
 
   const id = rowId(row);
   const entry = deps.entryFor(row);
+  const recordedClientId = row.config?.clientId;
+  let clientId: string;
+  let clientSecret: string | undefined;
+  try {
+    clientId = deps.clientIdFor(entry);
+    clientSecret = deps.clientSecretFor(entry);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'client_not_configured') {
+      // An instance secret/config rollout must not permanently mark every
+      // existing row as errored. The entry is not offerable until configured,
+      // and a later call can succeed if the instance value is restored.
+      throw new HostedMcpCredentialError(
+        'reconnect_required',
+        'OAuth client configuration is unavailable; restore instance configuration to continue',
+      );
+    }
+    throw error;
+  }
+  if (recordedClientId && recordedClientId !== clientId) {
+    const message = 'OAuth client changed; reconnect to continue';
+    await deps.markClientMismatch(id, recordedClientId, message);
+    throw new HostedMcpCredentialError('reconnect_required', message);
+  }
+  // Check the OAuth binding before a previous mismatch's `status: error` is
+  // treated as a generic disconnected row. Repeated calls on that row keep the
+  // actionable reconnect_required refusal until the callback replaces the pair.
+  assertUsable(row);
   const now = deps.now();
   const startRef = row.config?.credentialRef;
 
@@ -371,12 +422,11 @@ export const credentialFor = async (
     throw new HostedMcpCredentialError('credential_missing', message);
   }
 
-  const clientId = deps.clientIdFor(entry);
   const refreshToken = await deps.secrets.get(refreshTokenRef);
 
   let refreshed: RefreshResult;
   try {
-    refreshed = await deps.refreshAtVendor({ entry, clientId, refreshToken });
+    refreshed = await deps.refreshAtVendor({ entry, clientId, clientSecret, refreshToken });
   } catch (error) {
     const failure = error instanceof HostedMcpCredentialError
       ? error

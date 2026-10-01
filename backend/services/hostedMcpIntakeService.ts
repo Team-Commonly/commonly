@@ -7,9 +7,10 @@
  * Registration only as a fallback. This module owns everything about that
  * order that is decidable without the vendor:
  *
- * - the client identity we present, and the one public document that states it
- *   (CIMD: `client_id` IS a URL we serve, so nothing is registered and no
- *   client secret is stored anywhere);
+ * - the client identity we present, and the credentials required by the
+ *   instance's client kind (CIMD: `client_id` IS a URL we serve; a
+ *   pre-registered client's id and secret come from instance environment, and
+ *   the secret never enters the row);
  * - the authorization URL, including RFC 8707's `resource`, which the spec says
  *   MUST be on both the authorization request and the token request;
  * - PKCE `S256`, because a CIMD client is a public client with no secret.
@@ -133,6 +134,25 @@ export class HostedMcpClientError extends Error {
   }
 }
 
+export interface HostedMcpClientConfiguration {
+  clientId: string;
+  /** Present only for an instance-configured pre-registered confidential client. */
+  clientSecret?: string;
+}
+
+export type HostedMcpEndpointKind = 'token' | 'revocation';
+
+export interface HostedMcpClientRequest {
+  headers: Record<string, string>;
+  body: URLSearchParams;
+}
+
+/** The instance-level keys for one entry; the entry contains neither value. */
+export const hostedMcpClientConfigKeys = (entryId: string) => {
+  const prefix = entryId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  return { clientId: `${prefix}_CLIENT_ID`, clientSecret: `${prefix}_CLIENT_SECRET` };
+};
+
 /**
  * Which client id we present for this entry, in the ruling's order.
  *
@@ -153,15 +173,54 @@ export const resolvedClientId = (
       `entry ${entry.id} uses dynamic registration; register before authorizing`,
     );
   }
-  const key = `${entry.id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_CLIENT_ID`;
+  const key = hostedMcpClientConfigKeys(entry.id).clientId;
   const value = env[key];
-  if (!value) {
+  if (!value?.trim()) {
     throw new HostedMcpClientError(
       'client_not_configured',
       `${key} is not configured for entry ${entry.id}`,
     );
   }
   return value;
+};
+
+/** A client secret exists only for the pre-registered confidential-client kind. */
+export const resolvedClientSecret = (
+  entry: HostedMcpEntry,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined => {
+  if (entry.client !== 'pre-registered') return undefined;
+  const key = hostedMcpClientConfigKeys(entry.id).clientSecret;
+  const value = env[key];
+  if (!value?.trim()) {
+    throw new HostedMcpClientError(
+      'client_not_configured',
+      `${key} is not configured for entry ${entry.id}`,
+    );
+  }
+  return value;
+};
+
+/** Resolve all instance-held client material before offering or using the entry. */
+export const resolvedHostedMcpClient = (
+  entry: HostedMcpEntry,
+  env: NodeJS.ProcessEnv = process.env,
+): HostedMcpClientConfiguration => {
+  const clientId = resolvedClientId(entry, env);
+  const clientSecret = resolvedClientSecret(entry, env);
+  return { clientId, ...(clientSecret ? { clientSecret } : {}) };
+};
+
+export const isHostedMcpClientConfigured = (
+  entry: HostedMcpEntry,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean => {
+  try {
+    resolvedHostedMcpClient(entry, env);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /** The authorization server's metadata, of which intake needs two fields. */
@@ -176,6 +235,8 @@ export interface HostedMcpAuthorizationServer {
   authorization_endpoint: string;
   token_endpoint: string;
   revocation_endpoint?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  revocation_endpoint_auth_methods_supported?: string[];
 }
 
 /**
@@ -298,29 +359,118 @@ export const buildAuthorizeUrl = (
   return `${authorizationEndpoint}${separator}${query.toString()}`;
 };
 
-/** The token request's body, carrying the same `resource` the authorization request did. */
-export const buildTokenExchangeBody = (
-  entry: HostedMcpEntry,
-  params: { clientId: string; redirectUri: string; code: string; codeVerifier: string },
-): URLSearchParams => new URLSearchParams({
-  grant_type: 'authorization_code',
-  client_id: params.clientId,
-  redirect_uri: params.redirectUri,
-  code: params.code,
-  code_verifier: params.codeVerifier,
-  resource: entry.resource,
-});
+interface ClientEndpointAuthentication {
+  headers: Record<string, string>;
+  body: Record<string, string>;
+}
 
-/** The refresh body, same `resource`: the spec requires it on the token request, refresh included. */
-export const buildRefreshBody = (
+const formEncode = (value: string): string => (
+  new URLSearchParams([['value', value]]).toString().slice('value='.length)
+);
+
+const endpointAuthentication = (
   entry: HostedMcpEntry,
-  params: { clientId: string; refreshToken: string },
-): URLSearchParams => new URLSearchParams({
-  grant_type: 'refresh_token',
-  client_id: params.clientId,
-  refresh_token: params.refreshToken,
-  resource: entry.resource,
-});
+  metadata: Partial<HostedMcpAuthorizationServer>,
+  client: HostedMcpClientConfiguration,
+  endpoint: HostedMcpEndpointKind,
+): ClientEndpointAuthentication => {
+  if (entry.client !== 'pre-registered') {
+    return { headers: {}, body: { client_id: client.clientId } };
+  }
+  if (!client.clientSecret) {
+    throw new HostedMcpClientError(
+      'client_not_configured',
+      `${hostedMcpClientConfigKeys(entry.id).clientSecret} is not configured for entry ${entry.id}`,
+    );
+  }
+
+  // RFC 8414 defaults an omitted endpoint method list to client_secret_basic.
+  // An explicit empty/unsupported list is a refusal; do not silently fall back
+  // to a different authentication method than this server advertised.
+  const supported = endpoint === 'token'
+    ? metadata.token_endpoint_auth_methods_supported
+    : metadata.revocation_endpoint_auth_methods_supported;
+  const methods = supported === undefined
+    ? ['client_secret_basic']
+    : (Array.isArray(supported) ? supported : []);
+  const method = ['client_secret_basic', 'client_secret_post']
+    .find((candidate) => methods.includes(candidate));
+  if (!method) {
+    throw new HostedMcpClientError(
+      'client_auth_unsupported',
+      `authorization server advertises no supported ${endpoint} client-secret method for ${entry.id}`,
+    );
+  }
+  if (method === 'client_secret_post') {
+    return {
+      headers: {},
+      body: { client_id: client.clientId, client_secret: client.clientSecret },
+    };
+  }
+  const basic = `${formEncode(client.clientId)}:${formEncode(client.clientSecret)}`;
+  return {
+    headers: { Authorization: `Basic ${Buffer.from(basic).toString('base64')}` },
+    body: {},
+  };
+};
+
+/** Authorization-code exchange: PKCE and resource survive every client kind. */
+export const buildTokenExchangeRequest = (
+  entry: HostedMcpEntry,
+  metadata: Partial<HostedMcpAuthorizationServer>,
+  client: HostedMcpClientConfiguration,
+  params: { redirectUri: string; code: string; codeVerifier: string },
+): HostedMcpClientRequest => {
+  const authentication = endpointAuthentication(entry, metadata, client, 'token');
+  return {
+    headers: authentication.headers,
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      redirect_uri: params.redirectUri,
+      code: params.code,
+      code_verifier: params.codeVerifier,
+      resource: entry.resource,
+      ...authentication.body,
+    }),
+  };
+};
+
+/** Refresh uses the same client and endpoint-authentication rule as the exchange. */
+export const buildRefreshRequest = (
+  entry: HostedMcpEntry,
+  metadata: Partial<HostedMcpAuthorizationServer>,
+  client: HostedMcpClientConfiguration,
+  params: { refreshToken: string },
+): HostedMcpClientRequest => {
+  const authentication = endpointAuthentication(entry, metadata, client, 'token');
+  return {
+    headers: authentication.headers,
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: params.refreshToken,
+      resource: entry.resource,
+      ...authentication.body,
+    }),
+  };
+};
+
+/** RFC 7009 request: the same client must authenticate the revocation. */
+export const buildRevocationRequest = (
+  entry: HostedMcpEntry,
+  metadata: Partial<HostedMcpAuthorizationServer>,
+  client: HostedMcpClientConfiguration,
+  params: { token: string; tokenTypeHint: 'refresh_token' | 'access_token' },
+): HostedMcpClientRequest => {
+  const authentication = endpointAuthentication(entry, metadata, client, 'revocation');
+  return {
+    headers: authentication.headers,
+    body: new URLSearchParams({
+      token: params.token,
+      token_type_hint: params.tokenTypeHint,
+      ...authentication.body,
+    }),
+  };
+};
 
 /**
  * The state nonce. Its single use is enforced by the row (`config.pendingAuth`),

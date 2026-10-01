@@ -50,7 +50,12 @@ import {
   hostedMcpRevokeTarget,
 } from '../integrations/hostedMcp/entries';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
-import { resolvedClientId } from './hostedMcpIntakeService';
+import {
+  buildRevocationRequest,
+  discoverAuthorizationServer,
+  resolvedClientId,
+  resolvedClientSecret,
+} from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { upstreamFetch } from './upstreamFetch';
 
@@ -80,6 +85,7 @@ export interface RemovableConnection {
   revokedAt?: Date | null;
   config?: {
     entryId?: string;
+    clientId?: string;
     credentialRef?: string;
     refreshTokenRef?: string;
     revokePage?: string;
@@ -95,10 +101,12 @@ export interface RemovalDeps {
   markProviderRevoked: (id: unknown, at: Date) => Promise<void>;
   entryFor: (connection: RemovableConnection) => HostedMcpEntry | null;
   clientIdFor: (entry: HostedMcpEntry) => string;
+  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
   /** Step 3. Resolves when the authorization is gone; throws when it may still be live. */
   revokeAtVendor: (input: {
     entry: HostedMcpEntry;
     clientId: string;
+    clientSecret?: string;
     token: string;
     tokenTypeHint: 'refresh_token' | 'access_token';
   }) => Promise<void>;
@@ -153,6 +161,7 @@ export type RemovalResult =
 export const revokeTokenAtVendor = async (input: {
   entry: HostedMcpEntry;
   clientId: string;
+  clientSecret?: string;
   token: string;
   tokenTypeHint: 'refresh_token' | 'access_token';
 }, fetchImpl: typeof fetch = fetch): Promise<void> => {
@@ -166,18 +175,23 @@ export const revokeTokenAtVendor = async (input: {
     // would answer the empty string 200 for a request that revoked nothing.
     throw new Error('provider revoke refused: no token to revoke');
   }
+  const metadata = input.entry.client === 'pre-registered'
+    ? await discoverAuthorizationServer(input.entry.issuer, fetchImpl)
+    : {};
+  const request = buildRevocationRequest(
+    input.entry,
+    metadata,
+    { clientId: input.clientId, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) },
+    { token: input.token, tokenTypeHint: input.tokenTypeHint },
+  );
   const response = await upstreamFetch(target.endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
+      ...request.headers,
     },
-    body: new URLSearchParams({
-      token: input.token,
-      token_type_hint: input.tokenTypeHint,
-      // RFC 7009 §2.1: a client holding no secret identifies itself this way.
-      client_id: input.clientId,
-    }).toString(),
+    body: request.body,
   }, fetchImpl);
   if (response.ok) return;
   throw new Error(`provider revoke refused: HTTP ${response.status}`);
@@ -202,6 +216,7 @@ export const defaultDeps = (): RemovalDeps => ({
     String(connection?.config?.entryId || ''),
   ) || null,
   clientIdFor: (entry) => resolvedClientId(entry),
+  clientSecretFor: (entry) => resolvedClientSecret(entry),
   revokeAtVendor: (input) => revokeTokenAtVendor(input),
   secrets: connectorSecrets,
   remove: async (id) => {
@@ -279,62 +294,96 @@ export const removeConnection = async (options: {
   const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
 
   if (entry && target?.endpoint && !alreadyRevokedAtVendor) {
-    // The refresh token when the row has one, else the access token. A row can
-    // carry either: what matters is that the token sent is one we HOLD, and
-    // that an absent reference never becomes `token: ""` — RFC 7009 answers
-    // that 200 for a request that revoked nothing.
-    const tokenRef = refreshTokenRef || credentialRef;
-    const tokenTypeHint = refreshTokenRef ? 'refresh_token' : 'access_token';
-
-    // Both of the ways this stays null mean the same thing and take the same
-    // path: no reference to read, or a secret that is not there. Nothing we
-    // hold can revoke at the vendor, and a kept row only waits for a retry that
-    // can never succeed — so the removal still finishes below, and the person
-    // gets the page. Only an UNREADABLE secret refuses.
-    let token: string | null = null;
+    // The row records which client minted this pair; the instance's current
+    // configuration remains the source for client credentials. A recorded id
+    // that differs from the current one must never send a held token under the
+    // new client. During this first rollout, legacy rows without a snapshot use
+    // the current Linear client; the post-rollout backfill closes that window.
+    // A missing current client value hands the member the page instead.
+    const recordedClientId = connection?.config?.clientId;
+    let clientId: string | undefined;
+    let clientSecret: string | undefined;
+    let clientMatches = true;
     try {
-      token = tokenRef ? await deps.secrets.get(tokenRef) : null;
+      clientId = deps.clientIdFor(entry);
+      // During the first rollout legacy rows have no snapshot. The backfill
+      // runs after the new callback is live, so those rows still use the
+      // current Linear client until the snapshot is populated.
+      clientMatches = !recordedClientId || clientId === recordedClientId;
+      if (clientMatches) clientSecret = deps.clientSecretFor(entry);
     } catch (error) {
-      if (!holdsNothingToRevoke(error)) {
-        // `connector_secret_configuration_invalid` and
-        // `connector_secret_key_missing` both land here, and they must: one
-        // misconfigured key ring would otherwise delete every hosted row that
-        // day while recording the vendor revoke as done. It may be readable
-        // later, so the row keeps everything.
+      if ((error as { code?: string })?.code === 'client_not_configured') {
+        clientMatches = false;
+      } else {
         return {
           removed: false,
           code: 'provider_revoke_failed',
-          message: (error as { message?: string })?.message || 'connector secret unreadable',
+          message: (error as { message?: string })?.message || 'OAuth client configuration could not be read',
           grantsRevoked,
           revokeAt: revokePage,
         };
       }
-      token = null;
     }
 
-    if (token) {
+    if (clientMatches) {
+      // The refresh token when the row has one, else the access token. A row can
+      // carry either: what matters is that the token sent is one we HOLD, and
+      // that an absent reference never becomes `token: ""` — RFC 7009 answers
+      // that 200 for a request that revoked nothing.
+      const tokenRef = refreshTokenRef || credentialRef;
+      const tokenTypeHint = refreshTokenRef ? 'refresh_token' : 'access_token';
+
+      // Both of the ways this stays null mean the same thing and take the same
+      // path: no reference to read, or a secret that is not there. Nothing we
+      // hold can revoke at the vendor, and a kept row only waits for a retry that
+      // can never succeed — so the removal still finishes below, and the person
+      // gets the page. Only an UNREADABLE secret refuses.
+      let token: string | null = null;
       try {
-        await deps.revokeAtVendor({
-          entry,
-          clientId: deps.clientIdFor(entry),
-          token,
-          tokenTypeHint,
-        });
+        token = tokenRef ? await deps.secrets.get(tokenRef) : null;
       } catch (error) {
-        // Steps 4 and 5 do not run. The row stays `disconnected` with both
-        // references intact, and a retry still holds the token to send.
-        return {
-          removed: false,
-          code: 'provider_revoke_failed',
-          message: (error as { message?: string })?.message || 'provider revoke failed',
-          grantsRevoked,
-          revokeAt: revokePage,
-        };
+        if (!holdsNothingToRevoke(error)) {
+          // `connector_secret_configuration_invalid` and
+          // `connector_secret_key_missing` both land here, and they must: one
+          // misconfigured key ring would otherwise delete every hosted row that
+          // day while recording the vendor revoke as done. It may be readable
+          // later, so the row keeps everything.
+          return {
+            removed: false,
+            code: 'provider_revoke_failed',
+            message: (error as { message?: string })?.message || 'connector secret unreadable',
+            grantsRevoked,
+            revokeAt: revokePage,
+          };
+        }
+        token = null;
       }
 
-      // The provider revoke took. Record it BEFORE any material goes, so a
-      // crash here leaves a row the retry finishes by skipping the vendor.
-      await deps.markProviderRevoked(id, deps.now());
+      if (token) {
+        try {
+          await deps.revokeAtVendor({
+            entry,
+            clientId: clientId as string,
+            ...(clientSecret ? { clientSecret } : {}),
+            token,
+            tokenTypeHint,
+          });
+        } catch (error) {
+          // Steps 4 and 5 do not run. The row stays `disconnected` with both
+          // references intact, and a retry still holds the token to send.
+          return {
+            removed: false,
+            code: 'provider_revoke_failed',
+            message: (error as { message?: string })?.message || 'provider revoke failed',
+            grantsRevoked,
+            revokeAt: revokePage,
+          };
+        }
+
+        // The provider revoke took. Record it BEFORE any material goes, so a
+        // crash here leaves a row the retry finishes by skipping the vendor.
+        await deps.markProviderRevoked(id, deps.now());
+      }
     }
   }
 

@@ -17,6 +17,7 @@ import {
   findHostedMcpEntry,
 } from '../../integrations/hostedMcp/entries';
 import { hostedMcpToolName, type HostedMcpEntry } from '../hostedMcpEntryService';
+import { isHostedMcpClientConfigured } from '../hostedMcpIntakeService';
 
 // Resolved on first use, not at import: the broker module loads
 // githubAppService (jsonwebtoken), and routes/grants.ts must stay loadable
@@ -88,19 +89,24 @@ assertNoHostedMcpInstallableCollisions(HOSTED_MCP_ENTRIES);
 /**
  * One tool Installable per hosted-MCP catalogue entry (scope §7).
  *
- * The entry is the vendor's whole configuration: it names the server, the
- * authorization server and the client id kind, and a CIMD client id is this
- * instance's own URL (§4), so there is nothing for an operator to set and the
- * entry is available the moment it is pinned. That is why this readiness is a
- * constant and GitHub's is not — GitHub's needs an App's credentials.
+ * CIMD entries need no operator-held client values. A pre-registered entry is
+ * offerable only when this instance has both values in its environment; the
+ * catalogue still owns the client kind, never the credentials (§4).
  */
 export const hostedMcpToolInstallables = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
+  env: NodeJS.ProcessEnv = process.env,
 ): Record<string, ToolInstallableMeta> => {
   assertNoHostedMcpInstallableCollisions(entries);
   return Object.fromEntries(entries.map((entry) => [
     entry.id,
-    { connectionType: 'hosted-mcp' as const, entryId: entry.id, readiness: () => ({ available: true as const }) },
+    {
+      connectionType: 'hosted-mcp' as const,
+      entryId: entry.id,
+      readiness: () => (isHostedMcpClientConfigured(entry, env)
+        ? { available: true as const }
+        : { available: false as const, reason: 'not_configured' as const }),
+    },
   ]));
 };
 
@@ -111,7 +117,8 @@ export const hostedMcpToolInstallables = (
  */
 export const toolInstallableMetas = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
-): Record<string, ToolInstallableMeta> => ({ ...TOOL_INSTALLABLES, ...hostedMcpToolInstallables(entries) });
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, ToolInstallableMeta> => ({ ...TOOL_INSTALLABLES, ...hostedMcpToolInstallables(entries, env) });
 
 const githubToolNames = (): string[] => toolDefinitions()
   .filter((definition) => definition.connectionType === 'github-app')

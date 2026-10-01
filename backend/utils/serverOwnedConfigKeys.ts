@@ -74,16 +74,20 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // of a connected row, and the generic POST refuses the type by name as it
   // refuses `github-app`; this list is the second lock on the same door. Every
   // one of these decides something a body must not: `entryId` fixes which
-  // catalogue entry the row's tools and grants are checked against, `grantedScope`
-  // is the consent a later write tool reads to tell a row that needs re-consent
-  // from one that does not, `providerSubject` is what makes a reconnect as a
+  // catalogue entry the row's tools and grants are checked against, `clientId`
+  // snapshots which OAuth client minted the pair and is compared with the
+  // current instance config (never used for a call), and `clientSecret` is
+  // never row data because its only source is instance configuration.
+  // `grantedScope` is the consent a later write tool reads to tell a row that
+  // needs re-consent from
+  // one that does not, `providerSubject` is what makes a reconnect as a
   // different account revoke the row's grants, `expiresAt`/`refreshGeneration`
   // are the refresh fence's state, `credentialRef`/`refreshTokenRef` point at
   // another row's encrypted secret if a caller supplies them, and `pendingAuth`
   // is a single-use nonce — a supplied one is a state the callback would accept
   // from whoever wrote it. `intake` and `credentialHint` are here for the same
   // reason at lower stakes: no browser decides how a credential is obtained.
-  'entryId', 'intake', 'providerSubject', 'grantedScope', 'expiresAt',
+  'entryId', 'intake', 'clientId', 'clientSecret', 'providerSubject', 'grantedScope', 'expiresAt',
   'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'credentialHint', 'pendingAuth',
   // The mark step 3b of the removal sequence records (`connectionRemovalService`)
   // after the provider revoke TAKES. A body that could write it would make a

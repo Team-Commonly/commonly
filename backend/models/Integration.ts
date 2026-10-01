@@ -173,6 +173,7 @@ export interface IIntegration extends Document {
     // same thing — a cast being the same silence one layer up (Vera, #1976 gate).
     entryId?: string;
     intake?: 'oauth';
+    clientId?: string;
     providerSubject?: string;
     grantedScope?: string;
     expiresAt?: Date;
@@ -365,6 +366,7 @@ const IntegrationSchema = new Schema<IIntegration>(
         },
       },
       intake: String, // 'oauth' is the only intake for this type
+      clientId: String, // id that minted this pair; comparison snapshot, never used for calls (§2)
       providerSubject: String, // the authorization server's stable id for the account
       grantedScope: String, // the token response's `scope`: what the person consented to
       expiresAt: Date, // the access token's expiry, when the AS states one

@@ -77,8 +77,8 @@ const idToken = (sub) => [
 
 const BROWSER_COOKIE = 'commonly_hosted_mcp_nonce=browser-1';
 
-const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE) => {
-  const sent = request(app).get(`/connect/hosted-mcp/linear/callback?${query}`);
+const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE, entryId = 'linear') => {
+  const sent = request(app).get(`/connect/hosted-mcp/${entryId}/callback?${query}`);
   // The browser that started the flow sends this; `null` is the browser that
   // did not, which is the whole point of the cookie.
   return cookie === null ? sent : sent.set('Cookie', cookie);
@@ -152,7 +152,7 @@ const outcome = (res) => {
 };
 
 describe('hosted-mcp connect: callback', () => {
-  it('exchanges the code at the issuer\'s token endpoint and stores the pair', async () => {
+  it('the callback records the client that minted the pair', async () => {
     const res = await callback();
     expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
     expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -165,6 +165,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(body.get('grant_type')).toBe('authorization_code');
     expect(body.get('code')).toBe('code-1');
     expect(body.get('code_verifier')).toBe('verifier-1');
+    expect(body.get('client_id')).toBe(intake.hostedMcpClientMetadataUrl('linear'));
     // §4: the resource rides the token request too, or the AS issues a token
     // that reaches the vendor's default audience rather than this server.
     expect(body.get('resource')).toBe(FIXTURE_ENTRY.resource);
@@ -175,6 +176,7 @@ describe('hosted-mcp connect: callback', () => {
     const [, update] = Integration.findOneAndUpdate.mock.calls[1];
     expect(update.$set).toMatchObject({
       status: 'connected',
+      'config.clientId': intake.hostedMcpClientMetadataUrl('linear'),
       'config.credentialRef': 'ref-access',
       'config.refreshTokenRef': 'ref-refresh',
       'config.grantedScope': 'read',
@@ -197,6 +199,54 @@ describe('hosted-mcp connect: callback', () => {
     // The pending state is gone whichever way the flow went, so a replay of the
     // state finds no row and cannot reach the exchange a second time.
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$unset).toEqual({ 'config.pendingAuth': 1 });
+  });
+
+  it('exchanges a pre-registered callback with instance credentials while retaining PKCE', async () => {
+    const originalEntry = { ...FIXTURE_ENTRY };
+    const originalId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    const originalSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    Object.assign(FIXTURE_ENTRY, {
+      id: 'google-calendar',
+      issuer: 'https://accounts.google.test',
+      client: 'pre-registered',
+      resource: 'https://calendar.google.test/mcp',
+    });
+    process.env.GOOGLE_CALENDAR_CLIENT_ID = 'registered-client';
+    process.env.GOOGLE_CALENDAR_CLIENT_SECRET = 'registered-secret';
+    intake.discoverAuthorizationServer.mockResolvedValue({
+      issuer: FIXTURE_ENTRY.issuer,
+      authorization_endpoint: 'https://accounts.google.test/authorize',
+      token_endpoint: 'https://accounts.google.test/token',
+      token_endpoint_auth_methods_supported: ['client_secret_basic'],
+    });
+    setStoredRow({ entryId: 'google-calendar' });
+
+    try {
+      const res = await callback('state=st-1&code=code-1', BROWSER_COOKIE, 'google-calendar');
+
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [url, init] = global.fetch.mock.calls[0];
+      expect(url).toBe('https://accounts.google.test/token');
+      expect(init.headers.Authorization).toBe(
+        `Basic ${Buffer.from('registered-client:registered-secret').toString('base64')}`,
+      );
+      const body = new URLSearchParams(String(init.body));
+      expect(body.get('code_verifier')).toBe('verifier-1');
+      expect(body.get('resource')).toBe(FIXTURE_ENTRY.resource);
+      expect(body.get('client_id')).toBeNull();
+      expect(body.get('client_secret')).toBeNull();
+
+      const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+      expect(update.$set['config.clientId']).toBe('registered-client');
+      expect(JSON.stringify(update.$set)).not.toContain('registered-secret');
+    } finally {
+      Object.assign(FIXTURE_ENTRY, originalEntry);
+      if (originalId === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+      else process.env.GOOGLE_CALENDAR_CLIENT_ID = originalId;
+      if (originalSecret === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+      else process.env.GOOGLE_CALENDAR_CLIENT_SECRET = originalSecret;
+    }
   });
 
   it('refuses a browser that carries no nonce cookie, before it reads any row', async () => {

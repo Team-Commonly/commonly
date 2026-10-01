@@ -135,6 +135,21 @@ describe('hosted-MCP tool definitions', () => {
     expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
   });
 
+  it('a row minted under another client is refused reconnect_required before any call', async () => {
+    const deps = makeDeps({
+      credentialFor: jest.fn(async () => {
+        throw Object.assign(new Error('OAuth client changed; reconnect to continue'), {
+          code: 'reconnect_required',
+        });
+      }),
+    });
+
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION))
+      .rejects.toMatchObject({ code: 'reconnect_required', statusCode: 403 });
+    expect(deps.credentialFor).toHaveBeenCalledTimes(1);
+    expect(deps.fetcher).not.toHaveBeenCalled();
+  });
+
   it('calls the vendor name the pin recorded, not the name the agent sees', async () => {
     const deps = makeDeps();
     const definition = definitionFor('linear.create_issue', deps);
