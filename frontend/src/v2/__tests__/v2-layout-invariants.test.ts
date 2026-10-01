@@ -2086,6 +2086,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectorCss).not.toContain('v2-connector-row--dead):not(.v2-connector-row--not-enabled) .v2-connector-row__detail');
   });
 
+  it('connector refusal links keep the in-text link treatment in the parsed stylesheet', () => {
+    const style = document.createElement('style');
+    style.textContent = v2;
+    document.head.appendChild(style);
+
+    try {
+      const sheet = style.sheet;
+      expect(sheet).not.toBeNull();
+      const rules = Array.from(sheet!.cssRules);
+
+      // This covers links in any refusal slot. Parsing before these assertions
+      // catches malformed CSS without pinning unrelated stylesheet size/tail.
+
+      const styleRules = rules.filter((rule) => rule.type === CSSRule.STYLE_RULE) as CSSStyleRule[];
+      const linkRules = styleRules.filter((rule) => {
+        const selectors = rule.selectorText.split(',').map((selector) => selector.trim());
+        return selectors.includes('.v2-connector-row__refusal a')
+          && selectors.includes('.v2-connector-aside__refusal a');
+      });
+      expect(linkRules).toHaveLength(1);
+      expect(linkRules[0].selectorText.split(',').map((selector) => selector.trim())).toEqual([
+        '.v2-connector-row__refusal a',
+        '.v2-connector-aside__refusal a',
+      ]);
+      expect(linkRules[0].style.getPropertyValue('color')).toBe('var(--v2-accent-text)');
+      expect(linkRules[0].style.getPropertyValue('text-decoration')).toBe('underline');
+
+      const resetIndex = styleRules.findIndex((rule) => rule.selectorText === '.v2-root a');
+      const linkIndex = styleRules.indexOf(linkRules[0]);
+      expect(linkIndex).toBeGreaterThan(resetIndex);
+    } finally {
+      style.remove();
+    }
+  });
+
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
     const v2Root = ruleBody(v2, '.v2-root');
 
