@@ -473,9 +473,9 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   if (tokens.refresh_token) {
     refreshTokenRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token);
   } else if (refreshTokenRef) {
-    // The AS answered without a refresh token, so the one on the row is from a
-    // grant that no longer exists. Keeping it would leave the mint refreshing
-    // against a retired token and calling the failure a vendor outage.
+    // This authorization returned no refresh token, so the row cannot confirm
+    // that its stored token belongs to this grant. Discard it rather than let a
+    // later refresh use a credential whose grant binding is unknown.
     await connectorSecrets.revoke(refreshTokenRef);
     refreshTokenRef = undefined;
   }
