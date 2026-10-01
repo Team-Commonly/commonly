@@ -199,6 +199,9 @@ export const projectTools = (
   component: McpComponentLike | null,
   hostedEntry?: HostedMcpEntry | null,
 ): ProjectedTool[] => {
+  // `null` is a defensive fail-closed input. Catalogue rows are filtered
+  // against HOSTED_MCP_ENTRIES before reaching this projector, so a removed
+  // entry cannot currently reach this branch through the production path.
   if (!component || hostedEntry === null) return [];
   const enabled = Array.isArray(component.enabledTools) ? new Set(component.enabledTools) : null;
   // Include only this entry's namespaced broker definitions. A GitHub
