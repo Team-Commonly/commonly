@@ -959,6 +959,32 @@ describe('V2ConnectorsPage', () => {
       expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
     });
 
+    it('keeps tool-only connections out of Channels and refuses an unknown type as a row title', async () => {
+      mockCatalog([entry()], [
+        {
+          // Real hosted-MCP rows have no installationId; filter them by type.
+          _id: 'i-hosted-linear', type: 'hosted-mcp', status: 'connected',
+          config: { entryId: 'linear' },
+        },
+        {
+          _id: 'i-github-app', installationId: 'github-install', type: 'github-app', status: 'connected',
+        },
+        {
+          _id: 'i-unknown-channel', type: 'custom-messaging-platform', status: 'connected',
+        },
+      ]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'View Telegram' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /hosted-mcp|github-app/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'View Custom Messaging Platform' })).toBeNull();
+      expect(screen.queryByText('hosted-mcp')).toBeNull();
+      expect(screen.queryByText('github-app')).toBeNull();
+      expect(screen.queryByText('Hosted tool')).toBeNull();
+      expect(screen.queryByText('GitHub App')).toBeNull();
+      expect(screen.queryByText('custom-messaging-platform')).toBeNull();
+    });
+
     // TASK-024. Discord is a shipping connector (routes/discord.ts: install
     // link, callback, binding, uninstall) that read as "we don't build this"
     // because its manifest declared no readiness(), which is what the catalog
