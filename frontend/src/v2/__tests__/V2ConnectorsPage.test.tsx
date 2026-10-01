@@ -699,9 +699,40 @@ describe('V2ConnectorsPage', () => {
     expect(reviewLink).toHaveAttribute('target', '_blank');
     expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
     const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('Linear may still list your previous account.');
+    expect(notice).toHaveTextContent(
+      'Your previous Linear account may still have Commonly connected. Switch to it on Linear, then remove Commonly there.',
+    );
     expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
     expect(window.location.search).toBe('');
+  });
+
+  it('the manual-revoke notice tells the person to switch to the account they connected before', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage },
+    }], [hostedLinearCatalogEntry()]);
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+
+      const reviewLink = await screen.findByRole('link', { name: '打开 Linear 的已连接应用' });
+      expect(reviewLink).toHaveAttribute('href', revokePage);
+      const notice = screen.getByRole('status');
+      expect(notice).toHaveTextContent(
+        '你之前的 Linear 账号可能仍保留对 Commonly 的授权。请在 Linear 切换到那个账号，再在那里移除 Commonly。',
+      );
+      expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
+      expect(window.location.search).toBe('');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 
   it('does not turn a callback query into a provider link unless it matches the row', async () => {
