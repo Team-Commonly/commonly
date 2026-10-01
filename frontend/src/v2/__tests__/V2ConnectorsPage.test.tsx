@@ -716,6 +716,8 @@ describe('V2ConnectorsPage', () => {
     }], [hostedLinearCatalogEntry()]);
     renderPage();
 
+    const linearDescription = await screen.findByText('Read Linear issues and projects.');
+    expect(linearDescription.closest('.v2-connector-row')).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
   });
