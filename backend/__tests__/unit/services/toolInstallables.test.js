@@ -14,6 +14,7 @@ const {
   builtinToolInstallables, buildHostedMcpToolInstallable, toolInstallableMetas,
 } = require('../../../services/installable/toolInstallables');
 const { LINEAR_ENTRY } = require('../../../integrations/hostedMcp/linear');
+const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 
 const brokerTools = Object.values(TOOL_DEFINITIONS).filter((d) => d.connectionType === 'github-app').map((d) => d.name);
 
@@ -203,6 +204,15 @@ describe('one tool Installable per catalogue entry', () => {
       GOOGLE_CALENDAR_CLIENT_SECRET: 'instance-secret',
     });
     expect(configured['google-calendar'].readiness()).toEqual({ available: true });
+  });
+
+  test('the shipped Calendar catalogue projection is unavailable without instance credentials', () => {
+    const metas = toolInstallableMetas(HOSTED_MCP_ENTRIES, {});
+    expect(metas['google-calendar']).toMatchObject({
+      connectionType: 'hosted-mcp',
+      entryId: 'google-calendar',
+    });
+    expect(metas['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
   });
 
   test('a hosted entry cannot shadow the builtin GitHub Installable meta', () => {

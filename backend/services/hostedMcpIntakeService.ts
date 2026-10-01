@@ -348,6 +348,22 @@ export const buildAuthorizeUrl = (
     scope: entry.scopes.join(' '),
     resource: entry.resource,
   });
+  // Vendor-specific values are part of the reviewed entry, never caller input.
+  // Refuse collisions so they cannot replace the client, state, PKCE, scope or
+  // resource values this request is required to carry.
+  const requiredParams = new Set([
+    'client_id', 'redirect_uri', 'response_type', 'state', 'code_challenge',
+    'code_challenge_method', 'scope', 'resource',
+  ]);
+  Object.entries(entry.authorizationParams ?? {}).forEach(([key, value]) => {
+    if (requiredParams.has(key)) {
+      throw new HostedMcpClientError(
+        'authorization_parameter_conflict',
+        `entry ${entry.id} authorization parameter conflicts with ${key}`,
+      );
+    }
+    query.set(key, value);
+  });
   // `?` only when the endpoint carries no query yet: an authorization endpoint
   // that already has one is joined with `&`, and one that ends in `?` or `&`
   // (a vendor inviting parameters) takes no separator at all — appending `?`
