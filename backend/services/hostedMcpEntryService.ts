@@ -63,6 +63,12 @@ export interface HostedMcpEntry {
   /** Namespaces every tool name (`<id>.<tool>`) and names the row's app. */
   id: string;
   title: string;
+  /**
+   * The line the Tools page draws under the title. Ours, like a tool's
+   * description and for the same reason: the vendor's wording would reach a
+   * person's screen and a seat's prompt with no review.
+   */
+  description?: string;
   /** The MCP server URL, which is also the RFC 8707 `resource`. */
   resource: string;
   /** The authorization server the protected-resource metadata names. */

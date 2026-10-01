@@ -3,18 +3,22 @@
  * beside this file and is listed here; an entry is server-owned data that
  * changes only by PR.
  *
- * v1 lists no vendor: the Linear entry is build-order step 7, pinned from a
- * real `tools/list` taken on a consenting account, and every other candidate
- * lists only once its own docs verify the URL, transport, auth mode, token
- * lifetime, refresh and revocation. The lookup and the invariant check ship
- * first so a vendor module cannot land half-wired.
+ * Linear is the first entry (build-order step 7), pinned from a real
+ * `tools/list` taken on a consenting account. Every other candidate lists only
+ * once its own docs verify the URL, transport, auth mode, token lifetime,
+ * refresh and revocation, and once its list shows `readOnlyHint: true` on each
+ * tool the entry pins `read` (§3, §11). The lookup and the invariant check
+ * below ship for every entry, so a vendor module cannot land half-wired.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
+import { LINEAR_ENTRY } from './linear';
 
-export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [];
+export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY];
 
 /**
- * Six defects that would otherwise be silent, checked at module load:
+ * Six entry-local defects that would otherwise be silent, checked at module
+ * load. The collision with builtin tool Installable ids is checked by
+ * `toolInstallables.ts` at the load site that owns both maps.
  *
  * - An entry `id` is a tool-name namespace, so `linear.x` must name one entry.
  *   An id carrying a dot would make two entries indistinguishable in the tool
@@ -106,12 +110,18 @@ export const hostedMcpRevokeTarget = (entry: HostedMcpEntry): HostedMcpRevokeTar
   return { page: named.page, ...(named.endpoint ? { endpoint: named.endpoint } : {}) };
 };
 
-export const assertHostedMcpEntries = (entries: HostedMcpEntry[]): void => {
+export const assertHostedMcpEntries = (
+  entries: HostedMcpEntry[],
+  reservedIds: ReadonlySet<string> = new Set(),
+): void => {
   const seenEntries = new Set<string>();
   const seenTools = new Set<string>();
   for (const entry of entries) {
     if (!/^[a-z0-9-]+$/.test(entry.id)) {
       throw new Error(`hosted-mcp entry id is not a usable tool namespace: ${entry.id}`);
+    }
+    if (reservedIds.has(entry.id)) {
+      throw new Error(`hosted-mcp entry id collides with a builtin tool installable: ${entry.id}`);
     }
     // What removal will do with this entry
     // (services/connectionRemovalService.ts). A `revoke` that names no kind,

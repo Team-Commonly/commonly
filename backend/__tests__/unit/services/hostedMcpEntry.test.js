@@ -341,18 +341,83 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('v1 lists no vendor, and a lookup names the entry it was asked for', () => {
-    expect(HOSTED_MCP_ENTRIES).toEqual([]);
+  test('ships Linear and nothing else, and a lookup names the entry it was asked for', () => {
+    // Step 7: the catalogue's first entry. A second vendor landing here changes
+    // this line, which is the point — it is the one place that says what an
+    // instance offers before any member has connected anything.
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(catalogue, 'atlassian')).toBeUndefined();
-    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear').title).toBe('Linear');
+  });
+
+  test('the shipped Linear entry is read-only, fully annotated and names a revoke page', () => {
+    const [entry] = HOSTED_MCP_ENTRIES;
+    // 38 tools were measured at scope `read`; two caller-chosen fetch paths are
+    // excluded by the v1 target-fetch rule, leaving the reviewed 36-tool pin.
+    expect(entry.tools).toHaveLength(36);
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('get_attachment');
+    expect(entry.tools.map((tool) => tool.name)).not.toContain('extract_images');
+    expect(new Set(entry.tools.map((tool) => tool.class))).toEqual(new Set(['read']));
+    expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    expect(entry.tools.every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
+    // Every name an agent sees is the upstream name, which the entry load
+    // requires and the broker calls with.
+    expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
+    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(36);
+    expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/security' });
+    // The three identity fields the intake reads: `resource` is the RFC 8707
+    // value every authorization and token request carries, `issuer` is what the
+    // callback checks a returned `iss` against (RFC 9207), and `client: 'cimd'`
+    // is what keeps a client secret out of the instance entirely.
+    expect(entry.resource).toBe('https://mcp.linear.app/mcp');
+    expect(entry.issuer).toBe('https://mcp.linear.app');
+    expect(entry.client).toBe('cimd');
+    expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
+  });
+
+  test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
+    // The capture `connector-ops` took on 2026-10-01 is committed beside this
+    // suite, so the pin's schemas are compared with the measurement rather than
+    // with themselves. Drift is checked against the LIVE list at call time; this
+    // is the other end, catching a hand-edit of the entry that would otherwise
+    // only surface as every tool refusing `tool_drift` in production.
+    const capture = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+    const [entry] = HOSTED_MCP_ENTRIES;
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const excludedForCallerChosenFetch = new Set(['get_attachment', 'extract_images']);
+    expect(entry.tools.map((tool) => tool.name)).toEqual(
+      capture.tools.filter((tool) => !excludedForCallerChosenFetch.has(tool.name)).map((tool) => tool.name),
+    );
+    expect(capture.tools.filter((tool) => !entry.tools.some((pinned) => pinned.name === tool.name))
+      .map((tool) => tool.name).sort()).toEqual([...excludedForCallerChosenFetch].sort());
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.name);
+      expect(found).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+    }
+    // One annotation set across the whole list, which is what the header claims
+    // and what makes a single `READ_ANNOTATIONS` honest.
+    expect(new Set(capture.tools.map((tool) => JSON.stringify(tool.annotations))).size).toBe(1);
+    expect(capture.tools).toHaveLength(38);
+    expect(entry.tools.find((tool) => tool.name === 'get_diff').description).toContain('not fetch targets');
+    expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
   });
 
   test('a colliding entry id or tool name is refused', () => {
     // Control: a valid catalogue passes, so a throw below is about the collision.
     expect(() => assertHostedMcpEntries([linear(), linear({ id: 'notion', title: 'Notion' })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ id: 'github' })], new Set(['github'])))
+      .toThrow(/collides with a builtin tool installable: github/);
+    // The optional set allows callers to validate only hosted-MCP collisions.
+    expect(() => assertHostedMcpEntries([linear({ id: 'github' })], new Set())).not.toThrow();
     expect(() => assertHostedMcpEntries([linear(), linear()])).toThrow(/duplicate hosted-mcp entry id/);
     expect(() => assertHostedMcpEntries([linear({ id: 'lin.ear' })])).toThrow(/not a usable tool namespace/);
     // Control: the shipped shape is accepted, so the three refusals above are

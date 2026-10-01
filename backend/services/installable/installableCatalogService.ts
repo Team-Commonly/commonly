@@ -9,7 +9,7 @@ const { toPublicIntegration, withoutConnectCode } = require('../../models/integr
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { TOOL_INSTALLABLES, mcpComponentOf, projectTools } = require('./toolInstallables');
+const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -113,15 +113,23 @@ const publicConnection = (integration: any) => ({
  * the Connectors page skips them by `list`. A tool row carries what its Add
  * form needs — the allow-list projected from the broker's definitions, the
  * broker it names, and the caller's own Connections — and never a credential.
+ *
+ * A hosted-mcp row also carries the connect descriptor (`connectionType` and
+ * `entryId`), which is what lets the page offer Connect at all: the start route
+ * is per ENTRY (`/api/integrations/connect/hosted-mcp/:entryId/start`, §4), and
+ * the page has no other way to learn an entry id — an Installable id is the
+ * entry id by construction, but reading that as a URL would be a second,
+ * unwitnessed spelling of the same fact.
  */
 const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
+  const metas = toolInstallableMetas();
   const rows = (await Installable.find({
     source: 'builtin',
     status: 'active',
     'components.type': 'mcp-server',
-  }).lean() as any[]).filter((row) => mcpComponentOf(row) && TOOL_INSTALLABLES[row.installableId]);
+  }).lean() as any[]).filter((row) => mcpComponentOf(row) && metas[row.installableId]);
   if (!rows.length) return [];
-  const connectionTypes = Array.from(new Set(rows.map((row) => TOOL_INSTALLABLES[row.installableId].connectionType)));
+  const connectionTypes = Array.from(new Set(rows.map((row) => metas[row.installableId].connectionType)));
   const connections = await Integration.find({
     type: { $in: connectionTypes },
     createdBy: userId,
@@ -129,7 +137,7 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
     revokedAt: null,
   }).lean() as any[];
   return rows.map((row) => {
-    const meta = TOOL_INSTALLABLES[row.installableId];
+    const meta = metas[row.installableId];
     const component = mcpComponentOf(row);
     const readiness = meta.readiness();
     return {
@@ -137,12 +145,18 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       list: 'tools',
       label: row.name || row.installableId,
       description: row.description || '',
+      connectionType: meta.connectionType,
+      ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },
       tools: projectTools(component),
       connections: connections
-        .filter((integration) => integration.type === meta.connectionType)
+        // Two vendors' rows share one connection type, so an entry-scoped meta
+        // matches its own rows only: without the entryId half, a person
+        // connected to one vendor would be offered as connected to the other.
+        .filter((integration) => integration.type === meta.connectionType
+          && (!meta.entryId || String(integration.config?.entryId || '') === meta.entryId))
         .map(publicConnection),
       installation: null,
       integration: null,

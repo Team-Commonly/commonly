@@ -5,6 +5,8 @@ jest.mock('../../../services/toolBrokerService', () => ({
   getToolDefinitions: () => [
     { name: 'github.list_issues', description: 'List issues', requiredWriteMode: 'read', connectionType: 'github-app' },
     { name: 'github.create_issue', description: 'Create an issue', requiredWriteMode: 'write-with-confirm', connectionType: 'github-app', irreversible: true },
+    { name: 'linear.list_issues', description: 'List issues', requiredWriteMode: 'read', connectionType: 'hosted-mcp', entryId: 'linear' },
+    { name: 'acme.list_tickets', description: 'List tickets', requiredWriteMode: 'read', connectionType: 'hosted-mcp', entryId: 'acme' },
   ],
 }));
 jest.mock('../../../services/roomGrantService', () => ({
@@ -21,6 +23,7 @@ const Installable = require('../../../models/Installable');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const Integration = require('../../../models/Integration');
 const { catalogFor } = require('../../../services/installable/installableCatalogService');
+const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 
 const userId = '64b64c48c4f37a6b2f34c111';
 const installationId = '64b64c48c4f37a6b2f34c222';
@@ -195,6 +198,10 @@ describe('installable catalog service', () => {
       list: 'tools',
       label: 'GitHub',
       description: 'Issues and pull requests.',
+      // The connect descriptor is per row, and a github-app row has no entry to
+      // name: its connections are not per entry, so it carries the type and no
+      // `entryId`. The hosted half is asserted below.
+      connectionType: 'github-app',
       available: true,
       broker: { id: 'commonly-grant-broker' },
       tools: [
@@ -217,4 +224,73 @@ describe('installable catalog service', () => {
     const unconfigured = (await catalogFor(userId)).installables.find((entry) => entry.list === 'tools');
     expect(unconfigured).toMatchObject({ available: false, unavailableReason: 'not_configured', connections: [] });
   });
+});
+
+/**
+ * Scope §7, catalogue half: a hosted entry is offered as a tools row, and its
+ * Connections are its OWN.
+ *
+ * One `connectionType` covers every vendor this type serves, so the connection
+ * filter has to read `config.entryId` too — without that half, a person's Linear
+ * row is offered as a grantable connection under every other hosted entry, and
+ * the mint would then refuse the grant it just offered (one entry's tools cannot
+ * name another's). The fixture adds a second vendor beside the shipped one
+ * because a filter cannot be witnessed with a single value.
+ */
+it("a hosted entry's tool row carries its connect descriptor and only its own connections", async () => {
+  const acme = {
+    id: 'acme',
+    title: 'Acme',
+    description: 'Tickets in Acme.',
+    resource: 'https://mcp.acme.example/mcp',
+    issuer: 'https://mcp.acme.example',
+    client: 'cimd',
+    scopes: ['read'],
+    revoke: { page: 'https://acme.example/settings' },
+    tools: [{
+      name: 'list_tickets', upstreamName: 'list_tickets', description: 'List tickets',
+      class: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true },
+    }],
+  };
+  const shipped = [...HOSTED_MCP_ENTRIES];
+  HOSTED_MCP_ENTRIES.push(acme);
+  try {
+    mockInstallables([], [
+      { ...githubTool(), installableId: 'linear', name: 'Linear', description: 'Issues, projects and cycles.', components: [{ name: 'commonly-grant-broker', type: 'mcp-server', enabledTools: ['linear.list_issues'] }] },
+      { ...githubTool(), installableId: 'acme', name: 'Acme', description: 'Tickets.', components: [{ name: 'commonly-grant-broker', type: 'mcp-server', enabledTools: ['acme.list_tickets'] }] },
+    ]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      {
+        _id: 'conn-linear', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        config: { entryId: 'linear', credentialRef: 'ref-linear' },
+      },
+      {
+        _id: 'conn-acme', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        config: { entryId: 'acme', credentialRef: 'ref-acme' },
+      },
+    ]));
+
+    const catalog = await catalogFor(userId);
+    const rows = catalog.installables.filter((entry) => entry.list === 'tools');
+    const linear = rows.find((entry) => entry.installableId === 'linear');
+    const acmeRow = rows.find((entry) => entry.installableId === 'acme');
+
+    // The descriptor the page POSTs to the start route with: the entry id is not
+    // derivable from anything else the row carries.
+    expect(linear).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'linear', available: true, label: 'Linear' });
+    expect(acmeRow).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'acme' });
+    // Each row sees its own vendor's connection and not the other's.
+    expect(linear.connections).toEqual([
+      { connectionId: 'conn-linear', owner: '', repo: '' },
+    ]);
+    expect(acmeRow.connections).toEqual([
+      { connectionId: 'conn-acme', owner: '', repo: '' },
+    ]);
+    expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
+      type: { $in: ['hosted-mcp'] }, createdBy: userId, status: 'connected', revokedAt: null,
+    }));
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
 });

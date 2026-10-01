@@ -45,7 +45,12 @@ const mint = (body) => request(app).post('/api/grants').set('x-test-user', OWNER
   tools: ['github.list_issues'],
   writeMode: 'read',
   budget: { calls: 10, windowMs: 60000 },
-  expiresAt: new Date('2026-10-01T00:00:00.000Z').toISOString(),
+  // Relative, not a fixed date: this fixture pinned `2026-10-01T00:00:00Z`, which
+  // the mint refuses as `invalid_expiry` once the clock passes it — five arms in
+  // this file went red on their own the morning of 2026-10-01, on main, with no
+  // code change (measured at `91cc32af`). The expiry is not what any arm here is
+  // about; the grant's own expiry rules are asserted elsewhere.
+  expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
   ...body,
 });
 
@@ -147,8 +152,14 @@ describe('POST /api/grants', () => {
  * Scope §7: the mint admits `hosted-mcp` beside `github-app`, takes the row's
  * `_id` as the grant's installationId, requires a connected row with a
  * credential, refuses `write` (§5a), and lets a grant name only tools from the
- * row's own entry. `HOSTED_MCP_ENTRIES` is empty in v1, so the catalogue arms
- * push a fixture entry for the duration of the arm and restore the array.
+ * row's own entry.
+ *
+ * Each arm runs against the catalogue it NAMES, swapped in for the duration and
+ * restored after: the fixtures call their entry `linear`, which is also the id
+ * the shipped catalogue now carries (step 7), and `findHostedMcpEntry` answers
+ * first-wins — so a fixture pushed beside the shipped entry would never be
+ * found, and the arm that asserts the catalogue is what stops the mint would
+ * silently run against a catalogue that is not empty.
  */
 const HOSTED_ID = 'eeeeeeeeeeeeeeeeeeeeee01';
 
@@ -175,21 +186,23 @@ const hostedRow = (config = {}, over = {}) => ({
 
 const hostedMint = (body = {}) => mint({ connectionId: HOSTED_ID, tools: ['linear.list_issues'], ...body });
 
-/** Run `run` with the catalogue seeded, then restore it exactly. */
+/** Run `run` with exactly `entries` in the catalogue, then restore it exactly. */
 const withCatalog = async (entries, run) => {
-  const before = HOSTED_MCP_ENTRIES.length;
-  HOSTED_MCP_ENTRIES.push(...entries);
+  const shipped = HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...entries);
   try {
     return await run();
   } finally {
-    HOSTED_MCP_ENTRIES.length = before;
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }
 };
 
 describe('POST /api/grants on a hosted-mcp connection', () => {
   test('a connected hosted row is admitted; what stops the mint is the catalogue, not its type', async () => {
     Integration.findById.mockResolvedValue(hostedRow());
-    const res = await hostedMint();
+    // The catalogue is emptied for this arm on purpose: since step 7 the shipped
+    // one carries `linear`, so without this the arm would be measuring the
+    // shipped entry rather than the refusal it names.
+    const res = await withCatalog([], () => hostedMint());
     // A type the mint does not admit is refused `connection_mismatch`; this is
     // the other outcome, so the arm is evidence the type check was widened.
     expect(res.status).toBe(503);

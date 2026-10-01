@@ -51,7 +51,27 @@ describe('seed-builtin-tools', () => {
     expect(rows[0].source).toBe('user');
     expect(rows[0].name).toBe('Someone else\'s GitHub');
     expect(rows[0].components[0].enabledTools).toEqual(['github.list_issues']);
-    expect(await Installable.countDocuments({ source: 'builtin' })).toBe(0);
+    // Scoped to the id the foreign row holds: since step 7 the seed also writes
+    // one builtin row per catalogue entry, so the count over ALL builtin rows
+    // would be measuring Linear rather than whether GitHub was claimed.
+    expect(await Installable.countDocuments({ installableId: 'github', source: 'builtin' })).toBe(0);
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/held by a 'user' row/));
+  });
+
+  test('every catalogue entry becomes its own builtin tool Installable, holding the entry\'s tools', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    await seedBuiltinTools();
+    const rows = await Installable.find({ source: 'builtin' }).sort({ installableId: 1 }).lean();
+    // The shipped catalogue, as the Tools page sees it: GitHub plus the one
+    // pinned entry.
+    expect(rows.map((row) => row.installableId)).toEqual(['github', 'linear']);
+    const linear = rows.find((row) => row.installableId === 'linear');
+    expect(linear.name).toBe('Linear');
+    expect(linear.components[0].enabledTools).toContain('linear.list_issues');
+    expect(linear.components[0].enabledTools).toHaveLength(36);
+    // Re-seeded on every boot, so the second run has to update in place rather
+    // than collide on the unique installableId.
+    await seedBuiltinTools();
+    expect(await Installable.countDocuments({ installableId: 'linear' })).toBe(1);
   });
 });

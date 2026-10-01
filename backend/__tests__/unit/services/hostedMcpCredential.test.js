@@ -284,18 +284,20 @@ describe('the gates before any refresh', () => {
   });
 
   test('an entry id the catalogue does not carry is refused, and a resolvable entry is not', async () => {
-    // The real lookup, against the shipped catalogue: no vendor is listed in v1,
-    // so an id copied from a row resolves to nothing and must refuse rather than
-    // refresh against a guessed authorization server.
-    const row = stale();
-    const withRealLookup = harness({ row, entryFor: undefined });
+    // The real lookup, against the shipped catalogue. Since step 7 that
+    // catalogue carries `linear`, so the refusal arm names an entry nothing
+    // ships — the shape a row takes when its entry leaves the catalogue (§3),
+    // where the fence must refuse rather than refresh against a guessed
+    // authorization server.
+    const unknown = stale({ entryId: 'atlassian' });
+    const withRealLookup = harness({ row: unknown, entryFor: undefined });
     delete withRealLookup.deps.entryFor;
-    const error = await refusal(credentialFor(row, withRealLookup.deps));
+    const error = await refusal(credentialFor(unknown, withRealLookup.deps));
     expect(error.code).toBe('connection_mismatch');
-    expect(error.message).toBe(`hosted-mcp row names no known entry (${ENTRY.id})`);
+    expect(error.message).toBe('hosted-mcp row names no known entry (atlassian)');
 
-    const control = harness({ row });
-    await expect(credentialFor(row, control.deps)).resolves.toMatchObject({ token: 'new-access' });
+    const control = harness({ row: stale() });
+    await expect(credentialFor(stale(), control.deps)).resolves.toMatchObject({ token: 'new-access' });
   });
 });
 

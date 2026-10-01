@@ -13,11 +13,12 @@
 // SlowBuffer dependency is irrelevant to these suites.
 jest.mock('jsonwebtoken', () => ({}));
 
-// The catalogue is empty on this head, so a hosted removal reaches the sequence
-// but never a real entry. `findHostedMcpEntry` is the one seam the sequence
-// reads, and a page entry has to be reachable through the ROUTE for the
-// response's `revokeAt` to have a witness at all — nothing else asserts that
-// the route passes it on. Setting the override is the only arm that does.
+// The shipped catalogue carries `linear` since step 7, so a hosted removal that
+// names it now RESOLVES. `findHostedMcpEntry` is the one seam the sequence reads,
+// and both outcomes have to be reachable through the ROUTE: a row naming an entry
+// the catalogue does not carry (the 6b finish), and a row naming one it does (a
+// real vendor revoke). Setting the override is the only arm that witnesses the
+// second, and the first is named by an entry id the catalogue genuinely lacks.
 let mockHostedEntryOverride = null;
 jest.mock('../../../integrations/hostedMcp/entries', () => {
   const actual = jest.requireActual('../../../integrations/hostedMcp/entries');
@@ -243,7 +244,7 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
   // §2: a hosted row is a per-person Connection, so `scope: 'user'` and no
   // `podId` — the schema requires `podId` only when `scope === 'pod'`, which is
   // also what keeps pod deletion from ever reaching one of these rows.
-  const seedHostedRow = async () => Integration.create({
+  const seedHostedRow = async (config = {}) => Integration.create({
     type: 'hosted-mcp',
     status: 'connected',
     scope: 'user',
@@ -253,11 +254,16 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
       entryId: 'linear',
       credentialRef: 'access-ref',
       refreshTokenRef: 'refresh-ref',
+      ...config,
     },
   });
 
   it('refuses with provider_revoke_failed and keeps the row, its refs and its grants state', async () => {
-    const connection = await seedHostedRow();
+    // `atlassian` is not in the shipped catalogue, so this is the row whose entry
+    // a PR dropped or renamed — the one §9 says must keep its refusal, because a
+    // removal that finishes has to hand the person a page and this row holds no
+    // copy of one.
+    const connection = await seedHostedRow({ entryId: 'atlassian' });
     const root = grantFixture({
       connectionId: String(connection._id),
       installationId: 'install-none-hosted',
@@ -268,11 +274,9 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
       .delete(`/api/integrations/${connection._id}`)
       .set('x-test-user', OWNER);
 
-    // `HOSTED_MCP_ENTRIES` is empty on this head, so every hosted removal takes
-    // the "no known entry" branch. That is the shipped state, and it is worth an
-    // arm of its own: it proves the route dispatches to the sequence rather than
-    // falling through to the delete, and that a removal which cannot finish
-    // answers a named state instead of a 500 or a silent success.
+    // The row names an entry the shipped catalogue no longer carries, which is
+    // what this arm is about; a row naming `linear` resolves and takes the
+    // vendor path instead.
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('provider_revoke_failed');
     expect(res.body.message).toMatch(/names no known entry/);
