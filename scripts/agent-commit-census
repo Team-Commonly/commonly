@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execFileSync, spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const { StringDecoder } = require('node:string_decoder');
 
 const refExists = (ref) => spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
   stdio: 'ignore',
@@ -19,18 +20,6 @@ if (!refExists(ref)) {
   process.exit(1);
 }
 
-let log;
-try {
-  log = execFileSync(
-    'git',
-    ['log', '--format=%H%x00%(trailers:key=Co-authored-by)%x00%B%x00', ref],
-    { encoding: 'utf8' },
-  );
-} catch (error) {
-  process.stderr.write(`Could not read commits from ${ref}: ${error.message}\n`);
-  process.exit(1);
-}
-
 const counts = new Map();
 const models = new Map();
 const attributionWarnings = [];
@@ -43,13 +32,9 @@ const parseSeatLine = (line) => {
     seatId: match[2].slice(0, match[2].indexOf('@')),
   };
 };
-const fields = log.split('\0');
-for (let index = 0; index + 2 < fields.length; index += 3) {
-  const commitId = fields[index].trim();
-  const coAuthors = fields[index + 1];
-  const message = fields[index + 2];
-  if (!commitId) continue;
-
+const processCommit = (commitId, coAuthors, message) => {
+  const normalizedCommitId = commitId.trim();
+  if (!normalizedCommitId) return;
   const parsedSeatIds = new Set();
   const seatsInCommit = new Map();
   for (const line of coAuthors.split(/\r?\n/)) {
@@ -72,7 +57,7 @@ for (let index = 0; index + 2 < fields.length; index += 3) {
   const bodyOnlySeatIds = [...bodySeatIds].filter((seatId) => !parsedSeatIds.has(seatId));
   if (bodyOnlySeatIds.length > 0) {
     attributionWarnings.push(
-      `${commitId.slice(0, 12)}: ${bodyOnlySeatIds.length} Commonly seat line(s) did not parse as trailers; counted the exact message-body line(s).`,
+      `${normalizedCommitId.slice(0, 12)}: ${bodyOnlySeatIds.length} Commonly seat line(s) did not parse as trailers; counted the exact message-body line(s).`,
     );
   }
 
@@ -94,46 +79,96 @@ for (let index = 0; index + 2 < fields.length; index += 3) {
     const model = match[1].trim();
     const row = models.get(model) || { lines: 0, commits: new Set() };
     row.lines += 1;
-    row.commits.add(commitId);
+    row.commits.add(normalizedCommitId);
     models.set(model, row);
   }
 
   if (modelLinesInCommit > 0 && parsedSeatIds.size === 0) {
     if (seatsInCommit.size > 0) {
       attributionWarnings.push(
-        `${commitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer; counting ${seatsInCommit.size} seat(s) from message-body lines.`,
+        `${normalizedCommitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer; counting ${seatsInCommit.size} seat(s) from message-body lines.`,
       );
     } else {
       unattributedModelCommits += 1;
       attributionWarnings.push(
-        `${commitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer or Commonly seat line in the body; possible co-author lift failure.`,
+        `${normalizedCommitId.slice(0, 12)}: ${modelLinesInCommit} Agent-Model line(s) have no parsed seat trailer or Commonly seat line in the body; possible co-author lift failure.`,
       );
     }
   }
-}
+};
 
-if (counts.size === 0) {
-  process.stdout.write(`No Commonly seat attribution found on ${ref}.\n`);
-} else {
-  process.stdout.write(`Commonly seat-attributed commits on ${ref}\n`);
-  process.stdout.write('COMMITS\tSEAT ID\tDISPLAY NAME(S)\n');
-  for (const [seatId, row] of [...counts.entries()].sort((left, right) => (
-    right[1].commits - left[1].commits || left[0].localeCompare(right[0])
-  ))) {
-    process.stdout.write(`${row.commits}\t${seatId}\t${[...row.displayNames].sort().join(', ')}\n`);
+const readCommits = (gitRef) => new Promise((resolve, reject) => {
+  const child = spawn(
+    'git',
+    ['log', '--format=%H%x00%(trailers:key=Co-authored-by)%x00%B%x00', gitRef],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  const decoder = new StringDecoder('utf8');
+  let remainder = '';
+  let fields = [];
+  let stderr = '';
+
+  const acceptField = (field) => {
+    fields.push(field);
+    if (fields.length === 3) {
+      processCommit(fields[0], fields[1], fields[2]);
+      fields = [];
+    }
+  };
+
+  const acceptText = (text) => {
+    remainder += text;
+    let boundary = remainder.indexOf('\0');
+    while (boundary !== -1) {
+      acceptField(remainder.slice(0, boundary));
+      remainder = remainder.slice(boundary + 1);
+      boundary = remainder.indexOf('\0');
+    }
+  };
+
+  child.stdout.on('data', (chunk) => acceptText(decoder.write(chunk)));
+  child.stdout.on('end', () => acceptText(decoder.end()));
+  child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (remainder.trim()) acceptField(remainder);
+    if (code !== 0) {
+      reject(new Error(stderr.trim() || `git log exited with status ${code}`));
+    } else if (fields.length !== 0) {
+      reject(new Error('git log returned an incomplete commit record'));
+    } else {
+      resolve();
+    }
+  });
+});
+
+readCommits(ref).then(() => {
+  if (counts.size === 0) {
+    process.stdout.write(`No Commonly seat attribution found on ${ref}.\n`);
+  } else {
+    process.stdout.write(`Commonly seat-attributed commits on ${ref}\n`);
+    process.stdout.write('COMMITS\tSEAT ID\tDISPLAY NAME(S)\n');
+    for (const [seatId, row] of [...counts.entries()].sort((left, right) => (
+      right[1].commits - left[1].commits || left[0].localeCompare(right[0])
+    ))) {
+      process.stdout.write(`${row.commits}\t${seatId}\t${[...row.displayNames].sort().join(', ')}\n`);
+    }
   }
-}
 
-for (const warning of attributionWarnings) {
-  process.stderr.write(`Warning: ${warning}\n`);
-}
-if (unattributedModelCommits > 0) process.exitCode = 1;
-
-if (models.size > 0) {
-  process.stdout.write('MODEL LINES\tCOMMIT BODIES\tADAPTER/MODEL/EFFORT\n');
-  for (const [model, row] of [...models.entries()].sort((left, right) => (
-    right[1].lines - left[1].lines || left[0].localeCompare(right[0])
-  ))) {
-    process.stdout.write(`${row.lines}\t${row.commits.size}\t${model}\n`);
+  for (const warning of attributionWarnings) {
+    process.stderr.write(`Warning: ${warning}\n`);
   }
-}
+  if (unattributedModelCommits > 0) process.exitCode = 1;
+
+  if (models.size > 0) {
+    process.stdout.write('MODEL LINES\tCOMMIT BODIES\tADAPTER/MODEL/EFFORT\n');
+    for (const [model, row] of [...models.entries()].sort((left, right) => (
+      right[1].lines - left[1].lines || left[0].localeCompare(right[0])
+    ))) {
+      process.stdout.write(`${row.lines}\t${row.commits.size}\t${model}\n`);
+    }
+  }
+}).catch((error) => {
+  process.stderr.write(`Could not read commits from ${ref}: ${error.message}\n`);
+  process.exitCode = 1;
+});
