@@ -62,9 +62,10 @@ const connectors = [
   },
 ];
 
-const mockGets = (list = connectors) => {
+const mockGets = (list = connectors, installables = null) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/integrations/user/all') return Promise.resolve({ data: list });
+    if (url === '/api/installables' && installables) return Promise.resolve({ data: { installables } });
     if (url === '/api/pods') {
       return Promise.resolve({
         data: [
@@ -76,6 +77,20 @@ const mockGets = (list = connectors) => {
     return Promise.resolve({ data: [] });
   });
 };
+
+const hostedLinearCatalogEntry = (connectionId = 'i-linear') => ({
+  installableId: 'linear',
+  list: 'tools',
+  label: 'Linear',
+  description: 'Read Linear issues and projects.',
+  connectionType: 'hosted-mcp',
+  entryId: 'linear',
+  available: true,
+  tools: [],
+  connections: [{ connectionId, owner: 'sam', repo: '' }],
+  installation: null,
+  integration: null,
+});
 
 const renderPage = () => render(
   <AuthContext.Provider value={authValue}>
@@ -676,14 +691,16 @@ describe('V2ConnectorsPage', () => {
     mockGets([{
       _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
       config: { entryId: 'linear', revokePage },
-    }]);
+    }], [hostedLinearCatalogEntry()]);
     renderPage();
 
-    const reviewLink = await screen.findByRole('link', { name: 'Review provider access' });
+    const reviewLink = await screen.findByRole('link', { name: "Open Linear's connected apps" });
     expect(reviewLink).toHaveAttribute('href', revokePage);
     expect(reviewLink).toHaveAttribute('target', '_blank');
     expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(screen.getByRole('status')).toHaveTextContent('could not confirm withdrawal');
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('Linear may still list your previous account.');
+    expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
     expect(window.location.search).toBe('');
   });
 
@@ -696,11 +713,11 @@ describe('V2ConnectorsPage', () => {
     mockGets([{
       _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
       config: { entryId: 'linear', revokePage: 'https://linear.app/settings/security' },
-    }]);
+    }], [hostedLinearCatalogEntry()]);
     renderPage();
 
     await waitFor(() => expect(window.location.search).toBe(''));
-    expect(screen.queryByRole('link', { name: 'Review provider access' })).toBeNull();
+    expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
   });
 
   it('shows the error reconnect action and retains the separate removal action', async () => {

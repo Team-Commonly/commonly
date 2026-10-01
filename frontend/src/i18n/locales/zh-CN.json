@@ -1899,6 +1899,8 @@
     "gateOff": "已关闭",
     "gateSwitch": "转发 {{pod}}",
     "gatesTitle": "接入此频道的 Pod",
+    "hostedMcpManualRevoke": "{{provider}} 仍可能列出你之前的账户。",
+    "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
     "installInProgress": "仍在设置中，请稍后再试。",
     "installInProgressForPod": "{{pod}} 仍在设置中，请稍后再试。",
     "leadAny": "任一智能体都可主导",

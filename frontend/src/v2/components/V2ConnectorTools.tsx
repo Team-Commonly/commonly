@@ -83,10 +83,18 @@ export interface ToolCatalogEntry {
   connections: Array<{ connectionId: string; owner: string; repo: string }>;
 }
 
+export interface HostedMcpManualRevokeNotice {
+  connectionId: string;
+  entryId: string;
+  provider: string;
+  revokePage: string;
+}
+
 interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
 
 interface Props {
   pods: V2Pod[];
+  manualRevokeNotice?: HostedMcpManualRevokeNotice | null;
 }
 
 interface DraftGrant {
@@ -181,7 +189,7 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
   return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
 };
 
-const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
+const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
   const { t } = useTranslation();
   const api = useV2Api();
   // Revoke and Change access are the granter's (Vera 67912 / Wren 67913): the route 403s anyone else.
@@ -270,6 +278,28 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
   const entryFor = (grant: ToolGrant): ToolCatalogEntry | null => (
     catalog.find((entry) => entryCovers(entry, grant)) || null
   );
+  const noticeMatchesEntry = (entry: ToolCatalogEntry | null): boolean => Boolean(
+    manualRevokeNotice
+    && entry?.entryId === manualRevokeNotice.entryId
+    && entry.connections.some((connection) => connection.connectionId === manualRevokeNotice.connectionId),
+  );
+  const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
+    if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
+    return (
+      <p className="v2-connector-row__refusal" role="status">
+        {t('connectors.hostedMcpManualRevoke', {
+          defaultValue: '{{provider}} may still list your previous account.',
+          provider: manualRevokeNotice.provider,
+        })}{' '}
+        <a href={manualRevokeNotice.revokePage} target="_blank" rel="noopener noreferrer">
+          {t('connectors.hostedMcpReviewAuthorization', {
+            defaultValue: "Open {{provider}}'s connected apps",
+            provider: manualRevokeNotice.provider,
+          })}
+        </a>
+      </p>
+    );
+  };
   const toolLabel = (grant: ToolGrant): string => entryFor(grant)?.label
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
@@ -552,6 +582,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
+    const noticeGrantId = noticeMatchesEntry(entry)
+      ? (grants || []).find((candidate) => (
+        !isDead(candidate, now) && entryFor(candidate)?.installableId === entry?.installableId
+      ))?.grantId
+      : null;
     // What the grant was given TO, which is a seat when the target is a seat. It
     // is not the row's location: the kicker and the accessible name both name the
     // pod the row lives in, so a seat grant under Ops has a sentence reading
@@ -634,6 +669,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             <ActGlyph name="manage" />
           </button>
         )}
+        {noticeGrantId === grant.grantId && renderManualRevokeNotice(entry)}
       </article>
     );
   };
@@ -685,6 +721,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods }) => {
             {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
           </button>
         )}
+        {renderManualRevokeNotice(entry)}
       </article>
     );
   };

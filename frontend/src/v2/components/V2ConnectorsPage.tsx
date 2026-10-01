@@ -12,7 +12,7 @@ import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
-import V2ConnectorTools from './V2ConnectorTools';
+import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface ConnectorGate {
@@ -85,6 +85,7 @@ interface CatalogEntry {
   // Two lists (tools plan, Sam's option A): this page draws channels; the
   // Tools page draws tool Installables, so a `tools` row never renders here.
   list?: 'channels' | 'tools';
+  connectionType?: 'github-app' | 'hosted-mcp';
   label?: string;
   description?: string;
   available: boolean;
@@ -97,6 +98,8 @@ interface CatalogEntry {
   // restoring what this page did before the field existed.
   offered?: boolean;
   unavailableReason?: string;
+  // Tool entries provide the provider name for the hosted connection row.
+  entryId?: string;
   installation: CatalogInstallation | null;
   integration: Connector | null;
 }
@@ -288,6 +291,7 @@ const V2ConnectorsPage: React.FC = () => {
   const navigate = useNavigate();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
+  const [hostedCatalog, setHostedCatalog] = useState<CatalogEntry[] | null>(null);
   // `null` means membership is not available yet (or the read failed).  An
   // empty array is the only confirmed zero-pod state, so it alone may replace
   // the existing picker with the create-a-pod path.
@@ -302,7 +306,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [expandedGate, setExpandedGate] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hostedMcpManualRevoke, setHostedMcpManualRevoke] = useState<string | null>(null);
+  const [hostedMcpManualRevoke, setHostedMcpManualRevoke] = useState<HostedMcpManualRevokeNotice | null>(null);
   // Row C: a refusal raised by a row's own button belongs on that row, not
   // only in the page-level slot at the foot of the page.
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
@@ -342,9 +346,13 @@ const V2ConnectorsPage: React.FC = () => {
         api.get<CatalogResponse>('/api/installables').catch(() => null),
       ]);
       const connectorRows = Array.isArray(rows) ? rows : [];
+      const installables = catalogResponse && Array.isArray(catalogResponse.installables)
+        ? catalogResponse.installables
+        : null;
       setConnectors(connectorRows);
-      setCatalog(catalogResponse && Array.isArray(catalogResponse.installables)
-        ? catalogResponse.installables.filter((entry) => entry.list !== 'tools')
+      setCatalog(installables ? installables.filter((entry) => entry.list !== 'tools') : null);
+      setHostedCatalog(installables
+        ? installables.filter((entry) => entry.list === 'tools' && entry.connectionType === 'hosted-mcp')
         : null);
       setError(null);
       return connectorRows;
@@ -396,7 +404,7 @@ const V2ConnectorsPage: React.FC = () => {
     if (query.get('hostedMcp') !== 'connected') return;
     // Let the ordinary page load finish first; its authenticated row is the
     // authority for the provider link, so there is no second request here.
-    if (loading) return;
+    if (loading || hostedCatalog === null) return;
     const entryId = query.get('entryId');
     const revokeAt = query.get('revokeAt');
     if (entryId && revokeAt) {
@@ -404,8 +412,14 @@ const V2ConnectorsPage: React.FC = () => {
         candidate.type === 'hosted-mcp' && candidate.config?.entryId === entryId
       ));
       const revokePage = row?.config?.revokePage;
-      if (revokePage === revokeAt && safeProviderRevokePage(revokePage)) {
-        setHostedMcpManualRevoke(revokePage);
+      const provider = hostedCatalog?.find((entry) => entry.entryId === entryId)?.label;
+      if (row && provider && revokePage === revokeAt && safeProviderRevokePage(revokePage)) {
+        setHostedMcpManualRevoke({
+          connectionId: row._id,
+          entryId,
+          provider,
+          revokePage,
+        });
       }
     }
     query.delete('hostedMcp');
@@ -418,7 +432,7 @@ const V2ConnectorsPage: React.FC = () => {
       '',
       `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
     );
-  }, [connectors, loading]);
+  }, [connectors, hostedCatalog, loading]);
 
   const hasPending = connectors.some((connector) => connector.status !== 'connected' && (
     (connector.type === 'telegram' && codeIsLive(connector))
@@ -1655,19 +1669,9 @@ const V2ConnectorsPage: React.FC = () => {
       )}
 
       {/* Tools plan §6: the second list, under the channels, in the same grammar. */}
-      {!loading && <V2ConnectorTools pods={podList} />}
+      {!loading && <V2ConnectorTools pods={podList} manualRevokeNotice={hostedMcpManualRevoke} />}
 
       {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
-      {hostedMcpManualRevoke && (
-        <div className="v2-connectors__error" role="status">
-          {t('connectors.hostedMcpManualRevoke', {
-            defaultValue: 'The connection completed, but Commonly could not confirm withdrawal of the previous authorization. Review the provider’s connected applications.',
-          })}{' '}
-          <a href={hostedMcpManualRevoke} target="_blank" rel="noopener noreferrer">
-            {t('connectors.hostedMcpReviewAuthorization', { defaultValue: 'Review provider access' })}
-          </a>
-        </div>
-      )}
     </div>
   );
 };
