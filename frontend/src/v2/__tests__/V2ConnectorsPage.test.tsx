@@ -906,7 +906,8 @@ describe('V2ConnectorsPage', () => {
     it('keeps tool-only connections out of Channels and refuses an unknown type as a row title', async () => {
       mockCatalog([entry()], [
         {
-          _id: 'i-hosted-linear', installationId: 'hosted-linear', type: 'hosted-mcp', status: 'connected',
+          // Real hosted-MCP rows have no installationId; filter them by type.
+          _id: 'i-hosted-linear', type: 'hosted-mcp', status: 'connected',
           config: { entryId: 'linear' },
         },
         {
