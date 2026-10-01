@@ -924,6 +924,8 @@ describe('V2ConnectorsPage', () => {
       expect(screen.queryByRole('button', { name: 'View Custom Messaging Platform' })).toBeNull();
       expect(screen.queryByText('hosted-mcp')).toBeNull();
       expect(screen.queryByText('github-app')).toBeNull();
+      expect(screen.queryByText('Hosted tool')).toBeNull();
+      expect(screen.queryByText('GitHub App')).toBeNull();
       expect(screen.queryByText('custom-messaging-platform')).toBeNull();
     });
 

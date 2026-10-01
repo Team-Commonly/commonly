@@ -158,6 +158,10 @@ const TYPE_LABELS: Record<string, string> = {
   groupme: 'GroupMe',
   x: 'X',
   instagram: 'Instagram',
+  // Human-readable fallback only. These tool connections are still excluded
+  // from Channels by type in allItems below.
+  'github-app': 'GitHub App',
+  'hosted-mcp': 'Hosted tool',
 };
 
 const TOOL_ONLY_CONNECTION_TYPES = new Set(['github-app', 'hosted-mcp']);
