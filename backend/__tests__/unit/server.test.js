@@ -31,10 +31,23 @@ jest.mock('../../models/PodInvite', () => ({
   },
 }));
 
-const mockConnectPG = jest.fn().mockResolvedValue(null);
-jest.mock('../../config/db-pg', () => ({ connectPG: mockConnectPG }));
-const mockInitPGDB = jest.fn();
-jest.mock('../../config/init-pg-db', () => mockInitPGDB);
+// Each factory binds the mock that exists when server.ts requires it, not the
+// variable. A boot test that waits 30ms can return while its server's retry
+// loop is still sleeping between attempts, and after `jest.resetModules` that
+// loop keeps running. If it shared the next test's mock, its calls would land
+// in the next test's count: `toHaveBeenCalledTimes(2)` received 3 in two
+// unrelated CI runs. `beforeEach` below swaps in fresh mocks, so a left-over
+// loop can only reach the mocks of the test that started it.
+let mockConnectPG = jest.fn().mockResolvedValue(null);
+jest.mock('../../config/db-pg', () => {
+  const connectPG = mockConnectPG;
+  return { connectPG };
+});
+let mockInitPGDB = jest.fn();
+jest.mock('../../config/init-pg-db', () => {
+  const initPGDB = mockInitPGDB;
+  return initPGDB;
+});
 
 // Replace pg routes with simple routers
 jest.mock('../../routes/pg-status', () => {
@@ -72,6 +85,11 @@ describe('server pg boot routes', () => {
   // inherited so a genuine hang still shows up as a timeout, at 2x the headroom
   // the loaded case needed.
   jest.setTimeout(60000);
+
+  beforeEach(() => {
+    mockConnectPG = jest.fn().mockResolvedValue(null);
+    mockInitPGDB = jest.fn();
+  });
 
   afterEach(() => {
     jest.resetModules();
