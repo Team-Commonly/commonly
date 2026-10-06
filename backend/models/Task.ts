@@ -24,6 +24,8 @@ export interface ITask extends Document {
   // ADR-018 D4: a claim is a lease, never permanent. Null on legacy claims —
   // readers derive their effective expiry from claimedAt + the route's lease.
   claimExpiresAt?: Date | null;
+  // The updatedAt revision most recently offered to eligible pod agents.
+  offeredAt?: Date | null;
   // Fable's #1080 ruling, part 2: a lapsed lease held by a PROVABLY LIVE seat
   // is deferred rather than rescued, at most three times. The counter lives on
   // the row so the sweep stays stateless; it resets on every claim, so a seat
@@ -62,6 +64,8 @@ const TaskSchema = new Schema<ITask>(
     claimedBy: { type: String, default: null },
     claimedAt: { type: Date, default: null },
     claimExpiresAt: { type: Date, default: null },
+    // No default: missing means this revision has not been offered.
+    offeredAt: { type: Date },
     rescueDeferrals: { type: Number, default: 0 },
     lapsedFrom: { type: String, default: null },
     completedAt: { type: Date, default: null },

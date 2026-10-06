@@ -23,10 +23,15 @@ jest.mock('../../../models/AgentEvent', () => ({
   updateOne: jest.fn(),
 }));
 
+const mockTaskUpdateOne = jest.fn();
+jest.mock('../../../models/Task', () => ({
+  updateOne: (...args) => mockTaskUpdateOne(...args),
+}));
+
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const AgentEvent = require('../../../models/AgentEvent');
-const { notifyPodAgents } = require('../../../services/taskEventService');
+const { notifyPodAgents, notifyFoundWork } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
 const HUMAN_ID = new mongoose.Types.ObjectId().toString();
@@ -64,9 +69,73 @@ beforeEach(() => {
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
   AgentEvent.updateOne.mockResolvedValue({});
+  mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
 });
 
 describe('notifyPodAgents', () => {
+  it('stamps the offered task revision only after every eligible seat succeeds', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    const offeredAt = new Date('2026-08-20T20:00:00.000Z');
+    const offeredTask = task({ _id: 'task-1', updatedAt: offeredAt });
+
+    await notifyPodAgents(POD_ID, offeredTask, 'created', { userId: HUMAN_ID, isAgent: false });
+
+    expect(mockTaskUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockTaskUpdateOne).toHaveBeenCalledWith(
+      { _id: 'task-1', updatedAt: offeredAt },
+      { $set: { offeredAt } },
+      { timestamps: false },
+    );
+  });
+
+  it('leaves the task revision due when any eligible seat fails', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    AgentEventService.enqueue
+      .mockRejectedValueOnce(new Error('event store unavailable'))
+      .mockResolvedValueOnce({});
+
+    await notifyPodAgents(
+      POD_ID,
+      task({ _id: 'task-1', updatedAt: new Date('2026-08-20T20:00:00.000Z') }),
+      'created',
+      { userId: HUMAN_ID, isAgent: false },
+    );
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('leaves the task revision due if a folded wake stops being pending before its content rewrite', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce({
+      _id: 'event-1',
+      payload: { boardChanges: 1 },
+    });
+    AgentEvent.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+
+    await notifyPodAgents(
+      POD_ID,
+      task({ _id: 'task-1', updatedAt: new Date('2026-08-20T20:00:00.000Z') }),
+      'updated',
+      { userId: HUMAN_ID, isAgent: false },
+    );
+
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('does not mark work offered before any eligible seat is installed', async () => {
+    mockInstalls([]);
+
+    await notifyPodAgents(
+      POD_ID,
+      task({ _id: 'task-1', updatedAt: new Date('2026-08-20T20:00:00.000Z') }),
+      'created',
+      { userId: HUMAN_ID, isAgent: false },
+    );
+
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('rides message.posted, because a bespoke task.* type reaches neither runtime', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);
 
@@ -298,5 +367,58 @@ describe('notifyPodAgents', () => {
     await expect(
       notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('notifyFoundWork', () => {
+  const offerRows = (count) => Array.from({ length: count }, (_, index) => ({
+    _id: `row-${index + 1}`,
+    taskId: `TASK-${index + 1}`,
+    title: `Task ${index + 1}`,
+    updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
+  }));
+
+  it('names five rows but stamps every aggregate row, including rows 6+', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const rows = offerRows(9);
+
+    await notifyFoundWork(POD_ID, rows, rows.length, new Date('2026-08-20T20:00:00.000Z'));
+
+    const { payload: { content } } = AgentEventService.enqueue.mock.calls[0][0];
+    expect(content).toContain('TASK-1');
+    expect(content).toContain('TASK-5');
+    expect(content).not.toContain('TASK-6');
+    expect(content).toContain('…and 4 more on the board.');
+    expect(mockTaskUpdateOne).toHaveBeenCalledTimes(9);
+    rows.forEach((row) => {
+      expect(mockTaskUpdateOne).toHaveBeenCalledWith(
+        { _id: row._id, updatedAt: row.updatedAt },
+        { $set: { offeredAt: row.updatedAt } },
+        { timestamps: false },
+      );
+    });
+  });
+
+  it('leaves every aggregate row due when one seat enqueue fails', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    AgentEventService.enqueue
+      .mockRejectedValueOnce(new Error('event store unavailable'))
+      .mockResolvedValueOnce({});
+
+    const rows = offerRows(6);
+    await notifyFoundWork(POD_ID, rows, rows.length, new Date('2026-08-20T20:00:00.000Z'));
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('does not mark aggregate rows offered without an eligible seat', async () => {
+    mockInstalls([]);
+
+    const rows = offerRows(2);
+    await notifyFoundWork(POD_ID, rows, rows.length, new Date('2026-08-20T20:00:00.000Z'));
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 });
