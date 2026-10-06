@@ -72,10 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `registry-url`: setup-node@v4 then writes
+      # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` to the runner npmrc,
+      # and npm reads a present-but-empty token as "auth configured", skips the
+      # OIDC exchange and fails E404 (Vera, measured in setup-node's dist; fixed
+      # only in v7). npmjs.org is npm's default registry anyway.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Compare repo version with the registry
         id: cmp
@@ -130,6 +134,16 @@ jobs:
       - name: Use an npm that supports trusted publishing
         if: steps.cmp.outputs.action == 'publish'
         run: npm install -g npm@^11.5.1 && npm --version
+
+      # Turns the opaque registry E404 into a named failure (Vera 76338).
+      - name: Refuse to publish without a usable OIDC identity
+        if: steps.cmp.outputs.action == 'publish'
+        run: |
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || { echo "::error::id-token: write is not in effect; trusted publishing cannot run"; exit 1; }
+          for f in "${NPM_CONFIG_USERCONFIG:-}" "$HOME/.npmrc" ./.npmrc; do
+            [ -n "$f" ] && [ -f "$f" ] && grep -q '_authToken' "$f" && { echo "::error::$f carries _authToken; npm would skip the OIDC exchange and fail E404"; exit 1; }
+          done
+          true
 
       - name: Install
         if: steps.cmp.outputs.action == 'publish'

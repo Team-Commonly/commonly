@@ -373,7 +373,7 @@ describe('npm publish read-back', () => {
       // check reddened.
       const script = fs.readFileSync(SCRIPT, 'utf8');
       expect(script).toContain('publishes without --tag');
-      expect(script).toContain('npm-publish.yml:142');
+      expect(script).toContain('npm-publish.yml:156');
     });
   });
 

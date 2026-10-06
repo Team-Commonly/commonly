@@ -48,7 +48,7 @@
 # (`cf-cache-status: DYNAMIC`, 19 bytes) — so a publish that lands without moving
 # `latest` is a different defect from a version that never appeared. It is
 # assertable here because nothing in this repo publishes with `--tag`: there is
-# one `npm publish --provenance --access public` (npm-publish.yml:142) and
+# one `npm publish --provenance --access public` (npm-publish.yml:156) and
 # neither package sets `publishConfig.tag`. That is why the assertion is exact
 # rather than pre-weakened for a prerelease shape we do not ship — and it is the
 # assertion that will say so the day someone adds one.
@@ -70,7 +70,7 @@
 #   READBACK_REGISTRY_URL           registry base, default https://registry.npmjs.org
 #
 # `node` on PATH: the version document is parsed as JSON. The publish job already
-# guarantees it (`actions/setup-node` at npm-publish.yml:75 runs before this), and
+# guarantees it (`actions/setup-node` at npm-publish.yml:80 runs before this), and
 # the stub-driven tests never reach it — but this is the one script that runs
 # after a publish has already happened, so its dependencies belong here.
 #
@@ -257,7 +257,7 @@ diagnose() {
 # three findings, and a red run that conflates them sends the reader to the wrong
 # place.
 if [ "$last_tag_state" = "behind" ]; then
-  echo "::error::$NAME@$WANT is live, but latest still pointed at '${last_tag:-<empty>}' after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DIST_TAGS_URL — the version is published and the tag did NOT move. This is not 'not published yet': the version document served $WANT. This repo publishes without --tag (npm-publish.yml:142), so latest is expected to move; check for a publish that used one, or a visibility change."
+  echo "::error::$NAME@$WANT is live, but latest still pointed at '${last_tag:-<empty>}' after ${TIMEOUT_SECONDS}s (${attempt} attempt(s)) at GET $DIST_TAGS_URL — the version is published and the tag did NOT move. This is not 'not published yet': the version document served $WANT. This repo publishes without --tag (npm-publish.yml:156), so latest is expected to move; check for a publish that used one, or a visibility change."
   diagnose
   exit 1
 fi
