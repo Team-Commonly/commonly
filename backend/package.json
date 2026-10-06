@@ -42,7 +42,7 @@
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",
-    "axios": "^1.10.0",
+    "axios": "^1.20.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "discord.js": "^14.20.0",
@@ -54,7 +54,7 @@
     "mongodb": "^6.3.0",
     "mongoose": "^7.0.3",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.4.0",
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
     "openai": "^4.104.0",
@@ -64,6 +64,22 @@
     "stripe": "^22.4.0",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
+  },
+  "overrides": {
+    "@sendgrid/client": {
+      "axios": "0.34.0"
+    },
+    "fast-uri": "3.1.8",
+    "jsonpath-plus": "10.3.0",
+    "protobufjs": "7.6.6",
+    "request": {
+      "form-data": "2.5.6"
+    },
+    "socket.io-parser": "4.2.7",
+    "tar": "7.5.22",
+    "undici": "6.29.0",
+    "ws": "8.22.0",
+    "proxy-addr": "2.0.8"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
