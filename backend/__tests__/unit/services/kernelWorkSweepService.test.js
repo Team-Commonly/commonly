@@ -338,29 +338,45 @@ describe('sweep', () => {
     expect(result.woken).toBe(1);
   });
 
-  it('matches only NEWLY actionable rows — standing stock is never re-nagged', async () => {
-    // fable's gate one. Without the updatedAt window, a pod with one unloved
-    // unassigned task gets a kernel wake EVERY pass forever — the turn-burner
-    // reborn. A task every seat declined once is deliberately unclaimed.
+  it('matches due revisions within the 10-minute scan bound', async () => {
     Task.aggregate.mockResolvedValue([]);
 
     await KernelWorkSweepService.sweep(NOW);
 
     const [pipeline] = Task.aggregate.mock.calls[0];
     const match = pipeline[0].$match;
-    expect(match.updatedAt).toBeDefined();
     expect(match.updatedAt.$gte).toEqual(new Date(NOW.getTime() - 10 * 60 * 1000));
     expect(match.status).toBe('pending');
+    expect(match.$expr).toEqual({ $lt: ['$offeredAt', '$updatedAt'] });
+    expect(match.$or).toEqual([
+      { assignee: null },
+      { assignee: '' },
+      { assignee: { $exists: false } },
+    ]);
+    const group = pipeline[1].$group;
+    expect(group.tasks.$push).toMatchObject({
+      _id: '$_id',
+      updatedAt: '$updatedAt',
+    });
   });
 
-  it('names at most five items inline — a longer wake is a report, not a wake', async () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({ taskId: `TASK-${i}`, title: `t${i}` }));
+  it('passes every due row for stamping, including rows beyond the five named in the wake', async () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      _id: new mongoose.Types.ObjectId(),
+      taskId: `TASK-${i}`,
+      title: `t${i}`,
+      updatedAt: new Date(NOW.getTime() - i),
+    }));
     Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: many, count: 9 }]);
 
     await KernelWorkSweepService.sweep(NOW);
 
     const [, items, count] = mockNotifyFoundWork.mock.calls[0];
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(9);
+    expect(items[8]).toMatchObject({
+      _id: many[8]._id,
+      updatedAt: many[8].updatedAt,
+    });
     expect(count).toBe(9);
   });
 

@@ -73,15 +73,10 @@ const LIVE_STATES = new Set(['listening']);
 const MAX_RESCUE_DEFERRALS = 3;
 
 // MUST match the cron cadence in schedulerService ('4,14,24,... * * * *' =
-// every 10 minutes). The newly-actionable window is one sweep period: wider
-// re-wakes standing stock, narrower drops rows that landed between passes.
-// If the cron cadence changes, this changes with it — they are one decision.
+// every 10 minutes). This is only a scan bound now; offeredAt vs updatedAt
+// records whether a revision was delivered. One cadence window catches rows
+// changed between passes without scanning older standing stock.
 const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
-
-// How many found items a wake names inline. More than this and the wake stops
-// being "here is your work" and becomes a report; the seat can list the board
-// itself once it knows there is a reason to.
-const MAX_NAMED_ITEMS = 5;
 
 interface SweepResult {
   scannedPods: number;
@@ -305,20 +300,16 @@ class KernelWorkSweepService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const { notifyFoundWork } = require('./taskEventService');
 
-    // NEWLY actionable only — fable's gate one on this PR. Without the window,
-    // newly-actionable is indistinguishable from standing stock, and a pod with
-    // one unloved unassigned task gets a kernel wake EVERY pass, forever: the
-    // turn-burner this service exists to kill, reborn one layer down. A task
-    // every seat declined once is deliberately unclaimed; re-nagging is not
-    // discovery. Rescued rows enter the window because the rescue's
-    // findOneAndUpdate bumps updatedAt (Task has timestamps: true), so they
-    // still need no separate channel.
+    // updatedAt bounds the scan to the current sweep window; offeredAt records
+    // whether this exact revision was sent. A missing offeredAt sorts below a
+    // Date and is due. Rescue writes advance updatedAt as well.
     const since = new Date(now.getTime() - SWEEP_INTERVAL_MS);
     const actionable = await Task.aggregate([
       {
         $match: {
           status: 'pending',
           updatedAt: { $gte: since },
+          $expr: { $lt: ['$offeredAt', '$updatedAt'] },
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
         },
       },
@@ -326,14 +317,38 @@ class KernelWorkSweepService {
       // (#1080 part 3). The wake is the surface where the near-duplicate of
       // #1078 nearly happened: a row advertised as unassigned, with its
       // finished PR invisible because the rescue had cleared the assignee.
-      { $group: { _id: '$podId', tasks: { $push: { taskId: '$taskId', title: '$title', lapsedFrom: '$lapsedFrom' } }, count: { $sum: 1 } } },
-    ]) as Array<{ _id: unknown; tasks: Array<{ taskId?: string; title?: string; lapsedFrom?: string | null }>; count: number }>;
+      {
+        $group: {
+          _id: '$podId',
+          tasks: {
+            $push: {
+              _id: '$_id',
+              taskId: '$taskId',
+              title: '$title',
+              lapsedFrom: '$lapsedFrom',
+              updatedAt: '$updatedAt',
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]) as Array<{
+      _id: unknown;
+      tasks: Array<{
+        _id?: unknown;
+        taskId?: string;
+        title?: string;
+        lapsedFrom?: string | null;
+        updatedAt?: unknown;
+      }>;
+      count: number;
+    }>;
 
     let woken = 0;
     let skippedNoWork = 0;
     for (const pod of actionable) {
       // eslint-disable-next-line no-await-in-loop
-      const result = await notifyFoundWork(pod._id, pod.tasks.slice(0, MAX_NAMED_ITEMS), pod.count, now);
+      const result = await notifyFoundWork(pod._id, pod.tasks, pod.count, now);
       if (result.woken > 0) woken += result.woken; else skippedNoWork += 1;
     }
     return { woken, skippedNoWork, scannedPods: actionable.length };
