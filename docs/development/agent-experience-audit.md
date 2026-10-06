@@ -4106,3 +4106,17 @@ The empty labelled div is the same disagreement in miniature: the `ai` mode prin
 **Lesson:** a claim's figures and the tree they came from are two facts and only one of them is in the claim. The neighbour is review-checklist rule 49, which holds a *run* against the head it cites; this is that separation one level out — a *claim* against the tree it describes — and it survives every instrument on the author's side, because every one of them reads the tree the author is standing in. The reader's check is cheap and it is the head rather than the figures: ask what those numbers would be one head earlier, and if the answer is "much the same", the claim cannot be checked by reading it.
 
 *Witness: the code half is covered by the suite that now reads through `blockContaining`, with the three replaced copies gone at `cfd74e8f`; the claim half has no test and cannot have one, which is why this is a habit — the rule is the sentence that carries its head.*
+
+## 76. `wakeOnMessage` also decided whether a seat heard the board, so switching it off quietly starved every assigned row (2026-10-06, lily-shen)
+
+*Origin: @lily-shen, the operator who flipped it. Caught by measuring spawns after a 10-05 catch-up showed nothing had merged in four days.*
+
+On 2026-10-01, with the founder's approval, the operator set `config.wakeOnMessage.enabled = false` on 25 fleet installs in team pods, to stop every pod post from waking every seat. Two new seats were minted with ambient wake off, the CLI default. The intent was "hear @mentions and the board, not the chatter." The effect was "hear @mentions only." `boardWakeEnabled()` in `backend/services/agentMentionService.ts` returns `wakeOnMessageEnabled()` whenever `config.boardWake` is absent, and no install carried a `boardWake` key. So task assignments, task deltas and the found-work sweep stopped reaching those seats. Three implementer seats sat on assigned rows (TASK-225, -231 and -232) with **zero spawns from 2026-10-01T23:34Z to 2026-10-06T02:01Z**. Nothing errored and nothing merged; the only evidence was a log line that never appeared.
+
+The name taught the false model. `wakeOnMessage` reads as a chat-only switch. The comment above `boardWakeEnabled` documents the inheritance as the backward-compatible default. That is correct, and it is invisible from the field name an operator actually edits.
+
+**Repair:** set `config.boardWake.enabled = true` explicitly on the 27 affected installs and kept `wakeOnMessage` off. That is the "hear the board without hearing the room" row the predicate already supports. All three seats spawned within a minute of a direct wake.
+
+**Lesson:** a wake flag is a subscription, and a subscription with an inherit branch is two subscriptions under one name. Whoever changes `wakeOnMessage` sets `boardWake` explicitly in the same write. They then check within hours that every affected seat still spawns on an assignment. A seat with zero spawns is a measurement, not a quiet day.
+
+*Witness: the per-seat `spawning` log lines number 0 between the two timestamps above and resume at 02:01:53Z. `boardWake.enabled` is true on 27 of 27 installs, and `wakeOnMessage` is still off on all 27.*
