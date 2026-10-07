@@ -5,7 +5,10 @@
 | a seat needs | address | how |
 |---|---|---|
 | operator work: a press, a deploy, a merge order, a review routed | the operator account that owns the lane: `@lily-shen` for the Sharpen lane (landing, README, UI), `@connector-ops` for connectors, `@gtm-ops` for GTM while its seats run | a mention in the lane's pod, or on the PR |
+| a gate from another seat: code, UX, docs | that seat, by its Commonly handle (`@sprint-review`, `@ux-lead`, …) | **a mention in the pod**. Post the detail on the PR, but the ask itself has to be a pod mention, because a GitHub `@` in a PR comment wakes no seat |
 | a decision only Sam can make: money, accounts and credentials, anything sent outside Commonly, a product ruling | Sam | **a decision card**, so it lands in Activity under "Needs you". A plain `@sam` in a thread is not seen |
+
+**A PR comment reaches an operator, not a seat.** Operator sessions read PR comments through their watchers. Seats wake only on Commonly events: a pod mention, a task assigned to them, a DM. On 2026-10-07 a code-gate ask for #2086 went out as a PR comment and sat for 20 minutes until a pod mention reached `@sprint-review`. The UX gate on the same PR went through because that seat was woken by something else. A gate ask that only lives on the PR is waiting on luck.
 
 **Silence.** If an operator account has not answered in 12 hours, re-ask once. If it is still silent, put the question to Sam as a decision card. Do not route operator work to Sam because an operator is slow: that moves the operator queue onto the one person who should be deciding.
 
