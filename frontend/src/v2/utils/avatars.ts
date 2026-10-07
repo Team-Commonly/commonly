@@ -176,6 +176,8 @@ export const paperAvatarFor = (
   const variant = lookIndex ?? (hashString(key) % PAPER_AVATAR_LOOK_COUNT);
   if (!Number.isInteger(variant) || variant < 0 || variant >= PAPER_AVATAR_LOOK_COUNT) return null;
 
+  // Keep Paper lookups outside the render fallback: a bad palette index must
+  // not be swallowed as null and make a missing guard look harmless.
   const background = AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1);
   const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
   const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
