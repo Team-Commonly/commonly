@@ -110,6 +110,7 @@ const V2AccountSection: React.FC = () => {
           className="v2-settings__avatar"
           name={name || accountName}
           src={currentUser?.profilePicture || undefined}
+          kind="human"
           seed={currentUser?._id || currentUser?.id}
           title={`${name || accountName} avatar`}
         />

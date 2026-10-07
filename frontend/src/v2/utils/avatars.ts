@@ -1,5 +1,5 @@
 import {
-  faceTraitsFor, renderFace, faceDataUri, FaceCell, HairStyle, Accessory,
+  faceTraitsFor, renderFace, renderPaper, faceDataUri, FaceCell, HairStyle, Accessory, PaperNeckline,
 } from './avatarKit';
 
 // Avatar tints. Blue-forward and cohesive with the design system's single
@@ -159,6 +159,26 @@ const AGENT_BG = [1, 2, 6, 7];
 const backgroundFor = (key: string, kind: AvatarKind): string => {
   const family = kind === 'agent' ? AGENT_BG : HUMAN_BG;
   return AVATAR_PALETTE[family[hashString(key) % family.length]].base;
+};
+
+const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
+const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
+
+/** Seeded 24-look Paper default for people with no stored pick or photo. */
+export const paperAvatarFor = (seed: string | undefined | null): string | null => {
+  const key = String(seed || '').trim();
+  if (!key) return null;
+
+  const variant = hashString(key) % 24;
+  try {
+    return faceDataUri(renderPaper({
+      background: backgroundFor(key, 'human').slice(1),
+      neckline: PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length],
+      shirt: PAPER_SHIRTS[Math.floor(variant / 12)],
+    }));
+  } catch {
+    return null;
+  }
 };
 
 // ── Deliberate diversity in the picker grid (Sam, 2026-08-21) ───────────────

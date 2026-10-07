@@ -22,8 +22,8 @@ jest.mock('../../components/AppsManagement', () => {
 });
 
 jest.mock('../components/V2Avatar', () => {
-  const MockV2Avatar = ({ name, src, className }: { name?: string; src?: string; className?: string }) => (
-    <img alt={`${name} avatar`} className={className} src={src} />
+  const MockV2Avatar = ({ name, src, className, kind }: { name?: string; src?: string; className?: string; kind?: string }) => (
+    <img alt={`${name} avatar`} className={className} data-kind={kind} src={src} />
   );
   MockV2Avatar.displayName = 'MockV2Avatar';
   return MockV2Avatar;
@@ -84,6 +84,7 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('Connected app controls')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
+    expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('data-kind', 'human');
     expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
     expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();

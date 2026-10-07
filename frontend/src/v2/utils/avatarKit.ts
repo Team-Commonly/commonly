@@ -33,6 +33,16 @@ export interface FaceTraits {
   shirt: string;
 }
 
+export type PaperNeckline = 'crew' | 'vee' | 'scoop';
+
+export interface PaperTraits {
+  /** Hex without '#', from the human avatar background family. */
+  background: string;
+  /** Hex without '#', one of the two Paper shirt greys. */
+  shirt: string;
+  neckline: PaperNeckline;
+}
+
 /** A curated picker cell: each field is the set the seed may pick from. */
 export interface FaceCell {
   skin: readonly string[];
@@ -170,6 +180,27 @@ export const renderFace = (t: FaceTraits): string => {
   if (agent) layers.push([COLLAR, COBALT]);
   const paths = layers.map(([d, fill]) => `<path d="${d}" fill="#${fill}"/>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${paths}</svg>`;
+};
+
+const PAPER_SHOULDERS = 'M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z';
+const PAPER_VEE = 'M27.4 46.5L32 53.6L36.6 46.5Z';
+
+/** The unpicked human default: a paper figure with no facial or skin cues. */
+export const renderPaper = (t: PaperTraits): string => {
+  const neckline = t.neckline === 'vee'
+    ? `<path d="${PAPER_VEE}" fill="#f9fafb"/>`
+    : t.neckline === 'scoop'
+      ? '<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#f9fafb"/>'
+      : '';
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
+    `<path d="M0 0h64v64H0z" fill="#${t.background}"/>`,
+    `<path d="${PAPER_SHOULDERS}" fill="#${t.shirt}"/>`,
+    '<rect x="27" y="38" width="10" height="10" fill="#f9fafb"/>',
+    '<ellipse cx="32" cy="29" rx="13" ry="15" fill="#f9fafb"/>',
+    neckline,
+    '</svg>',
+  ].join('');
 };
 
 export const faceDataUri = (svg: string): string => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
