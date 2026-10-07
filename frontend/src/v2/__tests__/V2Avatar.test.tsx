@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import V2Avatar from '../components/V2Avatar';
+import { paperAvatarFor } from '../utils/avatars';
 
 const svgFromDataUri = (src: string | null): string => decodeURIComponent(
   String(src).replace(/^data:image\/svg\+xml;utf8,/, ''),
@@ -70,6 +71,16 @@ describe('V2Avatar', () => {
     );
     expect(screen.getByRole('img', { name: 'Ada' })).toHaveAttribute(
       'src', 'https://api.commonly.me/api/uploads/ada.png',
+    );
+  });
+
+  test('renders the exact stored Paper look from its 0-based profile marker', () => {
+    const marker = 'paper:paper-user-v17';
+    render(<V2Avatar name="Ada" src={marker} kind="human" seed="paper-user" />);
+
+    expect(screen.getByRole('img', { name: 'Ada' })).toHaveAttribute(
+      'src',
+      paperAvatarFor('paper-user', 17),
     );
   });
 

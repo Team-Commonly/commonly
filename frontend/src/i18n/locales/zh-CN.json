@@ -29,6 +29,32 @@
       "text": "正在检查你的访问权限…"
     }
   },
+  "settings": {
+    "avatar": {
+      "regenerate": "换一个",
+      "uploadPhoto": "上传照片",
+      "description": "选择前不会显示面部或肤色。你可以换一个造型，或上传照片。",
+      "descriptionAfterChoice": "你可以换一个造型，或上传照片。",
+      "uploadTitle": "上传照片",
+      "cropPreview": "头像裁剪预览",
+      "loadingImage": "正在加载图片…",
+      "zoom": "缩放",
+      "cropInstructions": "拖动图片调整位置。方框中的部分会显示为头像。",
+      "previewSizes": "头像尺寸预览",
+      "previewAt": "{{size}}像素",
+      "imageTypeRequired": "请选择图片文件。",
+      "imageCouldNotLoad": "无法加载这张图片，请选择其他图片。",
+      "cropCouldNotSave": "无法处理这张图片，请重试。",
+      "cancel": "取消",
+      "savePhoto": "保存照片",
+      "savingPhoto": "正在保存…",
+      "photoSaved": "照片已保存。",
+      "regenerated": "头像已更换。",
+      "uploadFailed": "无法上传照片，请重试。",
+      "profileSaveFailed": "无法保存头像，请重试。",
+      "regenerateFailed": "无法更换头像，请重试。"
+    }
+  },
   "activity": {
     "title": "动态",
     "subtitle": "需要你处理的事项，以及刚刚推进的工作",

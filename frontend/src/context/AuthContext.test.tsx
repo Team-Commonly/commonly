@@ -88,6 +88,26 @@ test('updateProfile sends auth header and updates user', async () => {
   expect(global.testAuth.currentUser).toEqual({ name: 'Updated' });
 });
 
+test('updateProfile leaves auth loading false while the profile write is pending', async () => {
+  axios.get.mockResolvedValue({ data: { name: 'Init' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+
+  let finishUpdate: (() => void) | undefined;
+  axios.put.mockReturnValueOnce(new Promise((resolve) => {
+    finishUpdate = () => resolve({ data: { name: 'Updated' } });
+  }));
+  let update: Promise<unknown>;
+  act(() => { update = global.testAuth.updateProfile({ foo: 'bar' }); });
+
+  expect(global.testAuth.loading).toBe(false);
+  await act(async () => {
+    finishUpdate?.();
+    await update;
+  });
+  expect(global.testAuth.loading).toBe(false);
+});
+
 test('updateProfile retains multipart support for a file payload', async () => {
   axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
   await act(async () => { await global.testAuth.login('a', 'b'); });

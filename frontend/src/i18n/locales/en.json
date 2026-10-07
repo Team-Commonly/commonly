@@ -29,6 +29,32 @@
       "text": "Checking your access…"
     }
   },
+  "settings": {
+    "avatar": {
+      "regenerate": "Regenerate",
+      "uploadPhoto": "Upload photo",
+      "description": "No face and no skin tone until you choose one. Regenerate for another, or upload a photo.",
+      "descriptionAfterChoice": "Regenerate for another, or upload a photo.",
+      "uploadTitle": "Upload photo",
+      "cropPreview": "Avatar crop preview",
+      "loadingImage": "Loading image…",
+      "zoom": "Zoom",
+      "cropInstructions": "Drag to place it. The square is what everyone sees.",
+      "previewSizes": "Avatar size previews",
+      "previewAt": "{{size}} px",
+      "imageTypeRequired": "Choose an image file.",
+      "imageCouldNotLoad": "This image could not be loaded. Choose another image.",
+      "cropCouldNotSave": "This image could not be prepared. Try again.",
+      "cancel": "Cancel",
+      "savePhoto": "Save photo",
+      "savingPhoto": "Saving…",
+      "photoSaved": "Photo saved.",
+      "regenerated": "Avatar changed.",
+      "uploadFailed": "Could not upload your photo. Try again.",
+      "profileSaveFailed": "Could not save your avatar. Try again.",
+      "regenerateFailed": "Could not change your avatar. Try again."
+    }
+  },
   "activity": {
     "title": "Activity",
     "subtitle": "what needs you, then what moved",

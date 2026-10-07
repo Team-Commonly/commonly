@@ -1,6 +1,8 @@
 import { normalizeUploadUrl } from './apiBaseUrl';
 // eslint-disable-next-line import/no-cycle
-import { characterAvatarFor, AvatarKind, PICKER_CELL_COUNT } from '../v2/utils/avatars';
+import {
+  characterAvatarFor, paperAvatarFor, AvatarKind, PICKER_CELL_COUNT,
+} from '../v2/utils/avatars';
 
 interface AvatarOption {
   id: string;
@@ -33,11 +35,11 @@ export const getAvatarColor = (avatarId: string | undefined | null): string => {
 // week: no per-pick API cost, same face forever, and SVG that scales to any
 // surface.
 //
-// Storage scheme: profilePicture = 'bigsmile:<seed>'. The seed — not image
-// bytes or a URL — is the identity, so every renderer regenerates the exact
-// face locally and nothing 404s, expires, or needs hosting. getAvatarSrc
-// resolves the scheme, which means every existing consumer (v1 Avatar src,
-// V2Avatar) renders picked faces with zero per-component changes.
+// Character storage scheme: profilePicture = 'bigsmile:<seed>' or
+// 'bottts:<seed>'. The seed — not image bytes or a URL — is the identity, so
+// every renderer regenerates the exact face locally and nothing 404s, expires,
+// or needs hosting. Paper looks use the separate persisted
+// 'paper:<userId>-v<n>' scheme, where n is the exact 0-based look index.
 export const FACE_PRESET_PREFIX = 'bigsmile:';
 // Agents use the same scheme with their own species (Sam: owners can edit an
 // agent's avatar too). One resolver, two prefixes — the prefix IS the kind.
@@ -92,6 +94,10 @@ const isLikelyImageUrl = (value: string | undefined | null): boolean => {
 export const getAvatarSrc = (avatarId: string | undefined | null): string | null | undefined => {
   if (!avatarId) return null;
   if (avatarOptions.some((option) => option.id === avatarId)) return null;
+  const paperPreset = /^paper:(.+)-v(0|[1-9]\d*)$/.exec(avatarId);
+  if (paperPreset) {
+    return paperAvatarFor(paperPreset[1], Number(paperPreset[2]));
+  }
   // Picked character preset (face or robot): regenerate locally from the
   // stored seed. Data-URI out, so every <img>-based consumer renders it with
   // no network involved.

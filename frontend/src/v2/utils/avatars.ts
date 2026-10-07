@@ -163,19 +163,26 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
 
 const PAPER_NECKLINES: readonly PaperNeckline[] = ['crew', 'vee', 'scoop'];
 const PAPER_SHIRTS = ['e4e7ec', 'd0d5dd'] as const;
+export const PAPER_AVATAR_LOOK_COUNT = 24;
 
-/** Seeded 24-look Paper default for people with no stored pick or photo. */
-export const paperAvatarFor = (seed: string | undefined | null): string | null => {
+/** Seeded Paper default, or one exact 0-based look from the 24-look set. */
+export const paperAvatarFor = (
+  seed: string | undefined | null,
+  lookIndex?: number,
+): string | null => {
   const key = String(seed || '').trim();
   if (!key) return null;
 
-  const variant = hashString(key) % 24;
+  const variant = lookIndex ?? (hashString(key) % PAPER_AVATAR_LOOK_COUNT);
+  if (!Number.isInteger(variant) || variant < 0 || variant >= PAPER_AVATAR_LOOK_COUNT) return null;
+
+  // Keep Paper lookups outside the render fallback: a bad palette index must
+  // not be swallowed as null and make a missing guard look harmless.
+  const background = AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1);
+  const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
+  const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
   try {
-    return faceDataUri(renderPaper({
-      background: backgroundFor(key, 'human').slice(1),
-      neckline: PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length],
-      shirt: PAPER_SHIRTS[Math.floor(variant / 12)],
-    }));
+    return faceDataUri(renderPaper({ background, neckline, shirt }));
   } catch {
     return null;
   }
