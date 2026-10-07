@@ -370,7 +370,13 @@ ingress:
       aliases: []
     litellm:
       host: litellm.commonly.me
-      path: /
+      # Only the OpenAI-compatible API is public. Clients (the pi adapter, any
+      # SDK) use the /v1 base URL; the admin dashboard, its login and the key /
+      # user / team management routes stay cluster-internal — reach them with
+      # `kubectl port-forward svc/litellm 4000:4000`. Serving `/` here put a
+      # master-key login page on the open internet.
+      paths:
+        - /v1
       pathType: Prefix
   tls:
     enabled: false

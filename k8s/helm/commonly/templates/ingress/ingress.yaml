@@ -66,12 +66,15 @@ spec:
   - host: {{ .Values.ingress.hosts.litellm.host }}
     http:
       paths:
-      - path: {{ .Values.ingress.hosts.litellm.path }}
-        pathType: {{ .Values.ingress.hosts.litellm.pathType }}
+      {{- /* `paths` wins over a legacy single `path` so an older values file cannot re-open `/`. */}}
+      {{- range (.Values.ingress.hosts.litellm.paths | default (list .Values.ingress.hosts.litellm.path)) }}
+      - path: {{ . }}
+        pathType: {{ $.Values.ingress.hosts.litellm.pathType }}
         backend:
           service:
             name: litellm
             port:
-              number: {{ .Values.litellm.port }}
+              number: {{ $.Values.litellm.port }}
+      {{- end }}
   {{- end }}
 {{- end }}
