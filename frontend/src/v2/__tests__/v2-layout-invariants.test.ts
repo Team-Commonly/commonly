@@ -290,16 +290,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-pods__channel-dot');
   });
 
-  test('pod list rows and marks reach the phone targets at 640px and below', () => {
-    const phone = blockContaining(v2, '@media (max-width: 640px)', '.v2-root button.v2-pods__row');
-    const row = ruleBody(v2, '.v2-root button.v2-pods__row', { within: phone });
-    const mark = ruleBody(v2, '.v2-pods__row-mark', { within: phone });
-    const avatar = ruleBody(v2, '.v2-pods__row-mark.v2-avatar', { within: phone });
-    const name = ruleBody(v2, '.v2-pods__row-name', { within: phone });
-    const pin = ruleBody(v2, '.v2-root button.v2-pods__pin', { within: phone });
-    const meta = ruleBody(v2, '.v2-pods__rowwrap--pinned .v2-pods__row-meta', { within: phone });
+  test('pod list rows and marks reach mobile targets at 760px and below', () => {
+    const mobile = blockContaining(v2, '@media (max-width: 760px)', '.v2-root button.v2-pods__row');
+    const row = ruleBody(v2, '.v2-root button.v2-pods__row', { within: mobile });
+    const mark = ruleBody(v2, '.v2-pods__row-mark', { within: mobile });
+    const avatar = ruleBody(v2, '.v2-pods__row-mark.v2-avatar', { within: mobile });
+    const name = ruleBody(v2, '.v2-pods__row-name', { within: mobile });
+    const pin = ruleBody(v2, '.v2-root button.v2-pods__pin', { within: mobile });
+    const meta = ruleBody(v2, '.v2-pods__rowwrap--pinned .v2-pods__row-meta', { within: mobile });
 
-    expect(phone).not.toBe('');
+    expect(mobile).not.toBe('');
     expect(row).toContain('min-height: 44px');
     expect(row).toContain('grid-template-columns: 28px minmax(0, 1fr) auto');
     expect(mark).toContain('width: 28px');

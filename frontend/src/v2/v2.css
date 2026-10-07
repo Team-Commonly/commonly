@@ -11194,7 +11194,8 @@ body.modern-ui.v2-canvas {
   font: 700 11px/1 var(--v2-font-mono);
 }
 
-@media (max-width: 640px) {
+/* Keep row targets aligned with the sidebar's mobile drawer breakpoint. */
+@media (max-width: 760px) {
   .v2-root button.v2-pods__row {
     min-height: 44px;
     grid-template-columns: 28px minmax(0, 1fr) auto;
