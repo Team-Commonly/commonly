@@ -29,7 +29,7 @@ Backend services  ──►  LiteLLM :4000  ──►  Gemini / OpenRouter / Ope
 ```
 
 - **Service**: `litellm.commonly-dev.svc.cluster.local:4000`
-- **Dashboard**: `https://litellm.commonly.me/ui` (login with `LITELLM_MASTER_KEY`)
+- **Dashboard**: cluster-internal only. `kubectl port-forward -n commonly-dev svc/litellm 4000:4000`, then `http://localhost:4000/ui` (login with `LITELLM_MASTER_KEY`). The public host `litellm.commonly.me` serves `/v1` and nothing else; the ingress used to serve `/`, which put this master-key login on the open internet.
 - **Health probe**: `GET /health/readiness` (no auth required)
 - **Spend logs**: stored in Aiven PostgreSQL (`LiteLLM_SpendLogs` table)
 - **Image**: `ghcr.io/berriai/litellm:main-stable`
@@ -422,7 +422,13 @@ req.write(body);req.end();"
 
 ### Using the LiteLLM Dashboard (UI)
 
-URL: `https://litellm.commonly.me/ui`
+Not public. Port-forward the service, then open the local URL:
+
+```bash
+kubectl port-forward -n commonly-dev svc/litellm 4000:4000
+# http://localhost:4000/ui
+```
+
 Login: username `admin`, password = value of `LITELLM_MASTER_KEY`
 
 ```bash

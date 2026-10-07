@@ -290,6 +290,8 @@ jobs:
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "30"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
+          # LiteLLM is public for its /v1 API only; `/` exposed the master-key admin login (2026-10-07).
+          test "$(yq 'select(.kind == "Ingress") | .spec.rules[] | select(.host == "litellm.commonly.me") | .http.paths | map(.path) | join(",")' /tmp/dev-rendered.yaml)" = "/v1"
 
       - name: Render Slack OAuth secret wiring
         run: |
