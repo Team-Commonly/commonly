@@ -265,6 +265,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(row).toContain('border-radius: 0');
     expect(mark).toContain('width: 22px');
     expect(mark).toContain('height: 22px');
+    const directMark = ruleBody(v2, '.v2-pods__row-mark.v2-avatar');
+    expect(directMark).toContain('border: 0');
+    expect(directMark).toContain('border-radius: 4px');
     expect(meta).toContain('font: 400 11px/16px var(--v2-font-mono)');
     expect(pill).toContain('background: var(--v2-ink)');
     expect(podsSidebar).toContain("'podsSidebar.workspace.recent'");
@@ -285,6 +288,29 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).not.toContain('v2-pods__subgroup-label');
     expect(v2).not.toContain('.v2-pods__subgroup-label');
     expect(v2).not.toContain('.v2-pods__channel-dot');
+  });
+
+  test('pod list rows and marks reach mobile targets at 760px and below', () => {
+    const mobile = blockContaining(v2, '@media (max-width: 760px)', '.v2-root button.v2-pods__row');
+    const row = ruleBody(v2, '.v2-root button.v2-pods__row', { within: mobile });
+    const mark = ruleBody(v2, '.v2-pods__row-mark', { within: mobile });
+    const avatar = ruleBody(v2, '.v2-pods__row-mark.v2-avatar', { within: mobile });
+    const name = ruleBody(v2, '.v2-pods__row-name', { within: mobile });
+    const pin = ruleBody(v2, '.v2-root button.v2-pods__pin', { within: mobile });
+    const meta = ruleBody(v2, '.v2-pods__rowwrap--pinned .v2-pods__row-meta', { within: mobile });
+
+    expect(mobile).not.toBe('');
+    expect(row).toContain('min-height: 44px');
+    expect(row).toContain('grid-template-columns: 28px minmax(0, 1fr) auto');
+    expect(mark).toContain('width: 28px');
+    expect(mark).toContain('height: 28px');
+    expect(mark).toContain('font-size: 13px');
+    expect(avatar).toContain('width: 28px');
+    expect(avatar).toContain('height: 28px');
+    expect(name).toContain('font-size: 16px');
+    expect(pin).toContain('width: 24px');
+    expect(pin).toContain('height: 24px');
+    expect(meta).toContain('padding-right: 32px');
   });
 
   test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {

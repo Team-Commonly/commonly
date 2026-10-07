@@ -360,6 +360,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             name={peer.username || pod.name}
             src={peer.profilePicture || undefined}
             size="sm"
+            kind={peer.isBot ? 'agent' : 'human'}
+            seed={peer._id}
           />
         ) : (
           <span className="v2-pods__row-mark" aria-hidden="true">{podInitials(pod.name)}</span>
