@@ -1,8 +1,7 @@
 import { getAvatarSrc } from '../../utils/avatarUtils';
-import { paperAvatarFor } from '../utils/avatars';
+import { PAPER_AVATAR_LOOK_COUNT, paperAvatarFor } from '../utils/avatars';
 import {
   defaultPaperAvatarPresetFor,
-  PAPER_AVATAR_LOOK_COUNT,
   paperAvatarPresetFor,
 } from '../utils/avatarPresets';
 
@@ -26,6 +25,13 @@ describe('stored Paper avatar resolver', () => {
     const userId = 'paper-user-234';
     expect(getAvatarSrc(defaultPaperAvatarPresetFor(userId))).toBe(paperAvatarFor(userId));
   });
+
+  test.each([-1, PAPER_AVATAR_LOOK_COUNT, 1.5])(
+    'rejects Paper look indices outside the exact 0-based range: %s',
+    (lookIndex) => {
+      expect(paperAvatarFor('paper-user-234', lookIndex)).toBeNull();
+    },
+  );
 
   test.each([
     'paper:user-v24',

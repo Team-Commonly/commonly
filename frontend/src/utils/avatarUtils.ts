@@ -1,7 +1,7 @@
 import { normalizeUploadUrl } from './apiBaseUrl';
 // eslint-disable-next-line import/no-cycle
 import {
-  characterAvatarFor, paperAvatarFor, PAPER_AVATAR_LOOK_COUNT, AvatarKind, PICKER_CELL_COUNT,
+  characterAvatarFor, paperAvatarFor, AvatarKind, PICKER_CELL_COUNT,
 } from '../v2/utils/avatars';
 
 interface AvatarOption {
@@ -96,8 +96,7 @@ export const getAvatarSrc = (avatarId: string | undefined | null): string | null
   if (avatarOptions.some((option) => option.id === avatarId)) return null;
   const paperPreset = /^paper:(.+)-v(0|[1-9]\d*)$/.exec(avatarId);
   if (paperPreset) {
-    const lookIndex = Number(paperPreset[2]);
-    return lookIndex < PAPER_AVATAR_LOOK_COUNT ? paperAvatarFor(paperPreset[1], lookIndex) : null;
+    return paperAvatarFor(paperPreset[1], Number(paperPreset[2]));
   }
   // Picked character preset (face or robot): regenerate locally from the
   // stored seed. Data-URI out, so every <img>-based consumer renders it with
