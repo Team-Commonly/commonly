@@ -1,5 +1,5 @@
 import {
-  imageDrawRectForCrop, minimumZoomToCoverStage, squareCropRectFor,
+  imageDrawRectForCrop, squareCropRectFor,
 } from '../utils/avatarCrop';
 
 describe('squareCropRectFor', () => {
@@ -19,21 +19,13 @@ describe('squareCropRectFor', () => {
     expect(squareCropRectFor(640, Number.NaN, 1)).toBeNull();
   });
 
-  test('opens at the smallest zoom that fills the landscape stage behind the square window', () => {
-    const zoom = minimumZoomToCoverStage(1600, 900, 392, 260, 150.8);
-    const crop = squareCropRectFor(1600, 900, zoom);
-    expect(zoom).toBeCloseTo(260 / 150.8);
-    expect(crop?.side).toBeCloseTo(522);
-  });
-
   test('positions the full source image behind the fixed crop frame', () => {
-    const zoom = minimumZoomToCoverStage(1600, 900, 392, 260, 150.8);
-    const crop = squareCropRectFor(1600, 900, zoom);
+    const crop = squareCropRectFor(1600, 900, 1);
     expect(crop).not.toBeNull();
     const imageRect = imageDrawRectForCrop(1600, 900, crop as NonNullable<typeof crop>, 392, 260, 150.8);
-    expect(imageRect?.x).toBeCloseTo((392 - 150.8) / 2 - (539 * 260) / 900);
-    expect(imageRect?.y).toBeCloseTo(0);
-    expect(imageRect?.width).toBeCloseTo((1600 * 260) / 900);
-    expect(imageRect?.height).toBeCloseTo(260);
+    expect(imageRect?.x).toBeCloseTo((392 - 150.8) / 2 - (350 * 150.8) / 900);
+    expect(imageRect?.y).toBeCloseTo((260 - 150.8) / 2);
+    expect(imageRect?.width).toBeCloseTo((1600 * 150.8) / 900);
+    expect(imageRect?.height).toBeCloseTo(150.8);
   });
 });

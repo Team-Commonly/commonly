@@ -4,7 +4,7 @@ import React, {
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  createAvatarCropBlob, CropCenter, imageDrawRectForCrop, minimumZoomToCoverStage, squareCropRectFor,
+  createAvatarCropBlob, CropCenter, imageDrawRectForCrop, squareCropRectFor,
 } from '../utils/avatarCrop';
 
 interface V2AvatarCropDialogProps {
@@ -55,13 +55,7 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
       if (!active) return;
       setImage(nextImage);
       setCenter(centerOf(nextImage));
-      setZoom(minimumZoomToCoverStage(
-        nextImage.naturalWidth,
-        nextImage.naturalHeight,
-        STAGE_WIDTH,
-        STAGE_HEIGHT,
-        FRAME_SIZE,
-      ));
+      setZoom(1);
       setLoadError(null);
     };
     nextImage.onerror = () => {
@@ -141,6 +135,8 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
     if (event.key === 'Escape') {
       if (!saving) onCancel();
       event.preventDefault();
+      // App.tsx's setupFocusManagement blurs the active element on any Escape that reaches document.
+      event.stopPropagation();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -234,15 +230,7 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
     }
   };
 
-  const minimumZoom = image
-    ? minimumZoomToCoverStage(
-      image.naturalWidth,
-      image.naturalHeight,
-      STAGE_WIDTH,
-      STAGE_HEIGHT,
-      FRAME_SIZE,
-    )
-    : 1;
+  const minimumZoom = 1;
   const zoomRange = Math.max(0.00001, 3 - minimumZoom);
   const zoomProgress = `${Math.max(0, Math.min(100, ((zoom - minimumZoom) / zoomRange) * 100))}%`;
 
@@ -336,7 +324,7 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
               <button ref={cancelButtonRef} type="button" className="v2-settings__secondary" onClick={onCancel} disabled={saving}>
                 {t('settings.avatar.cancel')}
               </button>
-              <button type="button" className="v2-settings__primary" onClick={() => void save()} disabled={!image || saving}>
+              <button type="button" className="v2-settings__primary" onClick={() => void save()} disabled={!image} aria-disabled={saving}>
                 {saving ? t('settings.avatar.savingPhoto') : t('settings.avatar.savePhoto')}
               </button>
             </div>

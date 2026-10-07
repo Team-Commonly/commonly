@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n';
 import axios from '../../utils/axiosConfig';
 import { MemoryRouter } from 'react-router-dom';
@@ -179,6 +179,30 @@ describe('V2SettingsPage', () => {
       profilePicture: 'paper:u1-v1',
     }));
     expect(await screen.findByRole('status')).toHaveTextContent('Avatar changed.');
+  });
+
+  test('keeps Regenerate focused and ignores repeated activation while the profile write is pending', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    let finishUpdate: (() => void) | undefined;
+    auth.updateProfile.mockReturnValue(new Promise((resolve) => {
+      finishUpdate = () => resolve({});
+    }));
+    renderSettings({ ...auth.currentUser, profilePicture: 'paper:u1-v12' });
+
+    const regenerateButton = screen.getByRole('button', { name: 'Regenerate' });
+    regenerateButton.focus();
+    fireEvent.click(regenerateButton);
+
+    expect(regenerateButton).toHaveAttribute('aria-disabled', 'true');
+    expect(regenerateButton).not.toBeDisabled();
+    expect(regenerateButton).toHaveFocus();
+    fireEvent.keyDown(regenerateButton, { key: 'Enter' });
+    fireEvent.click(regenerateButton);
+    expect(auth.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finishUpdate?.(); });
+    expect(await screen.findByRole('status')).toHaveTextContent('Avatar changed.');
+    expect(regenerateButton).toHaveFocus();
   });
 
   test('keeps the no-face explanation for Paper and shortens it for a picked face or photo', () => {

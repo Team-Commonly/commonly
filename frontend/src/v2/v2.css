@@ -7706,12 +7706,12 @@ body.modern-ui.v2-canvas {
   color: var(--v2-on-ink);
 }
 
-.v2-root button.v2-settings__primary:hover:not(:disabled) {
+.v2-root button.v2-settings__primary:hover:not(:disabled):not([aria-disabled="true"]) {
   border-color: var(--v2-ink-hover);
   background: var(--v2-ink-hover);
 }
 
-.v2-root button.v2-settings__secondary:hover:not(:disabled),
+.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"]),
 .v2-root button.v2-settings__language-option:hover:not(:disabled) {
   border-color: var(--v2-border-strong);
 }
@@ -7725,7 +7725,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-settings__primary:disabled,
-.v2-root button.v2-settings__secondary:disabled {
+.v2-root button.v2-settings__secondary:disabled,
+.v2-root button.v2-settings__primary[aria-disabled="true"],
+.v2-root button.v2-settings__secondary[aria-disabled="true"] {
   cursor: default;
   opacity: 0.55;
 }

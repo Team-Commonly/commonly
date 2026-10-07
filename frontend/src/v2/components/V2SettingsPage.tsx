@@ -205,8 +205,8 @@ const V2AccountSection: React.FC = () => {
         <button
           className="v2-settings__secondary"
           type="button"
-          onClick={() => { void regenerateAvatar(); }}
-          disabled={regeneratingAvatar || savingPhoto}
+          onClick={() => { if (!regeneratingAvatar && !savingPhoto) void regenerateAvatar(); }}
+          aria-disabled={regeneratingAvatar || savingPhoto}
         >
           {t('settings.avatar.regenerate')}
         </button>

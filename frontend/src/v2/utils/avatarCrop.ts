@@ -35,22 +35,6 @@ export const squareCropRectFor = (
   return { x, y, side };
 };
 
-/** Smallest crop zoom that fills the full preview stage behind its square window. */
-export const minimumZoomToCoverStage = (
-  imageWidth: number,
-  imageHeight: number,
-  stageWidth: number,
-  stageHeight: number,
-  frameSize: number,
-): number => {
-  if (![imageWidth, imageHeight, stageWidth, stageHeight, frameSize].every(Number.isFinite)
-    || imageWidth <= 0 || imageHeight <= 0 || stageWidth <= 0 || stageHeight <= 0 || frameSize <= 0) {
-    return 1;
-  }
-  const scaleToCoverStage = Math.max(stageWidth / imageWidth, stageHeight / imageHeight);
-  return clamp((Math.min(imageWidth, imageHeight) * scaleToCoverStage) / frameSize, 1, 3);
-};
-
 /** Place the full image behind a fixed square crop window on the preview stage. */
 export const imageDrawRectForCrop = (
   imageWidth: number,

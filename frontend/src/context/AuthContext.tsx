@@ -149,7 +149,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const updateProfile = async (profile: FormData | Record<string, string>): Promise<unknown> => {
     try {
-      setLoading(true);
       const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
       if (profile instanceof FormData) headers['Content-Type'] = 'multipart/form-data';
       const res = await axios.put<User>('/api/users/profile', profile, {
@@ -162,8 +161,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const e = err as { response?: { data?: { msg?: string } } };
       setError(e.response?.data?.msg || 'Failed to update profile');
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 

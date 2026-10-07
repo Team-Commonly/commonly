@@ -112,15 +112,17 @@ describe('V2AvatarCropDialog', () => {
     expect(screen.getByRole('dialog', { name: 'Upload photo' })).toBeInTheDocument();
     act(() => { image.onload?.call(image, new Event('load')); });
     expect(await screen.findByLabelText('Avatar crop preview')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Zoom' })).toHaveAttribute('min', '1');
+    expect(screen.getByRole('slider', { name: 'Zoom' })).toHaveValue('1');
     expect(document.querySelector('.v2-settings__avatar-crop-frame')).toBeInTheDocument();
     expect(document.querySelectorAll('.v2-settings__avatar-preview-image')).toHaveLength(3);
     const initialImage = drawImage.mock.calls[0];
     expect(initialImage[0]).toBe(image);
-    expect(initialImage[1]).toBeCloseTo((392 - 150.8) / 2 - (539 * 260) / 900);
-    expect(initialImage[2]).toBeCloseTo(0);
-    expect(initialImage[3]).toBeCloseTo((1600 * 260) / 900);
-    expect(initialImage[4]).toBeCloseTo(260);
-    expect(drawImage.mock.calls[1]).toEqual([image, 539, 189, 522, 522, 0, 0, 64, 64]);
+    expect(initialImage[1]).toBeCloseTo((392 - 150.8) / 2 - (350 * 150.8) / 900);
+    expect(initialImage[2]).toBeCloseTo((260 - 150.8) / 2);
+    expect(initialImage[3]).toBeCloseTo((1600 * 150.8) / 900);
+    expect(initialImage[4]).toBeCloseTo(150.8);
+    expect(drawImage.mock.calls[1]).toEqual([image, 350, 0, 900, 900, 0, 0, 64, 64]);
 
     fireEvent.change(screen.getByLabelText('Zoom'), { target: { value: '2' } });
     expect(drawImage).toHaveBeenLastCalledWith(image, 575, 225, 450, 450, 0, 0, 64, 64);
@@ -157,11 +159,51 @@ describe('V2AvatarCropDialog', () => {
     uploadButton.focus();
     fireEvent.click(uploadButton);
 
+    const reachedDocument = jest.fn();
+    document.addEventListener('keydown', reachedDocument);
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Upload photo' }), { key: 'Escape' });
+    document.removeEventListener('keydown', reachedDocument);
 
+    // Escape must not reach App.tsx's setupFocusManagement, which would blur the restored focus.
+    expect(reachedDocument).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(uploadButton).toHaveFocus();
     expect(document.body.style.overflow).toBe('');
+  });
+
+  test('keeps Save photo focusable and ignores activation while saving', async () => {
+    const onSave = jest.fn();
+    const onCancel = jest.fn();
+    const { rerender } = render(
+      <V2AvatarCropDialog
+        file={selectedFile}
+        saving={false}
+        error={null}
+        onCancel={onCancel}
+        onSave={onSave}
+      />,
+    );
+    act(() => { image.onload?.call(image, new Event('load')); });
+    const saveButton = await screen.findByRole('button', { name: 'Save photo' });
+    saveButton.focus();
+
+    rerender(
+      <V2AvatarCropDialog
+        file={selectedFile}
+        saving
+        error={null}
+        onCancel={onCancel}
+        onSave={onSave}
+      />,
+    );
+    const savingButton = screen.getByRole('button', { name: 'Saving…' });
+    expect(savingButton).toHaveAttribute('aria-disabled', 'true');
+    expect(savingButton).not.toBeDisabled();
+    expect(savingButton).toHaveFocus();
+
+    fireEvent.click(savingButton);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(savingButton).toHaveFocus();
   });
 
   test('dragging the source image changes the square crop', () => {
@@ -190,9 +232,9 @@ describe('V2AvatarCropDialog', () => {
 
     const crop = drawImage.mock.calls[drawImage.mock.calls.length - 1];
     expect(crop[0]).toBe(image);
-    expect(crop[1]).toBeCloseTo(539 - (20 * 522) / 150.8);
-    expect(crop[2]).toBeCloseTo(189);
-    expect(crop[3]).toBeCloseTo(522);
-    expect(crop[4]).toBeCloseTo(522);
+    expect(crop[1]).toBeCloseTo(350 - (20 * 900) / 150.8);
+    expect(crop[2]).toBeCloseTo(0);
+    expect(crop[3]).toBeCloseTo(900);
+    expect(crop[4]).toBeCloseTo(900);
   });
 });
