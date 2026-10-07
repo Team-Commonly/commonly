@@ -172,6 +172,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const app = read('../../App.tsx');
   const appStyles = read('../../App.css');
   const settingsPage = read('../components/V2SettingsPage.tsx');
+  const avatarCropDialog = read('../components/V2AvatarCropDialog.tsx');
   const avatar = read('../components/V2Avatar.tsx');
   const billingPanel = read('../components/V2BillingPanel.tsx');
   const appsManagement = read('../../components/AppsManagement.tsx');
@@ -891,7 +892,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<AppsManagement variant="settings" />');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 64px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
@@ -929,6 +930,30 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(accountForm).toContain('padding: 0');
     expect(accountForm).toContain('background: transparent');
     expect(accountForm).toContain('box-shadow: none');
+  });
+
+  test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
+    const avatar = ruleBody(v2, '.v2-settings__avatar');
+    expect(avatar).toContain('width: 64px');
+    expect(avatar).toContain('height: 64px');
+    expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
+    expect(avatarCropDialog).toContain('className="v2-modal v2-settings__avatar-dialog"');
+    expect(ruleBody(v2, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
+    expect(ruleBody(v2, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
+    expect(ruleBody(v2, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
+
+    const phone = blockContaining(v2, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
+    expect(ruleBody(phone, '.v2-settings__avatar-actions', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(phone, '.v2-root .v2-settings__avatar-actions button.v2-settings__secondary', { within: phone })).toContain('min-height: 44px');
+    expect(ruleBody(phone, '.v2-settings__avatar-footer', { within: phone })).toContain('flex-direction: column');
+    expect(ruleBody(phone, '.v2-root .v2-settings__avatar-dialog-actions button', { within: phone })).toContain('min-height: 44px');
+
+    const modalPhone = blockContaining(v2, '@media (max-width: 480px)', '.v2-modal__overlay');
+    expect(ruleBody(modalPhone, '.v2-modal__overlay', { within: modalPhone })).toContain('padding: 12px');
   });
 
   test('App.css keeps every V1 element selector out of the v2 canvas', () => {
