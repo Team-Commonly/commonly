@@ -175,12 +175,12 @@ export const paperAvatarFor = (
 
   const variant = lookIndex ?? (hashString(key) % PAPER_AVATAR_LOOK_COUNT);
   if (!Number.isInteger(variant) || variant < 0 || variant >= PAPER_AVATAR_LOOK_COUNT) return null;
+
+  const background = AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1);
+  const neckline = PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length];
+  const shirt = PAPER_SHIRTS[Math.floor(variant / 12)];
   try {
-    return faceDataUri(renderPaper({
-      background: AVATAR_PALETTE[HUMAN_BG[variant % HUMAN_BG.length]].base.slice(1),
-      neckline: PAPER_NECKLINES[Math.floor(variant / 4) % PAPER_NECKLINES.length],
-      shirt: PAPER_SHIRTS[Math.floor(variant / 12)],
-    }));
+    return faceDataUri(renderPaper({ background, neckline, shirt }));
   } catch {
     return null;
   }
