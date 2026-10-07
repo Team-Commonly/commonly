@@ -1,7 +1,7 @@
 import React from 'react';
 import { getAvatarSrc } from '../../utils/avatarUtils';
 import {
-  characterAvatarFor, gradientFor, initialsFor, AvatarKind,
+  characterAvatarFor, paperAvatarFor, gradientFor, initialsFor, AvatarKind,
 } from '../utils/avatars';
 
 export type V2AvatarSize = 'sm' | 'md' | 'lg';
@@ -14,13 +14,13 @@ interface V2AvatarProps {
   online?: boolean;
   title?: string;
   /**
-   * Renders the character tier: Commonly's own faces for both kinds (the
-   * "Cut" kit, avatarKit.ts), with the species carried by disjoint background
-   * families ('human' warm, 'agent' cool) and by dress (agents in ink with a
-   * cobalt collar). Omitted → gradient+initials, unchanged
+   * Renders the local identity tier: unpicked humans get Paper, while saved
+   * character picks and agents keep the Cut kit. Species stays legible through
+   * disjoint background families ('human' warm, 'agent' cool) and dress
+   * (agents in ink with a cobalt collar). Omitted → gradient+initials, unchanged
    * — callers that cannot tell who they are drawing must not guess, because
-   * mislabelling the tier mislabels the PERSON's species tint.
-   * An uploaded photo always wins over both tiers.
+   * mislabelling the tier mislabels the PERSON's species tint. A loadable
+   * uploaded photo wins over both tiers; failed human images fall back to Paper.
    */
   kind?: AvatarKind;
   /**
@@ -73,12 +73,17 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
     className,
   ].filter(Boolean).join(' ');
 
-  // Character tier (photo still wins, below). Memoized because the SVG build
-  // runs per identity per render otherwise, and chat re-renders per message.
-  // Falls back to gradient+initials on any generation failure — the character
-  // is presentation, never load-bearing.
+  // Default identity tier, used when no image is currently renderable. Human
+  // images and saved Cut picks use the image path above; if an image fails, an
+  // unpicked human falls back to Paper. Agents keep their existing face.
+  // Memoized because SVG generation runs per identity per render otherwise,
+  // and chat re-renders per message.
   const characterSrc = React.useMemo(
-    () => (kind ? characterAvatarFor(seedProp || seed, kind) : null),
+    () => {
+      if (!kind) return null;
+      if (kind === 'human') return paperAvatarFor(seedProp || seed);
+      return characterAvatarFor(seedProp || seed, kind);
+    },
     [kind, seedProp, seed],
   );
 

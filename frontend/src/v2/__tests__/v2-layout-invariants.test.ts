@@ -226,6 +226,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(active).toContain('background: var(--v2-ink)');
   });
 
+  test('the rail account avatar matches the nav-mark axis as a 32px hard-edged square', () => {
+    const accountButton = lastRuleBody(v2, '.v2-rail__account');
+    const accountAvatar = lastRuleBody(v2, '.v2-rail__account .v2-avatar');
+    const accountCluster = ruleBody(v2, '.v2-rail__user');
+    expect(accountButton).toContain('width: 32px');
+    expect(accountButton).toContain('height: 32px');
+    expect(accountAvatar).toContain('width: 32px');
+    expect(accountAvatar).toContain('height: 32px');
+    expect(accountAvatar).toContain('border-radius: var(--v2-radius-sm)');
+    expect(accountAvatar).toContain('border: 0');
+    expect(accountAvatar).toContain('box-shadow: none');
+    expect(accountCluster).toContain('align-items: center');
+  });
+
   test('sidebar is direction C: a white panel with search, Pinned / Recent / Everything, and rows that carry mark, pill and time', () => {
     // Walk-1 rulings (2026-09-06): the six 11px mono labels are gone; two
     // 12px semibold section heads plus a folded inventory replace them.
@@ -873,6 +887,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<SettingsSection id="language" title="Language">');
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
+    expect(settingsPage).toContain('kind="human"');
     expect(settingsPage).toContain('<AppsManagement variant="settings" />');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');

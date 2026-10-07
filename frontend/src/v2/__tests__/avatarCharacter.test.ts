@@ -1,4 +1,6 @@
-import { characterAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT } from '../utils/avatars';
+import {
+  characterAvatarFor, paperAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT,
+} from '../utils/avatars';
 import {
   faceTraitsFor, renderFace, HAIR_STYLES, SKIN_TONES, FaceTraits,
 } from '../utils/avatarKit';
@@ -48,9 +50,8 @@ describe('characterAvatarFor', () => {
     // hashString(key) % 4, so a single seed exercises one of four slots and a
     // wrong-but-lucky family would pass.
     const seeds = Array.from({ length: 200 }, (_, i) => `species-${i}`);
-    const groundsFor = (kind: 'human' | 'agent') => seeds.map((s) => groundOf(characterAvatarFor(s, kind)));
-    const human = groundsFor('human');
-    const agent = groundsFor('agent');
+    const human = seeds.map((s) => groundOf(paperAvatarFor(s)));
+    const agent = seeds.map((s) => groundOf(characterAvatarFor(s, 'agent')));
 
     // A family is a family: the ground varies within each kind...
     expect(new Set(human).size).toBeGreaterThanOrEqual(3);
@@ -99,6 +100,27 @@ describe('characterAvatarFor', () => {
         expect(cell.skin.some((tone) => svg.includes(tone))).toBe(true);
       });
     }
+  });
+
+  test('unpicked humans get all 24 seeded Paper looks without any skin-tone fill', () => {
+    const seeds = Array.from({ length: 240 }, (_, i) => `paper-user-${i}`);
+    const uris = seeds.map((seed) => paperAvatarFor(seed));
+    expect(uris.every(Boolean)).toBe(true);
+    expect(new Set(uris).size).toBe(24);
+
+    for (const uri of uris) {
+      const svg = svgOf(uri);
+      expect(SKIN_TONES.some((tone) => svg.includes(`fill="#${tone}"`))).toBe(false);
+      expect(svg).toContain('M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z');
+      expect(svg).toContain('cx="32" cy="29" rx="13" ry="15"');
+      expect(svg).toContain('<rect x="27" y="38" width="10" height="10" fill="#f9fafb"/>');
+      expect(svg).not.toMatch(/<circle|<text|<image|<style|<script/);
+    }
+  });
+
+  test('a stored human picker cell still renders a Cut face with its selected skin', () => {
+    const svg = svgOf(characterAvatarFor('paper-user-v13', 'human'));
+    expect(svg).toContain('fill="#e2ba87"');
   });
 
   test('the archetype table stays representation-complete', () => {

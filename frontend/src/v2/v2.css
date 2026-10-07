@@ -787,10 +787,17 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-rail__account {
+  width: 32px;
+  height: 32px;
   padding: 0;
 }
 
 .v2-rail__account .v2-avatar {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  box-shadow: none;
   pointer-events: none;
 }
 

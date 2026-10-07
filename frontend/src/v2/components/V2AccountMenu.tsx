@@ -31,7 +31,13 @@ const V2AccountMenu: React.FC = () => {
         onClick={(event) => setAnchorEl(event.currentTarget)}
         title="Account"
       >
-        <V2Avatar name={currentUser?.username || 'You'} size="md" online />
+        <V2Avatar
+          name={currentUser?.username || 'You'}
+          src={currentUser?.profilePicture}
+          size="md"
+          kind="human"
+          seed={currentUser?._id || currentUser?.id}
+        />
       </button>
       <Popover
         open={open}
