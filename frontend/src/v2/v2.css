@@ -11153,6 +11153,7 @@ body.modern-ui.v2-canvas {
   width: 22px;
   height: 22px;
   border-radius: 4px;
+  border: 0;
   font-size: 11px;
 }
 
@@ -11191,6 +11192,35 @@ body.modern-ui.v2-canvas {
   background: var(--v2-ink);
   color: #fff;
   font: 700 11px/1 var(--v2-font-mono);
+}
+
+@media (max-width: 640px) {
+  .v2-root button.v2-pods__row {
+    min-height: 44px;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .v2-pods__row-mark {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+
+  .v2-pods__row-mark.v2-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .v2-pods__row-name { font-size: 16px; }
+
+  .v2-root button.v2-pods__pin {
+    width: 24px;
+    height: 24px;
+  }
+
+  .v2-pods__rowwrap:hover .v2-pods__row-meta,
+  .v2-pods__rowwrap:focus-within .v2-pods__row-meta,
+  .v2-pods__rowwrap--pinned .v2-pods__row-meta { padding-right: 32px; }
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-pill {
