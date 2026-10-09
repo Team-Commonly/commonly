@@ -2,9 +2,11 @@ import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import { existsSync, readFileSync, readlinkSync, realpathSync } from 'fs';
 import {
+  chmod,
   mkdir,
   mkdtemp,
   rm,
+  symlink,
   writeFile,
 } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -21,8 +23,11 @@ const {
   DISABLED_ENV,
   buildArgs,
   buildMcpConfig,
+  buildProviderConfig,
   makeEventParser,
   publicPermissions,
+  qualifiedProviderModel,
+  resolveProviderKeyFile,
 } = await import('../src/lib/adapters/opencode.js');
 
 const EXPECTED_DISABLED_ENV = [
@@ -110,6 +115,12 @@ describe('opencode adapter — argv and event contract', () => {
     expect(resumed).not.toContain('--auto');
   });
 
+  test('qualifies a custom provider model without changing built-in model ids', () => {
+    expect(qualifiedProviderModel({ id: 'litellm' }, 'gpt-5.4')).toBe('litellm/gpt-5.4');
+    expect(qualifiedProviderModel(null, 'anthropic/claude-sonnet-4-5'))
+      .toBe('anthropic/claude-sonnet-4-5');
+  });
+
   test('parses final text, session id, and step token counts from JSONL', () => {
     const parser = makeEventParser();
     parser.consume(Buffer.from(sampleEvents().join('').slice(0, 72)));
@@ -187,6 +198,200 @@ describe('opencode MCP config', () => {
     expect(permission.edit['*']).toBe('allow');
     expect(publicPermissions('bwrap', []).edit['*']).toBe('allow');
     expect(publicPermissions('read-only', [])).toMatchObject({ edit: { '*': 'deny' } });
+  });
+});
+
+describe('opencode external provider config', () => {
+  test('uses file-backed provider auth and materializes only the selected model when models are omitted', () => {
+    const config = buildProviderConfig({
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+    }, 'gpt-5.4', '/private/keys/litellm');
+    expect(config).toEqual({
+      litellm: {
+        npm: '@ai-sdk/openai-compatible',
+        options: {
+          baseURL: 'https://llm.example.test/v1',
+          apiKey: '{file:/private/keys/litellm}',
+        },
+        models: { 'gpt-5.4': { name: 'gpt-5.4' } },
+      },
+    });
+  });
+
+  test('preserves caller model metadata and adds the selected model if missing', () => {
+    const config = buildProviderConfig({
+      id: 'openrouter',
+      baseURL: 'https://openrouter.example.test/v1',
+      models: { 'other-model': { name: 'Other', limit: { context: 1000, output: 500 } } },
+    }, 'gpt-5.4', '/private/keys/openrouter');
+    expect(config.openrouter.models).toEqual({
+      'other-model': { name: 'Other', limit: { context: 1000, output: 500 } },
+      'gpt-5.4': { name: 'gpt-5.4' },
+    });
+    expect(buildProviderConfig({
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      models: { 'gpt-5.4': { limit: { context: 1000, output: 500 } } },
+    }, 'gpt-5.4', '/private/keys/litellm').litellm.models['gpt-5.4']).toEqual({
+      limit: { context: 1000, output: 500 },
+      name: 'gpt-5.4',
+    });
+  });
+
+  test('key files must be absolute, 0600 regular files outside the workspace', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'provider-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'provider-key-value');
+      await chmod(keyFile, 0o600);
+      const provider = { keyFile };
+      await expect(resolveProviderKeyFile(provider, workspace)).resolves.toBe(realpathSync(keyFile));
+
+      await chmod(keyFile, 0o640);
+      await expect(resolveProviderKeyFile(provider, workspace)).rejects.toThrow(/mode 0600/);
+
+      const inside = join(workspace, 'provider-key');
+      await writeFile(inside, 'inside-workspace-key');
+      await chmod(inside, 0o600);
+      await expect(resolveProviderKeyFile({ keyFile: inside }, workspace)).rejects.toThrow(/outside the workspace/);
+
+      const link = join(root, 'secrets', 'provider-key-link');
+      await symlink(keyFile, link);
+      await expect(resolveProviderKeyFile({ keyFile: link }, workspace)).rejects.toThrow(/regular, non-symlink/);
+      await expect(resolveProviderKeyFile({ keyFile: 'relative/key' }, workspace)).rejects.toThrow(/absolute path/);
+    });
+  });
+
+  test('spawns with provider-qualified model and keeps key bytes out of config and environment', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'provider-key');
+      const key = 'provider-secret-never-inline';
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, key);
+      await chmod(keyFile, 0o600);
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, args, options) => {
+          expect(args).toContain('litellm/gpt-5.4');
+          const configText = readFileSync(options.env.OPENCODE_CONFIG, 'utf8');
+          const config = JSON.parse(configText);
+          expect(config.provider.litellm).toEqual({
+            npm: '@ai-sdk/openai-compatible',
+            options: {
+              baseURL: 'http://127.0.0.1:11434/v1',
+              apiKey: `{file:${realpathSync(keyFile)}}`,
+            },
+            models: { 'gpt-5.4': { name: 'gpt-5.4' } },
+          });
+          expect(configText).not.toContain(key);
+          expect(Object.values(options.env)).not.toContain(key);
+        },
+      });
+      await opencode.spawn('provider turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
+        environment: {
+          model: 'gpt-5.4',
+          provider: {
+            id: 'litellm', baseURL: 'http://127.0.0.1:11434/v1', keyFile,
+          },
+        },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: spawn.impl,
+      });
+    });
+  });
+
+  test('refuses provider keys with unsafe paths before spawning', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace, { recursive: true });
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('bad key', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gpt-5.4',
+          provider: {
+            id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: join(workspace, 'key'),
+          },
+        },
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(/unavailable/);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
+  test('adds only the exact provider key file to public Seatbelt read paths', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'provider-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'provider-key');
+      await chmod(keyFile, 0o600);
+      const realKey = realpathSync(keyFile);
+      const spawn = makeSpawnImpl();
+      await opencode.spawn('public provider turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+          sandbox: { trust: 'public', mode: 'workspace' },
+        },
+        agentName: 'public-provider-seat',
+        _opencodeHomeRoot: join(root, 'seat-state'),
+        _binaryPath: '/usr/local/bin/opencode',
+        _platform: 'darwin',
+        _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv, opts) => {
+          expect(opts.readOnlyPaths).toEqual([realKey]);
+          return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
+        },
+      });
+    });
+  });
+
+  test('adds only the exact provider key file to public bwrap read paths', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'provider-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'provider-key');
+      await chmod(keyFile, 0o600);
+      const realKey = realpathSync(keyFile);
+      const spawn = makeSpawnImpl();
+      await opencode.spawn('public provider turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+          sandbox: { trust: 'public', mode: 'bwrap' },
+        },
+        agentName: 'public-provider-seat',
+        _opencodeHomeRoot: join(root, 'seat-state'),
+        _binaryPath: '/usr/local/bin/opencode',
+        _platform: 'linux',
+        _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
+        _spawnImpl: spawn.impl,
+        _wrapArgvWithBwrap: (argv, _environment, opts) => {
+          expect(opts.readOnlyPaths).toEqual([
+            expect.stringMatching(/commonly-opencode-/),
+            '/usr/local/bin/opencode',
+            process.execPath,
+            realKey,
+          ]);
+          return ['/usr/bin/bwrap', '--test', ...argv];
+        },
+      });
+    });
   });
 });
 

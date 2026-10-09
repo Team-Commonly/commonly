@@ -94,6 +94,33 @@ describe('macOS Seatbelt profile', () => {
     expect(profile).not.toContain(`file-write* (literal "${resolvedAuthFile}")`);
   });
 
+  test('provider key access changes the profile by one exact read-only literal', () => {
+    const keyFile = join(root, 'operator-secrets', 'provider-key');
+    mkdirSync(join(root, 'operator-secrets'), { recursive: true });
+    writeFileSync(keyFile, 'provider-key');
+    const baseline = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+    });
+    const withKey = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+      readOnlyPaths: [keyFile],
+    });
+    const baselineLines = new Set(baseline.split('\n').filter(Boolean));
+    const addedRules = withKey.split('\n').filter((line) => line && !baselineLines.has(line));
+    const resolvedKey = realpathSync(keyFile);
+    expect(addedRules).toEqual([
+      `(allow file-read* file-test-existence (literal "${resolvedKey}"))`,
+    ]);
+    expect(withKey).not.toContain(`(subpath "${realpathSync(join(root, 'operator-secrets'))}")`);
+    expect(withKey).not.toContain(`file-write* (literal "${resolvedKey}")`);
+  });
+
   test('Claude-only Keychain and temp access are granted only on request', () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,

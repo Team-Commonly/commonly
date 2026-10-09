@@ -39,7 +39,13 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import {
+  environmentForServer,
+  normalizeSandboxTrust,
+  parseEnvironmentFile,
+  resolveWorkspace,
+  validateEnvironmentSpec,
+} from '../lib/environment.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -548,7 +554,7 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment) config.environment = environment;
+  if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
     throw new Error('provide at least one of --adapter, --model, --effort, or --env');
   }
@@ -667,6 +673,9 @@ export const performAttach = async ({
   if (envPath) {
     environment = await parseEnvironmentFile(envPath);
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
+    if (typeof adapter.validateEnvironment === 'function') {
+      await adapter.validateEnvironment(environment, workspace.path);
+    }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
     const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
@@ -776,7 +785,7 @@ export const performAttach = async ({
         adapter: adapterName,
         host: 'byo',
       },
-      ...(environment ? { environment } : {}),
+      ...(environment ? { environment: environmentForServer(environment) } : {}),
       // ADR-018: ambient wake is a per-install opt-in read by
       // agentMentionService (`config.wakeOnMessage.enabled === true`, default
       // OFF). Until now the only way to set it for a BYO seat was a DB write.

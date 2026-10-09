@@ -172,6 +172,29 @@ describe('updateAgentConfiguration', () => {
     );
   });
 
+  test('keeps the provider key path local while PATCHing its public environment fields', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const environment = {
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm',
+        baseURL: 'https://llm.example.test/v1',
+        keyFile: '/Users/kai/.config/commonly/llm-key',
+      },
+    };
+    const result = await updateAgentConfiguration({
+      client,
+      record,
+      envPath: '/tmp/provider-env.json',
+      parseEnv: jest.fn(async () => environment),
+    });
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({
+      model: 'gpt-5.4',
+      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
+    });
+    expect(result.environment).toEqual(environment);
+  });
+
   test('agent config writes the adapter binding explicitly', async () => {
     const client = { patch: jest.fn(async () => ({ success: true })) };
     const adapterRegistry = {
@@ -354,6 +377,41 @@ describe('performAttach', () => {
         config: expect.objectContaining({ wakeOnMessage: { enabled: true } }),
       }),
     );
+  });
+
+  test('keeps provider.keyFile in the local attach result, not the install request', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-provider-attach-'));
+    try {
+      const workspace = path.join(root, 'workspace');
+      const keyFile = path.join(root, 'provider-key');
+      const envPath = path.join(root, 'environment.json');
+      fs.mkdirSync(workspace, { recursive: true });
+      fs.writeFileSync(keyFile, 'provider-key', { mode: 0o600 });
+      fs.chmodSync(keyFile, 0o600);
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: workspace },
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile,
+        },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_provider' });
+      const result = await performAttach({
+        client,
+        adapterName: 'stub',
+        agentName: 'provider-seat',
+        podId: 'pod-provider',
+        envPath,
+      });
+      const install = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+      expect(install.config.environment.provider).toEqual({
+        id: 'litellm', baseURL: 'https://llm.example.test/v1',
+      });
+      expect(result.environment.provider.keyFile).toBe(keyFile);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('falls back to /runtime-tokens when install does not return runtimeToken', async () => {

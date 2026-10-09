@@ -29,12 +29,18 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { dirname, join, resolve as pathResolve } from 'path';
+import {
+  dirname, isAbsolute, join, relative, resolve as pathResolve, sep,
+} from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
+import {
+  isLegacySandboxTrust,
+  normalizeSandboxTrust,
+  validateEnvironmentSpec,
+} from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
@@ -218,6 +224,92 @@ const buildArgs = ({ prompt, sessionId, cwd, model, effort, title }) => ([
   ...(title ? ['--title', String(title)] : []),
   prompt,
 ]);
+
+const qualifiedProviderModel = (provider, model) => (
+  provider ? `${provider.id}/${model}` : model
+);
+
+const buildProviderConfig = (provider, model, keyFile) => {
+  if (!provider) return undefined;
+  if (!model) throw new Error('OpenCode provider configuration requires environment.model');
+  // OpenCode 1.18.35 resolves {file:} in provider options, but failed before
+  // making a request when the selected id was absent from provider.models.
+  const models = { ...(provider.models || {}) };
+  const selectedModel = models[model];
+  if (!selectedModel) {
+    models[model] = { name: model };
+  } else if (typeof selectedModel.name !== 'string' || !selectedModel.name) {
+    models[model] = { ...selectedModel, name: model };
+  }
+  return {
+    [provider.id]: {
+      npm: '@ai-sdk/openai-compatible',
+      options: {
+        baseURL: provider.baseURL,
+        apiKey: `{file:${keyFile}}`,
+      },
+      models,
+    },
+  };
+};
+
+const isPathWithin = (parent, candidate) => {
+  const fromParent = relative(parent, candidate);
+  return fromParent === '' || (fromParent !== '..'
+    && !fromParent.startsWith(`..${sep}`)
+    && !isAbsolute(fromParent));
+};
+
+/** Validate without reading the key; OpenCode resolves its value from the file reference. */
+const resolveProviderKeyFile = async (provider, workspacePath) => {
+  if (!provider) return null;
+  const keyFile = provider.keyFile;
+  if (typeof keyFile !== 'string' || !isAbsolute(keyFile)) {
+    throw new Error('OpenCode provider.keyFile must be an absolute path');
+  }
+  if (/[\r\n}]/.test(keyFile)) {
+    throw new Error('OpenCode provider.keyFile contains characters unsafe for a file reference');
+  }
+  let details;
+  try {
+    details = await lstat(keyFile);
+  } catch (err) {
+    throw new Error(`OpenCode provider key file is unavailable: ${err.message}`);
+  }
+  if (details.isSymbolicLink() || !details.isFile()) {
+    throw new Error('OpenCode provider.keyFile must be a regular, non-symlink file');
+  }
+  if ((details.mode & 0o777) !== 0o600) {
+    throw new Error('OpenCode provider.keyFile must have mode 0600');
+  }
+  if (typeof workspacePath !== 'string' || !isAbsolute(workspacePath)) {
+    throw new Error('OpenCode provider.keyFile requires an absolute workspace path');
+  }
+  let realKeyFile;
+  let realWorkspace;
+  try {
+    realKeyFile = realpathSync(keyFile);
+    realWorkspace = realpathSync(workspacePath);
+  } catch (err) {
+    throw new Error(`OpenCode provider key path could not be resolved: ${err.message}`);
+  }
+  if (isPathWithin(realWorkspace, realKeyFile)) {
+    throw new Error('OpenCode provider.keyFile must be outside the workspace');
+  }
+  return realKeyFile;
+};
+
+const validateProviderEnvironment = async (environment, workspacePath) => {
+  if (environment?.provider === undefined) return null;
+  const validation = validateEnvironmentSpec({
+    provider: environment.provider,
+    model: environment.model,
+  });
+  if (!validation.ok) {
+    throw new Error(`Invalid OpenCode provider configuration: ${validation.errors.join('; ')}`);
+  }
+  return resolveProviderKeyFile(environment.provider, workspacePath);
+};
 
 const makeEventParser = () => {
   let buffer = '';
@@ -426,6 +518,10 @@ export default {
   name: 'opencode',
   runtimeType: 'opencode',
 
+  async validateEnvironment(environment, workspacePath) {
+    return validateProviderEnvironment(environment, workspacePath);
+  },
+
   async detect() {
     try {
       const res = spawnSync('opencode', ['--version'], { encoding: 'utf8' });
@@ -455,6 +551,9 @@ export default {
     if (isPublic && !['workspace', 'read-only', 'bwrap'].includes(sandboxMode)) {
       throw new Error(`public OpenCode agents require an enforced sandbox mode, got ${sandboxMode || 'unset'}`);
     }
+
+    const provider = ctx.environment?.provider;
+    const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
@@ -489,6 +588,9 @@ export default {
         permission: isPublic ? publicPermissions(sandboxMode, Object.keys(mcp)) : 'allow',
         share: 'disabled',
         autoupdate: false,
+        ...(provider ? {
+          provider: buildProviderConfig(provider, ctx.environment.model, providerKeyFile),
+        } : {}),
         ...(Object.keys(mcp).length ? { mcp } : {}),
       };
       await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
@@ -516,7 +618,7 @@ export default {
         prompt: fullPrompt,
         sessionId: ctx.sessionId,
         cwd: ctx.cwd,
-        model: ctx.environment?.model,
+        model: qualifiedProviderModel(provider, ctx.environment?.model),
         effort: ctx.environment?.effort,
         title: ctx.agentName,
       });
@@ -550,6 +652,7 @@ export default {
             binary,
             process.execPath,
             ...(openCodeHome.authPath ? [openCodeHome.authPath] : []),
+            ...(providerKeyFile ? [providerKeyFile] : []),
           ],
         });
         [cmd, ...spawnArgs] = wrapped;
@@ -563,7 +666,10 @@ export default {
           executablePath: binary,
           statePath: openCodeHome.root,
           mcpConfigDir: tempDir,
-          readOnlyPaths: openCodeHome.authPath ? [openCodeHome.authPath] : [],
+          readOnlyPaths: [
+            ...(openCodeHome.authPath ? [openCodeHome.authPath] : []),
+            ...(providerKeyFile ? [providerKeyFile] : []),
+          ],
         });
         [cmd, ...spawnArgs] = wrapped;
       }
@@ -592,7 +698,10 @@ export {
   DISABLED_ENV,
   buildArgs,
   buildMcpConfig,
+  buildProviderConfig,
   makeEventParser,
   prepareOpenCodeDataHome,
   publicPermissions,
+  qualifiedProviderModel,
+  resolveProviderKeyFile,
 };
