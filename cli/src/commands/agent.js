@@ -125,7 +125,23 @@ export const deleteAgentToken = (name) => {
 // podId) or is a local fact (which CLI binary to wrap). Returns a record ready
 // for saveAgentToken, or null when COMMONLY_AGENT_TOKEN isn't set (caller
 // falls back to the attach hint).
+// OpenCode is opt-in: unlike the established wrappers it must not be selected
+// just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
+
+/** Return the adapter declared for this exact installation by the server. */
+export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
+  if (!Array.isArray(installations) || !podId) return null;
+  const expectedPodId = String(podId);
+  const expectedInstanceId = String(instanceId || 'default');
+  const installation = installations.find((row) => (
+    row?.type === 'installation'
+    && String(row.podId || '') === expectedPodId
+    && String(row.instanceId || 'default') === expectedInstanceId
+  ));
+  const adapter = String(installation?.runtimeAdapter || '').trim().toLowerCase();
+  return adapter || null;
+};
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token
@@ -211,6 +227,18 @@ export const bootstrapAgentRecordFromEnv = async ({
   const agentName = identity?.agentName || name;
   if (String(agentName).toLowerCase() !== String(name).toLowerCase()) {
     log(`token belongs to '${agentName}', not '${name}' — using the token's identity`);
+  }
+
+  if (adapterName === 'opencode'
+    && runtimeAdapterForInstallation({
+      installations: installs,
+      podId: primary?.podId,
+      instanceId: primary?.instanceId,
+    }) !== 'opencode') {
+    throw new Error(
+      `OpenCode is not declared for this Commonly installation. A pod owner must run `
+      + `commonly agent config ${agentName} --adapter opencode before this seat can use OpenCode.`,
+    );
   }
 
   return {
@@ -571,10 +599,10 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !['codex', 'claude'].includes(adapterName))) {
+    && (trust !== 'public' || !['codex', 'claude', 'opencode'].includes(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} is currently implemented only for public `
-      + 'codex or Claude adapters',
+      + 'Claude, Codex, or OpenCode adapters',
     );
   }
   return { mode, trust };
@@ -648,15 +676,16 @@ export const performAttach = async ({
             + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
           );
         }
+        const adapterLabel = adapterName === 'opencode' ? 'OpenCode' : 'Claude';
         log(
           `sandbox: public ${sandboxMode} via macOS Seatbelt `
-          + '(deny-by-default host filesystem; Claude/MCP network retained)',
+          + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
         );
       }
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
-        + `Supported locally: none, bwrap, and public codex/Claude workspace/read-only.`,
+        + `Supported locally: none, bwrap, and public Codex/Claude/OpenCode workspace/read-only.`,
       );
     }
   } else {
@@ -719,6 +748,7 @@ export const performAttach = async ({
     config: {
       runtime: {
         runtimeType,
+        adapter: adapterName,
         host: 'byo',
       },
       ...(environment ? { environment } : {}),
@@ -2570,7 +2600,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|…)')
+    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
@@ -2744,7 +2774,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|opencode); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -2782,6 +2812,29 @@ Docs:
       if (!adapterRequest.ok) {
         console.error(`${stamp()} [${name}] ${adapterRequest.message}`);
         process.exit(1);
+      }
+
+      if (String(record.adapter || '').trim().toLowerCase() === 'opencode') {
+        try {
+          const identity = await createClient({
+            instance: record.instanceUrl,
+            token: record.runtimeToken,
+          }).get('/api/agents/runtime/installations');
+          const declaredAdapter = runtimeAdapterForInstallation({
+            installations: identity?.installations,
+            podId: record.podId,
+            instanceId: record.instanceId,
+          });
+          if (declaredAdapter !== 'opencode') {
+            throw new Error(
+              `OpenCode is not declared for this Commonly installation. A pod owner must run `
+              + `commonly agent config ${record.agentName} --adapter opencode before this seat can use OpenCode.`,
+            );
+          }
+        } catch (err) {
+          console.error(`${stamp()} [${name}] could not verify OpenCode authorization: ${err.message}`);
+          process.exit(1);
+        }
       }
 
       const adapter = getAdapter(record.adapter);

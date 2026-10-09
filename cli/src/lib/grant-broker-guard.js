@@ -16,11 +16,11 @@
  * never reaches (a row naming no adapter, a backend older than the refusal, a
  * hand-written token file). Both halves emit the same `code`.
  *
- * THE ADAPTER IS THE HOST-INDEPENDENT FACT, so the set of adapters this daemon
- * can confine is the set that derives an enforced sandbox — `claude` and
- * `codex` (`ADAPTERS_WITH_DEFAULT_SANDBOX`, imported rather than retyped).
- * Anything else, `pi` included, confines on no host: `pi` refuses a declared
- * sandbox rather than honouring it, so an undeclared one is never derived.
+ * THE ADAPTER IS THE HOST-INDEPENDENT FACT, but sandbox support and broker
+ * admission are separate. OpenCode enforces a public sandbox locally; until
+ * the server allowlist admits its proven modes, only `claude` and `codex` may
+ * receive the grant broker. `pi` is also withheld because it refuses a declared
+ * sandbox rather than honouring it.
  *
  * ONE REASON THE SERVER DOES NOT HAVE: `sandbox_absent`. The server must ALLOW
  * an absent block (a daemon-provisioned seat's baseline is derived here and is
@@ -73,7 +73,7 @@
  * a foreign server cannot be drawn in by its spelling.
  */
 import { isGrantBrokerUrl } from './adapters/pi-mcp-client.mjs';
-import { ADAPTERS_WITH_DEFAULT_SANDBOX } from './default-environment.js';
+import { ADAPTERS_WITH_GRANT_BROKER } from './default-environment.js';
 import { effectiveSandboxTrust } from './environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './sandbox/mode.js';
 
@@ -177,7 +177,7 @@ export const declaresGrantBroker = (environment, opts) => (
  * The reason vocabulary mirrors the server's, plus `sandbox_absent`.
  */
 export const confinementReason = (environment, adapter, platform = process.platform) => {
-  if (!ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapter)) return 'adapter_cannot_confine';
+  if (!ADAPTERS_WITH_GRANT_BROKER.has(adapter)) return 'adapter_cannot_confine';
 
   const sandbox = environment?.sandbox;
   if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return 'sandbox_absent';
@@ -192,8 +192,8 @@ export const confinementReason = (environment, adapter, platform = process.platf
 const detailFor = (reason, adapter, environment) => {
   const drop = 'or drop the grant broker from this seat';
   if (reason === 'adapter_cannot_confine') {
-    return `the seat runs the '${adapter || 'unresolved'}' adapter, which confines on no host — a declared sandbox is`
-      + ' refused rather than enforced, and an absent one is never derived; move this seat to the claude or codex'
+    return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
+      + ' move this seat to the claude or codex'
       + ` adapter, ${drop}`;
   }
   if (reason === 'sandbox_absent') {
