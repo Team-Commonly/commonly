@@ -169,9 +169,9 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  * the adapter is known.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  const declared = declaredAdapter(runtime);
+  const named = declaredAdapter(runtime);
   // A runtime kind in the fallback slot names no adapter; the daemon decides it.
-  const adapter = declared && ADAPTER_NAMES.has(declared) ? declared : null;
+  const adapter = named && ADAPTER_NAMES.has(named) ? named : null;
   if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
