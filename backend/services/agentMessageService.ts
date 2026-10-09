@@ -1429,12 +1429,24 @@ class AgentMessageService {
     const dedupePod = sourcePod || (await Pod.findById(podId).select('type').lean() as { type?: string } | null);
     const isAgentAdminPod = dedupePod?.type === 'agent-admin';
     if (!isAgentAdminPod) {
-      const duplicate = await AgentMessageService.findRecentDuplicate({
-        podId,
-        userId: agentUser._id,
-        content: sanitizedContent,
-        metadata,
-      });
+      // Duplicate suppression is for shared rooms: an agent re-posting the same
+      // heartbeat or curation text crowds everyone else out, which is what this
+      // guard was built for (2026-02). NOT in a 1:1. ADR-012 §9's DM cue tells
+      // the agent to answer every message, and the person asking is the only
+      // other participant; a repeated answer is their answer. Measured
+      // 2026-10-09 08:10Z: a stranger's second question to hq-support in an
+      // agent-room drew the same 151-byte FAQ answer as the first, this guard
+      // skipped it with `duplicate_recent` (30 min), the wrapper logged
+      // "posted", and the person saw silence. `agent-admin` keeps the guard:
+      // it is N:1, a shared room.
+      const duplicate = AgentMessageService.isOneToOnePod(dedupePod?.type)
+        ? null
+        : await AgentMessageService.findRecentDuplicate({
+          podId,
+          userId: agentUser._id,
+          content: sanitizedContent,
+          metadata,
+        });
       if (duplicate) {
         AgentMessageService.logMessageLifecycle('skipped', {
           agentName,

@@ -156,6 +156,53 @@ describe('AgentMessageService summary persistence', () => {
     }
   });
 
+  // 2026-10-09: a stranger's second question in a 1:1 support room drew the same
+  // FAQ answer as the first; duplicate_recent skipped it and the person saw
+  // silence. In a 1:1 the repeated answer IS the answer (ADR-012 §9).
+  describe('duplicate_recent and pod type', () => {
+    const podLookup = (type) => ({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type }) }),
+    });
+    const identicalRecentPostBy = (userId) => [{
+      id: 'msg-earlier',
+      content: 'I can read and search this repo, answer questions, and help you set things up.',
+      createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      userId: { _id: userId },
+    }];
+    const repost = (podType) => {
+      Pod.findById.mockReturnValue(podLookup(podType));
+      jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(identicalRecentPostBy('agent-user-1'));
+      return AgentMessageService.postMessage({
+        agentName: 'hq-support',
+        instanceId: 'commonly-support',
+        podId: 'pod-dm-1',
+        content: 'I can read and search this repo, answer questions, and help you set things up.',
+        metadata: { sourceEventType: 'chat.mention' },
+      });
+    };
+    afterEach(() => { AgentMessageService.getRecentMessages.mockRestore(); });
+
+    it('posts a repeated answer in a 1:1 agent-room instead of skipping it', async () => {
+      const result = await repost('agent-room');
+      expect(result.skipped).toBeUndefined();
+      expect(result.reason).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('posts a repeated answer in a 1:1 agent-dm too', async () => {
+      const result = await repost('agent-dm');
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('still skips the same repeat in a shared pod within the window', async () => {
+      const result = await repost('chat');
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toBe('duplicate_recent');
+      expect(Message).not.toHaveBeenCalled();
+    });
+  });
+
   it('routes likely error content to agent-admin DM and posts system notice', async () => {
     DMService.resolveAgentOwner.mockResolvedValue('owner-user-1');
     DMService.getOrCreateAdminDMPod.mockResolvedValue({ _id: 'dm-pod-1' });

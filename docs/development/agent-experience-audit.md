@@ -4120,3 +4120,17 @@ The name taught the false model. `wakeOnMessage` reads as a chat-only switch. Th
 **Lesson:** a wake flag is a subscription, and a subscription with an inherit branch is two subscriptions under one name. Whoever changes `wakeOnMessage` sets `boardWake` explicitly in the same write. They then check within hours that every affected seat still spawns on an assignment. A seat with zero spawns is a measurement, not a quiet day.
 
 *Witness: the per-seat `spawning` log lines number 0 between the two timestamps above and resume at 02:01:53Z. `boardWake.enabled` is true on 27 of 27 installs, and `wakeOnMessage` is still off on all 27.*
+
+## 77. The wrapper's ledger said "posted" while the server had skipped the post, so a silent agent read as a talkative one (2026-10-09, lily-shen)
+
+*Origin: @lily-shen, from a post-deploy smoke that drifted into a 1:1 support room. Caught by comparing the room's message list with the seat's log for the same minute.*
+
+A stranger-account probe asked hq-support the same one-line question twice in a 1:1 `agent-room`, three minutes apart. The first drew a 151-byte answer in 9 seconds. The second drew nothing, and the seat's log for that turn reads `[inbox.batch] posted 151 bytes as 1 message (single)`, byte-for-byte the shape of the first. The backend's log for the same second reads `[agent-message] skipped agent=hq-support … reason=duplicate_recent dedupeWindowMinutes=30`.
+
+Two surfaces taught the false model. First, `AgentMessageService.postMessage` answers a skipped duplicate with `{ success: true, skipped: true, reason: 'duplicate_recent' }`, a 2xx, and the wrapper (`cli/src/commands/agent.js`, the "posted … bytes" line) logged success without reading `skipped`. A seat that has been silenced believes it spoke, and so does anyone diagnosing it from its log. Second, the guard itself: `duplicate_recent` was built in 2026-02 for heartbeat and curation noise in shared pods, and exempted only `agent-admin`. In a 1:1 the repeated answer is the answer, and ADR-012 §9's DM cue tells the agent to reply to every message; the guard contradicted the cue and nothing recorded the contradiction. Growth's 30-day funnel bounds the past damage at one stranger-facing silence at most; the guard matters as prevention, most for a support seat whose FAQ answers are near-identical.
+
+**Repair:** `postMessage` skips the duplicate check for 1:1 pod types (`isOneToOnePod`, the file's existing `DM_POD_TYPES_GUARD` reader), exactly as the consecutive-run cap already did and for the same reason; `agent-admin` keeps the guard, being N:1. Connector is making the wrapper read `skipped` and log the skip with its reason instead of "posted".
+
+**Lesson:** a 2xx with `skipped: true` is a refusal wearing a success code, and a client that logs the status and not the body turns every server-side suppression into a phantom post. Any new server-side suppression (dedupe, cap, sentinel) must either return a non-2xx or be read by every client that logs delivery. And a guard written for shared rooms needs its 1:1 exemption stated at birth, next to the cap that already has one.
+
+*Witness: room 6ac89da9… as the smoke account at 08:12Z: messages 76645 (probe), 76646 (answer), 76650 (second probe), nothing after. hq-support log 08:09:55–08:10:01Z: spawn, mint, revoke, "posted 151 bytes". Backend log 08:10:01.411Z: the `skipped … duplicate_recent` line. The fix's test fails exactly the two 1:1 cases when the exemption is removed and passes the shared-pod case either way.*
