@@ -1330,13 +1330,9 @@
       "modelOpus": "Opus — strongest reasoning",
       "modelSonnet": "Sonnet — balanced",
       "modelHaiku": "Haiku — fastest, cheapest",
-      "modelCodexSol": "GPT-6-Sol — strongest coding",
-      "modelCodexSol61": "GPT-6.1-Sol — newest Sol",
-      "modelCodexLuna": "GPT-6-Luna — balanced",
-      "modelCodexAstra": "GPT-6-Astra — frontier",
       "modelHintAuto": "Leave both adapter and model on default to use whatever that computer already prefers.",
       "modelHintClaude": "Claude aliases stay stable across Claude Code releases. Uses that computer's own Claude login.",
-      "modelHintCodex": "Codex model ids come from the Codex CLI catalog. Uses that computer's own Codex login."
+      "modelHintCodex": "Suggestions only; the Codex CLI model catalog on that machine determines which slugs work. Uses that computer's own Codex login."
     },
     "actions": {
       "install": "Install + generate token",

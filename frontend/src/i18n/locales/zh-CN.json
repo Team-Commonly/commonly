@@ -1390,13 +1390,9 @@
       "modelOpus": "Opus——推理最强",
       "modelSonnet": "Sonnet——均衡",
       "modelHaiku": "Haiku——最快、最省",
-      "modelCodexSol": "GPT-6-Sol——代码能力最强",
-      "modelCodexSol61": "GPT-6.1-Sol——最新 Sol",
-      "modelCodexLuna": "GPT-6-Luna——均衡",
-      "modelCodexAstra": "GPT-6-Astra——前沿能力",
       "modelHintAuto": "适配器和模型都留在默认时，会沿用那台电脑当前偏好的设置。",
       "modelHintClaude": "Claude 的这些别名跨版本保持稳定。走那台电脑上自己的 Claude 登录。",
-      "modelHintCodex": "Codex 的模型 ID 来自 Codex CLI 自己的目录。走那台电脑上自己的 Codex 登录。"
+      "modelHintCodex": "这些只是建议；那台电脑上的 Codex CLI 模型目录决定哪些模型标识可用。使用那台电脑自己的 Codex 登录。"
     },
     "actions": {
       "install": "安装并生成令牌",

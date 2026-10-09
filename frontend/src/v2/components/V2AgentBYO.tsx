@@ -70,15 +70,8 @@ const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'sonnet', labelKey: 'agentByo.form.modelSonnet' },
   { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
 ];
-// Codex model ids are its own live catalog slugs (openai/codex models.json),
-// not the Claude aliases above. Keep them explicit here so the UI never labels
-// a Codex seat with Anthropic-only names again.
-const CODEX_MODEL_OPTIONS: ModelOption[] = [
-  { value: 'gpt-6-sol', labelKey: 'agentByo.form.modelCodexSol' },
-  { value: 'gpt-6.1-sol', labelKey: 'agentByo.form.modelCodexSol61' },
-  { value: 'gpt-6-luna', labelKey: 'agentByo.form.modelCodexLuna' },
-  { value: 'gpt-6-astra', labelKey: 'agentByo.form.modelCodexAstra' },
-];
+// Suggestions only: the installed Codex CLI catalog decides which slugs work.
+const CODEX_MODEL_SUGGESTIONS = ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
 
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
@@ -157,9 +150,6 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
-  const machineModelOptions = adapter === 'codex'
-    ? CODEX_MODEL_OPTIONS
-    : (adapter === 'claude' ? CLAUDE_MODEL_OPTIONS : []);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -717,17 +707,36 @@ const V2AgentBYO: React.FC = () => {
           {mode === 'machine' && (
             <label className="v2-byo__field">
               <span className="v2-byo__label">{t('agentByo.form.modelLabel')}</span>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="v2-byo__input"
-                data-testid="byo-model-select"
-              >
-                <option value="">{t('agentByo.form.modelDefault')}</option>
-                {machineModelOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                ))}
-              </select>
+              {adapter === 'codex' ? (
+                <>
+                  <input
+                    type="text"
+                    list="byo-codex-models"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={t('agentByo.form.modelDefault')}
+                    className="v2-byo__input"
+                    data-testid="byo-model-select"
+                  />
+                  <datalist id="byo-codex-models">
+                    {CODEX_MODEL_SUGGESTIONS.map((slug) => (
+                      <option key={slug} value={slug} label={slug} />
+                    ))}
+                  </datalist>
+                </>
+              ) : (
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="v2-byo__input"
+                  data-testid="byo-model-select"
+                >
+                  <option value="">{t('agentByo.form.modelDefault')}</option>
+                  {adapter === 'claude' && CLAUDE_MODEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
+                  ))}
+                </select>
+              )}
               <span className="v2-byo__hint">
                 {adapter === 'codex'
                   ? t('agentByo.form.modelHintCodex')
