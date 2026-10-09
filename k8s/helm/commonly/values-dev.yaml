@@ -356,3 +356,9 @@ backup:
 slack:
   oauth:
     enabled: true
+
+# Both commonly-dev-google-calendar-client-* secrets exist with a version
+# (created 2026-10-09 in the cluster project's Secret Manager).
+hostedMcp:
+  googleCalendar:
+    enabled: true

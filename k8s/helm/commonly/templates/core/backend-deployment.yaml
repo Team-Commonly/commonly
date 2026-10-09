@@ -369,6 +369,23 @@ spec:
               name: api-keys
               key: commonly-bot-runtime-token
 
+        # Google Calendar hosted-MCP client (pre-registered). The names are
+        # what hostedMcpClientConfigKeys('google-calendar') derives. Optional,
+        # like Slack's below: an instance with hostedMcp.googleCalendar off
+        # keeps starting, and the entry reads not_configured.
+        - name: GOOGLE_CALENDAR_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: google-calendar-client-id
+              optional: true
+        - name: GOOGLE_CALENDAR_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: google-calendar-client-secret
+              optional: true
+
         # Slack installable OAuth and per-workspace token encryption. Every
         # reference is optional so instances that have not enabled Slack's
         # OAuth ExternalSecret entries continue to start normally.
