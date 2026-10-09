@@ -5815,6 +5815,7 @@ body.modern-ui.v2-canvas {
 .v2-byo__hint {
   font-size: 12px;
   color: var(--v2-text-tertiary);
+  margin: 0;
 }
 /* §3 error — a white card with a border, ink text, no icon. The red fill was
    the pre-Signal shape: it read as a state of the page rather than a message
