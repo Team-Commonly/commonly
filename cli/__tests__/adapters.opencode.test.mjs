@@ -566,6 +566,10 @@ describe('opencode external provider config', () => {
             .toBe(expectedIgnore);
           expect(readFileSync(join(options.env.XDG_CONFIG_HOME, 'opencode', '.gitignore'), 'utf8'))
             .toBe(expectedIgnore);
+          const homeConfigDir = join(options.env.HOME, '.opencode');
+          expect(options.env.HOME).toContain('commonly-opencode-');
+          expect(options.env.HOME).not.toBe(seatRoot);
+          expect(existsSync(homeConfigDir)).toBe(false);
           const permission = config.permission;
           const providerConfig = config.provider.litellm;
           const tokenFile = providerConfig.options.apiKey.match(/^\{file:(.+)\}$/)[1];
@@ -876,10 +880,13 @@ describe('opencode adapter — spawn()', () => {
       await writeFile(keyFile, 'read-only-provider-key');
       await chmod(keyFile, 0o600);
       let loopbackPort;
+      let readOnlyConfigRoot;
       const spawn = makeSpawnImpl({
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/sandbox-exec');
           expect(args[0]).toBe('-p');
+          expect(options.env.HOME).toBe(join(readOnlyConfigRoot, 'home'));
+          expect(existsSync(join(options.env.HOME, '.opencode'))).toBe(false);
           const policy = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           expect(policy.permission.edit['*']).toBe('deny');
           expect(policy.permission.external_directory).toBe('deny');
@@ -903,6 +910,7 @@ describe('opencode adapter — spawn()', () => {
         _platform: 'darwin',
         _spawnImpl: spawn.impl,
         _wrapArgvWithSeatbelt: (argv, opts) => {
+          readOnlyConfigRoot = opts.mcpConfigDir;
           expect(opts.workspaceAccess).toBe('read');
           expect(opts.executablePath).toBe('/usr/local/bin/opencode');
           expect(opts.readOnlyPaths).toEqual([]);
@@ -911,6 +919,8 @@ describe('opencode adapter — spawn()', () => {
           const profile = buildSeatbeltProfile(opts);
           expect(profile).not.toContain(keyFile);
           expect(profile).not.toContain(operatorAuth);
+          const writableRules = profile.split(/\n\n+/).filter((rule) => rule.includes('file-write*'));
+          expect(writableRules.some((rule) => rule.includes(opts.mcpConfigDir))).toBe(false);
           expect(profile).toContain(`(allow network-outbound (remote tcp "localhost:${loopbackPort}"))`);
           expect(profile).not.toContain(`localhost:${loopbackPort === 65535 ? 1 : loopbackPort + 1}`);
           return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
@@ -925,6 +935,7 @@ describe('opencode adapter — spawn()', () => {
       const xdgData = join(root, 'operator-data');
       const seatRoot = join(root, 'opencode-state');
       const keyFile = join(root, 'provider-key');
+      let readOnlyConfigRoot;
       await mkdir(workspace, { recursive: true });
       await writeFile(keyFile, 'linux-provider-key');
       await chmod(keyFile, 0o600);
@@ -932,6 +943,10 @@ describe('opencode adapter — spawn()', () => {
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/bwrap');
           expect(args[0]).toBe('--test');
+          expect(options.env.HOME).toBe(join(readOnlyConfigRoot, 'home'));
+          expect(options.env.HOME).toContain('commonly-opencode-');
+          expect(options.env.HOME).not.toBe(seatRoot);
+          expect(existsSync(join(options.env.HOME, '.opencode'))).toBe(false);
           const policy = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           expect(policy.permission.edit['*']).toBe('allow');
         },
@@ -951,6 +966,7 @@ describe('opencode adapter — spawn()', () => {
         _platform: 'linux',
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         _wrapArgvWithBwrap: (argv, environment, opts) => {
+          readOnlyConfigRoot = opts.readOnlyPaths[0];
           expect(opts.workspacePath).toBe(workspace);
           expect(opts.readOnlyPaths).toEqual([
             expect.any(String), '/usr/local/bin/opencode', process.execPath,
@@ -958,6 +974,7 @@ describe('opencode adapter — spawn()', () => {
           expect(opts.readOnlyPaths).not.toContain(keyFile);
           expect(opts.readOnlyPaths).not.toContain(join(xdgData, 'opencode', 'auth.json'));
           expect(opts).not.toHaveProperty('loopbackNetworkPorts');
+          expect(environment.sandbox.filesystem['write-outside']).not.toContain(opts.readOnlyPaths[0]);
           expect(environment.sandbox.filesystem['write-outside']).toContain(seatRoot);
           return ['/usr/bin/bwrap', '--test', ...argv];
         },

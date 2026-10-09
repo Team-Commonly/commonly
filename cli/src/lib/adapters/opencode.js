@@ -769,9 +769,12 @@ export default {
     const configPath = join(tempDir, 'opencode.json');
     const configDir = join(tempDir, 'config-dir');
     const xdgConfig = join(tempDir, 'xdg-config');
-    // OpenCode initializes Path.config with mkdir and ensureGitignore during
-    // startup. Seatbelt grants this per-spawn tree read-only, so create both
-    // config roots and the exact ignore files it would otherwise write.
+    const home = isPublic ? join(tempDir, 'home') : null;
+    // OpenCode initializes its global and XDG config directories during
+    // startup, so create those roots and their ignore files before wrapping.
+    // Keep public HOME per-spawn, but leave $HOME/.opencode absent: OpenCode
+    // loads it after OPENCODE_CONFIG when present, which could persist config
+    // or MCP injection into later spawns.
     const xdgConfigDir = join(xdgConfig, 'opencode');
     await Promise.all([
       mkdir(configDir),
@@ -843,7 +846,7 @@ export default {
         dataHome: openCodeHome.dataHome,
         stateHome,
         cacheHome,
-        home: isPublic ? openCodeHome.root : null,
+        home,
         tempWork,
         credentialFile: credential?.path || null,
       });
