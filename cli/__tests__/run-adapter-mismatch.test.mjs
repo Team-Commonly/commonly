@@ -29,8 +29,18 @@ await jest.unstable_mockModule('os', () => {
   };
 });
 await jest.unstable_mockModule('../src/lib/api.js', () => ({ createClient: createClientMock }));
+await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
+  getAdapter: (name) => (['claude', 'codex', 'pi', 'opencode', 'stub'].includes(name)
+    ? { name, detect: async () => true }
+    : null),
+  listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'stub'],
+}));
 
-const { checkRunAdapterRequest, saveAgentToken, registerAgent } = await import('../src/commands/agent.js');
+const {
+  checkRunAdapterRequest,
+  saveAgentToken,
+  registerAgent,
+} = await import('../src/commands/agent.js');
 
 afterAll(() => fs.rmSync(homeTmpDir, { recursive: true, force: true }));
 
@@ -130,8 +140,86 @@ describe('agent run --adapter against an existing token file', () => {
     expect(createClientMock).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(stderr).toContain('OpenCode is not declared for this Commonly installation');
+    expect(stderr).toContain("Adapter 'opencode' is not declared for this Commonly installation");
     expect(stderr).toContain('commonly agent config byo-test --adapter opencode');
+  });
+
+  test('a failed installations read reports the read failure separately from a binding refusal', async () => {
+    saveAgentToken('byo-test', { ...record('pi'), instanceId: 'connect-page' });
+    createClientMock.mockReturnValueOnce({
+      get: jest.fn().mockRejectedValue(new Error('network unavailable')),
+    });
+
+    await expect(run()).rejects.toBe(exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
+    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderr).toContain('could not read the server-declared adapter: network unavailable');
+    expect(stderr).not.toContain("Adapter 'pi' is not declared");
+  });
+
+  test('a saved pi seat rechecks the server binding on every run', async () => {
+    saveAgentToken('byo-test', { ...record('pi'), instanceId: 'connect-page' });
+    const get = jest.fn().mockResolvedValue({
+      installations: [{
+        type: 'installation',
+        podId: 'pod-1',
+        instanceId: 'connect-page',
+        runtimeAdapter: null,
+      }],
+    });
+    createClientMock
+      .mockReturnValueOnce({ get })
+      // If the run-time check is removed, fail before a poll loop can start.
+      .mockImplementationOnce(() => { throw new Error('agent run reached its poll loop'); });
+
+    await expect(run()).rejects.toBe(exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
+    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderr).toContain("Adapter 'pi' is not declared for this Commonly installation");
+    expect(stderr).toContain('commonly agent config byo-test --adapter pi');
+  });
+
+  test('the env-token first run refuses pi before saving its token or spawning', async () => {
+    fs.rmSync(tokenPath, { force: true });
+    const oldToken = process.env.COMMONLY_AGENT_TOKEN;
+    const oldApiUrl = process.env.COMMONLY_API_URL;
+    process.env.COMMONLY_AGENT_TOKEN = 'cm_agent_test';
+    process.env.COMMONLY_API_URL = 'https://api.commonly.me';
+    const get = jest.fn().mockResolvedValue({
+      agentName: 'byo-test',
+      instanceId: 'connect-page',
+      installations: [{
+        type: 'installation',
+        podId: 'pod-1',
+        instanceId: 'connect-page',
+        status: 'active',
+        runtimeAdapter: null,
+      }],
+    });
+    createClientMock
+      .mockReturnValueOnce({ get })
+      // If bootstrap does not enforce the server binding, fail on the poll path.
+      .mockImplementationOnce(() => { throw new Error('agent run reached its poll loop'); });
+
+    try {
+      await expect(run('--adapter', 'pi')).rejects.toBe(exitSentinel);
+      expect(exitSentinel.code).toBe(1);
+      expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
+      expect(createClientMock).toHaveBeenCalledTimes(1);
+      expect(fs.existsSync(tokenPath)).toBe(false);
+      const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(stderr).toContain("Adapter 'pi' is not declared for this Commonly installation");
+      expect(stderr).toContain('commonly agent config byo-test --adapter pi');
+    } finally {
+      if (oldToken === undefined) delete process.env.COMMONLY_AGENT_TOKEN;
+      else process.env.COMMONLY_AGENT_TOKEN = oldToken;
+      if (oldApiUrl === undefined) delete process.env.COMMONLY_API_URL;
+      else process.env.COMMONLY_API_URL = oldApiUrl;
+      saveAgentToken('byo-test', record('claude'));
+    }
   });
 
   test('the option help tells the truth about an existing token file', () => {

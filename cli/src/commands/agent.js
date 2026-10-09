@@ -40,7 +40,11 @@ import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
-import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
+import {
+  ADAPTERS_WITH_DEFAULT_MCP,
+  ADAPTERS_WITH_GRANT_BROKER,
+  defaultMcpServers,
+} from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
@@ -129,7 +133,7 @@ export const deleteAgentToken = (name) => {
 // just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 
-/** Return the adapter declared for this exact installation by the server. */
+/** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
   if (!Array.isArray(installations) || !podId) return null;
   const expectedPodId = String(podId);
@@ -141,6 +145,30 @@ export const runtimeAdapterForInstallation = ({ installations, podId, instanceId
   ));
   const adapter = String(installation?.runtimeAdapter || '').trim().toLowerCase();
   return adapter || null;
+};
+
+/** Non-broker adapters need a server-resolved binding on env-token seats. */
+export const adapterRequiresServerBinding = (adapterName) => {
+  const adapter = String(adapterName || '').trim().toLowerCase();
+  return Boolean(adapter) && adapter !== 'stub' && !ADAPTERS_WITH_GRANT_BROKER.has(adapter);
+};
+
+/** Return the refusal message unless this installation declares the same adapter. */
+export const serverAdapterBindingRefusal = ({
+  adapterName,
+  agentName,
+  installations,
+  podId,
+  instanceId,
+} = {}) => {
+  const adapter = String(adapterName || '').trim().toLowerCase();
+  if (!adapterRequiresServerBinding(adapter)) return null;
+  if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
+  return [
+    `Adapter '${adapter}' is not declared for this Commonly installation.`,
+    `A pod owner must run commonly agent config ${agentName} --adapter ${adapter}`
+      + ` before this seat can use adapter '${adapter}'.`,
+  ].join(' ');
 };
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
@@ -229,17 +257,14 @@ export const bootstrapAgentRecordFromEnv = async ({
     log(`token belongs to '${agentName}', not '${name}' — using the token's identity`);
   }
 
-  if (adapterName === 'opencode'
-    && runtimeAdapterForInstallation({
-      installations: installs,
-      podId: primary?.podId,
-      instanceId: primary?.instanceId,
-    }) !== 'opencode') {
-    throw new Error(
-      `OpenCode is not declared for this Commonly installation. A pod owner must run `
-      + `commonly agent config ${agentName} --adapter opencode before this seat can use OpenCode.`,
-    );
-  }
+  const bindingRefusal = serverAdapterBindingRefusal({
+    adapterName,
+    agentName,
+    installations: installs,
+    podId: primary?.podId,
+    instanceId: primary?.instanceId,
+  });
+  if (bindingRefusal) throw new Error(bindingRefusal);
 
   return {
     agentName,
@@ -2774,7 +2799,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|opencode); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -2814,33 +2839,34 @@ Docs:
         process.exit(1);
       }
 
-      if (String(record.adapter || '').trim().toLowerCase() === 'opencode') {
-        try {
-          const identity = await createClient({
-            instance: record.instanceUrl,
-            token: record.runtimeToken,
-          }).get('/api/agents/runtime/installations');
-          const declaredAdapter = runtimeAdapterForInstallation({
-            installations: identity?.installations,
-            podId: record.podId,
-            instanceId: record.instanceId,
-          });
-          if (declaredAdapter !== 'opencode') {
-            throw new Error(
-              `OpenCode is not declared for this Commonly installation. A pod owner must run `
-              + `commonly agent config ${record.agentName} --adapter opencode before this seat can use OpenCode.`,
-            );
-          }
-        } catch (err) {
-          console.error(`${stamp()} [${name}] could not verify OpenCode authorization: ${err.message}`);
-          process.exit(1);
-        }
-      }
-
       const adapter = getAdapter(record.adapter);
       if (!adapter) {
         console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
         process.exit(1);
+      }
+
+      if (adapterRequiresServerBinding(adapter.name)) {
+        let identity;
+        try {
+          identity = await createClient({
+            instance: record.instanceUrl,
+            token: record.runtimeToken,
+          }).get('/api/agents/runtime/installations');
+        } catch (err) {
+          console.error(`${stamp()} [${name}] could not read the server-declared adapter: ${err.message}`);
+          process.exit(1);
+        }
+        const bindingRefusal = serverAdapterBindingRefusal({
+          adapterName: adapter.name,
+          agentName: record.agentName,
+          installations: identity?.installations,
+          podId: record.podId,
+          instanceId: record.instanceId,
+        });
+        if (bindingRefusal) {
+          console.error(`${stamp()} [${name}] ${bindingRefusal}`);
+          process.exit(1);
+        }
       }
 
       // THE line to stamp, not just one of them. It is the first line of every

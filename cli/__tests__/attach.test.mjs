@@ -35,8 +35,10 @@ const {
   bootstrapAgentRecordFromEnv,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
   runtimeAdapterForInstallation,
+  adapterRequiresServerBinding,
   resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
+const { ADAPTERS_WITH_GRANT_BROKER } = await import('../src/lib/default-environment.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
   test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
@@ -491,13 +493,19 @@ describe('bootstrapAgentRecordFromEnv', () => {
     ],
   };
 
-  const makeRegistry = ({ claudeFound = true, codexFound = true, opencodeFound = false } = {}) => ({
+  const makeRegistry = ({
+    claudeFound = true,
+    codexFound = true,
+    piFound = false,
+    opencodeFound = false,
+  } = {}) => ({
     getAdapter: (n) => ({
       claude: { name: 'claude', detect: async () => (claudeFound ? { path: '/bin/claude', version: '1' } : null) },
       codex: { name: 'codex', detect: async () => (codexFound ? { path: '/bin/codex', version: '1' } : null) },
+      pi: { name: 'pi', detect: async () => (piFound ? { path: '/bin/pi', version: '1' } : null) },
       opencode: { name: 'opencode', detect: async () => (opencodeFound ? { path: '/bin/opencode', version: '1' } : null) },
     }[n] || null),
-    listAdapterNames: () => ['stub', 'claude', 'codex', 'opencode'],
+    listAdapterNames: () => ['stub', 'claude', 'codex', 'pi', 'opencode'],
   });
 
   const makeFactory = (response = identityResponse) => {
@@ -598,6 +606,57 @@ describe('bootstrapAgentRecordFromEnv', () => {
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
     })).rejects.toThrow(/pod owner must run commonly agent config smoke-agent --adapter opencode/);
+  });
+
+  test('an explicit pi bootstrap requires a matching server declaration', async () => {
+    const declared = makeFactory({
+      agentName: 'smoke-agent',
+      instanceId: 'default',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: 'PI',
+      }],
+    });
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: declared,
+      adapterRegistry: makeRegistry({ piFound: true }),
+      adapterOverride: 'pi',
+    });
+    expect(record.adapter).toBe('pi');
+
+    const undeclared = makeFactory();
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: undeclared,
+      adapterRegistry: makeRegistry({ piFound: true }),
+      adapterOverride: 'pi',
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent config smoke-agent --adapter pi/);
+
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, piFound: true }),
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent config smoke-agent --adapter pi/);
+  });
+
+  test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {
+    expect(adapterRequiresServerBinding('pi')).toBe(true);
+    expect(adapterRequiresServerBinding('opencode')).toBe(true);
+    expect(adapterRequiresServerBinding('claude')).toBe(false);
+    expect(adapterRequiresServerBinding('codex')).toBe(false);
+    expect(adapterRequiresServerBinding('stub')).toBe(false);
+
+    const futureBrokerAdapter = 'task184-test-adapter';
+    ADAPTERS_WITH_GRANT_BROKER.add(futureBrokerAdapter);
+    try {
+      expect(adapterRequiresServerBinding(futureBrokerAdapter)).toBe(false);
+    } finally {
+      ADAPTERS_WITH_GRANT_BROKER.delete(futureBrokerAdapter);
+    }
   });
 
   test('reads the declared adapter only from the matching active installation', () => {
