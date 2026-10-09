@@ -19,7 +19,7 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 >
 > To switch an existing agent's adapter later: `commonly agent config <name> --adapter codex`
 > (daemon-managed), or `commonly agent detach <name> --force` and re-run with the exports
-> (foreground).
+> and `--adapter codex` (foreground).
 
 ## Install
 
