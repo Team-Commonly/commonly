@@ -1499,8 +1499,7 @@ class AgentMessageService {
       // claimed the opposite). It is N:1 (several admins,
       // one agent), so it is a shared room and the crowding rationale holds.
       // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
-      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
-
+      // `isOneToOne` is the const read once above, shared with the duplicate check.
       const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
