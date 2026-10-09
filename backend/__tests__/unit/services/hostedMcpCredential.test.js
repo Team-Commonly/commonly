@@ -293,12 +293,13 @@ describe('the gates before any refresh', () => {
     // ships — the shape a row takes when its entry leaves the catalogue (§3),
     // where the fence must refuse rather than refresh against a guessed
     // authorization server.
-    const unknown = stale({ entryId: 'atlassian' });
+    // A placeholder nothing ships (this test used `atlassian` until TASK-185 shipped it).
+    const unknown = stale({ entryId: 'not-a-shipped-entry' });
     const withRealLookup = harness({ row: unknown, entryFor: undefined });
     delete withRealLookup.deps.entryFor;
     const error = await refusal(credentialFor(unknown, withRealLookup.deps));
     expect(error.code).toBe('connection_mismatch');
-    expect(error.message).toBe('hosted-mcp row names no known entry (atlassian)');
+    expect(error.message).toBe('hosted-mcp row names no known entry (not-a-shipped-entry)');
 
     const control = harness({ row: stale() });
     await expect(credentialFor(stale(), control.deps)).resolves.toMatchObject({ token: 'new-access' });

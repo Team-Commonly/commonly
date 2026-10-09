@@ -259,11 +259,12 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
   });
 
   it('refuses with provider_revoke_failed and keeps the row, its refs and its grants state', async () => {
-    // `atlassian` is not in the shipped catalogue, so this is the row whose entry
+    // `not-a-shipped-entry` is not in the shipped catalogue (this test used
+    // `atlassian` until TASK-185 shipped it), so this is the row whose entry
     // a PR dropped or renamed — the one §9 says must keep its refusal, because a
     // removal that finishes has to hand the person a page and this row holds no
     // copy of one.
-    const connection = await seedHostedRow({ entryId: 'atlassian' });
+    const connection = await seedHostedRow({ entryId: 'not-a-shipped-entry' });
     const root = grantFixture({
       connectionId: String(connection._id),
       installationId: 'install-none-hosted',
