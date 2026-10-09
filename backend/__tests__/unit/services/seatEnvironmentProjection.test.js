@@ -5,8 +5,8 @@
  * list is built from it and the grant read now answers from it, so a silent
  * change here reaches both surfaces at once. The tests below pin the parts a
  * refactor can break without any route turning red: the composite key, the
- * identity normalisation, the owner scope, first-declaration-wins, and the
- * placeholder-only env allow-list that keeps the daemon-token boundary.
+ * identity normalisation, the owner scope, first-declaration-wins, the
+ * placeholder-only MCP env allow-list, and the host-local provider boundary.
  */
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -145,6 +145,11 @@ describe('projectSeatEnvironments', () => {
         environment: {
           version: 1,
           model: 'claude-opus-5',
+          provider: {
+            id: 'litellm',
+            baseURL: 'https://llm.example.test/v1',
+            keyFile: '/Users/kai/.config/commonly/llm-key',
+          },
           sandbox: { mode: 'workspace', trust: 'internal', network: { policy: 'restricted' } },
           mcp: [{
             name: 'commonly',
@@ -168,6 +173,8 @@ describe('projectSeatEnvironments', () => {
     // A header that is not the broker's own projection is dropped, and the
     // literal value never reaches the daemon-token boundary.
     expect(entry.environment.mcp[0].headers).toEqual({ Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' });
-    expect(JSON.stringify(entry)).not.toMatch(/ghp_|X-Other/);
+    // `provider.keyFile` belongs to the attaching host, never the server row.
+    expect(entry.environment.provider).toBeUndefined();
+    expect(JSON.stringify(entry)).not.toMatch(/ghp_|X-Other|llm-key/);
   });
 });

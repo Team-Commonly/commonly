@@ -7,7 +7,8 @@
  * by two different fields, and they can disagree: the grant arrives in `mcp[]`
  * while confinement lives in `sandbox`. The adapters are the enforcing layers
  * (`cli/src/lib/adapters/claude.js` — Seatbelt/`--setting-sources`/the deny
- * list only inside its confined branch — and `codex.js`), and for
+ * list only inside its confined branch — `codex.js`, and `opencode.js` with
+ * Seatbelt on macOS or bwrap on Linux), and for
  * daemon-provisioned seats the baseline #1754 derives at the daemon.
  *
  * This predicate mirrors the part of their rule that is HOST-INDEPENDENT,
@@ -23,6 +24,10 @@
  * and is not visible from an AgentInstallation row. Refusing it here would
  * refuse the working path.
  *
+ * The server also refuses a named adapter absent from CONFINING_ADAPTERS,
+ * even when the adapter has a local sandbox. OpenCode remains absent until its
+ * public enforcement is reviewed for server-side broker admission.
+ *
  * Two further cases ARE host-independent, so they are decided here as well
  * (Vera 69810):
  *
@@ -37,11 +42,11 @@
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
  *    nowhere else in `cli/src`, so a seat declaring one fails every host the
- *    same way. Both adapters implement {workspace, read-only}, and claude adds
- *    `bwrap` for Linux — a wider set, not a narrower one, so the server cannot
- *    refuse anything a host would have confined. A mode that is not a string
- *    belongs here too: every adapter compares it with `===` against a string,
- *    so `['bwrap']` confines nothing even though it stringifies to a mode that
+ *    same way. Claude and Codex implement {workspace, read-only}; Claude adds
+ *    `bwrap` for Linux. OpenCode implements the same modes locally but is not
+ *    admitted to this server's map yet. A mode that is not a string belongs
+ *    here too: every adapter compares it with `===` against a string, so
+ *    `['bwrap']` confines nothing even though it stringifies to a mode that
  *    does.
  */
 
@@ -56,12 +61,6 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
   internal: 'public',
 });
 
-/**
- * Adapters that cannot confine a seat on any host — the adapter, not the
- * declaration, is the host-independent fact. Exact match mirrors how the cli
- * keys its adapter registry; an unrecognised adapter name is not pi, and a
- * record carrying one cannot spawn a pi seat either.
- */
 /**
  * Adapters known to confine a public seat, and the modes each one enforces.
  * This is an ALLOWLIST, inverted from a denylist on 2026-10-09: the denylist
@@ -81,8 +80,12 @@ export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', '
 
 /**
  * Runtime KINDS a row may carry in `runtime.runtimeType` that name no adapter:
- * the daemon decides those (claude or codex, never pi), which the header above
- * makes load-bearing. The set mirrors `CLOUD_RUNTIME_TYPES` (moltbot, internal,
+ * the daemon resolves those (claude or codex, never pi), which the header above
+ * makes load-bearing. A Connect-page env-token seat still projects as the known
+ * `webhook` runtime kind, so the server cannot infer a local adapter from this
+ * field; `agent run` requires a server-declared binding for every non-broker
+ * adapter (except the test stub) before spawning. The set mirrors `CLOUD_RUNTIME_TYPES`
+ * (moltbot, internal,
  * native, managed-agents) plus the pure-BYO kinds `isCloudRuntime` names
  * (webhook, claude-code) and the values the install paths write (hosted,
  * local-cli, wrapper); the predicate module stays a leaf, so the mirror is
@@ -120,6 +123,21 @@ export const normalizeAdapter = (adapter: unknown): string | null => (
 export const declaredAdapter = (runtime: unknown): string | null => {
   const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
   return normalizeAdapter(row?.adapter) ?? normalizeAdapter(row?.runtimeType);
+};
+
+/**
+ * Resolve only an adapter binding from a projected runtime. Runtime kinds such
+ * as `webhook` are daemon-decided and do not identify the local CLI adapter;
+ * adapter-shaped runtimeType values are the legacy binding for attached seats.
+ * Keep this resolution shared with the grant-broker predicate and the runtime
+ * installations projection so the CLI sees the same adapter the server judges.
+ */
+export const adapterForRuntimeBinding = (runtime: unknown): string | null => {
+  const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
+  const explicit = normalizeAdapter(row?.adapter);
+  if (explicit) return explicit;
+  const viaType = normalizeAdapter(row?.runtimeType);
+  return viaType && !RUNTIME_KINDS.has(viaType) ? viaType : null;
 };
 
 /**
@@ -167,24 +185,22 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  * and `:688` writes `config.runtime` as `{runtimeType, host: 'byo'}` — so a
  * predicate reading `adapter` alone admitted exactly the seat it exists to
  * refuse (Wren, TASK-175 12:17Z). A row naming NEITHER field stays
- * daemon-decided: undeclared, the daemon resolves only claude or codex, never
- * pi, so refusing there would refuse working claude seats.
+ * daemon-decided for the daemon: it resolves claude or codex, never pi, so
+ * refusing that server-side case would refuse working claude seats. A local
+ * env-token seat on a known `webhook` runtime is not distinguishable here; its
+ * `agent run` path requires the server-declared adapter before it can spawn pi.
  *
  * `null` means "not refused here" — either the declaration is confinable, or it
  * declares no sandbox block at all and the daemon decides.
  *
  * `runtime` is the seat's projected runtime (`config.runtime`), which is where
- * the adapter is known.
+ * the adapter is known when the row carries an adapter-shaped runtime type or
+ * an explicit adapter declaration.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  // An explicit `runtime.adapter` always names an adapter, so it is judged as
-  // declared, unknown names included. The `runtimeType` fallback is judged
-  // UNLESS it is a known runtime kind (daemon-decided); an adapter-shaped value
-  // the server does not recognise fails closed below, with no server edit.
-  const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
-  const explicit = normalizeAdapter(row?.adapter);
-  const viaType = normalizeAdapter(row?.runtimeType);
-  const adapter = explicit ?? (viaType && !RUNTIME_KINDS.has(viaType) ? viaType : null);
+  // Explicit adapters always win; adapter-shaped runtimeType values are the
+  // fallback binding. Known runtime kinds remain daemon-decided.
+  const adapter = adapterForRuntimeBinding(runtime);
   if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
