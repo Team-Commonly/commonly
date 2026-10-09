@@ -577,9 +577,12 @@ const V2AgentBYO: React.FC = () => {
   // direction only; this is the one that answers @mentions. The CLI-install
   // line rides INSIDE the snippet: it used to live in a footnote on the
   // previous screen, so first-time users hit "command not found" one step
-  // after we stopped watching (#887 class).
+  // after we stopped watching (#887 class). It has to be an EXECUTABLE line,
+  // not a shell comment: until 2026-10-09 it was `# install …: npm i -g …`,
+  // so a whole-snippet paste skipped the install and hit the same
+  // "command not found" on the last line (sprint-review's finding on #2102).
   const listenSnippet = issued
-    ? `# install or update the CLI first: ${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    ? `${CLI_INSTALL_COMMAND}   # install or update the CLI first\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
     : '';
 
   const cursorSnippet = issued
