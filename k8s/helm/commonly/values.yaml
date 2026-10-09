@@ -43,6 +43,17 @@ slack:
   oauth:
     enabled: false
 
+# Google Calendar's hosted-MCP entry uses a pre-registered OAuth client
+# (backend/integrations/hostedMcp/googleCalendar.ts). The backend reads
+# GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET, the names
+# hostedMcpClientConfigKeys('google-calendar') derives. Same gating rule as
+# Slack: create both `commonly-dev-google-calendar-client-*` secrets, each with
+# an enabled version, before enabling this in an environment. Until then the
+# entry reads not_configured and the Tools page offers no Connect.
+hostedMcp:
+  googleCalendar:
+    enabled: false
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true
