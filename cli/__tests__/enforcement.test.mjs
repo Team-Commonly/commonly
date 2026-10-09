@@ -549,6 +549,54 @@ describe('deliverChatReply', () => {
     });
   });
 
+  // hq-support, 2026-10-09 08:10Z: the server answered `{ success: true,
+  // skipped: true, reason: 'duplicate_recent' }` and the wrapper logged
+  // "posted 151 bytes as 1 message (single)". Nothing had reached the pod.
+  test('a normal-return skip is not recorded as a single-message delivery', async () => {
+    const post = jest.fn().mockResolvedValue({
+      success: true,
+      skipped: true,
+      reason: 'duplicate_recent',
+      duplicate: { id: 'msg-earlier', createdAt: '2026-10-09T07:55:29.000Z', dedupeWindowMinutes: 30 },
+    });
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text: 'short answer' });
+
+    expect(res).toEqual({
+      mode: 'skipped',
+      messages: 0,
+      attemptedMessages: 1,
+      skipped: true,
+      reason: 'duplicate_recent',
+      duplicate: { id: 'msg-earlier', dedupeWindowMinutes: 30 },
+    });
+  });
+
+  test('a skip without a duplicate record carries only its reason', async () => {
+    const post = jest.fn().mockResolvedValue({ success: true, skipped: true, reason: 'silent_or_empty' });
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text: 'short answer' });
+    expect(res).toEqual({
+      mode: 'skipped', messages: 0, attemptedMessages: 1, skipped: true, reason: 'silent_or_empty',
+    });
+  });
+
+  test('a split reply stops at a skipped chunk and reports only delivered chunks', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: 'duplicate_recent', duplicate: { id: 'm-2', dedupeWindowMinutes: 30 } })
+      .mockResolvedValueOnce({ success: true });
+    const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}\n\n${'c'.repeat(390)}`;
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text });
+    expect(res).toEqual({
+      mode: 'skipped',
+      messages: 1,
+      attemptedMessages: 3,
+      skipped: true,
+      reason: 'duplicate_recent',
+      duplicate: { id: 'm-2', dedupeWindowMinutes: 30 },
+    });
+    expect(post).toHaveBeenCalledTimes(2); // the third chunk is never attempted
+  });
+
   test('a split-sized reply posts its chunks in order', async () => {
     const post = jest.fn().mockResolvedValue({});
     const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}`;

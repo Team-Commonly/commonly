@@ -465,6 +465,66 @@ describe('performRun', () => {
     expect(onError.mock.calls[0][0].message).toContain(guidance);
   });
 
+  test('a normal-return skip is logged as a skip and acked, never as a posted reply', async () => {
+    // hq-support, 2026-10-09 08:10Z: the post route answered 200 with
+    // { success: true, skipped: true, reason: 'duplicate_recent' } and the
+    // wrapper logged "posted 151 bytes as 1 message (single)". Nothing had
+    // reached the pod, so the seat looked like it spoke when it was silent.
+    const lines = [];
+    const mockGet = jest.fn().mockResolvedValue({ events: [makeEvent({ _id: 'evt-dup' })] });
+    const mockPost = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/pods/pod-abc/messages') {
+        return {
+          success: true,
+          skipped: true,
+          reason: 'duplicate_recent',
+          duplicate: { id: 'msg-earlier', createdAt: '2026-10-09T07:55:29.000Z', dedupeWindowMinutes: 30 },
+        };
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const onError = jest.fn();
+    const spawn = jest.fn(async () => ({ text: 'Thanks, that answers it.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      onError,
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    const skipLine = lines.find((line) => line.includes('server skipped the post'));
+    expect(skipLine).toContain('duplicate_recent');
+    expect(skipLine).toContain('30 min window');
+    expect(skipLine).toContain('duplicate of msg-earlier');
+    expect(skipLine).toContain('nothing reached the pod');
+    expect(lines.some((line) => /posted \d+ bytes as/.test(line))).toBe(false);
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-dup/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'duplicate_recent',
+          details: { mode: 'skipped', postedMessages: 0, attemptedMessages: 1 },
+        },
+      },
+    );
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'agent_delivery_skipped',
+      reason: 'duplicate_recent',
+      postedMessages: 0,
+      attemptedMessages: 1,
+    }));
+  });
+
   test('first_contact event is forwarded to the adapter like a mention', async () => {
     const events = [makeEvent({
       _id: 'evt-first-contact',

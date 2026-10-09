@@ -687,6 +687,41 @@ export const deliverChatReply = async ({
       ? { consecutive: response.consecutive }
       : {}),
   });
+  // The same route also answers HTTP 200 with `{ success: true, skipped: true,
+  // reason }` when it decided not to create a row: a duplicate inside the dedupe
+  // window, a silent or empty body, a heartbeat it keeps to itself. The wrapper
+  // used to read that as a delivery and log "posted … (single)" while nothing
+  // reached the pod (hq-support, 2026-10-09 08:10Z), so a silent seat could not
+  // be read from its own log. A skip is a completed request and not a delivery,
+  // exactly like a refusal, and it stops a sequence the same way.
+  const skipped = (response, messages, attemptedMessages) => {
+    const duplicate = response.duplicate && typeof response.duplicate === 'object'
+      ? response.duplicate
+      : null;
+    return {
+      mode: 'skipped',
+      messages,
+      attemptedMessages,
+      skipped: true,
+      reason: response.reason || 'message_skipped',
+      ...(duplicate
+        ? {
+          duplicate: {
+            ...(duplicate.id ? { id: String(duplicate.id) } : {}),
+            ...(typeof duplicate.dedupeWindowMinutes === 'number'
+              ? { dedupeWindowMinutes: duplicate.dedupeWindowMinutes }
+              : {}),
+          },
+        }
+        : {}),
+    };
+  };
+  const undelivered = (response) => response?.refused === true || response?.skipped === true;
+  const nonDelivery = (response, messages, attemptedMessages) => (
+    response?.refused === true
+      ? refused(response, messages, attemptedMessages)
+      : skipped(response, messages, attemptedMessages)
+  );
   // An atomic unit (a fenced block, an unbreakable word-run) can exceed the
   // limit by construction — splitForChat keeps it whole rather than breaking
   // its rendering. The tone contract's own rule covers it: over ~800 chars of
@@ -696,7 +731,7 @@ export const deliverChatReply = async ({
   const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
   if (chunks.length <= 1 && !hasIndivisibleOversize) {
     const response = await postMessage({ content: chunks[0] ?? text });
-    if (response?.refused === true) return refused(response, 0, 1);
+    if (undelivered(response)) return nonDelivery(response, 0, 1);
     return { mode: 'single', messages: 1 };
   }
   if (chunks.length <= maxChunks && !hasIndivisibleOversize) {
@@ -704,7 +739,7 @@ export const deliverChatReply = async ({
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
       const response = await postMessage({ content: chunk }); // in order, so the reply reads top-down
-      if (response?.refused === true) return refused(response, messages, chunks.length);
+      if (undelivered(response)) return nonDelivery(response, messages, chunks.length);
       messages += 1;
     }
     return { mode: 'split', messages };
@@ -724,7 +759,7 @@ export const deliverChatReply = async ({
     let posted = 0;
     try {
       const rootRes = await postMessage({ content: chunks[0] });
-      if (rootRes?.refused === true) return refused(rootRes, 0, chunks.length);
+      if (undelivered(rootRes)) return nonDelivery(rootRes, 0, chunks.length);
       posted = 1;
       // The runtime route answers `res.json(result)` with the created row on
       // `result.message`. Accept either id field; refuse to guess if neither
@@ -736,7 +771,7 @@ export const deliverChatReply = async ({
       for (const chunk of chunks.slice(1)) {
         // eslint-disable-next-line no-await-in-loop
         const response = await postMessage({ content: chunk, threadRootId: String(rootId) });
-        if (response?.refused === true) return refused(response, posted, chunks.length);
+        if (undelivered(response)) return nonDelivery(response, posted, chunks.length);
         posted += 1;
       }
       return { mode: 'thread', messages: chunks.length, threadRootId: String(rootId) };
@@ -751,7 +786,7 @@ export const deliverChatReply = async ({
         for (const chunk of chunks.slice(posted)) {
           // eslint-disable-next-line no-await-in-loop
           const response = await postMessage({ content: chunk });
-          if (response?.refused === true) return refused(response, posted, chunks.length);
+          if (undelivered(response)) return nonDelivery(response, posted, chunks.length);
           posted += 1;
         }
         return { mode: 'thread-fallback', messages: chunks.length };
@@ -777,7 +812,7 @@ export const deliverChatReply = async ({
       ? chunks[0]
       : '(reply too large for chat — attached in full)';
     const response = await postMessage({ content: `${lead}\n\n${directive}` });
-    if (response?.refused === true) return refused(response, 0, 1);
+    if (undelivered(response)) return nonDelivery(response, 0, 1);
     return { mode: 'attach', messages: 1 };
   } catch (err) {
     log(`attach fallback failed (${err.message}) — posting ${chunks.length} split messages instead`);
@@ -785,7 +820,7 @@ export const deliverChatReply = async ({
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
       const response = await postMessage({ content: chunk });
-      if (response?.refused === true) return refused(response, messages, chunks.length);
+      if (undelivered(response)) return nonDelivery(response, messages, chunks.length);
       messages += 1;
     }
     return { mode: 'split-fallback', messages };
