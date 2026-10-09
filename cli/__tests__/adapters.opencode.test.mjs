@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -31,7 +32,16 @@ const {
   qualifiedProviderModel,
   resolveProviderKeyFile,
   startProviderProxy,
+  ALLOW_UNTESTED_OPENCODE_VERSION_ENV,
+  TESTED_OPENCODE_VERSION,
 } = await import('../src/lib/adapters/opencode.js');
+
+beforeEach(() => {
+  spawnSyncMock.mockReset();
+  spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+    ? { status: 0, stdout: `OpenCode ${TESTED_OPENCODE_VERSION}\n` }
+    : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+});
 
 const EXPECTED_DISABLED_ENV = [
   'OPENCODE_DISABLE_CLAUDE_CODE',
@@ -84,6 +94,18 @@ const withTemp = async (fn) => {
   }
 };
 
+const withProcessEnv = async (name, value, fn) => {
+  const previous = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  try {
+    await fn();
+  } finally {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  }
+};
+
 const requestProxy = (port, requestPath, headers) => new Promise((resolve, reject) => {
   const request = httpRequest({
     hostname: '127.0.0.1', port, path: requestPath, method: 'POST', headers,
@@ -96,8 +118,6 @@ const requestProxy = (port, requestPath, headers) => new Promise((resolve, rejec
 });
 
 describe('opencode adapter — detect()', () => {
-  beforeEach(() => spawnSyncMock.mockReset());
-
   test('finds opencode and reports its version', async () => {
     spawnSyncMock.mockImplementation((cmd) => (cmd === 'which'
       ? { status: 0, stdout: '/opt/homebrew/bin/opencode\n' }
@@ -735,17 +755,204 @@ describe('opencode adapter — spawn()', () => {
         },
       });
       const wrap = jest.fn(() => { throw new Error('trusted seat must not enter public wrapper'); });
-      await opencode.spawn('trusted turn', {
-        cwd: workspace,
-        env: { PATH: process.env.PATH },
-        environment: { mcp: [] },
-        agentName: 'trusted-agent',
-        _binaryPath: '/usr/local/bin/opencode',
-        _platform: 'darwin',
-        _spawnImpl: spawn.impl,
-        _wrapArgvWithSeatbelt: wrap,
+      const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await opencode.spawn('trusted turn', {
+          cwd: workspace,
+          env: { PATH: process.env.PATH },
+          environment: { mcp: [] },
+          agentName: 'trusted-agent',
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _spawnImpl: spawn.impl,
+          _wrapArgvWithSeatbelt: wrap,
+        });
+        expect(spawn.calls).toHaveLength(1);
+        expect(wrap).not.toHaveBeenCalled();
+        expect(spawnSyncMock).toHaveBeenCalledWith(
+          '/usr/local/bin/opencode', ['--version'], expect.objectContaining({
+            encoding: 'utf8', timeout: 5000, env: expect.any(Object),
+          }),
+        );
+        expect(warning).not.toHaveBeenCalled();
+      } finally {
+        warning.mockRestore();
+      }
+    });
+  });
+
+  test('a trusted seat warns on a newer version and still spawns', async () => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, '1', async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        await mkdir(workspace, { recursive: true });
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const spawn = makeSpawnImpl({ onCall: (_cmd, _args, options) => {
+          expect(options.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV]).toBeUndefined();
+        } });
+        try {
+          await opencode.spawn('trusted turn', {
+            cwd: workspace,
+            env: { PATH: process.env.PATH, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1' },
+            environment: { mcp: [] },
+            _binaryPath: '/usr/local/bin/opencode',
+            _spawnImpl: spawn.impl,
+          });
+          expect(spawn.calls).toHaveLength(1);
+          expect(warning).toHaveBeenCalledWith(
+            '[opencode] installed OpenCode 1.19.0 is newer than smoke-tested 1.18.35; trusted seat continues',
+          );
+        } finally {
+          warning.mockRestore();
+        }
       });
-      expect(wrap).not.toHaveBeenCalled();
+    });
+  });
+
+  test.each([
+    {
+      description: 'older',
+      result: { status: 0, stdout: 'OpenCode 1.18.0\n' },
+      message: /installed OpenCode 1\.18\.0 is older than smoke-tested 1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'unavailable',
+      result: { status: 1, stdout: '', stderr: 'version command failed' },
+      message: /installed OpenCode version is unknown.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+  ])('a public seat refuses an $description version before creating state or spawning', async ({
+    result,
+    message,
+  }) => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        const seatRoot = join(root, 'seat-state');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? result
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const spawn = makeSpawnImpl();
+        await expect(opencode.spawn('public turn', {
+          cwd: workspace,
+          env: { PATH: process.env.PATH },
+          environment: {
+            model: 'test-model',
+            provider: {
+              id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile,
+            },
+            sandbox: { trust: 'public', mode: 'workspace' },
+            mcp: [],
+          },
+          agentName: 'public-version-gate-seat',
+          _opencodeHomeRoot: seatRoot,
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _spawnImpl: spawn.impl,
+        })).rejects.toThrow(message);
+        expect(spawn.calls).toHaveLength(0);
+        expect(existsSync(seatRoot)).toBe(false);
+      });
+    });
+  });
+
+  test('a public seat cannot receive the version override through seat context', async () => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const spawn = makeSpawnImpl();
+        await expect(opencode.spawn('public turn', {
+          cwd: workspace,
+          env: { PATH: process.env.PATH, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1' },
+          environment: {
+            [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1',
+            model: 'test-model',
+            provider: {
+              id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile,
+            },
+            sandbox: { trust: 'public', mode: 'workspace' },
+            mcp: [],
+          },
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _spawnImpl: spawn.impl,
+        })).rejects.toThrow(/refuse to run.*1\.19\.0.*1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
+        expect(spawn.calls).toHaveLength(0);
+        expect(validateEnvironmentSpec({
+          version: 1, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1',
+        })).toMatchObject({ ok: false, errors: [expect.stringContaining('unknown top-level key')] });
+      });
+    });
+  });
+
+  test.each([
+    { value: '1', allow: true, outcome: 'honored' },
+    { value: 'true', allow: false, outcome: 'rejected' },
+  ])('a host-process override with value "$value" is $outcome', async ({
+    value,
+    allow,
+  }) => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, value, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const spawn = makeSpawnImpl({ onCall: (_cmd, _args, options) => {
+          expect(options.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV]).toBeUndefined();
+        } });
+        const spawnOptions = {
+          cwd: workspace,
+          env: { PATH: process.env.PATH, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: value },
+          environment: {
+            model: 'test-model',
+            provider: {
+              id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile,
+            },
+            sandbox: { trust: 'public', mode: 'workspace' },
+            mcp: [],
+          },
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv],
+          _spawnImpl: spawn.impl,
+        };
+        try {
+          if (allow) {
+            await opencode.spawn('public turn', spawnOptions);
+            expect(spawn.calls).toHaveLength(1);
+            expect(warning).toHaveBeenCalledWith(
+              '[opencode] installed OpenCode 1.19.0 is newer than smoke-tested 1.18.35; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
+            );
+          } else {
+            await expect(opencode.spawn('public turn', spawnOptions)).rejects.toThrow(
+              /refuse to run.*1\.19\.0.*1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+            );
+            expect(spawn.calls).toHaveLength(0);
+            expect(warning).not.toHaveBeenCalled();
+          }
+        } finally {
+          warning.mockRestore();
+        }
+      });
     });
   });
 

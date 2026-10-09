@@ -1,10 +1,11 @@
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
- * Tested against opencode-ai 1.18.35. OpenCode stores conversation sessions
- * under XDG_DATA_HOME. Trusted seats use the operator's data home directly;
- * public seats get per-identity state without operator auth.json and a child
- * environment limited to safe launch/locale variables. Public provider keys
+ * Smoke-tested version is recorded in TESTED_OPENCODE_VERSION below.
+ * OpenCode stores sessions under XDG_DATA_HOME. Trusted seats use the
+ * operator's data home directly; public seats get per-identity state without
+ * operator auth.json and a child environment limited to safe launch/locale
+ * variables. Public provider keys
  * stay in the host adapter and reach the configured provider through a
  * per-spawn loopback proxy; OpenCode receives only that proxy's bearer.
  * This protects the key, not provider spend: the model can use its seat's key
@@ -56,6 +57,10 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
+// Bump only with a passing real sandbox-exec smoke against the new version.
+const TESTED_OPENCODE_VERSION = '1.18.35';
+const ALLOW_UNTESTED_OPENCODE_VERSION_ENV = 'COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION';
+const VERSION_CHECK_TIMEOUT_MS = 5000;
 const OPENCODE_CONFIG_GITIGNORE = [
   'node_modules',
   'package.json',
@@ -713,6 +718,45 @@ const spawnBinaryPath = (env) => {
   return 'opencode';
 };
 
+const parseOpenCodeVersion = (output) => {
+  const match = String(output || '').match(
+    /(?:^|[^0-9A-Za-z])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?![0-9A-Za-z.+-])/,
+  );
+  return match?.[1] || null;
+};
+
+const readOpenCodeVersion = (binary, env) => {
+  try {
+    const result = spawnSync(binary, ['--version'], {
+      encoding: 'utf8', env, timeout: VERSION_CHECK_TIMEOUT_MS,
+    });
+    if (result.error || result.status !== 0) return null;
+    return parseOpenCodeVersion(`${result.stdout || ''}\n${result.stderr || ''}`);
+  } catch {
+    return null;
+  }
+};
+
+const compareOpenCodeVersions = (left, right) => {
+  const leftParts = left.split(/[+-]/, 1)[0].split('.').map(Number);
+  const rightParts = right.split(/[+-]/, 1)[0].split('.').map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] > rightParts[index] ? 1 : -1;
+    }
+  }
+  return 0;
+};
+
+const describeOpenCodeVersionMismatch = (installedVersion) => {
+  if (!installedVersion) return 'installed OpenCode version is unknown';
+  const relation = compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSION);
+  if (relation === 0) {
+    return `installed OpenCode ${installedVersion} differs from smoke-tested ${TESTED_OPENCODE_VERSION}`;
+  }
+  return `installed OpenCode ${installedVersion} is ${relation > 0 ? 'newer' : 'older'} than smoke-tested ${TESTED_OPENCODE_VERSION}`;
+};
+
 export default {
   name: 'opencode',
   runtimeType: 'opencode',
@@ -726,8 +770,7 @@ export default {
       const res = spawnSync('opencode', ['--version'], { encoding: 'utf8' });
       if (res.error || res.status !== 0) return null;
       const stdout = (res.stdout || '').trim();
-      const versionMatch = stdout.match(/(\d+\.\d+(?:\.\d+)?)/);
-      const version = versionMatch ? versionMatch[1] : (stdout || 'unknown');
+      const version = parseOpenCodeVersion(stdout) || stdout || 'unknown';
       const where = spawnSync('which', ['opencode'], { encoding: 'utf8' });
       const path = where.status === 0 ? (where.stdout || '').trim() || 'opencode' : 'opencode';
       return { path, version };
@@ -760,6 +803,29 @@ export default {
       throw new Error('public OpenCode provider proxy requires shared bwrap networking; sandbox.network.policy=restricted cannot reach the loopback proxy');
     }
     const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
+
+    const sourceEnv = ctx.env || process.env;
+    const childSourceEnv = Object.fromEntries(Object.entries(sourceEnv)
+      .filter(([key]) => key !== ALLOW_UNTESTED_OPENCODE_VERSION_ENV));
+    const runtimeEnv = isPublic
+      ? Object.fromEntries(Object.entries(childSourceEnv).filter(([key]) => PUBLIC_SAFE_ENV.test(key)))
+      : childSourceEnv;
+    const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
+    const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
+    if (installedVersion !== TESTED_OPENCODE_VERSION) {
+      const mismatch = describeOpenCodeVersionMismatch(installedVersion);
+      const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';
+      if (isPublic && !allowOverride) {
+        throw new Error(
+          `Public OpenCode seats refuse to run: ${mismatch}. `
+          + `To override from the host process, set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1.`,
+        );
+      }
+      // eslint-disable-next-line no-console
+      console.warn(isPublic
+        ? `[opencode] ${mismatch}; continuing because the host process set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1`
+        : `[opencode] ${mismatch}; trusted seat continues`);
+    }
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
@@ -834,10 +900,6 @@ export default {
       });
       await chmod(configPath, 0o600);
 
-      const sourceEnv = ctx.env || process.env;
-      const runtimeEnv = isPublic
-        ? Object.fromEntries(Object.entries(sourceEnv).filter(([key]) => PUBLIC_SAFE_ENV.test(key)))
-        : sourceEnv;
       const childEnv = makeChildEnvironment({
         source: runtimeEnv,
         tempDir,
@@ -858,7 +920,6 @@ export default {
         effort: ctx.environment?.effort,
         title: ctx.agentName,
       });
-      const binary = ctx._binaryPath || spawnBinaryPath(childEnv);
       const platform = ctx._platform || process.platform;
       let cmd = binary;
       let spawnArgs = args;
@@ -928,13 +989,16 @@ export default {
 };
 
 export {
+  ALLOW_UNTESTED_OPENCODE_VERSION_ENV,
   DISABLED_ENV,
+  TESTED_OPENCODE_VERSION,
   buildArgs,
   buildMcpConfig,
   buildProviderConfig,
   makeEventParser,
   prepareOpenCodeDataHome,
   publicPermissions,
+  readOpenCodeVersion,
   qualifiedProviderModel,
   resolveProviderKeyFile,
   startProviderProxy,

@@ -4,11 +4,24 @@ import { chmod, mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { existsSync, readFileSync, realpathSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import opencode from '../src/lib/adapters/opencode.js';
+import opencode, {
+  readOpenCodeVersion,
+  TESTED_OPENCODE_VERSION,
+} from '../src/lib/adapters/opencode.js';
 import { buildSeatbeltProfile, wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 
 const smokeBinary = process.env.COMMONLY_OPENCODE_SMOKE_BINARY;
 const realSeatbeltTest = process.platform === 'darwin' && smokeBinary ? test : test.skip;
+
+const assertSmokeTestedVersion = () => {
+  const binary = realpathSync(smokeBinary);
+  const version = readOpenCodeVersion(binary, process.env);
+  if (version !== TESTED_OPENCODE_VERSION) {
+    throw new Error(
+      `Seatbelt smoke requires OpenCode ${TESTED_OPENCODE_VERSION}; configured binary reports ${version || 'unknown'}`,
+    );
+  }
+};
 
 const listen = (server) => new Promise((resolve, reject) => {
   server.once('error', reject);
@@ -24,6 +37,7 @@ const writeJson = (response, body) => {
 };
 
 const runRealSeatbeltTurn = async ({ removeXdgGitignore = false, seedPersistentConfig = false } = {}) => {
+  assertSmokeTestedVersion();
   const root = await mkdtemp(join(tmpdir(), 'opencode-seatbelt-smoke-'));
   const workspace = join(root, 'workspace');
   const keyFile = join(root, 'provider-key');
