@@ -202,6 +202,23 @@ describe('opencode MCP config', () => {
 });
 
 describe('opencode external provider config', () => {
+  test('denies public provider secrets to every model-facing file content tool', () => {
+    const keyFile = '/private/operator-keys/litellm-key';
+    const permission = publicPermissions('workspace', [], keyFile);
+
+    expect(permission['*']).toBe('deny');
+    expect(permission.external_directory).toBe('deny');
+    expect(permission.read['*']).toBe('allow');
+    for (const path of [keyFile, keyFile.replace(/^\/+/, '')]) {
+      expect(permission.read[path]).toBe('deny');
+      expect(permission.edit[path]).toBe('deny');
+    }
+    for (const tool of ['grep', 'glob', 'list']) {
+      expect(permission[tool]).toBe('deny');
+    }
+    expect(permission.lsp).toBe('deny');
+  });
+
   test('uses file-backed provider auth and materializes only the selected model when models are omitted', () => {
     const config = buildProviderConfig({
       id: 'litellm',
@@ -326,7 +343,7 @@ describe('opencode external provider config', () => {
     });
   });
 
-  test('adds only the exact provider key file to public Seatbelt read paths', async () => {
+  test('grants Seatbelt the key for OpenCode while denying model tools access to it', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'provider-key');
@@ -335,7 +352,19 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'provider-key');
       await chmod(keyFile, 0o600);
       const realKey = realpathSync(keyFile);
-      const spawn = makeSpawnImpl();
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, _args, options) => {
+          const permission = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8')).permission;
+          for (const path of [realKey, realKey.replace(/^\/+/, '')]) {
+            expect(permission.read[path]).toBe('deny');
+            expect(permission.edit[path]).toBe('deny');
+          }
+          expect(permission.grep).toBe('deny');
+          expect(permission.glob).toBe('deny');
+          expect(permission.list).toBe('deny');
+          expect(permission.lsp).toBe('deny');
+        },
+      });
       await opencode.spawn('public provider turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
@@ -357,7 +386,7 @@ describe('opencode external provider config', () => {
     });
   });
 
-  test('adds only the exact provider key file to public bwrap read paths', async () => {
+  test('grants bwrap the key for OpenCode while denying model tools access to it', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'provider-key');
@@ -366,7 +395,19 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'provider-key');
       await chmod(keyFile, 0o600);
       const realKey = realpathSync(keyFile);
-      const spawn = makeSpawnImpl();
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, _args, options) => {
+          const permission = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8')).permission;
+          for (const path of [realKey, realKey.replace(/^\/+/, '')]) {
+            expect(permission.read[path]).toBe('deny');
+            expect(permission.edit[path]).toBe('deny');
+          }
+          expect(permission.grep).toBe('deny');
+          expect(permission.glob).toBe('deny');
+          expect(permission.list).toBe('deny');
+          expect(permission.lsp).toBe('deny');
+        },
+      });
       await opencode.spawn('public provider turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },

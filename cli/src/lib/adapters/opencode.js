@@ -185,20 +185,32 @@ const buildMcpConfig = (servers, ctx = {}) => {
   return mcp;
 };
 
-const publicPermissions = (mode, mcpNames) => {
+const publicPermissions = (mode, mcpNames, providerKeyFile = null) => {
   const read = { '*': 'allow' };
   const edit = { '*': mode === 'read-only' ? 'deny' : 'allow' };
   for (const pattern of PUBLIC_READ_DENIES) {
     read[pattern] = 'deny';
     edit[pattern] = 'deny';
   }
+  if (providerKeyFile) {
+    // The OS sandbox must expose this exact file so OpenCode can resolve its
+    // {file:} provider reference. The model's own tools must not read it:
+    // OpenCode 1.18.35 strips the leading slash before matching read/edit
+    // paths, so pin both spellings. grep/glob permissions match search inputs,
+    // not file paths; disable those path-search tools for provider-backed
+    // public seats instead.
+    for (const path of [providerKeyFile, providerKeyFile.replace(/^\/+/, '')]) {
+      read[path] = 'deny';
+      edit[path] = 'deny';
+    }
+  }
   return {
     '*': 'deny',
     read,
     edit,
-    glob: 'allow',
-    grep: 'allow',
-    list: 'allow',
+    glob: providerKeyFile ? 'deny' : 'allow',
+    grep: providerKeyFile ? 'deny' : 'allow',
+    list: providerKeyFile ? 'deny' : 'allow',
     bash: 'deny',
     task: 'deny',
     external_directory: 'deny',
@@ -208,7 +220,7 @@ const publicPermissions = (mode, mcpNames) => {
     skill: 'deny',
     todowrite: 'allow',
     todoread: 'allow',
-    lsp: 'allow',
+    lsp: providerKeyFile ? 'deny' : 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
   };
 };
@@ -585,7 +597,9 @@ export default {
         credentialFile: credential?.path || null,
       });
       const config = {
-        permission: isPublic ? publicPermissions(sandboxMode, Object.keys(mcp)) : 'allow',
+        permission: isPublic
+          ? publicPermissions(sandboxMode, Object.keys(mcp), providerKeyFile)
+          : 'allow',
         share: 'disabled',
         autoupdate: false,
         ...(provider ? {
