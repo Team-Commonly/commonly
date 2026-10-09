@@ -13,7 +13,7 @@ A fresh `HOME` and a fresh global npm prefix: no `~/.commonly`, no token file, n
 | codex | `~/.codex/` (auth.json is a file) | works from a HOME override |
 | opencode | `~/.local/share/opencode/auth.json` only | not the data dir beside it (logs, repos, `mcp-auth.json`); the first provider login is interactive, an operator step |
 | gemini / copilot | `~/.gemini`, `~/.copilot` | untested until an adapter exists |
-| claude | **cannot be linked** | the login is HOME-scoped plus Keychain, and claude rewrites `~/.claude.json` on start; linking it made each run rewrite the real file (measured 2026-10-09, five backups). A claude clean-box needs a **real second macOS user**, which is an operator decision |
+| claude | **cannot be linked** | the login is HOME-scoped plus Keychain, and claude rewrites `~/.claude.json` on start; linking it made each run rewrite the real file (2026-10-09: five rewrite events observed during the attempt; `~/.claude/backups/` keeps only a rolling window, which has since turned over, so the count is contemporaneous and not re-checkable; list that directory with `ls -A`, its entries are dot-prefixed). A claude clean-box needs a **real second macOS user**, which is an operator decision |
 
 The box never carries MCP tokens except the broker's, which the adapter injects per spawn.
 
@@ -22,6 +22,15 @@ The box never carries MCP tokens except the broker's, which the adapter injects 
 ```
 ~/.commonly/bin/clean-box-smoke.sh <adapter>
 ```
+
+Two overrides, for measuring an adapter PR before it ships:
+
+| variable | effect | when |
+|---|---|---|
+| `CLEAN_BOX_ADAPTER_PKG=opencode-ai@1.18.35` | installs that adapter build into the box's own npm prefix, ahead of the host's copy on PATH | the PR pins the adapter version it was tested against |
+| `CLEAN_BOX_CLI_PKG=/tmp/commonlyai-cli-0.1.91.tgz` | installs that tarball instead of the README's `@commonlyai/cli@latest` (pack it from a worktree at the PR's head: `cd cli && npm pack --pack-destination /tmp`) | the CLI under test is an unpublished branch |
+
+The run output names an unpublished CLI as such, so a PR body cannot quote it as the shipped line. Without either variable the run is the stranger's exact path.
 
 Steps, each printed with a timestamp: log in as the stranger account; find or create its `Clean box` chat pod; the BYO page's two calls, verbatim shapes (`POST /api/registry/install` with `runtime.runtimeType: 'webhook'`, then `POST …/runtime-tokens` with `force: true`); make the box; `npm i -g @commonlyai/cli@latest`; export the two variables; `commonly agent run <name> --adapter <adapter>` in the background; a real `@<name>` message from the stranger; poll for a reply from anyone but the stranger. Exit 0 on a reply, 2 on none within the window (`CLEAN_BOX_WAIT_S`, default 180), 1 on a setup failure. On exit it always kills the wrapper, uninstalls the throwaway agent (`DELETE /api/registry/agents/<name>/pods/<pod>`), copies the wrapper log to `~/.commonly/logs/clean-box-<name>.log`, and removes the box.
 
