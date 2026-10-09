@@ -342,6 +342,18 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
   await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
   await chmod(tokenFile, 0o600);
 
+  const logRefusedRequest = (method, requestPath) => {
+    let normalizedPath = '/';
+    try {
+      normalizedPath = new URL(requestPath || '/', 'http://127.0.0.1').pathname || '/';
+    } catch {
+      // Do not include an unparseable raw request target in logs.
+    }
+    const safeMethod = typeof method === 'string' && /^[A-Z]+$/.test(method)
+      ? method : 'UNKNOWN';
+    process.stderr.write(`[opencode] provider proxy refused ${safeMethod} ${normalizedPath}\n`);
+  };
+
   const server = createServer((incoming, outgoing) => {
     const supplied = Buffer.from(incoming.headers.authorization || '');
     const expected = Buffer.from(`Bearer ${proxyToken}`);
@@ -356,22 +368,26 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
       return;
     }
     const rejectRoute = (path) => {
+      logRefusedRequest(incoming.method, path);
       incoming.resume();
       outgoing.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
       outgoing.end(`Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
+    };
+    const rejectBadRequest = () => {
+      logRefusedRequest(incoming.method, incoming.url);
+      incoming.resume();
+      outgoing.writeHead(400).end();
     };
 
     let target;
     try {
       const requestPath = incoming.url || '/';
       if (!requestPath.startsWith('/') || requestPath.startsWith('//')) {
-        incoming.resume();
-        outgoing.writeHead(400).end();
+        rejectBadRequest();
         return;
       }
       if (/%(?:2f|5c|2e)/i.test(requestPath)) {
-        incoming.resume();
-        outgoing.writeHead(400).end();
+        rejectBadRequest();
         return;
       }
       // OpenCode owns this local request path, so never use it as an outbound
@@ -405,8 +421,7 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
         host: upstream.host,
       };
     } catch {
-      incoming.resume();
-      outgoing.writeHead(400).end();
+      rejectBadRequest();
       return;
     }
 

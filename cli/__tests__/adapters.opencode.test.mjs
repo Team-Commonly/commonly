@@ -364,6 +364,55 @@ describe('opencode external provider config', () => {
     });
   });
 
+  test('logs each refused provider route to wrapper stderr using only its normalized path', async () => {
+    await withTemp(async (root) => {
+      const keyFile = join(root, 'provider-key');
+      const proxyTokenFile = join(root, 'proxy-token');
+      await writeFile(keyFile, 'upstream-secret');
+      await chmod(keyFile, 0o600);
+      let upstreamCalls = 0;
+      const upstream = createServer((req, res) => {
+        upstreamCalls += 1;
+        req.resume();
+        res.writeHead(200).end('{}');
+      });
+      await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+      const upstreamPort = upstream.address().port;
+      const proxy = await startProviderProxy({
+        provider: { baseURL: `http://127.0.0.1:${upstreamPort}/v1` },
+        keyFile,
+        tokenFile: proxyTokenFile,
+      });
+      const proxyToken = readFileSync(proxyTokenFile, 'utf8');
+      const stderrWrite = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const unsupported = await fetch(`${proxy.baseURL}/embeddings?secret=do-not-log`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${proxyToken}` },
+          body: 'request body must not be logged',
+        });
+        expect(unsupported.status).toBe(403);
+        await unsupported.text();
+
+        const malformed = await requestProxy(proxy.port, '/v1/%2fadmin?secret=do-not-log', {
+          authorization: `Bearer ${proxyToken}`,
+        });
+        expect(malformed).toBe(400);
+
+        expect(stderrWrite.mock.calls.map(([line]) => String(line))).toEqual([
+          '[opencode] provider proxy refused POST /v1/embeddings\n',
+          '[opencode] provider proxy refused POST /v1/%2fadmin\n',
+        ]);
+        expect(stderrWrite.mock.calls).toHaveLength(2);
+        expect(upstreamCalls).toBe(0);
+      } finally {
+        stderrWrite.mockRestore();
+        await proxy.close();
+        await new Promise((resolve) => upstream.close(resolve));
+      }
+    });
+  });
+
   test('uses file-backed provider auth and materializes only the selected model when models are omitted', () => {
     const config = buildProviderConfig({
       id: 'litellm',
