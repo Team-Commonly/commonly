@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { createServer } from 'http';
+import { createServer, request as httpRequest } from 'http';
 import { existsSync, readFileSync, realpathSync } from 'fs';
 import {
   chmod,
@@ -83,6 +83,17 @@ const withTemp = async (fn) => {
     await rm(dir, { recursive: true, force: true });
   }
 };
+
+const requestProxy = (port, requestPath, headers) => new Promise((resolve, reject) => {
+  const request = httpRequest({
+    hostname: '127.0.0.1', port, path: requestPath, method: 'POST', headers,
+  }, (response) => {
+    response.resume();
+    response.on('end', () => resolve(response.statusCode));
+  });
+  request.on('error', reject);
+  request.end('{}');
+});
 
 describe('opencode adapter — detect()', () => {
   beforeEach(() => spawnSyncMock.mockReset());
@@ -213,7 +224,11 @@ describe('opencode external provider config', () => {
       await chmod(keyFile, 0o600);
       let observed = null;
       const upstream = createServer((req, res) => {
-        observed = { authorization: req.headers.authorization, url: req.url };
+        observed = {
+          authorization: req.headers.authorization,
+          host: req.headers.host,
+          url: req.url,
+        };
         req.resume();
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end('{"ok":true}');
@@ -227,6 +242,17 @@ describe('opencode external provider config', () => {
       });
       try {
         const proxyToken = readFileSync(proxyTokenFile, 'utf8');
+        const maliciousHost = await requestProxy(proxy.port, '/v1/chat/completions', {
+          authorization: `Bearer ${proxyToken}`,
+          host: 'attacker.example:4444',
+        });
+        expect(maliciousHost).toBe(200);
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/chat/completions',
+        });
+
         const response = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
           headers: { authorization: `Bearer ${proxyToken}`, 'content-type': 'application/json' },
@@ -234,14 +260,22 @@ describe('opencode external provider config', () => {
         });
         expect(response.status).toBe(200);
         expect(await response.text()).toBe('{"ok":true}');
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/chat/completions',
+        });
 
         const missing = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
           body: '{}',
         });
         expect(missing.status).toBe(401);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/chat/completions',
+        });
 
         const denied = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
@@ -249,13 +283,21 @@ describe('opencode external provider config', () => {
           body: '{}',
         });
         expect(denied.status).toBe(401);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/chat/completions',
+        });
 
         const models = await fetch(`${proxy.baseURL}/models`, {
           headers: { authorization: `Bearer ${proxyToken}` },
         });
         expect(models.status).toBe(200);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/models',
+        });
 
         const unsupported = await fetch(`${proxy.baseURL}/admin`, {
           method: 'POST',
@@ -263,7 +305,11 @@ describe('opencode external provider config', () => {
           body: '{}',
         });
         expect(unsupported.status).toBe(403);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/models',
+        });
 
         const query = await fetch(`${proxy.baseURL}/chat/completions?url=http://127.0.0.1/admin`, {
           method: 'POST',
@@ -271,13 +317,45 @@ describe('opencode external provider config', () => {
           body: '{}',
         });
         expect(query.status).toBe(403);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/models',
+        });
 
         const outsideBasePath = await fetch(`${proxy.baseURL.replace(/\/v1$/, '')}/admin`, {
           headers: { authorization: `Bearer ${proxyToken}` },
         });
         expect(outsideBasePath.status).toBe(403);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/models',
+        });
+
+        for (const encodedPath of ['/v1/..%2fadmin', '/v1/%5cadmin', '/v1/%2e%2e/admin']) {
+          const encodedPathStatus = await requestProxy(proxy.port, encodedPath, {
+            authorization: `Bearer ${proxyToken}`,
+          });
+          expect(encodedPathStatus).toBe(400);
+          expect(observed).toEqual({
+            authorization: 'Bearer upstream-secret',
+            host: `127.0.0.1:${upstreamPort}`,
+            url: '/v1/models',
+          });
+        }
+
+        const authorityPath = await requestProxy(
+          proxy.port,
+          `//127.0.0.1:${upstreamPort}/v1/chat/completions`,
+          { authorization: `Bearer ${proxyToken}` },
+        );
+        expect(authorityPath).toBe(400);
+        expect(observed).toEqual({
+          authorization: 'Bearer upstream-secret',
+          host: `127.0.0.1:${upstreamPort}`,
+          url: '/v1/models',
+        });
       } finally {
         await proxy.close();
         await new Promise((resolve) => upstream.close(resolve));
@@ -560,6 +638,24 @@ describe('opencode external provider config', () => {
       expect(spawn.calls).toHaveLength(0);
     });
   });
+
+  test('refuses public seats without an explicit provider instead of using OpenCode implicit public models', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace, { recursive: true });
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('public unconfigured turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'empty-operator-data') },
+        environment: { sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+        agentName: 'public-unconfigured-seat',
+        _binaryPath: '/usr/local/bin/opencode',
+        _platform: 'darwin',
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(/environment\.provider.*implicit OpenCode public tier/);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
 });
 
 describe('opencode adapter — spawn()', () => {
@@ -711,7 +807,10 @@ describe('opencode adapter — spawn()', () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const seatRoot = join(root, 'opencode-state');
+      const keyFile = join(root, 'provider-key');
       await mkdir(workspace, { recursive: true });
+      await writeFile(keyFile, 'read-only-provider-key');
+      await chmod(keyFile, 0o600);
       const spawn = makeSpawnImpl({
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/sandbox-exec');
@@ -723,7 +822,12 @@ describe('opencode adapter — spawn()', () => {
       await opencode.spawn('read-only turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
-        environment: { sandbox: { trust: 'public', mode: 'read-only' }, mcp: [] },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+          sandbox: { trust: 'public', mode: 'read-only' },
+          mcp: [],
+        },
         agentName: 'read-only-agent',
         _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',
@@ -743,7 +847,10 @@ describe('opencode adapter — spawn()', () => {
       const workspace = join(root, 'workspace');
       const xdgData = join(root, 'operator-data');
       const seatRoot = join(root, 'opencode-state');
+      const keyFile = join(root, 'provider-key');
       await mkdir(workspace, { recursive: true });
+      await writeFile(keyFile, 'linux-provider-key');
+      await chmod(keyFile, 0o600);
       const spawn = makeSpawnImpl({
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/bwrap');
@@ -755,7 +862,12 @@ describe('opencode adapter — spawn()', () => {
       await opencode.spawn('public Linux turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: xdgData },
-        environment: { sandbox: { trust: 'public', mode: 'bwrap' }, mcp: [] },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+          sandbox: { trust: 'public', mode: 'bwrap' },
+          mcp: [],
+        },
         agentName: 'public-linux-agent',
         _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',

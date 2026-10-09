@@ -354,6 +354,11 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
         outgoing.writeHead(400).end();
         return;
       }
+      if (/%(?:2f|5c|2e)/i.test(requestPath)) {
+        incoming.resume();
+        outgoing.writeHead(400).end();
+        return;
+      }
       // OpenCode owns this local request path, so never use it as an outbound
       // URL. The OpenAI-compatible chat provider needs only these fixed routes;
       // parse the incoming URL against a loopback sentinel, then select a
@@ -379,7 +384,13 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
         outgoing.writeHead(403).end();
         return;
       }
-      target = new URL(`${configuredPath}/${endpoint}`, upstream.origin);
+      target = {
+        path: `${configuredPath}/${endpoint}`,
+        protocol: upstream.protocol,
+      hostname: upstream.hostname,
+        port: upstream.port || undefined,
+        host: upstream.host,
+      };
     } catch {
       incoming.resume();
       outgoing.writeHead(400).end();
@@ -394,7 +405,11 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
       ].includes(name.toLowerCase())));
     headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
-    const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, {
+    const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port,
+      path: target.path,
       method: incoming.method,
       headers,
     }, (response) => {
@@ -735,6 +750,9 @@ export default {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
       if (isPublic && !provider && openCodeHome.operatorAuthPresent) {
         throw new Error('operator OpenCode auth.json is unsupported for public trust; configure environment.provider instead');
+      }
+      if (isPublic && !provider) {
+        throw new Error('public OpenCode seats require environment.provider; the implicit OpenCode public tier is unsupported for public trust');
       }
       if (isPublic && provider) {
         // OpenCode can still spend the configured model budget through this
