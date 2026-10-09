@@ -45,6 +45,7 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
+const { adapterForRuntimeBinding } = require('../services/grantBrokerConfinement');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -531,6 +532,11 @@ router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
         podType: pod.type || null,
         instanceId: inst?.instanceId || instanceId,
         status: inst?.status || 'active',
+        // Project the same resolved adapter the grant-broker predicate judges:
+        // explicit runtime.adapter, or an adapter-shaped legacy runtimeType.
+        // Known runtime kinds (such as a connect-page `webhook`) stay null.
+        // Expose only this non-secret discriminator, never the full config.
+        runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
         type: 'installation',
       };
     });

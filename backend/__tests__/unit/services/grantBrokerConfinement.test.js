@@ -38,12 +38,16 @@ describe('grant broker confinement predicate', () => {
     expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
     expect(CONFINING_ADAPTERS.has('pi')).toBe(false);
-    // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what the install paths write; a value in
-    // runtime.runtimeType outside this set is adapter-shaped and judged. pi is absent on purpose.
+    // OpenCode implements host sandboxes locally, but this server map is the
+    // separate broker-admission gate and remains closed until that proof lands.
+    expect(CONFINING_ADAPTERS.has('opencode')).toBe(false);
+    // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what install paths write;
+    // runtimeType values outside this set are adapter-shaped and judged.
     expect([...RUNTIME_KINDS].sort()).toEqual([
       'claude-code', 'hosted', 'internal', 'local-cli', 'managed-agents', 'moltbot', 'native', 'webhook', 'wrapper',
     ]);
     expect(RUNTIME_KINDS.has('pi')).toBe(false);
+    expect(RUNTIME_KINDS.has('opencode')).toBe(false);
     expect([...PUBLIC_HOST_MODES].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
   });
 
@@ -122,6 +126,9 @@ describe('grant broker confinement predicate', () => {
     ['a pi seat with no sandbox block', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
     ['a pi seat declaring a confined mode', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, 'adapter_cannot_confine'],
     ['a pi seat with no environment at all', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
+    ['an OpenCode seat with no sandbox declaration stays refused', undefined, { adapter: 'opencode' }, 'adapter_cannot_confine'],
+    ['an OpenCode seat with a locally supported sandbox stays refused pending server admission', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'opencode' }, 'adapter_cannot_confine'],
+    ['an OpenCode runtimeType without explicit adapter remains refused', undefined, { runtimeType: 'opencode', host: 'byo' }, 'adapter_cannot_confine'],
     ['a claude seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'claude' }, null],
     ['a codex seat declaring a confined mode', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'codex' }, null],
     ['a row that names no adapter — the daemon detects it locally', undefined, { model: 'gpt-5.4' }, null],
@@ -139,6 +146,7 @@ describe('grant broker confinement predicate', () => {
     // alone admitted exactly the seat this rule exists to refuse.
     ['a pi seat tagged only by runtimeType (the hand-attached shape)', undefined, { runtimeType: 'pi', host: 'byo' }, 'adapter_cannot_confine'],
     ['a pi runtimeType in another case', undefined, { runtimeType: 'PI' }, 'adapter_cannot_confine'],
+    ['a codex seat tagged only by runtimeType remains broker-confined', { sandbox: { mode: 'workspace', trust: 'public' } }, { runtimeType: 'codex', host: 'byo' }, null],
     ['a declared adapter wins over a pi runtimeType, as it does in the daemon', undefined, { adapter: 'claude', runtimeType: 'pi', host: 'byo' }, null],
     ['a claude-code runtimeType', undefined, { runtimeType: 'claude-code', host: 'byo' }, null],
     ['a webhook connect-page seat', undefined, { runtimeType: 'webhook', host: 'byo' }, null],
