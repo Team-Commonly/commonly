@@ -1,7 +1,5 @@
-import { isDeepStrictEqual } from 'node:util';
-
 /**
- * Guard server-declared `environment.mcp` and provider fields before the daemon adopts them.
+ * Guard server-declared `environment.mcp` before the daemon adopts it.
  *
  * The daemon projects `AgentInstallation.config.environment` onto the OWNER's
  * machine: every declared stdio server is spawned as the operator, and every
@@ -46,9 +44,6 @@ import { isDeepStrictEqual } from 'node:util';
  * environment is the operator's, so `?k=${GITHUB_TOKEN}` leaks too (Vera,
  * Connectors 69519). So any `${` other than the three known placeholders,
  * anywhere in an entry — url, headers, command, env — is refused outright.
- *
- * The provider guard also binds the endpoint to the local token record; a
- * server mirror cannot select another endpoint or supply a host key path.
  *
  * The guarantee is instance-specific: a self-hosted proxy that redirects
  * `/api/mcp/grants/…` breaks it in a way no test in this repo can see.
@@ -277,37 +272,6 @@ export const auditDeclaredMcp = (environment, { instanceUrl, allowedStdioEntries
     refusals.push(`'${name}': unknown transport ${JSON.stringify(transport)}`);
   });
 
-  return { ok: refusals.length === 0, refusals };
-};
-
-/**
- * A provider is host-local authority: it selects an endpoint and a host key
- * file. The server may mirror its public fields, but the local token record is
- * the source of truth. Compare the complete server-visible entry against that
- * record and never accept a server-supplied keyFile.
- */
-export const auditDeclaredProvider = (environment, { localEnvironment } = {}) => {
-  const refusals = [];
-  if (!environment || typeof environment !== 'object'
-    || !Object.prototype.hasOwnProperty.call(environment, 'provider')) {
-    return { ok: true, refusals };
-  }
-
-  const declared = environment.provider;
-  const local = localEnvironment?.provider;
-  if (!local || typeof local !== 'object' || Array.isArray(local)
-    || typeof local.keyFile !== 'string') {
-    return {
-      ok: false,
-      refusals: ['provider is server-declared but this host has no local provider key file'],
-    };
-  }
-
-  const expected = { ...local };
-  delete expected.keyFile;
-  if (!isDeepStrictEqual(declared, expected)) {
-    refusals.push('server-declared provider differs from the host-local provider; refusing it');
-  }
   return { ok: refusals.length === 0, refusals };
 };
 

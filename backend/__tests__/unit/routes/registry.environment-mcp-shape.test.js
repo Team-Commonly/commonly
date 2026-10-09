@@ -222,55 +222,6 @@ describe('agent config PATCH — write-time mcp entry shape (TASK-071)', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts public provider metadata but refuses a host-local keyFile', async () => {
-    const accepted = await patch({
-      environment: {
-        model: 'gpt-5.4',
-        provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
-      },
-    });
-    expect(accepted.status).toBe(200);
-    expect(primary.save).toHaveBeenCalledTimes(1);
-
-    jest.clearAllMocks();
-    primary = installation();
-    AgentInstallation.findOne.mockResolvedValue(primary);
-    AgentInstallation.find.mockResolvedValue([primary]);
-    const refused = await patch({
-      environment: {
-        model: 'gpt-5.4',
-        provider: {
-          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/host-key',
-        },
-      },
-    });
-    expect(refused.status).toBe(400);
-    expect(refused.body.fields).toEqual(expect.arrayContaining([
-      expect.objectContaining({ field: 'environment.provider.keyFile' }),
-    ]));
-    expect(primary.save).not.toHaveBeenCalled();
-  });
-
-  it('refuses inline credentials nested in provider model options', async () => {
-    const response = await patch({
-      environment: {
-        model: 'gpt-5.4',
-        provider: {
-          id: 'litellm',
-          baseURL: 'https://llm.example.test/v1',
-          models: { 'gpt-5.4': { options: { apiKey: 'inline-secret' } } },
-        },
-      },
-    });
-    expect(response.status).toBe(400);
-    expect(response.body.fields).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        field: 'environment.provider.models.gpt-5.4.options.apiKey',
-      }),
-    ]));
-    expect(primary.save).not.toHaveBeenCalled();
-  });
-
   it('leaves a row that already holds a malformed entry patchable for its other fields', async () => {
     // The deliberate limit, pinned: only the environment this BODY declares is
     // checked, never the merged result. A legacy row must not become

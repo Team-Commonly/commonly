@@ -3,7 +3,6 @@ import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
 import {
   auditDeclaredMcp,
-  auditDeclaredProvider,
   installedStdioEntries,
 } from './declared-mcp-guard.js';
 
@@ -154,24 +153,28 @@ export const createDaemonSupervisor = ({
     return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
   };
 
+  // `provider` is host-local authority: /assigned intentionally omits it.
+  // Ignore a provider field even if a future or malformed row carries one,
+  // then restore only the local token record's value during adoption.
+  const withoutServerProvider = (environment) => {
+    const safe = { ...(environment || {}) };
+    delete safe.provider;
+    return safe;
+  };
+
   // A declared environment runs on THIS machine as the operator. Refuse any
   // declared stdio command that is not the shipped commonly MCP server or one
-  // the operator already installed here, any http server that would receive
-  // the seat token off-origin, and any provider that does not exactly match
-  // the host-local provider. Refusal keeps the current seat (or skips the
-  // mint) and never adopts a partial environment.
+  // the operator already installed here, and any http server that would
+  // receive the seat token off-origin. Provider blocks are ignored from rows;
+  // the host-local token record is their only source.
   const admitDeclared = (row, environment, existing) => {
     const mcpAudit = auditDeclaredMcp(environment, {
       instanceUrl: existing?.instanceUrl || record.instanceUrl,
       allowedStdioEntries: installedStdioEntries(existing),
     });
-    const providerAudit = auditDeclaredProvider(environment, {
-      localEnvironment: existing?.environment,
-    });
-    const refusals = [...mcpAudit.refusals, ...providerAudit.refusals];
-    if (refusals.length === 0) return true;
+    if (mcpAudit.refusals.length === 0) return true;
     log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);
-    for (const refusal of refusals) log(`[${row.agentName}]   ${refusal}`);
+    for (const refusal of mcpAudit.refusals) log(`[${row.agentName}]   ${refusal}`);
     return false;
   };
 
@@ -235,13 +238,13 @@ export const createDaemonSupervisor = ({
         return false;
       }
       if (wanted) {
+        const serverEnvironment = withoutServerProvider(wanted.value);
         const merged = wanted.declared
-          ? wanted.value
-          : { ...(existing.environment || {}), ...wanted.value };
+          ? serverEnvironment
+          : { ...(existing.environment || {}), ...serverEnvironment };
         // The provider chooses a network endpoint and reads a host key file,
-        // so it is authored on this host. A server may mirror the public
-        // fields, but only after the exact local match above; rehydrate the
-        // local block even when the server omits it from a declared env.
+        // so it is authored on this host. /assigned omits it; rehydrate the
+        // local block after applying the server's declared environment.
         if (existing.environment?.provider) {
           merged.provider = existing.environment.provider;
         }
@@ -354,7 +357,7 @@ export const createDaemonSupervisor = ({
     // operator-authored, so this seat also gets the sandbox default — the
     // self-serve install's seat used to be born unconfined (TASK-052).
     const recordEnvironment = derive(
-      environment ? environment.value : null,
+      environment ? withoutServerProvider(environment.value) : null,
       adapter,
       { sandbox: true },
     );

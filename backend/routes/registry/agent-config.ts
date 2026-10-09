@@ -24,10 +24,7 @@ const {
   normalizeToolPolicy,
   normalizeContextPolicy,
 } = require('./tokens');
-const {
-  validateEnvironmentMcpEntries,
-  validateEnvironmentProvider,
-} = require('../../utils/environmentSpecValidation');
+const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 
 const agentConfigRouter = express.Router();
 
@@ -140,10 +137,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // checked, so a row that already holds a malformed entry stays patchable
     // for its other fields — refusing old records is not this rule's job.
     if (config && typeof config === 'object' && config.environment !== undefined) {
-      const environmentErrors = [
-        ...validateEnvironmentMcpEntries(config.environment),
-        ...validateEnvironmentProvider(config.environment),
-      ];
+      const environmentErrors = validateEnvironmentMcpEntries(config.environment);
       if (environmentErrors.length) {
         return res.status(400).json({
           error: 'Invalid environment spec',

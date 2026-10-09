@@ -39,10 +39,7 @@ const {
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
-const {
-  validateEnvironmentMcpEntries,
-  validateEnvironmentProvider,
-} = require('../../utils/environmentSpecValidation');
+const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -347,10 +344,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // before any of the work between this line and the install call, because a
     // refusal that arrives after the side effect is a report rather than a
     // refusal.
-    const environmentErrors = [
-      ...validateEnvironmentMcpEntries(installConfig.environment),
-      ...validateEnvironmentProvider(installConfig.environment),
-    ];
+    const environmentErrors = validateEnvironmentMcpEntries(installConfig.environment);
     if (environmentErrors.length) {
       return res.status(400).json({
         error: 'Invalid environment spec',

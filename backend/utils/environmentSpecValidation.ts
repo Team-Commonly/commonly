@@ -1,5 +1,5 @@
 /**
- * Write-time shape checks for seat-local instructions in `config.environment`.
+ * Write-time shape check for a seat's `config.environment.mcp` entries.
  *
  * WHY THIS IS A WRITE-TIME CHECK AND NOT A READ-TIME ONE (TASK-071).
  *
@@ -58,16 +58,12 @@
  * routing this path through that normalizer would trade a shape bug for a
  * data-loss bug.
  *
- * A provider block is host-local authority: it selects the endpoint and key
- * file used by the local adapter. The CLI does not write it to the server; if
- * another client does, reject host-local key paths and validate the public
- * metadata shape before it becomes a daemon instruction. The daemon separately
- * requires the server-visible block to match the local token record.
- *
- * SCOPE, stated so it is not assumed: the checks run only on the fields this
- * request declares. Other environment fields (`version`, `sandbox`, `skills`,
- * `model`, `effort`) remain the CLI validator's business, and a caller
- * patching an unrelated field is never refused for a sibling's shape.
+ * SCOPE, stated so it is not assumed: only the mcp entries are checked here,
+ * and only the ones THIS REQUEST declares. The rest of an environment spec
+ * (`version`, `sandbox`, `skills`, `model`, `effort`) is the CLI validator's
+ * business, and a caller patching an unrelated field is never refused for a
+ * sibling's shape — otherwise a row that already holds a malformed entry would
+ * be unpatchable, and refusing old records is not what this rule is for.
  */
 export type EnvironmentSpecError = { field: string; message: string };
 
@@ -76,20 +72,6 @@ const TRANSPORTS = ['http', 'stdio', 'sse'];
 const nonEmptyString = (value: unknown): boolean => (
   typeof value === 'string' && value.trim().length > 0
 );
-
-const INLINE_PROVIDER_CREDENTIAL_FIELD = /(?:key|token|secret|password|authorization|header|credential|auth)/i;
-
-const findInlineProviderCredentialField = (value: unknown, path: string): string | null => {
-  if (!value || typeof value !== 'object') return null;
-  for (const [key, nested] of Object.entries(value)) {
-    const normalized = key.replace(/[-_]/g, '').toLowerCase();
-    const fieldPath = `${path}.${key}`;
-    if (INLINE_PROVIDER_CREDENTIAL_FIELD.test(normalized)) return fieldPath;
-    const nestedPath = findInlineProviderCredentialField(nested, fieldPath);
-    if (nestedPath) return nestedPath;
-  }
-  return null;
-};
 
 const argv = (value: unknown): string[] | null => (
   Array.isArray(value) && value.length > 0 && value.every((part) => nonEmptyString(part))
@@ -185,94 +167,5 @@ export const validateEnvironmentMcpEntries = (environment: unknown): Environment
     }
   });
 
-  return errors;
-};
-
-/** Validate only the server-visible metadata of a host-local provider block. */
-export const validateEnvironmentProvider = (environment: unknown): EnvironmentSpecError[] => {
-  if (!environment || typeof environment !== 'object' || Array.isArray(environment)) return [];
-  const spec = environment as Record<string, unknown>;
-  if (spec.provider === undefined) return [];
-  if (!spec.provider || typeof spec.provider !== 'object' || Array.isArray(spec.provider)) {
-    return [{ field: 'environment.provider', message: 'must be an object' }];
-  }
-
-  const provider = spec.provider as Record<string, unknown>;
-  const errors: EnvironmentSpecError[] = [];
-  const allowedKeys = new Set(['id', 'baseURL', 'models']);
-  Object.keys(provider).forEach((key) => {
-    if (key === 'keyFile') {
-      errors.push({
-        field: 'environment.provider.keyFile',
-        message: 'is host-local and must not be stored on the Commonly server',
-      });
-    } else if (!allowedKeys.has(key)) {
-      errors.push({
-        field: `environment.provider.${key}`,
-        message: 'is not a supported server-visible provider field',
-      });
-    }
-  });
-
-  if (typeof provider.id !== 'string' || !nonEmptyString(provider.id)
-    || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(provider.id)) {
-    errors.push({ field: 'environment.provider.id', message: 'must be a safe OpenCode provider id' });
-  }
-  if (typeof provider.baseURL !== 'string' || !nonEmptyString(provider.baseURL)) {
-    errors.push({ field: 'environment.provider.baseURL', message: 'must be an HTTP(S) URL' });
-  } else {
-    try {
-      const url = new URL(provider.baseURL);
-      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname
-        || url.username || url.password || url.search || url.hash) {
-        errors.push({
-          field: 'environment.provider.baseURL',
-          message: 'must be HTTP(S) without credentials, query, or fragment',
-        });
-      }
-    } catch {
-      errors.push({ field: 'environment.provider.baseURL', message: 'must be an HTTP(S) URL' });
-    }
-  }
-
-  if (provider.models !== undefined) {
-    if (!provider.models || typeof provider.models !== 'object' || Array.isArray(provider.models)) {
-      errors.push({ field: 'environment.provider.models', message: 'must be an object keyed by bare model id' });
-    } else {
-      Object.entries(provider.models as Record<string, unknown>).forEach(([modelId, modelConfig]) => {
-        if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(modelId)) {
-          errors.push({
-            field: `environment.provider.models.${modelId}`,
-            message: 'must be a bare model id',
-          });
-        }
-        if (!modelConfig || typeof modelConfig !== 'object' || Array.isArray(modelConfig)) {
-          errors.push({
-            field: `environment.provider.models.${modelId}`,
-            message: 'must be an object',
-          });
-        } else {
-          const credentialField = findInlineProviderCredentialField(
-            modelConfig,
-            `environment.provider.models.${modelId}`,
-          );
-          if (credentialField) {
-            errors.push({
-              field: credentialField,
-              message: 'must not contain inline credentials; use provider.keyFile',
-            });
-          }
-        }
-      });
-    }
-  }
-
-  if (typeof spec.model !== 'string'
-    || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(spec.model)) {
-    errors.push({
-      field: 'environment.model',
-      message: 'must be a bare model id when provider is configured',
-    });
-  }
   return errors;
 };
