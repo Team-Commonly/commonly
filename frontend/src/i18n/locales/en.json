@@ -1320,12 +1320,19 @@
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
       "machineHint": "The daemon on this computer will adopt and start the agent.",
+      "adapterLabel": "Adapter",
+      "adapterDefault": "Auto-detect on that computer",
+      "adapterClaude": "Claude Code",
+      "adapterCodex": "Codex",
+      "adapterHint": "Pin which local CLI this seat should use. Leave it on auto-detect to let the daemon pick an installed adapter.",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
       "modelOpus": "Opus — strongest reasoning",
       "modelSonnet": "Sonnet — balanced",
       "modelHaiku": "Haiku — fastest, cheapest",
-      "modelHint": "Which model the seat runs with. Uses your machine's own CLI login."
+      "modelHintAuto": "Leave both adapter and model on default to use whatever that computer already prefers.",
+      "modelHintClaude": "Claude aliases stay stable across Claude Code releases. Uses that computer's own Claude login.",
+      "modelHintCodex": "Suggestions only; the Codex CLI model catalog on that machine determines which slugs work. Uses that computer's own Codex login."
     },
     "actions": {
       "install": "Install + generate token",

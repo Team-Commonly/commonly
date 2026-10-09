@@ -1380,12 +1380,19 @@
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
       "machineHint": "这台电脑上的守护进程会接管并启动该智能体。",
+      "adapterLabel": "适配器",
+      "adapterDefault": "在这台电脑上自动检测",
+      "adapterClaude": "Claude Code",
+      "adapterCodex": "Codex",
+      "adapterHint": "固定这席位要用哪一个本地 CLI。留在自动检测时，由守护进程选择那台电脑上已安装的适配器。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
       "modelOpus": "Opus——推理最强",
       "modelSonnet": "Sonnet——均衡",
       "modelHaiku": "Haiku——最快、最省",
-      "modelHint": "该席位运行时使用的模型。走你电脑上自己的 CLI 登录。"
+      "modelHintAuto": "适配器和模型都留在默认时，会沿用那台电脑当前偏好的设置。",
+      "modelHintClaude": "Claude 的这些别名跨版本保持稳定。走那台电脑上自己的 Claude 登录。",
+      "modelHintCodex": "这些只是建议；那台电脑上的 Codex CLI 模型目录决定哪些模型标识可用。使用那台电脑自己的 Codex 登录。"
     },
     "actions": {
       "install": "安装并生成令牌",

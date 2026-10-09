@@ -180,18 +180,118 @@ describe('BYO on-my-computer mode', () => {
     window.history.pushState({}, '', '/');
   });
 
-  test('a chosen model rides the install as config.runtime.model; the default sends none', async () => {
+  test('Codex suggests four plain catalog slugs and submits a chosen model', async () => {
     mockGet();
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
-    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'opus' } });
+
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+    const modelInput = screen.getByTestId('byo-model-select');
+    expect(modelInput).toHaveAttribute('type', 'text');
+    expect(modelInput).toHaveAttribute('list', 'byo-codex-models');
+    const suggestions = Array.from(document.querySelectorAll('#byo-codex-models option'));
+    expect(suggestions.map((option) => option.getAttribute('value'))).toEqual([
+      'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra',
+    ]);
+    expect(suggestions.map((option) => option.getAttribute('label'))).toEqual([
+      'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra',
+    ]);
+    expect(screen.getByText(/suggestions only.*catalog on that machine/i)).toBeInTheDocument();
+    fireEvent.change(modelInput, { target: { value: 'gpt-6-sol' } });
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
-      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', model: 'opus' } }),
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol' } }),
+    }), expect.anything());
+  });
+
+  test('Codex accepts a catalog slug beyond the suggestions', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'future-catalog-slug' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'codex', model: 'future-catalog-slug' } }),
+    }), expect.anything());
+  });
+
+  test('Claude offers stable aliases and submits the selected model', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+    const modelSelect = screen.getByTestId('byo-model-select');
+    expect(modelSelect.tagName).toBe('SELECT');
+    expect(Array.from(modelSelect.querySelectorAll('option')).map((option) => option.value)).toEqual([
+      '', 'opus', 'sonnet', 'haiku',
+    ]);
+    fireEvent.change(modelSelect, { target: { value: 'sonnet' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' } }),
+    }), expect.anything());
+  });
+
+  test('Claude with its default model submits only the adapter', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+    expect(screen.getByTestId('byo-model-select')).toHaveValue('');
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } }),
+    }), expect.anything());
+  });
+
+  test('switching from Codex and its model to Claude clears the model', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    const adapterSelect = screen.getByTestId('byo-adapter-select');
+    fireEvent.change(adapterSelect, { target: { value: 'codex' } });
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6-sol' } });
+    fireEvent.change(adapterSelect, { target: { value: 'claude' } });
+    expect(screen.getByTestId('byo-model-select')).toHaveValue('');
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'claude' } }),
+    }), expect.anything());
+  });
+
+  test('auto-detect submits neither adapter nor model', async () => {
+    mockGet();
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.getByTestId('byo-adapter-select')).toHaveValue('');
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper' } }),
     }), expect.anything());
   });
 
