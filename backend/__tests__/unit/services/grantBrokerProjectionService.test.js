@@ -29,6 +29,7 @@ const {
   hostedBrokerToolsForRun,
   dispatchHostedBrokerTool,
 } = require('../../../services/grantBrokerProjectionService');
+const { RoomGrantError } = require('../../../services/roomGrantService');
 const { GRANT_BROKER_ID } = require('../../../services/installable/toolInstallables');
 
 const POD_A = '507f1f77bcf86cd799439011';
@@ -241,10 +242,12 @@ describe('dispatchHostedBrokerTool', () => {
   });
 
   test('a refusal carries the broker row id and the same payload shape MCP sends', async () => {
-    const refusal = Object.assign(new Error('grant is revoked'), {
-      code: 'grant_revoked',
-      details: { recorded: true, callId: 'tool_call_refused' },
-    });
+    const refusal = new RoomGrantError(
+      'grant_revoked',
+      'grant is revoked',
+      403,
+      { recorded: true, callId: 'tool_call_refused' },
+    );
     mockCallTool.mockRejectedValue(refusal);
     const call = await dispatchHostedBrokerTool({
       projection,

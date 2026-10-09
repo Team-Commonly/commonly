@@ -34,7 +34,8 @@ jest.mock('../../../models/User', () => ({
 }));
 
 const mockPodFindById = jest.fn();
-const mockPodFind = jest.fn();jest.mock('../../../models/Pod', () => ({
+const mockPodFind = jest.fn();
+jest.mock('../../../models/Pod', () => ({
   __esModule: true,
   default: {
     findById: (...args) => mockPodFindById(...args),
@@ -77,6 +78,7 @@ jest.mock('../../../services/agentMessageService', () => ({
 }));
 
 const AgentRun = require('../../../models/AgentRun');
+const { RoomGrantError } = require('../../../services/roomGrantService');
 const { runAgent, resolveSeatUserId } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
@@ -260,13 +262,45 @@ describe('a hosted run in a granted pod', () => {
     });
   });
 
+  test('a hosted provider transport error is failed in the run, matching the grant trail', async () => {
+    mockCallTool.mockRejectedValue(new RoomGrantError(
+      'provider_unreachable',
+      'hosted-MCP vendor unreachable: connect ECONNREFUSED',
+      502,
+    ));
+    mockAxiosPost.mockResolvedValueOnce(toolCallTurn()).mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, {
+      type: 'first_contact',
+      eventId: '507f1f77bcf86cd799439012',
+      payload: { content: 'list my calendars' },
+    });
+
+    const secondRequest = mockAxiosPost.mock.calls[1][1];
+    const toolMessage = secondRequest.messages.find((message) => message.role === 'tool');
+    expect(JSON.parse(toolMessage.content)).toMatchObject({
+      error: 'provider_unreachable',
+      message: 'hosted-MCP vendor unreachable: connect ECONNREFUSED',
+    });
+
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls[0]).toEqual({
+      name: 'github_list_issues',
+      callId: undefined,
+      outcome: 'failed',
+      elapsedMs: expect.any(Number),
+    });
+  });
+
   test('a revocation mid-run refuses the second call, because the broker is re-asked every time', async () => {
     mockCallTool
       .mockResolvedValueOnce({ callId: 'tool_call_1', result: { issues: [] }, outcome: 'ok' })
-      .mockRejectedValueOnce(Object.assign(new Error('grant is revoked'), {
-        code: 'grant_revoked',
-        details: { recorded: true, callId: 'tool_call_refused' },
-      }));
+      .mockRejectedValueOnce(new RoomGrantError(
+        'grant_revoked',
+        'grant is revoked',
+        403,
+        { recorded: true, callId: 'tool_call_refused' },
+      ));
     mockAxiosPost
       .mockResolvedValueOnce(toolCallTurn('call_1'))
       .mockResolvedValueOnce(toolCallTurn('call_2'))

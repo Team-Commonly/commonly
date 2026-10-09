@@ -928,7 +928,7 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
-const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
+export const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
   if (!(error instanceof RoomGrantError)) return 'failed';
   if (error.code === 'approval_required') return 'pending_approval';
   if (error.code === 'provider_error' || error.code === 'provider_unreachable') return 'failed';

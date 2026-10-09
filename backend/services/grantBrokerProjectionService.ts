@@ -26,7 +26,7 @@
 
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
 import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
-import { allToolDefinitions } from './toolBrokerService';
+import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 
@@ -288,7 +288,7 @@ export const dispatchHostedBrokerTool = async (
         ...(e.details ? { details: e.details } : {}),
       },
       callId,
-      outcome: e.code ? 'refused' : 'failed',
+      outcome: executionErrorOutcome(error),
     };
   }
 };
