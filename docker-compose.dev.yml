@@ -262,8 +262,6 @@ services:
       # Mount Claude Code credentials for OAuth authentication
       # The credentials are in ~/.claude/.credentials.json
       - ${CLAUDE_CREDENTIALS_PATH:-~/.claude}:/home/node/.claude:ro
-      # Mount Commonly MCP server for pod context access
-      - ./packages/commonly-mcp:/app/commonly-mcp:ro
     ports:
       - "${CLAWDBOT_GATEWAY_PORT:-18789}:18789"
     networks:
