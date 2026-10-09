@@ -305,6 +305,7 @@ describe('opencode external provider config', () => {
           body: '{}',
         });
         expect(unsupported.status).toBe(403);
+        await expect(unsupported.text()).resolves.toBe('Unsupported provider request: POST /v1/admin');
         expect(observed).toEqual({
           authorization: 'Bearer upstream-secret',
           host: `127.0.0.1:${upstreamPort}`,
@@ -440,6 +441,7 @@ describe('opencode external provider config', () => {
           expect(args).toContain('litellm/gpt-5.4');
           const configText = readFileSync(options.env.OPENCODE_CONFIG, 'utf8');
           const config = JSON.parse(configText);
+          expect(config.enabled_providers).toEqual(['litellm']);
           expect(config.provider.litellm).toEqual({
             npm: '@ai-sdk/openai-compatible',
             options: {
@@ -652,7 +654,7 @@ describe('opencode external provider config', () => {
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
         _spawnImpl: spawn.impl,
-      })).rejects.toThrow(/environment\.provider.*implicit OpenCode public tier/);
+      })).rejects.toThrow(/environment\.provider.*implicit public tier.*auth\.json/);
       expect(spawn.calls).toHaveLength(0);
     });
   });
@@ -797,7 +799,7 @@ describe('opencode adapter — spawn()', () => {
         _platform: 'darwin',
         _spawnImpl: spawn.impl,
         _wrapArgvWithSeatbelt: () => { throw new Error('refusal must precede sandbox spawn'); },
-      })).rejects.toThrow(/auth\.json is unsupported for public trust/);
+      })).rejects.toThrow(/environment\.provider.*auth\.json.*unsupported for public trust/);
       expect(spawn.calls).toHaveLength(0);
       expect(existsSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(false);
     });
@@ -808,20 +810,29 @@ describe('opencode adapter — spawn()', () => {
       const workspace = join(root, 'workspace');
       const seatRoot = join(root, 'opencode-state');
       const keyFile = join(root, 'provider-key');
+      const xdgData = join(root, 'operator-data');
+      const operatorAuth = join(xdgData, 'opencode', 'auth.json');
       await mkdir(workspace, { recursive: true });
+      await mkdir(join(xdgData, 'opencode'), { recursive: true });
+      await writeFile(operatorAuth, '{"access":"operator-auth-must-not-be-linked"}');
       await writeFile(keyFile, 'read-only-provider-key');
       await chmod(keyFile, 0o600);
+      let loopbackPort;
       const spawn = makeSpawnImpl({
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/sandbox-exec');
           expect(args[0]).toBe('-p');
           const policy = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           expect(policy.permission.edit['*']).toBe('deny');
+          expect(policy.permission.external_directory).toBe('deny');
+          expect(policy.enabled_providers).toEqual(['litellm']);
+          expect(Number(new URL(policy.provider.litellm.options.baseURL).port)).toBe(loopbackPort);
+          expect(existsSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(false);
         },
       });
       await opencode.spawn('read-only turn', {
         cwd: workspace,
-        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: xdgData },
         environment: {
           model: 'gpt-5.4',
           provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
@@ -836,6 +847,14 @@ describe('opencode adapter — spawn()', () => {
         _wrapArgvWithSeatbelt: (argv, opts) => {
           expect(opts.workspaceAccess).toBe('read');
           expect(opts.executablePath).toBe('/usr/local/bin/opencode');
+          expect(opts.readOnlyPaths).toEqual([]);
+          expect(opts.loopbackNetworkPorts).toHaveLength(1);
+          loopbackPort = opts.loopbackNetworkPorts[0];
+          const profile = buildSeatbeltProfile(opts);
+          expect(profile).not.toContain(keyFile);
+          expect(profile).not.toContain(operatorAuth);
+          expect(profile).toContain(`(allow network-outbound (remote tcp "localhost:${loopbackPort}"))`);
+          expect(profile).not.toContain(`localhost:${loopbackPort === 65535 ? 1 : loopbackPort + 1}`);
           return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
         },
       });
@@ -875,7 +894,12 @@ describe('opencode adapter — spawn()', () => {
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         _wrapArgvWithBwrap: (argv, environment, opts) => {
           expect(opts.workspacePath).toBe(workspace);
+          expect(opts.readOnlyPaths).toEqual([
+            expect.any(String), '/usr/local/bin/opencode', process.execPath,
+          ]);
+          expect(opts.readOnlyPaths).not.toContain(keyFile);
           expect(opts.readOnlyPaths).not.toContain(join(xdgData, 'opencode', 'auth.json'));
+          expect(opts).not.toHaveProperty('loopbackNetworkPorts');
           expect(environment.sandbox.filesystem['write-outside']).toContain(seatRoot);
           return ['/usr/bin/bwrap', '--test', ...argv];
         },

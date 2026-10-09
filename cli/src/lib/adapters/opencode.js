@@ -7,6 +7,9 @@
  * environment limited to safe launch/locale variables. Public provider keys
  * stay in the host adapter and reach the configured provider through a
  * per-spawn loopback proxy; OpenCode receives only that proxy's bearer.
+ * This protects the key, not provider spend: the model can use its seat's key
+ * budget, and bwrap's existing shared networking is not a per-port egress
+ * fence.
  * Config is generated per spawn. OpenCode merges config sources, therefore the
  * global config directory is isolated and project config is explicitly off;
  * the environment spec is the sole source of MCP servers for this run.
@@ -345,6 +348,11 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
       outgoing.writeHead(405).end();
       return;
     }
+    const rejectRoute = (path) => {
+      incoming.resume();
+      outgoing.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      outgoing.end(`Unsupported provider request: ${incoming.method || 'UNKNOWN'} ${path}`);
+    };
 
     let target;
     try {
@@ -367,8 +375,7 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
       // path/URL fetcher (including paths on a local provider host).
       const requested = new URL(requestPath, 'http://127.0.0.1');
       if (requested.origin !== 'http://127.0.0.1' || requested.search || requested.hash) {
-        incoming.resume();
-        outgoing.writeHead(403).end();
+        rejectRoute(requested.pathname);
         return;
       }
       const configuredPath = basePath === '/' ? '' : basePath;
@@ -380,14 +387,13 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
         && requested.pathname === `${configuredPath}/models`) {
         endpoint = 'models';
       } else {
-        incoming.resume();
-        outgoing.writeHead(403).end();
+        rejectRoute(requested.pathname);
         return;
       }
       target = {
         path: `${configuredPath}/${endpoint}`,
         protocol: upstream.protocol,
-      hostname: upstream.hostname,
+        hostname: upstream.hostname,
         port: upstream.port || undefined,
         host: upstream.host,
       };
@@ -598,7 +604,6 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
 
   const sourceAuth = join(operatorAppData, 'auth.json');
   const targetAuth = join(appData, 'auth.json');
-  const sourceStat = await statOrNull(sourceAuth);
   if (publicSeat) {
     // A public model must never inherit the operator's OpenCode login. The
     // provider proxy is the only supported credential path for public seats.
@@ -612,9 +617,9 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
       appData,
       dataHome,
       authPath: null,
-      operatorAuthPresent: Boolean(sourceStat),
     };
   }
+  const sourceStat = await statOrNull(sourceAuth);
   const targetStat = await statOrNull(targetAuth);
   const authPath = sourceStat ? realpathSync(sourceAuth) : null;
   const resolvedSourceStat = authPath ? await statOrNull(authPath) : null;
@@ -725,6 +730,9 @@ export default {
     }
 
     const provider = ctx.environment?.provider;
+    if (isPublic && !provider) {
+      throw new Error('public OpenCode seats require environment.provider; the implicit public tier and operator auth.json are unsupported for public trust');
+    }
     if (isPublic && sandboxMode === 'bwrap' && provider
       && sandbox?.network?.policy === 'restricted') {
       throw new Error('public OpenCode provider proxy requires shared bwrap networking; sandbox.network.policy=restricted cannot reach the loopback proxy');
@@ -748,15 +756,9 @@ export default {
     let providerProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
-      if (isPublic && !provider && openCodeHome.operatorAuthPresent) {
-        throw new Error('operator OpenCode auth.json is unsupported for public trust; configure environment.provider instead');
-      }
-      if (isPublic && !provider) {
-        throw new Error('public OpenCode seats require environment.provider; the implicit OpenCode public tier is unsupported for public trust');
-      }
       if (isPublic && provider) {
-        // OpenCode can still spend the configured model budget through this
-        // proxy; the bearer only prevents unrelated local processes from using it.
+        // OpenCode can spend the configured model budget through this proxy;
+        // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
           keyFile: providerKeyFile,
@@ -783,6 +785,7 @@ export default {
         share: 'disabled',
         autoupdate: false,
         ...(provider ? {
+          enabled_providers: [provider.id],
           provider: buildProviderConfig(providerProxy
             ? { ...provider, baseURL: providerProxy.baseURL }
             : provider, ctx.environment.model, providerProxy?.tokenFile || providerKeyFile),
