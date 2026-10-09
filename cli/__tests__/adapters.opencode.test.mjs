@@ -404,6 +404,7 @@ describe('opencode external provider config', () => {
       const seatRoot = join(root, 'seat-state');
       const spawn = makeSpawnImpl({
         onCall: (_cmd, _args, options) => {
+          expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           const permission = config.permission;
           const providerConfig = config.provider.litellm;
