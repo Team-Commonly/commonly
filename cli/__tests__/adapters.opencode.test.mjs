@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { existsSync, readFileSync, readlinkSync, realpathSync } from 'fs';
+import { createServer } from 'http';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import {
   chmod,
   mkdir,
@@ -11,6 +12,7 @@ import {
 } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -28,6 +30,7 @@ const {
   publicPermissions,
   qualifiedProviderModel,
   resolveProviderKeyFile,
+  startProviderProxy,
 } = await import('../src/lib/adapters/opencode.js');
 
 const EXPECTED_DISABLED_ENV = [
@@ -202,21 +205,62 @@ describe('opencode MCP config', () => {
 });
 
 describe('opencode external provider config', () => {
-  test('denies public provider secrets to every model-facing file content tool', () => {
-    const keyFile = '/private/operator-keys/litellm-key';
-    const permission = publicPermissions('workspace', [], keyFile);
+  test('proxies provider requests with a per-spawn bearer and never forwards that bearer upstream', async () => {
+    await withTemp(async (root) => {
+      const keyFile = join(root, 'provider-key');
+      const proxyTokenFile = join(root, 'proxy-token');
+      await writeFile(keyFile, 'upstream-secret');
+      await chmod(keyFile, 0o600);
+      let observed = null;
+      const upstream = createServer((req, res) => {
+        observed = { authorization: req.headers.authorization, url: req.url };
+        req.resume();
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      });
+      await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+      const upstreamPort = upstream.address().port;
+      const proxy = await startProviderProxy({
+        provider: { baseURL: `http://127.0.0.1:${upstreamPort}/v1` },
+        keyFile,
+        tokenFile: proxyTokenFile,
+      });
+      try {
+        const proxyToken = readFileSync(proxyTokenFile, 'utf8');
+        const response = await fetch(`${proxy.baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${proxyToken}`, 'content-type': 'application/json' },
+          body: '{"model":"fake"}',
+        });
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe('{"ok":true}');
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
 
-    expect(permission['*']).toBe('deny');
-    expect(permission.external_directory).toBe('deny');
-    expect(permission.read['*']).toBe('allow');
-    for (const path of [keyFile, keyFile.replace(/^\/+/, '')]) {
-      expect(permission.read[path]).toBe('deny');
-      expect(permission.edit[path]).toBe('deny');
-    }
-    for (const tool of ['grep', 'glob', 'list']) {
-      expect(permission[tool]).toBe('deny');
-    }
-    expect(permission.lsp).toBe('deny');
+        const missing = await fetch(`${proxy.baseURL}/chat/completions`, {
+          method: 'POST',
+          body: '{}',
+        });
+        expect(missing.status).toBe(401);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+
+        const denied = await fetch(`${proxy.baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer wrong-token' },
+          body: '{}',
+        });
+        expect(denied.status).toBe(401);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+
+        const outsideBasePath = await fetch(`${proxy.baseURL.replace(/\/v1$/, '')}/admin`, {
+          headers: { authorization: `Bearer ${proxyToken}` },
+        });
+        expect(outsideBasePath.status).toBe(403);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+      } finally {
+        await proxy.close();
+        await new Promise((resolve) => upstream.close(resolve));
+      }
+    });
   });
 
   test('uses file-backed provider auth and materializes only the selected model when models are omitted', () => {
@@ -343,26 +387,38 @@ describe('opencode external provider config', () => {
     });
   });
 
-  test('grants Seatbelt the key for OpenCode while denying model tools access to it', async () => {
+  test('public Seatbelt provider config uses only the proxy credential, not the upstream key or auth.json', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
+      const operatorAppData = join(root, 'operator-data', 'opencode');
+      const authPath = join(operatorAppData, 'auth.json');
       const keyFile = join(root, 'secrets', 'provider-key');
       await mkdir(workspace, { recursive: true });
+      await mkdir(operatorAppData, { recursive: true });
       await mkdir(join(root, 'secrets'), { recursive: true });
       await writeFile(keyFile, 'provider-key');
       await chmod(keyFile, 0o600);
+      await writeFile(authPath, '{"provider":"operator-auth"}');
       const realKey = realpathSync(keyFile);
+      const realAuthPath = realpathSync(authPath);
+      const seatRoot = join(root, 'seat-state');
       const spawn = makeSpawnImpl({
         onCall: (_cmd, _args, options) => {
-          const permission = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8')).permission;
-          for (const path of [realKey, realKey.replace(/^\/+/, '')]) {
-            expect(permission.read[path]).toBe('deny');
-            expect(permission.edit[path]).toBe('deny');
-          }
-          expect(permission.grep).toBe('deny');
-          expect(permission.glob).toBe('deny');
-          expect(permission.list).toBe('deny');
-          expect(permission.lsp).toBe('deny');
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          const permission = config.permission;
+          const providerConfig = config.provider.litellm;
+          const tokenFile = providerConfig.options.apiKey.match(/^\{file:(.+)\}$/)[1];
+          expect(permission.external_directory).toBe('deny');
+          expect(permission.read['*']).toBe('allow');
+          expect(permission.grep).toBe('allow');
+          expect(permission.glob).toBe('allow');
+          expect(permission.list).toBe('allow');
+          expect(providerConfig.options.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+          expect(providerConfig.options.apiKey).not.toContain(realKey);
+          expect(JSON.stringify(config)).not.toContain('provider-key');
+          expect(readFileSync(tokenFile, 'utf8')).not.toBe('provider-key');
+          expect(Object.values(options.env).join('\n')).not.toContain('provider-key');
+          expect(existsSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(false);
         },
       });
       await opencode.spawn('public provider turn', {
@@ -374,38 +430,59 @@ describe('opencode external provider config', () => {
           sandbox: { trust: 'public', mode: 'workspace' },
         },
         agentName: 'public-provider-seat',
-        _opencodeHomeRoot: join(root, 'seat-state'),
+        _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
         _spawnImpl: spawn.impl,
         _wrapArgvWithSeatbelt: (argv, opts) => {
-          expect(opts.readOnlyPaths).toEqual([realKey]);
+          expect(opts.loopbackNetworkPorts).toHaveLength(1);
+          const profile = buildSeatbeltProfile(opts);
+          expect(profile).not.toContain(realKey);
+          expect(opts.readOnlyPaths).not.toContain(realKey);
+          expect(profile).toContain(`(allow network-outbound (remote tcp "localhost:${opts.loopbackNetworkPorts[0]}"))`);
+          expect(profile).not.toContain(realAuthPath);
+          expect(opts.mcpConfigDir).not.toContain(realKey);
+          expect(opts.readOnlyPaths).not.toContain(realAuthPath);
           return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
         },
       });
     });
   });
 
-  test('grants bwrap the key for OpenCode while denying model tools access to it', async () => {
+  test('public bwrap provider config does not expose the upstream key or operator auth.json', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'provider-key');
+      const authPath = join(root, 'operator-data', 'opencode', 'auth.json');
       await mkdir(workspace, { recursive: true });
       await mkdir(join(root, 'secrets'), { recursive: true });
+      await mkdir(join(root, 'operator-data', 'opencode'), { recursive: true });
       await writeFile(keyFile, 'provider-key');
       await chmod(keyFile, 0o600);
+      await writeFile(authPath, '{"provider":"operator-auth"}');
       const realKey = realpathSync(keyFile);
+      const realAuthPath = realpathSync(authPath);
+      const seatRoot = join(root, 'opencode-state');
       const spawn = makeSpawnImpl({
         onCall: (_cmd, _args, options) => {
-          const permission = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8')).permission;
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          const permission = config.permission;
+          const tokenFile = config.provider.litellm.options.apiKey.match(/^\{file:(.+)\}$/)[1];
           for (const path of [realKey, realKey.replace(/^\/+/, '')]) {
-            expect(permission.read[path]).toBe('deny');
-            expect(permission.edit[path]).toBe('deny');
+            expect(permission.read[path]).toBeUndefined();
+            expect(permission.edit[path]).toBeUndefined();
           }
-          expect(permission.grep).toBe('deny');
-          expect(permission.glob).toBe('deny');
-          expect(permission.list).toBe('deny');
-          expect(permission.lsp).toBe('deny');
+          expect(permission.external_directory).toBe('deny');
+          expect(permission.read[tokenFile]).toBeUndefined();
+          expect(permission.grep).toBe('allow');
+          expect(permission.glob).toBe('allow');
+          expect(permission.list).toBe('allow');
+          expect(permission.lsp).toBe('allow');
+          expect(config.provider.litellm.options.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+          expect(JSON.stringify(config)).not.toContain('provider-key');
+          expect(readFileSync(tokenFile, 'utf8')).not.toBe('provider-key');
+          expect(Object.values(options.env).join('\n')).not.toContain('provider-key');
+          expect(existsSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(false);
         },
       });
       await opencode.spawn('public provider turn', {
@@ -417,7 +494,7 @@ describe('opencode external provider config', () => {
           sandbox: { trust: 'public', mode: 'bwrap' },
         },
         agentName: 'public-provider-seat',
-        _opencodeHomeRoot: join(root, 'seat-state'),
+        _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'linux',
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
@@ -427,11 +504,37 @@ describe('opencode external provider config', () => {
             expect.stringMatching(/commonly-opencode-/),
             '/usr/local/bin/opencode',
             process.execPath,
-            realKey,
           ]);
+          expect(opts.readOnlyPaths).not.toContain(realKey);
+          expect(opts.readOnlyPaths).not.toContain(realAuthPath);
           return ['/usr/bin/bwrap', '--test', ...argv];
         },
       });
+    });
+  });
+
+  test('refuses a public bwrap provider when restricted networking cannot reach the loopback proxy', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace, { recursive: true });
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('public provider turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/unused/provider-key' },
+          sandbox: {
+            trust: 'public', mode: 'bwrap', network: { policy: 'restricted' },
+          },
+        },
+        agentName: 'public-provider-seat',
+        _binaryPath: '/usr/local/bin/opencode',
+        _platform: 'linux',
+        _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(/restricted cannot reach the loopback proxy/);
+      expect(spawn.calls).toHaveLength(0);
     });
   });
 });
@@ -559,27 +662,8 @@ describe('opencode adapter — spawn()', () => {
       await mkdir(workspace, { recursive: true });
       await mkdir(appData, { recursive: true });
       await writeFile(authPath, '{"provider":"dummy-auth"}');
-      const resolvedAuthPath = realpathSync(authPath);
-      const spawn = makeSpawnImpl({
-        onCall: (cmd, args, options) => {
-          expect(cmd).toBe('/usr/bin/sandbox-exec');
-          expect(args[0]).toBe('-p');
-          const policy = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
-          expect(policy.permission.bash).toBe('deny');
-          expect(policy.permission['*']).toBe('deny');
-          expect(policy.permission.edit['*']).toBe('allow');
-          expect(options.env.XDG_DATA_HOME).toBe(join(seatRoot, 'data'));
-          expect(options.env.XDG_STATE_HOME).toBe(join(seatRoot, 'state'));
-          expect(options.env.XDG_CACHE_HOME).toBe(join(seatRoot, 'cache'));
-          expect(options.env.HOME).toBe(seatRoot);
-          expect(options.env.TMPDIR).toBe(join(seatRoot, 'tmp'));
-          expect(options.env.PATH).toBe(process.env.PATH);
-          expect(options.env.OPENAI_API_KEY).toBeUndefined();
-          expect(options.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
-          expect(readlinkSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(resolvedAuthPath);
-        },
-      });
-      await opencode.spawn('public turn', {
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('public turn', {
         cwd: workspace,
         env: {
           PATH: process.env.PATH,
@@ -593,11 +677,10 @@ describe('opencode adapter — spawn()', () => {
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
         _spawnImpl: spawn.impl,
-        _wrapArgvWithSeatbelt: (argv, opts) => {
-          expect(opts.readOnlyPaths).toEqual([resolvedAuthPath]);
-          return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
-        },
-      });
+        _wrapArgvWithSeatbelt: () => { throw new Error('refusal must precede sandbox spawn'); },
+      })).rejects.toThrow(/auth\.json is unsupported for public trust/);
+      expect(spawn.calls).toHaveLength(0);
+      expect(existsSync(join(seatRoot, 'data', 'opencode', 'auth.json'))).toBe(false);
     });
   });
 
@@ -632,17 +715,12 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
-  test('a public Linux spawn derives bwrap, keeps seat state writable, and binds provider auth read-only', async () => {
+  test('a public Linux spawn derives bwrap without binding operator auth.json', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const xdgData = join(root, 'operator-data');
-      const appData = join(xdgData, 'opencode');
-      const authPath = join(appData, 'auth.json');
       const seatRoot = join(root, 'opencode-state');
       await mkdir(workspace, { recursive: true });
-      await mkdir(appData, { recursive: true });
-      await writeFile(authPath, '{"provider":"dummy-auth"}');
-      const resolvedAuthPath = realpathSync(authPath);
       const spawn = makeSpawnImpl({
         onCall: (cmd, args, options) => {
           expect(cmd).toBe('/usr/bin/bwrap');
@@ -662,7 +740,7 @@ describe('opencode adapter — spawn()', () => {
         _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
         _wrapArgvWithBwrap: (argv, environment, opts) => {
           expect(opts.workspacePath).toBe(workspace);
-          expect(opts.readOnlyPaths).toContain(resolvedAuthPath);
+          expect(opts.readOnlyPaths).not.toContain(join(xdgData, 'opencode', 'auth.json'));
           expect(environment.sandbox.filesystem['write-outside']).toContain(seatRoot);
           return ['/usr/bin/bwrap', '--test', ...argv];
         },

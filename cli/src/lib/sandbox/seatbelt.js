@@ -332,6 +332,7 @@ export const buildSeatbeltProfile = ({
   mcpConfigDir = null,
   executablePaths = [],
   readOnlyPaths = [],
+  loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
 }) => {
   for (const [path, label] of [
@@ -343,6 +344,11 @@ export const buildSeatbeltProfile = ({
   }
   if (mcpConfigDir) assertAbsolutePath(mcpConfigDir, 'mcpConfigDir');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
+  for (const port of loopbackNetworkPorts) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
+    }
+  }
   if (!['read', 'write'].includes(workspaceAccess)) {
     throw new Error('Seatbelt workspaceAccess must be read or write');
   }
@@ -374,6 +380,9 @@ export const buildSeatbeltProfile = ({
   const readOnlyRules = resolvedReadOnlyPaths.map((path) => (
     `(allow file-read* file-test-existence ${literal(path)})`
   )).join('\n');
+  const loopbackNetworkRules = [...new Set(loopbackNetworkPorts)].map((port) => (
+    `(allow network-outbound (remote tcp "localhost:${port}"))`
+  )).join('\n');
   const claudeRuntimeRules = allowClaudeRuntimeAccess ? (() => {
     const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
     const userKeychains = join(homedir(), 'Library', 'Keychains');
@@ -397,6 +406,7 @@ export const buildSeatbeltProfile = ({
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedState)}"))`,
     workspaceRule,
     `(allow file-read* file-test-existence file-write* ${subpath(resolvedState)})`,
+    loopbackNetworkRules,
     mcpRule,
     readOnlyRules,
     // The workspace is intentionally readable, but credential-like nested

@@ -3,9 +3,10 @@
  *
  * Tested against opencode-ai 1.18.35. OpenCode stores conversation sessions
  * under XDG_DATA_HOME. Trusted seats use the operator's data home directly;
- * public seats get per-identity state with only an auth.json symlink back to
- * the operator's provider login, and a child environment limited to safe
- * launch/locale variables.
+ * public seats get per-identity state without operator auth.json and a child
+ * environment limited to safe launch/locale variables. Public provider keys
+ * stay in the host adapter and reach the configured provider through a
+ * per-spawn loopback proxy; OpenCode receives only that proxy's bearer.
  * Config is generated per spawn. OpenCode merges config sources, therefore the
  * global config directory is isolated and project config is explicitly off;
  * the environment spec is the sole source of MCP servers for this run.
@@ -15,13 +16,17 @@
  */
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { realpathSync } from 'fs';
+import { constants as fsConstants } from 'fs';
+import { createServer, request as httpRequest } from 'http';
+import { request as httpsRequest } from 'https';
 import {
   chmod,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readlink,
   rm,
   unlink,
@@ -185,32 +190,20 @@ const buildMcpConfig = (servers, ctx = {}) => {
   return mcp;
 };
 
-const publicPermissions = (mode, mcpNames, providerKeyFile = null) => {
+const publicPermissions = (mode, mcpNames) => {
   const read = { '*': 'allow' };
   const edit = { '*': mode === 'read-only' ? 'deny' : 'allow' };
   for (const pattern of PUBLIC_READ_DENIES) {
     read[pattern] = 'deny';
     edit[pattern] = 'deny';
   }
-  if (providerKeyFile) {
-    // The OS sandbox must expose this exact file so OpenCode can resolve its
-    // {file:} provider reference. The model's own tools must not read it:
-    // OpenCode 1.18.35 strips the leading slash before matching read/edit
-    // paths, so pin both spellings. grep/glob permissions match search inputs,
-    // not file paths; disable those path-search tools for provider-backed
-    // public seats instead.
-    for (const path of [providerKeyFile, providerKeyFile.replace(/^\/+/, '')]) {
-      read[path] = 'deny';
-      edit[path] = 'deny';
-    }
-  }
   return {
     '*': 'deny',
     read,
     edit,
-    glob: providerKeyFile ? 'deny' : 'allow',
-    grep: providerKeyFile ? 'deny' : 'allow',
-    list: providerKeyFile ? 'deny' : 'allow',
+    glob: 'allow',
+    grep: 'allow',
+    list: 'allow',
     bash: 'deny',
     task: 'deny',
     external_directory: 'deny',
@@ -220,7 +213,7 @@ const publicPermissions = (mode, mcpNames, providerKeyFile = null) => {
     skill: 'deny',
     todowrite: 'allow',
     todoread: 'allow',
-    lsp: providerKeyFile ? 'deny' : 'allow',
+    lsp: 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
   };
 };
@@ -309,6 +302,128 @@ const resolveProviderKeyFile = async (provider, workspacePath) => {
     throw new Error('OpenCode provider.keyFile must be outside the workspace');
   }
   return realKeyFile;
+};
+
+const readProviderKey = async (keyFile) => {
+  const noFollow = fsConstants.O_NOFOLLOW || 0;
+  const handle = await open(keyFile, fsConstants.O_RDONLY | noFollow);
+  try {
+    const details = await handle.stat();
+    if (!details.isFile() || (details.mode & 0o777) !== 0o600) {
+      throw new Error('OpenCode provider.keyFile changed after validation; expected a regular mode-0600 file');
+    }
+    const value = (await handle.readFile()).toString('utf8').trim();
+    if (!value) throw new Error('OpenCode provider.keyFile must not be empty');
+    return value;
+  } finally {
+    await handle.close();
+  }
+};
+
+const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
+  const upstream = new URL(provider.baseURL);
+  if (!['http:', 'https:'].includes(upstream.protocol)
+    || upstream.username || upstream.password || upstream.search || upstream.hash) {
+    throw new Error('OpenCode provider.baseURL must be an http(s) URL without embedded credentials or query data');
+  }
+  const basePath = upstream.pathname.replace(/\/+$/, '') || '/';
+  const basePathPrefix = basePath === '/' ? '/' : `${basePath}/`;
+  const upstreamKey = await readProviderKey(keyFile);
+  const proxyToken = randomBytes(32).toString('base64url');
+  await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
+  await chmod(tokenFile, 0o600);
+
+  const server = createServer((incoming, outgoing) => {
+    const supplied = Buffer.from(incoming.headers.authorization || '');
+    const expected = Buffer.from(`Bearer ${proxyToken}`);
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      incoming.resume();
+      outgoing.writeHead(401).end();
+      return;
+    }
+    if (!['GET', 'POST'].includes(incoming.method || '')) {
+      incoming.resume();
+      outgoing.writeHead(405).end();
+      return;
+    }
+
+    let target;
+    try {
+      const requestPath = incoming.url || '/';
+      if (!requestPath.startsWith('/') || requestPath.startsWith('//')) {
+        incoming.resume();
+        outgoing.writeHead(400).end();
+        return;
+      }
+      target = new URL(requestPath, upstream);
+    } catch {
+      incoming.resume();
+      outgoing.writeHead(400).end();
+      return;
+    }
+    if (target.origin !== upstream.origin) {
+      incoming.resume();
+      outgoing.writeHead(403).end();
+      return;
+    }
+    if (target.pathname !== basePath && !target.pathname.startsWith(basePathPrefix)) {
+      incoming.resume();
+      outgoing.writeHead(403).end();
+      return;
+    }
+
+    const headers = Object.fromEntries(Object.entries(incoming.headers)
+      .filter(([name]) => ![
+        'authorization', 'connection', 'host', 'keep-alive', 'proxy-authenticate',
+        'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
+        'x-api-key',
+      ].includes(name.toLowerCase())));
+    headers.authorization = `Bearer ${upstreamKey}`;
+    headers.host = target.host;
+    const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, {
+      method: incoming.method,
+      headers,
+    }, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400) {
+        response.resume();
+        outgoing.writeHead(502).end('Provider redirects are not supported');
+        return;
+      }
+      const responseHeaders = Object.fromEntries(Object.entries(response.headers)
+        .filter(([name]) => ![
+          'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+          'te', 'trailer', 'transfer-encoding', 'upgrade',
+        ].includes(name.toLowerCase())));
+      outgoing.writeHead(response.statusCode || 502, responseHeaders);
+      response.pipe(outgoing);
+    });
+    request.on('error', () => {
+      if (!outgoing.headersSent) outgoing.writeHead(502);
+      outgoing.end('Provider request failed');
+    });
+    outgoing.on('close', () => request.destroy());
+    incoming.on('aborted', () => request.destroy());
+    incoming.pipe(request);
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+  const { port } = server.address();
+  const proxyBaseURL = new URL(upstream.pathname, `http://127.0.0.1:${port}`).toString();
+  return {
+    baseURL: proxyBaseURL,
+    tokenFile,
+    port,
+    close: () => new Promise((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections?.();
+    }),
+  };
 };
 
 const validateProviderEnvironment = async (environment, workspacePath) => {
@@ -455,6 +570,22 @@ const prepareOpenCodeDataHome = async (ctx, { publicSeat = false } = {}) => {
   const sourceAuth = join(operatorAppData, 'auth.json');
   const targetAuth = join(appData, 'auth.json');
   const sourceStat = await statOrNull(sourceAuth);
+  if (publicSeat) {
+    // A public model must never inherit the operator's OpenCode login. The
+    // provider proxy is the only supported credential path for public seats.
+    const targetStat = await statOrNull(targetAuth);
+    if (targetStat && !targetStat.isSymbolicLink()) {
+      throw new Error(`refusing to replace non-symlink OpenCode seat credential: ${targetAuth}`);
+    }
+    if (targetStat) await unlink(targetAuth);
+    return {
+      root,
+      appData,
+      dataHome,
+      authPath: null,
+      operatorAuthPresent: Boolean(sourceStat),
+    };
+  }
   const targetStat = await statOrNull(targetAuth);
   const authPath = sourceStat ? realpathSync(sourceAuth) : null;
   const resolvedSourceStat = authPath ? await statOrNull(authPath) : null;
@@ -565,6 +696,10 @@ export default {
     }
 
     const provider = ctx.environment?.provider;
+    if (isPublic && sandboxMode === 'bwrap' && provider
+      && sandbox?.network?.policy === 'restricted') {
+      throw new Error('public OpenCode provider proxy requires shared bwrap networking; sandbox.network.policy=restricted cannot reach the loopback proxy');
+    }
     const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
@@ -581,8 +716,21 @@ export default {
       root: tempDir,
     });
     let openCodeHome = null;
+    let providerProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
+      if (isPublic && !provider && openCodeHome.operatorAuthPresent) {
+        throw new Error('operator OpenCode auth.json is unsupported for public trust; configure environment.provider instead');
+      }
+      if (isPublic && provider) {
+        // OpenCode can still spend the configured model budget through this
+        // proxy; the bearer only prevents unrelated local processes from using it.
+        providerProxy = await startProviderProxy({
+          provider,
+          keyFile: providerKeyFile,
+          tokenFile: join(tempDir, 'provider-proxy-token'),
+        });
+      }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
       const cacheHome = isPublic ? join(openCodeHome.root, 'cache') : null;
       const tempWork = isPublic ? join(openCodeHome.root, 'tmp') : join(tempDir, 'tmp');
@@ -598,12 +746,14 @@ export default {
       });
       const config = {
         permission: isPublic
-          ? publicPermissions(sandboxMode, Object.keys(mcp), providerKeyFile)
+          ? publicPermissions(sandboxMode, Object.keys(mcp))
           : 'allow',
         share: 'disabled',
         autoupdate: false,
         ...(provider ? {
-          provider: buildProviderConfig(provider, ctx.environment.model, providerKeyFile),
+          provider: buildProviderConfig(providerProxy
+            ? { ...provider, baseURL: providerProxy.baseURL }
+            : provider, ctx.environment.model, providerProxy?.tokenFile || providerKeyFile),
         } : {}),
         ...(Object.keys(mcp).length ? { mcp } : {}),
       };
@@ -665,8 +815,6 @@ export default {
             tempDir,
             binary,
             process.execPath,
-            ...(openCodeHome.authPath ? [openCodeHome.authPath] : []),
-            ...(providerKeyFile ? [providerKeyFile] : []),
           ],
         });
         [cmd, ...spawnArgs] = wrapped;
@@ -680,10 +828,8 @@ export default {
           executablePath: binary,
           statePath: openCodeHome.root,
           mcpConfigDir: tempDir,
-          readOnlyPaths: [
-            ...(openCodeHome.authPath ? [openCodeHome.authPath] : []),
-            ...(providerKeyFile ? [providerKeyFile] : []),
-          ],
+          loopbackNetworkPorts: providerProxy ? [providerProxy.port] : [],
+          readOnlyPaths: [],
         });
         [cmd, ...spawnArgs] = wrapped;
       }
@@ -703,6 +849,7 @@ export default {
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } finally {
+      try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   },
@@ -718,4 +865,5 @@ export {
   publicPermissions,
   qualifiedProviderModel,
   resolveProviderKeyFile,
+  startProviderProxy,
 };
