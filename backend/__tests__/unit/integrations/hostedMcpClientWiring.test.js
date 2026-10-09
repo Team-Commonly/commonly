@@ -34,7 +34,14 @@ test('the pre-registered entries include Google Calendar, so the checks below ar
   expect(preRegistered.map((entry) => entry.id)).toContain('google-calendar');
 });
 
-describe.each(preRegistered.map((entry) => [entry.id]))('%s client wiring', (entryId) => {
+// A non-empty table even when the list empties, so the guard above is what
+// fails, by name, rather than jest refusing an empty `.each` at load time
+// (Vera, #2111). The placeholder id is mapped nowhere, so its arms fail too.
+const wiringTable = preRegistered.length
+  ? preRegistered.map((entry) => [entry.id])
+  : [['no-pre-registered-entry']];
+
+describe.each(wiringTable)('%s client wiring', (entryId) => {
   const { clientId, clientSecret } = hostedMcpClientConfigKeys(entryId);
 
   test.each([[clientId], [clientSecret]])(
