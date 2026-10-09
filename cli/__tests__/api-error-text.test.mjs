@@ -59,6 +59,22 @@ test('an HTML error page becomes one line named by its <title>', async () => {
   expect(err.body.message).toBe(tunnelPage);
 });
 
+test('a classifiable word only in the discarded page body still classifies', async () => {
+  // 502, so the status === 429 shortcut cannot fire: the words exist only in
+  // err.body.message, which the one-line message drops (Vera, #2092 review).
+  const page = [
+    '<!DOCTYPE html><html><head><title>Bad gateway</title></head><body>',
+    ...Array.from({ length: 80 }, (_, i) => `<div class="row-${i}">upstream</div>`),
+    '<p>rate limit exceeded</p>',
+    '</body></html>',
+  ].join('\n');
+  respond(502, page);
+  const err = await failure();
+  expect(err.message).toBe('HTTP 502: Bad gateway');
+  expect(err.message).not.toMatch(/rate limit/);
+  expect(classifySpawnFailure(err)).toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+});
+
 test('an HTML page with no <title> is named by its status', async () => {
   respond(503, '<html><body><h1>Service Unavailable</h1></body></html>');
   expect((await failure()).message).toBe('HTTP 503 (HTML error page)');
