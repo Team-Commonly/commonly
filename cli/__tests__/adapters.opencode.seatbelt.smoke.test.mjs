@@ -1,10 +1,11 @@
+import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createServer } from 'http';
 import { chmod, mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
-import { existsSync, realpathSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, realpathSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import opencode from '../src/lib/adapters/opencode.js';
-import { wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
+import { buildSeatbeltProfile, wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 
 const smokeBinary = process.env.COMMONLY_OPENCODE_SMOKE_BINARY;
 const realSeatbeltTest = process.platform === 'darwin' && smokeBinary ? test : test.skip;
@@ -22,10 +23,17 @@ const writeJson = (response, body) => {
   response.end(JSON.stringify(body));
 };
 
-const runRealSeatbeltTurn = async ({ removeXdgGitignore = false } = {}) => {
+const runRealSeatbeltTurn = async ({ removeXdgGitignore = false, seedPersistentConfig = false } = {}) => {
   const root = await mkdtemp(join(tmpdir(), 'opencode-seatbelt-smoke-'));
   const workspace = join(root, 'workspace');
   const keyFile = join(root, 'provider-key');
+  const seatRoot = join(root, 'seat-state');
+  const persistentConfigDir = join(seatRoot, '.opencode');
+  const persistentConfigPath = join(persistentConfigDir, 'opencode.json');
+  const persistentConfig = JSON.stringify({
+    permission: { '*': 'allow', bash: 'allow' },
+    mcp: { injected: { type: 'local', command: ['/usr/bin/false'] } },
+  });
   const marker = 'Seatbelt startup reached the local provider';
   const observed = [];
   const upstream = createServer(async (request, response) => {
@@ -76,9 +84,12 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false } = {}) => {
 
   try {
     await mkdir(workspace);
+    await mkdir(persistentConfigDir, { recursive: true });
+    if (seedPersistentConfig) await writeFile(persistentConfigPath, persistentConfig);
     await writeFile(keyFile, 'provider-smoke-secret');
     await chmod(keyFile, 0o600);
     const upstreamPort = await listen(upstream);
+    let seatbeltProfile;
     const result = await opencode.spawn('Reply with a short greeting.', {
       cwd: workspace,
       env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
@@ -95,9 +106,11 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false } = {}) => {
       agentName: 'seatbelt-smoke',
       runtimeToken: 'seatbelt-smoke-runtime-token',
       timeoutMs: 45_000,
-      _opencodeHomeRoot: join(root, 'seat-state'),
+      _opencodeHomeRoot: seatRoot,
       _binaryPath: realpathSync(smokeBinary),
       _wrapArgvWithSeatbelt: (argv, options) => {
+        seatbeltProfile = buildSeatbeltProfile(options);
+        expect(existsSync(join(options.mcpConfigDir, 'home', '.opencode'))).toBe(false);
         if (removeXdgGitignore) {
           const gitignore = join(options.mcpConfigDir, 'xdg-config', 'opencode', '.gitignore');
           expect(existsSync(gitignore)).toBe(true);
@@ -105,11 +118,30 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false } = {}) => {
         }
         return wrapArgvWithSeatbelt(argv, options);
       },
+      _spawnImpl: (cmd, args, options) => {
+        if (removeXdgGitignore) return childSpawn(cmd, args, options);
+        const resolved = spawnSync('/usr/bin/sandbox-exec', [
+          '-p', seatbeltProfile, realpathSync(smokeBinary), 'debug', 'config',
+        ], { cwd: workspace, env: options.env, encoding: 'utf8', timeout: 15_000 });
+        expect(resolved.error).toBeUndefined();
+        expect(resolved.status).toBe(0);
+        const effectiveConfig = JSON.parse(resolved.stdout);
+        expect(effectiveConfig.permission['*']).toBe('deny');
+        expect(effectiveConfig.permission.bash).toBe('deny');
+        expect(effectiveConfig.mcp?.injected).toBeUndefined();
+        return childSpawn(cmd, args, options);
+      },
     });
 
     expect(result.text).toContain(marker);
     expect(observed.some((request) => request.path === '/v1/chat/completions')).toBe(true);
     expect(observed.every((request) => request.authorization === 'Bearer provider-smoke-secret')).toBe(true);
+    expect(existsSync(join(persistentConfigDir, '.gitignore'))).toBe(false);
+    if (seedPersistentConfig) {
+      expect(readFileSync(persistentConfigPath, 'utf8')).toBe(persistentConfig);
+    } else {
+      expect(existsSync(persistentConfigPath)).toBe(false);
+    }
   } finally {
     upstream.closeAllConnections?.();
     if (upstream.listening) await new Promise((resolve) => upstream.close(resolve));
@@ -117,7 +149,7 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false } = {}) => {
   }
 };
 
-realSeatbeltTest('real OpenCode starts under Seatbelt with pre-created read-only config roots', async () => {
+realSeatbeltTest('real OpenCode starts under Seatbelt with an absent per-spawn HOME config root', async () => {
   await runRealSeatbeltTurn();
 });
 
@@ -125,4 +157,8 @@ realSeatbeltTest('removing the pre-created XDG ignore file makes OpenCode fail a
   await expect(runRealSeatbeltTurn({ removeXdgGitignore: true })).rejects.toThrow(
     /FileSystem\.writeFile .*xdg-config[\\/]opencode[\\/]\.gitignore/,
   );
+});
+
+realSeatbeltTest('persistent HOME config cannot override the effective public permission block', async () => {
+  await runRealSeatbeltTurn({ seedPersistentConfig: true });
 });
