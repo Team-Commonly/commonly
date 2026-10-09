@@ -531,6 +531,11 @@ router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
         podType: pod.type || null,
         instanceId: inst?.instanceId || instanceId,
         status: inst?.status || 'active',
+        // The CLI may verify this server-owned binding before spawning a
+        // seat. Expose the non-secret discriminator, never the full config.
+        runtimeAdapter: typeof inst?.config?.runtime?.adapter === 'string'
+          ? inst.config.runtime.adapter
+          : null,
         type: 'installation',
       };
     });

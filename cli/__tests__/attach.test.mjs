@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  BOOTSTRAP_ADAPTER_DETECT_ORDER,
+  runtimeAdapterForInstallation,
   resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
 
@@ -73,7 +75,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // The support check moved into the derivation must not become a no-op.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
-    })).toThrow(/implemented only for public codex or Claude adapters/);
+    })).toThrow(/implemented only for public Claude, Codex, or OpenCode adapters/);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {
@@ -165,6 +167,19 @@ describe('updateAgentConfiguration', () => {
           environment,
         },
       },
+    );
+  });
+
+  test('agent config writes the adapter binding explicitly', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const adapterRegistry = {
+      listAdapterNames: () => ['opencode'],
+      getAdapter: () => ({ detect: async () => ({ path: '/bin/opencode', version: '1.18.35' }) }),
+    };
+    await updateAgentConfiguration({ client, record, adapter: 'opencode', adapterRegistry });
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      { instanceId: 'writer', config: { runtime: { adapter: 'opencode' } } },
     );
   });
 
@@ -309,6 +324,7 @@ describe('performAttach', () => {
         config: expect.objectContaining({
           runtime: expect.objectContaining({
             runtimeType: 'stub',
+            adapter: 'stub',
             host: 'byo',
           }),
         }),
@@ -475,12 +491,13 @@ describe('bootstrapAgentRecordFromEnv', () => {
     ],
   };
 
-  const makeRegistry = ({ claudeFound = true, codexFound = true } = {}) => ({
+  const makeRegistry = ({ claudeFound = true, codexFound = true, opencodeFound = false } = {}) => ({
     getAdapter: (n) => ({
       claude: { name: 'claude', detect: async () => (claudeFound ? { path: '/bin/claude', version: '1' } : null) },
       codex: { name: 'codex', detect: async () => (codexFound ? { path: '/bin/codex', version: '1' } : null) },
+      opencode: { name: 'opencode', detect: async () => (opencodeFound ? { path: '/bin/opencode', version: '1' } : null) },
     }[n] || null),
-    listAdapterNames: () => ['stub', 'claude', 'codex'],
+    listAdapterNames: () => ['stub', 'claude', 'codex', 'opencode'],
   });
 
   const makeFactory = (response = identityResponse) => {
@@ -540,6 +557,60 @@ describe('bootstrapAgentRecordFromEnv', () => {
       adapterRegistry: makeRegistry({ claudeFound: false }),
     });
     expect(record.adapter).toBe('codex');
+  });
+
+  test('OpenCode is not selected by automatic bootstrap detection', async () => {
+    expect(BOOTSTRAP_ADAPTER_DETECT_ORDER).toEqual(['claude', 'codex', 'pi']);
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, opencodeFound: true }),
+    })).rejects.toThrow(/No supported agent CLI found on PATH/);
+  });
+
+  test('an explicit OpenCode bootstrap requires the server to declare that adapter for the selected install', async () => {
+    const declared = makeFactory({
+      agentName: 'smoke-agent',
+      instanceId: 'default',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: 'OpenCode',
+      }],
+    });
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: declared,
+      adapterRegistry: makeRegistry({ opencodeFound: true }),
+      adapterOverride: 'opencode',
+    });
+    expect(record.adapter).toBe('opencode');
+
+    const undeclared = makeFactory({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+    });
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: undeclared,
+      adapterRegistry: makeRegistry({ opencodeFound: true }),
+      adapterOverride: 'opencode',
+    })).rejects.toThrow(/pod owner must run commonly agent config smoke-agent --adapter opencode/);
+  });
+
+  test('reads the declared adapter only from the matching active installation', () => {
+    const installations = [
+      { podId: 'pod-dm', instanceId: 'writer', type: 'dm', runtimeAdapter: 'claude' },
+      { podId: 'pod-other', instanceId: 'writer', type: 'installation', runtimeAdapter: 'codex' },
+      { podId: 'pod-main', instanceId: 'other', type: 'installation', runtimeAdapter: 'claude' },
+      { podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ' },
+    ];
+    expect(runtimeAdapterForInstallation({ installations, podId: 'pod-main', instanceId: 'writer' }))
+      .toBe('opencode');
+    expect(runtimeAdapterForInstallation({ installations, podId: 'pod-main', instanceId: 'missing' }))
+      .toBeNull();
   });
 
   test('errors with install guidance when no CLI is on PATH', async () => {

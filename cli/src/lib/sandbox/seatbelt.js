@@ -1,20 +1,20 @@
 /**
- * macOS Seatbelt wrapper for public Claude Code agents.
+ * macOS Seatbelt wrapper for public local-CLI agents.
  *
  * `sandbox-exec` is deprecated as a public API, but remains the host-native
  * kernel boundary available to local CLI wrappers on current macOS. This
- * profile starts from deny-by-default, admits only the system runtime Claude
+ * profile starts from deny-by-default, admits only the system runtime the CLI
  * needs, and then grants explicit access to:
- *   - the selected Claude executable,
+ *   - the selected CLI executable,
  *   - one workspace (read/write or read-only),
- *   - one isolated, token-free Claude state directory, and
+ *   - one isolated state directory, and
  *   - the adapter-owned transient MCP config directory (read-only).
  *
  * The static platform baseline is adapted from OpenAI Codex's Apache-2.0
  * Seatbelt policy:
  * https://github.com/openai/codex/tree/main/codex-rs/sandboxing/src
  *
- * Public Claude still needs outbound network access for the Anthropic API and
+ * Public seats still need outbound network access for their provider API and
  * declared MCP transports. Host confidentiality therefore comes from the
  * filesystem boundary, not a claim that all network syscalls are disabled.
  */
@@ -132,13 +132,11 @@ const PLATFORM_BASELINE = String.raw`
 (allow file-read-metadata (subpath "/var"))
 (allow file-read-metadata (subpath "/private/var"))
 
-; The native Claude binary and declared MCP launchers may execute children.
-; Claude bootstraps stdio MCP servers through /bin/sh, whose interpreter is
-; /bin/bash on current macOS. An executable-level shell deny would therefore
-; disable the declared capability too. The built-in Bash tool is denied in
-; Claude argv; any trusted child that does run inherits this same Seatbelt
-; profile, so host-secret reads and out-of-workspace writes remain kernel
-; denied.
+; The wrapper and declared MCP launchers may execute children. Claude
+; bootstraps stdio MCP servers through /bin/sh, whose interpreter is /bin/bash
+; on current macOS. An executable-level shell deny would therefore disable
+; declared MCP capability too. Each adapter denies its built-in shell tool in
+; its own config; any declared child inherits this Seatbelt profile.
 
 (allow file-read-data file-read-metadata (subpath "/bin"))
 (allow file-read-data file-read-metadata (subpath "/sbin"))
@@ -264,7 +262,7 @@ const PLATFORM_BASELINE = String.raw`
   (local-name "com.apple.cfprefsd.agent"))
 (allow user-preference-read)
 
-; Claude itself and declared MCP transports need outbound network. The model's
+; The selected provider and declared MCP transports need outbound network. The model's
 ; WebSearch/WebFetch/Bash tools are denied independently in the adapter argv.
 (allow network-outbound)
 (allow system-socket
@@ -329,29 +327,33 @@ export const detectSeatbelt = () => {
 export const buildSeatbeltProfile = ({
   workspacePath,
   workspaceAccess = 'write',
-  claudePath,
+  executablePath,
   statePath,
   mcpConfigDir = null,
   executablePaths = [],
+  readOnlyPaths = [],
+  allowClaudeRuntimeAccess = false,
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
-    [claudePath, 'claudePath'],
+    [executablePath, 'executablePath'],
     [statePath, 'statePath'],
   ]) {
     assertAbsolutePath(path, label);
   }
   if (mcpConfigDir) assertAbsolutePath(mcpConfigDir, 'mcpConfigDir');
+  for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   if (!['read', 'write'].includes(workspaceAccess)) {
     throw new Error('Seatbelt workspaceAccess must be read or write');
   }
 
   const resolvedWorkspace = realpathOrSelf(workspacePath);
-  const resolvedClaude = realpathOrSelf(claudePath);
+  const resolvedExecutable = realpathOrSelf(executablePath);
   const resolvedState = realpathOrSelf(statePath);
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
+  const resolvedReadOnlyPaths = [...new Set(readOnlyPaths.map(realpathOrSelf))];
   const executables = [...new Set(
-    [resolvedClaude, process.execPath, ...executablePaths]
+    [resolvedExecutable, process.execPath, ...executablePaths]
       .filter(Boolean)
       .map(realpathOrSelf),
   )];
@@ -369,9 +371,24 @@ export const buildSeatbeltProfile = ({
   const mcpRule = resolvedMcpConfig
     ? `(allow file-read* file-test-existence ${subpath(resolvedMcpConfig)})`
     : '';
-  const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
-  const userKeychains = join(homedir(), 'Library', 'Keychains');
-  const textEncoding = join(homedir(), '.CFUserTextEncoding');
+  const readOnlyRules = resolvedReadOnlyPaths.map((path) => (
+    `(allow file-read* file-test-existence ${literal(path)})`
+  )).join('\n');
+  const claudeRuntimeRules = allowClaudeRuntimeAccess ? (() => {
+    const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
+    const userKeychains = join(homedir(), 'Library', 'Keychains');
+    const textEncoding = join(homedir(), '.CFUserTextEncoding');
+    return [
+      // Native Claude uses a uid-scoped /private/tmp directory. Admit that
+      // exact runtime directory; every sibling remains denied by default.
+      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(claudeTmp)}"))`,
+      `(allow file-read* file-test-existence file-write* ${literal(claudeTmp)} ${subpath(claudeTmp)})`,
+      // Claude's security helper needs the encrypted login-keychain database
+      // and this non-secret locale file. Other wrappers do not get this access.
+      `(allow file-read* file-test-existence ${subpath(userKeychains)} ${literal(textEncoding)})`,
+      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(userKeychains)}"))`,
+    ];
+  })() : [];
 
   return [
     PLATFORM_BASELINE.trim(),
@@ -381,21 +398,13 @@ export const buildSeatbeltProfile = ({
     workspaceRule,
     `(allow file-read* file-test-existence file-write* ${subpath(resolvedState)})`,
     mcpRule,
+    readOnlyRules,
     // The workspace is intentionally readable, but credential-like nested
     // paths are not. Explicit deny wins over the broad workspace allow.
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${literal(join(resolvedWorkspace, '.env'))})`,
-    // Native Claude uses a uid-scoped /private/tmp directory even when
-    // TMPDIR points elsewhere. Admit that exact runtime directory; every
-    // sibling under /private/tmp remains denied by the default policy.
-    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(claudeTmp)}"))`,
-    `(allow file-read* file-test-existence file-write* ${literal(claudeTmp)} ${subpath(claudeTmp)})`,
-    // OAuth remains in macOS Keychain rather than a bearer-token file or
-    // child environment variable. Claude's `security` helper needs the
-    // encrypted login-keychain database plus this non-secret locale file.
-    `(allow file-read* file-test-existence ${subpath(userKeychains)} ${literal(textEncoding)})`,
-    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(userKeychains)}"))`,
+    ...claudeRuntimeRules,
   ].filter(Boolean).join('\n\n');
 };
 

@@ -196,6 +196,55 @@ describe('registry install runtimeType fallback', () => {
     expect(res.status).not.toHaveBeenCalledWith(500);
   });
 
+  it('preserves opencode as an open driver identity through the registry model and install route', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent',
+      displayName: 'Sample Agent',
+      description: 'OpenCode BYO agent',
+      latestVersion: '1.0.0',
+      manifest: persistedManifest({
+        name: 'sample-agent',
+        version: '1.0.0',
+        context: { required: [] },
+        runtime: {
+          type: 'standalone',
+          runtimeType: 'opencode',
+        },
+      }),
+    });
+
+    const req = {
+      body: {
+        agentName: 'sample-agent',
+        podId: 'pod-1',
+        version: '1.0.0',
+        config: {},
+        scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await installHandler(req, res);
+
+    expect(AgentInstallation.install).toHaveBeenCalledWith(
+      'sample-agent',
+      'pod-1',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          runtime: expect.objectContaining({
+            runtimeType: 'opencode',
+          }),
+        }),
+      }),
+    );
+    expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
   it('does not copy manifest.runtime.type deployment metadata into runtimeType', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'sample-agent',

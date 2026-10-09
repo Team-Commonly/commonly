@@ -7,7 +7,8 @@
  * by two different fields, and they can disagree: the grant arrives in `mcp[]`
  * while confinement lives in `sandbox`. The adapters are the enforcing layers
  * (`cli/src/lib/adapters/claude.js` — Seatbelt/`--setting-sources`/the deny
- * list only inside its confined branch — and `codex.js`), and for
+ * list only inside its confined branch — `codex.js`, and `opencode.js` with
+ * Seatbelt on macOS or bwrap on Linux), and for
  * daemon-provisioned seats the baseline #1754 derives at the daemon.
  *
  * This predicate mirrors the part of their rule that is HOST-INDEPENDENT,
@@ -23,6 +24,10 @@
  * and is not visible from an AgentInstallation row. Refusing it here would
  * refuse the working path.
  *
+ * The server also refuses a named adapter absent from CONFINING_ADAPTERS,
+ * even when the adapter has a local sandbox. OpenCode remains absent until its
+ * public enforcement is reviewed for server-side broker admission.
+ *
  * Two further cases ARE host-independent, so they are decided here as well
  * (Vera 69810):
  *
@@ -37,11 +42,11 @@
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
  *    nowhere else in `cli/src`, so a seat declaring one fails every host the
- *    same way. Both adapters implement {workspace, read-only}, and claude adds
- *    `bwrap` for Linux — a wider set, not a narrower one, so the server cannot
- *    refuse anything a host would have confined. A mode that is not a string
- *    belongs here too: every adapter compares it with `===` against a string,
- *    so `['bwrap']` confines nothing even though it stringifies to a mode that
+ *    same way. Claude and Codex implement {workspace, read-only}; Claude adds
+ *    `bwrap` for Linux. OpenCode implements the same modes locally but is not
+ *    admitted to this server's map yet. A mode that is not a string belongs
+ *    here too: every adapter compares it with `===` against a string, so
+ *    `['bwrap']` confines nothing even though it stringifies to a mode that
  *    does.
  */
 
@@ -56,12 +61,6 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
   internal: 'public',
 });
 
-/**
- * Adapters that cannot confine a seat on any host — the adapter, not the
- * declaration, is the host-independent fact. Exact match mirrors how the cli
- * keys its adapter registry; an unrecognised adapter name is not pi, and a
- * record carrying one cannot spawn a pi seat either.
- */
 /**
  * Adapters known to confine a public seat, and the modes each one enforces.
  * This is an ALLOWLIST, inverted from a denylist on 2026-10-09: the denylist

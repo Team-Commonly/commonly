@@ -325,7 +325,7 @@ export const createDaemonSupervisor = ({
     }
     if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
-      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
+      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude, codex, or opencode, or attach manually`);
       return false;
     }
     const environment = environmentFor(row);

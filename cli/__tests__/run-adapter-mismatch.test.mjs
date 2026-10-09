@@ -18,6 +18,7 @@ import fs from 'fs';
 import { Command } from 'commander';
 
 const homeTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-run-adapter-test-'));
+const createClientMock = jest.fn();
 
 await jest.unstable_mockModule('os', () => {
   const actual = os;
@@ -27,6 +28,7 @@ await jest.unstable_mockModule('os', () => {
     homedir: () => homeTmpDir,
   };
 });
+await jest.unstable_mockModule('../src/lib/api.js', () => ({ createClient: createClientMock }));
 
 const { checkRunAdapterRequest, saveAgentToken, registerAgent } = await import('../src/commands/agent.js');
 
@@ -86,6 +88,7 @@ describe('agent run --adapter against an existing token file', () => {
   afterEach(() => {
     exitSpy.mockRestore();
     errorSpy.mockRestore();
+    createClientMock.mockReset();
   });
 
   const run = async (...args) => {
@@ -104,6 +107,31 @@ describe('agent run --adapter against an existing token file', () => {
     expect(stderr).toContain('commonly agent detach byo-test --force');
     // The token file is untouched: refusing must not edit the record.
     expect(JSON.parse(fs.readFileSync(tokenPath, 'utf8')).adapter).toBe('claude');
+  });
+
+  test('OpenCode refuses a connect-page installation that has no server adapter binding', async () => {
+    saveAgentToken('byo-test', { ...record('opencode'), instanceId: 'connect-page' });
+    const get = jest.fn().mockResolvedValue({
+      installations: [{
+        type: 'installation',
+        podId: 'pod-1',
+        instanceId: 'connect-page',
+        runtimeAdapter: null,
+      }],
+    });
+    createClientMock
+      .mockReturnValueOnce({ get })
+      // If the command drops its server-side binding check, fail before a poll
+      // loop can start. The test's expected exit then becomes a real failure.
+      .mockImplementationOnce(() => { throw new Error('agent run reached its poll loop'); });
+
+    await expect(run()).rejects.toBe(exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
+    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderr).toContain('OpenCode is not declared for this Commonly installation');
+    expect(stderr).toContain('commonly agent config byo-test --adapter opencode');
   });
 
   test('the option help tells the truth about an existing token file', () => {
