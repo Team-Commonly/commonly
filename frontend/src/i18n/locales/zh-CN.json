@@ -1927,6 +1927,7 @@
     "gatesTitle": "接入此频道的 Pod",
     "hostedMcpManualRevoke": "你之前的 {{provider}} 账号可能仍保留对 Commonly 的授权。请在 {{provider}} 切换到那个账号，再在那里移除 Commonly。",
     "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
+    "hostedMcpUnrequestedScope": "提供方授予了 Commonly 未请求的权限范围：{{scopes}}。连接未保存。",
     "installInProgress": "仍在设置中，请稍后再试。",
     "installInProgressForPod": "{{pod}} 仍在设置中，请稍后再试。",
     "leadAny": "任一智能体都可主导",

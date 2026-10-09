@@ -670,6 +670,22 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('invalid_state')).toBeNull();
   });
 
+  it('shows the unrequested scope and consumes the hosted-MCP error query', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/v2/connectors?hostedMcp=error&code=unrequested_scope&extraScope=write',
+    );
+    mockGets([]);
+    renderPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The provider granted scope(s) Commonly did not request: write. The connection was not saved.',
+    );
+    expect(window.location.search).toBe('');
+    expect(screen.queryByText('unrequested_scope')).toBeNull();
+  });
+
   it('reloads connectors after a successful Slack callback and clears its query', async () => {
     window.history.replaceState({}, '', '/v2/connectors?slack=pending');
     mockGets([]);

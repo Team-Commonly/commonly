@@ -159,8 +159,10 @@ const outcome = (res) => {
   };
   const entryId = url.searchParams.get('entryId');
   const revokeAt = url.searchParams.get('revokeAt');
+  const extraScopes = url.searchParams.getAll('extraScope');
   if (entryId) result.entryId = entryId;
   if (revokeAt) result.revokeAt = revokeAt;
+  if (extraScopes.length) result.extraScopes = extraScopes;
   return result;
 };
 
@@ -212,6 +214,80 @@ describe('hosted-mcp connect: callback', () => {
     // The pending state is gone whichever way the flow went, so a replay of the
     // state finds no row and cannot reach the exchange a second time.
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$unset).toEqual({ 'config.pendingAuth': 1 });
+  });
+
+  it('refuses and revokes an overbroad grant without storing either token', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'access-overbroad',
+          refresh_token: 'refresh-overbroad',
+          scope: 'read,openid,write',
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'error',
+      code: 'unrequested_scope',
+      extraScopes: ['write'],
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
+    const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+    expect(revokeBody.get('token')).toBe('refresh-overbroad');
+    expect(revokeBody.get('token_type_hint')).toBe('refresh_token');
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts the exact requested scope set regardless of order or comma separators', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        scope: 'openid, read',
+        id_token: idToken('acct-1'),
+      }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('openid read');
+  });
+
+  it('treats an omitted scope as the full requested set', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', refresh_token: 'refresh-1' }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('read openid');
+  });
+
+  it('accepts and records a subset grant', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', scope: 'read' }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('read');
   });
 
   it('exchanges a pre-registered callback with instance credentials while retaining PKCE', async () => {
