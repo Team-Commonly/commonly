@@ -195,6 +195,12 @@ describe('AgentMessageService summary persistence', () => {
       expect(Message).toHaveBeenCalled();
     });
 
+    it('agent-admin reaches neither guard: the repeat posts, because the !isAgentAdminPod gate skips the block (measured 2026-10-09)', async () => {
+      const result = await repost('agent-admin');
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
     it('still skips the same repeat in a shared pod within the window', async () => {
       const result = await repost('chat');
       expect(result.skipped).toBe(true);

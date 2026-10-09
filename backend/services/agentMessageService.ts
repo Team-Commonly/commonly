@@ -1437,9 +1437,16 @@ class AgentMessageService {
       // 2026-10-09 08:10Z: a stranger's second question to hq-support in an
       // agent-room drew the same 151-byte FAQ answer as the first, this guard
       // skipped it with `duplicate_recent` (30 min), the wrapper logged
-      // "posted", and the person saw silence. `agent-admin` keeps the guard:
-      // it is N:1, a shared room.
-      const duplicate = AgentMessageService.isOneToOnePod(dedupePod?.type)
+      // "posted", and the person saw silence.
+      //
+      // `agent-admin` never reaches this line: the `!isAgentAdminPod` gate above
+      // short-circuits BOTH this check and the run cap below. The cap's comment
+      // used to claim the opposite, and so did the first cut of this one; the
+      // test file now pins the measured behaviour instead. Whether agent-admin
+      // SHOULD be exempt is an open board decision, not settled here.
+      // One predicate, read once, so the two guards cannot drift apart.
+      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+      const duplicate = isOneToOne
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
@@ -1487,7 +1494,9 @@ class AgentMessageService {
       // conversation into a document — the same "report surface" failure the
       // tool description warns about, reached from the opposite direction.
       //
-      // `agent-admin` is deliberately NOT exempt: it is N:1 (several admins,
+      // `agent-admin` does not reach this cap either: the `!isAgentAdminPod`
+      // gate above skips both guards (measured 2026-10-09; the earlier text here
+      // claimed the opposite). It is N:1 (several admins,
       // one agent), so it is a shared room and the crowding rationale holds.
       // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
