@@ -172,7 +172,7 @@ describe('updateAgentConfiguration', () => {
     );
   });
 
-  test('keeps the provider key path local while PATCHing its public environment fields', async () => {
+  test('keeps the complete provider block local while PATCHing environment fields', async () => {
     const client = { patch: jest.fn(async () => ({ success: true })) };
     const environment = {
       model: 'gpt-5.4',
@@ -184,15 +184,28 @@ describe('updateAgentConfiguration', () => {
     };
     const result = await updateAgentConfiguration({
       client,
-      record,
+      record: { ...record, adapter: 'opencode' },
       envPath: '/tmp/provider-env.json',
       parseEnv: jest.fn(async () => environment),
     });
-    expect(client.patch.mock.calls[0][1].config.environment).toEqual({
-      model: 'gpt-5.4',
-      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
-    });
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({ model: 'gpt-5.4' });
     expect(result.environment).toEqual(environment);
+  });
+
+  test('refuses provider configuration when the local token record is not OpenCode-bound', async () => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({
+      client,
+      record,
+      envPath: '/tmp/provider-env.json',
+      parseEnv: jest.fn(async () => ({
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/provider-key',
+        },
+      })),
+    })).rejects.toThrow(/supported only by the opencode adapter/);
+    expect(client.patch).not.toHaveBeenCalled();
   });
 
   test('agent config writes the adapter binding explicitly', async () => {
@@ -379,7 +392,7 @@ describe('performAttach', () => {
     );
   });
 
-  test('keeps provider.keyFile in the local attach result, not the install request', async () => {
+  test('keeps the provider block in the local attach result, not the install request', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-provider-attach-'));
     try {
       const workspace = path.join(root, 'workspace');
@@ -399,16 +412,51 @@ describe('performAttach', () => {
       const client = makeClient({ runtimeToken: 'cm_agent_provider' });
       const result = await performAttach({
         client,
+        adapterName: 'opencode',
+        agentName: 'provider-seat',
+        podId: 'pod-provider',
+        envPath,
+        adapterRegistry: {
+          getAdapter: () => ({
+            name: 'opencode',
+            detect: async () => ({ path: '/usr/local/bin/opencode', version: '1.18.35' }),
+            validateEnvironment: async () => {},
+          }),
+          listAdapterNames: () => ['opencode'],
+        },
+      });
+      const install = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+      expect(install.config.environment).not.toHaveProperty('provider');
+      expect(result.environment.provider.keyFile).toBe(keyFile);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses a provider block when the selected adapter is not OpenCode', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-provider-adapter-'));
+    try {
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/provider-key',
+        },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_provider' });
+      await expect(performAttach({
+        client,
         adapterName: 'stub',
         agentName: 'provider-seat',
         podId: 'pod-provider',
         envPath,
-      });
-      const install = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
-      expect(install.config.environment.provider).toEqual({
-        id: 'litellm', baseURL: 'https://llm.example.test/v1',
-      });
-      expect(result.environment.provider.keyFile).toBe(keyFile);
+        adapterRegistry: {
+          getAdapter: () => ({ name: 'stub', detect: async () => ({ version: '1.0' }) }),
+          listAdapterNames: () => ['stub'],
+        },
+      })).rejects.toThrow(/supported only by the opencode adapter/);
+      expect(client.post).not.toHaveBeenCalled();
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

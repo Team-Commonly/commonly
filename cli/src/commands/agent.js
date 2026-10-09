@@ -554,6 +554,10 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
+  if (environment?.provider !== undefined
+    && String(runtime.adapter || record.adapter || '').trim().toLowerCase() !== 'opencode') {
+    throw new Error('environment.provider is supported only by the opencode adapter');
+  }
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
     throw new Error('provide at least one of --adapter, --model, --effort, or --env');
@@ -652,11 +656,12 @@ export const performAttach = async ({
   envPath = null,
   wakeOnMessage = false,
   log = () => {},
+  adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
-  const adapter = getAdapter(adapterName);
+  const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
     throw new Error(
-      `Unknown adapter "${adapterName}". Known: ${listAdapterNames().join(', ')}`,
+      `Unknown adapter "${adapterName}". Known: ${adapterRegistry.listAdapterNames().join(', ')}`,
     );
   }
 
@@ -672,6 +677,9 @@ export const performAttach = async ({
   let workspace = null;
   if (envPath) {
     environment = await parseEnvironmentFile(envPath);
+    if (environment?.provider !== undefined && adapterName !== 'opencode') {
+      throw new Error('environment.provider is supported only by the opencode adapter');
+    }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
       await adapter.validateEnvironment(environment, workspace.path);
@@ -1032,6 +1040,9 @@ export const performRun = ({
   revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
+  if (environment?.provider !== undefined && adapter?.name !== 'opencode') {
+    throw new Error('environment.provider is supported only by the opencode adapter');
+  }
   const client = createClient({ instance: instanceUrl, token });
 
   // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat

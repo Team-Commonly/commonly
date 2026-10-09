@@ -1,7 +1,11 @@
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
-import { auditDeclaredMcp, installedStdioEntries } from './declared-mcp-guard.js';
+import {
+  auditDeclaredMcp,
+  auditDeclaredProvider,
+  installedStdioEntries,
+} from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
 import { withholdGrantBroker } from './grant-broker-guard.js';
@@ -152,18 +156,22 @@ export const createDaemonSupervisor = ({
 
   // A declared environment runs on THIS machine as the operator. Refuse any
   // declared stdio command that is not the shipped commonly MCP server or one
-  // the operator already installed here, and any http server that would be
-  // handed the seat token off the instance's origin. Refusal keeps the current
-  // seat (or skips the mint) and says which server was kept off the machine;
-  // it never adopts a partial environment.
+  // the operator already installed here, any http server that would receive
+  // the seat token off-origin, and any provider that does not exactly match
+  // the host-local provider. Refusal keeps the current seat (or skips the
+  // mint) and never adopts a partial environment.
   const admitDeclared = (row, environment, existing) => {
-    const audit = auditDeclaredMcp(environment, {
+    const mcpAudit = auditDeclaredMcp(environment, {
       instanceUrl: existing?.instanceUrl || record.instanceUrl,
       allowedStdioEntries: installedStdioEntries(existing),
     });
-    if (audit.ok) return true;
+    const providerAudit = auditDeclaredProvider(environment, {
+      localEnvironment: existing?.environment,
+    });
+    const refusals = [...mcpAudit.refusals, ...providerAudit.refusals];
+    if (refusals.length === 0) return true;
     log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);
-    for (const refusal of audit.refusals) log(`[${row.agentName}]   ${refusal}`);
+    for (const refusal of refusals) log(`[${row.agentName}]   ${refusal}`);
     return false;
   };
 
@@ -222,10 +230,21 @@ export const createDaemonSupervisor = ({
         nextAdapter = declaredAdapter;
         adapterChanged = existing.adapter !== nextAdapter;
       }
+      if (existing.environment?.provider && nextAdapter !== 'opencode') {
+        log(`[${row.agentName}] host-local provider requires the opencode adapter — keeping the current seat`);
+        return false;
+      }
       if (wanted) {
         const merged = wanted.declared
           ? wanted.value
           : { ...(existing.environment || {}), ...wanted.value };
+        // The provider chooses a network endpoint and reads a host key file,
+        // so it is authored on this host. A server may mirror the public
+        // fields, but only after the exact local match above; rehydrate the
+        // local block even when the server omits it from a declared env.
+        if (existing.environment?.provider) {
+          merged.provider = existing.environment.provider;
+        }
         // A server-declared environment replaces the local one, so a seat whose
         // declaration carries no mcp[] would come back tool-less. Re-apply the
         // shipped default here and below, or the seat silently loses every

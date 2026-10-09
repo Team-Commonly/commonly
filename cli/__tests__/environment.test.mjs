@@ -155,6 +155,18 @@ describe('validateEnvironmentSpec', () => {
         id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
         models: { 'gpt/5.4': { name: 'bad id' } },
       },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        apiKey: 'inline-secret',
+      },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        models: { 'gpt-5.4': { options: { apiKey: 'inline-secret' } } },
+      },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        models: { 'gpt-5.4': { options: { clientSecret: 'inline-secret' } } },
+      },
     ];
     for (const provider of invalid) {
       expect(validateEnvironmentSpec({ model: 'gpt-5.4', provider }).ok).toBe(false);
@@ -168,7 +180,7 @@ describe('validateEnvironmentSpec', () => {
     }).errors.join(' ')).toMatch(/model is required/);
   });
 
-  test('removes a host-local provider key path from registry environment payloads', () => {
+  test('omits the complete host-local provider block from registry environment payloads', () => {
     const environment = {
       model: 'gpt-5.4',
       provider: {
@@ -178,9 +190,12 @@ describe('validateEnvironmentSpec', () => {
     };
     expect(environmentForServer(environment)).toEqual({
       model: 'gpt-5.4',
-      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
     });
-    expect(environment.provider.keyFile).toBe('/Users/kai/.config/commonly/llm-key');
+    expect(environment.provider).toEqual({
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+    });
   });
 
   test('rejects bad sandbox.mode', () => {

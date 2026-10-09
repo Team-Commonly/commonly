@@ -195,6 +195,53 @@ describe('registry install environment mcp shape (TASK-071)', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(AgentInstallation.install).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    const inlineCredential = buildRes();
+    await installHandler(installRequest({
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm',
+        baseURL: 'https://llm.example.test/v1',
+        models: { 'gpt-5.4': { options: { apiKey: 'inline-secret' } } },
+      },
+    }), inlineCredential);
+    expect(inlineCredential.status).toHaveBeenCalledWith(400);
+    expect(inlineCredential.json).toHaveBeenCalledWith(expect.objectContaining({
+      fields: expect.arrayContaining([
+        expect.objectContaining({
+          field: 'environment.provider.models.gpt-5.4.options.apiKey',
+        }),
+      ]),
+    }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  it('accepts public provider metadata but refuses a host-local keyFile before install', async () => {
+    const accepted = buildRes();
+    await installHandler(installRequest({
+      model: 'gpt-5.4',
+      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
+    }), accepted);
+    expect(accepted.status).not.toHaveBeenCalledWith(400);
+    expect(AgentInstallation.install).toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    const refused = buildRes();
+    await installHandler(installRequest({
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/host-key',
+      },
+    }), refused);
+    expect(refused.status).toHaveBeenCalledWith(400);
+    expect(refused.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'invalid_environment_spec',
+      fields: expect.arrayContaining([
+        expect.objectContaining({ field: 'environment.provider.keyFile' }),
+      ]),
+    }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 
   it('installs a conforming environment and an absent environment alike', async () => {

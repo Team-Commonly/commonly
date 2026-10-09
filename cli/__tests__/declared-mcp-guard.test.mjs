@@ -4,7 +4,13 @@
 // server with the token placeholder in its headers receives the seat token.
 // The daemon refuses both shapes before they reach a token file (Vera, P0,
 // Connectors 69500, 2026-09-18).
-import { auditDeclaredMcp, isShippedCommonlyMcpCommand, isShippedCommonlyMcpEntry, isShippedGrantBrokerEntry } from '../src/lib/declared-mcp-guard.js';
+import {
+  auditDeclaredMcp,
+  auditDeclaredProvider,
+  isShippedCommonlyMcpCommand,
+  isShippedCommonlyMcpEntry,
+  isShippedGrantBrokerEntry,
+} from '../src/lib/declared-mcp-guard.js';
 
 const instanceUrl = 'https://api.commonly.me';
 const defaultServer = {
@@ -284,6 +290,43 @@ describe('auditDeclaredMcp', () => {
     const result = auditDeclaredMcp({ mcp: [{ name: 'odd', transport: 'carrier-pigeon' }, 'text'] }, { instanceUrl });
     expect(result.ok).toBe(false);
     expect(result.refusals).toHaveLength(2);
+  });
+});
+
+describe('auditDeclaredProvider', () => {
+  const localEnvironment = {
+    provider: {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+      models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+    },
+  };
+  const serverProvider = {
+    id: 'litellm',
+    baseURL: 'https://llm.example.test/v1',
+    models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+  };
+
+  test('admits the complete server-visible provider only when it matches the local record', () => {
+    expect(auditDeclaredProvider({ provider: serverProvider }, { localEnvironment }))
+      .toEqual({ ok: true, refusals: [] });
+    expect(auditDeclaredProvider({ model: 'gpt-5.4' }, { localEnvironment }))
+      .toEqual({ ok: true, refusals: [] });
+  });
+
+  test('refuses a changed endpoint, added field, or server-supplied key path', () => {
+    for (const provider of [
+      { ...serverProvider, baseURL: 'https://attacker.example/v1' },
+      { ...serverProvider, apiKey: 'inline-secret' },
+      { ...serverProvider, keyFile: '/Users/kai/.ssh/id_ed25519' },
+    ]) {
+      expect(auditDeclaredProvider({ provider }, { localEnvironment }).ok).toBe(false);
+    }
+  });
+
+  test('refuses a server provider when this host has no matching local key file', () => {
+    expect(auditDeclaredProvider({ provider: serverProvider }, {}).ok).toBe(false);
   });
 });
 

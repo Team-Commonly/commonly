@@ -48,6 +48,19 @@ const ALLOWED_SANDBOX_MODES = new Set([
 ]);
 const ALLOWED_SANDBOX_TRUST = new Set(['public']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
+const INLINE_PROVIDER_CREDENTIAL_FIELD = /(?:key|token|secret|password|authorization|header|credential|auth)/i;
+
+const findInlineProviderCredentialField = (value, path) => {
+  if (!value || typeof value !== 'object') return null;
+  for (const [key, nested] of Object.entries(value)) {
+    const normalized = key.replace(/[-_]/g, '').toLowerCase();
+    const fieldPath = `${path}.${key}`;
+    if (INLINE_PROVIDER_CREDENTIAL_FIELD.test(normalized)) return fieldPath;
+    const nestedPath = findInlineProviderCredentialField(nested, fieldPath);
+    if (nestedPath) return nestedPath;
+  }
+  return null;
+};
 
 // `trust: 'internal'` was accepted by this schema and read by NO adapter. On the
 // attach path it could only name a mode the platform cannot resolve; on the
@@ -136,25 +149,22 @@ export const parseEnvironmentFile = async (absolutePath) => {
   // annotations. The caller is responsible for tracking envFileDir separately
   // (compute via `dirname(envPath)`) and passing it explicitly to
   // resolveWorkspace / mountSkills when relative paths in the spec need to
-  // resolve. A provider.keyFile is also host-local; API writers must pass the
-  // environment through environmentForServer() before sending it to Commonly.
+  // resolve. The provider block is host-local; API writers omit it entirely.
   return parsed;
 };
 
 /**
- * Remove host-local provider credentials paths before an environment spec is
+ * Remove the host-local provider declaration before an environment spec is
  * sent to the Commonly API. The full spec remains in the local token record so
- * this host's adapter can resolve the file on every spawn.
+ * the daemon can bind it to this host and the adapter can resolve its key file.
  */
 export const environmentForServer = (environment) => {
-  if (!environment?.provider || typeof environment.provider !== 'object'
-    || Array.isArray(environment.provider)
-    || !Object.prototype.hasOwnProperty.call(environment.provider, 'keyFile')) {
+  if (!environment || typeof environment !== 'object' || Array.isArray(environment)
+    || !Object.prototype.hasOwnProperty.call(environment, 'provider')) {
     return environment;
   }
-  const provider = { ...environment.provider };
-  delete provider.keyFile;
-  return { ...environment, provider };
+  const { provider: _hostLocalProvider, ...serverEnvironment } = environment;
+  return serverEnvironment;
 };
 
 // ── validateEnvironmentSpec ─────────────────────────────────────────────────
@@ -192,6 +202,12 @@ export const validateEnvironmentSpec = (spec) => {
     if (!spec.provider || typeof spec.provider !== 'object' || Array.isArray(spec.provider)) {
       errors.push('provider must be an object');
     } else {
+      const allowedProviderKeys = new Set(['id', 'baseURL', 'keyFile', 'models']);
+      for (const key of Object.keys(spec.provider)) {
+        if (!allowedProviderKeys.has(key)) {
+          errors.push(`unknown provider key: ${JSON.stringify(key)} (allowed: id, baseURL, keyFile, models)`);
+        }
+      }
       const { id, baseURL, keyFile, models } = spec.provider;
       if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
         errors.push('provider.id must be a safe OpenCode provider id');
@@ -225,6 +241,14 @@ export const validateEnvironmentSpec = (spec) => {
             }
             if (!modelConfig || typeof modelConfig !== 'object' || Array.isArray(modelConfig)) {
               errors.push(`provider.models[${JSON.stringify(modelId)}] must be an object`);
+            } else {
+              const credentialField = findInlineProviderCredentialField(
+                modelConfig,
+                `provider.models.${modelId}`,
+              );
+              if (credentialField) {
+                errors.push(`${credentialField} must not contain inline credentials; use provider.keyFile`);
+              }
             }
           }
         }

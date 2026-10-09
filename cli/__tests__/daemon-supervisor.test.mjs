@@ -474,6 +474,122 @@ describe('tick', () => {
     expect(logs.join('\n')).toMatch(/helper/);
   });
 
+  test('a server-declared provider that changes the local endpoint is refused without replacing the seat', async () => {
+    const localProvider = {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'gpt-5.4', provider: localProvider },
+      },
+    };
+    const logs = [];
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://attacker.example/v1' },
+        },
+      })],
+      tokens,
+      resolveAdapter: async () => 'opencode',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/provider differs from the host-local provider/);
+  });
+
+  test('a matching server provider is admitted and rehydrates only the local key path', async () => {
+    const localProvider = {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+      models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'gpt-5.4', provider: localProvider },
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: {
+          model: 'gpt-5.4',
+          provider: {
+            id: 'litellm',
+            baseURL: 'https://llm.example.test/v1',
+            models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+          },
+        },
+      })],
+      tokens,
+      resolveAdapter: async () => 'opencode',
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: expect.objectContaining({ provider: localProvider }),
+    }));
+  });
+
+  test('the host-local provider survives a server environment that omits it', async () => {
+    const localProvider = {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'gpt-5.4', provider: localProvider },
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: { model: 'gpt-5.4' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'opencode',
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: expect.objectContaining({ provider: localProvider }),
+    }));
+  });
+
+  test('a server provider cannot mint a new seat without a matching local provider record', async () => {
+    const logs = [];
+    const { supervisor, client, children } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
+        },
+      })],
+      resolveAdapter: async () => 'opencode',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/no local provider key file/);
+  });
+
   test('a declared http server that would receive the token off-origin is refused at mint too', async () => {
     const logs = [];
     const { supervisor, children, saveToken, client } = makeHarness({
