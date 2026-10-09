@@ -142,85 +142,106 @@ describe('prepareCommitAttribution', () => {
     }
   });
 
-  test.each([true, false])(
-    'delegates hooks to the repository being committed in when workspace core.hooksPath is %s',
-    (workspaceHasHooksPath) => {
-      const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-other-repo-'));
-      const workspace = join(root, 'workspace');
-      const target = join(root, 'target');
-      const workspaceHooks = join(root, 'workspace-hooks');
-      const targetHooks = workspaceHasHooksPath
-        ? join(root, 'target-hooks')
-        : join(target, '.git', 'hooks');
-      const workspaceMarker = join(root, 'workspace-hook-ran');
-      const targetMarker = join(root, 'target-hook-ran');
-      mkdirSync(workspace);
-      mkdirSync(target);
-      mkdirSync(workspaceHooks);
-      for (const repo of [workspace, target]) {
-        execFileSync('git', ['init', '--quiet'], { cwd: repo });
-        execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
-        execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
-      }
-      mkdirSync(targetHooks, { recursive: true });
+  test.each([
+    {
+      name: 'the target default hooks directory',
+      workspaceHooksPath: null,
+      targetHooksPath: null,
+      targetHasHook: true,
+    },
+    {
+      name: 'the target relative core.hooksPath',
+      workspaceHooksPath: '.husky/_',
+      targetHooksPath: '.husky/_',
+      targetHasHook: true,
+    },
+    {
+      name: 'no hooks in a second repo despite the workspace hooksPath',
+      workspaceHooksPath: '.husky/_',
+      targetHooksPath: null,
+      targetHasHook: false,
+    },
+  ])('uses $name and still adds seat attribution', ({ workspaceHooksPath, targetHooksPath, targetHasHook }) => {
+    const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-other-repo-'));
+    const workspace = join(root, 'workspace');
+    const target = join(root, 'target');
+    const workspaceHooks = workspaceHooksPath
+      ? join(workspace, ...workspaceHooksPath.split('/'))
+      : null;
+    const targetHooks = targetHooksPath
+      ? join(target, ...targetHooksPath.split('/'))
+      : join(target, '.git', 'hooks');
+    const workspaceMarker = join(root, 'workspace-hook-ran');
+    const targetMarker = join(root, 'target-hook-ran');
+    mkdirSync(workspace);
+    mkdirSync(target);
+    for (const repo of [workspace, target]) {
+      execFileSync('git', ['init', '--quiet'], { cwd: repo });
+      execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
+      execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
+    }
+    if (targetHasHook) mkdirSync(targetHooks, { recursive: true });
 
-      if (workspaceHasHooksPath) {
-        execFileSync('git', ['config', 'core.hooksPath', workspaceHooks], { cwd: workspace });
-        makeExecutable(
-          join(workspaceHooks, 'pre-commit'),
-          '#!/bin/sh\nprintf workspace > "$COMMONLY_TEST_WORKSPACE_HOOK_MARKER"\n',
-        );
-      }
-      if (workspaceHasHooksPath) {
-        execFileSync('git', ['config', 'core.hooksPath', targetHooks], { cwd: target });
-      }
+    if (workspaceHooksPath) {
+      mkdirSync(workspaceHooks, { recursive: true });
+      execFileSync('git', ['config', 'core.hooksPath', workspaceHooksPath], { cwd: workspace });
+      makeExecutable(
+        join(workspaceHooks, 'pre-commit'),
+        '#!/bin/sh\nprintf workspace > "$COMMONLY_TEST_WORKSPACE_HOOK_MARKER"\n',
+      );
+    }
+    if (targetHooksPath) {
+      execFileSync('git', ['config', 'core.hooksPath', targetHooksPath], { cwd: target });
+    }
+    if (targetHasHook) {
       makeExecutable(
         join(targetHooks, 'pre-commit'),
         '#!/bin/sh\nprintf target > "$COMMONLY_TEST_TARGET_HOOK_MARKER"\n',
       );
+    }
 
-      let attribution;
-      try {
-        attribution = prepareCommitAttribution({
-          cwd: workspace,
-          env: {
-            ...fixtureEnv,
-            ...(workspaceHasHooksPath ? {
-              GIT_CONFIG_COUNT: '1',
-              GIT_CONFIG_KEY_0: 'core.hooksPath',
-              GIT_CONFIG_VALUE_0: workspaceHooks,
-            } : {}),
-            COMMONLY_TEST_TARGET_HOOK_MARKER: targetMarker,
-            COMMONLY_TEST_WORKSPACE_HOOK_MARKER: workspaceMarker,
-          },
-          agentName: 'forge',
-          displayName: 'Forge',
-          instanceId: 'task-240',
-          adapter: 'codex',
-          model: 'test-model',
-          effort: 'high',
-        });
+    let attribution;
+    try {
+      attribution = prepareCommitAttribution({
+        cwd: workspace,
+        env: {
+          ...fixtureEnv,
+          ...(workspaceHooksPath ? {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'core.hooksPath',
+            GIT_CONFIG_VALUE_0: workspaceHooksPath,
+          } : {}),
+          COMMONLY_TEST_TARGET_HOOK_MARKER: targetMarker,
+          COMMONLY_TEST_WORKSPACE_HOOK_MARKER: workspaceMarker,
+        },
+        agentName: 'forge',
+        displayName: 'Forge',
+        instanceId: 'task-240',
+        adapter: 'codex',
+        model: 'test-model',
+        effort: 'high',
+      });
 
-        writeFileSync(join(target, 'change.txt'), 'target repo change\n');
-        execFileSync('git', ['add', 'change.txt'], { cwd: target, env: attribution.env });
-        execFileSync('git', ['commit', '-m', 'target repo change'], {
-          cwd: target,
-          env: attribution.env,
-        });
+      writeFileSync(join(target, 'change.txt'), 'target repo change\n');
+      execFileSync('git', ['add', 'change.txt'], { cwd: target, env: attribution.env });
+      execFileSync('git', ['commit', '-m', 'target repo change'], {
+        cwd: target,
+        env: attribution.env,
+      });
 
-        expect(readFileSync(targetMarker, 'utf8')).toBe('target');
-        expect(existsSync(workspaceMarker)).toBe(false);
-        expect(execFileSync('git', ['show', '-s', '--format=%B', 'HEAD'], {
-          cwd: target,
-          env: attribution.env,
-          encoding: 'utf8',
-        })).toContain('Co-authored-by: Forge ');
-      } finally {
-        attribution?.cleanup();
-        rmSync(root, { recursive: true, force: true });
-      }
-    },
-  );
+      expect(existsSync(targetMarker)).toBe(targetHasHook);
+      if (targetHasHook) expect(readFileSync(targetMarker, 'utf8')).toBe('target');
+      expect(existsSync(workspaceMarker)).toBe(false);
+      expect(execFileSync('git', ['show', '-s', '--format=%B', 'HEAD'], {
+        cwd: target,
+        env: attribution.env,
+        encoding: 'utf8',
+      })).toContain('Co-authored-by: Forge ');
+    } finally {
+      attribution?.cleanup();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   test('refuses an invalid pre-existing GIT_CONFIG_COUNT without creating hooks', () => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-invalid-'));
