@@ -63,6 +63,22 @@ const MACHINE_STATUS_MAX_TICKS = 30;
 // make it ONE paste, after which "On my computer" appears here.
 const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
+type MachineAdapter = '' | 'claude' | 'codex';
+type ModelOption = { value: string; labelKey: string };
+const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
+  { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
+  { value: 'sonnet', labelKey: 'agentByo.form.modelSonnet' },
+  { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
+];
+// Codex model ids are its own live catalog slugs (openai/codex models.json),
+// not the Claude aliases above. Keep them explicit here so the UI never labels
+// a Codex seat with Anthropic-only names again.
+const CODEX_MODEL_OPTIONS: ModelOption[] = [
+  { value: 'gpt-6-sol', labelKey: 'agentByo.form.modelCodexSol' },
+  { value: 'gpt-6.1-sol', labelKey: 'agentByo.form.modelCodexSol61' },
+  { value: 'gpt-6-luna', labelKey: 'agentByo.form.modelCodexLuna' },
+  { value: 'gpt-6-astra', labelKey: 'agentByo.form.modelCodexAstra' },
+];
 
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
@@ -136,11 +152,14 @@ const V2AgentBYO: React.FC = () => {
   // payload must name the SAME machine, so it is derived once here rather
   // than restated at each call site.
   const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
-  // Model choice for the on-my-computer path. Aliases, not version-pinned
-  // ids: the seat runs on the USER's own CLI install, whose model ids move —
-  // 'opus'/'sonnet'/'haiku' stay valid across releases. Empty = the
-  // adapter's own default.
+  // Model choice for the on-my-computer path. Adapter and model travel
+  // together: a Codex model slug must never be left behind if the user flips
+  // back to Claude or auto-detect, and vice versa.
+  const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  const machineModelOptions = adapter === 'codex'
+    ? CODEX_MODEL_OPTIONS
+    : (adapter === 'claude' ? CLAUDE_MODEL_OPTIONS : []);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -353,7 +372,11 @@ const V2AgentBYO: React.FC = () => {
           podId,
           scopes: DEFAULT_SCOPES,
           config: {
-            runtime: { runtimeType: 'wrapper', ...(model ? { model } : {}) },
+            runtime: {
+              runtimeType: 'wrapper',
+              ...(adapter ? { adapter } : {}),
+              ...(model ? { model } : {}),
+            },
             ...(personaCard ? { persona: personaCard.key } : {}),
           },
           displayName: personaCard?.name || cleanName,
@@ -674,6 +697,25 @@ const V2AgentBYO: React.FC = () => {
           )}
           {mode === 'machine' && (
             <label className="v2-byo__field">
+              <span className="v2-byo__label">{t('agentByo.form.adapterLabel')}</span>
+              <select
+                value={adapter}
+                onChange={(e) => {
+                  setAdapter(e.target.value as MachineAdapter);
+                  setModel('');
+                }}
+                className="v2-byo__input"
+                data-testid="byo-adapter-select"
+              >
+                <option value="">{t('agentByo.form.adapterDefault')}</option>
+                <option value="claude">{t('agentByo.form.adapterClaude')}</option>
+                <option value="codex">{t('agentByo.form.adapterCodex')}</option>
+              </select>
+              <span className="v2-byo__hint">{t('agentByo.form.adapterHint')}</span>
+            </label>
+          )}
+          {mode === 'machine' && (
+            <label className="v2-byo__field">
               <span className="v2-byo__label">{t('agentByo.form.modelLabel')}</span>
               <select
                 value={model}
@@ -682,11 +724,15 @@ const V2AgentBYO: React.FC = () => {
                 data-testid="byo-model-select"
               >
                 <option value="">{t('agentByo.form.modelDefault')}</option>
-                <option value="opus">{t('agentByo.form.modelOpus')}</option>
-                <option value="sonnet">{t('agentByo.form.modelSonnet')}</option>
-                <option value="haiku">{t('agentByo.form.modelHaiku')}</option>
+                {machineModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
+                ))}
               </select>
-              <span className="v2-byo__hint">{t('agentByo.form.modelHint')}</span>
+              <span className="v2-byo__hint">
+                {adapter === 'codex'
+                  ? t('agentByo.form.modelHintCodex')
+                  : (adapter === 'claude' ? t('agentByo.form.modelHintClaude') : t('agentByo.form.modelHintAuto'))}
+              </span>
             </label>
           )}
           <label className="v2-byo__field">
