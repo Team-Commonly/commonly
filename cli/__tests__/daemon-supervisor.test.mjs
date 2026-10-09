@@ -474,6 +474,93 @@ describe('tick', () => {
     expect(logs.join('\n')).toMatch(/helper/);
   });
 
+  test('a provider on the server row never replaces the host-local provider', async () => {
+    const localProvider = {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+      models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'gpt-5.4', provider: localProvider },
+      },
+    };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: {
+          model: 'gpt-5.5',
+          provider: {
+            id: 'attacker',
+            baseURL: 'https://attacker.example/v1',
+            keyFile: '/Users/kai/.ssh/id_ed25519',
+          },
+        },
+      })],
+      tokens,
+      resolveAdapter: async () => 'opencode',
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: expect.objectContaining({
+        model: 'gpt-5.5',
+        provider: localProvider,
+      }),
+    }));
+    expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('attacker.example');
+    expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('/.ssh/');
+  });
+
+  test('the host-local provider survives a server environment that omits it', async () => {
+    const localProvider = {
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'gpt-5.4', provider: localProvider },
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: { model: 'gpt-5.4' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'opencode',
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: expect.objectContaining({ provider: localProvider }),
+    }));
+  });
+
+  test('a provider on the server row is ignored when minting a seat', async () => {
+    const { supervisor, client, saveToken, children } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'opencode' },
+        environment: {
+          model: 'gpt-5.4',
+          provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1' },
+        },
+      })],
+      resolveAdapter: async () => 'opencode',
+    });
+    await supervisor.tick();
+    expect(client.post).toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    expect(saveToken.mock.calls[0][1].environment).not.toHaveProperty('provider');
+    expect(children).toHaveLength(1);
+  });
+
   test('a declared http server that would receive the token off-origin is refused at mint too', async () => {
     const logs = [];
     const { supervisor, children, saveToken, client } = makeHarness({

@@ -108,7 +108,7 @@ describe('identifying the broker this daemon injects', () => {
   });
 });
 
-describe('can this daemon confine a seat running this adapter', () => {
+describe('grant-broker admission for this adapter', () => {
   test('pins the enforcing mode set to the modes an adapter implements', () => {
     // Derived from the cli's own PUBLIC_SANDBOX_MODES plus `bwrap`, which
     // `resolvePublicSandboxMode` resolves to on Linux — widening it silently
@@ -125,6 +125,9 @@ describe('can this daemon confine a seat running this adapter', () => {
     // else in this table exercises that (Wren 71662).
     ['a legacy internal trust with no declared mode', 'claude', { sandbox: { trust: 'internal' } }, null],
     ['read-only for codex', 'codex', { sandbox: { mode: 'read-only', trust: 'public' } }, null],
+    ['OpenCode workspace is not yet admitted for the broker', 'opencode', { sandbox: { mode: 'workspace', trust: 'public' } }, 'adapter_cannot_confine'],
+    ['OpenCode bwrap is not yet admitted for the broker', 'opencode', { sandbox: { mode: 'bwrap', trust: 'public' } }, 'adapter_cannot_confine'],
+    ['OpenCode without a sandbox declaration is still not admitted for the broker', 'opencode', {}, 'adapter_cannot_confine'],
     ['pi, which refuses a declared sandbox and derives none', 'pi', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['an adapter this daemon cannot confine', 'mystery', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['no adapter at all', null, { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
@@ -212,5 +215,13 @@ describe('withholding the broker, entry-level', () => {
     const onRefuse = jest.fn();
     expect(withholdGrantBroker(confined, 'claude', { ...opts, onRefuse })).toBe(confined);
     expect(onRefuse).not.toHaveBeenCalled();
+  });
+
+  test('OpenCode withholds the broker until server confinement admission is added', () => {
+    const confined = { sandbox: { trust: 'public' }, mcp: [kernel, broker()] };
+    const onRefuse = jest.fn();
+    const out = withholdGrantBroker(confined, 'opencode', { ...opts, onRefuse });
+    expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+    expect(onRefuse.mock.calls[0][0].reason).toBe('adapter_cannot_confine');
   });
 });

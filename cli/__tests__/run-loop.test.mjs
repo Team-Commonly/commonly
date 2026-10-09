@@ -109,6 +109,16 @@ describe('performRun', () => {
     }
   });
 
+  test('refuses a provider block unless the selected local adapter is OpenCode', () => {
+    expect(() => performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub' },
+      environment: { model: 'gpt-5.4', provider: {} },
+    })).toThrow(/supported only by the opencode adapter/);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
     // Make the full attribution env differ from sandboxEnv at the adapter seam.
     process.env.GIT_CONFIG_COUNT = '1';

@@ -1,7 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
-import { auditDeclaredMcp, installedStdioEntries } from './declared-mcp-guard.js';
+import {
+  auditDeclaredMcp,
+  installedStdioEntries,
+} from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
 import { withholdGrantBroker } from './grant-broker-guard.js';
@@ -150,20 +153,28 @@ export const createDaemonSupervisor = ({
     return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
   };
 
+  // `provider` is host-local authority: /assigned intentionally omits it.
+  // Ignore a provider field even if a future or malformed row carries one,
+  // then restore only the local token record's value during adoption.
+  const withoutServerProvider = (environment) => {
+    const safe = { ...(environment || {}) };
+    delete safe.provider;
+    return safe;
+  };
+
   // A declared environment runs on THIS machine as the operator. Refuse any
   // declared stdio command that is not the shipped commonly MCP server or one
-  // the operator already installed here, and any http server that would be
-  // handed the seat token off the instance's origin. Refusal keeps the current
-  // seat (or skips the mint) and says which server was kept off the machine;
-  // it never adopts a partial environment.
+  // the operator already installed here, and any http server that would
+  // receive the seat token off-origin. Provider blocks are ignored from rows;
+  // the host-local token record is their only source.
   const admitDeclared = (row, environment, existing) => {
-    const audit = auditDeclaredMcp(environment, {
+    const mcpAudit = auditDeclaredMcp(environment, {
       instanceUrl: existing?.instanceUrl || record.instanceUrl,
       allowedStdioEntries: installedStdioEntries(existing),
     });
-    if (audit.ok) return true;
+    if (mcpAudit.refusals.length === 0) return true;
     log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);
-    for (const refusal of audit.refusals) log(`[${row.agentName}]   ${refusal}`);
+    for (const refusal of mcpAudit.refusals) log(`[${row.agentName}]   ${refusal}`);
     return false;
   };
 
@@ -222,10 +233,21 @@ export const createDaemonSupervisor = ({
         nextAdapter = declaredAdapter;
         adapterChanged = existing.adapter !== nextAdapter;
       }
+      if (existing.environment?.provider && nextAdapter !== 'opencode') {
+        log(`[${row.agentName}] host-local provider requires the opencode adapter — keeping the current seat`);
+        return false;
+      }
       if (wanted) {
+        const serverEnvironment = withoutServerProvider(wanted.value);
         const merged = wanted.declared
-          ? wanted.value
-          : { ...(existing.environment || {}), ...wanted.value };
+          ? serverEnvironment
+          : { ...(existing.environment || {}), ...serverEnvironment };
+        // The provider chooses a network endpoint and reads a host key file,
+        // so it is authored on this host. /assigned omits it; rehydrate the
+        // local block after applying the server's declared environment.
+        if (existing.environment?.provider) {
+          merged.provider = existing.environment.provider;
+        }
         // A server-declared environment replaces the local one, so a seat whose
         // declaration carries no mcp[] would come back tool-less. Re-apply the
         // shipped default here and below, or the seat silently loses every
@@ -325,7 +347,7 @@ export const createDaemonSupervisor = ({
     }
     if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
-      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
+      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude, codex, or opencode, or attach manually`);
       return false;
     }
     const environment = environmentFor(row);
@@ -335,7 +357,7 @@ export const createDaemonSupervisor = ({
     // operator-authored, so this seat also gets the sandbox default — the
     // self-serve install's seat used to be born unconfined (TASK-052).
     const recordEnvironment = derive(
-      environment ? environment.value : null,
+      environment ? withoutServerProvider(environment.value) : null,
       adapter,
       { sandbox: true },
     );

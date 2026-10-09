@@ -39,8 +39,18 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
-import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
+import {
+  environmentForServer,
+  normalizeSandboxTrust,
+  parseEnvironmentFile,
+  resolveWorkspace,
+  validateEnvironmentSpec,
+} from '../lib/environment.js';
+import {
+  ADAPTERS_WITH_DEFAULT_MCP,
+  ADAPTERS_WITH_GRANT_BROKER,
+  defaultMcpServers,
+} from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
@@ -125,7 +135,113 @@ export const deleteAgentToken = (name) => {
 // podId) or is a local fact (which CLI binary to wrap). Returns a record ready
 // for saveAgentToken, or null when COMMONLY_AGENT_TOKEN isn't set (caller
 // falls back to the attach hint).
+// OpenCode is opt-in: unlike the established wrappers it must not be selected
+// just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
+
+/** Return the adapter binding resolved for this exact installation by the server. */
+export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
+  if (!Array.isArray(installations) || !podId) return null;
+  const expectedPodId = String(podId);
+  const expectedInstanceId = String(instanceId || 'default');
+  const installation = installations.find((row) => (
+    row?.type === 'installation'
+    && String(row.podId || '') === expectedPodId
+    && String(row.instanceId || 'default') === expectedInstanceId
+  ));
+  const adapter = String(installation?.runtimeAdapter || '').trim().toLowerCase();
+  return adapter || null;
+};
+
+/** Non-broker adapters need a server-resolved binding on env-token seats. */
+export const adapterRequiresServerBinding = (adapterName) => {
+  const adapter = String(adapterName || '').trim().toLowerCase();
+  return Boolean(adapter) && adapter !== 'stub' && !ADAPTERS_WITH_GRANT_BROKER.has(adapter);
+};
+
+const serverRuntimeAdapterProjectionState = (installations) => {
+  if (!Array.isArray(installations)) return 'unknown';
+  const installationRows = installations.filter((row) => row?.type === 'installation');
+  if (installationRows.length === 0) return 'unknown';
+  return installationRows.some((row) => Object.prototype.hasOwnProperty.call(row, 'runtimeAdapter'))
+    ? 'present'
+    : 'legacy';
+};
+
+/** Return the refusal message unless this installation declares the same adapter. */
+export const serverAdapterBindingRefusal = ({
+  adapterName,
+  agentName,
+  installations,
+  podId,
+  instanceId,
+  includeAttachGuidance = true,
+} = {}) => {
+  const adapter = String(adapterName || '').trim().toLowerCase();
+  if (!adapterRequiresServerBinding(adapter)) return null;
+  const projectionState = serverRuntimeAdapterProjectionState(installations);
+  if (projectionState === 'unknown') {
+    return 'Could not verify the server adapter binding because the installations response is empty or missing. '
+      + 'Retry after the server returns this installation.';
+  }
+  if (projectionState === 'legacy') {
+    return `This Commonly server predates runtime adapter bindings; upgrade the server before running adapter '${adapter}'.`;
+  }
+  if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
+  const refusal = `Adapter '${adapter}' is not declared for this Commonly installation.`;
+  if (!includeAttachGuidance) return refusal;
+  return `${refusal} A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
+    + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
+    + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`;
+};
+
+/** Verify a newly attached adapter before telling the operator how to run it. */
+export const checkAttachedAdapterBinding = async ({
+  adapterName,
+  agentName,
+  podId,
+  instanceId,
+  instanceUrl,
+  runtimeToken,
+  clientFactory = createClient,
+} = {}) => {
+  if (!adapterRequiresServerBinding(adapterName)) return { canRun: true };
+
+  let identity;
+  try {
+    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
+      .get('/api/agents/runtime/installations');
+  } catch (error) {
+    return {
+      canRun: false,
+      warning: `Could not verify the server adapter binding after attach: ${error.message}. `
+        + 'The installation was saved, but do not expect agent run to work until verification succeeds.',
+    };
+  }
+
+  const refusal = serverAdapterBindingRefusal({
+    adapterName,
+    agentName,
+    installations: identity?.installations,
+    podId,
+    instanceId,
+    includeAttachGuidance: false,
+  });
+  return refusal ? { canRun: false, warning: refusal } : { canRun: true };
+};
+
+export const printAttachRunGuidance = ({
+  agentName,
+  binding,
+  log = console.log,
+  warn = console.warn,
+} = {}) => {
+  if (binding?.canRun) {
+    log(`\n  Run with:    commonly agent run ${agentName}`);
+  } else {
+    warn(`\n  WARNING: ${binding?.warning || 'The server did not confirm this adapter binding.'}`);
+  }
+};
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token
@@ -212,6 +328,15 @@ export const bootstrapAgentRecordFromEnv = async ({
   if (String(agentName).toLowerCase() !== String(name).toLowerCase()) {
     log(`token belongs to '${agentName}', not '${name}' — using the token's identity`);
   }
+
+  const bindingRefusal = serverAdapterBindingRefusal({
+    adapterName,
+    agentName,
+    installations: installs,
+    podId: primary?.podId,
+    instanceId: primary?.instanceId,
+  });
+  if (bindingRefusal) throw new Error(bindingRefusal);
 
   return {
     agentName,
@@ -495,7 +620,11 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment) config.environment = environment;
+  if (environment?.provider !== undefined
+    && String(runtime.adapter || record.adapter || '').trim().toLowerCase() !== 'opencode') {
+    throw new Error('environment.provider is supported only by the opencode adapter');
+  }
+  if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
     throw new Error('provide at least one of --adapter, --model, --effort, or --env');
   }
@@ -571,10 +700,10 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !['codex', 'claude'].includes(adapterName))) {
+    && (trust !== 'public' || !['codex', 'claude', 'opencode'].includes(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} is currently implemented only for public `
-      + 'codex or Claude adapters',
+      + 'Claude, Codex, or OpenCode adapters',
     );
   }
   return { mode, trust };
@@ -593,11 +722,12 @@ export const performAttach = async ({
   envPath = null,
   wakeOnMessage = false,
   log = () => {},
+  adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
-  const adapter = getAdapter(adapterName);
+  const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
     throw new Error(
-      `Unknown adapter "${adapterName}". Known: ${listAdapterNames().join(', ')}`,
+      `Unknown adapter "${adapterName}". Known: ${adapterRegistry.listAdapterNames().join(', ')}`,
     );
   }
 
@@ -613,7 +743,13 @@ export const performAttach = async ({
   let workspace = null;
   if (envPath) {
     environment = await parseEnvironmentFile(envPath);
+    if (environment?.provider !== undefined && adapterName !== 'opencode') {
+      throw new Error('environment.provider is supported only by the opencode adapter');
+    }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
+    if (typeof adapter.validateEnvironment === 'function') {
+      await adapter.validateEnvironment(environment, workspace.path);
+    }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
     const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
@@ -648,15 +784,16 @@ export const performAttach = async ({
             + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
           );
         }
+        const adapterLabel = adapterName === 'opencode' ? 'OpenCode' : 'Claude';
         log(
           `sandbox: public ${sandboxMode} via macOS Seatbelt `
-          + '(deny-by-default host filesystem; Claude/MCP network retained)',
+          + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
         );
       }
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
-        + `Supported locally: none, bwrap, and public codex/Claude workspace/read-only.`,
+        + `Supported locally: none, bwrap, and public Codex/Claude/OpenCode workspace/read-only.`,
       );
     }
   } else {
@@ -719,9 +856,10 @@ export const performAttach = async ({
     config: {
       runtime: {
         runtimeType,
+        adapter: adapterName,
         host: 'byo',
       },
-      ...(environment ? { environment } : {}),
+      ...(environment ? { environment: environmentForServer(environment) } : {}),
       // ADR-018: ambient wake is a per-install opt-in read by
       // agentMentionService (`config.wakeOnMessage.enabled === true`, default
       // OFF). Until now the only way to set it for a BYO seat was a DB write.
@@ -968,6 +1106,9 @@ export const performRun = ({
   revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
+  if (environment?.provider !== undefined && adapter?.name !== 'opencode') {
+    throw new Error('environment.provider is supported only by the opencode adapter');
+  }
   const client = createClient({ instance: instanceUrl, token });
 
   // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat
@@ -2570,7 +2711,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|…)')
+    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
@@ -2646,7 +2787,15 @@ Docs:
         // The mention handle is the instanceId (what the UI dropdown inserts),
         // not the registry agentName — say it here so users know how to ping it.
         const handle = instanceId && instanceId !== 'default' ? instanceId : installation.agentName;
-        console.log(`\n  Run with:    commonly agent run ${opts.name}`);
+        const binding = await checkAttachedAdapterBinding({
+          adapterName: wrappedCli,
+          agentName: opts.name,
+          podId: opts.pod,
+          instanceId,
+          instanceUrl,
+          runtimeToken,
+        });
+        printAttachRunGuidance({ agentName: opts.name, binding });
         console.log(`  Mention as:  @${handle}`);
       } catch (err) {
         console.error(`Attach failed: ${err.message}`);
@@ -2744,7 +2893,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -2788,6 +2937,30 @@ Docs:
       if (!adapter) {
         console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
         process.exit(1);
+      }
+
+      if (adapterRequiresServerBinding(adapter.name)) {
+        let identity;
+        try {
+          identity = await createClient({
+            instance: record.instanceUrl,
+            token: record.runtimeToken,
+          }).get('/api/agents/runtime/installations');
+        } catch (err) {
+          console.error(`${stamp()} [${name}] could not read the server-declared adapter: ${err.message}`);
+          process.exit(1);
+        }
+        const bindingRefusal = serverAdapterBindingRefusal({
+          adapterName: adapter.name,
+          agentName: record.agentName,
+          installations: identity?.installations,
+          podId: record.podId,
+          instanceId: record.instanceId,
+        });
+        if (bindingRefusal) {
+          console.error(`${stamp()} [${name}] ${bindingRefusal}`);
+          process.exit(1);
+        }
       }
 
       // THE line to stamp, not just one of them. It is the first line of every

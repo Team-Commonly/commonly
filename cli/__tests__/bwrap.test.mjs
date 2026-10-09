@@ -110,6 +110,20 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[idx + 1]).toBe('/tmp/commonly-claude-mcp-abc123');
   });
 
+  itLinux('binds a provider key file read-only without binding its containing directory', () => {
+    const keyFile = '/home/operator/.config/commonly/provider-key';
+    const argv = wrapArgvWithBwrap(
+      ['opencode', 'run'],
+      {},
+      { workspacePath: '/tmp/ws', readOnlyPaths: [keyFile] },
+    );
+    const idx = argv.indexOf(keyFile);
+    expect(idx).toBeGreaterThan(-1);
+    expect(argv[idx - 1]).toBe('--ro-bind');
+    expect(argv[idx + 1]).toBe(keyFile);
+    expect(argv).not.toContain('/home/operator/.config/commonly');
+  });
+
   itLinux('rejects relative adapter-owned transient paths', () => {
     expect(() => wrapArgvWithBwrap(
       ['claude'],

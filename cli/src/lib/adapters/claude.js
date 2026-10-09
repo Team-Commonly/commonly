@@ -631,10 +631,11 @@ const prepareArgv = async (innerArgv, ctx) => {
     const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
       workspacePath: ctx.cwd,
       workspaceAccess: sandboxMode === 'read-only' ? 'read' : 'write',
-      claudePath: claudeBin,
+      executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
       executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
+      allowClaudeRuntimeAccess: true,
     });
     return {
       cmd: wrapped[0],

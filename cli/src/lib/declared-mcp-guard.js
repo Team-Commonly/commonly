@@ -1,5 +1,5 @@
 /**
- * Guard for a server-declared `environment.mcp` before the daemon adopts it.
+ * Guard server-declared `environment.mcp` before the daemon adopts it.
  *
  * The daemon projects `AgentInstallation.config.environment` onto the OWNER's
  * machine: every declared stdio server is spawned as the operator, and every

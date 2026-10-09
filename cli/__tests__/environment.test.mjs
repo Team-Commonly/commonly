@@ -26,6 +26,7 @@ await jest.unstable_mockModule('os', () => {
 const {
   isLegacySandboxTrust,
   normalizeSandboxTrust,
+  environmentForServer,
   parseEnvironmentFile,
   validateEnvironmentSpec,
   resolveWorkspace,
@@ -129,6 +130,72 @@ describe('validateEnvironmentSpec', () => {
   test('accepts an unrecognised model id, leaving validity to the CLI', () => {
     expect(validateEnvironmentSpec({ version: 1, model: 'some-future-model-9' }).ok)
       .toBe(true);
+  });
+
+  test('accepts an OpenCode external provider with a host-local key file', () => {
+    expect(validateEnvironmentSpec({
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm',
+        baseURL: 'https://llm.example.test/v1',
+        keyFile: '/Users/kai/.config/commonly/llm-key',
+        models: { 'gpt-5.4': { name: 'GPT 5.4' } },
+      },
+    })).toEqual({ ok: true, errors: [] });
+  });
+
+  test('rejects unsafe provider declarations and a qualified model id', () => {
+    const invalid = [
+      { id: 'bad/id', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key' },
+      { id: 'litellm', baseURL: 'https://user:pass@llm.example.test/v1', keyFile: '/tmp/key' },
+      { id: 'litellm', baseURL: 'https://llm.example.test/v1?token=x', keyFile: '/tmp/key' },
+      { id: 'litellm', baseURL: 'file:///tmp/provider', keyFile: '/tmp/key' },
+      { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: 'relative/key' },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        models: { 'gpt/5.4': { name: 'bad id' } },
+      },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        apiKey: 'inline-secret',
+      },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        models: { 'gpt-5.4': { options: { apiKey: 'inline-secret' } } },
+      },
+      {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key',
+        models: { 'gpt-5.4': { options: { clientSecret: 'inline-secret' } } },
+      },
+    ];
+    for (const provider of invalid) {
+      expect(validateEnvironmentSpec({ model: 'gpt-5.4', provider }).ok).toBe(false);
+    }
+    expect(validateEnvironmentSpec({
+      model: 'litellm/gpt-5.4',
+      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key' },
+    }).ok).toBe(false);
+    expect(validateEnvironmentSpec({
+      provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/key' },
+    }).errors.join(' ')).toMatch(/model is required/);
+  });
+
+  test('omits the complete host-local provider block from registry environment payloads', () => {
+    const environment = {
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm', baseURL: 'https://llm.example.test/v1',
+        keyFile: '/Users/kai/.config/commonly/llm-key',
+      },
+    };
+    expect(environmentForServer(environment)).toEqual({
+      model: 'gpt-5.4',
+    });
+    expect(environment.provider).toEqual({
+      id: 'litellm',
+      baseURL: 'https://llm.example.test/v1',
+      keyFile: '/Users/kai/.config/commonly/llm-key',
+    });
   });
 
   test('rejects bad sandbox.mode', () => {

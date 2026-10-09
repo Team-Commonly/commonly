@@ -33,8 +33,15 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  BOOTSTRAP_ADAPTER_DETECT_ORDER,
+  runtimeAdapterForInstallation,
+  adapterRequiresServerBinding,
+  serverAdapterBindingRefusal,
+  checkAttachedAdapterBinding,
+  printAttachRunGuidance,
   resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
+const { ADAPTERS_WITH_GRANT_BROKER } = await import('../src/lib/default-environment.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
   test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
@@ -73,7 +80,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // The support check moved into the derivation must not become a no-op.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
-    })).toThrow(/implemented only for public codex or Claude adapters/);
+    })).toThrow(/implemented only for public Claude, Codex, or OpenCode adapters/);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {
@@ -165,6 +172,55 @@ describe('updateAgentConfiguration', () => {
           environment,
         },
       },
+    );
+  });
+
+  test('keeps the complete provider block local while PATCHing environment fields', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const environment = {
+      model: 'gpt-5.4',
+      provider: {
+        id: 'litellm',
+        baseURL: 'https://llm.example.test/v1',
+        keyFile: '/Users/kai/.config/commonly/llm-key',
+      },
+    };
+    const result = await updateAgentConfiguration({
+      client,
+      record: { ...record, adapter: 'opencode' },
+      envPath: '/tmp/provider-env.json',
+      parseEnv: jest.fn(async () => environment),
+    });
+    expect(client.patch.mock.calls[0][1].config.environment).toEqual({ model: 'gpt-5.4' });
+    expect(result.environment).toEqual(environment);
+  });
+
+  test('refuses provider configuration when the local token record is not OpenCode-bound', async () => {
+    const client = { patch: jest.fn() };
+    await expect(updateAgentConfiguration({
+      client,
+      record,
+      envPath: '/tmp/provider-env.json',
+      parseEnv: jest.fn(async () => ({
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/provider-key',
+        },
+      })),
+    })).rejects.toThrow(/supported only by the opencode adapter/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
+  test('agent config writes the adapter binding explicitly', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const adapterRegistry = {
+      listAdapterNames: () => ['opencode'],
+      getAdapter: () => ({ detect: async () => ({ path: '/bin/opencode', version: '1.18.35' }) }),
+    };
+    await updateAgentConfiguration({ client, record, adapter: 'opencode', adapterRegistry });
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      { instanceId: 'writer', config: { runtime: { adapter: 'opencode' } } },
     );
   });
 
@@ -309,6 +365,7 @@ describe('performAttach', () => {
         config: expect.objectContaining({
           runtime: expect.objectContaining({
             runtimeType: 'stub',
+            adapter: 'stub',
             host: 'byo',
           }),
         }),
@@ -336,6 +393,76 @@ describe('performAttach', () => {
         config: expect.objectContaining({ wakeOnMessage: { enabled: true } }),
       }),
     );
+  });
+
+  test('keeps the provider block in the local attach result, not the install request', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-provider-attach-'));
+    try {
+      const workspace = path.join(root, 'workspace');
+      const keyFile = path.join(root, 'provider-key');
+      const envPath = path.join(root, 'environment.json');
+      fs.mkdirSync(workspace, { recursive: true });
+      fs.writeFileSync(keyFile, 'provider-key', { mode: 0o600 });
+      fs.chmodSync(keyFile, 0o600);
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: workspace },
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile,
+        },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_provider' });
+      const result = await performAttach({
+        client,
+        adapterName: 'opencode',
+        agentName: 'provider-seat',
+        podId: 'pod-provider',
+        envPath,
+        adapterRegistry: {
+          getAdapter: () => ({
+            name: 'opencode',
+            detect: async () => ({ path: '/usr/local/bin/opencode', version: '1.18.35' }),
+            validateEnvironment: async () => {},
+          }),
+          listAdapterNames: () => ['opencode'],
+        },
+      });
+      const install = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+      expect(install.config.environment).not.toHaveProperty('provider');
+      expect(result.environment.provider.keyFile).toBe(keyFile);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses a provider block when the selected adapter is not OpenCode', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-provider-adapter-'));
+    try {
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        model: 'gpt-5.4',
+        provider: {
+          id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/provider-key',
+        },
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_provider' });
+      await expect(performAttach({
+        client,
+        adapterName: 'stub',
+        agentName: 'provider-seat',
+        podId: 'pod-provider',
+        envPath,
+        adapterRegistry: {
+          getAdapter: () => ({ name: 'stub', detect: async () => ({ version: '1.0' }) }),
+          listAdapterNames: () => ['stub'],
+        },
+      })).rejects.toThrow(/supported only by the opencode adapter/);
+      expect(client.post).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('falls back to /runtime-tokens when install does not return runtimeToken', async () => {
@@ -475,12 +602,19 @@ describe('bootstrapAgentRecordFromEnv', () => {
     ],
   };
 
-  const makeRegistry = ({ claudeFound = true, codexFound = true } = {}) => ({
+  const makeRegistry = ({
+    claudeFound = true,
+    codexFound = true,
+    piFound = false,
+    opencodeFound = false,
+  } = {}) => ({
     getAdapter: (n) => ({
       claude: { name: 'claude', detect: async () => (claudeFound ? { path: '/bin/claude', version: '1' } : null) },
       codex: { name: 'codex', detect: async () => (codexFound ? { path: '/bin/codex', version: '1' } : null) },
+      pi: { name: 'pi', detect: async () => (piFound ? { path: '/bin/pi', version: '1' } : null) },
+      opencode: { name: 'opencode', detect: async () => (opencodeFound ? { path: '/bin/opencode', version: '1' } : null) },
     }[n] || null),
-    listAdapterNames: () => ['stub', 'claude', 'codex'],
+    listAdapterNames: () => ['stub', 'claude', 'codex', 'pi', 'opencode'],
   });
 
   const makeFactory = (response = identityResponse) => {
@@ -540,6 +674,207 @@ describe('bootstrapAgentRecordFromEnv', () => {
       adapterRegistry: makeRegistry({ claudeFound: false }),
     });
     expect(record.adapter).toBe('codex');
+  });
+
+  test('OpenCode is not selected by automatic bootstrap detection', async () => {
+    expect(BOOTSTRAP_ADAPTER_DETECT_ORDER).toEqual(['claude', 'codex', 'pi']);
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, opencodeFound: true }),
+    })).rejects.toThrow(/No supported agent CLI found on PATH/);
+  });
+
+  test('an explicit OpenCode bootstrap requires the server to declare that adapter for the selected install', async () => {
+    const declared = makeFactory({
+      agentName: 'smoke-agent',
+      instanceId: 'default',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: 'OpenCode',
+      }],
+    });
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: declared,
+      adapterRegistry: makeRegistry({ opencodeFound: true }),
+      adapterOverride: 'opencode',
+    });
+    expect(record.adapter).toBe('opencode');
+
+    const undeclared = makeFactory({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+    });
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: undeclared,
+      adapterRegistry: makeRegistry({ opencodeFound: true }),
+      adapterOverride: 'opencode',
+    })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
+  });
+
+  test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
+    const refusal = serverAdapterBindingRefusal({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      installations: identityResponse.installations,
+      podId: 'pod-main',
+      instanceId: 'default',
+    });
+    expect(refusal).toMatch(/server predates runtime adapter bindings/i);
+    expect(refusal).toMatch(/upgrade the server/i);
+    expect(refusal).not.toMatch(/agent attach/);
+  });
+
+  test('an explicit pi bootstrap requires a matching server declaration', async () => {
+    const declared = makeFactory({
+      agentName: 'smoke-agent',
+      instanceId: 'default',
+      installations: [{
+        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
+        type: 'installation', runtimeAdapter: 'PI',
+      }],
+    });
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: declared,
+      adapterRegistry: makeRegistry({ piFound: true }),
+      adapterOverride: 'pi',
+    });
+    expect(record.adapter).toBe('pi');
+
+    const undeclared = makeFactory({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+    });
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: undeclared,
+      adapterRegistry: makeRegistry({ piFound: true }),
+      adapterOverride: 'pi',
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent attach pi --pod pod-main --name smoke-agent/);
+
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory({
+        ...identityResponse,
+        installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+      }),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, piFound: true }),
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent attach pi --pod pod-main --name smoke-agent/);
+  });
+
+  test('attach checks the installed binding and withholds the Run with hint when the server is old', async () => {
+    const get = jest.fn(async () => ({ installations: identityResponse.installations }));
+    const clientFactory = jest.fn(() => ({ get }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'default',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(clientFactory).toHaveBeenCalledWith({
+      instance: 'https://api.example.test', token: 'cm_agent_abc123',
+    });
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
+    expect(binding.canRun).toBe(false);
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('Run with:'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('predates runtime adapter bindings'));
+  });
+
+  test.each([
+    { description: 'an empty list', installations: [] },
+    { description: 'a missing list' },
+    { description: 'no installation rows', installations: [{ podId: 'pod-main', type: 'directMessage' }] },
+  ])('attach does not call an unverifiable binding state an old server ($description)', async ({ installations }) => {
+    const response = installations === undefined ? {} : { installations };
+    const clientFactory = jest.fn(() => ({ get: jest.fn(async () => response) }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'default',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(binding.canRun).toBe(false);
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('Run with:'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not verify the server adapter binding'));
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('predates runtime adapter bindings'));
+  });
+
+  test('attach prints Run with only after the server confirms the selected adapter', async () => {
+    const clientFactory = jest.fn(() => ({
+      get: jest.fn(async () => ({
+        installations: [{
+          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ',
+        }],
+      })),
+    }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'writer',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(binding.canRun).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Run with:    commonly agent run smoke-agent'));
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {
+    expect(adapterRequiresServerBinding('pi')).toBe(true);
+    expect(adapterRequiresServerBinding('opencode')).toBe(true);
+    expect(adapterRequiresServerBinding('claude')).toBe(false);
+    expect(adapterRequiresServerBinding('codex')).toBe(false);
+    expect(adapterRequiresServerBinding('stub')).toBe(false);
+
+    const futureBrokerAdapter = 'task184-test-adapter';
+    ADAPTERS_WITH_GRANT_BROKER.add(futureBrokerAdapter);
+    try {
+      expect(adapterRequiresServerBinding(futureBrokerAdapter)).toBe(false);
+    } finally {
+      ADAPTERS_WITH_GRANT_BROKER.delete(futureBrokerAdapter);
+    }
+  });
+
+  test('reads the declared adapter only from the matching active installation', () => {
+    const installations = [
+      { podId: 'pod-dm', instanceId: 'writer', type: 'dm', runtimeAdapter: 'claude' },
+      { podId: 'pod-other', instanceId: 'writer', type: 'installation', runtimeAdapter: 'codex' },
+      { podId: 'pod-main', instanceId: 'other', type: 'installation', runtimeAdapter: 'claude' },
+      { podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ' },
+    ];
+    expect(runtimeAdapterForInstallation({ installations, podId: 'pod-main', instanceId: 'writer' }))
+      .toBe('opencode');
+    expect(runtimeAdapterForInstallation({ installations, podId: 'pod-main', instanceId: 'missing' }))
+      .toBeNull();
   });
 
   test('errors with install guidance when no CLI is on PATH', async () => {

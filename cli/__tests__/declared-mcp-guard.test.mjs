@@ -4,7 +4,12 @@
 // server with the token placeholder in its headers receives the seat token.
 // The daemon refuses both shapes before they reach a token file (Vera, P0,
 // Connectors 69500, 2026-09-18).
-import { auditDeclaredMcp, isShippedCommonlyMcpCommand, isShippedCommonlyMcpEntry, isShippedGrantBrokerEntry } from '../src/lib/declared-mcp-guard.js';
+import {
+  auditDeclaredMcp,
+  isShippedCommonlyMcpCommand,
+  isShippedCommonlyMcpEntry,
+  isShippedGrantBrokerEntry,
+} from '../src/lib/declared-mcp-guard.js';
 
 const instanceUrl = 'https://api.commonly.me';
 const defaultServer = {

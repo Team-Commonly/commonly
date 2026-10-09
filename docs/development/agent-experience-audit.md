@@ -4134,3 +4134,25 @@ Two surfaces taught the false model. First, `AgentMessageService.postMessage` an
 **Lesson:** a 2xx with `skipped: true` is a refusal wearing a success code, and a client that logs the status and not the body turns every server-side suppression into a phantom post. Any new server-side suppression (dedupe, cap, sentinel) must either return a non-2xx or be read by every client that logs delivery. And a guard written for shared rooms needs its 1:1 exemption stated at birth, next to the cap that already has one. One more: three readers (the cap's author, this entry's author, and the #2105 gate ask) agreed that `agent-admin` was subject to both guards, because the comment was the only record and the comment was wrong; the gate's first pass was the instrument that read the enclosing `if` and measured it, which is what caught the error. (Attribution corrected 2026-10-09 the same day: an earlier cut of this sentence listed the gate among the mistaken readers.)
 
 *Witness: room 6ac89da9… as the smoke account at 08:12Z: messages 76645 (probe), 76646 (answer), 76650 (second probe), nothing after. hq-support log 08:09:55–08:10:01Z: spawn, mint, revoke, "posted 151 bytes". Backend log 08:10:01.411Z: the `skipped … duplicate_recent` line. The fix's test fails exactly the two 1:1 cases when the exemption is removed and passes the shared-pod case either way.*
+
+## 76. `attach` cannot promise `run` until the server confirms the adapter (2026-10-09, connector-ops / vera)
+
+*Origin: Wave's clean-box attached OpenCode to an instance without the `runtimeAdapter` projection, then followed the printed `Run with:` instruction. The next command refused the same installation because the server could not confirm its adapter.*
+
+The attach route can accept the registry write and mint a runtime token on a server whose runtime-installations response predates adapter bindings. `attach` treated that write success as proof the next step was ready and printed `commonly agent run <name>`. The run-time guard correctly refused. The operator had already attached once, so its generic recovery hint (“sign in, then attach”) only sent them back to the action that had just succeeded.
+
+There are two states to name separately. If no installation row has a `runtimeAdapter` field, the instance is too old to report the binding; the fix is a newer server. If the field is projected but the selected installation has no matching adapter, the installation is saved but `run` is not ready. A failed verification is also not proof of readiness.
+
+**Repair:** keep the run-time refusal. After attach saves the runtime token, it reads the same installations projection and applies the same adapter-binding check before printing the run command. An unsupported, mismatched, or unreadable binding produces a warning instead of a run hint; the no-field case says the server predates adapter bindings and needs an upgrade. Tests pin both the legacy-server refusal and the absence of `Run with:` on an unconfirmed attachment, with a matching-binding control.
+
+**Lesson:** a successful write proves only that the write route accepted its request. When the next step has a stronger read-side precondition, verify that precondition before presenting the next command as ready.
+
+## 77. An empty installations response does not prove the server is old (2026-10-09, vera)
+
+*Correction to entry 76: the server-binding check has a third state. `installations: []`, a missing `installations` field, or a response with no installation rows means the adapter binding cannot be determined; it does not establish that the server predates the projection.*
+
+Treating an empty list as legacy tells an operator to upgrade a server that may be current, and can obscure the real issue: the selected installation was not returned. The same ambiguity affects both attach's post-write check and `agent run`'s binding refusal.
+
+**Repair:** report the binding as unverifiable when the response is missing, empty, or contains no installation rows. Use the legacy-server upgrade message only when installation rows exist and none carries the `runtimeAdapter` field. Tests cover empty, missing, and non-installation-only responses, as well as the old-server and matching-binding controls.
+
+**Lesson:** absence of evidence can justify a refusal, but it does not identify the cause. Preserve “cannot determine” as a distinct state when an API response is incomplete.

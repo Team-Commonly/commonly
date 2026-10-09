@@ -26,6 +26,7 @@ const {
   registerDaemonMachine,
   unregisterDaemonMachine,
   formatSeatLine,
+  resolveAdapterForRuntime,
 } = await import('../src/commands/daemon.js');
 
 const daemonRecord = {
@@ -205,6 +206,24 @@ describe('daemon machine calls', () => {
 // TASK-072: the status line is the only place a local seat's identity and its flap
 // counter can be read, and it showed neither. `restarts` is written, persisted and
 // served, so a seat that had been crash-looping printed exactly like a healthy one.
+describe('resolveAdapterForRuntime', () => {
+  test('OpenCode is selected only by an explicit runtime.adapter', async () => {
+    const calls = [];
+    const registry = {
+      getAdapter: (name) => {
+        calls.push(name);
+        return name === 'opencode' ? { detect: async () => ({ path: '/bin/opencode' }) } : null;
+      },
+    };
+    await expect(resolveAdapterForRuntime({}, registry)).resolves.toBeNull();
+    expect(calls).toEqual(['claude', 'codex']);
+
+    calls.length = 0;
+    await expect(resolveAdapterForRuntime({ adapter: 'opencode' }, registry)).resolves.toBe('opencode');
+    expect(calls).toEqual(['opencode']);
+  });
+});
+
 describe('formatSeatLine', () => {
   test('names the seat\'s instance and its restart count', () => {
     const line = formatSeatLine({

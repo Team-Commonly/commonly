@@ -136,8 +136,8 @@ export const unregisterDaemonMachine = async ({ client, record, remove = removeD
 
 // The adapter names a binary on THIS machine — the one fact the server cannot
 // know (same reasoning as `agent run`'s env bootstrap). A server-declared
-// preference is honored when that CLI is installed; otherwise probe the known
-// ones in order.
+// preference is honored when that CLI is installed; otherwise probe only the
+// established fallbacks. OpenCode must be named explicitly in runtime.adapter.
 export const resolveAdapterForRuntime = async (runtime, registry = { getAdapter }) => {
   const candidates = [runtime?.adapter, 'claude', 'codex'].filter(Boolean);
   for (const name of candidates) {

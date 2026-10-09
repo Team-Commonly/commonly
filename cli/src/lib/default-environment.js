@@ -16,6 +16,7 @@
  *            codex agent posted through the operator's own CLI profile because
  *            it had no commonly_* tool of its own)
  *   pi     — stdio servers from the environment spec (adapters/pi.js)
+ *   opencode — per-spawn config file with local/remote MCP entries (adapters/opencode.js)
  * `stub` has no consumption path and must keep being handed `environment: null`.
  *
  * The placeholders are substituted at spawn time by the adapter, so the
@@ -24,7 +25,7 @@
 
 import { normalizeSandboxTrust } from './environment.js';
 
-export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
+export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode']);
 
 /**
  * The adapters that can ENFORCE the default sandbox — a strict subset of the
@@ -41,7 +42,12 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi']);
  * here and hoped for. A derived pi seat used to be exactly this shape and would
  * have failed every spawn with `public-trust seats are not supported`.
  */
-export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex']);
+export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode']);
+
+// The server has not yet admitted OpenCode to its grant-broker confinement
+// allowlist. Keep runtime sandbox support separate from the narrower set of
+// adapters that may receive a room grant.
+export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
 
 /**
  * The sandbox an unconfigured seat gets.
@@ -64,9 +70,11 @@ export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex']);
  * moves a host fact into the database and breaks the day the seat is re-homed.
  * An explicit mode in a record still wins over the derived one.
  *
- * Confinement holds for claude and codex, and only they are ever handed this
- * block (ADAPTERS_WITH_DEFAULT_SANDBOX). A pi seat must never be: it fails
- * closed on a declared sandbox rather than run under a spec it cannot honour.
+ * Confinement holds for claude, codex, and opencode, and only they are handed
+ * this block (ADAPTERS_WITH_DEFAULT_SANDBOX). Grant-broker eligibility is
+ * narrower until the server admits OpenCode after its confinement proof.
+ * A pi seat must never be handed this block: it fails closed on a declared
+ * sandbox rather than run under a spec it cannot honour.
  */
 export const COMMONLY_DEFAULT_SANDBOX = Object.freeze({ trust: 'public' });
 

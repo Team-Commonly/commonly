@@ -1,5 +1,5 @@
-import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 
 import {
@@ -32,7 +32,7 @@ describe('macOS Seatbelt profile', () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
       workspaceAccess: 'write',
-      claudePath: '/usr/bin/true',
+      executablePath: '/usr/bin/true',
       statePath: state,
       mcpConfigDir: mcp,
       executablePaths: [process.execPath],
@@ -65,7 +65,7 @@ describe('macOS Seatbelt profile', () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
       workspaceAccess: 'read',
-      claudePath: '/usr/bin/true',
+      executablePath: '/usr/bin/true',
       statePath: state,
     });
     const resolvedWorkspace = realpathSync(workspace);
@@ -78,10 +78,99 @@ describe('macOS Seatbelt profile', () => {
     );
   });
 
+  test('OpenCode config roots remain read-only in the generated profile', () => {
+    const configRoot = join(root, 'opencode-temp');
+    const configDir = join(configRoot, 'config-dir');
+    const xdgConfigHome = join(configRoot, 'xdg-config');
+    const xdgConfigDir = join(xdgConfigHome, 'opencode');
+    mkdirSync(configDir, { recursive: true });
+    mkdirSync(xdgConfigDir, { recursive: true });
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: configRoot,
+    });
+    const writableRules = profile.split('\n')
+      .filter((line) => line.includes('file-write*'))
+      .join('\n');
+
+    // A write rule for any ancestor of these config directories would cover
+    // them too, so pin the whole per-spawn config root as non-writable.
+    for (const path of [configRoot, configDir, xdgConfigHome, xdgConfigDir]) {
+      expect(writableRules).not.toContain(realpathSync(path));
+    }
+  });
+
+  test('admits only the explicit provider auth file outside public seat state', () => {
+    const authFile = join(root, 'operator-data', 'opencode', 'auth.json');
+    mkdirSync(join(root, 'operator-data', 'opencode'), { recursive: true });
+    writeFileSync(authFile, 'dummy-auth');
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      readOnlyPaths: [authFile],
+    });
+
+    const resolvedAuthFile = realpathSync(authFile);
+    expect(profile).toContain(`(allow file-read* file-test-existence (literal "${resolvedAuthFile}"))`);
+    expect(profile).not.toContain(`file-write* (literal "${resolvedAuthFile}")`);
+  });
+
+  test('adds an exact loopback allow rule for the per-spawn provider proxy port', () => {
+    const port = 54321;
+    const baseline = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+    });
+    const withProxyPort = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: mcp,
+      loopbackNetworkPorts: [port],
+    });
+    const baselineLines = new Set(baseline.split('\n').filter(Boolean));
+    const addedRules = withProxyPort.split('\n').filter((line) => line && !baselineLines.has(line));
+    expect(addedRules).toEqual([
+      `(allow network-outbound (remote tcp "localhost:${port}"))`,
+    ]);
+    expect(() => buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      loopbackNetworkPorts: [0],
+    })).toThrow(/valid TCP ports/);
+  });
+
+  test('Claude-only Keychain and temp access are granted only on request', () => {
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+    });
+    const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
+    expect(profile).not.toContain(join(homedir(), 'Library', 'Keychains'));
+    expect(profile).not.toContain(claudeTmp);
+
+    const claudeProfile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      allowClaudeRuntimeAccess: true,
+    });
+    expect(claudeProfile).toContain(join(homedir(), 'Library', 'Keychains'));
+    expect(claudeProfile).toContain(claudeTmp);
+  });
+
   test('rejects relative dynamic paths', () => {
     expect(() => buildSeatbeltProfile({
       workspacePath: 'relative',
-      claudePath: '/usr/bin/true',
+      executablePath: '/usr/bin/true',
       statePath: state,
     })).toThrow(/workspacePath must be an absolute path/);
   });
@@ -90,7 +179,7 @@ describe('macOS Seatbelt profile', () => {
     if (process.platform !== 'darwin') {
       expect(() => wrapArgvWithSeatbelt(['/usr/bin/true'], {
         workspacePath: workspace,
-        claudePath: '/usr/bin/true',
+        executablePath: '/usr/bin/true',
         statePath: state,
       })).toThrow(/available only on macOS/);
       expect(detectSeatbelt()).toMatchObject({ available: false });
@@ -101,7 +190,7 @@ describe('macOS Seatbelt profile', () => {
     expect(detected).toMatchObject({ available: true, path: '/usr/bin/sandbox-exec' });
     const argv = wrapArgvWithSeatbelt(['/usr/bin/true'], {
       workspacePath: workspace,
-      claudePath: '/usr/bin/true',
+      executablePath: '/usr/bin/true',
       statePath: state,
     });
     expect(argv[0]).toBe('/usr/bin/sandbox-exec');

@@ -3,6 +3,7 @@
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
+  ADAPTERS_WITH_GRANT_BROKER,
   COMMONLY_DEFAULT_SANDBOX,
   COMMONLY_MCP_SERVER_NAME,
   commonlyMcpServer,
@@ -15,7 +16,7 @@ import {
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 
 describe('defaultMcpServers', () => {
-  test.each(['claude', 'codex', 'pi'])('hands %s the commonly server', (adapterName) => {
+  test.each(['claude', 'codex', 'pi', 'opencode'])('hands %s the commonly server', (adapterName) => {
     expect(defaultMcpServers(adapterName)).toEqual([commonlyMcpServer()]);
   });
 
@@ -33,12 +34,17 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'pi']);
+    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex']);
+    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode']);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
+  });
+
+  test('OpenCode sandbox support does not yet authorize the grant broker', () => {
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
   });
 });
 
@@ -207,5 +213,12 @@ describe('seatBaseline', () => {
     // it, so the absence above is the adapter set and not a missing default.
     expect(seatBaseline(null, 'claude', { sandbox: true }).sandbox)
       .toEqual(defaultSeatSandbox());
+  });
+
+  test('derives OpenCode public confinement while withholding grant-broker eligibility', () => {
+    const derived = seatBaseline(null, 'opencode', { sandbox: true });
+    expect(derived.sandbox).toEqual({ trust: 'public' });
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('opencode')).toBe(true);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
   });
 });

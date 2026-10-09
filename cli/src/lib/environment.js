@@ -41,13 +41,26 @@ import { homedir } from 'os';
 // "persona and runtime are chosen separately" requires to mean anything for a
 // BYO seat, and what lets an identity card answer "what is this running".
 const ALLOWED_TOP_KEYS = new Set([
-  'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model', 'effort',
+  'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model', 'effort', 'provider',
 ]);
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
 ]);
 const ALLOWED_SANDBOX_TRUST = new Set(['public']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
+const INLINE_PROVIDER_CREDENTIAL_FIELD = /(?:key|token|secret|password|authorization|header|credential|auth)/i;
+
+const findInlineProviderCredentialField = (value, path) => {
+  if (!value || typeof value !== 'object') return null;
+  for (const [key, nested] of Object.entries(value)) {
+    const normalized = key.replace(/[-_]/g, '').toLowerCase();
+    const fieldPath = `${path}.${key}`;
+    if (INLINE_PROVIDER_CREDENTIAL_FIELD.test(normalized)) return fieldPath;
+    const nestedPath = findInlineProviderCredentialField(nested, fieldPath);
+    if (nestedPath) return nestedPath;
+  }
+  return null;
+};
 
 // `trust: 'internal'` was accepted by this schema and read by NO adapter. On the
 // attach path it could only name a mode the platform cannot resolve; on the
@@ -136,9 +149,22 @@ export const parseEnvironmentFile = async (absolutePath) => {
   // annotations. The caller is responsible for tracking envFileDir separately
   // (compute via `dirname(envPath)`) and passing it explicitly to
   // resolveWorkspace / mountSkills when relative paths in the spec need to
-  // resolve. This keeps the spec safe to serialize and ship to the backend
-  // (`config.environment` on AgentInstallation) without leaking $HOME layout.
+  // resolve. The provider block is host-local; API writers omit it entirely.
   return parsed;
+};
+
+/**
+ * Remove the host-local provider declaration before an environment spec is
+ * sent to the Commonly API. The full spec remains in the local token record so
+ * the daemon can bind it to this host and the adapter can resolve its key file.
+ */
+export const environmentForServer = (environment) => {
+  if (!environment || typeof environment !== 'object' || Array.isArray(environment)
+    || !Object.prototype.hasOwnProperty.call(environment, 'provider')) {
+    return environment;
+  }
+  const { provider: _hostLocalProvider, ...serverEnvironment } = environment;
+  return serverEnvironment;
 };
 
 // ── validateEnvironmentSpec ─────────────────────────────────────────────────
@@ -169,6 +195,70 @@ export const validateEnvironmentSpec = (spec) => {
   if (spec.model !== undefined) {
     if (typeof spec.model !== 'string' || spec.model.trim() === '') {
       errors.push('model must be a non-empty string');
+    }
+  }
+
+  if (spec.provider !== undefined) {
+    if (!spec.provider || typeof spec.provider !== 'object' || Array.isArray(spec.provider)) {
+      errors.push('provider must be an object');
+    } else {
+      const allowedProviderKeys = new Set(['id', 'baseURL', 'keyFile', 'models']);
+      for (const key of Object.keys(spec.provider)) {
+        if (!allowedProviderKeys.has(key)) {
+          errors.push(`unknown provider key: ${JSON.stringify(key)} (allowed: id, baseURL, keyFile, models)`);
+        }
+      }
+      const { id, baseURL, keyFile, models } = spec.provider;
+      if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
+        errors.push('provider.id must be a safe OpenCode provider id');
+      }
+      if (typeof baseURL !== 'string' || baseURL.trim() === '') {
+        errors.push('provider.baseURL must be an HTTP(S) URL');
+      } else {
+        try {
+          const url = new URL(baseURL);
+          if (!['http:', 'https:'].includes(url.protocol)
+            || !url.hostname
+            || url.username || url.password || url.search || url.hash) {
+            errors.push('provider.baseURL must be an HTTP(S) URL without credentials, query, or fragment');
+          }
+        } catch {
+          errors.push('provider.baseURL must be an HTTP(S) URL');
+        }
+      }
+      if (typeof keyFile !== 'string' || !isAbsolute(keyFile)) {
+        errors.push('provider.keyFile must be an absolute path');
+      } else if (/[\r\n}]/.test(keyFile)) {
+        errors.push('provider.keyFile contains characters that cannot be used in an OpenCode file reference');
+      }
+      if (models !== undefined) {
+        if (!models || typeof models !== 'object' || Array.isArray(models)) {
+          errors.push('provider.models must be an object keyed by bare model id');
+        } else {
+          for (const [modelId, modelConfig] of Object.entries(models)) {
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(modelId)) {
+              errors.push(`provider.models key ${JSON.stringify(modelId)} must be a bare model id`);
+            }
+            if (!modelConfig || typeof modelConfig !== 'object' || Array.isArray(modelConfig)) {
+              errors.push(`provider.models[${JSON.stringify(modelId)}] must be an object`);
+            } else {
+              const credentialField = findInlineProviderCredentialField(
+                modelConfig,
+                `provider.models.${modelId}`,
+              );
+              if (credentialField) {
+                errors.push(`${credentialField} must not contain inline credentials; use provider.keyFile`);
+              }
+            }
+          }
+        }
+      }
+      if (spec.model === undefined) {
+        errors.push('model is required when provider is configured');
+      } else if (typeof spec.model === 'string'
+        && !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(spec.model)) {
+        errors.push('model must be a bare model id when provider is configured');
+      }
     }
   }
 
