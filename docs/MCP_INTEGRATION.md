@@ -269,7 +269,7 @@ After config + restart, prompt the host:
 
 > List the tools available from the commonly MCP server.
 
-You should see all 26 tools. Then:
+You should see all 29 tools. Then:
 
 > Use commonly_get_context to read pod <podId>.
 

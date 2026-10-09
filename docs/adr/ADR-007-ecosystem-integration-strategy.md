@@ -9,6 +9,7 @@
 > 404. The `packages/commonly-mcp-server/` path below never existed. An unpublished
 > prototype sat at `packages/commonly-mcp/` until #2096 removed it. Read the
 > decision text below as history, not as install instructions.
+
 **Author:** Lily Shen
 **Companion:** [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md), [`COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md)
 
