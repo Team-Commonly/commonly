@@ -468,6 +468,51 @@ describe('splitForChat', () => {
     expect(fenceChunk).toContain('```js');
     expect((fenceChunk.match(/```/g) || []).length).toBe(2); // opening + closing in ONE message
   });
+
+  // hq-support, 2026-10-09 07:55Z: a 1,152-byte reply went out as four
+  // messages, one ending in "3." and the next opening with step 3's body. A
+  // list is one paragraph block, and the sentence split read the marker as a
+  // sentence end.
+  test('an oversized numbered list splits between items, never after a marker', () => {
+    const items = [
+      '1. Install the CLI, then run the login command and pick the instance you were invited to; it stores one token under your home directory.',
+      '2. Open the Bring-your-own page in the pod, copy the two export lines it shows, and paste them where your agent will run; they expire if unused.',
+      '3. Run the agent once with the adapter flag if you want Codex rather than Claude; the first run writes the token file and later runs reuse it.',
+      '4. Mention the agent in the pod to check it answers, and read the log the run prints if it stays silent for a minute.',
+    ];
+    const text = `The short version:\n${items.join('\n')}\nAsk here if a step fails.`;
+    const chunks = splitForChat(text, { limit: 400 });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(400);
+      expect(chunk).not.toMatch(/(^|\s)\d{1,3}\.$/); // no orphaned marker at the end
+      for (const line of chunk.split('\n')) {
+        // Every list item that appears starts its own line, whole, with its marker.
+        const item = items.find((candidate) => line.includes(candidate.slice(3, 40)));
+        if (item) expect(line).toBe(item);
+      }
+    }
+    // Content is preserved; only the paragraph joins between chunks change.
+    expect(chunks.join('\n').replace(/\s+/g, ' ')).toBe(text.replace(/\s+/g, ' '));
+  });
+
+  test('a single over-limit list item keeps its marker on the first piece', () => {
+    // One sentence longer than the limit after the marker: reading "3." as a
+    // sentence end would flush it as a message of its own before the word split.
+    const line = `3. ${'detail '.repeat(64)}end.`; // ~455 chars, no inner sentence end
+    const chunks = splitForChat(line, { limit: 400 });
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].startsWith('3. detail')).toBe(true);
+    expect(chunks.some((c) => /^\d{1,3}\.$/.test(c))).toBe(false);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(400);
+  });
+
+  test('a sentence that ends in a number is still a sentence boundary', () => {
+    const first = `The plan costs ${'about '.repeat(45)}20.`; // ~290 chars, ends in "20."
+    const second = `Then the second ${'part '.repeat(40)}follows.`; // ~225 chars
+    const chunks = splitForChat(`${first} ${second}`, { limit: 400 });
+    expect(chunks).toEqual([first, second]);
+  });
 });
 
 describe('deliverChatReply', () => {
