@@ -78,6 +78,31 @@ describe('macOS Seatbelt profile', () => {
     );
   });
 
+  test('OpenCode config roots remain read-only in the generated profile', () => {
+    const configRoot = join(root, 'opencode-temp');
+    const configDir = join(configRoot, 'config-dir');
+    const xdgConfigHome = join(configRoot, 'xdg-config');
+    const xdgConfigDir = join(xdgConfigHome, 'opencode');
+    mkdirSync(configDir, { recursive: true });
+    mkdirSync(xdgConfigDir, { recursive: true });
+    const profile = buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      mcpConfigDir: configRoot,
+    });
+    const writableRules = profile.split('\n')
+      .filter((line) => line.includes('file-write*'))
+      .join('\n');
+
+    // A write rule for any ancestor of these config directories would cover
+    // them too, so pin the whole per-spawn config root as non-writable.
+    for (const path of [configRoot, configDir, xdgConfigHome, xdgConfigDir]) {
+      expect(writableRules).not.toContain(realpathSync(path));
+    }
+  });
+
   test('admits only the explicit provider auth file outside public seat state', () => {
     const authFile = join(root, 'operator-data', 'opencode', 'auth.json');
     mkdirSync(join(root, 'operator-data', 'opencode'), { recursive: true });

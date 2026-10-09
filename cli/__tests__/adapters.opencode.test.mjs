@@ -508,6 +508,15 @@ describe('opencode external provider config', () => {
         onCall: (_cmd, _args, options) => {
           expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          expect(existsSync(options.env.OPENCODE_CONFIG_DIR)).toBe(true);
+          expect(existsSync(join(options.env.XDG_CONFIG_HOME, 'opencode'))).toBe(true);
+          const expectedIgnore = [
+            'node_modules', 'package.json', 'package-lock.json', 'bun.lock', '.gitignore',
+          ].join('\n');
+          expect(readFileSync(join(options.env.OPENCODE_CONFIG_DIR, '.gitignore'), 'utf8'))
+            .toBe(expectedIgnore);
+          expect(readFileSync(join(options.env.XDG_CONFIG_HOME, 'opencode', '.gitignore'), 'utf8'))
+            .toBe(expectedIgnore);
           const permission = config.permission;
           const providerConfig = config.provider.litellm;
           const tokenFile = providerConfig.options.apiKey.match(/^\{file:(.+)\}$/)[1];

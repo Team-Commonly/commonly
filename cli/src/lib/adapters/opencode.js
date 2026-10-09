@@ -56,6 +56,13 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
+const OPENCODE_CONFIG_GITIGNORE = [
+  'node_modules',
+  'package.json',
+  'package-lock.json',
+  'bun.lock',
+  '.gitignore',
+].join('\n');
 const DISABLED_ENV = [
   'OPENCODE_DISABLE_CLAUDE_CODE',
   'OPENCODE_DISABLE_CLAUDE_CODE_PROMPT',
@@ -747,7 +754,19 @@ export default {
     const configPath = join(tempDir, 'opencode.json');
     const configDir = join(tempDir, 'config-dir');
     const xdgConfig = join(tempDir, 'xdg-config');
-    await Promise.all([mkdir(configDir), mkdir(xdgConfig)]);
+    // OpenCode initializes Path.config with mkdir and ensureGitignore during
+    // startup. Seatbelt grants this per-spawn tree read-only, so create both
+    // config roots and the exact ignore files it would otherwise write.
+    const xdgConfigDir = join(xdgConfig, 'opencode');
+    await Promise.all([
+      mkdir(configDir),
+      mkdir(xdgConfigDir, { recursive: true }),
+    ]);
+    await Promise.all([configDir, xdgConfigDir].map((directory) => writeFile(
+      join(directory, '.gitignore'),
+      OPENCODE_CONFIG_GITIGNORE,
+      { encoding: 'utf8', mode: 0o600, flag: 'wx' },
+    )));
     const credential = writeCredentialFile(ctx.runtimeToken, {
       agentName: ctx.agentName || 'agent',
       root: tempDir,
