@@ -35,7 +35,11 @@ const DEFAULT_POD_TYPE = 'chat';
 // 0.1.9 — a machine with an older global install must upgrade, not skip the
 // line because the binary already resolves.
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
-const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
+// `--language` is a requiredOption of `agent init` (python is the only value),
+// so the command exits 1 without it. This footnote is the first thing a
+// stranger copies from the page the docs now send them to; it carried the
+// flagless form until 2026-10-09 and one real user hit the exit (#2095).
+const CLI_INIT_COMMAND = 'commonly agent init --language python --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
