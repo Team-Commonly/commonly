@@ -578,11 +578,15 @@ const V2AgentBYO: React.FC = () => {
   // line rides INSIDE the snippet: it used to live in a footnote on the
   // previous screen, so first-time users hit "command not found" one step
   // after we stopped watching (#887 class). It has to be an EXECUTABLE line,
-  // not a shell comment: until 2026-10-09 it was `# install …: npm i -g …`,
-  // so a whole-snippet paste skipped the install and hit the same
-  // "command not found" on the last line (sprint-review's finding on #2102).
+  // and the snippet carries no `#` at all: until 2026-10-09 line 1 was
+  // `# install …: npm i -g …`, so a whole-snippet paste skipped the install
+  // (sprint-review on #2102); the first fix kept a trailing `# comment`, and
+  // stock interactive zsh (the macOS default, `interactivecomments` off)
+  // passes those words to npm as arguments, which exits with
+  // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
+  // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}   # install or update the CLI first\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
     : '';
 
   const cursorSnippet = issued

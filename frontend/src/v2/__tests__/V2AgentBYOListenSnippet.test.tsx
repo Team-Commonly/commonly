@@ -68,9 +68,11 @@ describe('BYO listener snippet', () => {
     expect(pre).toBeDefined();
     const lines = (pre.textContent || '').split('\n');
     expect(lines).toHaveLength(4);
-    // The install line must run when the whole snippet is pasted.
-    expect(lines[0].startsWith('npm i -g @commonlyai/cli@latest')).toBe(true);
-    expect(lines[0].startsWith('#')).toBe(false);
+    // The install line must run when the whole snippet is pasted, in stock
+    // interactive zsh too: no trailing comment, since zsh passes it to npm as
+    // arguments unless `interactivecomments` is set (off by default on macOS).
+    expect(lines[0]).toBe('npm i -g @commonlyai/cli@latest');
+    expect(pre.textContent).not.toContain('#');
     expect(lines[1]).toMatch(/^export COMMONLY_API_URL=/);
     expect(lines[2]).toBe('export COMMONLY_AGENT_TOKEN=cm_agent_test_token');
     expect(lines[3]).toMatch(/^commonly agent run \S+$/);
