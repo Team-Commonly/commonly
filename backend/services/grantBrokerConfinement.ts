@@ -80,6 +80,18 @@ export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new 
 export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
 
 /**
+ * Every adapter that exists (`cli/src/lib/adapters/*.js`), confining or not.
+ * `declaredAdapter` falls back to `runtime.runtimeType`, and that field also
+ * carries runtime KINDS (`wrapper`, `webhook`, `hosted`, `claude-code`) that
+ * name no adapter: a `wrapper` row with no `adapter` key is daemon-decided
+ * (claude or codex, never pi), which the header above makes load-bearing.
+ * The allowlist therefore judges a value only when it names an adapter at all;
+ * a runtime kind stays on the daemon-decided path. Without this split the
+ * first cut of the allowlist refused every seat row on this host.
+ */
+export const ADAPTER_NAMES: ReadonlySet<string> = new Set([...CONFINING_ADAPTERS.keys(), 'pi', 'stub']);
+
+/**
  * The daemon normalises a declared adapter before it spawns a seat —
  * `cli/src/lib/daemon-supervisor.js` (`ensureToken`, and the spawn path) does
  * `adapter.trim().toLowerCase()` on the way through — so `'PI'` and `' pi '`
@@ -157,7 +169,9 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  * the adapter is known.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  const adapter = declaredAdapter(runtime);
+  const declared = declaredAdapter(runtime);
+  // A runtime kind in the fallback slot names no adapter; the daemon decides it.
+  const adapter = declared && ADAPTER_NAMES.has(declared) ? declared : null;
   if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
