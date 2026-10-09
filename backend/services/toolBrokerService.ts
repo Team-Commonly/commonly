@@ -96,6 +96,7 @@ export interface BrokerCallInput {
 export interface BrokerCallResult {
   callId: string;
   result: unknown;
+  outcome: 'ok' | 'failed';
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -927,6 +928,13 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
+const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
+  if (!(error instanceof RoomGrantError)) return 'failed';
+  if (error.code === 'approval_required') return 'pending_approval';
+  if (error.code === 'provider_error' || error.code === 'provider_unreachable') return 'failed';
+  return 'refused';
+};
+
 /**
  * Whose credential a refused call would have spent (scope §8, TASK-181).
  *
@@ -991,6 +999,40 @@ const recordCall = async (
     durationMs: Math.max(0, Date.now() - startedAt),
   });
   return callId;
+};
+
+/** A resolved MCP tool error is an executed call that failed at the provider. */
+const isToolErrorResult = (result: unknown): boolean => (
+  Boolean(result)
+  && typeof result === 'object'
+  && !Array.isArray(result)
+  && (result as { isError?: unknown }).isError === true
+);
+
+/** Keep both execution paths' trail semantics in one place. */
+const recordExecutionResult = async (
+  input: BrokerCallInput,
+  grant: IRoomGrant | Record<string, unknown> | undefined,
+  result: unknown,
+  startedAt: number,
+  overrides?: {
+    callId?: string;
+    approvalId?: string;
+    args?: unknown;
+    credentialOwnerId?: string;
+  },
+): Promise<{ callId: string; outcome: 'ok' | 'failed' }> => {
+  const upstreamToolError = isToolErrorResult(result);
+  const outcome = upstreamToolError ? 'failed' : 'ok';
+  const callId = await recordCall(
+    input,
+    grant,
+    outcome,
+    startedAt,
+    upstreamToolError ? 'upstream_tool_error' : undefined,
+    overrides,
+  );
+  return { callId, outcome };
 };
 
 const budgetEntriesFor = async (
@@ -1152,16 +1194,20 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     }
 
     const result = await runDefinition(definition, parsedArgs, connection);
-    const callId = await recordCall(input, grant, 'ok', startedAt, undefined, { credentialOwnerId });
-    return { callId, result };
+    const recorded = await recordExecutionResult(
+      input,
+      grant,
+      result,
+      startedAt,
+      { credentialOwnerId },
+    );
+    return { ...recorded, result };
   } catch (error) {
     const reason = safeReason(error);
     // Audit refusals and failures with the token-derived identity. If the
     // audit store itself is unavailable, surface that failure rather than
     // claiming a call happened without a durable trail.
-    const outcome = error instanceof RoomGrantError
-      ? (error.code === 'approval_required' ? 'pending_approval' : 'refused')
-      : 'failed';
+    const outcome = executionErrorOutcome(error);
     const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
     const callId = alreadyRecorded
       ? String(error.details?.callId || '')
@@ -1224,21 +1270,20 @@ export const executeApprovedToolCall = async (
       throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
     const result = await runDefinition(definition, executionArgs, connection);
-    await recordCall(
+    const recorded = await recordExecutionResult(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
-      'ok',
+      result,
       startedAt,
-      undefined,
       { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
-    return { callId, result };
+    return { ...recorded, result };
   } catch (error) {
     const reason = safeReason(error);
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
-      error instanceof RoomGrantError ? 'refused' : 'failed',
+      executionErrorOutcome(error),
       startedAt,
       reason,
       {

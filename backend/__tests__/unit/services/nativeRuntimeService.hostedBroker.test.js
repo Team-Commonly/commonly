@@ -182,7 +182,9 @@ afterAll(() => {
 
 describe('a hosted run in a granted pod', () => {
   test('offers the broker tool to the model and runs the call through the broker', async () => {
-    mockCallTool.mockResolvedValue({ callId: 'tool_call_1', result: [{ number: 7, title: 'Fix the relay' }] });
+    mockCallTool.mockResolvedValue({
+      callId: 'tool_call_1', result: [{ number: 7, title: 'Fix the relay' }], outcome: 'ok',
+    });
     mockAxiosPost.mockResolvedValueOnce(toolCallTurn()).mockResolvedValueOnce(finalTurn);
 
     const result = await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'what is open?' } });
@@ -229,9 +231,38 @@ describe('a hosted run in a granted pod', () => {
     expect(recordedCall.result).toBeUndefined();
   });
 
+  test('a vendor tool error reaches the model unchanged and marks the run call failed', async () => {
+    const vendorError = {
+      isError: true,
+      content: [{ type: 'text', text: 'Developer Preview access denied' }],
+    };
+    mockCallTool.mockResolvedValue({
+      callId: 'tool_call_vendor_error', result: vendorError, outcome: 'failed',
+    });
+    mockAxiosPost.mockResolvedValueOnce(toolCallTurn()).mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, {
+      type: 'first_contact',
+      eventId: '507f1f77bcf86cd799439012',
+      payload: { content: 'list my calendars' },
+    });
+
+    const secondRequest = mockAxiosPost.mock.calls[1][1];
+    const toolMessage = secondRequest.messages.find((message) => message.role === 'tool');
+    expect(JSON.parse(toolMessage.content)).toEqual(vendorError);
+
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls[0]).toEqual({
+      name: 'github_list_issues',
+      callId: 'tool_call_vendor_error',
+      outcome: 'failed',
+      elapsedMs: expect.any(Number),
+    });
+  });
+
   test('a revocation mid-run refuses the second call, because the broker is re-asked every time', async () => {
     mockCallTool
-      .mockResolvedValueOnce({ callId: 'tool_call_1', result: { issues: [] } })
+      .mockResolvedValueOnce({ callId: 'tool_call_1', result: { issues: [] }, outcome: 'ok' })
       .mockRejectedValueOnce(Object.assign(new Error('grant is revoked'), {
         code: 'grant_revoked',
         details: { recorded: true, callId: 'tool_call_refused' },
