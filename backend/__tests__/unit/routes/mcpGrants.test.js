@@ -34,7 +34,7 @@ describe('MCP grant transport', () => {
   });
 
   it('projects server tools and calls the broker with token identity', async () => {
-    mockCallTool.mockResolvedValue({ callId: 'call-1', result: { issues: [] } });
+    mockCallTool.mockResolvedValue({ callId: 'call-1', result: { issues: [] }, outcome: 'ok' });
     const app = express();
     app.use(express.json());
     app.use('/api/mcp/grants', router);
@@ -96,6 +96,26 @@ describe('MCP grant transport', () => {
       tool: 'github.list_issues',
       args: {},
     });
+
+    // `isError` belongs to the outer MCP result. The vendor content stays in
+    // the same text field so the caller retains its original explanation.
+    mockCallTool.mockResolvedValue({
+      callId: 'call-error',
+      result: { content: [{ type: 'text', text: 'Developer Preview access denied' }] },
+      outcome: 'failed',
+    });
+    const failed = await request(app)
+      .post('/api/mcp/grants/grant-1')
+      .set('Accept', 'application/json, text/event-stream')
+      .send({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: { name: 'github.list_issues', arguments: {} },
+      });
+    expect(failed.status).toBe(200);
+    expect(failed.text).toContain('"isError":true');
+    expect(failed.text).toContain('Developer Preview access denied');
   });
 
   it('answers a refused grant with the same code a call gives, not a catalogue', async () => {

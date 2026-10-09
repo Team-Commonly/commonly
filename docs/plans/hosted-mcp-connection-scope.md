@@ -250,7 +250,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 | 403 or `insufficient_scope` | fails the call | `refused`, `provider_denied` (§10.4) | recorded, so the page can say what was refused; the grant is not touched |
 | 429 | fails the call | `failed`, `provider_rate_limited`, with `Retry-After` when one is sent | untouched |
 | 5xx, a timeout, no connection | fails the call | `failed`, `provider_unavailable` | untouched |
-| a result with `isError: true` | returns the vendor's text as the tool's error | `failed` | untouched |
+| a result with `isError: true` | preserves the vendor content and marks the tool result as an error | `failed`, `upstream_tool_error` | untouched |
 | a pinned tool missing, or drifted (§3) | refuses before calling | `refused`, `tool_unavailable` or `tool_drift` | untouched |
 | the row's owner banned or gone (§7) | refuses before calling | `refused`, `connection_owner_banned`, `connection_owner_missing` or `connection_owner_bot` | untouched, and so is the grant |
 | the row's `clientId` is not the client its entry uses now (§2) | refuses before calling | `refused`, `reconnect_required` | `status: 'error'`, "reconnect"; written only while the row still holds that `clientId`, so a reconnect that lands first stands |

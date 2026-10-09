@@ -236,6 +236,7 @@ describe('a hosted-MCP grant through the broker', () => {
       params: { name: 'list_issues', arguments: { limit: 3 } },
     });
     expect(result.result).toEqual({ content: [{ type: 'text', text: 'done' }] });
+    expect(result.outcome).toBe('ok');
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'ok',
       // The hosted row's `createdBy` — the member whose credential the vendor saw.
@@ -244,6 +245,64 @@ describe('a hosted-MCP grant through the broker', () => {
 
     // The credential was read for THIS row, not for the grant id.
     expect(mockCredentialFor).toHaveBeenCalledWith(expect.objectContaining({ _id: ROW_ID }));
+  });
+
+  it('records a resolved vendor tool error as failed and returns its content unchanged', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    const vendorError = {
+      isError: true,
+      content: [{ type: 'text', text: 'Google Calendar access is not enabled for this project.' }],
+    };
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      jsonrpc: '2.0', id: 'call-error', result: vendorError,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await callTool({
+      grantId: 'grant-hosted',
+      agentUserId: 'agent-a',
+      tool: 'linear.list_issues',
+      args: { limit: 3 },
+      hostedTurn: true,
+    });
+
+    expect(result).toEqual(expect.objectContaining({ result: vendorError, outcome: 'failed' }));
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed',
+      reason: 'upstream_tool_error',
+    }));
+    expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+  });
+
+  it('records a vendor tool error after owner approval as failed with its approval id', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['linear.create_issue'],
+      writeMode: 'write-with-confirm',
+    }));
+    const args = { title: 'approved issue' };
+    const vendorError = {
+      isError: true,
+      content: [{ type: 'text', text: 'The vendor rejected this operation.' }],
+    };
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      jsonrpc: '2.0', id: 'call-error', result: vendorError,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await executeApprovedToolCall({
+      grantId: 'grant-hosted',
+      agentUserId: 'agent-a',
+      tool: 'linear.create_issue',
+      args,
+      expectedArgsDigest: digestArgs(args),
+      approvalId: 'approval-vendor-error',
+    });
+
+    expect(result).toEqual(expect.objectContaining({ result: vendorError, outcome: 'failed' }));
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed',
+      reason: 'upstream_tool_error',
+      approvalId: 'approval-vendor-error',
+    }));
+    expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
   });
 
   it('refuses when the row names another entry, and never reaches the vendor', async () => {

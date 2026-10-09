@@ -190,7 +190,7 @@ describe('dispatchHostedBrokerTool', () => {
   });
 
   test('the mapped grant and tool are used, so a forged id in the arguments decides nothing', async () => {
-    mockCallTool.mockResolvedValue({ callId: 'tool_call_1', result: [{ number: 7 }] });
+    mockCallTool.mockResolvedValue({ callId: 'tool_call_1', result: [{ number: 7 }], outcome: 'ok' });
     const call = await dispatchHostedBrokerTool({
       projection,
       name: 'github_list_issues',
@@ -215,6 +215,29 @@ describe('dispatchHostedBrokerTool', () => {
       args: { grantId: 'grant-someone-else', agentUserId: OTHER_SEAT, state: 'open' },
     });
     expect(call).toEqual({ content: [{ number: 7 }], callId: 'tool_call_1', outcome: 'ok' });
+  });
+
+  test('an in-band provider failure preserves the result and failed outcome for native runs', async () => {
+    const providerResult = {
+      isError: true,
+      content: [{ type: 'text', text: 'provider refused this call' }],
+    };
+    mockCallTool.mockResolvedValue({
+      callId: 'tool_call_failed', result: providerResult, outcome: 'failed',
+    });
+
+    const call = await dispatchHostedBrokerTool({
+      projection,
+      name: 'github_list_issues',
+      args: {},
+      agentUserId: SEAT,
+    });
+
+    expect(call).toEqual({
+      content: providerResult,
+      callId: 'tool_call_failed',
+      outcome: 'failed',
+    });
   });
 
   test('a refusal carries the broker row id and the same payload shape MCP sends', async () => {

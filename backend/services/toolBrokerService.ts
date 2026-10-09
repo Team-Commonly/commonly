@@ -96,6 +96,7 @@ export interface BrokerCallInput {
 export interface BrokerCallResult {
   callId: string;
   result: unknown;
+  outcome: 'ok' | 'failed';
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -993,6 +994,40 @@ const recordCall = async (
   return callId;
 };
 
+/** A resolved MCP tool error is an executed call that failed at the provider. */
+const isToolErrorResult = (result: unknown): boolean => (
+  Boolean(result)
+  && typeof result === 'object'
+  && !Array.isArray(result)
+  && (result as { isError?: unknown }).isError === true
+);
+
+/** Keep both execution paths' trail semantics in one place. */
+const recordExecutionResult = async (
+  input: BrokerCallInput,
+  grant: IRoomGrant | Record<string, unknown> | undefined,
+  result: unknown,
+  startedAt: number,
+  overrides?: {
+    callId?: string;
+    approvalId?: string;
+    args?: unknown;
+    credentialOwnerId?: string;
+  },
+): Promise<{ callId: string; outcome: 'ok' | 'failed' }> => {
+  const upstreamToolError = isToolErrorResult(result);
+  const outcome = upstreamToolError ? 'failed' : 'ok';
+  const callId = await recordCall(
+    input,
+    grant,
+    outcome,
+    startedAt,
+    upstreamToolError ? 'upstream_tool_error' : undefined,
+    overrides,
+  );
+  return { callId, outcome };
+};
+
 const budgetEntriesFor = async (
   grant: IRoomGrant | Record<string, unknown>,
 ): Promise<Array<{ grantId: string; calls: number; windowMs?: number }>> => {
@@ -1152,8 +1187,14 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     }
 
     const result = await runDefinition(definition, parsedArgs, connection);
-    const callId = await recordCall(input, grant, 'ok', startedAt, undefined, { credentialOwnerId });
-    return { callId, result };
+    const recorded = await recordExecutionResult(
+      input,
+      grant,
+      result,
+      startedAt,
+      { credentialOwnerId },
+    );
+    return { ...recorded, result };
   } catch (error) {
     const reason = safeReason(error);
     // Audit refusals and failures with the token-derived identity. If the
@@ -1224,15 +1265,14 @@ export const executeApprovedToolCall = async (
       throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
     const result = await runDefinition(definition, executionArgs, connection);
-    await recordCall(
+    const recorded = await recordExecutionResult(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
-      'ok',
+      result,
       startedAt,
-      undefined,
       { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
-    return { callId, result };
+    return { ...recorded, result };
   } catch (error) {
     const reason = safeReason(error);
     await recordCall(

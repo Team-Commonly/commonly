@@ -108,6 +108,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
         args,
       });
       return {
+        ...(result.outcome === 'failed' ? { isError: true } : {}),
         content: [{ type: 'text', text: JSON.stringify(result.result) }],
       };
     } catch (error) {

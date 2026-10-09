@@ -267,7 +267,7 @@ export const dispatchHostedBrokerTool = async (
       // (Wren, TASK-175 74882). This is the only caller that sets it.
       hostedTurn: true,
     });
-    return { content: result.result, callId: result.callId, outcome: 'ok' };
+    return { content: result.result, callId: result.callId, outcome: result.outcome };
   } catch (error) {
     const e = error as { code?: string; message?: string; details?: Record<string, unknown> };
     const callId = typeof e.details?.callId === 'string' ? e.details.callId : undefined;
