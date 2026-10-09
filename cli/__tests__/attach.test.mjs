@@ -796,6 +796,32 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('predates runtime adapter bindings'));
   });
 
+  test.each([
+    { description: 'an empty list', installations: [] },
+    { description: 'a missing list' },
+    { description: 'no installation rows', installations: [{ podId: 'pod-main', type: 'directMessage' }] },
+  ])('attach does not call an unverifiable binding state an old server ($description)', async ({ installations }) => {
+    const response = installations === undefined ? {} : { installations };
+    const clientFactory = jest.fn(() => ({ get: jest.fn(async () => response) }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'default',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(binding.canRun).toBe(false);
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('Run with:'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not verify the server adapter binding'));
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('predates runtime adapter bindings'));
+  });
+
   test('attach prints Run with only after the server confirms the selected adapter', async () => {
     const clientFactory = jest.fn(() => ({
       get: jest.fn(async () => ({

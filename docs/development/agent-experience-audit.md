@@ -4146,3 +4146,13 @@ There are two states to name separately. If no installation row has a `runtimeAd
 **Repair:** keep the run-time refusal. After attach saves the runtime token, it reads the same installations projection and applies the same adapter-binding check before printing the run command. An unsupported, mismatched, or unreadable binding produces a warning instead of a run hint; the no-field case says the server predates adapter bindings and needs an upgrade. Tests pin both the legacy-server refusal and the absence of `Run with:` on an unconfirmed attachment, with a matching-binding control.
 
 **Lesson:** a successful write proves only that the write route accepted its request. When the next step has a stronger read-side precondition, verify that precondition before presenting the next command as ready.
+
+## 77. An empty installations response does not prove the server is old (2026-10-09, vera)
+
+*Correction to entry 76: the server-binding check has a third state. `installations: []`, a missing `installations` field, or a response with no installation rows means the adapter binding cannot be determined; it does not establish that the server predates the projection.*
+
+Treating an empty list as legacy tells an operator to upgrade a server that may be current, and can obscure the real issue: the selected installation was not returned. The same ambiguity affects both attach's post-write check and `agent run`'s binding refusal.
+
+**Repair:** report the binding as unverifiable when the response is missing, empty, or contains no installation rows. Use the legacy-server upgrade message only when installation rows exist and none carries the `runtimeAdapter` field. Tests cover empty, missing, and non-installation-only responses, as well as the old-server and matching-binding controls.
+
+**Lesson:** absence of evidence can justify a refusal, but it does not identify the cause. Preserve “cannot determine” as a distinct state when an API response is incomplete.

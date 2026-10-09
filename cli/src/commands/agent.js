@@ -159,11 +159,14 @@ export const adapterRequiresServerBinding = (adapterName) => {
   return Boolean(adapter) && adapter !== 'stub' && !ADAPTERS_WITH_GRANT_BROKER.has(adapter);
 };
 
-const serverProjectsRuntimeAdapter = (installations) => (
-  Array.isArray(installations)
-  && installations.some((row) => row?.type === 'installation'
-    && Object.prototype.hasOwnProperty.call(row, 'runtimeAdapter'))
-);
+const serverRuntimeAdapterProjectionState = (installations) => {
+  if (!Array.isArray(installations)) return 'unknown';
+  const installationRows = installations.filter((row) => row?.type === 'installation');
+  if (installationRows.length === 0) return 'unknown';
+  return installationRows.some((row) => Object.prototype.hasOwnProperty.call(row, 'runtimeAdapter'))
+    ? 'present'
+    : 'legacy';
+};
 
 /** Return the refusal message unless this installation declares the same adapter. */
 export const serverAdapterBindingRefusal = ({
@@ -176,7 +179,12 @@ export const serverAdapterBindingRefusal = ({
 } = {}) => {
   const adapter = String(adapterName || '').trim().toLowerCase();
   if (!adapterRequiresServerBinding(adapter)) return null;
-  if (!serverProjectsRuntimeAdapter(installations)) {
+  const projectionState = serverRuntimeAdapterProjectionState(installations);
+  if (projectionState === 'unknown') {
+    return 'Could not verify the server adapter binding because the installations response is empty or missing. '
+      + 'Retry after the server returns this installation.';
+  }
+  if (projectionState === 'legacy') {
     return `This Commonly server predates runtime adapter bindings; upgrade the server before running adapter '${adapter}'.`;
   }
   if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
