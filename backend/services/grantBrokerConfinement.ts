@@ -62,7 +62,22 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
  * keys its adapter registry; an unrecognised adapter name is not pi, and a
  * record carrying one cannot spawn a pi seat either.
  */
-export const CONFINEMENTLESS_ADAPTERS: ReadonlySet<string> = new Set(['pi']);
+/**
+ * Adapters known to confine a public seat, and the modes each one enforces.
+ * This is an ALLOWLIST, inverted from a denylist on 2026-10-09: the denylist
+ * (`{'pi'}`) refused only adapters someone had already shown to be unconfined,
+ * so every adapter added after it passed this server-side check by default,
+ * before anyone had shown it confines (Vera, pre-gating the OpenCode adapter).
+ * An adapter joins this map by proving enforcement, in the adapter and in its
+ * tests, not by being new. Modes are keyed per adapter because the union was
+ * admitting `bwrap` on an adapter that only implements the Seatbelt pair.
+ */
+export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['claude', new Set(['workspace', 'read-only', 'bwrap'])],
+  ['codex', new Set(['workspace', 'read-only'])],
+]);
+
+export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
 
 /**
  * The daemon normalises a declared adapter before it spawns a seat —
@@ -94,7 +109,9 @@ export const declaredAdapter = (runtime: unknown): string | null => {
  * Linux path). A declared mode outside this set confines nowhere, so the
  * server can refuse it without resolving the host.
  */
-export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(['workspace', 'read-only', 'bwrap']);
+export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(
+  [...CONFINING_ADAPTERS.values()].flatMap((modes) => [...modes]),
+);
 
 /** One typed code, two emitters (server projection + daemon derive). */
 export const GRANT_BROKER_REFUSAL_CODE = 'grant_broker_unconfined';
@@ -141,14 +158,17 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
   const adapter = declaredAdapter(runtime);
-  if (adapter && CONFINEMENTLESS_ADAPTERS.has(adapter)) {
+  if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
-      `the seat runs the '${adapter}' adapter, which confines on no host — a declared sandbox is refused`
-        + ' rather than enforced, and an absent one is never derived; move this seat to the claude or codex'
-        + ' adapter, or drop the grant broker from it',
+      `the seat runs the '${adapter}' adapter, which is not known to confine on any host; the adapters`
+        + ` known to confine are ${KNOWN_CONFINING_ADAPTERS}, and an adapter joins that set by proving`
+        + ' enforcement, not by default. Move this seat to one of them, or drop the grant broker from it',
     );
   }
+  // Modes are judged against the declared adapter's own set; a seat that names
+  // no adapter is daemon-decided (claude or codex), so the union applies there.
+  const enforceableModes = adapter ? CONFINING_ADAPTERS.get(adapter) as ReadonlySet<string> : PUBLIC_HOST_MODES;
 
   const source = environment as { sandbox?: unknown } | null | undefined;
   const sandbox = source?.sandbox;
@@ -163,12 +183,13 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
     );
   }
   const mode = declared.mode;
-  if (mode !== undefined && mode !== null && (typeof mode !== 'string' || !PUBLIC_HOST_MODES.has(mode))) {
+  if (mode !== undefined && mode !== null && (typeof mode !== 'string' || !enforceableModes.has(mode))) {
     const shown = typeof mode === 'string' ? `'${mode}'` : (JSON.stringify(mode) ?? String(mode));
+    const which = adapter ? `the '${adapter}' adapter` : 'any adapter';
     return refusalFor(
       'sandbox_mode_unenforceable',
-      `the declared sandbox.mode is ${shown}, which no adapter enforces on any host;`
-        + " declare one of 'workspace' / 'read-only' (or 'bwrap' on Linux)"
+      `the declared sandbox.mode is ${shown}, which ${which} does not enforce on any host;`
+        + ` declare one of ${[...enforceableModes].map((m) => `'${m}'`).join(' / ')}`
         + ' or drop the grant broker from this seat',
     );
   }
