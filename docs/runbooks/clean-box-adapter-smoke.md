@@ -13,7 +13,7 @@ A fresh `HOME` and a fresh global npm prefix: no `~/.commonly`, no token file, n
 | codex | `~/.codex/` (auth.json is a file) | works from a HOME override |
 | opencode | `~/.local/share/opencode/auth.json` only | not the data dir beside it (logs, repos, `mcp-auth.json`); the first provider login is interactive, an operator step |
 | gemini / copilot | `~/.gemini`, `~/.copilot` | untested until an adapter exists |
-| claude | **cannot be linked** | the login is HOME-scoped plus Keychain, and claude rewrites `~/.claude.json` on start; linking it made each run rewrite the real file (measured 2026-10-09: five rewrite events, each leaving a `~/.claude/backups/` entry at the time; claude prunes those, so only the newest survives later). A claude clean-box needs a **real second macOS user**, which is an operator decision |
+| claude | **cannot be linked** | the login is HOME-scoped plus Keychain, and claude rewrites `~/.claude.json` on start; linking it made each run rewrite the real file (2026-10-09: five rewrite events observed during the attempt; `~/.claude/backups/` keeps only a rolling window, which has since turned over, so the count is contemporaneous and not re-checkable; list that directory with `ls -A`, its entries are dot-prefixed). A claude clean-box needs a **real second macOS user**, which is an operator decision |
 
 The box never carries MCP tokens except the broker's, which the adapter injects per spawn.
 
