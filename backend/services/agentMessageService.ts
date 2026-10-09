@@ -1495,10 +1495,18 @@ class AgentMessageService {
       // tool description warns about, reached from the opposite direction.
       //
       // `agent-admin` does not reach this cap either: the `!isAgentAdminPod`
-      // gate above skips both guards (measured 2026-10-09; the earlier text here
-      // claimed the opposite). It is N:1 (several admins,
-      // one agent), so it is a shared room and the crowding rationale holds.
-      // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
+      // gate above skips both guards. That exemption is RULED (TASK-241,
+      // 2026-10-09), on both message stores: 6,357 agent-admin messages since
+      // 2026-04 (Postgres 8 + Mongo 6,349), ZERO from humans, ~99.7% routed
+      // error reports, the longest run a 30-minute heartbeat drip. No human has
+      // ever posted in one, so there is no one to crowd and no one a suppressed
+      // post would mislead. The guards are not idle here: duplicate_recent
+      // would have fired ~1,600 times on repeated error bodies. Keeping the
+      // DUPLICATES is the fidelity choice (the guards stay off), since
+      // recurrence frequency is forensic information. Revisit if a human posts
+      // in an agent-admin pod (the same query that produced these numbers) or
+      // the duplicate rows become a storage cost. `agent-admin` is also excluded from
+      // DM_POD_TYPES_GUARD (ADR-001 §3.10) because it is N:1, a separate fact.
       // `isOneToOne` is the const read once above, shared with the duplicate check.
       const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
