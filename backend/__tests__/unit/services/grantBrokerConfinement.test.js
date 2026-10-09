@@ -8,7 +8,7 @@ const {
   LEGACY_SANDBOX_TRUST,
   GRANT_BROKER_REFUSAL_CODE,
   CONFINING_ADAPTERS,
-  ADAPTER_NAMES,
+  RUNTIME_KINDS,
   PUBLIC_HOST_MODES,
   effectiveSandboxTrust,
   normalizeAdapter,
@@ -38,7 +38,12 @@ describe('grant broker confinement predicate', () => {
     expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
     expect(CONFINING_ADAPTERS.has('pi')).toBe(false);
-    expect([...ADAPTER_NAMES].sort()).toEqual(['claude', 'codex', 'pi', 'stub']);
+    // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what the install paths write; a value in
+    // runtime.runtimeType outside this set is adapter-shaped and judged. pi is absent on purpose.
+    expect([...RUNTIME_KINDS].sort()).toEqual([
+      'claude-code', 'hosted', 'internal', 'local-cli', 'managed-agents', 'moltbot', 'native', 'webhook', 'wrapper',
+    ]);
+    expect(RUNTIME_KINDS.has('pi')).toBe(false);
     expect([...PUBLIC_HOST_MODES].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
   });
 

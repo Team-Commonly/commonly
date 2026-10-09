@@ -80,16 +80,23 @@ export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new 
 export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
 
 /**
- * Every adapter that exists (`cli/src/lib/adapters/*.js`), confining or not.
- * `declaredAdapter` falls back to `runtime.runtimeType`, and that field also
- * carries runtime KINDS (`wrapper`, `webhook`, `hosted`, `claude-code`) that
- * name no adapter: a `wrapper` row with no `adapter` key is daemon-decided
- * (claude or codex, never pi), which the header above makes load-bearing.
- * The allowlist therefore judges a value only when it names an adapter at all;
- * a runtime kind stays on the daemon-decided path. Without this split the
- * first cut of the allowlist refused every seat row on this host.
+ * Runtime KINDS a row may carry in `runtime.runtimeType` that name no adapter:
+ * the daemon decides those (claude or codex, never pi), which the header above
+ * makes load-bearing. The set mirrors `CLOUD_RUNTIME_TYPES` (moltbot, internal,
+ * native, managed-agents) plus the pure-BYO kinds `isCloudRuntime` names
+ * (webhook, claude-code) and the values the install paths write (hosted,
+ * local-cli, wrapper); the predicate module stays a leaf, so the mirror is
+ * asserted in its suite rather than imported. Anything ELSE in that field is
+ * adapter-shaped and is judged, so a hand-attached seat whose attach wrote
+ * `runtimeType: <adapter name>` with no `adapter` key fails closed when that
+ * adapter is unproven. The first cut listed adapter NAMES here instead, which
+ * was the denylist shape one layer down: a new adapter nobody had listed
+ * passed as daemon-decided (Vera, connector pod 76719).
  */
-export const ADAPTER_NAMES: ReadonlySet<string> = new Set([...CONFINING_ADAPTERS.keys(), 'pi', 'stub']);
+export const RUNTIME_KINDS: ReadonlySet<string> = new Set([
+  'wrapper', 'webhook', 'hosted', 'claude-code', 'local-cli',
+  'moltbot', 'internal', 'native', 'managed-agents',
+]);
 
 /**
  * The daemon normalises a declared adapter before it spawns a seat —
@@ -171,13 +178,13 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
   // An explicit `runtime.adapter` always names an adapter, so it is judged as
-  // declared, unknown names included. The `runtimeType` fallback also carries
-  // runtime kinds (`wrapper`, `webhook`, `hosted`), which name no adapter and
-  // stay daemon-decided; only a fallback value that IS an adapter name is judged.
+  // declared, unknown names included. The `runtimeType` fallback is judged
+  // UNLESS it is a known runtime kind (daemon-decided); an adapter-shaped value
+  // the server does not recognise fails closed below, with no server edit.
   const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
   const explicit = normalizeAdapter(row?.adapter);
   const viaType = normalizeAdapter(row?.runtimeType);
-  const adapter = explicit ?? (viaType && ADAPTER_NAMES.has(viaType) ? viaType : null);
+  const adapter = explicit ?? (viaType && !RUNTIME_KINDS.has(viaType) ? viaType : null);
   if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',

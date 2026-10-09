@@ -183,6 +183,14 @@ describe('GET /assigned — grant broker confinement', () => {
 
   // 2026-10-09: the denylist became an allowlist. An adapter nobody has shown to confine fails
   // closed, and a mode is judged against the declared adapter's own set, not the union.
+  it('refuses a hand-attached seat whose runtimeType names an unproven adapter and carries no adapter key', async () => {
+    // attach writes `runtime: { runtimeType: adapter.name, host: 'byo' }` with no `adapter` key.
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'opencode', host: 'byo', model: 'x' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+  });
+
   it('leaves a wrapper row with no adapter key daemon-decided: a runtime kind is not an adapter', async () => {
     await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'wrapper', model: 'claude-opus-5' });
     const row = await assigned();
