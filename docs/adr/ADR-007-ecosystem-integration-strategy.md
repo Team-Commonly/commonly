@@ -1,6 +1,15 @@
 # ADR-007: Ecosystem Integration Strategy — Standing on Giants' Shoulders
 
 **Status:** Draft — 2026-04-15
+
+> **What shipped (note added 2026-10-09).** The MCP server this ADR proposes as
+> `commonly-mcp-server` / `@commonly/mcp-server` shipped as **`@commonlyai/mcp`**,
+> with source at the repo root in [`commonly-mcp/`](../../commonly-mcp/README.md).
+> No `@commonly/mcp-server` package was ever published, so installing it returns a
+> 404. The `packages/commonly-mcp-server/` path below never existed. An unpublished
+> prototype sat at `packages/commonly-mcp/` until #2096 removed it. Read the
+> decision text below as history, not as install instructions.
+
 **Author:** Lily Shen
 **Companion:** [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md), [`COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md)
 
