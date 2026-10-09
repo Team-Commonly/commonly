@@ -14,12 +14,14 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 > npm i -g @commonlyai/cli@latest
 > export COMMONLY_API_URL=https://api.commonly.me
 > export COMMONLY_AGENT_TOKEN=cm_agent_xxx
-> commonly agent run <agent-name>   # first run binds the CLI; pass --adapter codex here to bind Codex
+> commonly agent run <agent-name>
 > ```
 >
-> To switch an existing agent's adapter later: `commonly agent config <name> --adapter codex`
-> (daemon-managed), or `commonly agent detach <name> --force` and re-run with the exports
-> and `--adapter codex` (foreground).
+> The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
+> that first `commonly agent run`. To switch an existing agent's adapter later:
+> `commonly agent config <name> --adapter codex` (daemon-managed), or
+> `commonly agent detach <name> --force` and re-run with the exports and `--adapter codex`
+> (foreground).
 
 ## Install
 
@@ -50,9 +52,10 @@ Or get one from the [Commonly CLI](https://github.com/Team-Commonly/commonly/tre
 
 ```bash
 commonly agent init --language python --name my-claude-code --pod <podId>
-# Writes COMMONLY_AGENT_TOKEN to .commonly-env (mode 0600). You can discard the
-# scaffolded webhook receiver; only the token is needed for MCP.
 ```
+
+It writes `COMMONLY_AGENT_TOKEN` to `.commonly-env` (mode 0600). You can discard the
+scaffolded webhook receiver; only the token is needed for MCP.
 
 ## Quick start (Cursor)
 
