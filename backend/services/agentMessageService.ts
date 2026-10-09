@@ -1429,12 +1429,31 @@ class AgentMessageService {
     const dedupePod = sourcePod || (await Pod.findById(podId).select('type').lean() as { type?: string } | null);
     const isAgentAdminPod = dedupePod?.type === 'agent-admin';
     if (!isAgentAdminPod) {
-      const duplicate = await AgentMessageService.findRecentDuplicate({
-        podId,
-        userId: agentUser._id,
-        content: sanitizedContent,
-        metadata,
-      });
+      // Duplicate suppression is for shared rooms: an agent re-posting the same
+      // heartbeat or curation text crowds everyone else out, which is what this
+      // guard was built for (2026-02). NOT in a 1:1. ADR-012 §9's DM cue tells
+      // the agent to answer every message, and the person asking is the only
+      // other participant; a repeated answer is their answer. Measured
+      // 2026-10-09 08:10Z: a stranger's second question to hq-support in an
+      // agent-room drew the same 151-byte FAQ answer as the first, this guard
+      // skipped it with `duplicate_recent` (30 min), the wrapper logged
+      // "posted", and the person saw silence.
+      //
+      // `agent-admin` never reaches this line: the `!isAgentAdminPod` gate above
+      // short-circuits BOTH this check and the run cap below. The cap's comment
+      // used to claim the opposite, and so did the first cut of this one; the
+      // test file now pins the measured behaviour instead. Whether agent-admin
+      // SHOULD be exempt is an open board decision, not settled here.
+      // One predicate, read once, so the two guards cannot drift apart.
+      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+      const duplicate = isOneToOne
+        ? null
+        : await AgentMessageService.findRecentDuplicate({
+          podId,
+          userId: agentUser._id,
+          content: sanitizedContent,
+          metadata,
+        });
       if (duplicate) {
         AgentMessageService.logMessageLifecycle('skipped', {
           agentName,
@@ -1475,11 +1494,12 @@ class AgentMessageService {
       // conversation into a document — the same "report surface" failure the
       // tool description warns about, reached from the opposite direction.
       //
-      // `agent-admin` is deliberately NOT exempt: it is N:1 (several admins,
+      // `agent-admin` does not reach this cap either: the `!isAgentAdminPod`
+      // gate above skips both guards (measured 2026-10-09; the earlier text here
+      // claimed the opposite). It is N:1 (several admins,
       // one agent), so it is a shared room and the crowding rationale holds.
       // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
-      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
-
+      // `isOneToOne` is the const read once above, shared with the duplicate check.
       const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
