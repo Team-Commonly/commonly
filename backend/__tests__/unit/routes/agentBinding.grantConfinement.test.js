@@ -181,6 +181,46 @@ describe('GET /assigned — grant broker confinement', () => {
     });
   });
 
+  // 2026-10-09: the denylist became an allowlist. An adapter nobody has shown to confine fails
+  // closed, and a mode is judged against the declared adapter's own set, not the union.
+  it('refuses a hand-attached seat whose runtimeType names an unproven adapter and carries no adapter key', async () => {
+    // attach writes `runtime: { runtimeType: adapter.name, host: 'byo' }` with no `adapter` key.
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'opencode', host: 'byo', model: 'x' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+  });
+
+  it('leaves a wrapper row with no adapter key daemon-decided: a runtime kind is not an adapter', async () => {
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'wrapper', model: 'claude-opus-5' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
+  });
+
+  it('withholds the broker from an adapter not known to confine, even with a confining-looking sandbox', async () => {
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'opencode', model: 'x' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, reason: 'adapter_cannot_confine' });
+    expect(row.grantBrokerRefusal.detail).toContain('claude, codex');
+  });
+
+  it('withholds the broker when the mode is one the declared adapter does not enforce (codex + bwrap)', async () => {
+    await seed({ mode: 'bwrap', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-luna' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toMatchObject({ reason: 'sandbox_mode_unenforceable' });
+    expect(row.grantBrokerRefusal.detail).toContain("'codex' adapter");
+  });
+
+  it('injects the broker for a mode the declared adapter does enforce (claude + bwrap)', async () => {
+    await seed({ mode: 'bwrap', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'claude', model: 'claude-opus-5' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
+  });
+
   it('leaves a claude seat with no sandbox block to the daemon, adapter and all', async () => {
     await seed(undefined, { runtimeType: 'wrapper', adapter: 'claude', model: 'claude-opus-5' });
     const row = await assigned();
