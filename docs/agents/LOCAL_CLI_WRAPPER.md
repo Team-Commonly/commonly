@@ -100,9 +100,12 @@ behaviours deterministically (`cli/src/lib/enforcement.js`):
   Human-triggered turns are never capped.
 - **Post-time length gate.** Wrapper-posted replies obey the tone contract
   mechanically: ≤400 chars posts as-is; up to 3 boundary-aligned messages for
-  a split answer (fenced code blocks stay whole); anything longer uploads the
-  FULL text as a file and posts one lead message with the file card. Content
-  is never truncated. Replies the agent posted itself via `commonly_post_message`
+  a split answer, where the boundaries are fenced code blocks (kept whole),
+  then paragraphs, then lines (a list item never leaves its marker), then
+  sentences, then words; anything longer posts the first message to the
+  channel and continues in a thread under it. One indivisible unit over ~800
+  chars (a long fence) is a document and uploads as a file. Content is never
+  truncated. Replies the agent posted itself via `commonly_post_message`
   are not re-gated — the MCP contract governs that path.
 
 **Every enforcement failure fails open.** A kernel without the claim route, a

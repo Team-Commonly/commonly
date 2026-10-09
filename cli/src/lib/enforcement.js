@@ -483,12 +483,53 @@ export const createClaimKeeper = (client, {
 
 // ── post-time length gate ───────────────────────────────────────────────────
 
+// A sentence ends at [.!?] followed by whitespace, except when what precedes
+// the whitespace is only a numbered list marker at the start of the line: in
+// "3. Run it once." the first period belongs to the marker, not a sentence.
+// Applied to one line at a time, so `^` is the line start.
+const SENTENCE_END = /(?<=[.!?])(?<!^[ \t]*\d{1,3}\.)\s+/;
+
+// Split one over-limit line at sentence boundaries, and a sentence that is
+// itself over the limit at word boundaries. A single over-limit word (a URL)
+// posts whole rather than being cut.
+const splitLineForChat = (line, limit) => {
+  const units = [];
+  let piece = '';
+  const flushPiece = () => {
+    if (piece.trim()) units.push(piece.trim());
+    piece = '';
+  };
+  for (const sentence of line.split(SENTENCE_END)) {
+    if (sentence.length > limit) {
+      flushPiece();
+      let run = '';
+      for (const word of sentence.split(/\s+/)) {
+        if (run && `${run} ${word}`.length > limit) {
+          units.push(run);
+          run = word;
+        } else {
+          run = run ? `${run} ${word}` : word;
+        }
+      }
+      if (run) units.push(run);
+    } else if (piece && `${piece} ${sentence}`.length > limit) {
+      flushPiece();
+      piece = sentence;
+    } else {
+      piece = piece ? `${piece} ${sentence}` : sentence;
+    }
+  }
+  flushPiece();
+  return units;
+};
+
 /**
  * Split chat text into tone-contract-sized messages without ever cutting
  * content. Boundaries in preference order: fenced code blocks stay whole
  * (atomic — an oversized fence becomes one oversized message rather than a
- * broken pair), then paragraphs, then sentences, then words. Greedy packing
- * rejoins small pieces so two short paragraphs share one message.
+ * broken pair), then paragraphs, then lines (a list item never leaves its
+ * marker), then sentences, then words. Greedy packing rejoins small pieces so
+ * two short paragraphs share one message.
  */
 export const splitForChat = (text, { limit = 400 } = {}) => {
   const trimmed = String(text || '').trim();
@@ -529,39 +570,39 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
   }
   flushProse();
 
-  // Pass 2: split oversized prose blocks at sentence then word boundaries.
+  // Pass 2: split oversized prose blocks at line, then sentence, then word
+  // boundaries. Lines come first because a list is one paragraph block whose
+  // items are separated by single newlines: splitting it by sentence read a
+  // numbered marker ("3.") as a sentence end and packed it onto the previous
+  // piece, so a support reply posted one message ending in "3." and the next
+  // opening with step 3's body (hq-support, 2026-10-09). Lines pack greedily
+  // with single newlines, so a list stays a list inside a message; only a line
+  // that is itself over the limit goes on to sentences and words.
   const units = [];
   for (const block of blocks) {
     if (block.atomic || block.text.length <= limit) {
       units.push(block.text);
       continue;
     }
-    let piece = '';
-    const flushPiece = () => {
-      if (piece.trim()) units.push(piece.trim());
-      piece = '';
+    let group = '';
+    const flushGroup = () => {
+      if (group) units.push(group);
+      group = '';
     };
-    for (const sentence of block.text.split(/(?<=[.!?])\s+/)) {
-      if (sentence.length > limit) {
-        flushPiece();
-        let run = '';
-        for (const word of sentence.split(/\s+/)) {
-          if (run && `${run} ${word}`.length > limit) {
-            units.push(run);
-            run = word;
-          } else {
-            run = run ? `${run} ${word}` : word;
-          }
-        }
-        if (run) units.push(run); // a single over-limit word (URL) posts whole
-      } else if (piece && `${piece} ${sentence}`.length > limit) {
-        flushPiece();
-        piece = sentence;
+    for (const rawLine of block.text.split('\n')) {
+      const line = rawLine.trimEnd(); // keep a nested item's indentation
+      if (!line.trim()) continue;
+      if (line.length > limit) {
+        flushGroup();
+        units.push(...splitLineForChat(line, limit));
+      } else if (group && `${group}\n${line}`.length > limit) {
+        flushGroup();
+        group = line;
       } else {
-        piece = piece ? `${piece} ${sentence}` : sentence;
+        group = group ? `${group}\n${line}` : line;
       }
     }
-    flushPiece();
+    flushGroup();
   }
 
   // Pass 3: greedy packing back up to the limit.
