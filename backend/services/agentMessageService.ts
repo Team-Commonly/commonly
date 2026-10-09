@@ -1495,10 +1495,14 @@ class AgentMessageService {
       // tool description warns about, reached from the opposite direction.
       //
       // `agent-admin` does not reach this cap either: the `!isAgentAdminPod`
-      // gate above skips both guards (measured 2026-10-09; the earlier text here
-      // claimed the opposite). It is N:1 (several admins,
-      // one agent), so it is a shared room and the crowding rationale holds.
-      // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
+      // gate above skips both guards. That exemption is RULED (TASK-241,
+      // 2026-10-09): over 94 days agent-admin pods carried 8 messages, all
+      // unique error reports from routeErrorToDM, zero human messages, so there
+      // is no room to crowd. The earlier text here argued the opposite and was
+      // never implemented; it is gone so a reader is not sent to a decision the
+      // ledger already settled. Revisit only if agent-admin ever carries human
+      // conversation. `agent-admin` is also excluded from DM_POD_TYPES_GUARD
+      // (ADR-001 §3.10) because it is N:1, a separate fact about membership.
       // `isOneToOne` is the const read once above, shared with the duplicate check.
       const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
