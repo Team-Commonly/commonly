@@ -169,9 +169,14 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
  * the adapter is known.
  */
 export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
-  const named = declaredAdapter(runtime);
-  // A runtime kind in the fallback slot names no adapter; the daemon decides it.
-  const adapter = named && ADAPTER_NAMES.has(named) ? named : null;
+  // An explicit `runtime.adapter` always names an adapter, so it is judged as
+  // declared, unknown names included. The `runtimeType` fallback also carries
+  // runtime kinds (`wrapper`, `webhook`, `hosted`), which name no adapter and
+  // stay daemon-decided; only a fallback value that IS an adapter name is judged.
+  const row = runtime as { adapter?: unknown; runtimeType?: unknown } | null | undefined;
+  const explicit = normalizeAdapter(row?.adapter);
+  const viaType = normalizeAdapter(row?.runtimeType);
+  const adapter = explicit ?? (viaType && ADAPTER_NAMES.has(viaType) ? viaType : null);
   if (adapter && !CONFINING_ADAPTERS.has(adapter)) {
     return refusalFor(
       'adapter_cannot_confine',
