@@ -1935,6 +1935,7 @@
     "gatesTitle": "Pods that reach this channel",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
+    "hostedMcpUnrequestedScope": "The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.",
     "installInProgress": "Still setting up — try again in a moment.",
     "installInProgressForPod": "Still setting up for {{pod}} — try again in a moment.",
     "leadAny": "Any agent leads",

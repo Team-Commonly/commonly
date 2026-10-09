@@ -65,6 +65,12 @@ const { revokeConnectionGrants } = require('../../../services/roomGrantService')
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
 
+const { HOSTED_MCP_ENTRIES: SHIPPED_ENTRIES } = jest.requireActual('../../../integrations/hostedMcp/entries');
+const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+const ATLASSIAN_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
+const AIRTABLE_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
+
 const app = express();
 app.use('/connect/hosted-mcp', connectRoutes);
 
@@ -159,12 +165,36 @@ const outcome = (res) => {
   };
   const entryId = url.searchParams.get('entryId');
   const revokeAt = url.searchParams.get('revokeAt');
+  const extraScopes = url.searchParams.getAll('extraScope');
   if (entryId) result.entryId = entryId;
   if (revokeAt) result.revokeAt = revokeAt;
+  if (extraScopes.length) result.extraScopes = extraScopes;
   return result;
 };
 
+const scopeSet = (scope) => new Set(String(scope).split(/[\s,]+/).filter(Boolean));
+
 describe('hosted-mcp connect: callback', () => {
+  it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
+    const captures = [
+      [LINEAR_SCOPE_CAPTURE, 'scope'],
+      [ATLASSIAN_SCOPE_CAPTURE, 'grantedScope'],
+      [AIRTABLE_SCOPE_CAPTURE, 'grantedScope'],
+    ];
+    captures.forEach(([capture, grantedScopeKey]) => {
+      const entry = SHIPPED_ENTRIES.find((candidate) => candidate.id === capture.server
+        || candidate.resource === capture.server);
+      expect(Object.prototype.hasOwnProperty.call(capture.tokenShape, grantedScopeKey)).toBe(true);
+      const grantedScope = capture.tokenShape[grantedScopeKey];
+      expect(entry).toBeDefined();
+      expect([...scopeSet(grantedScope)].sort())
+        .toEqual([...scopeSet(entry.scopes.join(' '))].sort());
+    });
+    // This Google fixture is an unauthenticated tools/list response, not an
+    // OAuth token capture; readiness keeps its callback unavailable meanwhile.
+    expect(GOOGLE_CALENDAR_CAPTURE.tokenShape).toBeUndefined();
+  });
+
   it('the callback records the client that minted the pair', async () => {
     const res = await callback();
     expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
@@ -212,6 +242,172 @@ describe('hosted-mcp connect: callback', () => {
     // The pending state is gone whichever way the flow went, so a replay of the
     // state finds no row and cannot reach the exchange a second time.
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$unset).toEqual({ 'config.pendingAuth': 1 });
+  });
+
+  it('refuses and revokes an overbroad grant without storing either token', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'access-overbroad',
+          refresh_token: 'refresh-overbroad',
+          scope: 'read,openid,write',
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    try {
+      const res = await callback();
+
+      expect(outcome(res)).toEqual({
+        status: 302,
+        hostedMcp: 'error',
+        code: 'unrequested_scope',
+      });
+      expect(new URL(res.headers.location).searchParams.getAll('extraScope')).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        '[hosted-mcp] refused overbroad OAuth scope grant',
+        JSON.stringify({ entryId: 'linear', extraScopes: ['write'] }),
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
+      const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+      expect(revokeBody.get('token')).toBe('refresh-overbroad');
+      expect(revokeBody.get('token_type_hint')).toBe('refresh_token');
+      expect(connectorSecrets.put).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('accepts the exact requested scope set regardless of order or comma separators', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        scope: 'openid, read',
+        id_token: idToken('acct-1'),
+      }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('openid read');
+  });
+
+  it('accepts Atlassian\'s captured reordered granted-scope list', async () => {
+    const originalEntry = { ...FIXTURE_ENTRY, scopes: [...FIXTURE_ENTRY.scopes] };
+    Object.assign(FIXTURE_ENTRY, {
+      id: 'atlassian',
+      issuer: 'https://auth.atlassian.test',
+      resource: 'https://mcp.atlassian.test/v2/mcp',
+      scopes: [
+        'read:me',
+        'read:account',
+        'offline_access',
+        'read:jira:agent-interface',
+        'search:jira:agent-interface',
+        'read:confluence:agent-interface',
+        'search:confluence:agent-interface',
+      ],
+    });
+    setStoredRow({ entryId: 'atlassian' });
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        scope: ATLASSIAN_SCOPE_CAPTURE.tokenShape.grantedScope,
+      }),
+    });
+
+    try {
+      const res = await callback('state=st-1&code=code-1', BROWSER_COOKIE, 'atlassian');
+
+      expect(outcome(res).hostedMcp).toBe('connected');
+      const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+      expect(scopeSet(update.$set['config.grantedScope']))
+        .toEqual(scopeSet(ATLASSIAN_SCOPE_CAPTURE.tokenShape.grantedScope));
+      expect([...scopeSet(ATLASSIAN_SCOPE_CAPTURE.tokenShape.grantedScope)])
+        .not.toEqual(FIXTURE_ENTRY.scopes);
+    } finally {
+      Object.assign(FIXTURE_ENTRY, originalEntry);
+    }
+  });
+
+  it('a refused overbroad reconnect preserves the connected row and its grants', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    const connectedRow = storedRow({
+      credentialRef: 'ref-old-access',
+      refreshTokenRef: 'ref-old-refresh',
+      providerSubject: 'acct-old',
+      clientId: intake.hostedMcpClientMetadataUrl('linear'),
+    });
+    connectedRow.status = 'connected';
+    Integration.findOne.mockResolvedValue(connectedRow);
+    Integration.findOneAndUpdate.mockReset();
+    Integration.findOneAndUpdate.mockResolvedValueOnce(connectedRow);
+    connectorSecrets.get.mockResolvedValue('old-refresh-token');
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access',
+          refresh_token: 'new-refresh',
+          scope: 'read openid write',
+          id_token: idToken('acct-new'),
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const res = await callback();
+
+    expect(outcome(res)).toMatchObject({ hostedMcp: 'error', code: 'unrequested_scope' });
+    expect(new URL(res.headers.location).searchParams.getAll('extraScope')).toEqual([]);
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+    expect(revokeConnectionGrants).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(Integration.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { 'config.pendingAuth': 1 } });
+    expect(connectedRow.status).toBe('connected');
+    expect(connectedRow.config.credentialRef).toBe('ref-old-access');
+    expect(connectedRow.config.refreshTokenRef).toBe('ref-old-refresh');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+    expect(revokeBody.get('token')).toBe('new-refresh');
+    expect(revokeBody.get('token')).not.toBe('old-refresh-token');
+  });
+
+  it('treats an omitted scope as the full requested set', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', refresh_token: 'refresh-1' }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('read openid');
+  });
+
+  it('accepts and records a subset grant', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', scope: 'read' }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('read');
   });
 
   it('exchanges a pre-registered callback with instance credentials while retaining PKCE', async () => {

@@ -670,6 +670,34 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('invalid_state')).toBeNull();
   });
 
+  it('shows a fixed unrequested-scope notice and consumes hostile callback query values', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/v2/connectors?hostedMcp=error&code=unrequested_scope&extraScope=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E&extraScope=spoofed',
+    );
+    mockGets([]);
+    renderPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.",
+    );
+    expect(window.location.search).toBe('');
+    expect(screen.queryByText(/img|spoofed/i)).toBeNull();
+    expect(screen.queryByText('unrequested_scope')).toBeNull();
+  });
+
+  it('does not treat a different hosted-MCP callback code as an unrequested-scope refusal', () => {
+    window.history.replaceState({}, '', '/v2/connectors?hostedMcp=error&code=exchange_refused');
+    mockGets([]);
+    renderPage();
+
+    expect(screen.queryByText(
+      "The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.",
+    )).toBeNull();
+    expect(window.location.search).toBe('?hostedMcp=error&code=exchange_refused');
+  });
+
   it('reloads connectors after a successful Slack callback and clears its query', async () => {
     window.history.replaceState({}, '', '/v2/connectors?slack=pending');
     mockGets([]);

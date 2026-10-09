@@ -319,6 +319,7 @@ const V2ConnectorsPage: React.FC = () => {
   // only in the page-level slot at the foot of the page.
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
+  const [hostedMcpCallbackError, setHostedMcpCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
@@ -379,6 +380,23 @@ const V2ConnectorsPage: React.FC = () => {
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [load]);
+
+  // Keep vendor-controlled scope values out of the URL and official UI copy.
+  // Consume the callback result after displaying a fixed notice.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('hostedMcp') !== 'error' || query.get('code') !== 'unrequested_scope') return;
+    setHostedMcpCallbackError(t('connectors.hostedMcpUnrequestedScope'));
+    query.delete('hostedMcp');
+    query.delete('code');
+    query.delete('extraScope');
+    const remaining = query.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
+    );
+  }, [t]);
 
   // The Slack callback resolves in its own tab. Consume its opaque result and
   // leave no state or error code in the browser URL.
@@ -1686,7 +1704,11 @@ const V2ConnectorsPage: React.FC = () => {
       {/* Tools plan §6: the second list, under the channels, in the same grammar. */}
       {!loading && <V2ConnectorTools pods={podList} manualRevokeNotice={hostedMcpManualRevoke} />}
 
-      {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
+      {(error || slackCallbackError || hostedMcpCallbackError) && (
+        <div className="v2-connectors__error" role="alert">
+          {hostedMcpCallbackError || error || slackCallbackError}
+        </div>
+      )}
     </div>
   );
 };

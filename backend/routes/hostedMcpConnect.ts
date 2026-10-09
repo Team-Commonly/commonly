@@ -16,6 +16,7 @@
 const express = require('express');
 import type { Request, Response } from 'express';
 import type { HostedMcpAuthorizationServer } from '../services/hostedMcpIntakeService';
+import type { HostedMcpEntry } from '../services/hostedMcpEntryService';
 import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -77,15 +78,44 @@ const callbackRedirect = (
   res: Response,
   status: string,
   code?: string,
-  manualRevoke?: { entryId: string; revokeAt: string },
+  options?: {
+    manualRevoke?: { entryId: string; revokeAt: string };
+  },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
-  if (manualRevoke) {
-    query.set('entryId', manualRevoke.entryId);
-    query.set('revokeAt', manualRevoke.revokeAt);
+  if (options?.manualRevoke) {
+    query.set('entryId', options.manualRevoke.entryId);
+    query.set('revokeAt', options.manualRevoke.revokeAt);
   }
   return res.redirect(302, `${publicAppUrl()}/v2/connectors?${query.toString()}`);
+};
+
+/** Vendors return OAuth scope lists with either separator; compare the set. */
+const parseScopeSet = (scope: string): Set<string> => new Set(
+  scope.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
+);
+
+/** A refused grant is never stored; revoke its refresh token when the entry can. */
+const revokeRefusedGrant = async (
+  entry: HostedMcpEntry,
+  client: { clientId: string; clientSecret?: string },
+  tokens: TokenResponse,
+): Promise<void> => {
+  if (!hostedMcpRevokeTarget(entry)?.endpoint) return;
+  const token = tokens.refresh_token || tokens.access_token;
+  if (!token) return;
+  try {
+    await revokeTokenAtVendor({
+      entry,
+      clientId: client.clientId,
+      ...(client.clientSecret ? { clientSecret: client.clientSecret } : {}),
+      token,
+      tokenTypeHint: tokens.refresh_token ? 'refresh_token' : 'access_token',
+    });
+  } catch {
+    // The connect remains refused and no token is retained if vendor revoke fails.
+  }
 };
 
 /**
@@ -402,6 +432,31 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     return callbackRedirect(res, 'error', 'exchange_incomplete');
   }
 
+  const scopeWasReturned = Object.prototype.hasOwnProperty.call(tokens, 'scope');
+  if (scopeWasReturned && typeof tokens.scope !== 'string') {
+    await revokeRefusedGrant(entry, client, tokens);
+    return callbackRedirect(res, 'error', 'exchange_invalid_scope');
+  }
+  const grantedScope = scopeWasReturned ? tokens.scope as string : entry.scopes.join(' ');
+  const grantedScopes: Set<string> = scopeWasReturned
+    ? parseScopeSet(grantedScope)
+    : new Set<string>(entry.scopes);
+  const requestedScopes: Set<string> = new Set<string>(entry.scopes);
+  const extraScopes: string[] = [...grantedScopes].filter((scope) => !requestedScopes.has(scope));
+  if (extraScopes.length) {
+    // Keep vendor-controlled scope strings out of the browser URL and official
+    // UI copy. JSON encoding keeps control characters inert in server logs.
+    console.warn('[hosted-mcp] refused overbroad OAuth scope grant', JSON.stringify({
+      entryId: entry.id,
+      extraScopes,
+    }));
+    await revokeRefusedGrant(entry, client, tokens);
+    return callbackRedirect(res, 'error', 'unrequested_scope');
+  }
+  // Store the parsed set in the canonical OAuth space-delimited form. This
+  // keeps a vendor's comma-separated response useful to later scope checks.
+  const recordedGrantedScope = [...grantedScopes].join(' ');
+
   const owner = String(consumed.createdBy);
   // The credential half of the row lives under `config` (a strict
   // subdocument), so a top-level read is `undefined` on every real row: the
@@ -502,7 +557,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         'config.credentialRef': credentialRef,
         'config.refreshTokenRef': refreshTokenRef || null,
         'config.refreshGeneration': 0,
-        'config.grantedScope': tokens.scope || entry.scopes.join(' '),
+        'config.grantedScope': recordedGrantedScope,
         'config.expiresAt': tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
         // `|| null`, not the bare value: `$set` with `undefined` is a NO-OP on
         // this strict subdocument (measured on a real mongod — the old value
@@ -520,8 +575,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   );
 
   return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
-    entryId: entry.id,
-    revokeAt: manualRevokeAt,
+    manualRevoke: {
+      entryId: entry.id,
+      revokeAt: manualRevokeAt,
+    },
   } : undefined);
 });
 
