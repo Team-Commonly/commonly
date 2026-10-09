@@ -127,6 +127,30 @@ export const deleteAgentToken = (name) => {
 // falls back to the attach hint).
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 
+// ── `agent run --adapter` against an existing token file (#2098) ────────────
+// The flag picks the CLI once, at first-run bootstrap; after that the token
+// file's adapter is what runs. A different `--adapter` used to be dropped
+// without a word, so "switch this agent to Codex" kept running Claude and read
+// as Codex misbehaving. Refuse instead, and name the way out for each path:
+// a foreground run re-bootstraps from the Connect page's env exports after the
+// local record is removed; a daemon-managed seat is switched through the
+// registry, which the daemon applies on its next pass.
+export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) => {
+  const requested = String(requestedAdapter || '').trim().toLowerCase();
+  if (!requested) return { ok: true };
+  const bound = String(record?.adapter || '').trim().toLowerCase();
+  if (!bound || bound === requested) return { ok: true };
+  const name = record.agentName;
+  return {
+    ok: false,
+    message: [
+      `'${name}' is bound to the ${bound} adapter by its token file (${tokenPath}); --adapter ${requested} was not applied.`,
+      `To run it with ${requested} here: commonly agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
+      `A daemon-managed seat switches with: commonly agent config ${name} --adapter ${requested}`,
+    ].join('\n'),
+  };
+};
+
 export const bootstrapAgentRecordFromEnv = async ({
   name,
   env = process.env,
@@ -2690,7 +2714,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -2720,6 +2744,14 @@ Docs:
           );
           process.exit(1);
         }
+      }
+
+      const adapterRequest = checkRunAdapterRequest({
+        record, requestedAdapter: opts.adapter, tokenPath: tokenFile(name),
+      });
+      if (!adapterRequest.ok) {
+        console.error(`${stamp()} [${name}] ${adapterRequest.message}`);
+        process.exit(1);
       }
 
       const adapter = getAdapter(record.adapter);
