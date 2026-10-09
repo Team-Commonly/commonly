@@ -109,9 +109,9 @@ GIT_CONFIG_COUNT=$base_count
 export GIT_CONFIG_COUNT
 unset "GIT_CONFIG_KEY_$config_index" "GIT_CONFIG_VALUE_$config_index"
 
-# Read only this repository's setting so global and process-level workspace
-# hooks paths cannot redirect commits in another repository.
-if original_hooks=$(git config --local --path --get core.hooksPath 2>/dev/null); then
+# Read the target repository's file-backed config while excluding process-level
+# GIT_CONFIG_* overlays inherited from the workspace seat.
+if original_hooks=$(GIT_CONFIG_COUNT=0 git config --path --get core.hooksPath 2>/dev/null); then
   :
 else
   git_common_dir=$(GIT_CONFIG_COUNT=0 git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || git_common_dir=
@@ -178,7 +178,8 @@ export const prepareCommitAttribution = ({
     COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: String(configIndex),
     COMMONLY_AGENT_HOOKS_PATH: hooksDirectory,
     // The sandbox adapters allow the workspace's existing hook files. The
-    // proxy itself resolves core.hooksPath from the repository at hook time.
+    // proxy resolves the target repo's path at hook time; a confined seat may
+    // fail closed if that repo's hook lies outside the workspace allowlist.
     ...(originalHooksPath ? { COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath } : {}),
     COMMONLY_AGENT_SEAT_NAME: cleanSingleLine(displayName || agentName, 'agent'),
     COMMONLY_AGENT_SEAT_ID: seatAddressId(agentName, instanceId),

@@ -126,6 +126,8 @@ describe('prepareCommitAttribution', () => {
 
       const messageFile = join(root, 'repeat-message');
       writeFileSync(messageFile, `${message}\n`);
+      // Match the original path to the proxy directory so the recursion guard
+      // skips delegation while this test checks trailer idempotence.
       const hook = spawnSync(join(attribution.hooksDirectory, 'prepare-commit-msg'), [messageFile, 'message'], {
         cwd: repo,
         env: { ...attribution.env, COMMONLY_AGENT_HOOKS_PATH: originalHooks },
@@ -147,21 +149,33 @@ describe('prepareCommitAttribution', () => {
       name: 'the target default hooks directory',
       workspaceHooksPath: null,
       targetHooksPath: null,
-      targetHasHook: true,
+      targetHook: 'target',
     },
     {
       name: 'the target relative core.hooksPath',
       workspaceHooksPath: '.husky/_',
       targetHooksPath: '.husky/_',
-      targetHasHook: true,
+      targetHook: 'target',
+    },
+    {
+      name: 'the target default hooks directory despite the workspace hooksPath overlay',
+      workspaceHooksPath: '.husky/_',
+      targetHooksPath: null,
+      targetHook: 'target',
     },
     {
       name: 'no hooks in a second repo despite the workspace hooksPath',
       workspaceHooksPath: '.husky/_',
       targetHooksPath: null,
-      targetHasHook: false,
+      targetHook: null,
     },
-  ])('uses $name and still adds seat attribution', ({ workspaceHooksPath, targetHooksPath, targetHasHook }) => {
+    {
+      name: 'the effective global hooksPath instead of the workspace env overlay',
+      workspaceHooksPath: '.husky/_',
+      targetHooksPath: null,
+      targetHook: 'global',
+    },
+  ])('uses $name and still adds seat attribution', ({ workspaceHooksPath, targetHooksPath, targetHook }) => {
     const root = mkdtempSync(join(tmpdir(), 'commonly-commit-attribution-other-repo-'));
     const workspace = join(root, 'workspace');
     const target = join(root, 'target');
@@ -171,8 +185,11 @@ describe('prepareCommitAttribution', () => {
     const targetHooks = targetHooksPath
       ? join(target, ...targetHooksPath.split('/'))
       : join(target, '.git', 'hooks');
+    const globalHooks = join(root, 'global-hooks');
+    const globalConfig = join(root, 'gitconfig');
     const workspaceMarker = join(root, 'workspace-hook-ran');
     const targetMarker = join(root, 'target-hook-ran');
+    const globalMarker = join(root, 'global-hook-ran');
     mkdirSync(workspace);
     mkdirSync(target);
     for (const repo of [workspace, target]) {
@@ -180,7 +197,7 @@ describe('prepareCommitAttribution', () => {
       execFileSync('git', ['config', 'user.name', 'Fixture Author'], { cwd: repo });
       execFileSync('git', ['config', 'user.email', 'fixture@example.test'], { cwd: repo });
     }
-    if (targetHasHook) mkdirSync(targetHooks, { recursive: true });
+    if (targetHook === 'target') mkdirSync(targetHooks, { recursive: true });
 
     if (workspaceHooksPath) {
       mkdirSync(workspaceHooks, { recursive: true });
@@ -193,10 +210,18 @@ describe('prepareCommitAttribution', () => {
     if (targetHooksPath) {
       execFileSync('git', ['config', 'core.hooksPath', targetHooksPath], { cwd: target });
     }
-    if (targetHasHook) {
+    if (targetHook === 'target') {
       makeExecutable(
         join(targetHooks, 'pre-commit'),
         '#!/bin/sh\nprintf target > "$COMMONLY_TEST_TARGET_HOOK_MARKER"\n',
+      );
+    }
+    if (targetHook === 'global') {
+      mkdirSync(globalHooks, { recursive: true });
+      writeFileSync(globalConfig, `[core]\n\thooksPath = ${globalHooks}\n`);
+      makeExecutable(
+        join(globalHooks, 'pre-commit'),
+        '#!/bin/sh\nprintf global > "$COMMONLY_TEST_GLOBAL_HOOK_MARKER"\n',
       );
     }
 
@@ -211,8 +236,10 @@ describe('prepareCommitAttribution', () => {
             GIT_CONFIG_KEY_0: 'core.hooksPath',
             GIT_CONFIG_VALUE_0: workspaceHooksPath,
           } : {}),
+          ...(targetHook === 'global' ? { GIT_CONFIG_GLOBAL: globalConfig } : {}),
           COMMONLY_TEST_TARGET_HOOK_MARKER: targetMarker,
           COMMONLY_TEST_WORKSPACE_HOOK_MARKER: workspaceMarker,
+          COMMONLY_TEST_GLOBAL_HOOK_MARKER: globalMarker,
         },
         agentName: 'forge',
         displayName: 'Forge',
@@ -229,8 +256,10 @@ describe('prepareCommitAttribution', () => {
         env: attribution.env,
       });
 
-      expect(existsSync(targetMarker)).toBe(targetHasHook);
-      if (targetHasHook) expect(readFileSync(targetMarker, 'utf8')).toBe('target');
+      expect(existsSync(targetMarker)).toBe(targetHook === 'target');
+      if (targetHook === 'target') expect(readFileSync(targetMarker, 'utf8')).toBe('target');
+      expect(existsSync(globalMarker)).toBe(targetHook === 'global');
+      if (targetHook === 'global') expect(readFileSync(globalMarker, 'utf8')).toBe('global');
       expect(existsSync(workspaceMarker)).toBe(false);
       expect(execFileSync('git', ['show', '-s', '--format=%B', 'HEAD'], {
         cwd: target,
