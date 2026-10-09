@@ -381,18 +381,12 @@ const V2ConnectorsPage: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [load]);
 
-  // A rejected hosted-MCP grant names only the extra scope. Consume the result
-  // after displaying it, so scope details and callback codes do not stay in URL.
+  // Keep vendor-controlled scope values out of the URL and official UI copy.
+  // Consume the callback result after displaying a fixed notice.
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     if (query.get('hostedMcp') !== 'error' || query.get('code') !== 'unrequested_scope') return;
-    const extraScopes = query.getAll('extraScope').filter((scope) => scope.length > 0);
-    setHostedMcpCallbackError(t('connectors.hostedMcpUnrequestedScope', {
-      scopes: extraScopes.join(', '),
-      defaultValue: extraScopes.length
-        ? `The provider granted scope(s) Commonly did not request: ${extraScopes.join(', ')}. The connection was not saved.`
-        : 'The provider granted an unrequested scope, so Commonly did not save this connection.',
-    }));
+    setHostedMcpCallbackError(t('connectors.hostedMcpUnrequestedScope'));
     query.delete('hostedMcp');
     query.delete('code');
     query.delete('extraScope');

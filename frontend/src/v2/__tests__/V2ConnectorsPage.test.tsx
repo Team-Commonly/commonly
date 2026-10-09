@@ -670,19 +670,20 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('invalid_state')).toBeNull();
   });
 
-  it('shows the unrequested scope and consumes the hosted-MCP error query', async () => {
+  it('shows a fixed unrequested-scope notice and consumes hostile callback query values', async () => {
     window.history.replaceState(
       {},
       '',
-      '/v2/connectors?hostedMcp=error&code=unrequested_scope&extraScope=write',
+      '/v2/connectors?hostedMcp=error&code=unrequested_scope&extraScope=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E&extraScope=spoofed',
     );
     mockGets([]);
     renderPage();
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'The provider granted scope(s) Commonly did not request: write. The connection was not saved.',
+      "The provider granted access Commonly didn't ask for, so the connection wasn't saved.",
     );
     expect(window.location.search).toBe('');
+    expect(screen.queryByText(/img|spoofed/i)).toBeNull();
     expect(screen.queryByText('unrequested_scope')).toBeNull();
   });
 

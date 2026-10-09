@@ -80,7 +80,6 @@ const callbackRedirect = (
   code?: string,
   options?: {
     manualRevoke?: { entryId: string; revokeAt: string };
-    extraScopes?: string[];
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
@@ -89,7 +88,6 @@ const callbackRedirect = (
     query.set('entryId', options.manualRevoke.entryId);
     query.set('revokeAt', options.manualRevoke.revokeAt);
   }
-  options?.extraScopes?.forEach((scope) => query.append('extraScope', scope));
   return res.redirect(302, `${publicAppUrl()}/v2/connectors?${query.toString()}`);
 };
 
@@ -446,8 +444,14 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   const requestedScopes: Set<string> = new Set<string>(entry.scopes);
   const extraScopes: string[] = [...grantedScopes].filter((scope) => !requestedScopes.has(scope));
   if (extraScopes.length) {
+    // Keep vendor-controlled scope strings out of the browser URL and official
+    // UI copy. JSON encoding keeps control characters inert in server logs.
+    console.warn('[hosted-mcp] refused overbroad OAuth scope grant', JSON.stringify({
+      entryId: entry.id,
+      extraScopes,
+    }));
     await revokeRefusedGrant(entry, client, tokens);
-    return callbackRedirect(res, 'error', 'unrequested_scope', { extraScopes });
+    return callbackRedirect(res, 'error', 'unrequested_scope');
   }
   // Store the parsed set in the canonical OAuth space-delimited form. This
   // keeps a vendor's comma-separated response useful to later scope checks.

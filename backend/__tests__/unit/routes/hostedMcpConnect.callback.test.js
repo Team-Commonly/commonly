@@ -246,6 +246,7 @@ describe('hosted-mcp connect: callback', () => {
 
   it('refuses and revokes an overbroad grant without storing either token', async () => {
     FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     global.fetch
       .mockResolvedValueOnce({
         ok: true,
@@ -257,21 +258,29 @@ describe('hosted-mcp connect: callback', () => {
       })
       .mockResolvedValueOnce({ ok: true, status: 200 });
 
-    const res = await callback();
+    try {
+      const res = await callback();
 
-    expect(outcome(res)).toEqual({
-      status: 302,
-      hostedMcp: 'error',
-      code: 'unrequested_scope',
-      extraScopes: ['write'],
-    });
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
-    const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
-    expect(revokeBody.get('token')).toBe('refresh-overbroad');
-    expect(revokeBody.get('token_type_hint')).toBe('refresh_token');
-    expect(connectorSecrets.put).not.toHaveBeenCalled();
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(outcome(res)).toEqual({
+        status: 302,
+        hostedMcp: 'error',
+        code: 'unrequested_scope',
+      });
+      expect(new URL(res.headers.location).searchParams.getAll('extraScope')).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        '[hosted-mcp] refused overbroad OAuth scope grant',
+        JSON.stringify({ entryId: 'linear', extraScopes: ['write'] }),
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
+      const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));
+      expect(revokeBody.get('token')).toBe('refresh-overbroad');
+      expect(revokeBody.get('token_type_hint')).toBe('refresh_token');
+      expect(connectorSecrets.put).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('accepts the exact requested scope set regardless of order or comma separators', async () => {
@@ -359,7 +368,8 @@ describe('hosted-mcp connect: callback', () => {
 
     const res = await callback();
 
-    expect(outcome(res)).toMatchObject({ hostedMcp: 'error', code: 'unrequested_scope', extraScopes: ['write'] });
+    expect(outcome(res)).toMatchObject({ hostedMcp: 'error', code: 'unrequested_scope' });
+    expect(new URL(res.headers.location).searchParams.getAll('extraScope')).toEqual([]);
     expect(connectorSecrets.put).not.toHaveBeenCalled();
     expect(connectorSecrets.get).not.toHaveBeenCalled();
     expect(revokeConnectionGrants).not.toHaveBeenCalled();
